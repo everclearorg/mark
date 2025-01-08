@@ -1,0 +1,40 @@
+{
+  "name": "mark",
+  "version": "0.0.1",
+  "description": "Price insensitive market making bot, Mark.",
+  "repository": "https://github.com/everclearorg/mark.git",
+  "author": "Everclear",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "yarn workspaces foreach --all --parallel --topological-dev run build",
+    "clean": "yarn workspaces foreach -A --parallel run clean",
+    "lint": "yarn workspaces foreach -A --parallel run lint",
+    "lint:fix": "yarn workspaces foreach -A --parallel run lint:fix",
+    "purge": "yarn workspaces foreach -A --parallel run purge && rimraf './node_modules'",
+    "test": "yarn workspaces foreach -A --parallel run test",
+    "test:unit": "yarn workspaces foreach -v -A --parallel run test:unit"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "19.6.1",
+    "@commitlint/config-conventional": "19.6.0",
+    "@istanbuljs/nyc-config-typescript": "1.0.2",
+    "@jtbennett/ts-project-scripts": "1.0.0-rc.4",
+    "@typescript-eslint/eslint-plugin": "8.19.1",
+    "@typescript-eslint/parser": "8.19.1",
+    "eslint": "9.17.0",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-import": "2.31.0",
+    "eslint-plugin-node": "11.1.0",
+    "eslint-plugin-prettier": "5.2.1",
+    "husky": "9.1.7",
+    "prettier": "3.4.2",
+    "rimraf": "6.0.1",
+    "sort-package-json": "2.12.0"
+  },
+  "packageManager": "yarn@4.6.0"
+}

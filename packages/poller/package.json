@@ -1,0 +1,27 @@
+{
+  "name": "@mark/poller",
+  "version": "0.0.1",
+  "description": "Poller logic for Mark.",
+  "main": "dist/index.js",
+  "author": "Everclear",
+  "license": "MIT",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "src/**/*"
+  ],
+  "scripts": {
+    "build": "tsc --build ./tsconfig.json",
+    "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+    "lint": "eslint ./src/index.ts",
+    "lint:fix": "yarn lint --fix",
+    "purge": "yarn clean && rimraf ./coverage ./node_modules",
+    "test": "",
+    "test:unit": ""
+  },
+  "devDependencies": {
+    "eslint": "9.17.0",
+    "rimraf": "6.0.1",
+    "typescript": "5.7.2"
+  }
+}
