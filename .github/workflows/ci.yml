@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - testnet-staging
+      - testnet-prod
+      - prod
+      - main
+  pull_request:
+
+defaults:
+  run:
+    working-directory: packages/contracts
+
+concurrency:
+  group: ${{github.workflow}}-${{github.ref}}
+  cancel-in-progress: true
+
+env:
+
+jobs:
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build
+        run: yarn build
+
+      - name: Run unit tests
+        shell: bash
+        run: yarn test:unit
+
+  lint:
+    name: Lint Commit Messages
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Lint PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: github.event_name == 'pull_request'
+
+      - name: Lint commit
+        uses: wagoid/commitlint-github-action@v5
+
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20.x
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install
+
+      - run: yarn lint
