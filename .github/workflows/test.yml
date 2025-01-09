@@ -1,5 +1,11 @@
 name: Test Release
 on:
+  push:
+    branches:
+      - testnet-staging
+      - testnet-prod
+      - prod
+      - main
   pull_request:
 
 concurrency:
