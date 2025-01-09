@@ -6,7 +6,6 @@ on:
       - testnet-staging
       - testnet-prod
       - prod
-      - main
   pull_request:
 
 defaults:
