@@ -1,10 +1,10 @@
-// eslint.config.js (Flat Config example)
-import eslintPluginPrettier from 'eslint-plugin-prettier';
-import prettierConfig from 'eslint-config-prettier';
-import typescriptParser from '@typescript-eslint/parser';
-import typescriptPlugin from '@typescript-eslint/eslint-plugin';
+// eslint.config.js (CommonJS example)
+const eslintPluginPrettier = require('eslint-plugin-prettier');
+const prettierConfig = require('eslint-config-prettier');
+const typescriptParser = require('@typescript-eslint/parser');
+const typescriptPlugin = require('@typescript-eslint/eslint-plugin');
 
-export default [
+module.exports = [
     // 1) Basic ignore settings
     {
         ignores: ['dist', 'node_modules'],
