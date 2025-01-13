@@ -3,9 +3,9 @@ name: CI
 on:
   push:
     branches:
-      - testnet-staging
-      - testnet-prod
-      - prod
+      - testnet
+      - mainnet
+      - main
   pull_request:
 
 defaults:
