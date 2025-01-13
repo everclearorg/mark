@@ -19,12 +19,14 @@
     "test": "yarn workspaces foreach -A --parallel run test",
     "test:unit": "yarn workspaces foreach -v -A --parallel run test:unit"
   },
+  "dependencies": {
+    "@types/node": "20.17.12"
+  },
   "devDependencies": {
     "@commitlint/cli": "19.6.1",
     "@commitlint/config-conventional": "19.6.0",
     "@istanbuljs/nyc-config-typescript": "1.0.2",
     "@jtbennett/ts-project-scripts": "1.0.0-rc.4",
-    "@types/node": "20.17.12",
     "@typescript-eslint/eslint-plugin": "8.19.1",
     "@typescript-eslint/parser": "8.19.1",
     "eslint": "9.17.0",
