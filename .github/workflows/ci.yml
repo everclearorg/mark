@@ -26,6 +26,12 @@ jobs:
           node-version: 20.x
           cache: 'yarn'
 
+      - name: Check Yarn version
+        run: yarn --version
+
+      - name: Check Path
+        run: echo $(pwd)
+
       - name: Install dependencies
         run: yarn install
 
