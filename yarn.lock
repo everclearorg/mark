@@ -481,6 +481,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:20.17.12":
+  version: 20.17.12
+  resolution: "@types/node@npm:20.17.12"
+  dependencies:
+    undici-types: "npm:~6.19.2"
+  checksum: 10c0/340b65a11e4486e597163991532a08e525beee40f082cf73dc830c060426fa9ea8690a4e3931d91375e946816a884d6140d96e99ac048b51f280f21cc70d22ed
+  languageName: node
+  linkType: hard
+
 "@typescript-eslint/eslint-plugin@npm:8.19.1":
   version: 8.19.1
   resolution: "@typescript-eslint/eslint-plugin@npm:8.19.1"
@@ -2550,6 +2559,7 @@ __metadata:
     "@commitlint/config-conventional": "npm:19.6.0"
     "@istanbuljs/nyc-config-typescript": "npm:1.0.2"
     "@jtbennett/ts-project-scripts": "npm:1.0.0-rc.4"
+    "@types/node": "npm:20.17.12"
     "@typescript-eslint/eslint-plugin": "npm:8.19.1"
     "@typescript-eslint/parser": "npm:8.19.1"
     eslint: "npm:9.17.0"
@@ -3568,6 +3578,13 @@ __metadata:
     has-symbols: "npm:^1.1.0"
     which-boxed-primitive: "npm:^1.1.1"
   checksum: 10c0/7dbd35ab02b0e05fe07136c72cb9355091242455473ec15057c11430129bab38b7b3624019b8778d02a881c13de44d63cd02d122ee782fb519e1de7775b5b982
+  languageName: node
+  linkType: hard
+
+"undici-types@npm:~6.19.2":
+  version: 6.19.8
+  resolution: "undici-types@npm:6.19.8"
+  checksum: 10c0/078afa5990fba110f6824823ace86073b4638f1d5112ee26e790155f481f2a868cc3e0615505b6f4282bdf74a3d8caad715fd809e870c2bb0704e3ea6082f344
   languageName: node
   linkType: hard
 
