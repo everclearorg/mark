@@ -12,8 +12,6 @@ concurrency:
   group: ${{github.workflow}}-${{github.ref}}
   cancel-in-progress: true
 
-env:
-
 jobs:
   unit-tests:
     name: Run Unit Tests
