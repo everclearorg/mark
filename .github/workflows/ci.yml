@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   unit-tests:
-    name: Run Unit Tests
+    name: Unit Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -37,7 +37,7 @@ jobs:
         run: yarn test:unit
 
   lint:
-    name: Lint Commit Messages
+    name: Lint
     runs-on: ubuntu-latest
 
     steps:
