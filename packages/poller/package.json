@@ -2,9 +2,9 @@
   "name": "@mark/poller",
   "version": "0.0.1",
   "description": "Poller logic for Mark.",
-  "main": "dist/index.js",
-  "author": "Everclear",
   "license": "MIT",
+  "author": "Everclear",
+  "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist/**/*",
@@ -13,8 +13,11 @@
   "scripts": {
     "build": "tsc --build ./tsconfig.json",
     "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
-    "lint": "eslint ./src/index.ts",
+    "dev": "yarn dev",
+    "lint": "yarn lint:package && yarn lint:ts",
     "lint:fix": "yarn lint --fix",
+    "lint:package": "sort-package-json",
+    "lint:ts": "eslint ./src/index.ts",
     "purge": "yarn clean && rimraf ./coverage ./node_modules",
     "test": "",
     "test:unit": ""
