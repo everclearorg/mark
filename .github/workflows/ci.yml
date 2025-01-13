@@ -8,10 +8,6 @@ on:
       - main
   pull_request:
 
-defaults:
-  run:
-    working-directory: packages/contracts
-
 concurrency:
   group: ${{github.workflow}}-${{github.ref}}
   cancel-in-progress: true
