@@ -1,3 +1,1 @@
-export const start = () => {
-  console.log('Started!');
-};
+import {} from 'aws-lambda';
