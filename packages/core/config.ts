@@ -1,45 +1,64 @@
 import { MarkConfiguration } from './types';
-import { MarkError } from './errors';
 
-export class ConfigurationError extends MarkError {
-  constructor(message: string, context?: Record<string, unknown>) {
-    super('ConfigurationError', message, context);
+export class ConfigurationError extends Error {
+  constructor(
+    message: string,
+    public readonly context?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = 'ConfigurationError';
   }
 }
 
-export const loadConfig = (): MarkConfiguration => {
+export function loadConfiguration(): MarkConfiguration {
   try {
-    // Try loading from environment variables first
-    if (process.env.MARK_CONFIG) {
-      return JSON.parse(process.env.MARK_CONFIG);
-    }
+    const config: MarkConfiguration = {
+      chain: {
+        chainId: parseInt(process.env.CHAIN_ID || '', 10),
+        providers: parseProviders(process.env.RPC_PROVIDERS || ''),
+      },
+      everclear: {
+        apiUrl: requireEnv('EVERCLEAR_API_URL'),
+        apiKey: requireEnv('EVERCLEAR_API_KEY'),
+      },
+      web3Signer: {
+        url: requireEnv('WEB3_SIGNER_URL'),
+        publicKey: requireEnv('WEB3_SIGNER_PUBLIC_KEY'),
+      },
+    };
 
-    // Fall back to local config file
-    const configPath = process.env.MARK_CONFIG_PATH || './config.json';
-    return require(configPath);
+    validateConfiguration(config);
+    return config;
   } catch (error) {
-    throw new ConfigurationError('Failed to load configuration', { error: error.message });
+    throw new ConfigurationError('Failed to load configuration', { error: (error as Error).message });
   }
-};
+}
 
-export const validateConfig = (config: MarkConfiguration): void => {
-  // Basic validation
-  if (!config.signer) {
-    throw new ConfigurationError('Missing signer configuration');
-  }
-
-  if (!config.everclear?.url) {
-    throw new ConfigurationError('Missing Everclear URL');
+function validateConfiguration(config: MarkConfiguration): void {
+  if (!config.chain.chainId) {
+    throw new ConfigurationError('Chain ID is required');
   }
 
-  if (!config.chains || Object.keys(config.chains).length === 0) {
-    throw new ConfigurationError('No chains configured');
+  if (!config.chain.providers || config.chain.providers.length === 0) {
+    throw new ConfigurationError('At least one RPC provider is required');
   }
+}
 
-  // Validate each chain has required fields
-  Object.entries(config.chains).forEach(([chainId, chain]) => {
-    if (!chain.providers || chain.providers.length === 0) {
-      throw new ConfigurationError('Chain missing providers', { chainId });
-    }
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new ConfigurationError(`Environment variable ${name} is required`);
+  }
+  return value;
+}
+
+function parseProviders(providers: string): { url: string; weight?: number }[] {
+  if (!providers) return [];
+  return providers.split(',').map((provider) => {
+    const [url, weight] = provider.split('|');
+    return {
+      url: url.trim(),
+      weight: weight ? parseInt(weight.trim(), 10) : undefined,
+    };
   });
-};
+}

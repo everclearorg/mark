@@ -1,7 +1,7 @@
-import { Logger } from '@mark/logger-adapter';
-import { EverclearAdapter } from '@mark/everclear-adapter';
-import { ChainServiceAdapter } from '@mark/chainservice-adapter';
-import { TransactionAdapter } from '@mark/transaction-adapter';
+import { Logger } from '../../../adapters/logger/src';
+import { EverclearAdapter } from '../../../adapters/everclear/src';
+import { ChainServiceAdapter } from '../../../adapters/chainservice/src';
+import { TransactionAdapter } from '../../../adapters/transaction/src';
 
 export interface ProcessInvoicesConfig {
   batchSize: number;

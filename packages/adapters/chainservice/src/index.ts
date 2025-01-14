@@ -1,16 +1,17 @@
-import { Logger } from '@mark/logger-adapter';
+import { ILogger } from '../../../adapters/logger/src';
 import { ethers } from 'ethers';
+import { TransactionRequest } from '@ethersproject/abstract-provider';
 
 export interface ChainConfig {
   rpcUrl: string;
 }
 
 export abstract class ChainReader {
-  protected readonly provider: ethers.JsonRpcProvider;
-  protected readonly logger: Logger;
+  protected readonly provider: ethers.providers.JsonRpcProvider;
+  protected readonly logger: ILogger;
 
-  constructor(config: ChainConfig, logger: Logger) {
-    this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
+  constructor(config: ChainConfig, logger: ILogger) {
+    this.provider = new ethers.providers.JsonRpcProvider(config.rpcUrl);
     this.logger = logger;
   }
 
@@ -35,7 +36,7 @@ export class ChainServiceAdapter extends ChainReader {
   private readonly contractAddress: string;
   private isInitialized: boolean = false;
 
-  constructor(config: ChainServiceConfig, logger: Logger) {
+  constructor(config: ChainServiceConfig, logger: ILogger) {
     super(config, logger);
     this.contractAddress = config.contractAddress;
   }
@@ -53,13 +54,13 @@ export class ChainServiceAdapter extends ChainReader {
     }
   }
 
-  async submitTransaction(transaction: ethers.TransactionRequest) {
+  async submitTransaction(transaction: TransactionRequest) {
     if (!this.isInitialized) {
       await this.initialize();
     }
 
     try {
-      const tx = await this.provider.broadcastTransaction(await this.prepareTransaction(transaction));
+      const tx = await this.provider.sendTransaction(await this.prepareTransaction(transaction));
       this.logger.info('Transaction submitted', { txHash: tx.hash });
       return tx;
     } catch (error) {
@@ -68,7 +69,7 @@ export class ChainServiceAdapter extends ChainReader {
     }
   }
 
-  private async prepareTransaction(tx: ethers.TransactionRequest): Promise<string> {
+  private async prepareTransaction(tx: TransactionRequest): Promise<string> {
     if (!tx.to) tx.to = this.contractAddress;
     if (!tx.chainId) {
       const network = await this.provider.getNetwork();
@@ -78,7 +79,7 @@ export class ChainServiceAdapter extends ChainReader {
   }
 
   async dispose() {
-    this.provider.destroy();
+    // No need to destroy provider in v5
     this.isInitialized = false;
     this.logger.info('Chain service disposed');
   }

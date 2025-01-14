@@ -1,8 +1,8 @@
-import { Logger } from '@mark/logger-adapter';
-import { EverclearAdapter, EverclearConfig } from '@mark/everclear-adapter';
-import { ChainServiceAdapter, ChainServiceConfig } from '@mark/chainservice-adapter';
-import { Web3SignerAdapter, Web3SignerConfig } from '@mark/web3signer-adapter';
-import { TransactionAdapter, TransactionConfig } from '@mark/transaction-adapter';
+import { Logger } from '../../adapters/logger/src';
+import { EverclearAdapter, EverclearConfig } from '../../adapters/everclear/src';
+import { ChainServiceAdapter, ChainServiceConfig } from '../../adapters/chainservice/src';
+import { Web3SignerAdapter, Web3SignerConfig } from '../../adapters/web3signer/src';
+import { TransactionAdapter, TransactionConfig } from '../../adapters/transaction/src';
 import { ProcessInvoicesConfig, ProcessInvoicesDependencies, startPolling } from './invoice/processInvoices';
 
 export interface PollerConfig {

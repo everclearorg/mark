@@ -1,6 +1,6 @@
-import { Logger } from '@mark/logger-adapter';
-import { ChainServiceAdapter } from '@mark/chainservice-adapter';
-import { Web3SignerAdapter } from '@mark/web3signer-adapter';
+import { Logger } from '../../../adapters/logger/src';
+import { ChainServiceAdapter } from '../../../adapters/chainservice/src';
+import { Web3SignerAdapter } from '../../../adapters/web3signer/src';
 import { ethers } from 'ethers';
 
 export interface TransactionConfig {
@@ -21,7 +21,7 @@ export class TransactionAdapter {
     this.logger = logger;
   }
 
-  async submitAndMonitor(transaction: ethers.TransactionRequest): Promise<string> {
+  async submitAndMonitor(transaction: ethers.providers.TransactionRequest): Promise<string> {
     // Implementation will go here
     throw new Error('Not implemented');
   }
