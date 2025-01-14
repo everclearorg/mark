@@ -4,7 +4,6 @@ import { TransactionServiceAdapter } from '../../../adapters/txservice/src';
 
 export interface ProcessInvoicesConfig {
   batchSize: number;
-  pollingInterval: number;
 }
 
 export interface ProcessInvoicesDependencies {
@@ -25,8 +24,7 @@ export async function processInvoice(invoice: any, deps: ProcessInvoicesDependen
 
   try {
     // Create and submit transaction
-    const tx = await txService.submitAndMonitor({
-      // Transaction details would go here
+    const tx = await txService.submitAndMonitor(invoice.chainId, {
       data: '0x',
     });
 
@@ -79,19 +77,20 @@ function isValidInvoice(invoice: any): boolean {
 }
 
 // Main polling function that orchestrates the process
-export async function startPolling(config: ProcessInvoicesConfig, deps: ProcessInvoicesDependencies) {
+export async function pollAndProcess(
+  config: ProcessInvoicesConfig,
+  deps: ProcessInvoicesDependencies,
+): Promise<ProcessInvoicesResult> {
   const { everclear, logger } = deps;
 
-  while (true) {
-    try {
-      const invoices = await everclear.fetchInvoices();
-      const result = await processBatch(invoices, deps);
+  try {
+    const invoices = await everclear.fetchInvoices();
+    const result = await processBatch(invoices, deps);
 
-      logger.info('Batch processing completed', { result });
-    } catch (error) {
-      logger.error('Failed to process batch', { error });
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, config.pollingInterval));
+    logger.info('Invoice processing completed', { result });
+    return result;
+  } catch (error) {
+    logger.error('Failed to process invoices', { error });
+    throw error;
   }
 }
