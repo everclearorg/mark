@@ -1,3 +1,4 @@
 export * from './types';
 export * from './errors';
-export * from './utils/logging';
+export * from './logging';
+export * from './config';
