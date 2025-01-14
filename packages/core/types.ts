@@ -6,24 +6,37 @@ export interface MethodContext {
   method: string;
 }
 
-export interface ChainProvider {
-  url: string;
-  weight?: number;
+// Don't need this until we have to support swaps
+export interface PriceConfiguration {
+  isStable?: boolean;
+  priceFeed?: string; // uniswap pool address
+  coingeckoId?: string;
 }
 
-export interface ChainConfig {
-  chainId: number;
-  providers: ChainProvider[];
+export interface AssetConfiguration {
+  symbol: string;
+  address: string;
+  decimals: number;
+  tickerHash: string;
+  isNative: boolean;
+}
+
+export interface ChainConfiguration {
+  providers: string[];
+  assets: AssetConfiguration[];
 }
 
 export interface MarkConfiguration {
-  chain: ChainConfig;
+  invoiceAge: number;
+  signer: string;
   everclear: {
-    apiUrl: string;
-    apiKey: string;
-  };
-  web3Signer: {
     url: string;
-    publicKey: string;
+    key?: string;
   };
+  relayer?: {
+    url: string;
+    key: string;
+  };
+  supportedSettlementDomains: number[];
+  chains: Record<string, ChainConfiguration>; // keyed on chain id
 }
