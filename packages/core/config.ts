@@ -1,4 +1,4 @@
-import { MarkConfiguration } from './types';
+import { MarkConfiguration, ChainConfiguration, AssetConfiguration } from './types';
 
 export class ConfigurationError extends Error {
   constructor(
@@ -13,18 +13,20 @@ export class ConfigurationError extends Error {
 export function loadConfiguration(): MarkConfiguration {
   try {
     const config: MarkConfiguration = {
-      chain: {
-        chainId: parseInt(process.env.CHAIN_ID || '', 10),
-        providers: parseProviders(process.env.RPC_PROVIDERS || ''),
-      },
+      invoiceAge: parseInt(requireEnv('INVOICE_AGE'), 10),
+      signer: requireEnv('SIGNER_ADDRESS'),
       everclear: {
-        apiUrl: requireEnv('EVERCLEAR_API_URL'),
-        apiKey: requireEnv('EVERCLEAR_API_KEY'),
+        url: requireEnv('EVERCLEAR_API_URL'),
+        key: process.env.EVERCLEAR_API_KEY,
       },
-      web3Signer: {
-        url: requireEnv('WEB3_SIGNER_URL'),
-        publicKey: requireEnv('WEB3_SIGNER_PUBLIC_KEY'),
-      },
+      relayer: process.env.RELAYER_URL
+        ? {
+            url: process.env.RELAYER_URL,
+            key: requireEnv('RELAYER_API_KEY'),
+          }
+        : undefined,
+      supportedSettlementDomains: parseSettlementDomains(requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
+      chains: parseChainConfigurations(),
     };
 
     validateConfiguration(config);
@@ -35,12 +37,24 @@ export function loadConfiguration(): MarkConfiguration {
 }
 
 function validateConfiguration(config: MarkConfiguration): void {
-  if (!config.chain.chainId) {
-    throw new ConfigurationError('Chain ID is required');
+  if (!config.invoiceAge || config.invoiceAge <= 0) {
+    throw new ConfigurationError('Invalid invoice age');
   }
 
-  if (!config.chain.providers || config.chain.providers.length === 0) {
-    throw new ConfigurationError('At least one RPC provider is required');
+  if (!config.signer) {
+    throw new ConfigurationError('Signer address is required');
+  }
+
+  if (!config.everclear.url) {
+    throw new ConfigurationError('Everclear API URL is required');
+  }
+
+  if (Object.keys(config.chains).length === 0) {
+    throw new ConfigurationError('At least one chain configuration is required');
+  }
+
+  if (config.supportedSettlementDomains.length === 0) {
+    throw new ConfigurationError('At least one settlement domain is required');
   }
 }
 
@@ -52,13 +66,39 @@ function requireEnv(name: string): string {
   return value;
 }
 
-function parseProviders(providers: string): { url: string; weight?: number }[] {
-  if (!providers) return [];
-  return providers.split(',').map((provider) => {
-    const [url, weight] = provider.split('|');
+function parseSettlementDomains(domains: string): number[] {
+  return domains.split(',').map((domain) => parseInt(domain.trim(), 10));
+}
+
+function parseChainConfigurations(): Record<string, ChainConfiguration> {
+  const chainIds = requireEnv('CHAIN_IDS')
+    .split(',')
+    .map((id) => id.trim());
+  const chains: Record<string, ChainConfiguration> = {};
+
+  for (const chainId of chainIds) {
+    chains[chainId] = {
+      providers: parseProviders(requireEnv(`CHAIN_${chainId}_PROVIDERS`)),
+      assets: parseAssets(requireEnv(`CHAIN_${chainId}_ASSETS`)),
+    };
+  }
+
+  return chains;
+}
+
+function parseProviders(providers: string): string[] {
+  return providers.split(',').map((provider) => provider.trim());
+}
+
+function parseAssets(assets: string): AssetConfiguration[] {
+  return assets.split(';').map((asset) => {
+    const [symbol, address, decimals, tickerHash, isNative] = asset.split(',').map((s) => s.trim());
     return {
-      url: url.trim(),
-      weight: weight ? parseInt(weight.trim(), 10) : undefined,
+      symbol,
+      address,
+      decimals: parseInt(decimals, 10),
+      tickerHash,
+      isNative: isNative === 'true',
     };
   });
 }
