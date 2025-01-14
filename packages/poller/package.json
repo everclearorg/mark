@@ -23,9 +23,13 @@
     "test:unit": ""
   },
   "devDependencies": {
+    "@types/aws-lambda": "^8.10.147",
     "@types/node": "20.17.12",
     "eslint": "9.17.0",
     "rimraf": "6.0.1",
     "typescript": "5.7.2"
+  },
+  "dependencies": {
+    "aws-lambda": "^1.0.7"
   }
 }
