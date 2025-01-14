@@ -1,7 +1,6 @@
 import { Logger } from '../../../adapters/logger/src';
 import { EverclearAdapter } from '../../../adapters/everclear/src';
-import { ChainServiceAdapter } from '../../../adapters/chainservice/src';
-import { TransactionAdapter } from '../../../adapters/transaction/src';
+import { TransactionServiceAdapter } from '../../../adapters/txservice/src';
 
 export interface ProcessInvoicesConfig {
   batchSize: number;
@@ -10,8 +9,7 @@ export interface ProcessInvoicesConfig {
 
 export interface ProcessInvoicesDependencies {
   everclear: EverclearAdapter;
-  chainService: ChainServiceAdapter;
-  transaction: TransactionAdapter;
+  txService: TransactionServiceAdapter;
   logger: Logger;
 }
 
@@ -23,11 +21,11 @@ export interface ProcessInvoicesResult {
 
 // Pure function to process a single invoice
 export async function processInvoice(invoice: any, deps: ProcessInvoicesDependencies): Promise<boolean> {
-  const { everclear, transaction, logger } = deps;
+  const { everclear, txService, logger } = deps;
 
   try {
     // Create and submit transaction
-    const tx = await transaction.submitAndMonitor({
+    const tx = await txService.submitAndMonitor({
       // Transaction details would go here
       data: '0x',
     });

@@ -10,9 +10,8 @@
     "packages/core",
     "packages/poller",
     "packages/adapters/logger",
-    "packages/adapters/chainservice",
+    "packages/adapters/txservice",
     "packages/adapters/everclear",
-    "packages/adapters/transaction",
     "packages/adapters/web3signer"
   ],
   "scripts": {

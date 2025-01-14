@@ -1,18 +1,30 @@
-import { Logger } from '../../../adapters/logger/src';
+import { ILogger } from '../../logger/src';
 import { ethers } from 'ethers';
+
+// TODO: proabably just copy the exact implementation from monorepo
 
 export interface Web3SignerConfig {
   url: string;
   publicKey: string;
 }
 
-export class Web3SignerAdapter {
-  private readonly logger: Logger;
+export class Web3SignerAdapter extends ethers.Signer {
+  private readonly logger: ILogger;
   private readonly config: Web3SignerConfig;
 
-  constructor(config: Web3SignerConfig, logger: Logger) {
+  constructor(config: Web3SignerConfig, logger: ILogger) {
+    super();
     this.config = config;
     this.logger = logger;
+  }
+
+  async getAddress(): Promise<string> {
+    return this.config.publicKey;
+  }
+
+  async signMessage(message: string): Promise<string> {
+    // Implementation will go here
+    throw new Error('Not implemented');
   }
 
   async signTransaction(transaction: ethers.providers.TransactionRequest): Promise<string> {
@@ -20,8 +32,7 @@ export class Web3SignerAdapter {
     throw new Error('Not implemented');
   }
 
-  async signMessage(message: string): Promise<string> {
-    // Implementation will go here
-    throw new Error('Not implemented');
+  connect(provider: ethers.providers.Provider): ethers.Signer {
+    return new Web3SignerAdapter(this.config, this.logger);
   }
 }

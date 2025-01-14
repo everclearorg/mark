@@ -10,8 +10,5 @@
   },
   "include": ["./**/*.ts"],
   "exclude": ["dist", "node_modules", "**/*.test.ts"],
-  "references": [
-    { "path": "../../core" },
-    { "path": "../logger" }
-  ]
-} 
+  "references": [{ "path": "../../core" }, { "path": "../logger" }, { "path": "../web3signer" }]
+}

@@ -1,8 +1,8 @@
 {
-  "name": "@mark/transaction",
+  "name": "@mark/txservice",
   "version": "0.0.1",
   "private": true,
-  "description": "Transaction adapter for Mark.",
+  "description": "Transaction service adapter for Mark.",
   "author": "Everclear",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -23,10 +23,9 @@
     "test:unit": ""
   },
   "dependencies": {
-    "@mark/chainservice": "workspace:*",
+    "@connext/nxtp-txservice": "2.5.0-alpha.6",
     "@mark/core": "workspace:*",
     "@mark/logger": "workspace:*",
-    "@mark/web3signer": "workspace:*",
     "ethers": "5.7.2"
   },
   "devDependencies": {

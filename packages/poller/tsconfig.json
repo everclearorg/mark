@@ -10,9 +10,8 @@
     "references": [
       { "path": "../core" },
       { "path": "../adapters/logger" },
-      { "path": "../adapters/chainservice" },
       { "path": "../adapters/everclear" },
-      { "path": "../adapters/transaction" },
+      { "path": "../adapters/txservice" },
       { "path": "../adapters/web3signer" }
     ]
 }
