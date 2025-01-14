@@ -1,50 +1,29 @@
-export type RequestContext = {
+export interface RequestContext {
   id: string;
-  timestamp?: number;
-};
+}
 
-export type MethodContext = {
+export interface MethodContext {
   method: string;
-};
+}
 
-export type ChainConfig = {
-  providers: string[];
-  confirmations: number;
-  deployments: {
-    everclear: string;
-  };
-};
+export interface ChainProvider {
+  url: string;
+  weight?: number;
+}
 
-export type PriceConfiguration = {
-  isStable?: boolean;
-  priceFeed?: string;
-  coingeckoId?: string;
-};
+export interface ChainConfig {
+  chainId: number;
+  providers: ChainProvider[];
+}
 
-export type AssetConfiguration = {
-  symbol: string;
-  address: string;
-  decimals: number;
-  tickerHash: string;
-  isNative: boolean;
-};
-
-export type ChainConfiguration = {
-  providers: string[];
-  assets: AssetConfiguration[];
-};
-
-export type MarkConfiguration = {
-  invoiceAge: number;
-  signer: string;
+export interface MarkConfiguration {
+  chain: ChainConfig;
   everclear: {
-    url: string;
-    key?: string;
+    apiUrl: string;
+    apiKey: string;
   };
-  relayer?: {
+  web3Signer: {
     url: string;
-    key: string;
+    publicKey: string;
   };
-  supportedSettlementDomains: number[];
-  chains: Record<string, ChainConfiguration>;
-};
+}

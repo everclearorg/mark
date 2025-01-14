@@ -1,4 +1,4 @@
-import { Logger } from '@mark/logger-adapter';
+import { Logger } from '../../../adapters/logger/src';
 
 export interface EverclearConfig {
   apiUrl: string;
@@ -14,9 +14,9 @@ export class EverclearAdapter {
     this.logger = logger;
   }
 
-  async fetchInvoices() {
+  async fetchInvoices(): Promise<any[]> {
     // Implementation will go here
-    throw new Error('Not implemented');
+    return []; // Temporarily
   }
 
   async updateInvoiceStatus(invoiceId: string, status: string) {

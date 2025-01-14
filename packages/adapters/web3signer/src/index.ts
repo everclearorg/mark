@@ -1,4 +1,4 @@
-import { Logger } from '@mark/logger-adapter';
+import { Logger } from '../../../adapters/logger/src';
 import { ethers } from 'ethers';
 
 export interface Web3SignerConfig {
@@ -15,7 +15,7 @@ export class Web3SignerAdapter {
     this.logger = logger;
   }
 
-  async signTransaction(transaction: ethers.TransactionRequest): Promise<string> {
+  async signTransaction(transaction: ethers.providers.TransactionRequest): Promise<string> {
     // Implementation will go here
     throw new Error('Not implemented');
   }
