@@ -1,33 +1,45 @@
 import { Logger } from '../../adapters/logger/src';
 import { EverclearAdapter, EverclearConfig } from '../../adapters/everclear/src';
-import { ChainServiceAdapter, ChainServiceConfig } from '../../adapters/chainservice/src';
+import { TransactionServiceAdapter, TransactionServiceConfig } from '../../adapters/txservice/src';
 import { Web3SignerAdapter, Web3SignerConfig } from '../../adapters/web3signer/src';
-import { TransactionAdapter, TransactionConfig } from '../../adapters/transaction/src';
 import { ProcessInvoicesConfig, ProcessInvoicesDependencies, startPolling } from './invoice/processInvoices';
+import { ethers } from 'ethers';
 
 export interface PollerConfig {
   everclear: EverclearConfig;
-  chainService: ChainServiceConfig;
+  txService: {
+    rpcUrl: string;
+    contractAddress: string;
+    maxRetries?: number;
+    retryDelay?: number;
+    logLevel?: string;
+  };
   web3Signer: Web3SignerConfig;
-  transaction: TransactionConfig;
   processor: ProcessInvoicesConfig;
 }
 
 // Initialize all adapters with proper lifecycle management
 async function initializeAdapters(config: PollerConfig, logger: Logger) {
   // Initialize adapters in the correct order
-  const chainService = new ChainServiceAdapter(config.chainService, logger);
-  await chainService.initialize();
-
   const web3Signer = new Web3SignerAdapter(config.web3Signer, logger);
+  const txService = new TransactionServiceAdapter(
+    {
+      rpcUrl: config.txService.rpcUrl,
+      contractAddress: config.txService.contractAddress,
+      maxRetries: config.txService.maxRetries || 3,
+      retryDelay: config.txService.retryDelay || 15000,
+      logLevel: 'info',
+    },
+    web3Signer,
+    logger,
+  );
+
   const everclear = new EverclearAdapter(config.everclear, logger);
-  const transaction = new TransactionAdapter(config.transaction, chainService, web3Signer, logger);
 
   return {
-    chainService,
+    txService,
     web3Signer,
     everclear,
-    transaction,
   };
 }
 
@@ -60,17 +72,13 @@ export async function handler(event: any) {
       apiUrl: process.env.EVERCLEAR_API_URL!,
       apiKey: process.env.EVERCLEAR_API_KEY!,
     },
-    chainService: {
+    txService: {
       rpcUrl: process.env.RPC_URL!,
       contractAddress: process.env.CONTRACT_ADDRESS!,
     },
     web3Signer: {
       url: process.env.WEB3_SIGNER_URL!,
       publicKey: process.env.WEB3_SIGNER_PUBLIC_KEY!,
-    },
-    transaction: {
-      maxRetries: parseInt(process.env.TX_MAX_RETRIES || '3', 10),
-      retryDelay: parseInt(process.env.TX_RETRY_DELAY || '15000', 10),
     },
     processor: {
       batchSize: parseInt(process.env.BATCH_SIZE || '10', 10),
