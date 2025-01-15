@@ -18,7 +18,7 @@ export interface ProcessInvoicesResult {
   skipped: number;
 }
 
-// Pure function to process a single invoice
+// TODO: check if invoice is settle-able with Mark's funds
 export async function processInvoice(invoice: any, deps: ProcessInvoicesDependencies): Promise<boolean> {
   const { everclear, txService, logger } = deps;
 
