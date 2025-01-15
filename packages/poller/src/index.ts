@@ -1,6 +1,6 @@
 import { Logger } from '../../adapters/logger/src';
 import { MarkConfiguration, loadConfiguration } from '@mark/core';
-import { ProcessInvoicesConfig, pollAndProcess } from './invoice/processInvoices';
+import { pollAndProcess } from './invoice/processInvoices';
 import { EverclearAdapter } from '../../adapters/everclear/src';
 import { TransactionServiceAdapter } from '../../adapters/txservice/src';
 import { Web3SignerAdapter } from '../../adapters/web3signer/src';
@@ -41,7 +41,8 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   };
 }
 
-export async function handler(event: any) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function handler(_event: unknown) {
   const config = await loadConfiguration();
 
   const logger = new Logger({

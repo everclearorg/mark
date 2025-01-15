@@ -6,6 +6,12 @@ export interface ProcessInvoicesConfig {
   batchSize: number;
 }
 
+export interface Invoice {
+  amount: string;
+  chainId: string;
+  id: string;
+}
+
 export interface ProcessInvoicesDependencies {
   everclear: EverclearAdapter;
   txService: TransactionServiceAdapter;
@@ -19,7 +25,7 @@ export interface ProcessInvoicesResult {
 }
 
 // TODO: check if invoice is settle-able with Mark's funds
-export async function processInvoice(invoice: any, deps: ProcessInvoicesDependencies): Promise<boolean> {
+export async function processInvoice(invoice: Invoice, deps: ProcessInvoicesDependencies): Promise<boolean> {
   const { everclear, txService, logger } = deps;
 
   try {
@@ -47,7 +53,10 @@ export async function processInvoice(invoice: any, deps: ProcessInvoicesDependen
 }
 
 // Pure function to process a batch of invoices
-export async function processBatch(invoices: any[], deps: ProcessInvoicesDependencies): Promise<ProcessInvoicesResult> {
+export async function processBatch(
+  invoices: Invoice[],
+  deps: ProcessInvoicesDependencies,
+): Promise<ProcessInvoicesResult> {
   const result: ProcessInvoicesResult = {
     processed: 0,
     failed: 0,
@@ -72,7 +81,7 @@ export async function processBatch(invoices: any[], deps: ProcessInvoicesDepende
 }
 
 // Pure function to validate an invoice
-function isValidInvoice(invoice: any): boolean {
+function isValidInvoice(invoice: Invoice): boolean {
   return invoice && typeof invoice.id === 'string' && typeof invoice.amount === 'number' && invoice.amount > 0;
 }
 
@@ -85,7 +94,7 @@ export async function pollAndProcess(
 
   try {
     const invoices = await everclear.fetchInvoices();
-    const result = await processBatch(invoices, deps);
+    const result = await processBatch(invoices as Invoice[], deps);
 
     logger.info('Invoice processing completed', { result });
     return result;

@@ -27,14 +27,15 @@ export interface ChainConfiguration {
 }
 
 export interface MarkConfiguration {
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
-  stage: 'testnet' | 'mainnet' | 'local';
-  environment: 'staging' | 'production';
   invoiceAge: number;
   signer: string;
   everclear: {
     url: string;
     key?: string;
+  };
+  relayer?: {
+    url: string;
+    key: string;
   };
   supportedSettlementDomains: number[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id

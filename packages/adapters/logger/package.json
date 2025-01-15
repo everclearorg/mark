@@ -17,7 +17,7 @@
     "lint": "yarn lint:package && yarn lint:ts",
     "lint:fix": "yarn lint --fix",
     "lint:package": "sort-package-json",
-    "lint:ts": "eslint ./src/index.ts",
+    "lint:ts": "eslint ./src",
     "purge": "yarn clean && rimraf ./coverage ./node_modules",
     "test": "",
     "test:unit": ""
@@ -31,6 +31,7 @@
     "@types/node": "20.17.12",
     "eslint": "9.17.0",
     "rimraf": "6.0.1",
+    "sort-package-json": "2.12.0",
     "typescript": "5.7.2"
   }
 }
