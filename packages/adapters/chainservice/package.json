@@ -1,8 +1,8 @@
 {
-  "name": "@mark/txservice",
+  "name": "@mark/chainservice",
   "version": "0.0.1",
   "private": true,
-  "description": "Transaction service adapter for Mark.",
+  "description": "Chain service for Mark.",
   "author": "Everclear",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -2,7 +2,7 @@ import { Logger } from '../../adapters/logger/src';
 import { MarkConfiguration, loadConfiguration } from '@mark/core';
 import { pollAndProcess } from './invoice/processInvoices';
 import { EverclearAdapter } from '../../adapters/everclear/src';
-import { TransactionServiceAdapter } from '../../adapters/txservice/src';
+import { ChainService } from '../../adapters/chainservice/src';
 import { Web3SignerAdapter } from '../../adapters/web3signer/src';
 
 async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
@@ -15,7 +15,7 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
     logger,
   );
 
-  const txService = new TransactionServiceAdapter(
+  const chainService = new ChainService(
     {
       chains: config.chains,
       maxRetries: 3,
@@ -35,7 +35,7 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   );
 
   return {
-    txService,
+    chainService,
     web3Signer,
     everclear,
   };
