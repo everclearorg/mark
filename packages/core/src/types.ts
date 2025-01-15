@@ -37,6 +37,9 @@ export interface MarkConfiguration {
     url: string;
     key: string;
   };
+  stage: 'development' | 'staging' | 'mainnet';
+  environment: 'mainnet' | 'testnet' | 'local';
+  logLevel: 'debug' | 'info' | 'warn' | 'error';
   supportedSettlementDomains: number[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id
 }

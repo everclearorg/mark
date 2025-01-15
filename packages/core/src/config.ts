@@ -27,6 +27,9 @@ export function loadConfiguration(): MarkConfiguration {
         : undefined,
       supportedSettlementDomains: parseSettlementDomains(requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
       chains: parseChainConfigurations(),
+      logLevel: 'debug',
+      stage: 'development',
+      environment: 'local',
     };
 
     validateConfiguration(config);
