@@ -3,7 +3,7 @@ import { TransactionService as NxtpTxService } from '@connext/nxtp-txservice';
 import { ILogger } from '../../logger/src';
 import { createLoggingContext } from '@mark/core';
 import { ethers } from 'ethers';
-import { ChainConfiguration, MarkConfiguration } from '@mark/core';
+import { ChainConfiguration } from '@mark/core';
 
 export interface TransactionServiceConfig {
   chains: Record<string, ChainConfiguration>;
@@ -35,6 +35,7 @@ export class TransactionServiceAdapter {
     );
 
     this.txService = new NxtpTxService(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       logger as any,
       {
         chains: nxtpChainConfig,

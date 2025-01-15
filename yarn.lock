@@ -1068,6 +1068,7 @@ __metadata:
     "@types/uuid": ^9.0.0
     eslint: 9.17.0
     rimraf: 6.0.1
+    sort-package-json: 2.12.0
     typescript: 5.7.2
     uuid: ^9.0.0
   languageName: unknown
@@ -1083,6 +1084,7 @@ __metadata:
     axios: 1.0.0
     eslint: 9.17.0
     rimraf: 6.0.1
+    sort-package-json: 2.12.0
     typescript: 5.7.2
   languageName: unknown
   linkType: soft
@@ -1097,6 +1099,7 @@ __metadata:
     eslint: 9.17.0
     pino: 8.0.0
     rimraf: 6.0.1
+    sort-package-json: 2.12.0
     typescript: 5.7.2
   languageName: unknown
   linkType: soft
@@ -1128,6 +1131,7 @@ __metadata:
     eslint: 9.17.0
     ethers: 5.7.2
     rimraf: 6.0.1
+    sort-package-json: 2.12.0
     typescript: 5.7.2
   languageName: unknown
   linkType: soft
@@ -1142,6 +1146,7 @@ __metadata:
     eslint: 9.17.0
     ethers: 5.7.2
     rimraf: 6.0.1
+    sort-package-json: 2.12.0
     typescript: 5.7.2
   languageName: unknown
   linkType: soft

@@ -22,17 +22,20 @@ export class Web3SignerAdapter extends ethers.Signer {
     return this.config.publicKey;
   }
 
-  async signMessage(message: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async signMessage(_message: string): Promise<string> {
     // Implementation will go here
     throw new Error('Not implemented');
   }
 
-  async signTransaction(transaction: ethers.providers.TransactionRequest): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async signTransaction(_transaction: ethers.providers.TransactionRequest): Promise<string> {
     // Implementation will go here
     throw new Error('Not implemented');
   }
 
-  connect(provider: ethers.providers.Provider): ethers.Signer {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  connect(_provider: ethers.providers.Provider): ethers.Signer {
     return new Web3SignerAdapter(this.config, this.logger);
   }
 }

@@ -14,12 +14,13 @@ export class EverclearAdapter {
     this.logger = logger;
   }
 
-  async fetchInvoices(): Promise<any[]> {
+  async fetchInvoices(): Promise<unknown[]> {
     // Implementation will go here
     return []; // Temporarily
   }
 
-  async updateInvoiceStatus(invoiceId: string, status: string) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async updateInvoiceStatus(_invoiceId: string, _status: string) {
     // Implementation will go here
     throw new Error('Not implemented');
   }

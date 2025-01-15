@@ -14,7 +14,7 @@
     "build": "tsc --build ./tsconfig.json",
     "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
     "dev": "ts-node-dev --respawn src/index.ts",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "lint:fix": "yarn lint --fix"
   },
   "dependencies": {
