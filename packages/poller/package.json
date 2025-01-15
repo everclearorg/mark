@@ -18,10 +18,10 @@
     "lint:fix": "yarn lint --fix"
   },
   "dependencies": {
+    "@mark/chainservice": "workspace:*",
     "@mark/core": "workspace:*",
     "@mark/everclear": "workspace:*",
     "@mark/logger": "workspace:*",
-    "@mark/txservice": "workspace:*",
     "@mark/web3signer": "workspace:*"
   },
   "devDependencies": {

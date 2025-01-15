@@ -11,7 +11,7 @@
       { "path": "../core" },
       { "path": "../adapters/logger" },
       { "path": "../adapters/everclear" },
-      { "path": "../adapters/txservice" },
+      { "path": "../adapters/chainservice" },
       { "path": "../adapters/web3signer" }
     ]
 }

@@ -1,6 +1,6 @@
 import { Logger } from '../../../adapters/logger/src';
 import { EverclearAdapter } from '../../../adapters/everclear/src';
-import { TransactionServiceAdapter } from '../../../adapters/txservice/src';
+import { ChainService } from '../../../adapters/chainservice/src';
 
 export interface ProcessInvoicesConfig {
   batchSize: number;
@@ -14,7 +14,7 @@ export interface Invoice {
 
 export interface ProcessInvoicesDependencies {
   everclear: EverclearAdapter;
-  txService: TransactionServiceAdapter;
+  chainService: ChainService;
   logger: Logger;
 }
 
@@ -26,11 +26,11 @@ export interface ProcessInvoicesResult {
 
 // TODO: check if invoice is settle-able with Mark's funds
 export async function processInvoice(invoice: Invoice, deps: ProcessInvoicesDependencies): Promise<boolean> {
-  const { everclear, txService, logger } = deps;
+  const { everclear, chainService, logger } = deps;
 
   try {
     // Create and submit transaction
-    const tx = await txService.submitAndMonitor(invoice.chainId, {
+    const tx = await chainService.submitAndMonitor(invoice.chainId, {
       data: '0x',
     });
 
