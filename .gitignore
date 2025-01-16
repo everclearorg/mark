@@ -132,3 +132,6 @@ dist
 # terraform
 .terraform
 tfvars.json
+
+# Misc
+.DS_Store
