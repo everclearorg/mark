@@ -22,7 +22,8 @@
     "@mark/everclear": "workspace:*",
     "@mark/logger": "workspace:*",
     "@mark/txservice": "workspace:*",
-    "@mark/web3signer": "workspace:*"
+    "@mark/web3signer": "workspace:*",
+    "viem": "^2.22.8"
   },
   "devDependencies": {
     "@types/node": "20.17.12",

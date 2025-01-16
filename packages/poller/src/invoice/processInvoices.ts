@@ -1,6 +1,7 @@
 import { Logger } from '../../../adapters/logger/src';
 import { EverclearAdapter } from '../../../adapters/everclear/src';
 import { TransactionServiceAdapter } from '../../../adapters/txservice/src';
+import { findBestDestination } from 'src/helpers/selectDestination';
 
 export interface ProcessInvoicesConfig {
   batchSize: number;
@@ -29,8 +30,18 @@ export interface ProcessInvoicesResult {
 }
 
 // TODO: check if invoice is settle-able with Mark's funds
-export async function processInvoiceBatch(batch: Invoice[], deps: ProcessInvoicesDependencies): Promise<boolean> {
+export async function processInvoiceBatch(
+  batch: Invoice[],
+  deps: ProcessInvoicesDependencies,
+  config: ProcessInvoicesConfig,
+): Promise<boolean> {
   const { everclear, txService, logger } = deps;
+
+  // batch here is same destination and same ticker hash
+
+  // construct new transaction data using `newIntent` endpoint here
+
+  const intentDestination = await findBestDestination(batch[0].destinations[0], batch[0].ticker_hash);
 
   try {
     // Create and submit transaction
@@ -41,7 +52,7 @@ export async function processInvoiceBatch(batch: Invoice[], deps: ProcessInvoice
     });
 
     // Update invoice status
-    await everclear.updateInvoiceStatus(invoice.id, 'processed');
+    // await everclear.updateInvoiceStatus(invoice.id, 'processed');
 
     logger.info('Invoice processed successfully', {
       invoiceId: invoice.id,
@@ -89,6 +100,7 @@ export async function processInvoice(invoice: Invoice, deps: ProcessInvoicesDepe
 export async function processBatch(
   invoices: Invoice[],
   deps: ProcessInvoicesDependencies,
+  config: ProcessInvoicesConfig,
 ): Promise<ProcessInvoicesResult> {
   const result: ProcessInvoicesResult = {
     processed: 0,
@@ -127,7 +139,7 @@ export async function processBatch(
   for (const batchKey in batches) {
     const batch = batches[batchKey];
 
-    const success = await processInvoiceBatch(batch, deps);
+    const success = await processInvoiceBatch(batch, deps, config);
     if (success) {
       result.processed++;
     } else {
@@ -158,7 +170,7 @@ export async function pollAndProcess(
 
   try {
     const invoices = await everclear.fetchInvoices(config.chains);
-    const result = await processBatch(invoices as Invoice[], deps);
+    const result = await processBatch(invoices as Invoice[], deps, config);
 
     logger.info('Invoice processing completed', { result });
     return result;
