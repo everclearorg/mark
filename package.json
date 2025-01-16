@@ -7,15 +7,20 @@
   "license": "MIT",
   "author": "Everclear",
   "workspaces": [
-    "packages/*"
+    "packages/core",
+    "packages/poller",
+    "packages/adapters/logger",
+    "packages/adapters/chainservice",
+    "packages/adapters/everclear",
+    "packages/adapters/web3signer"
   ],
   "scripts": {
-    "build": "yarn workspaces foreach --all --parallel --topological-dev run build",
+    "build": "yarn workspaces foreach -Av --parallel --topological-dev run build",
     "clean": "yarn workspaces foreach -A --parallel run clean",
     "lint": "yarn lint:package && yarn workspaces foreach -A --parallel run lint",
     "lint:fix": "yarn workspaces foreach -A --parallel run lint:fix",
     "lint:package": "sort-package-json",
-    "purge": "yarn workspaces foreach -A --parallel run purge && rimraf './node_modules'",
+    "purge": "yarn workspaces foreach -A --parallel run clean && rimraf node_modules packages/*/node_modules packages/adapters/*/node_modules .yarn/cache .yarn/install-state.gz",
     "test": "yarn workspaces foreach -A --parallel run test",
     "test:unit": "yarn workspaces foreach -v -A --parallel run test:unit"
   },

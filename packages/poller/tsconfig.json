@@ -1,8 +1,17 @@
 {
-    "extends": "./tsconfig.build.json",
+    "extends": "../../tsconfig.json",
     "compilerOptions": {
-      "types": ["node"]
+      "outDir": "dist",
+      "baseUrl": ".",
+      "composite": true
     },
-    "exclude": [],
-    "references": []
+    "include": ["./**/*.ts"],
+    "exclude": ["dist", "node_modules", "**/*.test.ts"],
+    "references": [
+      { "path": "../core" },
+      { "path": "../adapters/logger" },
+      { "path": "../adapters/everclear" },
+      { "path": "../adapters/chainservice" },
+      { "path": "../adapters/web3signer" }
+    ]
 }

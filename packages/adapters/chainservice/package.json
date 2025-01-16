@@ -1,8 +1,8 @@
 {
-  "name": "@mark/poller",
+  "name": "@mark/chainservice",
   "version": "0.0.1",
-  "description": "Poller logic for Mark.",
-  "license": "MIT",
+  "private": true,
+  "description": "Chain service for Mark.",
   "author": "Everclear",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,21 +13,26 @@
   "scripts": {
     "build": "tsc --build ./tsconfig.json",
     "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
-    "dev": "ts-node-dev --respawn src/index.ts",
-    "lint": "eslint src",
-    "lint:fix": "yarn lint --fix"
+    "dev": "yarn dev",
+    "lint": "yarn lint:package && yarn lint:ts",
+    "lint:fix": "yarn lint --fix",
+    "lint:package": "sort-package-json",
+    "lint:ts": "eslint ./src",
+    "purge": "yarn clean && rimraf ./coverage ./node_modules",
+    "test": "",
+    "test:unit": ""
   },
   "dependencies": {
-    "@mark/chainservice": "workspace:*",
+    "@connext/nxtp-txservice": "2.5.0-alpha.6",
     "@mark/core": "workspace:*",
-    "@mark/everclear": "workspace:*",
     "@mark/logger": "workspace:*",
-    "@mark/web3signer": "workspace:*"
+    "ethers": "5.7.2"
   },
   "devDependencies": {
     "@types/node": "20.17.12",
     "eslint": "9.17.0",
     "rimraf": "6.0.1",
+    "sort-package-json": "2.12.0",
     "typescript": "5.7.2"
   }
 }
