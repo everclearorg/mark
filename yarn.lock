@@ -1060,6 +1060,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@mark/chainservice@workspace:*, @mark/chainservice@workspace:packages/adapters/chainservice":
+  version: 0.0.0-use.local
+  resolution: "@mark/chainservice@workspace:packages/adapters/chainservice"
+  dependencies:
+    "@connext/nxtp-txservice": 2.5.0-alpha.6
+    "@mark/core": "workspace:*"
+    "@mark/logger": "workspace:*"
+    "@types/node": 20.17.12
+    eslint: 9.17.0
+    ethers: 5.7.2
+    rimraf: 6.0.1
+    sort-package-json: 2.12.0
+    typescript: 5.7.2
+  languageName: unknown
+  linkType: soft
+
 "@mark/core@workspace:*, @mark/core@workspace:packages/core":
   version: 0.0.0-use.local
   resolution: "@mark/core@workspace:packages/core"
@@ -1108,30 +1124,14 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/poller@workspace:packages/poller"
   dependencies:
+    "@mark/chainservice": "workspace:*"
     "@mark/core": "workspace:*"
     "@mark/everclear": "workspace:*"
     "@mark/logger": "workspace:*"
-    "@mark/txservice": "workspace:*"
     "@mark/web3signer": "workspace:*"
     "@types/node": 20.17.12
     eslint: 9.17.0
     rimraf: 6.0.1
-    typescript: 5.7.2
-  languageName: unknown
-  linkType: soft
-
-"@mark/txservice@workspace:*, @mark/txservice@workspace:packages/adapters/txservice":
-  version: 0.0.0-use.local
-  resolution: "@mark/txservice@workspace:packages/adapters/txservice"
-  dependencies:
-    "@connext/nxtp-txservice": 2.5.0-alpha.6
-    "@mark/core": "workspace:*"
-    "@mark/logger": "workspace:*"
-    "@types/node": 20.17.12
-    eslint: 9.17.0
-    ethers: 5.7.2
-    rimraf: 6.0.1
-    sort-package-json: 2.12.0
     typescript: 5.7.2
   languageName: unknown
   linkType: soft
