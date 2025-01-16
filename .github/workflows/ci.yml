@@ -3,9 +3,8 @@ name: CI
 on:
   push:
     branches:
-      - testnet
-      - mainnet
       - main
+      - mainnet-prod
   pull_request:
 
 concurrency:
