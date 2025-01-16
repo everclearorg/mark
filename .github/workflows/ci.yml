@@ -76,3 +76,101 @@ jobs:
 
       - name: Lint workspaces
         run: yarn lint
+
+  set-aws-region:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set AWS Region
+        id: set-aws-region
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/mainnet-prod" ]]; then
+            echo "AWS_REGION=ap-northeast-1" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      AWS_REGION: ${{ steps.set-aws-region.outputs.AWS_REGION }}
+
+  build-and-push-poller-image:
+    if: github.ref == 'refs/heads/mainnet-prod'
+    env:
+      REGISTRY: 679752396206.dkr.ecr.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
+      IMAGE_TAG: mark-poller-${{ github.sha }}
+      REPOSITORY: mark-poller
+    runs-on: ubuntu-latest
+    needs: [set-aws-region]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ needs.set-aws-region.outputs.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Private ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        id: build-and-push
+        run: |
+          DOCKER_BUILDKIT=1 docker build -f docker/poller/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+          echo "FULL_IMAGE_NAME=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+    outputs:
+      FULL_IMAGE_NAME: ${{ steps.build-and-push.outputs.FULL_IMAGE_NAME }}
+
+  terraform-deploy-mainnet-prod:
+    if: github.ref == 'refs/heads/mainnet-prod'
+    runs-on: ubuntu-latest
+    needs: [build-and-push-poller-image, set-aws-region]
+    env:
+      AWS_PROFILE: aws-deployer-connext
+      AWS_REGION: ${{ needs.set-aws-region.outputs.AWS_REGION }}
+      TF_VAR_full_image_name_poller: ${{ needs.build-and-push-poller-image.outputs.FULL_IMAGE_NAME }}
+
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 1.5.7
+
+      - name: Setup Sops
+        uses: mdgreenwald/mozilla-sops-action@v1.2.0
+        with:
+          version: '3.7.2'
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: Fooji/create-aws-profile-action@v1
+        with:
+          profile: aws-deployer-connext
+          region: ${{ needs.set-aws-region.outputs.AWS_REGION }}
+          key: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          secret: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Decrypt Mainnet Secrets
+        id: decrypt
+        run: sops -d ops/env/mainnet/backend/secrets.prod.json > ops/mainnet/prod/backend/tfvars.json
+
+      - name: Terraform Init
+        working-directory: ./ops/mainnet/prod/backend
+        run: terraform init
+
+      - name: Debug Image Name
+        run: |
+          echo "Full Image Name: ${{ env.TF_VAR_full_image_name_poller }}"
+
+      - name: Terraform Apply
+        working-directory: ./ops/mainnet/prod/backend
+        run: |
+          terraform apply -var-file=tfvars.json -var="full_image_name_poller=${{ env.TF_VAR_full_image_name_poller }}" -auto-approve
