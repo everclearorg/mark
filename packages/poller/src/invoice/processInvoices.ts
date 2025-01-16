@@ -34,36 +34,60 @@ export async function processInvoiceBatch(
   batch: Invoice[],
   deps: ProcessInvoicesDependencies,
   config: ProcessInvoicesConfig,
+  batchKey: string,
 ): Promise<boolean> {
   const { everclear, txService, logger } = deps;
 
-  // batch here is same destination and same ticker hash
-
-  // construct new transaction data using `newIntent` endpoint here
-
-  const intentDestination = await findBestDestination(batch[0].destinations[0], batch[0].ticker_hash);
+  // Validate batch input
+  if (!batch || batch.length === 0) {
+    logger.error('Batch is empty or invalid', { batchKey });
+    return false;
+  }
 
   try {
-    // Create and submit transaction
+    const origin = batch[0].destinations[0];
+    const tickerHash = batch[0].ticker_hash;
 
-    // add a logic for batching
-    const tx = await txService.submitAndMonitor(invoice.chainId, {
-      data: '0x',
+    // Find the best destination
+    const selectedDestination = await findBestDestination(origin, tickerHash, config);
+
+    // Calculate total batch amount
+    const batchAmount = batch.reduce((total, invoice) => total + Number(invoice.amount), 0);
+
+    // Throw error if batchAmount is 0
+    if (batchAmount === 0) {
+      throw new Error(`Batch amount is 0 for batchKey: ${batchKey}. No invoices to process.`);
+    }
+
+    // TODO: add types here
+    const params: NewIntentParams = {
+      origin,
+      destinations: [selectedDestination],
+      to: config.ownAddress, // Use own address from config
+      inputAsset: config.inputAsset, // Fetch input asset from config
+      amount: batchAmount,
+      callData: '0x', // Default call data
+      maxFee: '0', // Default max fee
+    };
+
+    // Create a new intent
+    const transaction: IntentTransaction = await everclear.createNewIntent(params);
+
+    // Submit and monitor the transaction
+    const txHash = await txService.submitAndMonitor(transaction.chainId.toString(), {
+      data: transaction.data,
     });
 
-    // Update invoice status
-    // await everclear.updateInvoiceStatus(invoice.id, 'processed');
-
-    logger.info('Invoice processed successfully', {
-      invoiceId: invoice.id,
-      txHash: tx,
+    logger.info('Batch processed successfully', {
+      batchKey,
+      txHash,
     });
 
     return true;
   } catch (error) {
-    logger.error('Failed to process invoice', {
-      invoiceId: invoice.id,
-      error,
+    logger.error('Failed to process batch', {
+      batchKey,
+      error: error.message || error,
     });
     return false;
   }
@@ -139,7 +163,7 @@ export async function processBatch(
   for (const batchKey in batches) {
     const batch = batches[batchKey];
 
-    const success = await processInvoiceBatch(batch, deps, config);
+    const success = await processInvoiceBatch(batch, deps, config, batchKey);
     if (success) {
       result.processed++;
     } else {

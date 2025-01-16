@@ -1,5 +1,5 @@
 import { Logger } from '../../../adapters/logger/src';
-import { axiosGet } from 'utils/axios';
+import { axiosGet, axiosPost } from 'utils/axios';
 
 export interface EverclearConfig {
   apiUrl: string;
@@ -26,6 +26,13 @@ export class EverclearAdapter {
     const params = destinations.length > 0 ? { destinations } : {}; // Need to know if we are only restricting it for blast
 
     const { data } = await axiosGet(url, { params });
+    return data;
+  }
+
+  async createNewIntent(params: any) {
+    const url = `${this.config.apiUrl}/intents`;
+
+    const { data } = await axiosPost(url, { params });
     return data;
   }
 
