@@ -75,7 +75,7 @@ module "mark_poller" {
   stage               = var.stage
   environment         = var.environment
   container_family    = "mark-poller"
-  execution_role_arn  = data.aws_iam_role.ecr_admin_role.arn
+  execution_role_arn  = module.iam.lambda_role_arn
   ecr_repository_url  = "${local.repository_url_prefix}mark-poller"
   docker_image_tag    = "latest"
   subnet_ids          = module.network.private_subnets
@@ -86,4 +86,11 @@ module "mark_poller" {
     STAGE             = var.stage
     BATCH_SIZE        = "10"
   }
+}
+
+module "iam" {
+  source = "../../modules/iam"
+  environment = var.environment
+  stage = var.stage
+  domain = var.domain
 }
