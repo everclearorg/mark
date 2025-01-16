@@ -16,6 +16,7 @@ ops/
 │       └── config.tf
 ├── modules/
 │   ├── ecs/               # ECS cluster setup
+│   ├── iam/               # Roles
 │   ├── lambda/            # Lambda function for Mark poller
 │   ├── networking/        # Basic VPC/subnet setup
 │   ├── service/           # Generic service module for W3S
@@ -25,9 +26,10 @@ ops/
 ### Core Components
 
 1. **Networking (modules/networking)**
-   - VPC with private subnets
-   - NAT Gateway for outbound internet access
-   - Security groups for service isolation
+   - VPC with public and private subnets across multiple AZs
+   - NAT Gateways in each AZ for high availability
+   - Internet Gateway for public subnet access
+   - Route tables for public/private subnet traffic management
 
 2. **ECS Cluster (modules/ecs)**
    - Fargate-based ECS cluster
