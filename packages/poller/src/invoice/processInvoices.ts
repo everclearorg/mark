@@ -140,16 +140,31 @@ export async function processBatch(
       continue;
     }
 
-    // Check if the invoice has exactly one destination
+    let addedToBatch = false;
+
+    // Group invoices with single destination directly
     if (invoice.destinations.length === 1) {
       const batchKey = `${invoice.destinations[0]}_${invoice.ticker_hash}`;
       if (!batches[batchKey]) {
         batches[batchKey] = [];
       }
       batches[batchKey].push(invoice);
+      addedToBatch = true;
     } else {
-      // directly process those invoice based on liq available
+      // Handle multi-destination invoices
+      for (const destination of invoice.destinations) {
+        const batchKey = `${destination}_${invoice.ticker_hash}`;
+        if (batches[batchKey]) {
+          // Add to an existing batch if a destination matches
+          batches[batchKey].push(invoice);
+          addedToBatch = true;
+          break;
+        }
+      }
+    }
 
+    // If not added to any batch, process individually
+    if (!addedToBatch) {
       const success = await processInvoice(invoice, deps);
       if (success) {
         result.processed++;
