@@ -168,3 +168,5 @@ jobs:
         working-directory: ./ops/mainnet/prod
         run: |
           terraform apply -var "image_uri=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" -var-file=tfvars.json -auto-approve
+        env:
+          TF_LOG: DEBUG
