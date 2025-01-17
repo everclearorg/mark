@@ -26,11 +26,12 @@ locals {
 }
 
 module "network" {
-  source      = "../../modules/networking"
-  stage       = var.stage
-  environment = var.environment
-  domain      = var.domain
-  cidr_block  = var.cidr_block
+  source               = "../../modules/networking"
+  stage                = var.stage
+  environment          = var.environment
+  domain               = var.domain
+  cidr_block           = var.cidr_block
+  vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
 }
 
 module "ecs" {
@@ -93,4 +94,8 @@ module "iam" {
   environment = var.environment
   stage = var.stage
   domain = var.domain
+}
+
+module "ecr" {
+  source = "../../modules/ecr"
 }
