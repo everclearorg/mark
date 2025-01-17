@@ -15,6 +15,9 @@ resource "aws_lambda_function" "function" {
   package_type  = "Image"
   image_uri     = var.image_uri
   
+  s3_bucket     = null
+  s3_key        = null
+  
   memory_size   = var.memory_size
   timeout       = var.timeout
 
