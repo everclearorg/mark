@@ -124,11 +124,11 @@ jobs:
           docker build -f docker/poller/Dockerfile -t $IMAGE_URI .
           docker push $IMAGE_URI
           echo "FULL_IMAGE_NAME=${IMAGE_URI}" >> $GITHUB_OUTPUT
-          # Debug output
           echo "Set FULL_IMAGE_NAME to: ${IMAGE_URI}"
 
       - name: Verify output
-        run: echo "Output value: ${{ steps.build-image.outputs.FULL_IMAGE_NAME }}"
+        run: |
+          echo "Output value: ${{ steps.build-image.outputs.FULL_IMAGE_NAME }}"
 
     outputs:
       docker_image: ${{ steps.build-image.outputs.FULL_IMAGE_NAME }}
