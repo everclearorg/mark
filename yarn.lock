@@ -1129,6 +1129,7 @@ __metadata:
     "@mark/everclear": "workspace:*"
     "@mark/logger": "workspace:*"
     "@mark/web3signer": "workspace:*"
+    "@types/aws-lambda": 8.10.110
     "@types/node": 20.17.12
     eslint: 9.17.0
     rimraf: 6.0.1
@@ -1404,6 +1405,13 @@ __metadata:
   version: 7.2.5
   resolution: "@types/abstract-leveldown@npm:7.2.5"
   checksum: 3a99b13c81a53a62b42bea9cff326880de3146b4eeff528b039be69a268515b3120a6c12142e96646fcb0a03c463f298998581e86d9ddb29fbea3612f40edb2b
+  languageName: node
+  linkType: hard
+
+"@types/aws-lambda@npm:8.10.110":
+  version: 8.10.110
+  resolution: "@types/aws-lambda@npm:8.10.110"
+  checksum: 57be33940035f68c93ecb2c43d82b6f47a9f91f7f2114870d5fbab30c4b93084f12c4353da4aaffdfb0b612f2e7f13ee3ac53e0cc7b9f8e536b04bda0a593615
   languageName: node
   linkType: hard
 

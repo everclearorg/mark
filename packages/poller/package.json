@@ -25,6 +25,7 @@
     "@mark/web3signer": "workspace:*"
   },
   "devDependencies": {
+    "@types/aws-lambda": "8.10.110",
     "@types/node": "20.17.12",
     "eslint": "9.17.0",
     "rimraf": "6.0.1",
