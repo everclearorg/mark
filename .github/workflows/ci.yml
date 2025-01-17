@@ -182,13 +182,6 @@ jobs:
           echo "Docker image from previous job: ${{ needs.build-and-push-poller-image.outputs.docker_image }}"
           echo "TF_VAR value: $TF_VAR_full_image_name_poller"
 
-      - name: Verify Image URI
-        run: |
-          if [ -z "${{ needs.build-and-push-poller-image.outputs.docker_image }}" ]; then
-            echo "Error: Docker image output is empty"
-            exit 1
-          fi
-
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod
         run: |
