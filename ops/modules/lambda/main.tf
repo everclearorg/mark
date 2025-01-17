@@ -13,7 +13,7 @@ resource "aws_lambda_function" "function" {
   role          = var.execution_role_arn
   
   package_type  = "Image"
-  image_uri     = "${var.ecr_repository_url}:${var.docker_image_tag}"
+  image_uri     = var.image_uri
   
   memory_size   = var.memory_size
   timeout       = var.timeout

@@ -33,3 +33,8 @@ variable "web3_signer_private_key" {
   type        = string
   sensitive   = true
 }
+
+variable "full_image_name_poller" {
+  description = "Full image name for the poller container (from CI pipeline)"
+  type        = string
+}

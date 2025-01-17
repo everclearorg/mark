@@ -99,6 +99,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      FULL_IMAGE_NAME: ${{ steps.build-and-push.outputs.FULL_IMAGE_NAME }}
 
     steps:
       - name: Checkout repository
@@ -123,8 +125,6 @@ jobs:
           DOCKER_BUILDKIT=1 docker build -f docker/poller/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
           echo "FULL_IMAGE_NAME=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-    outputs:
-      FULL_IMAGE_NAME: ${{ steps.build-and-push.outputs.FULL_IMAGE_NAME }}
 
   terraform-deploy-mainnet-prod:
     if: github.ref == 'refs/heads/mainnet-prod'
@@ -172,4 +172,4 @@ jobs:
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod
         run: |
-          terraform apply -var-file=tfvars.json -var="full_image_name_poller=${{ env.TF_VAR_full_image_name_poller }}" -auto-approve
+          terraform apply -var-file=tfvars.json -auto-approve
