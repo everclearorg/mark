@@ -118,15 +118,15 @@ jobs:
           mask-password: 'true'
 
       - name: Build, tag, and push Docker image to Amazon ECR
-        id: build-and-push
+        id: build-image
         run: |
           FULL_IMAGE_NAME=$REGISTRY/$REPOSITORY:$IMAGE_TAG
           DOCKER_BUILDKIT=1 docker build -f docker/poller/Dockerfile -t $FULL_IMAGE_NAME .
           docker push $FULL_IMAGE_NAME
-          echo "FULL_IMAGE_NAME=$FULL_IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "image_uri=${FULL_IMAGE_NAME}" >> $GITHUB_OUTPUT
 
     outputs:
-      FULL_IMAGE_NAME: ${{ steps.build-and-push.outputs.FULL_IMAGE_NAME }}
+      image_uri: ${{ steps.build-image.outputs.image_uri }}
 
   terraform-deploy-mainnet-prod:
     if: github.ref == 'refs/heads/mainnet-prod'
@@ -135,7 +135,7 @@ jobs:
     env:
       AWS_PROFILE: aws-deployer-connext
       AWS_REGION: ${{ needs.set-aws-region.outputs.AWS_REGION }}
-      TF_VAR_full_image_name_poller: ${{ needs.build-and-push-poller-image.outputs.FULL_IMAGE_NAME }}
+      TF_VAR_full_image_name_poller: ${{ needs.build-and-push-poller-image.outputs.image_uri }}
 
     steps:
       - name: Setup Terraform
@@ -169,8 +169,8 @@ jobs:
 
       - name: Debug Image Name
         run: |
-          echo "Full Image Name from previous job: ${{ needs.build-and-push-poller-image.outputs.FULL_IMAGE_NAME }}"
-          echo "Full Image Name in TF var: $TF_VAR_full_image_name_poller"
+          echo "Image URI from previous job: ${{ needs.build-and-push-poller-image.outputs.image_uri }}"
+          echo "Image URI in TF var: $TF_VAR_full_image_name_poller"
 
       - name: Debug Variables
         working-directory: ./ops/mainnet/prod
@@ -178,6 +178,14 @@ jobs:
           echo "Full Image Name: $TF_VAR_full_image_name_poller"
           echo "AWS Region: $AWS_REGION"
           terraform plan -var-file=tfvars.json
+
+      - name: Verify Image URI
+        run: |
+          if [ -z "$TF_VAR_full_image_name_poller" ]; then
+            echo "Error: Image URI is empty"
+            exit 1
+          fi
+          echo "✓ Image URI is properly set: $TF_VAR_full_image_name_poller"
 
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod
