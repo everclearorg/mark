@@ -49,10 +49,14 @@ RUN yarn build
 
 FROM node AS runtime
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    PORT=8080
 
 # Copy built files from build stage and flatten the structure
-COPY --from=build /tmp/build/packages/poller/dist/src/index.js ${LAMBDA_TASK_ROOT}/index.js
-COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
+# COPY --from=build /tmp/build/packages/poller/dist/src/index.js ${LAMBDA_TASK_ROOT}/index.js
+# COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
+WORKDIR ${LAMBDA_TASK_ROOT}
+COPY --from=build /tmp/build ${LAMBDA_TASK_ROOT}
 
-CMD ["index.handler"]
+EXPOSE 8080
+CMD ["packages/poller/dist/src/index.handler"]
