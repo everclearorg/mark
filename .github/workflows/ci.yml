@@ -91,7 +91,7 @@ jobs:
   build-and-push-poller-image:
     if: github.ref == 'refs/heads/mainnet-prod'
     env:
-      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
+      REGISTRY: 679752396206.dkr.ecr.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
       IMAGE_TAG: mark-poller-${{ github.sha }}
       REPOSITORY: mark-poller
     runs-on: ubuntu-latest
@@ -159,7 +159,7 @@ jobs:
 
       - name: Decrypt Mainnet Secrets
         id: decrypt
-        run: sops -d ops/env/mainnet/backend/secrets.prod.json > ops/mainnet/prod/backend/tfvars.json
+        run: sops -d ops/env/mainnet/secrets.prod.json > ops/mainnet/prod/tfvars.json
 
       - name: Terraform Init
         working-directory: ./ops/mainnet/prod/backend
