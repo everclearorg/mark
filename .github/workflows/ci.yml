@@ -173,6 +173,13 @@ jobs:
         run: |
           echo "Full Image Name: ${{ needs.build-and-push-poller-image.outputs.FULL_IMAGE_NAME }}"
 
+      - name: Debug Variables
+        working-directory: ./ops/mainnet/prod
+        run: |
+          echo "Full Image Name: $TF_VAR_full_image_name_poller"
+          echo "AWS Region: $AWS_REGION"
+          terraform plan -var-file=tfvars.json
+
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod
         run: |
