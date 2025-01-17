@@ -51,8 +51,8 @@ FROM node AS runtime
 
 ENV NODE_ENV=production
 
-# Copy built files from build stage
-COPY --from=build /tmp/build/packages/poller/dist ${LAMBDA_TASK_ROOT}
+# Copy built files from build stage and flatten the structure
+COPY --from=build /tmp/build/packages/poller/dist/index.js ${LAMBDA_TASK_ROOT}/index.js
 COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
 
 CMD ["index.handler"]
