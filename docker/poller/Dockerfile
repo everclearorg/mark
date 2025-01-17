@@ -3,6 +3,9 @@ FROM public.ecr.aws/lambda/nodejs:20 as build
 # Set working directory
 WORKDIR /tmp/build
 
+# Install yarn
+RUN npm install -g yarn
+
 # Copy workspace configuration files
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn ./.yarn
