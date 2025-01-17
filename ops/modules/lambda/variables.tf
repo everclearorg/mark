@@ -18,16 +18,6 @@ variable "execution_role_arn" {
   type        = string
 }
 
-variable "ecr_repository_url" {
-  description = "URL of the ECR repository"
-  type        = string
-}
-
-variable "docker_image_tag" {
-  description = "Tag of the docker image to deploy"
-  type        = string
-}
-
 variable "memory_size" {
   description = "Amount of memory in MB for the function"
   type        = number
@@ -60,4 +50,9 @@ variable "container_env_vars" {
   description = "Environment variables for the Lambda function"
   type        = map(string)
   default     = {}
+}
+
+variable "image_uri" {
+  description = "Full URI of the container image"
+  type        = string
 }

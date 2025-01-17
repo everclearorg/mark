@@ -77,8 +77,7 @@ module "mark_poller" {
   environment         = var.environment
   container_family    = "mark-poller"
   execution_role_arn  = module.iam.lambda_role_arn
-  ecr_repository_url  = "${local.repository_url_prefix}mark-poller"
-  docker_image_tag    = "latest"
+  image_uri          = var.full_image_name_poller
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
   container_env_vars  = {
