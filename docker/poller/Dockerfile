@@ -3,6 +3,9 @@ FROM public.ecr.aws/lambda/nodejs:20 as build
 # Set working directory
 WORKDIR /tmp/build
 
+# Install system dependencies
+RUN yum install -y python3 make gcc gcc-c++ git
+
 # Install yarn
 RUN npm install -g yarn
 
