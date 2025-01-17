@@ -124,11 +124,7 @@ jobs:
         run: |
           DOCKER_BUILDKIT=1 docker build -f docker/poller/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
-          FULL_IMAGE_NAME="${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}"
-          echo "Debug - Image name before setting output: ${FULL_IMAGE_NAME}"
-          echo "FULL_IMAGE_NAME=${FULL_IMAGE_NAME}" >> $GITHUB_OUTPUT
-          echo "Debug - Contents of GITHUB_OUTPUT:"
-          cat $GITHUB_OUTPUT
+          echo "FULL_IMAGE_NAME=$REGISTRY/$REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   terraform-deploy-mainnet-prod:
     if: github.ref == 'refs/heads/mainnet-prod'
