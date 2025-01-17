@@ -130,7 +130,7 @@ jobs:
           echo "Output value: ${{ steps.build-image.outputs.FULL_IMAGE_NAME }}"
 
     outputs:
-      docker_image: ${{ steps.build-image.outputs.FULL_IMAGE_NAME }}
+      FULL_IMAGE_NAME: ${{ steps.build-image.outputs.FULL_IMAGE_NAME }}
 
   terraform-deploy-mainnet-prod:
     if: github.ref == 'refs/heads/mainnet-prod'
@@ -139,7 +139,7 @@ jobs:
     env:
       AWS_PROFILE: aws-deployer-connext
       AWS_REGION: ${{ needs.set-aws-region.outputs.AWS_REGION }}
-      TF_VAR_full_image_name_poller: ${{ needs.build-and-push-poller-image.outputs.docker_image }}
+      TF_VAR_full_image_name_poller: ${{ needs.build-and-push-poller-image.outputs.FULL_IMAGE_NAME }}
 
     steps:
       - name: Setup Terraform
@@ -173,7 +173,7 @@ jobs:
 
       - name: Debug Image Name
         run: |
-          echo "Image URI from previous job: ${{ needs.build-and-push-poller-image.outputs.docker_image }}"
+          echo "Image URI from previous job: ${{ needs.build-and-push-poller-image.outputs.FULL_IMAGE_NAME }}"
           echo "Image URI in TF var: $TF_VAR_full_image_name_poller"
 
       - name: Terraform Apply
