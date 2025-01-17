@@ -139,7 +139,7 @@ jobs:
     env:
       AWS_PROFILE: aws-deployer-connext
       AWS_REGION: ${{ needs.set-aws-region.outputs.AWS_REGION }}
-      TF_VAR_full_image_name_poller: mark-poller-${{ github.sha }}
+      TF_VAR_full_image_name_poller: ${{ needs.build-and-push-poller-image.outputs.docker_image }}
 
     steps:
       - name: Setup Terraform
@@ -175,12 +175,6 @@ jobs:
         run: |
           echo "Image URI from previous job: ${{ needs.build-and-push-poller-image.outputs.docker_image }}"
           echo "Image URI in TF var: $TF_VAR_full_image_name_poller"
-
-      - name: Debug Variables
-        working-directory: ./ops/mainnet/prod
-        run: |
-          echo "Docker image from previous job: ${{ needs.build-and-push-poller-image.outputs.docker_image }}"
-          echo "TF_VAR value: $TF_VAR_full_image_name_poller"
 
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod
