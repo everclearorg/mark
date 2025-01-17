@@ -1,50 +1,58 @@
-FROM public.ecr.aws/lambda/nodejs:20 as build
+FROM public.ecr.aws/lambda/nodejs:18 AS node
 
-# Set working directory
+# ----------------------------------------
+# Build stage
+# ----------------------------------------
+
+FROM node AS build
+RUN yum update -y
+RUN yum install -y git python3 python3-pip make gcc gcc-c++ python3-devel
+RUN npm install --global yarn@1.22.19
+
+ENV HOME=/tmp/build \
+    PATH=/tmp/build/node_modules/.bin:./node_modules/.bin:${PATH}
+
 WORKDIR /tmp/build
 
-# Install system dependencies
-RUN yum install -y python3 make gcc gcc-c++ git
+# Copy yarn configuration files first
+COPY .yarn /tmp/build/.yarn/
+COPY .yarnrc.yml /tmp/build/
+COPY package.json /tmp/build/
 
-# Install yarn
-RUN npm install -g yarn
+# Copy all package.json files
+COPY packages/core/package.json /tmp/build/packages/core/
+COPY packages/poller/package.json /tmp/build/packages/poller/
+COPY packages/adapters/logger/package.json /tmp/build/packages/adapters/logger/
+COPY packages/adapters/chainservice/package.json /tmp/build/packages/adapters/chainservice/
+COPY packages/adapters/everclear/package.json /tmp/build/packages/adapters/everclear/
+COPY packages/adapters/web3signer/package.json /tmp/build/packages/adapters/web3signer/
+COPY yarn.lock /tmp/build/
 
-# Copy workspace configuration files
-COPY package.json yarn.lock .yarnrc.yml ./
-COPY .yarn ./.yarn
-
-# Copy all workspace package.json files
-COPY packages/core/package.json ./packages/core/
-COPY packages/poller/package.json ./packages/poller/
-COPY packages/adapters/logger/package.json ./packages/adapters/logger/
-COPY packages/adapters/chainservice/package.json ./packages/adapters/chainservice/
-COPY packages/adapters/everclear/package.json ./packages/adapters/everclear/
-COPY packages/adapters/web3signer/package.json ./packages/adapters/web3signer/
-
-# Install dependencies
-RUN yarn install --frozen-lockfile
+# Install dependencies with frozen lockfile
+RUN YARN_ENABLE_SCRIPTS=0 yarn install --frozen-lockfile
 
 # Copy source files
-COPY packages/core ./packages/core
-COPY packages/poller ./packages/poller
-COPY packages/adapters/logger ./packages/adapters/logger
-COPY packages/adapters/chainservice ./packages/adapters/chainservice
-COPY packages/adapters/everclear ./packages/adapters/everclear
-COPY packages/adapters/web3signer ./packages/adapters/web3signer
-COPY tsconfig.json ./
+COPY packages/core /tmp/build/packages/core
+COPY packages/poller /tmp/build/packages/poller
+COPY packages/adapters/logger /tmp/build/packages/adapters/logger
+COPY packages/adapters/chainservice /tmp/build/packages/adapters/chainservice
+COPY packages/adapters/everclear /tmp/build/packages/adapters/everclear
+COPY packages/adapters/web3signer /tmp/build/packages/adapters/web3signer
+COPY tsconfig.json /tmp/build/
 
-# Build all packages
+# Build packages
 RUN yarn build
 
+# ----------------------------------------
 # Runtime stage
-FROM public.ecr.aws/lambda/nodejs:20 as runtime
+# ----------------------------------------
 
-# Set environment variables
+FROM node AS runtime
+
 ENV NODE_ENV=production
 
 # Copy built files from build stage
 COPY --from=build /tmp/build/packages/poller/dist ${LAMBDA_TASK_ROOT}
 COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
 
-# Set the Lambda handler
 CMD ["index.handler"]
