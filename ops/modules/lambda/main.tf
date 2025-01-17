@@ -12,14 +12,11 @@ resource "aws_lambda_function" "function" {
   function_name = "${var.container_family}-${var.environment}-${var.stage}"
   role          = var.execution_role_arn
   
-  package_type  = "Image"
-  image_uri     = var.image_uri
+  package_type = "Image"
+  image_uri    = var.image_uri
   
-  s3_bucket     = null
-  s3_key        = null
-  
-  memory_size   = var.memory_size
-  timeout       = var.timeout
+  memory_size = var.memory_size
+  timeout     = var.timeout
 
   vpc_config {
     subnet_ids         = var.subnet_ids
