@@ -1,9 +1,10 @@
-import { Logger } from '../../adapters/logger/src';
+import { Context, APIGatewayProxyResult, APIGatewayEvent } from 'aws-lambda';
 import { MarkConfiguration, loadConfiguration } from '@mark/core';
+import { Logger } from '@mark/logger';
+import { EverclearAdapter } from '@mark/everclear';
+import { ChainService } from '@mark/chainservice';
+import { Web3SignerAdapter } from '@mark/web3signer';
 import { pollAndProcess } from './invoice/processInvoices';
-import { EverclearAdapter } from '../../adapters/everclear/src';
-import { ChainService } from '../../adapters/chainservice/src';
-import { Web3SignerAdapter } from '../../adapters/web3signer/src';
 
 async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   // Initialize adapters in the correct order
@@ -41,14 +42,16 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function handler(_event: unknown) {
+export const handler = async (event: APIGatewayEvent, context: Context): Promise<APIGatewayProxyResult> => {
   const config = await loadConfiguration();
 
   const logger = new Logger({
     service: 'mark-poller',
     level: config.logLevel,
   });
+
+  logger.info(`Event: ${JSON.stringify(event, null, 2)}`);
+  logger.info(`Context: ${JSON.stringify(context, null, 2)}`);
 
   try {
     const adapters = await initializeAdapters(config, logger);
@@ -80,4 +83,4 @@ export async function handler(_event: unknown) {
       body: JSON.stringify({ error: 'Failed to poll invoices' }),
     };
   }
-}
+};
