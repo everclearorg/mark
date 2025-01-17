@@ -91,7 +91,7 @@ jobs:
   build-and-push-poller-image:
     if: github.ref == 'refs/heads/mainnet-prod'
     env:
-      REGISTRY: 679752396206.dkr.ecr..${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
       IMAGE_TAG: mark-poller-${{ github.sha }}
       REPOSITORY: mark-poller
     runs-on: ubuntu-latest
