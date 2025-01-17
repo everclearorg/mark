@@ -1,13 +1,26 @@
 # Fetch available AZs
 data "aws_availability_zones" "available" {}
 
+# Create VPC
 resource "aws_vpc" "main" {
   cidr_block           = var.cidr_block
   enable_dns_hostnames = true
   enable_dns_support   = true
 
   tags = {
-    Name        = "mark-${var.environment}-${var.stage}"
+    Name        = "mark-vpc-${var.environment}-${var.stage}"
+    Environment = var.environment
+    Stage       = var.stage
+    Domain      = var.domain
+  }
+}
+
+# Create Internet Gateway
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name        = "mark-igw-${var.environment}-${var.stage}"
     Environment = var.environment
     Stage       = var.stage
     Domain      = var.domain
@@ -114,8 +127,9 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private[count.index].id
 }
 
-data "aws_iam_role" "vpc_flow_logs" {
-  name = "vpc_flow_logs_role"
+variable "vpc_flow_logs_role_arn" {
+  description = "ARN of the VPC Flow Logs IAM role"
+  type        = string
 }
 
 resource "aws_cloudwatch_log_group" "flow_logs_log_group_private_subnets" {
@@ -128,18 +142,22 @@ resource "aws_cloudwatch_log_group" "flow_logs_log_group_public_subnets" {
   name  = "vpc-flow-logs-${var.environment}-${var.stage}-${var.domain}-public-${count.index}"
 }
 
+# VPC Flow Logs for Private Subnets
 resource "aws_flow_log" "vpc_flow_logs_private_subnets" {
-  count           = 2
-  iam_role_arn    = data.aws_iam_role.vpc_flow_logs.arn
-  log_destination = aws_cloudwatch_log_group.flow_logs_log_group_private_subnets[count.index].arn
-  traffic_type    = "ALL"
-  subnet_id       = aws_subnet.private[count.index].id
+  count                = 2
+  log_destination      = aws_cloudwatch_log_group.flow_logs_log_group_private_subnets[count.index].arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type        = "ALL"
+  subnet_id           = aws_subnet.private[count.index].id
+  iam_role_arn        = var.vpc_flow_logs_role_arn
 }
 
+# VPC Flow Logs for Public Subnets
 resource "aws_flow_log" "vpc_flow_logs_public_subnets" {
-  count           = 2
-  iam_role_arn    = data.aws_iam_role.vpc_flow_logs.arn
-  log_destination = aws_cloudwatch_log_group.flow_logs_log_group_public_subnets[count.index].arn
-  traffic_type    = "ALL"
-  subnet_id       = aws_subnet.public[count.index].id
+  count                = 2
+  log_destination      = aws_cloudwatch_log_group.flow_logs_log_group_public_subnets[count.index].arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type        = "ALL"
+  subnet_id           = aws_subnet.public[count.index].id
+  iam_role_arn        = var.vpc_flow_logs_role_arn
 }
