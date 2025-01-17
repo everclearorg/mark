@@ -77,7 +77,7 @@ module "mark_poller" {
   environment         = var.environment
   container_family    = "mark-poller"
   execution_role_arn  = module.iam.lambda_role_arn
-  image_uri          = var.full_image_name_poller
+  image_uri          = var.image_uri
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
   container_env_vars  = {
