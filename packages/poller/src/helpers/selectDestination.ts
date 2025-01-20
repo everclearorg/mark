@@ -1,10 +1,11 @@
 import { ProcessInvoicesConfig } from 'src/invoice/processInvoices';
 import { getHubStorageContract } from './contracts';
+import { MarkConfiguration } from '@mark/core';
 
 export const findBestDestination = async (
   origin: string,
   tickerHash: string,
-  config: ProcessInvoicesConfig,
+  config: MarkConfiguration,
 ): Promise<number> => {
   try {
     const hubStorage = await getHubStorageContract(config);
@@ -33,6 +34,6 @@ export const findBestDestination = async (
     return bestDestination;
   } catch (error) {
     console.error('Error in findBestDestination:', error);
-    throw new Error(`Failed to find the best destination: ${error.message || error}`);
+    throw new Error(`Failed to find the best destination: ${(error as unknown as Error).message}`);
   }
 };

@@ -1,5 +1,6 @@
 import { Logger } from '../../../adapters/logger/src';
 import { axiosGet, axiosPost } from 'utils/axios';
+import { ChainConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface EverclearConfig {
   apiUrl: string;
@@ -21,19 +22,21 @@ export class EverclearAdapter {
     this.logger = logger;
   }
 
-  async fetchInvoices(destinations: string[]): Promise<Invoice[]> {
+  async fetchInvoices(destinations: Record<string, ChainConfiguration>): Promise<Invoice[]> {
     const url = `${this.config.apiUrl}/invoices`;
-    const params = destinations.length > 0 ? { destinations } : {}; // Need to know if we are only restricting it for blast
+
+    const destinationKeys = Object.keys(destinations);
+    const params = destinationKeys.length > 0 ? { destinations: destinationKeys } : {};
 
     const { data } = await axiosGet(url, { params });
     return data;
   }
 
-  async createNewIntent(params: any) {
+  async createNewIntent(params: NewIntentParams) {
     const url = `${this.config.apiUrl}/intents`;
 
     const { data } = await axiosPost(url, { params });
-    return data;
+    return data as TransactionRequest;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
