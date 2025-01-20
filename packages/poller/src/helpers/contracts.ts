@@ -1,6 +1,5 @@
 import { MarkConfiguration } from '@mark/core';
-import { ProcessInvoicesConfig } from 'src/invoice/processInvoices';
-import { createPublicClient, http, getContract, Abi, Chain } from 'viem';
+import { createPublicClient, getContract, http, Abi, Chain } from 'viem';
 
 const abi = [
   {
@@ -19,11 +18,11 @@ const abi = [
 
 const hub_address = '0x121344';
 
-export const getProviderUrl = (chainId: string, config: any): string | undefined => {
+export const getProviderUrl = (chainId: string, config: MarkConfiguration): string | undefined => {
   return config.chains[chainId]?.providers[0];
 };
 
-const createClient = (chainId: string, config: MarkConfiguration) => {
+export const createClient = (chainId: string, config: MarkConfiguration) => {
   const providerURL = getProviderUrl(chainId, config);
   if (!providerURL) {
     throw new Error(`No RPC configured for given domain: ${chainId}`);
@@ -37,6 +36,7 @@ const createClient = (chainId: string, config: MarkConfiguration) => {
 
 export const getHubStorageContract = async (config: MarkConfiguration) => {
   const client = createClient('hub_chain_id', config);
+
   return getContract({
     address: hub_address as `0x${string}`,
     abi: abi as unknown as Abi,
