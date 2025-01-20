@@ -58,16 +58,10 @@ export async function handler(_event: unknown) {
       environment: config.environment,
     });
 
-    const result = await pollAndProcess(
-      {
-        batchSize: parseInt(process.env.BATCH_SIZE || '10', 10),
-        chains: ['1'], // all supported chain ids here
-      },
-      {
-        ...adapters,
-        logger,
-      },
-    );
+    const result = await pollAndProcess(config, {
+      ...adapters,
+      logger,
+    });
 
     return {
       statusCode: 200,

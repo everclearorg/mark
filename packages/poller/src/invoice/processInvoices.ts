@@ -2,6 +2,8 @@ import { Logger } from '../../../adapters/logger/src';
 import { EverclearAdapter } from '../../../adapters/everclear/src';
 import { TransactionServiceAdapter } from '../../../adapters/txservice/src';
 import { findBestDestination } from 'src/helpers/selectDestination';
+import { markHighestLiquidityBalance } from 'src/helpers/balance';
+import { fetchTokenAddress, MarkConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface ProcessInvoicesConfig {
   batchSize: number;
@@ -33,7 +35,7 @@ export interface ProcessInvoicesResult {
 export async function processInvoiceBatch(
   batch: Invoice[],
   deps: ProcessInvoicesDependencies,
-  config: ProcessInvoicesConfig,
+  config: MarkConfiguration,
   batchKey: string,
 ): Promise<boolean> {
   const { everclear, txService, logger } = deps;
@@ -49,7 +51,7 @@ export async function processInvoiceBatch(
     const tickerHash = batch[0].ticker_hash;
 
     // Find the best destination
-    const selectedDestination = await findBestDestination(origin, tickerHash, config);
+    const selectedDestination = (await findBestDestination(origin, tickerHash, config)).toString();
 
     // Calculate total batch amount
     const batchAmount = batch.reduce((total, invoice) => total + Number(invoice.amount), 0);
@@ -59,19 +61,21 @@ export async function processInvoiceBatch(
       throw new Error(`Batch amount is 0 for batchKey: ${batchKey}. No invoices to process.`);
     }
 
+    const tokenAddress = fetchTokenAddress(tickerHash, origin);
+
     // TODO: add types here
     const params: NewIntentParams = {
       origin,
       destinations: [selectedDestination],
       to: config.ownAddress, // Use own address from config
-      inputAsset: config.inputAsset, // Fetch input asset from config
+      inputAsset: tokenAddress, // Fetch input asset from config
       amount: batchAmount,
       callData: '0x', // Default call data
       maxFee: '0', // Default max fee
     };
 
     // Create a new intent
-    const transaction: IntentTransaction = await everclear.createNewIntent(params);
+    const transaction: TransactionRequest = await everclear.createNewIntent(params);
 
     // Submit and monitor the transaction
     const txHash = await txService.submitAndMonitor(transaction.chainId.toString(), {
@@ -87,23 +91,43 @@ export async function processInvoiceBatch(
   } catch (error) {
     logger.error('Failed to process batch', {
       batchKey,
-      error: error.message || error,
+      error: (error as unknown as Error).message || error,
     });
     return false;
   }
 }
 
-export async function processInvoice(invoice: Invoice, deps: ProcessInvoicesDependencies): Promise<boolean> {
+export async function processInvoice(
+  invoice: Invoice,
+  deps: ProcessInvoicesDependencies,
+  config: MarkConfiguration,
+): Promise<boolean> {
   const { everclear, txService, logger } = deps;
 
   try {
-    // Create and submit transaction
-    const tx = await txService.submitAndMonitor(invoice.chainId, {
-      data: '0x',
-    });
+    const tickerHash = invoice.ticker_hash;
+    const origin = (await markHighestLiquidityBalance(tickerHash, invoice.destinations, config)).toString();
 
-    // Update invoice status
-    await everclear.updateInvoiceStatus(invoice.id, 'processed');
+    // Find the best destination
+    const selectedDestination = (await findBestDestination(origin, tickerHash, config)).toString();
+
+    const inputAsset = fetchTokenAddress(tickerHash, origin);
+
+    const params: NewIntentParams = {
+      origin,
+      destinations: [selectedDestination],
+      to: config.ownAddress,
+      inputAsset: inputAsset,
+      amount: invoice.amount,
+      callData: '0x',
+      maxFee: '0',
+    };
+
+    const transaction: TransactionRequest = await everclear.createNewIntent(params);
+
+    const tx = await txService.submitAndMonitor(transaction.chainId.toString(), {
+      data: transaction.data,
+    });
 
     logger.info('Invoice processed successfully', {
       invoiceId: invoice.id,
@@ -124,7 +148,7 @@ export async function processInvoice(invoice: Invoice, deps: ProcessInvoicesDepe
 export async function processBatch(
   invoices: Invoice[],
   deps: ProcessInvoicesDependencies,
-  config: ProcessInvoicesConfig,
+  config: MarkConfiguration,
 ): Promise<ProcessInvoicesResult> {
   const result: ProcessInvoicesResult = {
     processed: 0,
@@ -165,7 +189,7 @@ export async function processBatch(
 
     // If not added to any batch, process individually
     if (!addedToBatch) {
-      const success = await processInvoice(invoice, deps);
+      const success = await processInvoice(invoice, deps, config);
       if (success) {
         result.processed++;
       } else {
@@ -202,7 +226,7 @@ function isValidInvoice(invoice: Invoice): boolean {
 
 // Main polling function that orchestrates the process
 export async function pollAndProcess(
-  config: ProcessInvoicesConfig,
+  config: MarkConfiguration,
   deps: ProcessInvoicesDependencies,
 ): Promise<ProcessInvoicesResult> {
   const { everclear, logger } = deps;

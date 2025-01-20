@@ -37,9 +37,44 @@ export interface MarkConfiguration {
     url: string;
     key: string;
   };
+  ownAddress: string;
   stage: 'development' | 'staging' | 'mainnet';
   environment: 'mainnet' | 'testnet' | 'local';
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   supportedSettlementDomains: number[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id
+}
+
+export interface NewIntentParams {
+  origin: string;
+  destinations: string[];
+  to: string;
+  inputAsset: string;
+  amount: string | number;
+  callData: string;
+  maxFee: string | number;
+}
+
+export interface TransactionRequest {
+  to: string | null;
+  from?: string | null;
+  nonce?: string;
+  gasLimit?: string;
+  gasPrice?: string;
+  data: string;
+  value?: string;
+  chainId: number;
+  type?: number | null;
+  accessList?:
+    | {
+        address?: string;
+        storageKeys?: string[];
+      }[]
+    | null;
+  maxPriorityFeePerGas?: string | null;
+  maxFeePerGas?: string | null;
+  customData?: {
+    [key: string]: unknown;
+  } | null;
+  ccipReadEnabled?: boolean | null;
 }
