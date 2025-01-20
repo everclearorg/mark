@@ -136,6 +136,10 @@ export const tokenAddressMapping: Record<string, Record<string, string>> = {
   },
 };
 
+export const getTokenAddress = (ticker_hash: string, origin: string): string => {
+  return fetchTokenAddress(ticker_hash, origin);
+};
+
 export const fetchTokenAddress = (ticker_hash: string, origin: string): string => {
   const tokenAddress = tokenAddressMapping[ticker_hash]?.[origin];
   if (!tokenAddress) {
