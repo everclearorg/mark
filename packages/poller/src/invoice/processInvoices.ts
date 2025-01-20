@@ -3,7 +3,7 @@ import { EverclearAdapter } from '../../../adapters/everclear/src';
 import { TransactionServiceAdapter } from '../../../adapters/txservice/src';
 import { findBestDestination } from 'src/helpers/selectDestination';
 import { markHighestLiquidityBalance } from 'src/helpers/balance';
-import { fetchTokenAddress, MarkConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
+import { fetchTokenAddress, getTokenAddress, MarkConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface ProcessInvoicesConfig {
   batchSize: number;
@@ -106,7 +106,10 @@ export async function processInvoice(
 
   try {
     const tickerHash = invoice.ticker_hash;
-    const origin = (await markHighestLiquidityBalance(tickerHash, invoice.destinations, config)).toString();
+    // Fixed: Use `of` instead of `in`
+    const origin = (
+      await markHighestLiquidityBalance(tickerHash, invoice.destinations, config, getTokenAddress)
+    ).toString();
 
     // Find the best destination
     const selectedDestination = (await findBestDestination(origin, tickerHash, config)).toString();
