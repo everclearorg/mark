@@ -1,5 +1,5 @@
 import { Logger } from '../../../adapters/logger/src';
-import { axiosGet, axiosPost } from 'utils/axios';
+import { axiosGet, axiosPost } from './utils/axios';
 import { ChainConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface EverclearConfig {
