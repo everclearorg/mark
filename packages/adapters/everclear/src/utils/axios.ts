@@ -5,53 +5,59 @@ import axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
  *
  * @param ms - Time to wait for resolution
  */
-// eslint-disable-next-line @typescript-eslint/no-implied-eval
-export const delay = (ms: number): Promise<void> => new Promise((res: () => void): any => setTimeout(res, ms));
+export const delay = (ms: number): Promise<void> => new Promise((res: () => void) => setTimeout(res, ms));
 
-export const axiosPost = async <T = any, R = AxiosResponse<T>, D = any>(
+export const axiosPost = async <
+  TResponseData = unknown,
+  TResponse extends AxiosResponse<TResponseData> = AxiosResponse<TResponseData>,
+  TRequestData = unknown,
+>(
   url: string,
-  data?: D,
-  config?: AxiosRequestConfig<D>,
+  data?: TRequestData,
+  config?: AxiosRequestConfig<TRequestData>,
   numAttempts = 30,
   retryDelay = 2000,
-): Promise<R> => {
-  let error;
+): Promise<TResponse> => {
+  let lastError;
   for (let i = 0; i < numAttempts; i++) {
     try {
-      const response = await axios.post<T, R, D>(url, data, config);
+      const response = await axios.post<TResponseData, TResponse, TRequestData>(url, data, config);
       return response;
     } catch (err: unknown) {
-      // eslint-disable-next-line import/no-named-as-default-member
       if (axios.isAxiosError(err)) {
-        error = { error: err.toJSON(), status: err.response?.status };
+        lastError = { error: err.toJSON(), status: err.response?.status };
+      } else {
+        lastError = err;
       }
-      error = err;
     }
     await delay(retryDelay);
   }
-  throw new Error('AxiosQueryError' + ' Post');
+  throw new Error(`AxiosQueryError Post: ${JSON.stringify(lastError)}`);
 };
 
-export const axiosGet = async <T = any, R = AxiosResponse<T>, D = any>(
+export const axiosGet = async <
+  TResponseData = unknown,
+  TResponse extends AxiosResponse<TResponseData> = AxiosResponse<TResponseData>,
+  TRequestData = unknown,
+>(
   url: string,
-  data?: D,
+  data?: TRequestData,
   numAttempts = 5,
   retryDelay = 2000,
-): Promise<R> => {
-  let error;
+): Promise<TResponse> => {
+  let lastError;
   for (let i = 0; i < numAttempts; i++) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const response = await axios.get<T, R, D>(url, data as any);
+      const response = await axios.get<TResponseData, TResponse, TRequestData>(url, data);
       return response;
     } catch (err: unknown) {
-      // eslint-disable-next-line import/no-named-as-default-member
       if (axios.isAxiosError(err)) {
-        error = { error: err.toJSON(), status: err.response?.status };
+        lastError = { error: err.toJSON(), status: err.response?.status };
+      } else {
+        lastError = err;
       }
-      error = err;
     }
     await delay(retryDelay);
   }
-  throw new Error('AxiosQueryError' + ' Get');
+  throw new Error(`AxiosQueryError Get: ${JSON.stringify(lastError)}`);
 };
