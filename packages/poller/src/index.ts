@@ -61,15 +61,10 @@ export const handler = async (event: APIGatewayEvent, context: Context): Promise
       environment: config.environment,
     });
 
-    const result = await pollAndProcess(
-      {
-        batchSize: parseInt(process.env.BATCH_SIZE || '10', 10),
-      },
-      {
-        ...adapters,
-        logger,
-      },
-    );
+    const result = await pollAndProcess(config, {
+      ...adapters,
+      logger,
+    });
 
     return {
       statusCode: 200,
