@@ -1,8 +1,19 @@
 import { Logger } from '../../../adapters/logger/src';
+import { axiosGet, axiosPost } from 'utils/axios';
+import { ChainConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface EverclearConfig {
   apiUrl: string;
   apiKey: string;
+}
+
+export interface Invoice {
+  amount: number;
+  chainId: string;
+  id: string;
+  owner: string;
+  destinations: string[];
+  ticker_hash: string;
 }
 
 export class EverclearAdapter {
@@ -14,9 +25,21 @@ export class EverclearAdapter {
     this.logger = logger;
   }
 
-  async fetchInvoices(): Promise<unknown[]> {
-    // Implementation will go here
-    return []; // Temporarily
+  async fetchInvoices(destinations: Record<string, ChainConfiguration>): Promise<Invoice[]> {
+    const url = `${this.config.apiUrl}/invoices`;
+
+    const destinationKeys = Object.keys(destinations);
+    const params = destinationKeys.length > 0 ? { destinations: destinationKeys } : {};
+
+    const { data } = await axiosGet(url, { params });
+    return data;
+  }
+
+  async createNewIntent(params: NewIntentParams) {
+    const url = `${this.config.apiUrl}/intents`;
+
+    const { data } = await axiosPost(url, { params });
+    return data as TransactionRequest;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
