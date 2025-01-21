@@ -1,5 +1,5 @@
 import { getERC20Contract } from './contracts';
-import { fetchTokenAddress, MarkConfiguration } from '@mark/core';
+import { MarkConfiguration } from '@mark/core';
 
 export const walletBalance = async (tokenAddress: string, chainId: string, config: MarkConfiguration) => {
   try {
@@ -7,7 +7,7 @@ export const walletBalance = async (tokenAddress: string, chainId: string, confi
     const balance = await tokenContract.read.balanceOf([config.ownAddress]);
     return balance;
   } catch (err) {
-    console.log('Not able to fetch the wallet balance!');
+    console.log('Not able to fetch the wallet balance!', err);
   }
 };
 
@@ -33,7 +33,7 @@ export const markHighestLiquidityBalance = async (
 
     return highestLiquidityDomain;
   } catch (err) {
-    console.log('Not able to fetch the wallet balance!');
+    console.log('Not able to fetch the wallet balance!', err);
     return 0;
   }
 };
