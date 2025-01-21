@@ -8,9 +8,12 @@ export interface EverclearConfig {
 }
 
 export interface Invoice {
-  amount: string;
+  amount: number;
   chainId: string;
   id: string;
+  owner: string;
+  destinations: string[];
+  ticker_hash: string;
 }
 
 export class EverclearAdapter {
