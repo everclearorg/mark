@@ -1,4 +1,3 @@
-import { ProcessInvoicesConfig } from 'src/invoice/processInvoices';
 import { getHubStorageContract } from './contracts';
 import { MarkConfiguration } from '@mark/core';
 
@@ -13,12 +12,13 @@ export const findBestDestination = async (
     let bestDestination: number | null = null;
     let maxLiquidity = BigInt(0);
 
-    for (const chainId in config.chains) {
+    for (const chainId of Object.keys(config.chains)) {
       if (chainId === origin) {
         continue; // Skip the origin chain
       }
 
-      const assetHash = await hubStorage.read.assetHash([tickerHash, chainId]);
+      const assetHash = (await hubStorage.read.assetHash([tickerHash, chainId])) as bigint;
+
       const custodiedLiquidity = (await hubStorage.read.custodiedAsset([assetHash])) as bigint;
 
       if (custodiedLiquidity > maxLiquidity) {
