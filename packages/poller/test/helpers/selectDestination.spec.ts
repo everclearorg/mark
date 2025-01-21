@@ -12,6 +12,12 @@ describe('findBestDestination', () => {
     },
   };
 
+  let consoleErrorStub: sinon.SinonStub;
+
+  beforeEach(() => {
+    consoleErrorStub = sinon.stub(console, 'error');
+  });
+
   afterEach(() => {
     sinon.restore();
   });
