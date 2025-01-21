@@ -41,14 +41,14 @@ export const axiosGet = async <
   TRequestData = unknown,
 >(
   url: string,
-  data?: TRequestData,
+  config?: AxiosRequestConfig<TRequestData>,
   numAttempts = 5,
   retryDelay = 2000,
 ): Promise<TResponse> => {
   let lastError;
   for (let i = 0; i < numAttempts; i++) {
     try {
-      const response = await axios.get<TResponseData, TResponse, TRequestData>(url, data);
+      const response = await axios.get<TResponseData, TResponse>(url, config);
       return response;
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
