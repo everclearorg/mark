@@ -1,8 +1,8 @@
 import { Logger } from '../../../adapters/logger/src';
 import { EverclearAdapter } from '../../../adapters/everclear/src';
 import { TransactionServiceAdapter } from '../../../adapters/txservice/src';
-import { findBestDestination } from 'src/helpers/selectDestination';
-import { markHighestLiquidityBalance } from 'src/helpers/balance';
+import { findBestDestination } from '../helpers/selectDestination';
+import { markHighestLiquidityBalance } from '../helpers/balance';
 import { fetchTokenAddress, getTokenAddress, MarkConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface ProcessInvoicesConfig {
@@ -11,7 +11,7 @@ export interface ProcessInvoicesConfig {
 }
 
 export interface Invoice {
-  amount: string;
+  amount: number;
   chainId: string;
   id: string;
   owner: string;
@@ -216,8 +216,10 @@ export async function processBatch(
   return result;
 }
 
-// Pure function to validate an invoice
-function isValidInvoice(invoice: Invoice): boolean {
+export function isValidInvoice(invoice: Invoice): boolean {
+  if (!invoice) {
+    return false;
+  }
   return (
     invoice &&
     typeof invoice.id === 'string' &&
