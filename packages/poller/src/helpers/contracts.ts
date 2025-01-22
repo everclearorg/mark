@@ -14,6 +14,25 @@ const abi = [
     inputs: [{ type: 'bytes32' }],
     outputs: [{ type: 'uint256' }],
   },
+  {
+    name: 'adoptedForAssets',
+    type: 'function',
+    inputs: [{ type: 'bytes32', name: '_assetHash' }],
+    outputs: [
+      {
+        components: [
+          { type: 'bytes32', name: 'tickerHash' },
+          { type: 'bytes32', name: 'adopted' },
+          { type: 'uint32', name: 'domain' },
+          { type: 'bool', name: 'approval' },
+          { type: 'uint8', name: 'strategy' },
+        ],
+        type: 'tuple',
+        name: '_config',
+      },
+    ],
+    stateMutability: 'view',
+  },
 ];
 
 const hub_address = '0x121344';
@@ -34,7 +53,7 @@ export const createClient = (chainId: string, config: MarkConfiguration) => {
   });
 };
 
-export const getHubStorageContract = async (config: MarkConfiguration) => {
+export const getHubStorageContract = (config: MarkConfiguration) => {
   const client = createClient('25327', config);
 
   return getContract({

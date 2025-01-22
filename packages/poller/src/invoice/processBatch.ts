@@ -30,7 +30,7 @@ export async function processBatch(
     }
 
     // Check to see if any of the destinations on the invoice support xerc20 for ticker
-    if (await isXerc20Supported(invoice.ticker_hash, invoice.destinations)) {
+    if (await isXerc20Supported(invoice.ticker_hash, invoice.destinations, config)) {
       logger.info('XERC20 supported for ticker on valid destination', {
         id: invoice.intent_id,
         destinations: invoice.destinations,
