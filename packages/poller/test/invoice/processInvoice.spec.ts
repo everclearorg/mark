@@ -1,5 +1,10 @@
 import { expect } from 'chai';
-import { isValidInvoice, Invoice } from '../../src/invoice/processInvoices';
+import { isValidInvoice, Invoice, processInvoice } from '../../src/invoice/processInvoices';
+import { MarkConfiguration } from '@mark/core';
+import sinon from 'sinon';
+import * as balanceFns from '../../src/helpers/balance';
+import * as destinationFns from '../../src/helpers/selectDestination';
+import * as CoreFns from '@mark/core';
 
 describe('isValidInvoice', () => {
   it('should return true for a valid invoice', () => {
@@ -101,5 +106,106 @@ describe('isValidInvoice', () => {
 
     const result = isValidInvoice(invalidInvoice);
     expect(result).to.be.false;
+  });
+});
+
+describe('processInvoice', () => {
+  let mockInvoice: Invoice;
+  let mockDeps: any;
+  let mockConfig: any;
+
+  beforeEach(() => {
+    // Initialize a mock invoice object
+    mockInvoice = {
+      id: 'invoice123',
+      amount: 100,
+      chainId: '1',
+      owner: 'SomeOwner',
+      destinations: ['2', '3'],
+      ticker_hash: '0xhash',
+    };
+
+    // Initialize mock dependencies with stubs
+    mockDeps = {
+      everclear: {
+        createNewIntent: sinon.stub(),
+      },
+      txService: {
+        submitAndMonitor: sinon.stub(),
+      },
+      logger: {
+        info: sinon.stub(),
+        error: sinon.stub(),
+      },
+    };
+
+    // Initialize a mock configuration object
+    mockConfig = {
+      ownAddress: '0xYourAddress',
+      chains: {
+        '1': { providers: ['https://mainnet.infura.io/v3/test'] },
+        '2': { providers: ['https://ropsten.infura.io/v3/test'] },
+        '3': { providers: ['https://kovan.infura.io/v3/test'] },
+      },
+    };
+  });
+
+  afterEach(() => {
+    // Restore the default sandbox here
+    sinon.restore();
+  });
+
+  it('should process the invoice successfully', async () => {
+    const markHighestLiquidityBalanceStub = sinon.stub(balanceFns, 'markHighestLiquidityBalance').resolves(2);
+    const findBestDestinationStub = sinon.stub(destinationFns, 'findBestDestination').resolves(3);
+    const getTokenAddressMock = sinon.stub().resolves('0xTokenAddress');
+
+    mockDeps.everclear.createNewIntent.resolves({
+      chainId: '1',
+      data: '0xTransactionData',
+    });
+
+    mockDeps.txService.submitAndMonitor.resolves('0xTransactionHash');
+
+    const result = await processInvoice(mockInvoice, mockDeps, mockConfig, getTokenAddressMock);
+
+    expect(result).to.be.true;
+
+    expect(
+      markHighestLiquidityBalanceStub.calledOnceWith(
+        mockInvoice.ticker_hash,
+        mockInvoice.destinations,
+        mockConfig,
+        getTokenAddressMock,
+      ),
+    ).to.be.true;
+
+    expect(findBestDestinationStub.calledOnceWith('2', mockInvoice.ticker_hash, mockConfig)).to.be.true;
+
+    expect(mockDeps.everclear.createNewIntent.calledOnce).to.be.true;
+
+    expect(mockDeps.txService.submitAndMonitor.calledOnce).to.be.true;
+
+    expect(
+      mockDeps.logger.info.calledOnceWith('Invoice processed successfully', {
+        invoiceId: mockInvoice.id,
+        txHash: '0xTransactionHash',
+      }),
+    ).to.be.true;
+  });
+
+  it('should log an error and return false if processing fails', async () => {
+    const markHighestLiquidityBalanceStub = sinon.stub().rejects(new Error('Liquidity balance error'));
+    const getTokenAddressMock = sinon.stub().resolves('0xTokenAddress');
+
+    const result = await processInvoice(mockInvoice, mockDeps, mockConfig, getTokenAddressMock);
+
+    expect(result).to.be.false;
+    expect(
+      mockDeps.logger.error.calledOnceWith('Failed to process invoice', {
+        invoiceId: mockInvoice.id,
+        error: sinon.match.instanceOf(Error),
+      }),
+    ).to.be.true;
   });
 });

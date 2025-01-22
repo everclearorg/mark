@@ -101,20 +101,19 @@ export async function processInvoice(
   invoice: Invoice,
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
+  getTokenAddress: (tickerHash: string, origin: string) => Promise<string> | string,
 ): Promise<boolean> {
   const { everclear, txService, logger } = deps;
 
   try {
     const tickerHash = invoice.ticker_hash;
-    // Fixed: Use `of` instead of `in`
     const origin = (
       await markHighestLiquidityBalance(tickerHash, invoice.destinations, config, getTokenAddress)
     ).toString();
 
-    // Find the best destination
     const selectedDestination = (await findBestDestination(origin, tickerHash, config)).toString();
 
-    const inputAsset = fetchTokenAddress(tickerHash, origin);
+    const inputAsset = await getTokenAddress(tickerHash, origin);
 
     const params: NewIntentParams = {
       origin,
@@ -192,7 +191,7 @@ export async function processBatch(
 
     // If not added to any batch, process individually
     if (!addedToBatch) {
-      const success = await processInvoice(invoice, deps, config);
+      const success = await processInvoice(invoice, deps, config, getTokenAddress);
       if (success) {
         result.processed++;
       } else {
