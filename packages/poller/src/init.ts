@@ -1,6 +1,6 @@
 import { Logger } from '@mark/logger';
 import { MarkConfiguration, loadConfiguration } from '@mark/core';
-import { pollAndProcess } from './invoice/processInvoices';
+import { pollAndProcess } from './invoice';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { Web3SignerAdapter } from '@mark/web3signer';
