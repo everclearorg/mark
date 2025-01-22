@@ -1,4 +1,16 @@
-import { MarkConfiguration, ChainConfiguration, AssetConfiguration } from './types';
+import axios from 'axios';
+import { config } from 'dotenv';
+import {
+  MarkConfiguration,
+  ChainConfiguration,
+  AssetConfiguration,
+  LogLevel,
+  Stage,
+  Environment,
+  EverclearConfig,
+} from './types';
+
+config();
 
 export class ConfigurationError extends Error {
   constructor(
@@ -10,8 +22,46 @@ export class ConfigurationError extends Error {
   }
 }
 
-export function loadConfiguration(): MarkConfiguration {
+export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
+export const EVERCLEAR_TESTNET_CONFIG_URL =
+  'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
+
+export const getEverclearConfig = async (_configUrl?: string): Promise<EverclearConfig | undefined> => {
+  const configUrl = _configUrl ?? EVERCLEAR_MAINNET_CONFIG_URL;
+
   try {
+    const res = await axios.get(configUrl);
+    if (!res.data) {
+      throw new Error(`Failed to retrieve config from ${configUrl}`);
+    }
+    // TODO: add validation of config?
+    return res.data as EverclearConfig;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (err: unknown) {
+    if (configUrl === EVERCLEAR_MAINNET_CONFIG_URL) {
+      return undefined;
+    }
+    try {
+      const res = await axios.get(EVERCLEAR_MAINNET_CONFIG_URL);
+      if (res.data) return res.data as EverclearConfig;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (err: unknown) {
+      return undefined;
+    }
+
+    return undefined;
+  }
+};
+
+export async function loadConfiguration(): Promise<MarkConfiguration> {
+  try {
+    const environment = (process.env.ENVIRONMENT ?? 'local') as Environment;
+    const url = environment === 'mainnet' ? EVERCLEAR_MAINNET_CONFIG_URL : EVERCLEAR_TESTNET_CONFIG_URL;
+
+    const hostedConfig = await getEverclearConfig(url);
+
+    const supportedAssets = parseSupportedAssets(requireEnv('SUPPORTED_ASSETS'));
+
     const config: MarkConfiguration = {
       invoiceAge: parseInt(requireEnv('INVOICE_AGE'), 10),
       signer: requireEnv('SIGNER_ADDRESS'),
@@ -27,16 +77,18 @@ export function loadConfiguration(): MarkConfiguration {
         : undefined,
       ownAddress: 'Mark Address',
       supportedSettlementDomains: parseSettlementDomains(requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
-      chains: parseChainConfigurations(),
-      logLevel: 'debug',
-      stage: 'development',
-      environment: 'local',
+      supportedAssets,
+      chains: parseChainConfigurations(hostedConfig, supportedAssets),
+      logLevel: (process.env.LOG_LEVEL ?? 'debug') as LogLevel,
+      stage: (process.env.STAGE ?? 'development') as Stage,
+      environment: (process.env.ENVIRONMENT ?? 'local') as Environment,
     };
 
     validateConfiguration(config);
     return config;
-  } catch (error) {
-    throw new ConfigurationError('Failed to load configuration', { error: (error as Error).message });
+  } catch (_error: unknown) {
+    const error = _error as Error;
+    throw new ConfigurationError('Failed to load configuration: ' + error.message, { error: JSON.stringify(error) });
   }
 }
 
@@ -74,16 +126,32 @@ function parseSettlementDomains(domains: string): number[] {
   return domains.split(',').map((domain) => parseInt(domain.trim(), 10));
 }
 
-function parseChainConfigurations(): Record<string, ChainConfiguration> {
+const parseSupportedAssets = (symbols: string): string[] => {
+  return symbols.split(',').map((symbol) => symbol.trim());
+};
+
+function parseChainConfigurations(
+  config: EverclearConfig | undefined,
+  supportedAssets: string[],
+): Record<string, ChainConfiguration> {
   const chainIds = requireEnv('CHAIN_IDS')
     .split(',')
     .map((id) => id.trim());
   const chains: Record<string, ChainConfiguration> = {};
 
   for (const chainId of chainIds) {
+    const providers =
+      (process.env[`CHAIN_${chainId}_PROVIDERS`]
+        ? parseProviders(process.env[`CHAIN_${chainId}_PROVIDERS`]!)
+        : undefined) ??
+      config?.chains[chainId]?.providers ??
+      [];
+    const assets =
+      (process.env[`CHAIN_${chainId}_ASSETS`] ? parseAssets(process.env[`CHAIN_${chainId}_ASSETS`]!) : undefined) ??
+      Object.values(config?.chains[chainId]?.assets ?? {});
     chains[chainId] = {
-      providers: parseProviders(requireEnv(`CHAIN_${chainId}_PROVIDERS`)),
-      assets: parseAssets(requireEnv(`CHAIN_${chainId}_ASSETS`)),
+      providers,
+      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
     };
   }
 

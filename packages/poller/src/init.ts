@@ -42,12 +42,15 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
 }
 
 export const initPoller = async (): Promise<{ statusCode: number, body: string }> => {
-  const config = loadConfiguration();
+  const config = await loadConfiguration();
 
   const logger = new Logger({
     service: 'mark-poller',
     level: config.logLevel,
   });
+
+  // TODO: sanitize sensitive vars
+  logger.debug('Created config', { config });
 
   try {
     const adapters = await initializeAdapters(config, logger);

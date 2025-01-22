@@ -55,5 +55,6 @@ export interface MarkConfiguration {
   environment: Environment;
   logLevel: LogLevel;
   supportedSettlementDomains: number[];
+  supportedAssets: string[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id
 }
