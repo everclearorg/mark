@@ -64,7 +64,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const config: MarkConfiguration = {
       invoiceAge: parseInt(requireEnv('INVOICE_AGE'), 10),
-      signer: requireEnv('SIGNER_ADDRESS'),
+      web3SignerUrl: requireEnv('SIGNER_ADDRESS'),
       everclear: {
         url: requireEnv('EVERCLEAR_API_URL'),
         key: process.env.EVERCLEAR_API_KEY,
@@ -97,7 +97,7 @@ function validateConfiguration(config: MarkConfiguration): void {
     throw new ConfigurationError('Invalid invoice age');
   }
 
-  if (!config.signer) {
+  if (!config.web3SignerUrl) {
     throw new ConfigurationError('Signer address is required');
   }
 
