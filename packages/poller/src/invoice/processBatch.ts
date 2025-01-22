@@ -1,74 +1,136 @@
-import { MarkConfiguration, getTokenAddress } from '@mark/core';
+import { MarkConfiguration, NewIntentParams, getTokenAddress } from '@mark/core';
 import { Invoice } from '@mark/everclear';
-import { ProcessInvoicesDependencies, ProcessInvoicesResult } from './processInvoices';
-import { processInvoiceBatch } from './processInvoiceBatch';
-import { isValidInvoice, processInvoice } from './processInvoices';
+import { ProcessInvoicesDependencies } from './pollAndProcess';
+import { isValidInvoice } from './validation';
+import { combineIntents, getCustodiedBalances, getMarkBalances, isXerc20Supported, sendIntents } from 'src/helpers';
 
 export async function processBatch(
   invoices: Invoice[],
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
-): Promise<ProcessInvoicesResult> {
-  const result: ProcessInvoicesResult = {
-    processed: 0,
-    failed: 0,
-    skipped: 0,
-  };
+): Promise<void> {
+  const { logger, chainService } = deps;
 
-  const batches: Record<string, Invoice[]> = {}; // Key: `${destination}_${ticker_hash}`
+  // Query all of marks balances across chains
+  const balances = await getMarkBalances(config);
+
+  // Query all of the custodied amounts across chains and ticker hashes
+  const custodied = await getCustodiedBalances(config);
+
+  // These are the unbatched intents, i.e. the intents we would send to purchase all of the
+  // invoices, grouped by origin domain
+  const unbatchedIntents = new Map<string, NewIntentParams[]>();
 
   for (const invoice of invoices) {
     if (!isValidInvoice(invoice, config)) {
-      result.skipped++;
+      logger.info('Invalid invoice', {
+        invoice,
+      });
       continue;
     }
 
-    let addedToBatch = false;
-
-    // Group invoices with single destination directly
-    if (invoice.destinations.length === 1) {
-      const batchKey = `${invoice.destinations[0]}_${invoice.ticker_hash}`;
-      if (!batches[batchKey]) {
-        batches[batchKey] = [];
-      }
-      batches[batchKey].push(invoice);
-      addedToBatch = true;
-    } else {
-      // Handle multi-destination invoices
-      for (const destination of invoice.destinations) {
-        const batchKey = `${destination}_${invoice.ticker_hash}`;
-        if (batches[batchKey]) {
-          // Add to an existing batch if a destination matches
-          batches[batchKey].push(invoice);
-          addedToBatch = true;
-          break;
-        }
-      }
+    // Check to see if any of the destinations on the invoice support xerc20 for ticker
+    if (await isXerc20Supported(invoice.ticker_hash, invoice.destinations)) {
+      logger.info('XERC20 supported for ticker on valid destination', {
+        id: invoice.intent_id,
+        destinations: invoice.destinations,
+        ticker: invoice.ticker_hash,
+      });
+      continue;
     }
 
-    // If not added to any batch, process individually
+    // Contracts will select the destination with the highest available liquidity to settle invoice into
+    // Sort all invoice destinations by the custodied balance, then find the best match
+    const custodiedTicker = custodied.get(invoice.ticker_hash) ?? new Map();
+    const destinations = invoice.destinations.sort((a, b) => {
+      const custodiedA = custodiedTicker.get(a) ?? 0n;
+      const custodiedB = custodiedTicker.get(b) ?? 0n;
+      return custodiedB - custodiedA;
+    });
 
-    if (!addedToBatch) {
-      const success = await processInvoice(invoice, deps, config);
-      if (success) {
-        result.processed++;
-      } else {
-        result.failed++;
+    // Calculate the true invoice amount by applying the bps
+    const purchaseable = BigInt(invoice.amount) * BigInt(10_000 - invoice.discountBps);
+
+    // For each destination on the invoice, find a chain where mark has balances and invoice req. deposit
+    // TODO: should look at all enqueued intents for each destination that could be processed before
+    // marks created intent - this can come from /economy endpoint
+    for (const destination of destinations) {
+      const destinationCustodied = BigInt(custodied.get(invoice.ticker_hash.toLowerCase())?.get(destination) ?? '0');
+      // If there is sufficient custodied asset, ignore invoice. should be settlable w.o intervention.
+      if (purchaseable <= destinationCustodied) {
+        logger.info('Sufficient custodied balance to settle invoice', {
+          purchaseable,
+          custodied,
+          id: invoice.intent_id,
+        });
+
+        // Update the custodied mapping for next invoice
+        const updatedCustodied = custodied.get(invoice.ticker_hash) ?? new Map<string, bigint>();
+        updatedCustodied.set(destination, destinationCustodied - purchaseable);
+        custodied.set(invoice.ticker_hash, updatedCustodied);
+        break;
       }
+
+      // Get marks balance on this chain
+      const balance = BigInt(balances.get(invoice.ticker_hash.toLowerCase())?.get(destination) ?? '0');
+
+      // Check to see how much is required for mark to deposit
+      const requiredDeposit = purchaseable - destinationCustodied;
+      if (balance < requiredDeposit) {
+        logger.debug('Insufficient balance to support destination', {
+          purchaseable,
+          destinationCustodied,
+          id: invoice.intent_id,
+          balance,
+          requiredDeposit,
+        });
+        continue;
+      }
+
+      // Sufficient balance to settle invoice with invoice destination == intent origin
+      const purchaseAction: NewIntentParams = {
+        origin: destination,
+        destinations: config.supportedSettlementDomains.map((s) => s.toString()),
+        to: config.signer,
+        inputAsset: getTokenAddress(invoice.ticker_hash, destination),
+        amount: requiredDeposit.toString(),
+        callData: '0x',
+        maxFee: '0',
+      };
+      logger.info('Purchasing invoice', {
+        invoice,
+        purchaseAction,
+      });
+
+      // Push to unbatched intents
+      if (!unbatchedIntents.has(destination)) {
+        unbatchedIntents.set(destination, []);
+      }
+      unbatchedIntents.set(destination, [...unbatchedIntents.get(destination)!, purchaseAction]);
+
+      // Decrement balances before entering into next loop
+      const updatedBalance = balances.get(invoice.ticker_hash) ?? new Map<string, bigint>();
+      updatedBalance.set(destination, balance - requiredDeposit);
+      balances.set(invoice.ticker_hash, updatedBalance);
+
+      // Decrement custodied before entering into next loop.
+      // NOTE: because at this point you _have_ to add some amount to purchase the invoice, the
+      // custodied assets must be fully consumed.
+      const updatedCustodied = custodied.get(invoice.ticker_hash) ?? new Map<string, bigint>();
+      updatedCustodied.set(destination, 0n);
+      custodied.set(invoice.ticker_hash, updatedCustodied);
+
+      // Exit destination loop
+      break;
     }
   }
 
-  // Process each batch
+  // Combine all unbatched intents
+  const batched = await combineIntents(unbatchedIntents);
 
-  for (const batchKey in batches) {
-    const batch = batches[batchKey];
-    const success = await processInvoiceBatch(batch, deps, config, batchKey, getTokenAddress);
-    if (success) {
-      result.processed++;
-    } else {
-      result.failed++;
-    }
-  }
-
-  return result;
+  // Dispatch all through transaction service
+  const receipts = await sendIntents(batched, chainService);
+  logger.info('Sent transactions to purchase invoices', {
+    receipts: receipts.map((r) => ({ chainId: r.chainId, transactionHash: r.transactionHash })),
+  });
 }
