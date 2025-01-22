@@ -28,7 +28,7 @@ export interface ChainConfiguration {
 
 export interface MarkConfiguration {
   invoiceAge: number;
-  signer: string;
+  web3SignerUrl: string;
   everclear: {
     url: string;
     key?: string;
