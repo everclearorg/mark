@@ -11,6 +11,15 @@ export const walletBalance = async (tokenAddress: string, chainId: string, confi
   }
 };
 
+/**
+ * Returns all of the balances for supported assets across all chains
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<string, Map<string, string>>> => {
+  // const { chains, supportedAssets } = config;
+  throw new Error(`not implemented - getMarkBalances`);
+};
+
 export const markHighestLiquidityBalance = async (
   ticker_hash: string,
   origins: string[],

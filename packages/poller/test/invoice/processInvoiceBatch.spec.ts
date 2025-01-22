@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { Invoice } from '../../src/invoice/processInvoices';
+import { Invoice } from '@mark/everclear';
 import sinon from 'sinon';
 import { processInvoiceBatch } from '../../src/invoice/processInvoiceBatch';
 import * as destinationFns from '../../src/helpers/selectDestination';
@@ -13,21 +13,21 @@ describe('processInvoiceBatch', () => {
   beforeEach(() => {
     mockBatch = [
       {
-        id: 'invoice1',
-        amount: 100,
-        chainId: '1',
+        intent_id: 'invoice1',
+        amount: '100',
+        origin: '1',
         owner: 'Owner1',
         destinations: ['2'],
         ticker_hash: '0xhash',
-      },
+      } as unknown as Invoice,
       {
-        id: 'invoice2',
-        amount: 200,
-        chainId: '1',
+        intent_id: 'invoice2',
+        amount: '200',
+        origin: '1',
         owner: 'Owner2',
         destinations: ['2'],
         ticker_hash: '0xhash',
-      },
+      } as unknown as Invoice,
     ];
 
     mockDeps = {
@@ -93,8 +93,8 @@ describe('processInvoiceBatch', () => {
   });
 
   it('should throw an error if batch amount is 0', async () => {
-    mockBatch[0].amount = 0;
-    mockBatch[1].amount = 0;
+    mockBatch[0].amount = '0';
+    mockBatch[1].amount = '0';
 
     sinon.stub(destinationFns, 'findBestDestination').resolves(3);
     const getTokenAddressMock = sinon.stub().resolves('0xTokenAddress');

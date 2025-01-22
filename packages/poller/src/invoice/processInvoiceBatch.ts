@@ -1,4 +1,5 @@
-import { Invoice, ProcessInvoicesDependencies } from './processInvoices';
+import { Invoice } from '@mark/everclear';
+import { ProcessInvoicesDependencies } from './processInvoices';
 import { MarkConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 import { findBestDestination } from '../helpers/selectDestination';
 

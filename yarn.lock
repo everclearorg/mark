@@ -1340,7 +1340,6 @@ __metadata:
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
     "@types/node": "npm:20.17.12"
-    axios: "npm:1.0.0"
     eslint: "npm:9.17.0"
     rimraf: "npm:6.0.1"
     sort-package-json: "npm:2.12.0"
@@ -2590,17 +2589,6 @@ __metadata:
   version: 1.13.2
   resolution: "aws4@npm:1.13.2"
   checksum: 10/290b9f84facbad013747725bfd8b4c42d0b3b04b5620d8418f0219832ef95a7dc597a4af7b1589ae7fce18bacde96f40911c3cda36199dd04d9f8e01f72fa50a
-  languageName: node
-  linkType: hard
-
-"axios@npm:1.0.0":
-  version: 1.0.0
-  resolution: "axios@npm:1.0.0"
-  dependencies:
-    follow-redirects: "npm:^1.15.0"
-    form-data: "npm:^4.0.0"
-    proxy-from-env: "npm:^1.1.0"
-  checksum: 10/e23f74777c7de3f7d7c0dab1748d62f79643c58d2c8046e0b667bbdcfca0c43c2128ee7899f0dc9e36b3ec24402caefcfbd7c7d1756b54909e414c904d4bb4b6
   languageName: node
   linkType: hard
 
