@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { axiosGet } from './axios';
 import { config } from 'dotenv';
 import {
   MarkConfiguration,
@@ -30,7 +30,7 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
   const configUrl = _configUrl ?? EVERCLEAR_MAINNET_CONFIG_URL;
 
   try {
-    const res = await axios.get(configUrl);
+    const res = await axiosGet(configUrl);
     if (!res.data) {
       throw new Error(`Failed to retrieve config from ${configUrl}`);
     }
@@ -42,7 +42,7 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
       return undefined;
     }
     try {
-      const res = await axios.get(EVERCLEAR_MAINNET_CONFIG_URL);
+      const res = await axiosGet(EVERCLEAR_MAINNET_CONFIG_URL);
       if (res.data) return res.data as EverclearConfig;
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (err: unknown) {
