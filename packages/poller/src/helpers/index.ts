@@ -1,4 +1,5 @@
+export * from './asset';
 export * from './balance';
 export * from './contracts';
-export * from './selectDestination';
+export * from './intent';
 
