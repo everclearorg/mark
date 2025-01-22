@@ -1,5 +1,6 @@
 import { Invoice } from '@mark/everclear';
 import { MarkConfiguration } from '@mark/core';
+import { getTickers } from 'src/helpers';
 
 // TODO - add logging for why invoices are skipped
 export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): boolean {
@@ -37,10 +38,7 @@ export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): boo
   }
 
   // Check that the ticker hash is supported
-  const tickers = Object.values(config.chains)
-    .map((c) => c.assets)
-    .map((c) => c.map((a) => a.tickerHash.toLowerCase()))
-    .flat();
+  const tickers = getTickers(config);
   if (!tickers.includes(invoice.ticker_hash)) {
     console.log('!tickers');
     return false;
