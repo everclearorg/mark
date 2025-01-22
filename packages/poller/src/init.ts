@@ -3,17 +3,11 @@ import { MarkConfiguration, loadConfiguration } from '@mark/core';
 import { pollAndProcess } from './invoice';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
-import { Web3SignerAdapter } from '@mark/web3signer';
+import { Web3Signer } from '@mark/web3signer';
 
 function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   // Initialize adapters in the correct order
-  const web3Signer = new Web3SignerAdapter(
-    {
-      url: config.signer,
-      publicKey: config.signer,
-    },
-    logger,
-  );
+  const web3Signer = new Web3Signer(config.web3SignerUrl);
 
   const chainService = new ChainService(
     {
@@ -26,13 +20,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger) {
     logger,
   );
 
-  const everclear = new EverclearAdapter(
-    {
-      apiUrl: config.everclear.url,
-      apiKey: config.everclear.key ?? '',
-    },
-    logger,
-  );
+  const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
   return {
     chainService,

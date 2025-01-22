@@ -21,13 +21,7 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
     logger,
   );
 
-  const everclear = new EverclearAdapter(
-    {
-      apiUrl: config.everclear.url,
-      apiKey: config.everclear.key ?? '',
-    },
-    logger,
-  );
+  const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
   return {
     chainService,

@@ -39,13 +39,11 @@ export type EverclearConfig = {
 
 export type Environment = 'mainnet' | 'testnet' | 'devnet';
 export type Stage = 'development' | 'staging' | 'production';
+
 export interface MarkConfiguration {
   invoiceAge: number;
-  signer: string;
-  everclear: {
-    url: string;
-    key?: string;
-  };
+  web3SignerUrl: string;
+  everclearApiUrl: string;
   relayer?: {
     url: string;
     key: string;
