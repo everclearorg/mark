@@ -1,3 +1,6 @@
 import { initPoller } from './init';
 
-initPoller();
+initPoller().catch((err) => {
+  console.log('Poller failed:', err);
+  process.exit(1);
+});
