@@ -10,7 +10,7 @@
     "packages/core",
     "packages/poller",
     "packages/adapters/logger",
-    "packages/adapters/txservice",
+    "packages/adapters/chainservice",
     "packages/adapters/everclear",
     "packages/adapters/web3signer"
   ],
@@ -40,6 +40,7 @@
     "eslint-plugin-node": "11.1.0",
     "eslint-plugin-prettier": "5.2.1",
     "husky": "9.1.7",
+    "nyc": "^17.1.0",
     "prettier": "3.4.2",
     "rimraf": "6.0.1",
     "sort-package-json": "2.12.0",

@@ -1,6 +1,6 @@
 import { Logger } from '../../../adapters/logger/src';
 import { EverclearAdapter } from '../../../adapters/everclear/src';
-import { TransactionServiceAdapter } from '../../../adapters/txservice/src';
+import { ChainService } from '../../../adapters/chainservice/src';
 import { findBestDestination } from '../helpers/selectDestination';
 import { markHighestLiquidityBalance } from '../helpers/balance';
 import { MarkConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
@@ -21,7 +21,7 @@ export interface Invoice {
 
 export interface ProcessInvoicesDependencies {
   everclear: EverclearAdapter;
-  txService: TransactionServiceAdapter;
+  chainService: ChainService;
   logger: Logger;
 }
 
@@ -37,7 +37,7 @@ export async function processInvoice(
   config: MarkConfiguration,
   getTokenAddress: (tickerHash: string, origin: string) => Promise<string> | string,
 ): Promise<boolean> {
-  const { everclear, txService, logger } = deps;
+  const { everclear, chainService, logger } = deps;
 
   try {
     const tickerHash = invoice.ticker_hash;
@@ -61,7 +61,7 @@ export async function processInvoice(
 
     const transaction: TransactionRequest = await everclear.createNewIntent(params);
 
-    const tx = await txService.submitAndMonitor(transaction.chainId.toString(), {
+    const tx = await chainService.submitAndMonitor(transaction.chainId.toString(), {
       data: transaction.data,
     });
 

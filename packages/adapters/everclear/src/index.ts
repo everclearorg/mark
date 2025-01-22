@@ -1,5 +1,5 @@
 import { Logger } from '../../../adapters/logger/src';
-import { axiosGet, axiosPost } from 'utils/axios';
+import { axiosGet, axiosPost } from './utils/axios';
 import { ChainConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface EverclearConfig {
@@ -31,20 +31,19 @@ export class EverclearAdapter {
     const destinationKeys = Object.keys(destinations);
     const params = destinationKeys.length > 0 ? { destinations: destinationKeys } : {};
 
-    const { data } = await axiosGet(url, { params });
+    const { data } = await axiosGet<Invoice[]>(url, { params });
     return data;
   }
 
-  async createNewIntent(params: NewIntentParams) {
+  async createNewIntent(params: NewIntentParams): Promise<TransactionRequest> {
     const url = `${this.config.apiUrl}/intents`;
 
-    const { data } = await axiosPost(url, { params });
-    return data as TransactionRequest;
+    const { data } = await axiosPost<TransactionRequest>(url, { params });
+    return data;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async updateInvoiceStatus(_invoiceId: string, _status: string) {
-    // Implementation will go here
+  // Method stub for future implementation
+  async updateInvoiceStatus(/* invoiceId: string, status: string */): Promise<void> {
     throw new Error('Not implemented');
   }
 }
