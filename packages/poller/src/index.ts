@@ -4,6 +4,7 @@ import { pollAndProcess } from './invoice/processInvoices';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
+import { Context, ScheduledEvent } from 'aws-lambda';
 
 async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   // Initialize adapters in the correct order
@@ -35,8 +36,7 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function handler(_event: unknown) {
+export async function handler(event: ScheduledEvent, context: Context) {
   const config = await loadConfiguration();
 
   const logger = new Logger({
@@ -45,6 +45,12 @@ export async function handler(_event: unknown) {
   });
 
   try {
+    logger.debug('Lambda execution started', {
+      event,
+      requestId: context.awsRequestId,
+      remainingTime: context.getRemainingTimeInMillis(),
+    });
+
     const adapters = await initializeAdapters(config, logger);
 
     logger.info('Starting invoice polling', {
@@ -62,11 +68,14 @@ export async function handler(_event: unknown) {
       body: JSON.stringify(result),
     };
   } catch (error) {
-    logger.error('Failed to poll invoices', { error });
+    logger.error('Failed to run poller', {
+      error,
+      requestId: context.awsRequestId,
+    });
 
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to poll invoices' }),
+      body: JSON.stringify({ error: 'Failed to run poller' }),
     };
   }
 }
