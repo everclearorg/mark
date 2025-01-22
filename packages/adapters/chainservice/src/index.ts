@@ -5,19 +5,19 @@ import { createLoggingContext } from '@mark/core';
 import { ethers } from 'ethers';
 import { ChainConfiguration } from '@mark/core';
 
-export interface TransactionServiceConfig {
+export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
   maxRetries?: number;
   retryDelay?: number;
   logLevel?: string;
 }
 
-export class TransactionServiceAdapter {
+export class ChainService {
   private readonly txService: NxtpTxService;
   private readonly logger: ILogger;
-  private readonly config: TransactionServiceConfig;
+  private readonly config: ChainServiceConfig;
 
-  constructor(config: TransactionServiceConfig, signer: Signer, logger: ILogger) {
+  constructor(config: ChainServiceConfig, signer: Signer, logger: ILogger) {
     this.config = config;
     this.logger = logger;
 
@@ -44,14 +44,14 @@ export class TransactionServiceAdapter {
       signer,
     );
 
-    this.logger.info('Transaction service initialized', {
+    this.logger.info('Chain service initialized', {
       supportedChains: Object.keys(config.chains),
     });
   }
 
   async submitAndMonitor(chainId: string, transaction: providers.TransactionRequest): Promise<string> {
     const { requestContext } = createLoggingContext('submitAndMonitor');
-    const context = { ...requestContext, origin: 'txservice' };
+    const context = { ...requestContext, origin: 'chainservice' };
 
     if (!this.config.chains[chainId]) {
       throw new Error(`Chain ${chainId} not supported`);

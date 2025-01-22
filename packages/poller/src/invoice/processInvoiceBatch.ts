@@ -9,7 +9,7 @@ export async function processInvoiceBatch(
   batchKey: string,
   getTokenAddress: (tickerHash: string, origin: string) => Promise<string> | string, // Add as a dependency
 ): Promise<boolean> {
-  const { everclear, txService, logger } = deps;
+  const { everclear, chainService, logger } = deps;
 
   // Validate batch input
   if (!batch || batch.length === 0) {
@@ -49,7 +49,7 @@ export async function processInvoiceBatch(
     const transaction: TransactionRequest = await everclear.createNewIntent(params);
 
     // Submit and monitor the transaction
-    const txHash = await txService.submitAndMonitor(transaction.chainId.toString(), {
+    const txHash = await chainService.submitAndMonitor(transaction.chainId.toString(), {
       data: transaction.data,
     });
 
