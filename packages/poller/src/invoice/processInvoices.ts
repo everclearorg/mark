@@ -37,6 +37,7 @@ export async function processInvoiceBatch(
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
   batchKey: string,
+  getTokenAddress: (tickerHash: string, origin: string) => Promise<string> | string, // Add as a dependency
 ): Promise<boolean> {
   const { everclear, txService, logger } = deps;
 
@@ -61,9 +62,9 @@ export async function processInvoiceBatch(
       throw new Error(`Batch amount is 0 for batchKey: ${batchKey}. No invoices to process.`);
     }
 
-    const tokenAddress = fetchTokenAddress(tickerHash, origin);
+    // Fetch token address using DI
+    const tokenAddress = await getTokenAddress(tickerHash, origin);
 
-    // TODO: add types here
     const params: NewIntentParams = {
       origin,
       destinations: [selectedDestination],
@@ -204,7 +205,7 @@ export async function processBatch(
   for (const batchKey in batches) {
     const batch = batches[batchKey];
 
-    const success = await processInvoiceBatch(batch, deps, config, batchKey);
+    const success = await processInvoiceBatch(batch, deps, config, batchKey, getTokenAddress);
     if (success) {
       result.processed++;
     } else {
