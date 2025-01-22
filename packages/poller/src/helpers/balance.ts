@@ -1,5 +1,6 @@
-import { getERC20Contract } from './contracts';
-import { MarkConfiguration } from '@mark/core';
+import { getTokenAddress, MarkConfiguration } from '@mark/core';
+import { getERC20Contract, getHubStorageContract } from './contracts';
+import { getAssetHash, getTickers } from './asset';
 
 export const walletBalance = async (tokenAddress: string, chainId: string, config: MarkConfiguration) => {
   try {
@@ -15,18 +16,50 @@ export const walletBalance = async (tokenAddress: string, chainId: string, confi
  * Returns all of the balances for supported assets across all chains.
  * @returns Mapping of balances keyed on tickerhash - chain - amount
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<string, Map<string, bigint>>> => {
-  // const { chains, supportedAssets } = config;
-  throw new Error(`not implemented - getMarkBalances`);
+  const { chains, ownAddress } = config;
+  const markBalances = new Map<string, Map<string, bigint>>();
+
+  // get all ticker hashes
+  const tickers = getTickers(config);
+  for (const ticker of tickers) {
+    const domainBalances = new Map<string, bigint>();
+    for (const domain of Object.keys(chains)) {
+      // get asset address
+      const tokenAddr = getTokenAddress(ticker, domain) as `0x${string}`;
+      const tokenContract = await getERC20Contract(config, domain, tokenAddr);
+      // get balance
+      const balance = await tokenContract.read.balanceOf([ownAddress]);
+      domainBalances.set(domain, balance as bigint);
+    }
+    markBalances.set(ticker, domainBalances);
+  }
+  return markBalances;
 };
 
 /**
  * Returns all of the custodied amounts for supported assets across all chains
  * @returns Mapping of balances keyed on tickerhash - chain - amount
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const getCustodiedBalances = async (config: MarkConfiguration): Promise<Map<string, Map<string, bigint>>> => {
-  // const { chains, supportedAssets } = config;
-  throw new Error(`not implemented - getCustodiedBalances`);
+  const { chains } = config;
+  const custodiedBalances = new Map<string, Map<string, bigint>>();
+
+  // get hub contract
+  const contract = getHubStorageContract(config);
+
+  // get all ticker hashes
+  const tickers = getTickers(config);
+  for (const ticker of tickers) {
+    const domainBalances = new Map<string, bigint>();
+    for (const domain of Object.keys(chains)) {
+      // get asset hash
+      const assetHash = getAssetHash(ticker, domain);
+      // get custodied balance
+      const custodied = await contract.read.custodiedBalances([assetHash]);
+      domainBalances.set(domain, custodied as bigint);
+    }
+    custodiedBalances.set(ticker, domainBalances);
+  }
+  return custodiedBalances;
 };
