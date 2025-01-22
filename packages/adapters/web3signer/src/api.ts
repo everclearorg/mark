@@ -49,6 +49,7 @@ export class Web3SignerApi {
   }
 
   private sanitizeResponse(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     response: any,
     endpoint: (typeof Web3SignerApi.ENDPOINTS)[keyof typeof Web3SignerApi.ENDPOINTS],
   ) {
