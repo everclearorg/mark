@@ -5,7 +5,7 @@ import { EverclearAdapter } from '../../adapters/everclear/src';
 import { ChainService } from '../../adapters/chainservice/src';
 import { Web3SignerAdapter } from '../../adapters/web3signer/src';
 
-async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
+function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   // Initialize adapters in the correct order
   const web3Signer = new Web3SignerAdapter(
     {
@@ -53,7 +53,7 @@ export const initPoller = async (): Promise<{ statusCode: number, body: string }
   logger.debug('Created config', { config });
 
   try {
-    const adapters = await initializeAdapters(config, logger);
+    const adapters = initializeAdapters(config, logger);
 
     logger.info('Starting invoice polling', {
       stage: config.stage,
