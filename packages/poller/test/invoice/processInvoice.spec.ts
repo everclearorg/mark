@@ -75,7 +75,7 @@ describe('processInvoice', () => {
 
     mockDeps.txService.submitAndMonitor.resolves('0xTransactionHash');
 
-    const result = await processInvoice(mockInvoice, mockDeps, mockConfig, getTokenAddressMock);
+    const result = await processInvoice(mockInvoice, mockDeps, mockConfig);
 
     expect(result).to.be.true;
 
@@ -96,7 +96,7 @@ describe('processInvoice', () => {
 
     expect(
       mockDeps.logger.info.calledOnceWith('Invoice processed successfully', {
-        invoiceId: mockInvoice.id,
+        invoiceId: mockInvoice.intent_id,
         txHash: '0xTransactionHash',
       }),
     ).to.be.true;
@@ -106,12 +106,12 @@ describe('processInvoice', () => {
     const markHighestLiquidityBalanceStub = sinon.stub().rejects(new Error('Liquidity balance error'));
     const getTokenAddressMock = sinon.stub().resolves('0xTokenAddress');
 
-    const result = await processInvoice(mockInvoice, mockDeps, mockConfig, getTokenAddressMock);
+    const result = await processInvoice(mockInvoice, mockDeps, mockConfig);
 
     expect(result).to.be.false;
     expect(
       mockDeps.logger.error.calledOnceWith('Failed to process invoice', {
-        invoiceId: mockInvoice.id,
+        invoiceId: mockInvoice.intent_id,
         error: sinon.match.instanceOf(Error),
       }),
     ).to.be.true;

@@ -1,7 +1,7 @@
 import { Logger } from '@mark/logger';
 import { EverclearAdapter, Invoice } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
-import { findBestDestination, markHighestLiquidityBalance, selectOrigin } from '../helpers';
+import { findBestDestination, getMarkBalances, markHighestLiquidityBalance } from '../helpers';
 import { fetchTokenAddress, getTokenAddress, MarkConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface ProcessInvoicesConfig {
@@ -37,7 +37,6 @@ export async function processInvoiceBatch(
   }
 
   try {
-    const origin = await selectOrigin(batch);
     const tickerHash = batch[0].ticker_hash;
 
     // Find the best destination
@@ -159,6 +158,7 @@ export async function processBatch(
 
   // Get available balances from mark on the chains
   const balances = await getMarkBalances(config);
+  logger.info('Retrieved mark balances', { balances });
 
   for (const invoice of invoices) {
     if (!isValidInvoice(invoice, config)) {

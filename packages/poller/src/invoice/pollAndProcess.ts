@@ -1,7 +1,7 @@
 import { MarkConfiguration } from '@mark/core';
+import { Invoice } from '@mark/everclear';
 import { ProcessInvoicesDependencies, ProcessInvoicesResult } from './processInvoices';
 import { processBatch } from './processBatch';
-import { Invoice } from './processInvoices';
 
 export async function pollAndProcess(
   config: MarkConfiguration,

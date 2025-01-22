@@ -1,5 +1,6 @@
-import { Invoice, ProcessInvoicesDependencies, ProcessInvoicesResult } from './processInvoices';
 import { MarkConfiguration, getTokenAddress } from '@mark/core';
+import { Invoice } from '@mark/everclear';
+import { ProcessInvoicesDependencies, ProcessInvoicesResult } from './processInvoices';
 import { processInvoiceBatch } from './processInvoiceBatch';
 import { isValidInvoice, processInvoice } from './processInvoices';
 
@@ -17,7 +18,7 @@ export async function processBatch(
   const batches: Record<string, Invoice[]> = {}; // Key: `${destination}_${ticker_hash}`
 
   for (const invoice of invoices) {
-    if (!isValidInvoice(invoice)) {
+    if (!isValidInvoice(invoice, config)) {
       result.skipped++;
       continue;
     }
@@ -48,7 +49,7 @@ export async function processBatch(
     // If not added to any batch, process individually
 
     if (!addedToBatch) {
-      const success = await processInvoice(invoice, deps, config, getTokenAddress);
+      const success = await processInvoice(invoice, deps, config);
       if (success) {
         result.processed++;
       } else {
