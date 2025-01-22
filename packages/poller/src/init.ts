@@ -1,9 +1,9 @@
-import { Logger } from '../../adapters/logger/src';
+import { Logger } from '@mark/logger';
 import { MarkConfiguration, loadConfiguration } from '@mark/core';
 import { pollAndProcess } from './invoice/processInvoices';
-import { EverclearAdapter } from '../../adapters/everclear/src';
-import { ChainService } from '../../adapters/chainservice/src';
-import { Web3SignerAdapter } from '../../adapters/web3signer/src';
+import { EverclearAdapter } from '@mark/everclear';
+import { ChainService } from '@mark/chainservice';
+import { Web3SignerAdapter } from '@mark/web3signer';
 
 function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   // Initialize adapters in the correct order
