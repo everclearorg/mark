@@ -14,7 +14,7 @@ provider "aws" {
 data "aws_availability_zones" "available" {}
 
 data "aws_iam_role" "ecr_admin_role" {
-  name = "erc_admin_role"
+  name = "ecr_admin_role"
 }
 
 data "aws_caller_identity" "current" {}
