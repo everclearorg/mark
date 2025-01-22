@@ -3,5 +3,6 @@
  * given ticker hash
  */
 export const isXerc20Supported = async (ticker: string, domains: string[]): Promise<boolean> => {
+  console.log('isXerc20Supported params: ', ticker, domains);
   throw new Error('isXerc20Supported not implemented');
 };

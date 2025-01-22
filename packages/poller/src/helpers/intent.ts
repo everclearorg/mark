@@ -13,6 +13,7 @@ import { TransactionReceipt } from 'viem';
 export const combineIntents = async (
   unbatched: Map<string, NewIntentParams[]>,
 ): Promise<Map<string, Map<string, NewIntentParams>>> => {
+  console.log('combineIntents params: ', unbatched);
   throw new Error('combineIntents - not implemented');
 };
 
@@ -23,5 +24,6 @@ export const sendIntents = async (
   batch: Map<string, Map<string, NewIntentParams>>,
   chainservice: ChainService,
 ): Promise<(TransactionReceipt & { chainId: number })[]> => {
+  console.log('sendIntents params: ', batch, chainservice);
   throw new Error('sendIntents - not implemented');
 };

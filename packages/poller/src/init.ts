@@ -29,7 +29,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   };
 }
 
-export const initPoller = async (): Promise<{ statusCode: number, body: string }> => {
+export const initPoller = async (): Promise<{ statusCode: number; body: string }> => {
   const config = await loadConfiguration();
 
   const logger = new Logger({
@@ -66,4 +66,4 @@ export const initPoller = async (): Promise<{ statusCode: number, body: string }
       body: JSON.stringify({ error: 'Failed to poll invoices: ' + error.message }),
     };
   }
-}
+};
