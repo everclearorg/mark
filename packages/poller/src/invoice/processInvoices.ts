@@ -1,22 +1,12 @@
-import { Logger } from '../../../adapters/logger/src';
-import { EverclearAdapter } from '../../../adapters/everclear/src';
-import { ChainService } from '../../../adapters/chainservice/src';
-import { findBestDestination } from '../helpers/selectDestination';
-import { markHighestLiquidityBalance } from '../helpers/balance';
+import { Logger } from '@mark/logger';
+import { EverclearAdapter, Invoice } from '@mark/everclear';
+import { ChainService } from '@mark/chainservice';
+import { findBestDestination, markHighestLiquidityBalance } from '../helpers';
 import { fetchTokenAddress, getTokenAddress, MarkConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
 export interface ProcessInvoicesConfig {
   batchSize: number;
   chains: string[];
-}
-
-export interface Invoice {
-  amount: number;
-  chainId: string;
-  id: string;
-  owner: string;
-  destinations: string[];
-  ticker_hash: string;
 }
 
 export interface ProcessInvoicesDependencies {
@@ -133,14 +123,14 @@ export async function processInvoice(
     });
 
     logger.info('Invoice processed successfully', {
-      invoiceId: invoice.id,
+      invoiceId: invoice.intent_id,
       txHash: tx,
     });
 
     return true;
   } catch (error) {
     logger.error('Failed to process invoice', {
-      invoiceId: invoice.id,
+      invoiceId: invoice.intent_id,
       error,
     });
     return false;
@@ -153,6 +143,7 @@ export async function processBatch(
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
 ): Promise<ProcessInvoicesResult> {
+  const { logger } = deps;
   const result: ProcessInvoicesResult = {
     processed: 0,
     failed: 0,
@@ -161,11 +152,18 @@ export async function processBatch(
 
   const batches: Record<string, Invoice[]> = {}; // Key: `${destination}_${ticker_hash}`
 
+  if (invoices.length === 0) {
+    logger.info('No invoices to process');
+    return result;
+  }
+
   for (const invoice of invoices) {
-    if (!isValidInvoice(invoice)) {
+    if (!isValidInvoice(invoice, config)) {
       result.skipped++;
       continue;
     }
+
+    console.log('processing', invoice);
 
     let addedToBatch = false;
 
@@ -216,17 +214,53 @@ export async function processBatch(
   return result;
 }
 
-export function isValidInvoice(invoice: Invoice): boolean {
-  if (!invoice) {
+// TODO - add logging for why invoices are skipped
+export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): boolean {
+  // Check formatting of invoice // TODO: ajv?
+  const validFormat =
+    invoice &&
+    typeof invoice.intent_id === 'string' &&
+    typeof invoice.amount === 'string' &&
+    BigInt(invoice.amount) > 0;
+  if (!validFormat) {
+    console.log('!validFormat');
     return false;
   }
-  return (
-    invoice &&
-    typeof invoice.id === 'string' &&
-    typeof invoice.amount === 'number' &&
-    invoice.amount > 0 &&
-    invoice.owner !== 'Mark wallet address'
+
+  // Check it is not our invoice
+  if (invoice.owner.toLowerCase() === config.signer.toLowerCase()) {
+    console.log('!owner');
+    return false;
+  }
+
+  // Check that it is old enough
+  const time = Math.floor(Date.now() / 1000);
+  if (time - config.invoiceAge < invoice.hub_invoice_enqueued_timestamp) {
+    console.log('!old', time - config.invoiceAge, invoice.hub_invoice_enqueued_timestamp);
+    return false;
+  }
+
+  // Check at least one destination is supported
+  const matchedDest = invoice.destinations.filter((destination) =>
+    config.supportedSettlementDomains.includes(+destination),
   );
+  if (matchedDest.length < 1) {
+    console.log('!dest');
+    return false;
+  }
+
+  // Check that the ticker hash is supported
+  const tickers = Object.values(config.chains)
+    .map((c) => c.assets)
+    .map((c) => c.map((a) => a.tickerHash.toLowerCase()))
+    .flat();
+  if (!tickers.includes(invoice.ticker_hash)) {
+    console.log('!tickers');
+    return false;
+  }
+
+  // Valid invoice
+  return true;
 }
 
 // Main polling function that orchestrates the process
@@ -238,12 +272,13 @@ export async function pollAndProcess(
 
   try {
     const invoices = await everclear.fetchInvoices(config.chains);
-    const result = await processBatch(invoices as Invoice[], deps, config);
+    const result = await processBatch(invoices, deps, config);
 
     logger.info('Invoice processing completed', { result });
     return result;
   } catch (error) {
-    logger.error('Failed to process invoices', { error });
+    console.log('error', error);
+    logger.error('Failed to process invoices', { error: JSON.stringify(error) });
     throw error;
   }
 }
