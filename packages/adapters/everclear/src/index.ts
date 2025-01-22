@@ -2,11 +2,6 @@ import { Logger } from '@mark/logger';
 import { axiosPost, axiosGet } from '@mark/core';
 import { ChainConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
 
-export interface EverclearConfig {
-  apiUrl: string;
-  apiKey: string;
-}
-
 export interface Invoice {
   amount: string;
   intent_id: string;
@@ -21,16 +16,16 @@ export interface Invoice {
 }
 
 export class EverclearAdapter {
+  private readonly apiUrl: string;
   private readonly logger: Logger;
-  private readonly config: EverclearConfig;
 
-  constructor(config: EverclearConfig, logger: Logger) {
-    this.config = config;
+  constructor(apiUrl: string, logger: Logger) {
+    this.apiUrl = apiUrl;
     this.logger = logger;
   }
 
   async fetchInvoices(destinations: Record<string, ChainConfiguration>): Promise<Invoice[]> {
-    const url = `${this.config.apiUrl}/invoices`;
+    const url = `${this.apiUrl}/invoices`;
 
     const destinationKeys = Object.keys(destinations);
     const params = destinationKeys.length > 0 ? { destinations: destinationKeys } : {};
@@ -54,7 +49,7 @@ export class EverclearAdapter {
   }
 
   async createNewIntent(params: NewIntentParams): Promise<TransactionRequest> {
-    const url = `${this.config.apiUrl}/intents`;
+    const url = `${this.apiUrl}/intents`;
 
     const { data } = await axiosPost<TransactionRequest>(url, { params });
     return data;

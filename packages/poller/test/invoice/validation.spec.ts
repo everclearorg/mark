@@ -17,7 +17,7 @@ const validInvoice = {
 };
 
 const validConfig = {
-  signer: '0xMark',
+  web3SignerUrl: '0xMark',
   supportedSettlementDomains: [8453],
 } as MarkConfiguration;
 

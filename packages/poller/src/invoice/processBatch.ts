@@ -91,7 +91,7 @@ export async function processBatch(
       const purchaseAction: NewIntentParams = {
         origin: destination,
         destinations: config.supportedSettlementDomains.map((s) => s.toString()),
-        to: config.signer,
+        to: config.web3SignerUrl,
         inputAsset: getTokenAddress(invoice.ticker_hash, destination),
         amount: requiredDeposit.toString(),
         callData: '0x',

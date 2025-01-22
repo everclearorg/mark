@@ -1,14 +1,14 @@
 import { axiosGet } from './axios';
 import { config } from 'dotenv';
 import {
-  MarkConfiguration,
-  ChainConfiguration,
-  AssetConfiguration,
-  LogLevel,
-  Stage,
-  Environment,
   EverclearConfig,
-} from './types';
+  AssetConfiguration,
+  ChainConfiguration,
+  Environment,
+  MarkConfiguration,
+  Stage,
+} from './types/config';
+import { LogLevel } from './types/logging';
 
 config();
 
@@ -65,10 +65,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const config: MarkConfiguration = {
       invoiceAge: parseInt(requireEnv('INVOICE_AGE'), 10),
       web3SignerUrl: requireEnv('SIGNER_ADDRESS'),
-      everclear: {
-        url: requireEnv('EVERCLEAR_API_URL'),
-        key: process.env.EVERCLEAR_API_KEY,
-      },
+      everclearApiUrl: requireEnv('EVERCLEAR_API_URL'),
       relayer: process.env.RELAYER_URL
         ? {
             url: process.env.RELAYER_URL,
@@ -101,7 +98,7 @@ function validateConfiguration(config: MarkConfiguration): void {
     throw new ConfigurationError('Signer address is required');
   }
 
-  if (!config.everclear.url) {
+  if (!config.everclearApiUrl) {
     throw new ConfigurationError('Everclear API URL is required');
   }
 

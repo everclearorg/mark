@@ -15,7 +15,7 @@ export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): boo
   }
 
   // Check it is not our invoice
-  if (invoice.owner.toLowerCase() === config.signer.toLowerCase()) {
+  if (invoice.owner.toLowerCase() === config.web3SignerUrl.toLowerCase()) {
     console.log('!owner');
     return false;
   }
