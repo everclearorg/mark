@@ -1,6 +1,5 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { createPublicClient, getContract, http } from 'viem';
 import * as contractModule from '../../src/helpers/contracts';
 import * as ViemFns from 'viem';
 
@@ -55,7 +54,7 @@ describe('Contracts Module', () => {
       const contract = await contractModule.getHubStorageContract(mockConfig as any);
 
       expect(clientStub.calledOnce).to.be.true;
-      expect(clientStub.firstCall.args[0]).to.equal('hub_chain_id');
+      expect(clientStub.firstCall.args[0]).to.equal('25327');
       expect(clientStub.firstCall.args[1]).to.deep.equal(mockConfig);
 
       expect(contract).to.be.an('object');

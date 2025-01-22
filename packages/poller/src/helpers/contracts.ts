@@ -35,7 +35,7 @@ export const createClient = (chainId: string, config: MarkConfiguration) => {
 };
 
 export const getHubStorageContract = async (config: MarkConfiguration) => {
-  const client = createClient('hub_chain_id', config);
+  const client = createClient('25327', config);
 
   return getContract({
     address: hub_address as `0x${string}`,
