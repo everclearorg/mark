@@ -13,8 +13,33 @@ import { TransactionReceipt } from 'viem';
 export const combineIntents = async (
   unbatched: Map<string, NewIntentParams[]>,
 ): Promise<Map<string, Map<string, NewIntentParams>>> => {
-  console.log('combineIntents params: ', unbatched);
-  throw new Error('combineIntents - not implemented');
+  try {
+    // Initialize the result map
+    const result = new Map<string, Map<string, NewIntentParams>>();
+
+    // Iterate over the unbatched map
+    for (const [origin, intents] of unbatched.entries()) {
+      const assetMap = new Map<string, NewIntentParams>();
+
+      for (const intent of intents) {
+        const { inputAsset, amount, destinations, to, callData, maxFee } = intent;
+
+        // If the asset already exists, update the existing intent
+        if (assetMap.has(inputAsset)) {
+          const existingIntent = assetMap.get(inputAsset)!;
+          existingIntent.amount = (BigInt(existingIntent.amount) + BigInt(amount)).toString();
+        } else {
+          assetMap.set(inputAsset, { origin, destinations, to, inputAsset, amount, callData, maxFee });
+        }
+      }
+
+      result.set(origin, assetMap);
+    }
+
+    return result;
+  } catch (err) {
+    throw new Error('combine Intents failed');
+  }
 };
 
 /**
