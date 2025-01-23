@@ -5,12 +5,34 @@ FROM public.ecr.aws/lambda/nodejs:18 AS node
 # ----------------------------------------
 
 FROM node AS build
-RUN yum update -y
-RUN yum install -y git python3 python3-pip make gcc gcc-c++ python3-devel
-RUN npm install --global yarn@1.22.19
+RUN yum update -y && yum install -y \
+    git \
+    python3 \
+    python3-pip \
+    make \
+    gcc \
+    gcc-c++ \
+    python3-devel \
+    libsecret-devel \
+    libuuid-devel \
+    openssl-devel \
+    zlib-devel
+
+RUN npm install --global yarn@1.22.19 node-gyp
 
 ENV HOME=/tmp/build \
-    PATH=/tmp/build/node_modules/.bin:./node_modules/.bin:${PATH}
+    PATH=/tmp/build/node_modules/.bin:./node_modules/.bin:${PATH} \
+    PYTHON=/usr/bin/python3 \
+    NODE_ENV=development \
+    NODE_OPTIONS="--max-old-space-size=4096" \
+    YARN_ENABLE_IMMUTABLE_INSTALLS=false \
+    YARN_ENABLE_SCRIPTS=true \
+    YARN_CACHE_FOLDER=/tmp/yarn-cache \
+    SKIP_OPTIONAL_DEPENDENCIES=true \
+    DD_SKIP_NATIVE_METRICS=true \
+    DD_TRACE_ENABLED=false \
+    BUFFERUTIL_SKIP_INSTALL=true \
+    UTF_8_VALIDATE_SKIP_INSTALL=true
 
 WORKDIR /tmp/build
 
@@ -28,8 +50,9 @@ COPY packages/adapters/everclear/package.json /tmp/build/packages/adapters/everc
 COPY packages/adapters/web3signer/package.json /tmp/build/packages/adapters/web3signer/
 COPY yarn.lock /tmp/build/
 
-# Install dependencies with frozen lockfile
-RUN YARN_ENABLE_SCRIPTS=0 yarn install --frozen-lockfile
+# Install dependencies including devDependencies
+RUN yarn install --mode=skip-build && \
+    yarn workspaces foreach -A run rebuild
 
 # Copy source files
 COPY packages/core /tmp/build/packages/core
@@ -52,11 +75,10 @@ FROM node AS runtime
 ENV NODE_ENV=production \
     PORT=8080
 
-# Copy built files from build stage and flatten the structure
-# COPY --from=build /tmp/build/packages/poller/dist/src/index.js ${LAMBDA_TASK_ROOT}/index.js
-# COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
 WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Copy the entire build directory
 COPY --from=build /tmp/build ${LAMBDA_TASK_ROOT}
 
 EXPOSE 8080
-CMD ["packages/poller/dist/src/index.handler"]
+CMD ["packages/poller/dist/index.handler"]
