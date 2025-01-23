@@ -11,7 +11,7 @@
     "src/**/*"
   ],
   "scripts": {
-    "build": "tsc --build ./tsconfig.json",
+    "build": "tsc --build ./tsconfig.json && tsc-alias",
     "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
     "dev": "ts-node-dev --respawn src/dev.ts",
     "lint": "eslint src",

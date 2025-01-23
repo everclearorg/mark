@@ -1,18 +1,23 @@
 {
-    "extends": "../../tsconfig.json",
-    "compilerOptions": {
-      "rootDir": "./src",
-      "outDir": "./dist",
-      "baseUrl": ".",
-      "composite": true
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "#/*": ["./src/*"]
     },
-    "include": ["./**/*.ts"],
-    "exclude": ["dist", "node_modules", "**/*.spec.ts"],
-    "references": [
-      { "path": "../core" },
-      { "path": "../adapters/logger" },
-      { "path": "../adapters/everclear" },
-      { "path": "../adapters/chainservice" },
-      { "path": "../adapters/web3signer" }
-    ]
+    "composite": true,
+    "moduleResolution": "node",
+    "module": "commonjs"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules", "**/*.spec.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../adapters/logger" },
+    { "path": "../adapters/chainservice" },
+    { "path": "../adapters/everclear" },
+    { "path": "../adapters/web3signer" }
+  ]
 }
