@@ -54,7 +54,9 @@ export async function processBatch(
     });
 
     // Calculate the true invoice amount by applying the bps
-    const purchaseable = (BigInt(invoice.amount) * BigInt(10_0000 - invoice.discountBps * 10)) / 10n; // multiply by 10 the RHS and dividing the whole to avoid decimals
+    const scaledDiscountBps = Math.round(invoice.discountBps * 10_000);
+    const discountAmount = (BigInt(invoice.amount) * BigInt(scaledDiscountBps)) / BigInt(10_000 * 10_000);
+    const purchaseable = BigInt(invoice.amount) - discountAmount; // multiply by 10 the RHS and dividing the whole to avoid decimals
 
     // For each destination on the invoice, find a chain where mark has balances and invoice req. deposit
     // TODO: should look at all enqueued intents for each destination that could be processed before
@@ -62,6 +64,8 @@ export async function processBatch(
     for (const destination of destinations) {
       const destinationCustodied = BigInt(custodied.get(invoice.ticker_hash.toLowerCase())?.get(destination) ?? '0');
       // If there is sufficient custodied asset, ignore invoice. should be settlable w.o intervention.
+      console.log(purchaseable, destinationCustodied, 'heyheyhey hey');
+
       if (purchaseable <= destinationCustodied) {
         logger.info('Sufficient custodied balance to settle invoice', {
           purchaseable,
@@ -88,6 +92,7 @@ export async function processBatch(
           id: invoice.intent_id,
           balance,
           requiredDeposit,
+          tickerHash: invoice.ticker_hash,
         });
         continue;
       }
