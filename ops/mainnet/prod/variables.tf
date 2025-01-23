@@ -46,11 +46,6 @@ variable "invoice_age" {
   default     = "600"
 }
 
-variable "signer_url" {
-  description = "URL of the web3signer service"
-  type        = string
-}
-
 variable "signer_address" {
   description = "Ethereum address of the signer"
   type        = string
