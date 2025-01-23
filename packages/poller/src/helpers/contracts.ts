@@ -226,42 +226,101 @@ const erc20Abi = [
 
 const hubStorageAbi = [
   {
+    type: 'function',
     name: 'assetHash',
-    type: 'function',
-    inputs: [{ type: 'bytes32' }, { type: 'uint32' }],
-    outputs: [{ type: 'bytes32' }],
-  },
-  {
-    name: 'custodiedAssets',
-    type: 'function',
-    inputs: [{ type: 'bytes32' }],
-    outputs: [{ type: 'uint256' }],
-  },
-  {
-    name: 'adoptedForAssets',
-    type: 'function',
-    inputs: [{ type: 'bytes32', name: '_assetHash' }],
+    inputs: [
+      {
+        name: '_tickerHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: '_domain',
+        type: 'uint32',
+        internalType: 'uint32',
+      },
+    ],
     outputs: [
       {
-        components: [
-          { type: 'bytes32', name: 'tickerHash' },
-          { type: 'bytes32', name: 'adopted' },
-          { type: 'uint32', name: 'domain' },
-          { type: 'bool', name: 'approval' },
-          { type: 'uint8', name: 'strategy' },
-        ],
-        type: 'tuple',
+        name: '_assetHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'custodiedAssets',
+    inputs: [
+      {
+        name: '_assetHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: '_amount',
+        type: 'uint256',
+        internalType: 'uint256',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'adoptedForAssets',
+    inputs: [
+      {
+        name: '_assetHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
         name: '_config',
+        type: 'tuple',
+        internalType: 'struct IHubStorage.AssetConfig',
+        components: [
+          {
+            name: 'tickerHash',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'adopted',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'domain',
+            type: 'uint32',
+            internalType: 'uint32',
+          },
+          {
+            name: 'approval',
+            type: 'bool',
+            internalType: 'bool',
+          },
+          {
+            name: 'strategy',
+            type: 'uint8',
+            internalType: 'enum IEverclear.Strategy',
+          },
+        ],
       },
     ],
     stateMutability: 'view',
   },
 ];
 
-const hub_address = '0x121344';
+const HUB_MAINNET_ADDR = '0xa05A3380889115bf313f1Db9d5f335157Be4D816';
+const HUB_TESTNET_ADDR = '0x4C526917051ee1981475BB6c49361B0756F505a8';
 
 export const getProviderUrl = (chainId: string, config: MarkConfiguration): string | undefined => {
-  return config.chains[chainId]?.providers[0];
+  return chainId === config.hub.domain ? config.hub.providers[0] : config.chains[chainId]?.providers[0];
 };
 
 export const createClient = (chainId: string, config: MarkConfiguration) => {
@@ -277,10 +336,10 @@ export const createClient = (chainId: string, config: MarkConfiguration) => {
 };
 
 export const getHubStorageContract = (config: MarkConfiguration) => {
-  const client = createClient('25327', config);
+  const client = createClient(config.hub.domain, config);
 
   return getContract({
-    address: hub_address as `0x${string}`,
+    address: config.environment === 'mainnet' ? HUB_TESTNET_ADDR : HUB_MAINNET_ADDR as `0x${string}`,
     abi: hubStorageAbi as unknown as Abi,
     client,
   });
