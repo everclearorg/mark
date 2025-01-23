@@ -1,25 +1,326 @@
 import { MarkConfiguration } from '@mark/core';
 import { createPublicClient, getContract, http, Abi, Chain } from 'viem';
 
-const abi = [
+const erc20Abi = [
   {
-    name: 'assetHash',
+    constant: true,
+    inputs: [],
+    name: 'name',
+    outputs: [
+      {
+        name: '',
+        type: 'string',
+      },
+    ],
+    payable: false,
+    stateMutability: 'view',
     type: 'function',
-    inputs: [{ type: 'bytes32' }, { type: 'uint32' }],
-    outputs: [{ type: 'bytes32' }],
   },
   {
-    name: 'custodiedAssets',
+    constant: false,
+    inputs: [
+      {
+        name: '_spender',
+        type: 'address',
+      },
+      {
+        name: '_value',
+        type: 'uint256',
+      },
+    ],
+    name: 'approve',
+    outputs: [
+      {
+        name: '',
+        type: 'bool',
+      },
+    ],
+    payable: false,
+    stateMutability: 'nonpayable',
     type: 'function',
-    inputs: [{ type: 'bytes32' }],
-    outputs: [{ type: 'uint256' }],
+  },
+  {
+    constant: true,
+    inputs: [],
+    name: 'totalSupply',
+    outputs: [
+      {
+        name: '',
+        type: 'uint256',
+      },
+    ],
+    payable: false,
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    constant: false,
+    inputs: [
+      {
+        name: '_from',
+        type: 'address',
+      },
+      {
+        name: '_to',
+        type: 'address',
+      },
+      {
+        name: '_value',
+        type: 'uint256',
+      },
+    ],
+    name: 'transferFrom',
+    outputs: [
+      {
+        name: '',
+        type: 'bool',
+      },
+    ],
+    payable: false,
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    constant: true,
+    inputs: [],
+    name: 'decimals',
+    outputs: [
+      {
+        name: '',
+        type: 'uint8',
+      },
+    ],
+    payable: false,
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    constant: true,
+    inputs: [
+      {
+        name: '_owner',
+        type: 'address',
+      },
+    ],
+    name: 'balanceOf',
+    outputs: [
+      {
+        name: 'balance',
+        type: 'uint256',
+      },
+    ],
+    payable: false,
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    constant: true,
+    inputs: [],
+    name: 'symbol',
+    outputs: [
+      {
+        name: '',
+        type: 'string',
+      },
+    ],
+    payable: false,
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    constant: false,
+    inputs: [
+      {
+        name: '_to',
+        type: 'address',
+      },
+      {
+        name: '_value',
+        type: 'uint256',
+      },
+    ],
+    name: 'transfer',
+    outputs: [
+      {
+        name: '',
+        type: 'bool',
+      },
+    ],
+    payable: false,
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    constant: true,
+    inputs: [
+      {
+        name: '_owner',
+        type: 'address',
+      },
+      {
+        name: '_spender',
+        type: 'address',
+      },
+    ],
+    name: 'allowance',
+    outputs: [
+      {
+        name: '',
+        type: 'uint256',
+      },
+    ],
+    payable: false,
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    payable: true,
+    stateMutability: 'payable',
+    type: 'fallback',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        name: 'owner',
+        type: 'address',
+      },
+      {
+        indexed: true,
+        name: 'spender',
+        type: 'address',
+      },
+      {
+        indexed: false,
+        name: 'value',
+        type: 'uint256',
+      },
+    ],
+    name: 'Approval',
+    type: 'event',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        name: 'from',
+        type: 'address',
+      },
+      {
+        indexed: true,
+        name: 'to',
+        type: 'address',
+      },
+      {
+        indexed: false,
+        name: 'value',
+        type: 'uint256',
+      },
+    ],
+    name: 'Transfer',
+    type: 'event',
   },
 ];
 
-const hub_address = '0x121344';
+const hubStorageAbi = [
+  {
+    type: 'function',
+    name: 'assetHash',
+    inputs: [
+      {
+        name: '_tickerHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+      {
+        name: '_domain',
+        type: 'uint32',
+        internalType: 'uint32',
+      },
+    ],
+    outputs: [
+      {
+        name: '_assetHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'custodiedAssets',
+    inputs: [
+      {
+        name: '_assetHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: '_amount',
+        type: 'uint256',
+        internalType: 'uint256',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'adoptedForAssets',
+    inputs: [
+      {
+        name: '_assetHash',
+        type: 'bytes32',
+        internalType: 'bytes32',
+      },
+    ],
+    outputs: [
+      {
+        name: '_config',
+        type: 'tuple',
+        internalType: 'struct IHubStorage.AssetConfig',
+        components: [
+          {
+            name: 'tickerHash',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'adopted',
+            type: 'bytes32',
+            internalType: 'bytes32',
+          },
+          {
+            name: 'domain',
+            type: 'uint32',
+            internalType: 'uint32',
+          },
+          {
+            name: 'approval',
+            type: 'bool',
+            internalType: 'bool',
+          },
+          {
+            name: 'strategy',
+            type: 'uint8',
+            internalType: 'enum IEverclear.Strategy',
+          },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+];
+
+const HUB_MAINNET_ADDR = '0xa05A3380889115bf313f1Db9d5f335157Be4D816';
+const HUB_TESTNET_ADDR = '0x4C526917051ee1981475BB6c49361B0756F505a8';
 
 export const getProviderUrl = (chainId: string, config: MarkConfiguration): string | undefined => {
-  return config.chains[chainId]?.providers[0];
+  return chainId === config.hub.domain ? config.hub.providers[0] : config.chains[chainId]?.providers[0];
 };
 
 export const createClient = (chainId: string, config: MarkConfiguration) => {
@@ -34,12 +335,12 @@ export const createClient = (chainId: string, config: MarkConfiguration) => {
   });
 };
 
-export const getHubStorageContract = async (config: MarkConfiguration) => {
-  const client = createClient('hub_chain_id', config);
+export const getHubStorageContract = (config: MarkConfiguration) => {
+  const client = createClient(config.hub.domain, config);
 
   return getContract({
-    address: hub_address as `0x${string}`,
-    abi: abi as unknown as Abi,
+    address: config.environment === 'mainnet' ? HUB_MAINNET_ADDR : HUB_TESTNET_ADDR,
+    abi: hubStorageAbi as unknown as Abi,
     client,
   });
 };
@@ -48,7 +349,7 @@ export const getERC20Contract = async (config: MarkConfiguration, chainId: strin
   const client = createClient(chainId, config);
   return getContract({
     address: address,
-    abi: abi as unknown as Abi,
+    abi: erc20Abi as unknown as Abi,
     client,
   });
 };
