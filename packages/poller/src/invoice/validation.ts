@@ -1,6 +1,6 @@
 import { Invoice } from '@mark/everclear';
 import { MarkConfiguration } from '@mark/core';
-import { getTickers } from 'src/helpers';
+import { getTickers } from '../helpers';
 
 // TODO - add logging for why invoices are skipped
 export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): boolean {
