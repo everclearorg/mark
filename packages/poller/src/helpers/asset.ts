@@ -10,11 +10,11 @@ export const getTickers = (config: MarkConfiguration) => {
   return tickers;
 };
 
-export const getAssetHash = (ticker: string, domain: string, config: MarkConfiguration): string => {
+export const getAssetHash = (ticker: string, domain: string, config: MarkConfiguration): string | undefined => {
   // Get the token address
   const tokenAddr = getTokenAddressFromConfig(ticker, domain, config);
   if (!tokenAddr) {
-    throw new Error(`Token not configured for ticker (${ticker}) and domain (${domain})`);
+    return undefined;
   }
   // Get the asset hash
   const assetHash = keccak256(
@@ -35,6 +35,10 @@ export const isXerc20Supported = async (
   for (const domain of domains) {
     // Get the asset hash
     const assetHash = getAssetHash(ticker, domain, config);
+    if (!assetHash) {
+      // asset does not exist on this domain
+      continue;
+    }
     // Get the asset config
     const assetConfig = await getAssetConfig(assetHash, config);
     if (assetConfig.strategy === SettlementStrategy.XERC20) {
