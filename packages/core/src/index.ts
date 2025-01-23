@@ -1,3 +1,4 @@
-export * from './types';
-export * from './logging';
+export * from './axios';
 export * from './config';
+export * from './logging';
+export * from './types';

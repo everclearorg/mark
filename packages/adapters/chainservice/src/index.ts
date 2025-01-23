@@ -1,6 +1,6 @@
 import { providers, Signer } from 'ethers';
 import { TransactionService as NxtpTxService } from '@connext/nxtp-txservice';
-import { ILogger } from '../../logger/src';
+import { ILogger } from '@mark/logger';
 import { createLoggingContext } from '@mark/core';
 import { ethers } from 'ethers';
 import { ChainConfiguration } from '@mark/core';

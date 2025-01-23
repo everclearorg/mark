@@ -24,8 +24,7 @@
   },
   "dependencies": {
     "@mark/core": "workspace:*",
-    "@mark/logger": "workspace:*",
-    "axios": "1.0.0"
+    "@mark/logger": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "20.17.12",

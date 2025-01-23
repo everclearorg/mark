@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsc --build ./tsconfig.json",
     "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
-    "dev": "ts-node-dev --respawn src/index.ts",
+    "dev": "ts-node-dev --respawn src/dev.ts",
     "lint": "eslint src",
     "lint:fix": "yarn lint --fix",
     "test": "nyc ts-mocha --check-leaks --exit --timeout 60000 'test/**/*.spec.ts'"
@@ -24,6 +24,7 @@
     "@mark/everclear": "workspace:*",
     "@mark/logger": "workspace:*",
     "@mark/web3signer": "workspace:*",
+    "aws-lambda": "1.0.7",
     "viem": "^2.22.8"
   },
   "devDependencies": {
@@ -37,6 +38,7 @@
     "mocha": "11.0.1",
     "nyc": "^17.1.0",
     "rimraf": "6.0.1",
+    "ts-node-dev": "2.0.0",
     "typescript": "5.7.2"
   }
 }

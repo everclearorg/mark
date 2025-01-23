@@ -1,12 +1,11 @@
 import { Logger } from '@mark/logger';
 import { MarkConfiguration, loadConfiguration } from '@mark/core';
+import { pollAndProcess } from './invoice';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
-import { Context, ScheduledEvent } from 'aws-lambda';
-import { pollAndProcess } from './invoice/pollAndProcess';
 
-async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
+function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   // Initialize adapters in the correct order
   const web3Signer = new Web3Signer(config.web3SignerUrl);
 
@@ -30,7 +29,7 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   };
 }
 
-export async function handler(event: ScheduledEvent, context: Context) {
+export const initPoller = async (): Promise<{ statusCode: number; body: string }> => {
   const config = await loadConfiguration();
 
   const logger = new Logger({
@@ -38,14 +37,11 @@ export async function handler(event: ScheduledEvent, context: Context) {
     level: config.logLevel,
   });
 
-  try {
-    logger.debug('Lambda execution started', {
-      event,
-      requestId: context.awsRequestId,
-      remainingTime: context.getRemainingTimeInMillis(),
-    });
+  // TODO: sanitize sensitive vars
+  logger.debug('Created config', { config });
 
-    const adapters = await initializeAdapters(config, logger);
+  try {
+    const adapters = initializeAdapters(config, logger);
 
     logger.info('Starting invoice polling', {
       stage: config.stage,
@@ -61,15 +57,13 @@ export async function handler(event: ScheduledEvent, context: Context) {
       statusCode: 200,
       body: JSON.stringify(result),
     };
-  } catch (error) {
-    logger.error('Failed to run poller', {
-      error,
-      requestId: context.awsRequestId,
-    });
+  } catch (_error: unknown) {
+    const error = _error as Error;
+    logger.error('Failed to poll invoices', { error });
 
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to run poller' }),
+      body: JSON.stringify({ error: 'Failed to poll invoices: ' + error.message }),
     };
   }
-}
+};
