@@ -16,8 +16,10 @@ export async function pollAndProcess(config: MarkConfiguration, deps: ProcessInv
   try {
     const invoices = await everclear.fetchInvoices(config.chains);
     await processBatch(invoices, deps, config);
-  } catch (error) {
-    logger.error('Failed to process invoices', { error });
+  } catch (_error: unknown) {
+    const error = _error as Error;
+    // console.log('error:', error);
+    logger.error('Failed to process invoices', { message: error.message, stack: error.stack, name: error.name });
     throw error;
   }
 }
