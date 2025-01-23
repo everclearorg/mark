@@ -140,10 +140,10 @@ export async function processBatch(
   }
 
   // Combine all unbatched intents
-  const batched = await combineIntents(unbatchedIntents);
+  const batched = await combineIntents(unbatchedIntents, deps);
 
   // Dispatch all through transaction service
-  const receipts = await sendIntents(batched, chainService);
+  const receipts = await sendIntents(batched, chainService, deps, config);
   logger.info('Sent transactions to purchase invoices', {
     receipts: receipts.map((r) => ({ chainId: r.chainId, transactionHash: r.transactionHash })),
   });
