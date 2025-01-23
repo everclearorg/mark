@@ -13,5 +13,6 @@
     "paths": {
       "@mark/*": ["packages/*/src"]
     }
-  }
+  },
+  "exclude": ["node_modules", "dist"]
 }
