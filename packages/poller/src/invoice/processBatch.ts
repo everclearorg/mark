@@ -64,8 +64,6 @@ export async function processBatch(
     for (const destination of destinations) {
       const destinationCustodied = BigInt(custodied.get(invoice.ticker_hash.toLowerCase())?.get(destination) ?? '0');
       // If there is sufficient custodied asset, ignore invoice. should be settlable w.o intervention.
-      console.log(purchaseable, destinationCustodied, 'heyheyhey hey');
-
       if (purchaseable <= destinationCustodied) {
         logger.info('Sufficient custodied balance to settle invoice', {
           purchaseable,
