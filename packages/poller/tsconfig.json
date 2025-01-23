@@ -1,13 +1,11 @@
 {
-    "extends": "../../tsconfig.json",
+    "extends": "./tsconfig.build.json",
     "compilerOptions": {
-      "rootDir": "./src",
-      "outDir": "./dist",
-      "baseUrl": ".",
-      "composite": true
+      "rootDir": ".",
+      "types": ["node", "mocha", "chai"]
     },
-    "include": ["./**/*.ts"],
-    "exclude": ["dist", "node_modules", "**/*.spec.ts"],
+    "exclude": [],
+    "include": ["src/**/*.ts", "test/**/*.ts"],
     "references": [
       { "path": "../core" },
       { "path": "../adapters/logger" },
