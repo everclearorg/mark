@@ -29,7 +29,7 @@ export interface HubConfig {
   providers: string[];
   subgraphUrls: string[];
   confirmations: number;
-  assets?: AssetConfiguration;
+  assets?: AssetConfiguration[];
 }
 
 export type EverclearConfig = {
@@ -55,4 +55,5 @@ export interface MarkConfiguration {
   supportedSettlementDomains: number[];
   supportedAssets: string[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id
+  hub: Omit<HubConfig, 'confirmations' | 'subgraphUrls'>;
 }

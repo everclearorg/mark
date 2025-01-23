@@ -7,6 +7,7 @@ import {
   Environment,
   MarkConfiguration,
   Stage,
+  HubConfig,
 } from './types/config';
 import { LogLevel } from './types/logging';
 
@@ -79,6 +80,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       logLevel: (process.env.LOG_LEVEL ?? 'debug') as LogLevel,
       stage: (process.env.STAGE ?? 'development') as Stage,
       environment: (process.env.ENVIRONMENT ?? 'local') as Environment,
+      hub: parseHubConfigurations(hostedConfig, environment),
     };
 
     validateConfiguration(config);
@@ -153,6 +155,29 @@ function parseChainConfigurations(
   }
 
   return chains;
+}
+
+function parseHubConfigurations(
+  config: EverclearConfig | undefined,
+  environment: Environment,
+): Omit<HubConfig, 'confirmations' | 'subgraphUrls'> {
+  const chainId = process.env.HUB_CHAIN ?? config?.hub.domain ?? (environment === 'mainnet' ? '25327' : '6398');
+
+  const assets =
+    (process.env[`CHAIN_${chainId}_ASSETS`] ? parseAssets(process.env[`CHAIN_${chainId}_ASSETS`]!) : undefined) ??
+    Object.values(config?.hub.assets ?? {});
+
+  const providers =
+    (process.env[`CHAIN_${chainId}_PROVIDERS`]
+      ? parseProviders(process.env[`CHAIN_${chainId}_PROVIDERS`]!)
+      : undefined) ??
+    config?.hub.providers ??
+    [];
+  return {
+    domain: chainId,
+    providers,
+    assets: assets.length > 0 ? assets : undefined,
+  };
 }
 
 function parseProviders(providers: string): string[] {
