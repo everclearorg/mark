@@ -1,8 +1,9 @@
-import { MarkConfiguration, NewIntentParams, getTokenAddress } from '@mark/core';
+import { MarkConfiguration, NewIntentParams, getTokenAddressFromConfig } from '@mark/core';
 import { Invoice } from '@mark/everclear';
 import { ProcessInvoicesDependencies } from './pollAndProcess';
 import { isValidInvoice } from './validation';
-import { combineIntents, getCustodiedBalances, getMarkBalances, isXerc20Supported, sendIntents } from 'src/helpers';
+import { combineIntents, getCustodiedBalances, getMarkBalances, isXerc20Supported, sendIntents } from '../helpers';
+import { jsonifyNestedMap } from '@mark/logger';
 
 export async function processBatch(
   invoices: Invoice[],
@@ -12,10 +13,14 @@ export async function processBatch(
   const { logger, chainService } = deps;
 
   // Query all of marks balances across chains
+  logger.info('Getting mark balances', { chains: Object.keys(config.chains) });
   const balances = await getMarkBalances(config);
+  logger.debug('Retrieved balances', { balances: jsonifyNestedMap(balances) });
 
   // Query all of the custodied amounts across chains and ticker hashes
+  logger.info('Getting custodied balances', { chains: Object.keys(config.chains) });
   const custodied = await getCustodiedBalances(config);
+  logger.debug('Retrieved custodied amounts', { custodied: jsonifyNestedMap(custodied) });
 
   // These are the unbatched intents, i.e. the intents we would send to purchase all of the
   // invoices, grouped by origin domain
@@ -88,11 +93,17 @@ export async function processBatch(
       }
 
       // Sufficient balance to settle invoice with invoice destination == intent origin
+      const inputAsset = getTokenAddressFromConfig(invoice.ticker_hash, destination, config);
+      if (!inputAsset) {
+        throw new Error(
+          `No input asset found for ticker (${invoice.ticker_hash}) and domain (${destination}) in config.`,
+        );
+      }
       const purchaseAction: NewIntentParams = {
         origin: destination,
         destinations: config.supportedSettlementDomains.map((s) => s.toString()),
         to: config.ownAddress,
-        inputAsset: getTokenAddress(invoice.ticker_hash, destination),
+        inputAsset,
         amount: requiredDeposit.toString(),
         callData: '0x',
         maxFee: '0',

@@ -1,4 +1,4 @@
-import { getTokenAddress, MarkConfiguration } from '@mark/core';
+import { getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
 import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex } from 'viem';
 import { getHubStorageContract } from './contracts';
 
@@ -10,9 +10,12 @@ export const getTickers = (config: MarkConfiguration) => {
   return tickers;
 };
 
-export const getAssetHash = (ticker: string, domain: string): string => {
+export const getAssetHash = (ticker: string, domain: string, config: MarkConfiguration): string => {
   // Get the token address
-  const tokenAddr = getTokenAddress(ticker, domain);
+  const tokenAddr = getTokenAddressFromConfig(ticker, domain, config);
+  if (!tokenAddr) {
+    throw new Error(`Token not configured for ticker (${ticker}) and domain (${domain})`);
+  }
   // Get the asset hash
   const assetHash = keccak256(
     encodeAbiParameters([{ type: 'bytes32' }, { type: 'uint32' }], [addressToBytes32(tokenAddr), parseInt(domain)]),
@@ -31,7 +34,7 @@ export const isXerc20Supported = async (
 ): Promise<boolean> => {
   for (const domain of domains) {
     // Get the asset hash
-    const assetHash = getAssetHash(ticker, domain);
+    const assetHash = getAssetHash(ticker, domain, config);
     // Get the asset config
     const assetConfig = await getAssetConfig(assetHash, config);
     if (assetConfig.strategy === SettlementStrategy.XERC20) {

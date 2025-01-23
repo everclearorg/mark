@@ -1,4 +1,4 @@
-import { getTokenAddress, MarkConfiguration } from '@mark/core';
+import { getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
 import { getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 
@@ -26,7 +26,10 @@ export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<st
     const domainBalances = new Map<string, bigint>();
     for (const domain of Object.keys(chains)) {
       // get asset address
-      const tokenAddr = getTokenAddress(ticker, domain) as `0x${string}`;
+      const tokenAddr = getTokenAddressFromConfig(ticker, domain, config) as `0x${string}`;
+      if (!tokenAddr) {
+        continue;
+      }
       const tokenContract = await getERC20Contract(config, domain, tokenAddr);
       // get balance
       const balance = await tokenContract.read.balanceOf([ownAddress]);
