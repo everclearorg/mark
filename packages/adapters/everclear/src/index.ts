@@ -97,10 +97,14 @@ export class EverclearAdapter {
   }
 
   async createNewIntent(params: NewIntentParams): Promise<TransactionRequest> {
-    const url = `${this.apiUrl}/intents`;
-
-    const { data } = await axiosPost<TransactionRequest>(url, { params });
-    return data;
+    try {
+      console.log('In the createNewIntent function', params);
+      const url = `${this.apiUrl}/intents`;
+      const { data } = await axiosPost<TransactionRequest>(url, { params });
+      return data;
+    } catch (err) {
+      throw new Error(`Failed to fetch create intent from API ${err}`);
+    }
   }
 
   // Method stub for future implementation
