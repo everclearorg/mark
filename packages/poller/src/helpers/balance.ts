@@ -1,4 +1,4 @@
-import { getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
+import { getTokenAddressFromConfig, MarkConfiguration, USDC_TICKER } from '@mark/core';
 import { getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 
@@ -32,7 +32,13 @@ export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<st
       }
       const tokenContract = await getERC20Contract(config, domain, tokenAddr);
       // get balance
-      const balance = await tokenContract.read.balanceOf([ownAddress]);
+      let balance = await tokenContract.read.balanceOf([ownAddress]);
+
+      // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
+      if (ticker === USDC_TICKER) {
+        const DECIMALS_DIFFERENCE = 12n; // Difference between 18 and 6 decimals
+        balance = BigInt(balance as string) * 10n ** DECIMALS_DIFFERENCE;
+      }
       domainBalances.set(domain, balance as bigint);
     }
     markBalances.set(ticker, domainBalances);
