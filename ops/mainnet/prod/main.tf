@@ -52,23 +52,23 @@ module "sgs" {
 }
 
 module "mark_web3signer" {
-  source                   = "../../modules/service"
-  stage                    = var.stage
-  environment             = var.environment
-  domain                  = var.domain
-  region                  = var.region
-  execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
-  cluster_id              = module.ecs.ecs_cluster_id
-  vpc_id                  = module.network.vpc_id
-  lb_subnets             = module.network.private_subnets
-  docker_image           = "ghcr.io/connext/web3signer:latest"
-  container_family       = "mark-web3signer"
-  container_port         = 9000
-  cpu                    = 256
-  memory                 = 512
-  instance_count         = 1
+  source              = "../../modules/service"
+  stage               = var.stage
+  environment         = var.environment
+  domain              = var.domain
+  region              = var.region
+  execution_role_arn  = data.aws_iam_role.ecr_admin_role.arn
+  cluster_id          = module.ecs.ecs_cluster_id
+  vpc_id              = module.network.vpc_id
+  lb_subnets          = module.network.private_subnets
+  docker_image        = "ghcr.io/connext/web3signer:latest"
+  container_family    = "mark-web3signer"
+  container_port      = 9000
+  cpu                 = 256
+  memory              = 512
+  instance_count      = 1
   service_security_groups = [module.sgs.web3signer_sg_id]
-  container_env_vars     = local.web3signer_env_vars
+  container_env_vars  = local.web3signer_env_vars
 }
 
 module "mark_poller" {
@@ -77,15 +77,10 @@ module "mark_poller" {
   environment         = var.environment
   container_family    = "mark-poller"
   execution_role_arn  = module.iam.lambda_role_arn
-  image_uri          = var.image_uri
+  image_uri           = var.image_uri
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
-  container_env_vars  = {
-    WEB3SIGNER_URL     = "http://${module.mark_web3signer.service_url}:9000"
-    ENVIRONMENT        = var.environment
-    STAGE             = var.stage
-    BATCH_SIZE        = "10"
-  }
+  container_env_vars  = local.poller_env_vars
 }
 
 module "iam" {
