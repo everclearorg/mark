@@ -1,16 +1,24 @@
 {
-    "extends": "./tsconfig.build.json",
-    "compilerOptions": {
-      "rootDir": ".",
-      "types": ["node", "mocha", "chai"]
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "#/*": ["./src/*"]
     },
-    "exclude": [],
-    "include": ["src/**/*.ts", "test/**/*.ts"],
-    "references": [
-      { "path": "../core" },
-      { "path": "../adapters/logger" },
-      { "path": "../adapters/everclear" },
-      { "path": "../adapters/chainservice" },
-      { "path": "../adapters/web3signer" }
-    ]
+    "composite": true,
+    "moduleResolution": "node",
+    "module": "commonjs",
+    "types": ["node", "mocha", "chai"]
+  },
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["dist", "node_modules", "**/*.spec.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../adapters/logger" },
+    { "path": "../adapters/chainservice" },
+    { "path": "../adapters/everclear" },
+    { "path": "../adapters/web3signer" }
+  ]
 }
