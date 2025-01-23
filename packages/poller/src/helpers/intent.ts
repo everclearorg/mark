@@ -1,8 +1,7 @@
 import { ChainService } from '@mark/chainservice';
 import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
-import { TransactionReceipt } from 'viem';
-import { getERC20Contract, createClient } from './contracts';
+import { getERC20Contract } from './contracts';
 import { encodeFunctionData } from 'viem';
 
 /**
@@ -44,7 +43,7 @@ export const combineIntents = async (
     logger.info('Batched intent mapping', { batch: result });
     return result;
   } catch (err) {
-    throw new Error('combine Intents failed');
+    throw new Error(`combine Intents failed ${(err as unknown as Error).message || err}`);
   }
 };
 
