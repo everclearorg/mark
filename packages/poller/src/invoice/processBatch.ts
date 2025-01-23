@@ -54,7 +54,7 @@ export async function processBatch(
     });
 
     // Calculate the true invoice amount by applying the bps
-    const purchaseable = BigInt(invoice.amount) * BigInt(10_000 - invoice.discountBps);
+    const purchaseable = (BigInt(invoice.amount) * BigInt(10_0000 - invoice.discountBps * 10)) / 10n; // multiply by 10 the RHS and dividing the whole to avoid decimals
 
     // For each destination on the invoice, find a chain where mark has balances and invoice req. deposit
     // TODO: should look at all enqueued intents for each destination that could be processed before
