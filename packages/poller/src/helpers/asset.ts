@@ -21,7 +21,7 @@ export const getAssetHash = (ticker: string, domain: string, config: MarkConfigu
     encodeAbiParameters([{ type: 'bytes32' }, { type: 'uint32' }], [addressToBytes32(tokenAddr), parseInt(domain)]),
   );
   return assetHash;
-}
+};
 
 /**
  * Returns true if the XERC20 strategy is supported on any of the domains for the
