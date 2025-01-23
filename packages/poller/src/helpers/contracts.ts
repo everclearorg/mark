@@ -339,7 +339,7 @@ export const getHubStorageContract = (config: MarkConfiguration) => {
   const client = createClient(config.hub.domain, config);
 
   return getContract({
-    address: config.environment === 'mainnet' ? HUB_TESTNET_ADDR : HUB_MAINNET_ADDR as `0x${string}`,
+    address: config.environment === 'mainnet' ? HUB_MAINNET_ADDR : HUB_TESTNET_ADDR,
     abi: hubStorageAbi as unknown as Abi,
     client,
   });
