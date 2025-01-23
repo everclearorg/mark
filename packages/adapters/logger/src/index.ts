@@ -14,6 +14,19 @@ export interface ILogger {
   debug(message: string, context?: object): void;
 }
 
+export function jsonifyNestedMap(nestedMap: Map<string, Map<string, bigint>>): Record<string, Record<string, string>> {
+  const jsonObject: Record<string, Record<string, string>> = {};
+
+  for (const [key, innerMap] of nestedMap.entries()) {
+    jsonObject[key] = {};
+    for (const [innerKey, value] of innerMap.entries()) {
+      jsonObject[key][innerKey] = value.toString();
+    }
+  }
+
+  return jsonObject;
+}
+
 export class Logger implements ILogger {
   private readonly logger: pino.Logger;
 
