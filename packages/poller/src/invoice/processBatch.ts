@@ -3,7 +3,7 @@ import { Invoice } from '@mark/everclear';
 import { ProcessInvoicesDependencies } from './pollAndProcess';
 import { isValidInvoice } from './validation';
 import { combineIntents, getCustodiedBalances, getMarkBalances, isXerc20Supported, sendIntents } from '../helpers';
-import { jsonifyNestedMap } from '@mark/logger';
+import { jsonifyMap } from '@mark/logger';
 
 export async function processBatch(
   invoices: Invoice[],
@@ -15,12 +15,12 @@ export async function processBatch(
   // Query all of marks balances across chains
   logger.info('Getting mark balances', { chains: Object.keys(config.chains) });
   const balances = await getMarkBalances(config);
-  logger.debug('Retrieved balances', { balances: jsonifyNestedMap(balances) });
+  logger.debug('Retrieved balances', { balances: jsonifyMap(balances) });
 
   // Query all of the custodied amounts across chains and ticker hashes
   logger.info('Getting custodied balances', { chains: Object.keys(config.chains) });
   const custodied = await getCustodiedBalances(config);
-  logger.debug('Retrieved custodied amounts', { custodied: jsonifyNestedMap(custodied) });
+  logger.debug('Retrieved custodied amounts', { custodied: jsonifyMap(custodied) });
 
   // These are the unbatched intents, i.e. the intents we would send to purchase all of the
   // invoices, grouped by origin domain
@@ -137,6 +137,11 @@ export async function processBatch(
       // Exit destination loop
       break;
     }
+  }
+
+  if (unbatchedIntents.size === 0) {
+    logger.info('No intents to purchase');
+    return;
   }
 
   // Combine all unbatched intents
