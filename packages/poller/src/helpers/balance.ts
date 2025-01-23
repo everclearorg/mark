@@ -57,7 +57,7 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
     const domainBalances = new Map<string, bigint>();
     for (const domain of Object.keys(chains)) {
       // get asset hash
-      const assetHash = getAssetHash(ticker, domain);
+      const assetHash = getAssetHash(ticker, domain, config);
       // get custodied balance
       const custodied = await contract.read.custodiedBalances([assetHash]);
       domainBalances.set(domain, custodied as bigint);
