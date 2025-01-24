@@ -1,5 +1,5 @@
 import { providers, Signer } from 'ethers';
-import { TransactionService as NxtpTxService } from '@connext/nxtp-txservice';
+import { ChainService as EverclearChainService } from '@everclear-org/chainservice';
 import { ILogger } from '@mark/logger';
 import { createLoggingContext } from '@mark/core';
 import { ethers } from 'ethers';
@@ -13,7 +13,7 @@ export interface ChainServiceConfig {
 }
 
 export class ChainService {
-  private readonly txService: NxtpTxService;
+  private readonly txService: EverclearChainService;
   private readonly logger: ILogger;
   private readonly config: ChainServiceConfig;
 
@@ -34,7 +34,7 @@ export class ChainService {
       {},
     );
 
-    this.txService = new NxtpTxService(
+    this.txService = new EverclearChainService(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       logger as any,
       {
