@@ -65,7 +65,7 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
     const domainBalances = new Map<string, bigint>();
     for (const domain of Object.keys(chains)) {
       // get asset hash
-      const assetHash = getAssetHash(ticker, domain, config);
+      const assetHash = getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
       if (!assetHash) {
         // not registered on this domain
         domainBalances.set(domain, 0n);
