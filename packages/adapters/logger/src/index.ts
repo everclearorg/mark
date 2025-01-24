@@ -14,13 +14,15 @@ export interface ILogger {
   debug(message: string, context?: object): void;
 }
 
-export function jsonifyNestedMap(nestedMap: Map<string, Map<string, bigint>>): Record<string, Record<string, string>> {
-  const jsonObject: Record<string, Record<string, string>> = {};
+export function jsonifyMap(map: Map<string, unknown>): Record<string, unknown> {
+  const jsonObject: Record<string, unknown> = {};
 
-  for (const [key, innerMap] of nestedMap.entries()) {
-    jsonObject[key] = {};
-    for (const [innerKey, value] of innerMap.entries()) {
-      jsonObject[key][innerKey] = value.toString();
+  for (const [key, value] of map.entries()) {
+    if (value instanceof Map) {
+      jsonObject[key] = jsonifyMap(value);
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      jsonObject[key] = typeof value === 'object' ? JSON.stringify(value) : (value as any).toString();
     }
   }
 
