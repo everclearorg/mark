@@ -1,4 +1,4 @@
-import { getTokenAddressFromConfig, MarkConfiguration, USDC_TICKER } from '@mark/core';
+import { getDecimalsFromConfig, getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
 import { getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 
@@ -14,7 +14,7 @@ export const walletBalance = async (tokenAddress: string, chainId: string, confi
 
 /**
  * Returns all of the balances for supported assets across all chains.
- * @returns Mapping of balances keyed on tickerhash - chain - amount
+ * @returns Mapping of balances keyed on tickerhash - chain - amount in 18 decimal units
  */
 export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<string, Map<string, bigint>>> => {
   const { chains, ownAddress } = config;
@@ -27,7 +27,9 @@ export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<st
     for (const domain of Object.keys(chains)) {
       // get asset address
       const tokenAddr = getTokenAddressFromConfig(ticker, domain, config) as `0x${string}`;
-      if (!tokenAddr) {
+      // get decimals
+      const decimals = getDecimalsFromConfig(ticker, domain, config);
+      if (!tokenAddr || !decimals) {
         continue;
       }
       const tokenContract = await getERC20Contract(config, domain, tokenAddr);
@@ -35,8 +37,8 @@ export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<st
       let balance = await tokenContract.read.balanceOf([ownAddress]);
 
       // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
-      if (ticker === USDC_TICKER) {
-        const DECIMALS_DIFFERENCE = 12n; // Difference between 18 and 6 decimals
+      if (decimals !== 18) {
+        const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
         balance = BigInt(balance as string) * 10n ** DECIMALS_DIFFERENCE;
       }
       domainBalances.set(domain, balance as bigint);
