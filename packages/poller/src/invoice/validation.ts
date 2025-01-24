@@ -38,7 +38,6 @@ export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): boo
     config.supportedSettlementDomains.includes(+destination),
   );
   if (matchedDest.length < 1) {
-    console.log('!dest');
     return false;
   }
 
