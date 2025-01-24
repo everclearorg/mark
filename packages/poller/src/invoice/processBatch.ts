@@ -67,7 +67,9 @@ export async function processBatch(
       if (purchaseable <= destinationCustodied) {
         logger.info('Sufficient custodied balance to settle invoice', {
           purchaseable,
-          custodied,
+          custodied: destinationCustodied,
+          destination,
+          tickerHash: invoice.ticker_hash,
           id: invoice.intent_id,
         });
 
