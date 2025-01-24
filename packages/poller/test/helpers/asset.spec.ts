@@ -1,8 +1,9 @@
-import { getTickers, getAssetHash } from '../../src/helpers/asset';
+import { getTickers, getAssetHash, isXerc20Supported } from '../../src/helpers/asset';
 import { expect } from 'chai';
 import sinon from 'sinon';
 import * as coreFns from '@mark/core';
 import * as viemFns from 'viem';
+import * as assetFns from '../../src/helpers/asset';
 
 describe('getTickers', () => {
   it('should return ticker hashes in lowercase from the configuration', () => {
@@ -17,7 +18,6 @@ describe('getTickers', () => {
       },
     };
     const result = getTickers(config as any);
-    console.log(result, 'results from test');
     expect(result).to.deep.eq(['0xabcdef', '0x123456', '0xdeadbeef']);
   });
 
@@ -107,5 +107,94 @@ describe('getAssetHash', () => {
     const result = getAssetHash('0xhash1', '3', mockConfig, getTokenAddressMock);
 
     expect(result).to.be.undefined;
+  });
+});
+
+describe('isXerc20Supported', () => {
+  const mockConfig: any = {
+    chains: {
+      '1': {
+        tokens: {
+          '0xhash1': {
+            address: '0xTokenAddress1',
+          },
+        },
+      },
+      '2': {
+        tokens: {
+          '0xhash2': {
+            address: '0xTokenAddress2',
+          },
+        },
+      },
+    },
+    hub: {
+      domain: 'hub_domain',
+      providers: ['https://mainnet.infura.io/v3/test'],
+    },
+  };
+
+  enum SettlementStrategy {
+    DEFAULT,
+    XERC20,
+  }
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should return true if any domain supports XERC20', async () => {
+    const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash').returns(viemFns.pad('0xAssetHash1'));
+    const getAssetConfig = sinon
+      .stub(assetFns, 'getAssetConfig')
+      .resolves({ strategy: SettlementStrategy.XERC20 } as any);
+    const result = await isXerc20Supported('ticker', ['1', '2'], mockConfig);
+
+    expect(result).to.be.true;
+    expect(getAssetHashStub.called).to.be.true;
+  });
+
+  it('should return false if no domain supports XERC20', async () => {
+    const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash');
+    getAssetHashStub.withArgs('ticker', '1', mockConfig, sinon.match.any).returns('0xAssetHash1');
+    getAssetHashStub.withArgs('ticker', '2', mockConfig, sinon.match.any).returns('0xAssetHash2');
+
+    const getAssetConfigStub = sinon.stub(assetFns, 'getAssetConfig');
+    getAssetConfigStub.withArgs('0xAssetHash1', mockConfig).resolves({ strategy: SettlementStrategy.DEFAULT } as any);
+    getAssetConfigStub.withArgs('0xAssetHash2', mockConfig).resolves({ strategy: SettlementStrategy.DEFAULT } as any);
+
+    const result = await isXerc20Supported('ticker', ['1', '2'], mockConfig);
+
+    expect(result).to.be.false;
+    expect(getAssetHashStub.calledTwice).to.be.true;
+    expect(getAssetConfigStub.calledTwice).to.be.true;
+  });
+
+  it('should return false if no asset hashes are found', async () => {
+    const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash');
+    getAssetHashStub.withArgs('ticker', '1', mockConfig, sinon.match.any).returns(undefined);
+    getAssetHashStub.withArgs('ticker', '2', mockConfig, sinon.match.any).returns(undefined);
+
+    const getAssetConfigStub = sinon.stub(assetFns, 'getAssetConfig');
+
+    const result = await isXerc20Supported('ticker', ['1', '2'], mockConfig);
+
+    expect(result).to.be.false;
+    expect(getAssetHashStub.calledTwice).to.be.true;
+    expect(getAssetConfigStub.notCalled).to.be.true;
+  });
+
+  it('should continue checking other domains if one domain has no asset hash', async () => {
+    const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash');
+    getAssetHashStub.withArgs('ticker', '1', mockConfig, sinon.match.any).returns(undefined);
+    getAssetHashStub.withArgs('ticker', '2', mockConfig, sinon.match.any).returns('0xAssetHash2');
+
+    const getAssetConfigStub = sinon.stub(assetFns, 'getAssetConfig');
+    getAssetConfigStub.withArgs('0xAssetHash2', mockConfig).resolves({ strategy: SettlementStrategy.XERC20 } as any);
+
+    const result = await isXerc20Supported('ticker', ['1', '2'], mockConfig);
+
+    expect(result).to.be.true;
+    expect(getAssetHashStub.calledTwice).to.be.true;
+    expect(getAssetConfigStub.calledOnceWith('0xAssetHash2', mockConfig)).to.be.true;
   });
 });
