@@ -11,9 +11,9 @@
     "src/**/*"
   ],
   "scripts": {
-    "build": "tsc --build ./tsconfig.json && tsc-alias",
+    "build": "tsc --build ./tsconfig.json && tsc-alias -p tsconfig.json",
     "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
-    "dev": "ts-node-dev --respawn src/dev.ts",
+    "dev": "ts-node-dev -r tsconfig-paths/register --respawn src/dev.ts",
     "lint": "eslint src",
     "lint:fix": "yarn lint --fix",
     "test": "mocha --require ts-node/register --require tsconfig-paths/register --extensions ts,tsx --exit --timeout 60000 'test/**/*.spec.ts'"
@@ -29,8 +29,8 @@
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.147",
-    "@types/chai": "5.0.1",
-    "@types/mocha": "10.0.10",
+    "@types/chai": "^5.0.1",
+    "@types/mocha": "^10.0.10",
     "@types/node": "20.17.12",
     "@types/sinon": "17.0.3",
     "chai": "4.2.0",
@@ -41,6 +41,7 @@
     "sinon": "17.0.1",
     "ts-node": "10.9.2",
     "ts-node-dev": "2.0.0",
+    "tsc-alias": "^1.8.10",
     "tsconfig-paths": "4.2.0",
     "typescript": "5.7.2"
   }
