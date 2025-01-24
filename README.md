@@ -11,18 +11,6 @@ git clone https://github.com/everclearorg/mark.git
 cd mark
 ```
 
-2. Use yarn 3.3.1 and node v18
-
-```
-yarn --version
-> 3.3.1
-```
-
-```
-node --version
-v18.17.0
-```
-
 2. Install dependencies:
 
 ```sh
@@ -34,12 +22,6 @@ yarn install
 ```sh
 yarn build
 yarn test
-```
-
-## Local Dev
-
-```
-yarn workspace @mark/poller dev
 ```
 
 ## Local Image
