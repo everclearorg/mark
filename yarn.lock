@@ -855,11 +855,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/chainservice@npm:0.0.1":
-  version: 0.0.1
-  resolution: "@chimera-monorepo/chainservice@npm:0.0.1"
+"@chimera-monorepo/chainservice@npm:0.0.1-alpha.0":
+  version: 0.0.1-alpha.0
+  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.0"
   dependencies:
-    "@chimera-monorepo/utils": 0.0.1
+    "@chimera-monorepo/utils": 0.0.1-alpha.0
     "@safe-global/api-kit": ^2.5.6
     "@safe-global/protocol-kit": ^5.1.1
     "@safe-global/types-kit": ^1.0.1
@@ -867,7 +867,7 @@ __metadata:
     ethers: 5.7.2
     interval-promise: 1.4.0
     p-queue: 6.6.2
-  checksum: d7fb044563839c1a3a936a4fa88eb43ce87a23a9150883710e312b1f38f538cfa2924f1ac6f28a2ddce8e03c3a9ce20f9eba4e94924d0dc05ac2ec4fd8b582bb
+  checksum: 9440270639e4c51944a012b14b5e4d0ad36680e3a3600d4090521541be6eaa03ea6adab3d3c2f5d126412364a8eca5f698f373f16360102bc7a766d01b866634
   languageName: node
   linkType: hard
 
@@ -887,9 +887,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/utils@npm:0.0.1":
-  version: 0.0.1
-  resolution: "@chimera-monorepo/utils@npm:0.0.1"
+"@chimera-monorepo/utils@npm:0.0.1-alpha.0":
+  version: 0.0.1-alpha.0
+  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.0"
   dependencies:
     "@chimera-monorepo/contracts": 0.0.1
     "@hyperlane-xyz/sdk": 3.15.1
@@ -904,7 +904,7 @@ __metadata:
     hyperid: 3.2.0
     secp256k1: 4.0.3
     sinon-chai: 3.7.0
-  checksum: ab49a7de5be19cdfd7340e7fdb2ff61829321a50061616ac0fc44300eeeb753ff1f5f230ed1f14420e79c5cc516acacd96a8f565da751b8d442339087c699371
+  checksum: 96d772fdf1579128277c7aacee0c1623c5cdc84911b60ec1c389800d594572374453d823ca97fe7e768e94f1348620a4754443bd8f6b6b71aa2cf7fe4633a1c6
   languageName: node
   linkType: hard
 
@@ -2513,7 +2513,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/chainservice@workspace:packages/adapters/chainservice"
   dependencies:
-    "@chimera-monorepo/chainservice": 0.0.1
+    "@chimera-monorepo/chainservice": 0.0.1-alpha.0
     "@connext/nxtp-txservice": 2.5.0-alpha.6
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
