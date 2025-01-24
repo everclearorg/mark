@@ -5,6 +5,11 @@ import { getTickers } from '#/helpers';
 // TODO - add logging for why invoices are skipped
 export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): boolean {
   // Check formatting of invoice // TODO: ajv?
+  try {
+    BigInt(invoice.amount);
+  } catch (err) {
+    return false;
+  }
   const validFormat =
     invoice &&
     typeof invoice.intent_id === 'string' &&
