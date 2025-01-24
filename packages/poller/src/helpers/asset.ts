@@ -10,13 +10,17 @@ export const getTickers = (config: MarkConfiguration) => {
   return tickers;
 };
 
-export const getAssetHash = (ticker: string, domain: string, config: MarkConfiguration): string | undefined => {
-  // Get the token address
-  const tokenAddr = getTokenAddressFromConfig(ticker, domain, config);
+export const getAssetHash = (
+  ticker: string,
+  domain: string,
+  config: MarkConfiguration,
+  getTokenAddressFn: (ticker: string, domain: string, config: MarkConfiguration) => string | undefined,
+): string | undefined => {
+  const tokenAddr = getTokenAddressFn(ticker, domain, config);
   if (!tokenAddr) {
     return undefined;
   }
-  // Get the asset hash
+
   const assetHash = keccak256(
     encodeAbiParameters([{ type: 'bytes32' }, { type: 'uint32' }], [addressToBytes32(tokenAddr), parseInt(domain)]),
   );
@@ -34,7 +38,7 @@ export const isXerc20Supported = async (
 ): Promise<boolean> => {
   for (const domain of domains) {
     // Get the asset hash
-    const assetHash = getAssetHash(ticker, domain, config);
+    const assetHash = getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
     if (!assetHash) {
       // asset does not exist on this domain
       continue;
@@ -60,7 +64,7 @@ type AssetConfig = {
   approval: boolean;
   strategy: SettlementStrategy;
 };
-const getAssetConfig = async (assetHash: string, config: MarkConfiguration): Promise<AssetConfig> => {
+export const getAssetConfig = async (assetHash: string, config: MarkConfiguration): Promise<AssetConfig> => {
   const contract = getHubStorageContract(config);
   const assetConfig = (await contract.read.adoptedForAssets([assetHash])) as unknown as AssetConfig;
   return assetConfig;
