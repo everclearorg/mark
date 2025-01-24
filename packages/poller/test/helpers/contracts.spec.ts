@@ -4,6 +4,8 @@ import * as contractModule from '../../src/helpers/contracts';
 import * as ViemFns from 'viem';
 
 describe('Contracts Module', () => {
+  const HUB_TESTNET_ADDR = '0x4C526917051ee1981475BB6c49361B0756F505a8';
+  const HUB_MAINNET_ADDR = '0xa05A3380889115bf313f1Db9d5f335157Be4D816';
   const mockConfig = {
     chains: {
       '1': { providers: ['https://mainnet.infura.io/v3/test'] },
@@ -49,40 +51,55 @@ describe('Contracts Module', () => {
     });
   });
 
-  // describe('getHubStorageContract', () => {
-  //   it('should return a contract instance for the hub chain', async () => {
-  //     const clientStub = sinon.stub(contractModule, 'createClient').returns({} as any);
+  describe('getHubStorageContract', () => {
+    it('should return a contract instance for the hub chain', async () => {
+      const clientStub = sinon.stub(contractModule, 'createClient').returns({} as any);
 
-  //     const contractStub = sinon.stub(ViemFns, 'getContract').returns({} as any);
+      const contractStub = sinon.stub(ViemFns, 'getContract').returns({} as any);
 
-  //     const contract = await contractModule.getHubStorageContract(mockConfig as any);
+      const contract = await contractModule.getHubStorageContract(mockConfig as any);
 
-  //     expect(clientStub.calledOnce).to.be.true;
-  //     expect(clientStub.firstCall.args[0]).to.equal('25327');
-  //     expect(clientStub.firstCall.args[1]).to.deep.equal(mockConfig);
+      expect(clientStub.calledOnce).to.be.true;
+      expect(clientStub.firstCall.args[0]).to.equal('hub_domain');
+      expect(clientStub.firstCall.args[1]).to.deep.equal(mockConfig);
 
-  //     expect(contract).to.be.an('object');
-  //   });
-  // });
+      expect(contract).to.be.an('object');
+      expect(contract.address).to.be.eq(HUB_TESTNET_ADDR);
+    });
 
-  // describe('getERC20Contract', () => {
-  //   it('should return a contract instance for a given chain and address', async () => {
-  //     const clientStub = sinon.stub(contractModule, 'createClient').returns({} as any);
-  //     const contractStub = sinon.stub(ViemFns, 'getContract').returns({} as any);
+    it('should return a contract instance for the hub mainnet chain', async () => {
+      const clientStub = sinon.stub(contractModule, 'createClient').returns({} as any);
 
-  //     const contract = await contractModule.getERC20Contract(mockConfig as any, '1', '0x121344');
+      const contractStub = sinon.stub(ViemFns, 'getContract').returns({} as any);
 
-  //     expect(clientStub.calledOnce).to.be.true;
-  //     expect(contract).to.be.an('object');
-  //   });
+      const contract = await contractModule.getHubStorageContract({ ...mockConfig, environment: 'mainnet' } as any);
 
-  //   it('should throw an error if the chainId is invalid', async () => {
-  //     try {
-  //       await contractModule.getERC20Contract(mockConfig as any, '999', '0x121344');
-  //       throw new Error('Expected getERC20Contract to throw an error, but it did not');
-  //     } catch (error: any) {
-  //       expect(error.message).to.equal('No RPC configured for given domain: 999');
-  //     }
-  //   });
-  // });
+      expect(clientStub.calledOnce).to.be.true;
+      expect(clientStub.firstCall.args[0]).to.equal('hub_domain');
+      expect(clientStub.firstCall.args[1]).to.deep.equal({ ...mockConfig, environment: 'mainnet' });
+
+      expect(contract).to.be.an('object');
+      expect(contract.address).to.be.eq(HUB_MAINNET_ADDR);
+    });
+  });
+
+  describe('getERC20Contract', () => {
+    it('should return a contract instance for a given chain and address', async () => {
+      const clientStub = sinon.stub(contractModule, 'createClient').returns({} as any);
+      const contractStub = sinon.stub(ViemFns, 'getContract').returns({} as any);
+
+      const contract = await contractModule.getERC20Contract(mockConfig as any, '1', '0x121344');
+
+      expect(clientStub.calledOnce).to.be.true;
+      expect(contract).to.be.an('object');
+    });
+
+    it('should throw an error if the chainId is invalid', async () => {
+      try {
+        await contractModule.getERC20Contract(mockConfig as any, '999', '0x121344');
+      } catch (error: any) {
+        expect(error.message).to.equal('No RPC configured for given domain: 999');
+      }
+    });
+  });
 });
