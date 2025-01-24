@@ -65,7 +65,7 @@ type AssetConfig = {
   approval: boolean;
   strategy: SettlementStrategy;
 };
-const getAssetConfig = async (assetHash: string, config: MarkConfiguration): Promise<AssetConfig> => {
+export const getAssetConfig = async (assetHash: string, config: MarkConfiguration): Promise<AssetConfig> => {
   const contract = getHubStorageContract(config);
   const assetConfig = (await contract.read.adoptedForAssets([assetHash])) as unknown as AssetConfig;
   return assetConfig;
