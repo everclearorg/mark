@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version-file: package.json
+          node-version: 18.17
       - name: Set up corepack (for getting yarn)
         run: corepack enable
       - name: Get yarn cache
@@ -75,7 +75,7 @@ jobs:
         run: yarn --version
 
       - name: Install dependencies
-        run: yarn install --immutable --verbose
+        run: yarn install --immutable
 
       - name: Lint workspaces
         run: yarn lint
