@@ -1,7 +1,6 @@
 import { getTickers, getAssetHash, isXerc20Supported } from '../../src/helpers/asset';
 import { expect } from 'chai';
 import sinon from 'sinon';
-import * as coreFns from '@mark/core';
 import * as viemFns from 'viem';
 import * as assetFns from '../../src/helpers/asset';
 

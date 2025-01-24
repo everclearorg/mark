@@ -1,7 +1,6 @@
 import { getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
 import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex } from 'viem';
 import { getHubStorageContract } from './contracts';
-import * as viemFns from 'viem';
 
 export const getTickers = (config: MarkConfiguration) => {
   const tickers = Object.values(config.chains)
