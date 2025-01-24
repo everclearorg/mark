@@ -1372,8 +1372,8 @@ __metadata:
     "@mark/logger": "workspace:*"
     "@mark/web3signer": "workspace:*"
     "@types/aws-lambda": "npm:^8.10.147"
-    "@types/chai": "npm:5.0.1"
-    "@types/mocha": "npm:10.0.10"
+    "@types/chai": "npm:^5.0.1"
+    "@types/mocha": "npm:^10.0.10"
     "@types/node": "npm:20.17.12"
     "@types/sinon": "npm:17.0.3"
     aws-lambda: "npm:1.0.7"
@@ -1385,6 +1385,7 @@ __metadata:
     sinon: "npm:17.0.1"
     ts-node: "npm:10.9.2"
     ts-node-dev: "npm:2.0.0"
+    tsc-alias: "npm:^1.8.10"
     tsconfig-paths: "npm:4.2.0"
     typescript: "npm:5.7.2"
     viem: "npm:2.22.8"
@@ -1835,7 +1836,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/chai@npm:5.0.1":
+"@types/chai@npm:^5.0.1":
   version: 5.0.1
   resolution: "@types/chai@npm:5.0.1"
   dependencies:
@@ -1915,7 +1916,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/mocha@npm:10.0.10":
+"@types/mocha@npm:^10.0.10":
   version: 10.0.10
   resolution: "@types/mocha@npm:10.0.10"
   checksum: 10/4e3b61ed5112add86891a5dd3ebdd087714f5e1784a63d47a96424c0825058fd07074e85e43573462f751636c92808fc18a5f3862fe45e649ea98fdc5a3ee2ea
