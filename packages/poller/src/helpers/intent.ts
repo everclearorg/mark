@@ -103,24 +103,39 @@ export const sendIntents = async (
           logger.debug('Sending approval transaction', { transaction, chainId: txData.chainId });
           const approvalTxHash = await chainservice.submitAndMonitor(txData.chainId.toString(), transaction);
 
-          logger.info('Approval transaction sent successfully', { approvalTxHash });
+          logger.info('Approval transaction sent successfully', {
+            chain: txData.chainId,
+            approvalTxHash,
+            allowance,
+            asset: tokenContract.address,
+            amount: intent.amount,
+          });
         } else {
-          logger.info('Sufficient allowance already available', { allowance });
+          logger.info('Sufficient allowance already available', {
+            allowance,
+            chain: txData.chainId,
+            asset: tokenContract.address,
+            amount: intent.amount,
+          });
         }
 
         // Submit the create intent transaction
         logger.info('Submitting create intent transaction', {
-          to: txData.to,
-          value: txData.value,
-          data: txData.data,
-          from: txData.from,
+          intent,
+          transaction: {
+            to: txData.to,
+            value: txData.value,
+            data: txData.data,
+            from: txData.from,
+            chain: txData.chainId,
+          },
         });
 
         const intentTxHash = await chainservice.submitAndMonitor(txData.chainId.toString(), {
           to: txData.to as string,
-          value: txData.value,
+          value: txData.value ?? '0',
           data: txData.data,
-          from: txData.from as string,
+          from: txData.from ?? config.ownAddress,
         });
 
         logger.info('Create intent transaction sent successfully', {
