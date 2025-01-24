@@ -855,11 +855,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/chainservice@npm:0.0.1-alpha.0":
-  version: 0.0.1-alpha.0
-  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.0"
+"@chimera-monorepo/chainservice@npm:0.0.1-alpha.1":
+  version: 0.0.1-alpha.1
+  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.1"
   dependencies:
-    "@chimera-monorepo/utils": 0.0.1-alpha.0
+    "@chimera-monorepo/utils": 0.0.1-alpha.1
     "@safe-global/api-kit": ^2.5.6
     "@safe-global/protocol-kit": ^5.1.1
     "@safe-global/types-kit": ^1.0.1
@@ -867,31 +867,31 @@ __metadata:
     ethers: 5.7.2
     interval-promise: 1.4.0
     p-queue: 6.6.2
-  checksum: 9440270639e4c51944a012b14b5e4d0ad36680e3a3600d4090521541be6eaa03ea6adab3d3c2f5d126412364a8eca5f698f373f16360102bc7a766d01b866634
+  checksum: 9b041b2eb803b95644c0167112d386f854d5b1855fb64786bffd924c8fe9d99ad778097e0c8c341a849358df851c5d018a0c5659990bffc5caf2f89f123174a0
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/contracts@npm:0.0.1":
-  version: 0.0.1
-  resolution: "@chimera-monorepo/contracts@npm:0.0.1"
+"@chimera-monorepo/contracts@npm:0.0.1-alpha.1":
+  version: 0.0.1-alpha.1
+  resolution: "@chimera-monorepo/contracts@npm:0.0.1-alpha.1"
   dependencies:
     "@hyperlane-xyz/core": 3.8.1
     "@inquirer/prompts": ^5.3.8
     "@openzeppelin/contracts": 5.0.2
     "@openzeppelin/contracts-upgradeable": 5.0.2
     dotenv: ^16.4.5
-    isolmate: "github:defi-wonderland/isolmate#59e18043c2450fef550f1744b3705ce9ebcaf1c8"
+    solmate: ^6.8.0
     ts-node: ^10.9.2
     viem: ^2.19.8
-  checksum: bf44f2ae38bfd2afc4129e8d94d2768de96c0fbf20b4b2baa5694dd4bb711f46095d2e2b6b8803dc8379f67a1297c71e29b762deabf5eefb9937a5904f7ba8c9
+  checksum: 68003151283294640fb9443fe6acb390754556db6c90fc3771e7e4dd5b7a67bd82a5ba333fc9b0c8f3e8e31513472aa6c0b8ceb88038c4049171cb5609836f16
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/utils@npm:0.0.1-alpha.0":
-  version: 0.0.1-alpha.0
-  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.0"
+"@chimera-monorepo/utils@npm:0.0.1-alpha.1":
+  version: 0.0.1-alpha.1
+  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.1"
   dependencies:
-    "@chimera-monorepo/contracts": 0.0.1
+    "@chimera-monorepo/contracts": 0.0.1-alpha.1
     "@hyperlane-xyz/sdk": 3.15.1
     "@sinclair/typebox": 0.25.21
     "@urql/core": 5.0.4
@@ -904,7 +904,7 @@ __metadata:
     hyperid: 3.2.0
     secp256k1: 4.0.3
     sinon-chai: 3.7.0
-  checksum: 96d772fdf1579128277c7aacee0c1623c5cdc84911b60ec1c389800d594572374453d823ca97fe7e768e94f1348620a4754443bd8f6b6b71aa2cf7fe4633a1c6
+  checksum: 7abe383a79acf1292297854d91075041542b9b420d6c69de8256b3e26d3174aafee56f266a1e6a0c7aec586392193f20ce82a1784e6277bd684297f2b4a84caa
   languageName: node
   linkType: hard
 
@@ -2513,7 +2513,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/chainservice@workspace:packages/adapters/chainservice"
   dependencies:
-    "@chimera-monorepo/chainservice": 0.0.1-alpha.0
+    "@chimera-monorepo/chainservice": 0.0.1-alpha.1
     "@connext/nxtp-txservice": 2.5.0-alpha.6
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
@@ -8766,13 +8766,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"isolmate@github:defi-wonderland/isolmate#59e18043c2450fef550f1744b3705ce9ebcaf1c8":
-  version: 6.2.0-beta2
-  resolution: "isolmate@https://github.com/defi-wonderland/isolmate.git#commit=59e18043c2450fef550f1744b3705ce9ebcaf1c8"
-  checksum: 08e1b73c055f54999c3c4e8b729b383d7b3b36e03b5e40029e925c362a922542bdb85ecc67d9e1ca67942fc3f83f428d7b717a76f9797f327eac03a4cb02554e
-  languageName: node
-  linkType: hard
-
 "isomorphic-ws@npm:^4.0.1":
   version: 4.0.1
   resolution: "isomorphic-ws@npm:4.0.1"
@@ -12027,6 +12020,13 @@ __metadata:
     ip-address: "npm:^9.0.5"
     smart-buffer: "npm:^4.2.0"
   checksum: 7a6b7f6eedf7482b9e4597d9a20e09505824208006ea8f2c49b71657427f3c137ca2ae662089baa73e1971c62322d535d9d0cf1c9235cf6f55e315c18203eadd
+  languageName: node
+  linkType: hard
+
+"solmate@npm:^6.8.0":
+  version: 6.8.0
+  resolution: "solmate@npm:6.8.0"
+  checksum: 43d36bb2db67bf1345093c29e0dd6d6dedb8bdbb5b21db722f75457e63a22f2a8fd9c9d397e81e476b731823e9854cf8c3b9d922a680413932e6c5ce3c5a7d00
   languageName: node
   linkType: hard
 
