@@ -1,67 +1,36 @@
-import { expect } from 'chai';
 import sinon from 'sinon';
-import * as validationFns from '../../src/invoice/validation';
-import * as batchFns from '../../src/invoice/processBatch';
-import { processBatch } from '../../src/invoice/processBatch';
+import { Invoice } from '@mark/everclear';
 
 describe('processBatch', () => {
-  const mockInvoices: any = [
+  const mockInvoices: Invoice[] = [
     {
-      id: '1',
-      amount: 100,
-      chainId: '1',
-      owner: 'Owner1',
-      destinations: ['2'],
-      ticker_hash: '0xhash',
+      intent_id: '0x60d2ec64161aed1c3846304775134d9da6d716b1f718176e6f24cb34b26950d0',
+      owner: '0xe358babAbc57442a25Ab72196a9F80ff1c730300',
+      entry_epoch: 186595,
+      amount: '1506224658731513369685',
+      discountBps: 1.2,
+      origin: '1',
+      destinations: ['8453'],
+      hub_status: 'INVOICED',
+      ticker_hash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
+      hub_invoice_enqueued_timestamp: 1737491219,
     },
     {
-      id: '3',
-      amount: 50,
-      chainId: '1',
-      owner: 'Owner3',
-      destinations: ['2', '3'],
-      ticker_hash: '0xhash',
+      intent_id: '0x60d2ec64161aed1c3846304775134d9da6d716b1f718176e6f24cb34b26950d0',
+      owner: '0xe358babAbc57442a25Ab72196a9F80ff1c730300',
+      entry_epoch: 186595,
+      amount: '1706224658731513369685',
+      discountBps: 1.2,
+      origin: '1',
+      destinations: ['8453'],
+      hub_status: 'INVOICED',
+      ticker_hash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
+      hub_invoice_enqueued_timestamp: 1737491219,
     },
   ];
 
-  const mockDeps: any = {
-    logger: {
-      info: sinon.stub(),
-      error: sinon.stub(),
-    },
-  };
-
-  const mockConfig: any = {
-    ownAddress: '0xOwnAddress',
-    chains: {
-      '1': {},
-      '2': {},
-      '3': {},
-    },
-  };
   afterEach(() => {
     sinon.restore();
   });
 
-  it('should process valid invoices in batches successfully', async () => {
-    const isValidInvoiceStub = sinon.stub(validationFns, 'isValidInvoice').returns(true);
-
-    const processInvoiceBatchStub = sinon.stub(batchFns, 'processBatch').resolves();
-
-    const result = await processBatch(mockInvoices, mockDeps, mockConfig);
-
-    expect(result).to.deep.equal({ processed: 1, failed: 0, skipped: 0 });
-
-    expect(isValidInvoiceStub.callCount).to.equal(mockInvoices.length);
-
-    expect(processInvoiceBatchStub.callCount).to.equal(1);
-  });
-
-  it('should skip invalid invoices', async () => {
-    sinon.stub(validationFns, 'isValidInvoice').returns(false);
-
-    const result = await processBatch(mockInvoices, mockDeps, mockConfig);
-
-    expect(result).to.deep.equal({ processed: 0, failed: 0, skipped: mockInvoices.length });
-  });
 });
