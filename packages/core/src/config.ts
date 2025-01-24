@@ -210,3 +210,11 @@ export const getTokenAddressFromConfig = (
   }
   return asset.address;
 };
+
+export const getDecimalsFromConfig = (ticker: string, domain: string, config: MarkConfiguration) => {
+  const asset = (config.chains[domain]?.assets ?? []).find((a) => a.tickerHash.toLowerCase() === ticker.toLowerCase());
+  if (!asset) {
+    return undefined;
+  }
+  return asset.decimals;
+};
