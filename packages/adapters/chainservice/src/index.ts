@@ -1,9 +1,7 @@
 import { providers, Signer } from 'ethers';
 import { ChainService as ChimeraChainService } from '@chimera-monorepo/chainservice';
 import { ILogger } from '@mark/logger';
-import { createLoggingContext } from '@mark/core';
-import { ethers } from 'ethers';
-import { ChainConfiguration } from '@mark/core';
+import { createLoggingContext, ChainConfiguration } from '@mark/core';
 
 export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
@@ -26,9 +24,9 @@ export class ChainService {
       (acc, [chainId, chainConfig]) => ({
         ...acc,
         [chainId]: {
-          providers: chainConfig.providers.map((url) => ({ url })),
-          confirmations: 1,
-          confirmationTimeout: config.retryDelay || 15000,
+          providers: chainConfig.providers.map((url) => url),
+          confirmations: 2,
+          confirmationTimeout: config.retryDelay || 45000,
         },
       }),
       {},
@@ -37,10 +35,7 @@ export class ChainService {
     this.txService = new ChimeraChainService(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       logger as any,
-      {
-        chains: nxtpChainConfig,
-        logLevel: config.logLevel || 'info',
-      },
+      nxtpChainConfig,
       signer,
     );
 
@@ -57,19 +52,17 @@ export class ChainService {
       throw new Error(`Chain ${chainId} not supported`);
     }
 
+    const writeTransaction = {
+      to: transaction.to!,
+      data: transaction.data! as `0x${string}`,
+      value: transaction.value ? transaction.value.toString() : '0',
+      domain: parseInt(chainId),
+      from: transaction.from,
+    };
     try {
-      const tx = await this.txService.sendTx(
-        {
-          to: transaction.to!,
-          data: transaction.data ? ethers.utils.hexlify(transaction.data) : '0x',
-          value: transaction.value ? transaction.value.toString() : '0',
-          domain: parseInt(chainId),
-          from: transaction.from,
-        },
-        context,
-      );
+      const tx = await this.txService.sendTx(writeTransaction, context);
 
-      this.logger.info('Transaction submitted', {
+      this.logger.info('Transaction mined', {
         chainId,
         txHash: tx.transactionHash,
       });
