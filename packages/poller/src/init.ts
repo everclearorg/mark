@@ -59,7 +59,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     };
   } catch (_error: unknown) {
     const error = _error as Error;
-    logger.error('Failed to poll invoices', { error });
+    logger.error('Failed to poll invoices', { name: error.name, message: error.message, stack: error.stack });
 
     return {
       statusCode: 500,

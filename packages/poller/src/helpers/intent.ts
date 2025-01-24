@@ -2,7 +2,8 @@ import { ChainService } from '@mark/chainservice';
 import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
 import { getERC20Contract } from './contracts';
-import { encodeFunctionData } from 'viem';
+import { encodeFunctionData, erc20Abi } from 'viem';
+import { jsonifyMap } from '@mark/logger';
 
 /**
  * Receives a mapping of new intent params designed to purchase a single invoice, keyed
@@ -16,34 +17,42 @@ export const combineIntents = async (
   unbatched: Map<string, NewIntentParams[]>,
   deps: ProcessInvoicesDependencies,
 ): Promise<Map<string, Map<string, NewIntentParams>>> => {
+  const { logger } = deps;
   try {
     // Initialize the result map
-    const { logger } = deps;
-    logger.info('Into the combine intent method');
+    logger.debug('Method started', { method: combineIntents.name, unbatched: jsonifyMap(unbatched) });
     const result = new Map<string, Map<string, NewIntentParams>>();
 
     // Iterate over the unbatched map
     for (const [origin, intents] of unbatched.entries()) {
+      logger.info('Combining intents for domain', { domain: origin, intents: intents.length });
       const assetMap = new Map<string, NewIntentParams>();
 
       for (const intent of intents) {
         const { inputAsset, amount, destinations, to, callData, maxFee } = intent;
 
         // If the asset already exists, update the existing intent
-        if (assetMap.has(inputAsset)) {
-          const existingIntent = assetMap.get(inputAsset)!;
+        if (assetMap.has(inputAsset.toLowerCase())) {
+          const existingIntent = assetMap.get(inputAsset.toLowerCase())!;
           existingIntent.amount = (BigInt(existingIntent.amount) + BigInt(amount)).toString();
         } else {
-          assetMap.set(inputAsset, { origin, destinations, to, inputAsset, amount, callData, maxFee });
+          assetMap.set(inputAsset.toLowerCase(), { origin, destinations, to, inputAsset, amount, callData, maxFee });
         }
       }
+      logger.info('Combined intents for domain + asset', {
+        domain: origin,
+        assets: [...assetMap.keys()],
+        intents: intents.length,
+      });
 
       result.set(origin, assetMap);
     }
-    logger.info('Batched intent mapping', { batch: result });
+    logger.info('Batched intents mapping', { domains: [...result.keys()] });
     return result;
-  } catch (err) {
-    throw new Error(`combine Intents failed ${(err as unknown as Error).message || err}`);
+  } catch (err: unknown) {
+    const error = err as Error;
+    logger.error('Error combining intents', { message: error.message, name: error.name, stack: error.stack });
+    throw new Error(`combineIntents failed ${(err as unknown as Error).message || err}`);
   }
 };
 
@@ -60,7 +69,8 @@ export const sendIntents = async (
   const results: { transactionHash: string; chainId: string }[] = [];
 
   try {
-    for (const originMap of batch.values()) {
+    for (const [domain, originMap] of batch.entries()) {
+      logger.info('Attempting to send batched intents', { domain, intents: originMap.size });
       for (const intent of originMap.values()) {
         logger.info('Processing intent for new transaction', { intent });
 
@@ -80,27 +90,18 @@ export const sendIntents = async (
           });
 
           const approveCalldata = encodeFunctionData({
-            abi: [
-              {
-                inputs: [
-                  { name: 'spender', type: 'address' },
-                  { name: 'amount', type: 'uint256' },
-                ],
-                name: 'approve',
-                outputs: [{ name: '', type: 'bool' }],
-                stateMutability: 'nonpayable',
-                type: 'function',
-              },
-            ],
+            abi: erc20Abi,
             functionName: 'approve',
             args: [txData.to as `0x${string}`, BigInt(intent.amount)],
           });
-
-          const approvalTxHash = await chainservice.submitAndMonitor(txData.chainId.toString(), {
-            to: txData.to as string,
+          const transaction = {
+            to: tokenContract.address,
             data: approveCalldata,
             from: config.ownAddress,
-          });
+          };
+
+          logger.debug('Sending approval transaction', { transaction, chainId: txData.chainId });
+          const approvalTxHash = await chainservice.submitAndMonitor(txData.chainId.toString(), transaction);
 
           logger.info('Approval transaction sent successfully', { approvalTxHash });
         } else {
@@ -133,7 +134,12 @@ export const sendIntents = async (
     }
     return results;
   } catch (err) {
-    logger.error('Error encountered while sending intents', { error: err });
-    throw new Error(`Failed to send intents: ${(err as unknown as Error).message || err}`);
+    const error = err as Error;
+    logger.error('Error encountered while sending intents', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+    throw new Error(`Failed to send intents: ${error.message || err}`);
   }
 };
