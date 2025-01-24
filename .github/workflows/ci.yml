@@ -24,7 +24,11 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
+          node-version: "18.x"
+
+      - name: Get yarn cache
+        uses: actions/setup-node@v3
+        with:
           cache: 'yarn'
 
       - name: Check Yarn version
@@ -62,9 +66,9 @@ jobs:
         uses: wagoid/commitlint-github-action@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: 18.x
           cache: 'yarn'
 
       - name: Check Yarn version
