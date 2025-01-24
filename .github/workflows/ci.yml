@@ -21,14 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set up corepack
+        run: corepack enable
+
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
           node-version: "18.x"
-
-      - name: Get yarn cache
-        uses: actions/setup-node@v3
-        with:
           cache: 'yarn'
 
       - name: Check Yarn version
@@ -66,7 +65,7 @@ jobs:
         uses: wagoid/commitlint-github-action@v5
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: 18.x
           cache: 'yarn'
@@ -75,7 +74,7 @@ jobs:
         run: yarn --version
 
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --immutable
 
       - name: Lint workspaces
         run: yarn lint
