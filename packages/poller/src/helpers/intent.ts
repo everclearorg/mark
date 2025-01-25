@@ -1,4 +1,3 @@
-import { ChainService } from '@mark/chainservice';
 import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
 import { getERC20Contract } from './contracts';
@@ -61,11 +60,10 @@ export const combineIntents = async (
  */
 export const sendIntents = async (
   batch: Map<string, Map<string, NewIntentParams>>,
-  chainservice: ChainService,
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
 ): Promise<{ transactionHash: string; chainId: string }[]> => {
-  const { everclear, logger } = deps;
+  const { everclear, logger, chainService } = deps;
   const results: { transactionHash: string; chainId: string }[] = [];
 
   try {
@@ -101,7 +99,7 @@ export const sendIntents = async (
           };
 
           logger.debug('Sending approval transaction', { transaction, chainId: txData.chainId });
-          const approvalTxHash = await chainservice.submitAndMonitor(txData.chainId.toString(), transaction);
+          const approvalTxHash = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
 
           logger.info('Approval transaction sent successfully', {
             chain: txData.chainId,
@@ -131,7 +129,7 @@ export const sendIntents = async (
           },
         });
 
-        const intentTxHash = await chainservice.submitAndMonitor(txData.chainId.toString(), {
+        const intentTxHash = await chainService.submitAndMonitor(txData.chainId.toString(), {
           to: txData.to as string,
           value: txData.value ?? '0',
           data: txData.data,
