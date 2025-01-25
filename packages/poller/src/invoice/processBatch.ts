@@ -10,7 +10,7 @@ export async function processBatch(
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
 ): Promise<void> {
-  const { logger, chainService } = deps;
+  const { logger } = deps;
 
   // Query all of marks balances across chains
   logger.info('Getting mark balances', { chains: Object.keys(config.chains) });

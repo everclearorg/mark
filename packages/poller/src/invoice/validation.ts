@@ -7,7 +7,8 @@ export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): boo
   // Check formatting of invoice // TODO: ajv?
   try {
     BigInt(invoice.amount);
-  } catch (err) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } catch (_) {
     return false;
   }
   const validFormat =
