@@ -16,7 +16,8 @@
     "dev": "ts-node-dev -r tsconfig-paths/register --respawn src/dev.ts",
     "lint": "eslint src",
     "lint:fix": "yarn lint --fix",
-    "test": "mocha --require ts-node/register --require tsconfig-paths/register --require test/globalTestHook.ts --extensions ts,tsx --exit --timeout 60000 'test/**/*.spec.ts'"
+    "test": "nyc mocha --require ts-node/register --require tsconfig-paths/register --require test/globalTestHook.ts --extensions ts,tsx --exit --timeout 60000 'test/**/*.spec.ts'",
+    "coverage": "nyc report --reporter=text-summary --reporter=html"
   },
   "dependencies": {
     "@mark/chainservice": "workspace:*",
