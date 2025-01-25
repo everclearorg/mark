@@ -50,7 +50,7 @@ export async function processBatch(
     const destinations = invoice.destinations.sort((a, b) => {
       const custodiedA = custodiedTicker.get(a) ?? 0n;
       const custodiedB = custodiedTicker.get(b) ?? 0n;
-      return custodiedB - custodiedA;
+      return custodiedB > custodiedA ? 1 : custodiedB < custodiedA ? -1 : 0;
     });
 
     // Calculate the true invoice amount by applying the bps
