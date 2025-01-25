@@ -2582,11 +2582,13 @@ __metadata:
     "@mark/web3signer": "workspace:*"
     "@types/aws-lambda": ^8.10.147
     "@types/chai": ^5.0.1
+    "@types/chai-as-promised": 7.1.1
     "@types/mocha": ^10.0.10
     "@types/node": 20.17.12
     "@types/sinon": 17.0.3
     aws-lambda: 1.0.7
     chai: 4.2.0
+    chai-as-promised: 7.1.1
     eslint: 9.17.0
     mocha: 11.0.1
     nyc: 17.1.0
@@ -3998,7 +4000,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/chai@npm:^5.0.1":
+"@types/chai-as-promised@npm:7.1.1":
+  version: 7.1.1
+  resolution: "@types/chai-as-promised@npm:7.1.1"
+  dependencies:
+    "@types/chai": "*"
+  checksum: 3745f49ce591b1af28236a4436783466d24276cdc7fcc9daa4a076ca91f7d10ea4553e171caeb814165647f31e95cedc3cc7218a817537eff58bdb8d83909ceb
+  languageName: node
+  linkType: hard
+
+"@types/chai@npm:*, @types/chai@npm:^5.0.1":
   version: 5.0.1
   resolution: "@types/chai@npm:5.0.1"
   dependencies:
