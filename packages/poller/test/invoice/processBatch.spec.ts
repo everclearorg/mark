@@ -204,4 +204,294 @@ describe('processBatch', () => {
     await expect(processBatch(mockInvoices, mockDeps, badConfig as any))
       .to.be.rejectedWith('No input asset found for ticker');
   });
+
+  it('should correctly apply discount BPS to invoice amount', async () => {
+    const invoiceWithDiscount = {
+      ...mockInvoices[0],
+      amount: '2000000000000000000', // 2 tokens
+      discountBps: 50 // 0.5% discount
+    };
+
+    await processBatch([invoiceWithDiscount], mockDeps, mockConfig);
+
+    // With 0.5% discount on 2 tokens, the purchase amount should be 1.99 tokens
+    // The discount calculation is: amount * (1 - (discountBps * 10000) / (10000 * 10000))
+    expect(sendIntentsStub.called).to.be.true;
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    const intentAmount = sentIntents.get('8453')?.get('0xtoken8453')?.amount;
+    expect(intentAmount).to.equal('1990000000000000000'); // 1.99 tokens
+  });
+
+  it('should try multiple destinations until finding one with sufficient balance', async () => {
+    const multiDestInvoice = {
+      ...mockInvoices[0],
+      destinations: ['8453', '1'], // Try 8453 first, then 1
+      amount: '1000000000000000000', // 1 token
+      discountBps: 0 // No discount to keep math simple
+    };
+
+    // Set up balances where first destination has insufficient balance
+    const mockBalances = new Map();
+    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('100')], // Insufficient for first destination
+      ['1', BigInt('2000000000000000000')] // Sufficient for second destination
+    ]));
+    markBalanceStub.resolves(mockBalances);
+
+    await processBatch([multiDestInvoice], mockDeps, mockConfig);
+
+    expect(sendIntentsStub.called).to.be.true;
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    expect(sentIntents.has('1')).to.be.true; // Should use the second destination
+    expect(sentIntents.has('8453')).to.be.false; // Should skip the first destination
+  });
+
+  it('should correctly update balances after processing each invoice', async () => {
+    const multipleInvoices = [
+      {
+        ...mockInvoices[0],
+        amount: '1000000000000000000', // 1 token
+        discountBps: 0 // No discount to keep math simple
+      },
+      {
+        ...mockInvoices[0],
+        intent_id: '0x456',
+        amount: '500000000000000000', // 0.5 tokens
+        discountBps: 0 // No discount to keep math simple
+      }
+    ];
+
+    // Set up initial balance of 2 tokens
+    const mockBalances = new Map();
+    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('2000000000000000000')]
+    ]));
+    markBalanceStub.resolves(mockBalances);
+
+    await processBatch(multipleInvoices, mockDeps, mockConfig);
+
+    expect(sendIntentsStub.called).to.be.true;
+    // Should process both invoices since total amount (1.5 tokens) is less than balance (2 tokens)
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    const combinedAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
+    expect(combinedAmount).to.equal('1500000000000000000'); // 1.5 tokens
+  });
+
+  it('should correctly handle partial custodied amounts', async () => {
+    const invoice = {
+      ...mockInvoices[0],
+      amount: '2000000000000000000', // 2 tokens
+      discountBps: 0 // No discount to keep math simple
+    };
+
+    // Set up partial custodied amount (1 token)
+    const mockCustodied = new Map();
+    mockCustodied.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('1000000000000000000')]
+    ]));
+    custodiedBalanceStub.resolves(mockCustodied);
+
+    // Set up sufficient balance for the remainder
+    const mockBalances = new Map();
+    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('2000000000000000000')]
+    ]));
+    markBalanceStub.resolves(mockBalances);
+
+    await processBatch([invoice], mockDeps, mockConfig);
+
+    expect(sendIntentsStub.called).to.be.true;
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
+    expect(intentAmount).to.equal('1000000000000000000');
+  });
+
+  it('should handle case when all destinations have insufficient balance', async () => {
+    const multiDestInvoice = {
+      ...mockInvoices[0],
+      destinations: ['8453', '1']
+    };
+
+    // Set up insufficient balances for all destinations
+    const mockBalances = new Map();
+    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('100')],
+      ['1', BigInt('100')]
+    ]));
+    markBalanceStub.resolves(mockBalances);
+
+    await processBatch([multiDestInvoice], mockDeps, mockConfig);
+
+    expect(sendIntentsStub.called).to.be.false;
+    expect(mockDeps.logger.info.calledWith('No intents to purchase')).to.be.true;
+  });
+
+  it('should handle undefined custodied map for ticker', async () => {
+    const invoice = {
+      ...mockInvoices[0],
+      ticker_hash: '0xnonexistentticker',
+      amount: '1000000000000000000', // 1 token
+      discountBps: 0 // No discount to keep math simple
+    };
+
+    // Set up empty custodied map
+    custodiedBalanceStub.resolves(new Map());
+
+    // Set up sufficient balance
+    const mockBalances = new Map();
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('2000000000000000000')]
+    ]));
+    markBalanceStub.resolves(mockBalances);
+
+    // Update config to include the new ticker
+    const configWithNewTicker = {
+      ...mockConfig,
+      chains: {
+        ...mockConfig.chains,
+        '8453': {
+          ...mockConfig.chains['8453'],
+          assets: [{
+            ...mockConfig.chains['8453'].assets[0],
+            tickerHash: invoice.ticker_hash
+          }]
+        }
+      }
+    };
+
+    await processBatch([invoice], mockDeps, configWithNewTicker as any);
+
+    expect(sendIntentsStub.called).to.be.true;
+    // Should treat undefined custodied amount as 0
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
+    expect(intentAmount).to.equal('1000000000000000000');
+  });
+
+  it('should handle undefined balance map for ticker', async () => {
+    const invoice = {
+      ...mockInvoices[0],
+      ticker_hash: '0xnonexistentticker',
+      amount: '1000000000000000000', // 1 token
+      discountBps: 0 // No discount to keep math simple
+    };
+
+    // Set up empty balance map
+    markBalanceStub.resolves(new Map());
+
+    // Set up empty custodied map
+    custodiedBalanceStub.resolves(new Map());
+
+    // Update config to include the new ticker
+    const configWithNewTicker = {
+      ...mockConfig,
+      chains: {
+        ...mockConfig.chains,
+        '8453': {
+          ...mockConfig.chains['8453'],
+          assets: [{
+            ...mockConfig.chains['8453'].assets[0],
+            tickerHash: invoice.ticker_hash
+          }]
+        }
+      }
+    };
+
+    await processBatch([invoice], mockDeps, configWithNewTicker as any);
+
+    expect(sendIntentsStub.called).to.be.false;
+    expect(mockDeps.logger.debug.calledWith('Insufficient balance to support destination')).to.be.true;
+  });
+
+  it('should handle undefined custodied chain map', async () => {
+    const invoice = {
+      ...mockInvoices[0],
+      amount: '1000000000000000000', // 1 token
+      discountBps: 0 // No discount to keep math simple
+    };
+
+    // Set up custodied map with no chain map
+    const mockCustodied = new Map();
+    mockCustodied.set(invoice.ticker_hash.toLowerCase(), new Map());
+    custodiedBalanceStub.resolves(mockCustodied);
+
+    // Set up sufficient balance
+    const mockBalances = new Map();
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('2000000000000000000')]
+    ]));
+    markBalanceStub.resolves(mockBalances);
+
+    await processBatch([invoice], mockDeps, mockConfig);
+
+    expect(sendIntentsStub.called).to.be.true;
+    // Should treat undefined custodied amount as 0
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
+    expect(intentAmount).to.equal('1000000000000000000');
+  });
+
+  it('should handle errors in getMarkBalances', async () => {
+    markBalanceStub.rejects(new Error('Failed to get balances'));
+    await expect(processBatch(mockInvoices, mockDeps, mockConfig))
+      .to.be.rejectedWith('Failed to get balances');
+  });
+
+  it('should handle errors in getCustodiedBalances', async () => {
+    custodiedBalanceStub.rejects(new Error('Failed to get custodied balances'));
+    await expect(processBatch(mockInvoices, mockDeps, mockConfig))
+      .to.be.rejectedWith('Failed to get custodied balances');
+  });
+
+  it('should handle errors in isXerc20Supported', async () => {
+    isXerc20SupportedStub.rejects(new Error('Failed to check XERC20 support'));
+    await expect(processBatch(mockInvoices, mockDeps, mockConfig))
+      .to.be.rejectedWith('Failed to check XERC20 support');
+  });
+
+  it('should handle errors in combineIntents', async () => {
+    // Set up a valid invoice that will get to the combineIntents call
+    const invoice = {
+      ...mockInvoices[0],
+      amount: '1000000000000000000',
+      discountBps: 0
+    };
+
+    // Set up sufficient balance
+    const mockBalances = new Map();
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('2000000000000000000')]
+    ]));
+    markBalanceStub.resolves(mockBalances);
+
+    // Make combineIntents fail
+    stub(intentHelpers, 'combineIntents').rejects(new Error('Failed to combine intents'));
+
+    await expect(processBatch([invoice], mockDeps, mockConfig))
+      .to.be.rejectedWith('Failed to combine intents');
+  });
+
+  it('should initialize unbatched intents map for new destination', async () => {
+    const invoice = {
+      ...mockInvoices[0],
+      amount: '1000000000000000000', // 1 token
+      discountBps: 0 // No discount to keep math simple
+    };
+
+    // Set up sufficient balance
+    const mockBalances = new Map();
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([
+      ['8453', BigInt('2000000000000000000')]
+    ]));
+    markBalanceStub.resolves(mockBalances);
+
+    await processBatch([invoice], mockDeps, mockConfig);
+
+    expect(sendIntentsStub.called).to.be.true;
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    // Verify that a new map was initialized for the destination
+    expect(sentIntents.has('8453')).to.be.true;
+    const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
+    expect(intentAmount).to.equal('1000000000000000000');
+  });
 });
