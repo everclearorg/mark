@@ -61,6 +61,11 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
 
   // get all ticker hashes
   const tickers = getTickers(config);
+
+  if (!tickers || tickers.length === 0) {
+    return custodiedBalances; // Return the empty map immediately
+  }
+
   for (const ticker of tickers) {
     const domainBalances = new Map<string, bigint>();
     for (const domain of Object.keys(chains)) {
