@@ -94,6 +94,7 @@ variable "chain_ids" {
 }
 
 variable "dd_api_key" {
+  description = "Datadog API KEY"
   type      = string
   sensitive = true
 }
