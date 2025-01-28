@@ -92,3 +92,8 @@ variable "chain_ids" {
   type        = string
   default     = "1,56,8453"
 }
+
+variable "dd_api_key" {
+  type      = string
+  sensitive = true
+}

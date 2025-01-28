@@ -81,6 +81,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       stage: (process.env.STAGE ?? 'development') as Stage,
       environment: (process.env.ENVIRONMENT ?? 'local') as Environment,
       hub: parseHubConfigurations(hostedConfig, environment),
+      dd_api_key: requireEnv('DD_API_KEY'),
     };
 
     validateConfiguration(config);
