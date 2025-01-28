@@ -1,13 +1,16 @@
 import { Logger } from '@mark/logger';
 import { MarkConfiguration, loadConfiguration } from '@mark/core';
-import { pollAndProcess } from './invoice';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
+import { Wallet } from 'ethers';
+import { pollAndProcess } from './invoice';
 
 function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   // Initialize adapters in the correct order
-  const web3Signer = new Web3Signer(config.web3SignerUrl);
+  const web3Signer = config.web3SignerUrl.startsWith('http')
+    ? new Web3Signer(config.web3SignerUrl)
+    : new Wallet(config.web3SignerUrl);
 
   const chainService = new ChainService(
     {
@@ -59,7 +62,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     };
   } catch (_error: unknown) {
     const error = _error as Error;
-    logger.error('Failed to poll invoices', { error });
+    logger.error('Failed to poll invoices', { name: error.name, message: error.message, stack: error.stack });
 
     return {
       statusCode: 500,
