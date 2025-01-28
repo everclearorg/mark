@@ -7,5 +7,5 @@
     "baseUrl": "."
   },
   "include": ["./**/*.ts"],
-  "exclude": ["dist", "node_modules", "**/*.spec.ts"]
+  "exclude": ["dist", "node_modules", "**/*.spec.ts", "./test/globalTestHook.ts"]
 }
