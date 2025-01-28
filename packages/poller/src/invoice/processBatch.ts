@@ -3,24 +3,24 @@ import { Invoice } from '@mark/everclear';
 import { ProcessInvoicesDependencies } from './pollAndProcess';
 import { isValidInvoice } from './validation';
 import { combineIntents, getCustodiedBalances, getMarkBalances, isXerc20Supported, sendIntents } from '../helpers';
-import { jsonifyNestedMap } from '@mark/logger';
+import { jsonifyMap } from '@mark/logger';
 
 export async function processBatch(
   invoices: Invoice[],
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
 ): Promise<void> {
-  const { logger, chainService } = deps;
+  const { logger } = deps;
 
   // Query all of marks balances across chains
   logger.info('Getting mark balances', { chains: Object.keys(config.chains) });
   const balances = await getMarkBalances(config);
-  logger.debug('Retrieved balances', { balances: jsonifyNestedMap(balances) });
+  logger.debug('Retrieved balances', { balances: jsonifyMap(balances) });
 
   // Query all of the custodied amounts across chains and ticker hashes
   logger.info('Getting custodied balances', { chains: Object.keys(config.chains) });
   const custodied = await getCustodiedBalances(config);
-  logger.debug('Retrieved custodied amounts', { custodied: jsonifyNestedMap(custodied) });
+  logger.debug('Retrieved custodied amounts', { custodied: jsonifyMap(custodied) });
 
   // These are the unbatched intents, i.e. the intents we would send to purchase all of the
   // invoices, grouped by origin domain
@@ -50,11 +50,13 @@ export async function processBatch(
     const destinations = invoice.destinations.sort((a, b) => {
       const custodiedA = custodiedTicker.get(a) ?? 0n;
       const custodiedB = custodiedTicker.get(b) ?? 0n;
-      return custodiedB - custodiedA;
+      return custodiedB > custodiedA ? 1 : custodiedB < custodiedA ? -1 : 0;
     });
 
     // Calculate the true invoice amount by applying the bps
-    const purchaseable = BigInt(invoice.amount) * BigInt(10_000 - invoice.discountBps);
+    const scaledDiscountBps = Math.round(invoice.discountBps * 10_000);
+    const discountAmount = (BigInt(invoice.amount) * BigInt(scaledDiscountBps)) / BigInt(10_000 * 10_000);
+    const purchaseable = BigInt(invoice.amount) - discountAmount; // multiply by 10 the RHS and dividing the whole to avoid decimals
 
     // For each destination on the invoice, find a chain where mark has balances and invoice req. deposit
     // TODO: should look at all enqueued intents for each destination that could be processed before
@@ -65,7 +67,9 @@ export async function processBatch(
       if (purchaseable <= destinationCustodied) {
         logger.info('Sufficient custodied balance to settle invoice', {
           purchaseable,
-          custodied,
+          custodied: destinationCustodied,
+          destination,
+          tickerHash: invoice.ticker_hash,
           id: invoice.intent_id,
         });
 
@@ -88,6 +92,7 @@ export async function processBatch(
           id: invoice.intent_id,
           balance,
           requiredDeposit,
+          tickerHash: invoice.ticker_hash,
         });
         continue;
       }
@@ -136,11 +141,16 @@ export async function processBatch(
     }
   }
 
+  if (unbatchedIntents.size === 0) {
+    logger.info('No intents to purchase');
+    return;
+  }
+
   // Combine all unbatched intents
-  const batched = await combineIntents(unbatchedIntents);
+  const batched = await combineIntents(unbatchedIntents, deps);
 
   // Dispatch all through transaction service
-  const receipts = await sendIntents(batched, chainService);
+  const receipts = await sendIntents(batched, deps, config);
   logger.info('Sent transactions to purchase invoices', {
     receipts: receipts.map((r) => ({ chainId: r.chainId, transactionHash: r.transactionHash })),
   });
