@@ -56,6 +56,7 @@ export interface MarkConfiguration {
   supportedAssets: string[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id
   hub: Omit<HubConfig, 'confirmations' | 'subgraphUrls'>;
+  dd_api_key: string;
 }
 
 export const USDC_TICKER = '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa';
