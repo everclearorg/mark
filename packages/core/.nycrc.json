@@ -10,8 +10,9 @@
         "src/**/*.ts"
     ],
     "exclude": [
-        "src/**/*.spec.ts",
-        "src/**/*.d.ts"
+        "src/types/*.ts",
+        "src/errors.ts",
+        "test/**/*.spec.ts"
     ],
     "branches": 80,
     "lines": 80,
