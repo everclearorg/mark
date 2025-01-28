@@ -13,7 +13,7 @@
     "types": ["node", "mocha", "chai"]
   },
   "include": ["src/**/*", "test/**/*"],
-  "exclude": ["dist", "node_modules", "**/*.spec.ts"],
+  "exclude": ["dist", "node_modules", "**/*.spec.ts", "**/globalTestHook.ts"],
   "references": [
     { "path": "../core" },
     { "path": "../adapters/logger" },
