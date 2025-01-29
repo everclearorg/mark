@@ -33,7 +33,7 @@ variable "timeout" {
 variable "schedule_expression" {
   description = "CloudWatch Events schedule expression"
   type        = string
-  default     = "rate(1 minute)"
+  default     = "rate(5 minutes)"
 }
 
 variable "subnet_ids" {
