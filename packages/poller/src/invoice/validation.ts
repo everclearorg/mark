@@ -5,18 +5,18 @@ import { getTickers } from '#/helpers';
 export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): string | undefined {
   // Check formatting of invoice // TODO: ajv?
   try {
-    BigInt(invoice.amount);
+    BigInt(invoice?.amount ?? '0');
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (_) {
-    return `Invalid amount: ${invoice.amount} -- could not convert to BigInt`;
+    return `Invalid amount: ${invoice?.amount} -- could not convert to BigInt`;
   }
   const validFormat =
     invoice &&
-    typeof invoice.intent_id === 'string' &&
-    typeof invoice.amount === 'string' &&
-    BigInt(invoice.amount) > 0;
+    typeof invoice?.intent_id === 'string' &&
+    typeof invoice?.amount === 'string' &&
+    BigInt(invoice?.amount) > 0;
   if (!validFormat) {
-    return `Invalid invoice format: amount (${invoice.amount}), invoice presence (${!!invoice}), or id (${invoice.intent_id})`;
+    return `Invalid invoice format: amount (${invoice?.amount}), invoice presence (${!!invoice}), or id (${invoice?.intent_id})`;
   }
 
   // Check it is not our invoice

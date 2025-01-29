@@ -27,7 +27,7 @@ export const logBalanceThresholds = (
         });
         return;
       }
-      if (held < BigInt(asset.balanceThreshold)) {
+      if (held < BigInt(asset.balanceThreshold ?? '0')) {
         logger.error('Asset balance below threshold', {
           asset,
           chain: domain,
@@ -50,7 +50,7 @@ export const logGasThresholds = (gas: Map<string, bigint>, config: MarkConfigura
       });
       return;
     }
-    if (gas.get(chain)! > BigInt(threshold)) {
+    if (gas.get(chain)! > BigInt(threshold ?? '0')) {
       return;
     }
     logger.error('Gas balance is below threshold', {
