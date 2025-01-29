@@ -76,7 +76,6 @@ module "mark_poller" {
   source              = "../../modules/lambda"
   stage               = var.stage
   environment         = var.environment
-  dd_api_key          = var.dd_api_key
   container_family    = "mark-poller"
   execution_role_arn  = module.iam.lambda_role_arn
   image_uri           = var.image_uri
