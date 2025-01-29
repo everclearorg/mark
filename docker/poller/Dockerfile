@@ -81,4 +81,5 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 COPY --from=build /tmp/build ${LAMBDA_TASK_ROOT}
 
 EXPOSE 8080
-CMD ["packages/poller/dist/index.handler"]
+
+CMD ["node_modules/datadog-lambda-js/dist/handler.handler"]
