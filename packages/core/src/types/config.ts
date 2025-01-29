@@ -16,12 +16,15 @@ export interface AssetConfiguration {
   decimals: number;
   tickerHash: string;
   isNative: boolean;
+  balanceThreshold: string;
   //   price: PriceConfiguration;
 }
 
 export interface ChainConfiguration {
   providers: string[];
   assets: AssetConfiguration[];
+  invoiceAge: number;
+  gasThreshold: string;
 }
 
 export interface HubConfig {
@@ -41,7 +44,6 @@ export type Environment = 'mainnet' | 'testnet' | 'devnet';
 export type Stage = 'development' | 'staging' | 'production';
 
 export interface MarkConfiguration {
-  invoiceAge: number;
   web3SignerUrl: string;
   everclearApiUrl: string;
   relayer?: {
@@ -56,7 +58,4 @@ export interface MarkConfiguration {
   supportedAssets: string[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id
   hub: Omit<HubConfig, 'confirmations' | 'subgraphUrls'>;
-  dd_api_key: string;
 }
-
-export const USDC_TICKER = '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa';

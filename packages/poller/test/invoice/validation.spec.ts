@@ -21,10 +21,11 @@ describe('isValidInvoice', () => {
 
   const validConfig: MarkConfiguration = {
     web3SignerUrl: '0xDifferentAddress',
+    ownAddress: '0xDifferentAddress',
     supportedSettlementDomains: [8453],
-    invoiceAge: 3600, // 1 hour in seconds
     chains: {
       '8453': {
+        invoiceAge: 3600, // 1 hour in seconds
         providers: ['provider'],
         assets: [{
           tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
@@ -47,27 +48,32 @@ describe('isValidInvoice', () => {
     sinon.restore();
   });
 
-  it('should return true for a valid invoice', () => {
+  it('should return undefined for a valid invoice', () => {
     sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
     const result = isValidInvoice(validInvoice, validConfig);
-    expect(result).to.be.true;
+    expect(result).to.be.undefined;
   });
 
   describe('Format validation', () => {
-    it('should return false if invoice is null or undefined', () => {
-      expect(isValidInvoice(null as any, validConfig)).to.be.false;
-      expect(isValidInvoice(undefined as any, validConfig)).to.be.false;
+    it('should return error string if invoice is null or undefined', () => {
+      const nullResult = isValidInvoice(null as any, validConfig);
+      const undefinedResult = isValidInvoice(undefined as any, validConfig);
+
+      expect(nullResult).to.equal('Invalid invoice format: amount (undefined), invoice presence (false), or id (undefined)');
+      expect(undefinedResult).to.equal('Invalid invoice format: amount (undefined), invoice presence (false), or id (undefined)');
     });
 
-    it('should return false if intent_id is not a string', () => {
+    it('should return error string if intent_id is not a string', () => {
       const invalidInvoice = {
         ...validInvoice,
         intent_id: 123 as any
       };
-      expect(isValidInvoice(invalidInvoice, validConfig)).to.be.false;
+      expect(isValidInvoice(invalidInvoice, validConfig)).to.equal(
+        'Invalid invoice format: amount (4506224658731513369685), invoice presence (true), or id (123)'
+      );
     });
 
-    it('should return false if amount is not a valid BigInt string', () => {
+    it('should return error string if amount is not a valid BigInt string', () => {
       const invalidInvoice1 = {
         ...validInvoice,
         amount: 'not a number'
@@ -81,83 +87,78 @@ describe('isValidInvoice', () => {
         amount: '-100'
       };
 
-      expect(isValidInvoice(invalidInvoice1, validConfig)).to.be.false;
-      expect(isValidInvoice(invalidInvoice2, validConfig)).to.be.false;
-      expect(isValidInvoice(invalidInvoice3, validConfig)).to.be.false;
+      expect(isValidInvoice(invalidInvoice1, validConfig)).to.equal(
+        'Invalid amount: not a number -- could not convert to BigInt'
+      );
+      expect(isValidInvoice(invalidInvoice2, validConfig)).to.equal(
+        'Invalid invoice format: amount (0), invoice presence (true), or id (0x60d2ec64161aed1c3846304775134d9da6d716b1f718176e6f24cb34b26950d0)'
+      );
+      expect(isValidInvoice(invalidInvoice3, validConfig)).to.equal(
+        'Invalid invoice format: amount (-100), invoice presence (true), or id (0x60d2ec64161aed1c3846304775134d9da6d716b1f718176e6f24cb34b26950d0)'
+      );
     });
   });
 
   describe('Owner validation', () => {
-    it('should return false if owner matches web3SignerUrl', () => {
+    it('should return error string if owner matches web3SignerUrl', () => {
       const invalidInvoice = {
         ...validInvoice,
-        owner: validConfig.web3SignerUrl
+        owner: validConfig.ownAddress
       };
-      expect(isValidInvoice(invalidInvoice, validConfig)).to.be.false;
+      expect(isValidInvoice(invalidInvoice, validConfig)).to.equal(
+        `This is our invoice (owner: ${validConfig.ownAddress}, us: ${validConfig.ownAddress})`
+      );
     });
 
-    it('should return false if owner matches web3SignerUrl in different case', () => {
+    it('should return error string if owner matches web3SignerUrl in different case', () => {
       const invalidInvoice = {
         ...validInvoice,
-        owner: validConfig.web3SignerUrl.toUpperCase()
+        owner: validConfig.ownAddress.toUpperCase()
       };
-      expect(isValidInvoice(invalidInvoice, validConfig)).to.be.false;
-    });
-  });
-
-  describe('Age validation', () => {
-    it('should return false if invoice is too recent', () => {
-      const now = Math.floor(Date.now() / 1000);
-      const recentInvoice = {
-        ...validInvoice,
-        hub_invoice_enqueued_timestamp: now - (validConfig.invoiceAge / 2) // Half the required age
-      };
-      expect(isValidInvoice(recentInvoice, validConfig)).to.be.false;
-    });
-
-    it('should return true if invoice is old enough', () => {
-      sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
-      const now = Math.floor(Date.now() / 1000);
-      const oldInvoice = {
-        ...validInvoice,
-        hub_invoice_enqueued_timestamp: now - (validConfig.invoiceAge * 2) // Twice the required age
-      };
-      expect(isValidInvoice(oldInvoice, validConfig)).to.be.true;
+      expect(isValidInvoice(invalidInvoice, validConfig)).to.equal(
+        `This is our invoice (owner: ${validConfig.ownAddress.toUpperCase()}, us: ${validConfig.ownAddress})`
+      );
     });
   });
 
   describe('Destination validation', () => {
-    it('should return false if no destinations match supported domains', () => {
+    it('should return error string if no destinations match supported domains', () => {
       const invalidInvoice = {
         ...validInvoice,
         destinations: ['999999'] // Unsupported domain
       };
-      expect(isValidInvoice(invalidInvoice, validConfig)).to.be.false;
+      expect(isValidInvoice(invalidInvoice, validConfig)).to.equal(
+        'No matched destinations. Invoice: 999999, configured: 8453'
+      );
     });
 
-    it('should return true if at least one destination is supported', () => {
+    it('should return undefined if at least one destination is supported', () => {
       sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
       const validInvoiceMultiDest = {
         ...validInvoice,
         destinations: ['999999', '8453'] // One supported, one unsupported
       };
-      expect(isValidInvoice(validInvoiceMultiDest, validConfig)).to.be.true;
+      expect(isValidInvoice(validInvoiceMultiDest, validConfig)).to.be.undefined;
     });
   });
 
   describe('Ticker validation', () => {
-    it('should return false if ticker is not supported', () => {
-      sinon.stub(assetHelpers, 'getTickers').returns(['0xdifferentticker']);
+    it('should return error string if ticker is not supported', () => {
+      const unsupportedTicker = '0xunsupportedticker';
+      const supportedTicker = '0xdifferentticker';
+      sinon.stub(assetHelpers, 'getTickers').returns([supportedTicker]);
       const invalidInvoice = {
         ...validInvoice,
-        ticker_hash: '0xunsupportedticker'
+        ticker_hash: unsupportedTicker
       };
-      expect(isValidInvoice(invalidInvoice, validConfig)).to.be.false;
+      expect(isValidInvoice(invalidInvoice, validConfig)).to.equal(
+        `No matched tickers. Invoice: ${unsupportedTicker}, supported: ${supportedTicker}`
+      );
     });
 
-    it('should return true if ticker is supported', () => {
+    it('should return undefined if ticker is supported', () => {
       sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
-      expect(isValidInvoice(validInvoice, validConfig)).to.be.true;
+      expect(isValidInvoice(validInvoice, validConfig)).to.be.undefined;
     });
   });
 });
