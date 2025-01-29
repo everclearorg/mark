@@ -57,6 +57,7 @@ module "mark_web3signer" {
   environment         = var.environment
   domain              = var.domain
   region              = var.region
+  dd_api_key          = var.dd_api_key
   execution_role_arn  = data.aws_iam_role.ecr_admin_role.arn
   cluster_id          = module.ecs.ecs_cluster_id
   vpc_id              = module.network.vpc_id
