@@ -23,7 +23,8 @@ export class ConfigurationError extends Error {
   }
 }
 
-export const DEFAULT_GAS_THRESHOLD = '1000000000000000';
+export const DEFAULT_GAS_THRESHOLD = '1000000000000000'; // 0.001 eth
+export const DEFAULT_BALANCE_THRESHOLD = '100000000000000000'; // 0.1 eth
 export const DEFAULT_INVOICE_AGE = '600';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
 export const EVERCLEAR_TESTNET_CONFIG_URL =
@@ -151,7 +152,10 @@ function parseChainConfigurations(
       [];
     const assets =
       (process.env[`CHAIN_${chainId}_ASSETS`] ? parseAssets(process.env[`CHAIN_${chainId}_ASSETS`]!) : undefined) ??
-      Object.values(config?.chains[chainId]?.assets ?? {});
+      Object.values(config?.chains[chainId]?.assets ?? {}).map((a) => ({
+        ...a,
+        balanceThreshold: DEFAULT_BALANCE_THRESHOLD,
+      }));
 
     // Get the invoice age
     // First, check if there is a configured invoice age in the env
