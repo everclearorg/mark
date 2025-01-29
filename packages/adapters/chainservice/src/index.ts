@@ -37,6 +37,7 @@ export class ChainService {
       logger as any,
       nxtpChainConfig,
       signer,
+      true,
     );
 
     this.logger.info('Chain service initialized', {
