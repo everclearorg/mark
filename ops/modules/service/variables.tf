@@ -91,3 +91,7 @@ variable "health_check_path" {
   type        = string
   default     = "/"
 }
+
+variable "dd_api_key" {
+  description = "DataDog API Key"
+}
