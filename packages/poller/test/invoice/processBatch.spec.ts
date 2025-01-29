@@ -60,6 +60,7 @@ describe('processBatch', () => {
 
   let custodiedBalanceStub: SinonStub;
   let markBalanceStub: SinonStub;
+  let mockGasStub: SinonStub;
   let isXerc20SupportedStub: SinonStub;
   let sendIntentsStub: SinonStub;
 
@@ -67,27 +68,34 @@ describe('processBatch', () => {
     ownAddress: '0xmarkAddress',
     chains: {
       '1': {
+        invoiceAge: 3600,
+        gasThreshold: '0',
         providers: ['provider1'],
         assets: [{
           address: '0xtoken1',
           tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
           decimals: 18,
-          symbol: 'TEST'
+          symbol: 'TEST',
+          balanceThreshold: '0',
+          isNative: false
         }]
       },
       '8453': {
+        invoiceAge: 3600,
+        gasThreshold: '0',
         providers: ['provider8453'],
         assets: [{
           address: '0xtoken8453',
           tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
           decimals: 18,
-          symbol: 'TEST'
+          symbol: 'TEST',
+          balanceThreshold: '0',
+          isNative: false
         }]
       }
     },
     supportedSettlementDomains: [1, 8453],
     web3SignerUrl: '0xdifferentAddress',
-    invoiceAge: 3600,
   } as unknown as MarkConfiguration;
 
   beforeEach(() => {
@@ -103,6 +111,11 @@ describe('processBatch', () => {
       ['8453', BigInt(mockInvoices[0].amount)] // More than invoice amount
     ]));
     markBalanceStub = stub(balanceHelpers, 'getMarkBalances').resolves(mockBalances);
+
+    // Mock gas with sufficient amount
+    const mockgas = new Map();
+    Object.keys(mockConfig.chains).map(chain => mockgas.set(chain, BigInt('100000000000000000000'))) // 100 ether
+    mockGasStub = stub(balanceHelpers, 'getMarkGasBalances').resolves(mockgas);
 
     // Mock empty custodied amounts
     const mockCustodied = new Map();
