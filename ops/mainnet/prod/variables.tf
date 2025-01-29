@@ -92,3 +92,9 @@ variable "chain_ids" {
   type        = string
   default     = "1,56,8453"
 }
+
+variable "dd_api_key" {
+  description = "Datadog API KEY"
+  type      = string
+  sensitive = true
+}
