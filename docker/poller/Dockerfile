@@ -79,6 +79,7 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 
 # Copy the entire build directory
 COPY --from=build /tmp/build ${LAMBDA_TASK_ROOT}
+COPY --from=public.ecr.aws/datadog/lambda-extension:60 /opt/extensions/ /opt/extensions
 
 EXPOSE 8080
 
