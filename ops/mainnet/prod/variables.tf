@@ -67,6 +67,7 @@ variable "relayer_api_key" {
   description = "Optional relayer API key"
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 variable "supported_settlement_domains" {
