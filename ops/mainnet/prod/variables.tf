@@ -73,13 +73,13 @@ variable "relayer_api_key" {
 variable "supported_settlement_domains" {
   description = "Comma-separated list of supported settlement domains"
   type        = string
-  default     = "1,56,8453"
+  default     = "1,56"
 }
 
 variable "supported_assets" {
   description = "Comma-separated list of supported assets"
   type        = string
-  default     = "USDC,WETH,USDT"
+  default     = "USDC,USDT"
 }
 
 variable "log_level" {
@@ -91,7 +91,7 @@ variable "log_level" {
 variable "chain_ids" {
   description = "Comma-separated list of chain IDs"
   type        = string
-  default     = "1,56,8453"
+  default     = "1,56"
 }
 
 variable "dd_api_key" {
