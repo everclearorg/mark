@@ -23,6 +23,9 @@ export class ConfigurationError extends Error {
   }
 }
 
+export const DEFAULT_GAS_THRESHOLD = '1000000000000000'; // 0.001 eth
+export const DEFAULT_BALANCE_THRESHOLD = '100000000000000000'; // 0.1 eth
+export const DEFAULT_INVOICE_AGE = '600';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
 export const EVERCLEAR_TESTNET_CONFIG_URL =
   'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
@@ -64,7 +67,6 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const supportedAssets = parseSupportedAssets(requireEnv('SUPPORTED_ASSETS'));
 
     const config: MarkConfiguration = {
-      invoiceAge: parseInt(requireEnv('INVOICE_AGE'), 10),
       web3SignerUrl: requireEnv('SIGNER_URL'),
       everclearApiUrl: requireEnv('EVERCLEAR_API_URL'),
       relayer: process.env.RELAYER_URL
@@ -81,7 +83,6 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       stage: (process.env.STAGE ?? 'development') as Stage,
       environment: (process.env.ENVIRONMENT ?? 'local') as Environment,
       hub: parseHubConfigurations(hostedConfig, environment),
-      dd_api_key: requireEnv('DD_API_KEY'),
     };
 
     validateConfiguration(config);
@@ -93,10 +94,6 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 }
 
 function validateConfiguration(config: MarkConfiguration): void {
-  if (!config.invoiceAge || config.invoiceAge <= 0) {
-    throw new ConfigurationError('Invalid invoice age');
-  }
-
   if (!config.web3SignerUrl) {
     throw new ConfigurationError('Signer address is required');
   }
@@ -107,6 +104,13 @@ function validateConfiguration(config: MarkConfiguration): void {
 
   if (Object.keys(config.chains).length === 0) {
     throw new ConfigurationError('At least one chain configuration is required');
+  }
+
+  for (const chain of Object.keys(config.chains)) {
+    const invoiceAge = config.chains[chain].invoiceAge;
+    if (!invoiceAge || invoiceAge <= 0) {
+      throw new ConfigurationError('Invalid invoice age for chain:' + chain);
+    }
   }
 
   if (config.supportedSettlementDomains.length === 0) {
@@ -148,10 +152,21 @@ function parseChainConfigurations(
       [];
     const assets =
       (process.env[`CHAIN_${chainId}_ASSETS`] ? parseAssets(process.env[`CHAIN_${chainId}_ASSETS`]!) : undefined) ??
-      Object.values(config?.chains[chainId]?.assets ?? {});
+      Object.values(config?.chains[chainId]?.assets ?? {}).map((a) => ({
+        ...a,
+        balanceThreshold: DEFAULT_BALANCE_THRESHOLD,
+      }));
+
+    // Get the invoice age
+    // First, check if there is a configured invoice age in the env
+    const invoiceAge = process.env[`CHAIN_${chainId}_INVOICE_AGE`] ?? process.env[`INVOICE_AGE`] ?? DEFAULT_INVOICE_AGE;
+    const gasThreshold =
+      process.env[`CHAIN_${chainId}_GAS_THRESHOLD`] ?? process.env[`GAS_THRESHOLD`] ?? DEFAULT_GAS_THRESHOLD;
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
+      invoiceAge: parseInt(invoiceAge),
+      gasThreshold,
     };
   }
 
@@ -187,13 +202,14 @@ function parseProviders(providers: string): string[] {
 
 function parseAssets(assets: string): AssetConfiguration[] {
   return assets.split(';').map((asset) => {
-    const [symbol, address, decimals, tickerHash, isNative] = asset.split(',').map((s) => s.trim());
+    const [symbol, address, decimals, tickerHash, isNative, balanceThreshold] = asset.split(',').map((s) => s.trim());
     return {
       symbol,
       address,
       decimals: parseInt(decimals, 10),
       tickerHash,
       isNative: isNative === 'true',
+      balanceThreshold,
     };
   });
 }

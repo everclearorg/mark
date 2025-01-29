@@ -1,5 +1,5 @@
 import { getDecimalsFromConfig, getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
-import { getERC20Contract, getHubStorageContract } from './contracts';
+import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 
 export const walletBalance = async (tokenAddress: string, chainId: string, config: MarkConfiguration) => {
@@ -10,6 +10,25 @@ export const walletBalance = async (tokenAddress: string, chainId: string, confi
   } catch (err) {
     console.log('Not able to fetch the wallet balance!', err);
   }
+};
+
+/**
+ * Returns the gas balance of mark on all chains.
+ * @param config Mark configuration
+ * @returns Map of native asset balances on all configured chains
+ */
+export const getMarkGasBalances = async (config: MarkConfiguration): Promise<Map<string, bigint>> => {
+  const { chains, ownAddress } = config;
+  const markBalances = new Map<string, bigint>();
+
+  await Promise.all(
+    Object.keys(chains).map(async (chain) => {
+      const client = createClient(chain, config);
+      const native = await client.getBalance({ address: ownAddress as `0x${string}` });
+      markBalances.set(chain, native);
+    }),
+  );
+  return markBalances;
 };
 
 /**
