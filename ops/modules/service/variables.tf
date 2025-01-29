@@ -94,4 +94,6 @@ variable "health_check_path" {
 
 variable "dd_api_key" {
   description = "DataDog API Key"
+  type        = string
+  sensitive   = true
 }
