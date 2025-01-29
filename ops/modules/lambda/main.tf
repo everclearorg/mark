@@ -24,7 +24,7 @@ resource "aws_lambda_function" "function" {
   }
 
   environment {
-    variables = var.container_env_vars
+    variables = merge(var.container_env_vars, { DD_SERVICE = var.container_family })
   }
 
   depends_on = [aws_cloudwatch_log_group.lambda]
