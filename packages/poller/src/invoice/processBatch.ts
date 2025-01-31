@@ -168,7 +168,10 @@ export async function processBatch(
       }
       const purchaseAction: NewIntentParams = {
         origin: destination,
-        destinations: config.supportedSettlementDomains.map((s) => s.toString()),
+        // Don't include this intent's origin domain in destinations
+        destinations: config.supportedSettlementDomains
+          .filter((domain) => domain.toString() !== destination)
+          .map((s) => s.toString()),
         to: config.ownAddress,
         inputAsset,
         amount: requiredDeposit.toString(),
