@@ -23,7 +23,7 @@ export class ConfigurationError extends Error {
   }
 }
 
-export const DEFAULT_GAS_THRESHOLD = '1000000000000000'; // 0.001 eth
+export const DEFAULT_GAS_THRESHOLD = '5000000000000000'; // 0.005 eth
 export const DEFAULT_BALANCE_THRESHOLD = '100000000000000000'; // 0.1 eth
 export const DEFAULT_INVOICE_AGE = '600';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';

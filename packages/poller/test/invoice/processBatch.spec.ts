@@ -507,4 +507,27 @@ describe('processBatch', () => {
     const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
     expect(intentAmount).to.equal('1000000000000000000');
   });
+
+  it('should not include origin domain in destinations list when creating intent', async () => {
+    const invoice = {
+      ...mockInvoices[0],
+      amount: '1000000000000000000', // 1 token
+      discountBps: 0, // No discount to keep math simple
+      destinations: ['1', '8453'], // Include both domains
+    };
+
+    // Set up sufficient balance
+    const mockBalances = new Map();
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([['1', BigInt('2000000000000000000')]]));
+    markBalanceStub.resolves(mockBalances);
+
+    await processBatch([invoice], mockDeps, mockConfig);
+
+    expect(sendIntentsStub.called).to.be.true;
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    const intent = sentIntents.get('1')?.get(mockConfig.chains['1'].assets[0].address.toLowerCase());
+
+    // Verify that the origin domain (1) is not included in destinations
+    expect(intent?.destinations).to.deep.equal(['8453']);
+  });
 });
