@@ -12,8 +12,8 @@ export const logBalanceThresholds = (
   config: MarkConfiguration,
   logger: Logger,
 ) => {
-  // Log if the balance is below threshold. Still try to send intents if this threshold
-  // is configured generously.
+  // Log if the balance is below threshold on settlement domain.
+  // Still try to send intents if this threshold is configured generously.
   [...balances.keys()].map((ticker) => {
     [...balances.get(ticker)!.keys()].map((domain) => {
       const held = balances.get(ticker)!.get(domain)!;
