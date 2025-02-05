@@ -2,7 +2,7 @@ import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
 import { getERC20Contract } from './contracts';
 import { encodeFunctionData, erc20Abi } from 'viem';
-import { jsonifyMap } from '@mark/logger';
+import { jsonifyError, jsonifyMap } from '@mark/logger';
 
 /**
  * Receives a mapping of new intent params designed to purchase a single invoice, keyed
@@ -12,20 +12,20 @@ import { jsonifyMap } from '@mark/logger';
  * created intent. i.e. all USDC intents from optimism will be aggregated into a single USDC on optimism
  * intent.
  */
-export const combineIntents = async (
+export const combineIntents = (
   unbatched: Map<string, NewIntentParams[]>,
   deps: ProcessInvoicesDependencies,
-): Promise<Map<string, Map<string, NewIntentParams>>> => {
+): Map<string, Map<string, NewIntentParams>> => {
   const { logger } = deps;
-  try {
-    // Initialize the result map
-    logger.debug('Method started', { method: combineIntents.name, unbatched: jsonifyMap(unbatched) });
-    const result = new Map<string, Map<string, NewIntentParams>>();
+  // Initialize the result map
+  logger.debug('Method started', { method: combineIntents.name, unbatched: jsonifyMap(unbatched) });
+  const result = new Map<string, Map<string, NewIntentParams>>();
 
-    // Iterate over the unbatched map
-    for (const [origin, intents] of unbatched.entries()) {
+  // Iterate over the unbatched map
+  for (const [origin, intents] of unbatched.entries()) {
+    const assetMap = new Map<string, NewIntentParams>();
+    try {
       logger.info('Combining intents for domain', { domain: origin, intents: intents.length });
-      const assetMap = new Map<string, NewIntentParams>();
 
       for (const intent of intents) {
         const { inputAsset, amount, destinations, to, callData, maxFee } = intent;
@@ -43,16 +43,15 @@ export const combineIntents = async (
         assets: [...assetMap.keys()],
         intents: intents.length,
       });
-
+    } catch (err: unknown) {
+      const error = jsonifyError(err, { domain: origin });
+      logger.error('Error combining intents', { domain: origin, error });
+    } finally {
       result.set(origin, assetMap);
     }
-    logger.info('Batched intents mapping', { domains: [...result.keys()] });
-    return result;
-  } catch (err: unknown) {
-    const error = err as Error;
-    logger.error('Error combining intents', { message: error.message, name: error.name, stack: error.stack });
-    throw new Error(`combineIntents failed ${(err as unknown as Error).message || err}`);
   }
+
+  return result;
 };
 
 /**
@@ -66,8 +65,9 @@ export const sendIntents = async (
   const { everclear, logger, chainService } = deps;
   const results: { transactionHash: string; chainId: string }[] = [];
 
-  try {
-    for (const [domain, originMap] of batch.entries()) {
+  for (const [domain, originMap] of batch.entries()) {
+    // Attempt to handle the origin map
+    try {
       logger.info('Attempting to send batched intents', { domain, intents: originMap.size });
       for (const intent of originMap.values()) {
         logger.info('Processing intent for new transaction', { intent });
@@ -144,15 +144,11 @@ export const sendIntents = async (
         // Add result to the output array
         results.push({ transactionHash: intentTxHash, chainId: intent.origin });
       }
+    } catch (e: unknown) {
+      const error = jsonifyError(e, { domain });
+      logger.error('Error encountered while sending intents on domain', { domain, error });
+      results.push({ transactionHash: 'failed', chainId: domain });
     }
-    return results;
-  } catch (err) {
-    const error = err as Error;
-    logger.error('Error encountered while sending intents', {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-    });
-    throw new Error(`Failed to send intents: ${error.message || err}`);
   }
+  return results;
 };
