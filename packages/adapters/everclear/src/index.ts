@@ -15,6 +15,14 @@ export interface Invoice {
   hub_invoice_enqueued_timestamp: number;
 }
 
+export interface MinAmountsResponse {
+  invoiceAmount: string;
+  amountAfterDiscount: string;
+  discountBps: string;
+  custodiedAmounts: Record<string, string>;
+  minAmounts: Record<string, string>;
+}
+
 export class EverclearAdapter {
   private readonly apiUrl: string;
   private readonly logger: Logger;
@@ -106,8 +114,9 @@ export class EverclearAdapter {
     }
   }
 
-  // Method stub for future implementation
-  async updateInvoiceStatus(/* invoiceId: string, status: string */): Promise<void> {
-    throw new Error('Not implemented');
+  async getMinAmounts(intentId: string): Promise<MinAmountsResponse> {
+    const url = `${this.apiUrl}/invoices/${intentId}/min-amounts`;
+    const { data } = await axiosGet<MinAmountsResponse>(url);
+    return data;
   }
 }

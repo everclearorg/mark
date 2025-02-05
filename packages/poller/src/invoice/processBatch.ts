@@ -43,6 +43,14 @@ export async function processBatch(
   const custodied = await getCustodiedBalances(config);
   logger.debug('Retrieved custodied amounts', { requestId, custodied: jsonifyMap(custodied) });
 
+  // Track custodied amounts that will result from our batched intents
+  const pendingCustodied = new Map<string, Map<string, bigint>>();
+
+  // Initialize pending custodied tracking from current custodied balances
+  for (const [ticker, domainMap] of custodied.entries()) {
+    pendingCustodied.set(ticker, new Map(domainMap));
+  }
+
   // These are the unbatched intents, i.e. the intents we would send to purchase all of the
   // invoices, grouped by origin domain
   const unbatchedIntents = new Map<string, NewIntentParams[]>();
@@ -58,6 +66,20 @@ export async function processBatch(
         id: invoice.intent_id,
         invoice,
         msg,
+      });
+      continue;
+    }
+
+    // Verify invoice is old enough to consider
+    const age = time - invoice.hub_invoice_enqueued_timestamp;
+    const minAge = config.chains[invoice.destinations[0]]?.invoiceAge ?? 3600;
+    if (age < minAge) {
+      logger.warn('Invoice too old', {
+        requestId,
+        id: invoice.intent_id,
+        age,
+        minAge,
+        timestamp: invoice.hub_invoice_enqueued_timestamp,
       });
       continue;
     }
@@ -79,133 +101,91 @@ export async function processBatch(
       continue;
     }
 
-    // Contracts will select the destination with the highest available liquidity to settle invoice into
-    // Sort all invoice destinations by the custodied balance, then find the best match
-    const custodiedTicker = custodied.get(invoice.ticker_hash) ?? new Map();
-    const destinations = invoice.destinations.sort((a, b) => {
-      const custodiedA = custodiedTicker.get(a) ?? 0n;
-      const custodiedB = custodiedTicker.get(b) ?? 0n;
-      return custodiedB > custodiedA ? 1 : custodiedB < custodiedA ? -1 : 0;
-    });
-    logger.info('Sorted destinations by custodied balance', {
+    // Get min amounts required for each destination
+    const minAmountsResponse = await deps.everclear.getMinAmounts(invoice.intent_id);
+    logger.debug('Retrieved min amounts', {
       requestId,
       id: invoice.intent_id,
-      destinations,
-      unsorted: invoice.destinations,
+      minAmounts: minAmountsResponse,
     });
 
-    // Calculate the true invoice amount by applying the bps
-    const scaledDiscountBps = Math.round(invoice.discountBps * 10_000);
-    const discountAmount = (BigInt(invoice.amount) * BigInt(scaledDiscountBps)) / BigInt(10_000 * 10_000);
-    const purchaseable = BigInt(invoice.amount) - discountAmount; // multiply by 10 the RHS and dividing the whole to avoid decimals
-    logger.info('Calculated purchaseable amount', {
-      requestId,
-      id: invoice.intent_id,
-      purchaseable,
-    });
+    // Find best destination based on mark's balances and min amounts required
+    let selectedDestination: string | null = null;
+    let requiredDeposit: bigint | null = null;
 
-    // For each destination on the invoice, find a chain where mark has balances and invoice req. deposit
-    // TODO: should look at all enqueued intents for each destination that could be processed before
-    // marks created intent - this can come from /economy endpoint
-    for (const destination of destinations) {
-      // Verify invoice is old enough to consider
-      const age = time - invoice.hub_invoice_enqueued_timestamp;
-      if (age < (config.chains[destination]?.invoiceAge ?? time)) {
-        logger.info('Invoice not old enough to settle on this domain', {
-          requestId,
-          id: invoice.intent_id,
-          domain: destination,
-          threshold: config.chains[destination]?.invoiceAge,
-          age,
-          invoice,
-        });
-        continue;
-      }
+    for (const destination of invoice.destinations) {
+      const minAmount = BigInt(minAmountsResponse.minAmounts[destination] || '0');
 
-      const destinationCustodied = BigInt(custodied.get(invoice.ticker_hash.toLowerCase())?.get(destination) ?? '0');
-      // If there is sufficient custodied asset, ignore invoice. should be settlable w.o intervention.
-      if (purchaseable <= destinationCustodied) {
-        logger.info('Sufficient custodied balance to settle invoice', {
-          requestId,
-          purchaseable,
-          custodied: destinationCustodied,
-          destination,
-          tickerHash: invoice.ticker_hash,
-          id: invoice.intent_id,
-        });
+      // Invoice will be settled, do nothing
+      if (minAmount === 0n) continue;
 
-        // Update the custodied mapping for next invoice
-        const updatedCustodied = custodied.get(invoice.ticker_hash) ?? new Map<string, bigint>();
-        updatedCustodied.set(destination, destinationCustodied - purchaseable);
-        custodied.set(invoice.ticker_hash, updatedCustodied);
+      const balance = BigInt(balances.get(invoice.ticker_hash.toLowerCase())?.get(destination) ?? '0');
+      const pendingCustodiedAmount = pendingCustodied.get(invoice.ticker_hash.toLowerCase())?.get(destination) ?? 0n;
+
+      // Check if we have sufficient balance after accounting for pending custodied amounts
+      // Mark will select the first destination that has sufficient balance right now
+      if (balance >= minAmount + pendingCustodiedAmount) {
+        selectedDestination = destination;
+        requiredDeposit = minAmount;
         break;
       }
+    }
 
-      // Get marks balance on this chain
-      const balance = BigInt(balances.get(invoice.ticker_hash.toLowerCase())?.get(destination) ?? '0');
-
-      // Check to see how much is required for mark to deposit
-      const requiredDeposit = purchaseable - destinationCustodied;
-      if (balance < requiredDeposit) {
-        logger.debug('Insufficient balance to support destination', {
-          requestId,
-          purchaseable,
-          destinationCustodied,
-          id: invoice.intent_id,
-          balance,
-          requiredDeposit,
-          tickerHash: invoice.ticker_hash,
-        });
-        continue;
-      }
-
-      // Sufficient balance to settle invoice with invoice destination == intent origin
-      const inputAsset = getTokenAddressFromConfig(invoice.ticker_hash, destination, config);
-      if (!inputAsset) {
-        throw new Error(
-          `No input asset found for ticker (${invoice.ticker_hash}) and domain (${destination}) in config.`,
-        );
-      }
-      const purchaseAction: NewIntentParams = {
-        origin: destination,
-        // Don't include this intent's origin domain in destinations
-        destinations: config.supportedSettlementDomains
-          .filter((domain) => domain.toString() !== destination)
-          .map((s) => s.toString()),
-        to: config.ownAddress,
-        inputAsset,
-        amount: requiredDeposit.toString(),
-        callData: '0x',
-        maxFee: '0',
-      };
-      logger.info('Purchasing invoice', {
+    if (!selectedDestination || !requiredDeposit) {
+      logger.debug('No suitable destination found with sufficient balance', {
         requestId,
         id: invoice.intent_id,
-        invoice,
-        purchaseAction,
       });
-
-      // Push to unbatched intents
-      if (!unbatchedIntents.has(destination)) {
-        unbatchedIntents.set(destination, []);
-      }
-      unbatchedIntents.set(destination, [...unbatchedIntents.get(destination)!, purchaseAction]);
-
-      // Decrement balances before entering into next loop
-      const updatedBalance = balances.get(invoice.ticker_hash) ?? new Map<string, bigint>();
-      updatedBalance.set(destination, balance - requiredDeposit);
-      balances.set(invoice.ticker_hash, updatedBalance);
-
-      // Decrement custodied before entering into next loop.
-      // NOTE: because at this point you _have_ to add some amount to purchase the invoice, the
-      // custodied assets must be fully consumed.
-      const updatedCustodied = custodied.get(invoice.ticker_hash) ?? new Map<string, bigint>();
-      updatedCustodied.set(destination, 0n);
-      custodied.set(invoice.ticker_hash, updatedCustodied);
-
-      // Exit destination loop
-      break;
+      continue;
     }
+
+    // Update pending custodied amounts
+    const tickerHash = invoice.ticker_hash.toLowerCase();
+    if (!pendingCustodied.has(tickerHash)) {
+      pendingCustodied.set(tickerHash, new Map());
+    }
+    const domainMap = pendingCustodied.get(tickerHash)!;
+    const currentAmount = domainMap.get(selectedDestination) ?? 0n;
+    domainMap.set(selectedDestination, currentAmount + requiredDeposit);
+
+    logger.debug('Updated pending custodied amounts', {
+      requestId,
+      id: invoice.intent_id,
+      destination: selectedDestination,
+      currentAmount: currentAmount.toString(),
+      newAmount: (currentAmount + requiredDeposit).toString(),
+    });
+
+    // Create purchase action
+    const inputAsset = getTokenAddressFromConfig(invoice.ticker_hash, selectedDestination, config);
+    if (!inputAsset) {
+      throw new Error(
+        `No input asset found for ticker (${invoice.ticker_hash}) and domain (${selectedDestination}) in config.`,
+      );
+    }
+
+    const purchaseAction: NewIntentParams = {
+      origin: selectedDestination,
+      destinations: config.supportedSettlementDomains
+        .filter((domain) => domain.toString() !== selectedDestination)
+        .map((s) => s.toString()),
+      to: config.ownAddress,
+      inputAsset,
+      amount: requiredDeposit.toString(),
+      callData: '0x',
+      maxFee: '0',
+    };
+
+    // Add to unbatched intents
+    if (!unbatchedIntents.has(selectedDestination)) {
+      unbatchedIntents.set(selectedDestination, []);
+    }
+    unbatchedIntents.set(selectedDestination, [...unbatchedIntents.get(selectedDestination)!, purchaseAction]);
+
+    // Update balances
+    const updatedBalance = balances.get(invoice.ticker_hash) ?? new Map<string, bigint>();
+    updatedBalance.set(selectedDestination, BigInt(updatedBalance.get(selectedDestination) ?? '0') - requiredDeposit);
+    balances.set(invoice.ticker_hash, updatedBalance);
   }
 
   if (unbatchedIntents.size === 0) {
