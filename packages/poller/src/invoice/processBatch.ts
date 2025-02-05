@@ -215,7 +215,7 @@ export async function processBatch(
   }
 
   // Combine all unbatched intents
-  const batched = await combineIntents(unbatchedIntents, deps);
+  const batched = combineIntents(unbatchedIntents, deps);
   logger.info('Purchasing invoices', {
     requestId,
     batch: jsonifyMap(batched),
