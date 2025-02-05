@@ -10,6 +10,7 @@ import {
   isXerc20Supported,
   logBalanceThresholds,
   logGasThresholds,
+  convertInvoiceToLocalDecimals,
   sendIntents,
 } from '../helpers';
 import { jsonifyMap } from '@mark/logger';
@@ -174,7 +175,7 @@ export async function processBatch(
           .map((s) => s.toString()),
         to: config.ownAddress,
         inputAsset,
-        amount: requiredDeposit.toString(),
+        amount: convertInvoiceToLocalDecimals(requiredDeposit, inputAsset, destination, config).toString(),
         callData: '0x',
         maxFee: '0',
       };
