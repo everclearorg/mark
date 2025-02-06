@@ -44,6 +44,7 @@ export async function processBatch(
   logger.debug('Retrieved custodied amounts', { requestId, custodied: jsonifyMap(custodied) });
 
   // Track custodied amounts that will result from our batched intents
+  // Keyed by ticker hash, then by destination
   const pendingCustodied = new Map<string, Map<string, bigint>>();
 
   // Initialize pending custodied tracking from current custodied balances
@@ -145,15 +146,16 @@ export async function processBatch(
       pendingCustodied.set(tickerHash, new Map());
     }
     const domainMap = pendingCustodied.get(tickerHash)!;
-    const currentAmount = domainMap.get(selectedDestination) ?? 0n;
-    domainMap.set(selectedDestination, currentAmount + requiredDeposit);
+
+    // Zero out existing custodied amount since it will be used in settlement
+    domainMap.set(selectedDestination, requiredDeposit);
 
     logger.debug('Updated pending custodied amounts', {
       requestId,
       id: invoice.intent_id,
       destination: selectedDestination,
-      currentAmount: currentAmount.toString(),
-      newAmount: (currentAmount + requiredDeposit).toString(),
+      newAmount: requiredDeposit.toString(),
+      note: 'Zeroed existing custodied amount as it will be used in settlement',
     });
 
     // Create purchase action
