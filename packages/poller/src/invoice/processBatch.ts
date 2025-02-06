@@ -148,15 +148,7 @@ export async function processBatch(
     const domainMap = pendingCustodied.get(tickerHash)!;
 
     // Zero out existing custodied amount since it will be used in settlement
-    domainMap.set(selectedDestination, requiredDeposit);
-
-    logger.debug('Updated pending custodied amounts', {
-      requestId,
-      id: invoice.intent_id,
-      destination: selectedDestination,
-      newAmount: requiredDeposit.toString(),
-      note: 'Zeroed existing custodied amount as it will be used in settlement',
-    });
+    domainMap.set(selectedDestination, 0n);
 
     // Create purchase action
     const inputAsset = getTokenAddressFromConfig(invoice.ticker_hash, selectedDestination, config);
