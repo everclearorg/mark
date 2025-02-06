@@ -44,8 +44,8 @@ export async function processBatch(
   // Grouped valid invoices by ticker-destination combo
   const invoicesByTickerDest = new Map<string, Invoice[]>();
 
-  // These are the unbatched intents we'll create
-  const unbatchedIntents = new Map<string, NewIntentParams[]>();
+  // These are the intents we'll send to purchase invoices
+  const intents: NewIntentParams[] = [];
 
   // Track already handled invoices
   const handledInvoices = new Set<string>();
@@ -139,11 +139,7 @@ export async function processBatch(
           maxFee: '0',
         };
 
-        // Add to unbatched intents
-        if (!unbatchedIntents.has(destination)) {
-          unbatchedIntents.set(destination, []);
-        }
-        unbatchedIntents.set(destination, [...unbatchedIntents.get(destination)!, purchaseAction]);
+        intents.push(purchaseAction);
 
         // Update balances
         balances.get(tickerHash)!.set(destination, balance - minAmount);
@@ -169,20 +165,22 @@ export async function processBatch(
     }
   }
 
-  if (unbatchedIntents.size === 0) {
+  if (intents.length === 0) {
     logger.info('No intents to purchase', { requestId });
     return;
   }
 
-  // Combine all unbatched intents
-  const batched = await combineIntents(unbatchedIntents, deps);
   logger.info('Purchasing invoices', {
     requestId,
-    batch: jsonifyMap(batched),
+    intents: intents.map((i) => ({
+      origin: i.origin,
+      amount: i.amount,
+      inputAsset: i.inputAsset,
+    })),
   });
 
   // Dispatch all through transaction service
-  const receipts = await sendIntents(batched, deps, config);
+  const receipts = await sendIntents(intents, deps, config);
   logger.info('Sent transactions to purchase invoices', {
     requestId,
     receipts: receipts.map((r) => ({ chainId: r.chainId, transactionHash: r.transactionHash })),
