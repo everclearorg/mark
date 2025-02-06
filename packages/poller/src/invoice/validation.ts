@@ -2,7 +2,7 @@ import { Invoice } from '@mark/everclear';
 import { MarkConfiguration } from '@mark/core';
 import { getTickers } from '#/helpers';
 
-export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): string | undefined {
+export function isValidInvoice(invoice: Invoice, config: MarkConfiguration, currentTime: number): string | undefined {
   // Check formatting of invoice // TODO: ajv?
   try {
     BigInt(invoice?.amount ?? '0');
@@ -36,6 +36,13 @@ export function isValidInvoice(invoice: Invoice, config: MarkConfiguration): str
   const tickers = getTickers(config);
   if (!tickers.includes(invoice.ticker_hash)) {
     return `No matched tickers. Invoice: ${invoice.ticker_hash}, supported: ${tickers}`;
+  }
+
+  // Verify invoice is old enough to consider
+  const age = currentTime - invoice.hub_invoice_enqueued_timestamp;
+  const minAge = config.chains[invoice.destinations[0]]?.invoiceAge ?? 3600;
+  if (age < minAge) {
+    return `Invoice too new: age ${age}, required ${minAge}`;
   }
 
   // Valid invoice
