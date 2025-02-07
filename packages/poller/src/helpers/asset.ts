@@ -15,7 +15,7 @@ export const getTickers = (config: MarkConfiguration) => {
  * to the local units (ie USDC is 6 decimals on ethereum, but represents as an 18 decimal invoice)
  * @dev This will round up if there is precision loss
  */
-export const convertInvoiceToLocalDecimals = (
+export const convertHubAmountToLocalDecimals = (
   amount: bigint,
   asset: string,
   domain: string,
