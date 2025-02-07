@@ -274,8 +274,11 @@ describe('sendIntents', () => {
 
         mockDeps.everclear.createNewIntent.rejects(new Error('API Error'));
 
-        await expect(sendIntents(batch, mockDeps, mockConfig))
-            .to.be.rejectedWith('Failed to send intents: API Error');
+        const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
+
+        await expect(sendIntents(intentsArray, mockDeps, mockConfig)).to.be.rejectedWith(
+          'Failed to send intents: API Error',
+        );
     });
 
     it('should fail if getting allowance fails', async () => {
@@ -298,7 +301,9 @@ describe('sendIntents', () => {
 
         stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
 
-        await expect(sendIntents(batch, mockDeps, mockConfig))
+        const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
+
+        await expect(sendIntents(intentsArray, mockDeps, mockConfig))
             .to.be.rejectedWith('Failed to send intents: Allowance check failed');
     });
 
@@ -323,7 +328,9 @@ describe('sendIntents', () => {
         stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
         mockDeps.chainService.submitAndMonitor.rejects(new Error('Approval failed'));
 
-        await expect(sendIntents(batch, mockDeps, mockConfig))
+        const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
+
+        await expect(sendIntents(intentsArray, mockDeps, mockConfig))
             .to.be.rejectedWith('Failed to send intents: Approval failed');
     });
 
@@ -348,13 +355,17 @@ describe('sendIntents', () => {
         stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
         mockDeps.chainService.submitAndMonitor.rejects(new Error('Intent transaction failed'));
 
-        await expect(sendIntents(batch, mockDeps, mockConfig))
+        const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
+
+        await expect(sendIntents(intentsArray, mockDeps, mockConfig))
             .to.be.rejectedWith('Failed to send intents: Intent transaction failed');
     });
 
     it('should handle empty batches', async () => {
         const batch = new Map();
-        const result = await sendIntents(batch, mockDeps, mockConfig);
+        const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
+
+        const result = await sendIntents(intentsArray as NewIntentParams[], mockDeps, mockConfig);
         expect(result).to.deep.equal([]);
         expect(mockDeps.everclear.createNewIntent.called).to.be.false;
     });
@@ -382,7 +393,9 @@ describe('sendIntents', () => {
             .onFirstCall().resolves('0xapprovalTx')
             .onSecondCall().resolves('0xintentTx');
 
-        const result = await sendIntents(batch, mockDeps, mockConfig);
+        const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
+
+        const result = await sendIntents(intentsArray, mockDeps, mockConfig);
 
         expect(mockDeps.chainService.submitAndMonitor.callCount).to.equal(2); // Called for both approval and intent
         expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1' }]);
@@ -409,7 +422,11 @@ describe('sendIntents', () => {
         stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);
         mockDeps.chainService.submitAndMonitor.resolves('0xintentTx');
 
-        const result = await sendIntents(batch, mockDeps, mockConfig);
+        const result = await sendIntents(
+            Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values())),
+            mockDeps,
+            mockConfig,
+        );
 
         expect(mockDeps.chainService.submitAndMonitor.callCount).to.equal(1); // Called only for intent
         expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1' }]);
