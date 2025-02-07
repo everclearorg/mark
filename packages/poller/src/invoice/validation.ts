@@ -1,5 +1,4 @@
-import { Invoice } from '@mark/everclear';
-import { MarkConfiguration } from '@mark/core';
+import { MarkConfiguration, Invoice } from '@mark/core';
 import { getTickers } from '#/helpers';
 
 export function isValidInvoice(invoice: Invoice, config: MarkConfiguration, currentTime: number): string | undefined {
