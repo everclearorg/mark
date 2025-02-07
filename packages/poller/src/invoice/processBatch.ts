@@ -10,7 +10,7 @@ import {
   isXerc20Supported,
   logBalanceThresholds,
   logGasThresholds,
-  convertInvoiceToLocalDecimals,
+  convertHubAmountToLocalDecimals,
   sendIntents,
 } from '../helpers';
 import { jsonifyMap } from '@mark/logger';
@@ -76,13 +76,13 @@ export async function processBatch(
     }
 
     const tickerHash = invoice.ticker_hash.toLowerCase();
-    for (const dest of invoice.destinations) {
+    invoice.destinations.forEach((dest) => {
       const tickerDest = `${tickerHash}-${dest}`;
       if (!invoicesByTickerDest.has(tickerDest)) {
         invoicesByTickerDest.set(tickerDest, []);
       }
       invoicesByTickerDest.get(tickerDest)!.push(invoice);
-    }
+    });
   }
 
   // Process each ticker-destination group of invoices
@@ -108,14 +108,17 @@ export async function processBatch(
 
       // Subtract amounts for already handled prior invoices
       for (const priorInvoice of invoices) {
-        if (
-          handledInvoices.has(priorInvoice.intent_id) &&
-          priorInvoice.hub_invoice_enqueued_timestamp <= invoice.hub_invoice_enqueued_timestamp
-        ) {
-          // Subtract the discounted amount for this invoice
-          const discountedAmount = (BigInt(priorInvoice.amount) * BigInt(10000 - priorInvoice.discountBps)) / 10000n;
-          minAmount -= discountedAmount;
+        if (!handledInvoices.has(priorInvoice.intent_id)) {
+          // not handled
+          continue;
         }
+        if (priorInvoice.hub_invoice_enqueued_timestamp > invoice.hub_invoice_enqueued_timestamp) {
+          // prior invoice is newer, not doesnt impact liquidity
+          continue;
+        }
+        // Subtract the discounted amount for this invoice
+        const discountedAmount = (BigInt(priorInvoice.amount) * BigInt(10000 - priorInvoice.discountBps)) / 10000n;
+        minAmount -= discountedAmount;
       }
 
       if (minAmount <= 0n) continue;
@@ -135,7 +138,7 @@ export async function processBatch(
             .map((s) => s.toString()),
           to: config.ownAddress,
           inputAsset,
-          amount: minAmount.toString(),
+          amount: convertHubAmountToLocalDecimals(minAmount, inputAsset, destination, config).toString(),
           callData: '0x',
           maxFee: '0',
         };
