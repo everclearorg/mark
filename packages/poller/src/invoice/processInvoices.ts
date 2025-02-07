@@ -10,6 +10,7 @@ import {
   logGasThresholds,
   convertHubAmountToLocalDecimals,
   sendIntents,
+  isXerc20Supported,
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { ChainService } from '@mark/chainservice';
@@ -130,6 +131,19 @@ export async function processInvoices({
             destination,
             required: minAmount.toString(),
             available: markBalance.toString(),
+          });
+          continue;
+        }
+
+        // Add XERC20 check here
+        const isXerc20 = await isXerc20Supported(invoice.ticker_hash, [destination], config);
+        if (isXerc20) {
+          logger.info('XERC20 strategy enabled for destination, skipping', {
+            requestId,
+            invoiceId,
+            destination,
+            invoice,
+            ticker: invoice.ticker_hash,
           });
           continue;
         }
