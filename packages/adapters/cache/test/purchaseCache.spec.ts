@@ -37,8 +37,8 @@ describe('PurchaseCache', () => {
     };
 
     beforeEach(() => {
-        mockRedis = new Redis() as jest.Mocked<Redis>;
-        cache = new PurchaseCache(mockRedis);
+        cache = new PurchaseCache('host', 1010);
+        mockRedis = (cache as any).store as jest.Mocked<Redis>;
     });
 
     afterEach(() => {
