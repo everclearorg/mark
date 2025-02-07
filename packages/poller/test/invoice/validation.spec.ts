@@ -1,7 +1,6 @@
 import { expect } from 'chai';
 import { isValidInvoice } from '../../src/invoice';
-import { Invoice } from '@mark/everclear';
-import { MarkConfiguration } from '@mark/core';
+import { MarkConfiguration, Invoice } from '@mark/core';
 import * as assetHelpers from '../../src/helpers/asset';
 import sinon from 'sinon';
 

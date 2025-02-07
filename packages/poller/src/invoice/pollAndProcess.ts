@@ -22,7 +22,7 @@ export async function pollAndProcess(config: MarkConfiguration, deps: ProcessInv
       everclear,
       logger,
       chainService,
-      purchaseCache: cache,
+      cache,
       config,
     });
   } catch (_error: unknown) {
