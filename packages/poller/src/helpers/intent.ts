@@ -65,7 +65,7 @@ export const sendIntents = async (
 ): Promise<{ transactionHash: string; chainId: string }[]> => {
   const { everclear, logger, chainService } = deps;
   const results: { transactionHash: string; chainId: string }[] = [];
-  logger.info('Attempting to send batched intents', { batch: jsonifyMap(batch) });
+  logger.info('Attempting to send batched intents', { batch: intents });
 
   try {
     for (const intent of intents) {

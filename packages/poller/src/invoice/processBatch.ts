@@ -1,5 +1,4 @@
-import { MarkConfiguration, NewIntentParams, getTokenAddressFromConfig } from '@mark/core';
-import { Invoice } from '@mark/everclear';
+import { MarkConfiguration, NewIntentParams, getTokenAddressFromConfig, Invoice } from '@mark/core';
 import { ProcessInvoicesDependencies } from './pollAndProcess';
 import { isValidInvoice } from './validation';
 import {
