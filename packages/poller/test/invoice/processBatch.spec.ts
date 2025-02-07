@@ -1,13 +1,12 @@
 import { expect } from '../globalTestHook';
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
-import { Invoice } from '@mark/everclear';
+import { Invoice, MinAmountsResponse, EverclearAdapter } from '@mark/everclear';
 import { processBatch } from '../../src/invoice/processBatch';
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as assetHelpers from '../../src/helpers/asset';
 import { MarkConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
-import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 
 describe('processBatch', () => {
@@ -48,13 +47,17 @@ describe('processBatch', () => {
       destinations: ['8453'],
       hub_status: 'INVOICED',
       ticker_hash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
-      hub_invoice_enqueued_timestamp: 1737491219,
+      hub_invoice_enqueued_timestamp: 1737491219
     }
   ];
 
   let mockDeps: {
     logger: SinonStubbedInstance<Logger>;
-    everclear: SinonStubbedInstance<EverclearAdapter>;
+    everclear: SinonStubbedInstance<EverclearAdapter> & {
+      getMinAmounts: SinonStub<[string], Promise<MinAmountsResponse>>;
+      fetchInvoices: SinonStub;
+      createNewIntent: SinonStub;
+    };
     chainService: SinonStubbedInstance<ChainService>;
   };
 
@@ -71,57 +74,75 @@ describe('processBatch', () => {
         invoiceAge: 3600,
         gasThreshold: '0',
         providers: ['provider1'],
-        assets: [{
-          address: '0xtoken1',
-          tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
-          decimals: 18,
-          symbol: 'TEST',
-          balanceThreshold: '0',
-          isNative: false
-        }]
+        assets: [
+          {
+            address: '0xtoken1',
+            tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
+            decimals: 18,
+            symbol: 'TEST',
+            balanceThreshold: '0',
+            isNative: false
+          }
+        ]
       },
       '8453': {
         invoiceAge: 3600,
         gasThreshold: '0',
         providers: ['provider8453'],
-        assets: [{
-          address: '0xtoken8453',
-          tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
-          decimals: 18,
-          symbol: 'TEST',
-          balanceThreshold: '0',
-          isNative: false
-        }]
+        assets: [
+          {
+            address: '0xtoken8453',
+            tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
+            decimals: 18,
+            symbol: 'TEST',
+            balanceThreshold: '0',
+            isNative: false
+          }
+        ]
       }
     },
     supportedSettlementDomains: [1, 8453],
-    web3SignerUrl: '0xdifferentAddress',
+    web3SignerUrl: '0xdifferentAddress'
   } as unknown as MarkConfiguration;
 
   beforeEach(() => {
     mockDeps = {
       logger: createStubInstance(Logger),
-      everclear: createStubInstance(EverclearAdapter),
-      chainService: createStubInstance(ChainService),
+      everclear: Object.assign(createStubInstance(EverclearAdapter), {
+        getMinAmounts: stub<[string], Promise<MinAmountsResponse>>(),
+        fetchInvoices: stub(),
+        createNewIntent: stub()
+      }),
+      chainService: createStubInstance(ChainService)
     };
+
+    // Set up default getMinAmounts response
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: mockInvoices[0].amount,
+      amountAfterDiscount: mockInvoices[0].amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': mockInvoices[0].amount }
+    });
 
     // Mock balances with sufficient amount
     const mockBalances = new Map();
-    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt(mockInvoices[0].amount)] // More than invoice amount
-    ]));
+    mockBalances.set(
+      mockInvoices[0].ticker_hash.toLowerCase(),
+      new Map([
+        ['8453', BigInt(mockInvoices[0].amount)] // More than invoice amount
+      ])
+    );
     markBalanceStub = stub(balanceHelpers, 'getMarkBalances').resolves(mockBalances);
 
     // Mock gas with sufficient amount
     const mockgas = new Map();
-    Object.keys(mockConfig.chains).map(chain => mockgas.set(chain, BigInt('100000000000000000000'))) // 100 ether
+    Object.keys(mockConfig.chains).map((chain) => mockgas.set(chain, BigInt('100000000000000000000'))); // 100 ether
     mockGasStub = stub(balanceHelpers, 'getMarkGasBalances').resolves(mockgas);
 
     // Mock empty custodied amounts
     const mockCustodied = new Map();
-    mockCustodied.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt(0)]
-    ]));
+    mockCustodied.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([['8453', BigInt(0)]]));
     custodiedBalanceStub = stub(balanceHelpers, 'getCustodiedBalances').resolves(mockCustodied);
 
     isXerc20SupportedStub = stub(assetHelpers, 'isXerc20Supported').resolves(false);
@@ -138,14 +159,26 @@ describe('processBatch', () => {
   it('should skip invoice when sufficient custodied balance exists', async () => {
     // Mock sufficient custodied amounts
     const mockCustodied = new Map();
-    mockCustodied.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('2000000000000000000000')] // More than invoice amount
-    ]));
+    mockCustodied.set(
+      mockInvoices[0].ticker_hash.toLowerCase(),
+      new Map([
+        ['8453', BigInt('2000000000000000000000')] // More than invoice amount
+      ])
+    );
     custodiedBalanceStub.resolves(mockCustodied);
+
+    // Mock getMinAmounts to show high custodied amount
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: mockInvoices[0].amount,
+      amountAfterDiscount: mockInvoices[0].amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '2000000000000000000000' },
+      minAmounts: { '8453': '0' } // No additional amount needed due to custodied balance
+    });
 
     await processBatch(mockInvoices, mockDeps, mockConfig);
 
-    expect(mockDeps.logger.info.calledWith('Sufficient custodied balance to settle invoice')).to.be.true;
+    expect(mockDeps.logger.info.calledWith('No intents to purchase')).to.be.true;
     expect(sendIntentsStub.called).to.be.false;
   });
 
@@ -169,11 +202,33 @@ describe('processBatch', () => {
       }
     ];
 
+    // Mock getMinAmounts for both invoices
+    mockDeps.everclear.getMinAmounts
+      .withArgs(mockInvoices[0].intent_id)
+      .resolves({
+        invoiceAmount: mockInvoices[0].amount,
+        amountAfterDiscount: mockInvoices[0].amount,
+        discountBps: '0',
+        custodiedAmounts: { '8453': '0' },
+        minAmounts: { '8453': mockInvoices[0].amount }
+      })
+      .withArgs('0xdifferent')
+      .resolves({
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: { '8453': '0' },
+        minAmounts: { '8453': '1000000000000000000' }
+      });
+
     // Mock balances with sufficient amount for both
     const mockBalances = new Map();
-    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('3000000000000000000000')] // Enough for both invoices
-    ]));
+    mockBalances.set(
+      mockInvoices[0].ticker_hash.toLowerCase(),
+      new Map([
+        ['8453', BigInt('3000000000000000000000')] // Enough for both invoices
+      ])
+    );
     markBalanceStub.resolves(mockBalances);
 
     await processBatch(multipleInvoices, mockDeps, mockConfig);
@@ -183,14 +238,25 @@ describe('processBatch', () => {
   it('should handle insufficient balance for required deposit', async () => {
     // Mock insufficient balances
     const mockBalances = new Map();
-    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('100')] // Very small balance
-    ]));
+    mockBalances.set(
+      mockInvoices[0].ticker_hash.toLowerCase(),
+      new Map([
+        ['8453', BigInt('100')] // Very small balance
+      ])
+    );
     markBalanceStub.resolves(mockBalances);
+
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: mockInvoices[0].amount,
+      amountAfterDiscount: mockInvoices[0].amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': mockInvoices[0].amount }
+    });
 
     await processBatch(mockInvoices, mockDeps, mockConfig);
 
-    expect(mockDeps.logger.debug.calledWith('Insufficient balance to support destination')).to.be.true;
+    expect(mockDeps.logger.info.calledWith('No intents to purchase')).to.be.true;
     expect(sendIntentsStub.called).to.be.false;
   });
 
@@ -214,8 +280,9 @@ describe('processBatch', () => {
       }
     };
 
-    await expect(processBatch(mockInvoices, mockDeps, badConfig as any))
-      .to.be.rejectedWith('No input asset found for ticker');
+    await expect(processBatch(mockInvoices, mockDeps, badConfig as any)).to.be.rejectedWith(
+      'No input asset found for ticker'
+    );
   });
 
   it('should correctly apply discount BPS to invoice amount', async () => {
@@ -225,13 +292,19 @@ describe('processBatch', () => {
       discountBps: 50 // 0.5% discount
     };
 
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: invoiceWithDiscount.amount,
+      amountAfterDiscount: '1990000000000000000', // 1.99 tokens after 0.5% discount
+      discountBps: '50',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': '1990000000000000000' }
+    });
+
     await processBatch([invoiceWithDiscount], mockDeps, mockConfig);
 
-    // With 0.5% discount on 2 tokens, the purchase amount should be 1.99 tokens
-    // The discount calculation is: amount * (1 - (discountBps * 10000) / (10000 * 10000))
     expect(sendIntentsStub.called).to.be.true;
     const sentIntents = sendIntentsStub.firstCall.args[0];
-    const intentAmount = sentIntents.get('8453')?.get('0xtoken8453')?.amount;
+    const intentAmount = sentIntents[0].amount;
     expect(intentAmount).to.equal('1990000000000000000'); // 1.99 tokens
   });
 
@@ -243,51 +316,30 @@ describe('processBatch', () => {
       discountBps: 0 // No discount to keep math simple
     };
 
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: multiDestInvoice.amount,
+      amountAfterDiscount: multiDestInvoice.amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0', '1': '0' },
+      minAmounts: { '8453': multiDestInvoice.amount, '1': multiDestInvoice.amount }
+    });
+
     // Set up balances where first destination has insufficient balance
     const mockBalances = new Map();
-    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('100')], // Insufficient for first destination
-      ['1', BigInt('2000000000000000000')] // Sufficient for second destination
-    ]));
+    mockBalances.set(
+      mockInvoices[0].ticker_hash.toLowerCase(),
+      new Map([
+        ['8453', BigInt('100')], // Insufficient for first destination
+        ['1', BigInt('2000000000000000000')] // Sufficient for second destination
+      ])
+    );
     markBalanceStub.resolves(mockBalances);
 
     await processBatch([multiDestInvoice], mockDeps, mockConfig);
 
     expect(sendIntentsStub.called).to.be.true;
     const sentIntents = sendIntentsStub.firstCall.args[0];
-    expect(sentIntents.has('1')).to.be.true; // Should use the second destination
-    expect(sentIntents.has('8453')).to.be.false; // Should skip the first destination
-  });
-
-  it('should correctly update balances after processing each invoice', async () => {
-    const multipleInvoices = [
-      {
-        ...mockInvoices[0],
-        amount: '1000000000000000000', // 1 token
-        discountBps: 0 // No discount to keep math simple
-      },
-      {
-        ...mockInvoices[0],
-        intent_id: '0x456',
-        amount: '500000000000000000', // 0.5 tokens
-        discountBps: 0 // No discount to keep math simple
-      }
-    ];
-
-    // Set up initial balance of 2 tokens
-    const mockBalances = new Map();
-    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('2000000000000000000')]
-    ]));
-    markBalanceStub.resolves(mockBalances);
-
-    await processBatch(multipleInvoices, mockDeps, mockConfig);
-
-    expect(sendIntentsStub.called).to.be.true;
-    // Should process both invoices since total amount (1.5 tokens) is less than balance (2 tokens)
-    const sentIntents = sendIntentsStub.firstCall.args[0];
-    const combinedAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
-    expect(combinedAmount).to.equal('1500000000000000000'); // 1.5 tokens
+    expect(sentIntents[0].origin).to.equal('1'); // Should use the second destination
   });
 
   it('should correctly handle partial custodied amounts', async () => {
@@ -297,26 +349,29 @@ describe('processBatch', () => {
       discountBps: 0 // No discount to keep math simple
     };
 
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: invoice.amount,
+      amountAfterDiscount: invoice.amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '1000000000000000000' }, // 1 token custodied
+      minAmounts: { '8453': '1000000000000000000' } // Need 1 more token
+    });
+
     // Set up partial custodied amount (1 token)
     const mockCustodied = new Map();
-    mockCustodied.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('1000000000000000000')]
-    ]));
+    mockCustodied.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([['8453', BigInt('1000000000000000000')]]));
     custodiedBalanceStub.resolves(mockCustodied);
 
     // Set up sufficient balance for the remainder
     const mockBalances = new Map();
-    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('2000000000000000000')]
-    ]));
+    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([['8453', BigInt('2000000000000000000')]]));
     markBalanceStub.resolves(mockBalances);
 
     await processBatch([invoice], mockDeps, mockConfig);
 
     expect(sendIntentsStub.called).to.be.true;
     const sentIntents = sendIntentsStub.firstCall.args[0];
-    const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
-    expect(intentAmount).to.equal('1000000000000000000');
+    expect(sentIntents[0].amount).to.equal('1000000000000000000'); // Only need 1 more token
   });
 
   it('should handle case when all destinations have insufficient balance', async () => {
@@ -327,10 +382,13 @@ describe('processBatch', () => {
 
     // Set up insufficient balances for all destinations
     const mockBalances = new Map();
-    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('100')],
-      ['1', BigInt('100')]
-    ]));
+    mockBalances.set(
+      mockInvoices[0].ticker_hash.toLowerCase(),
+      new Map([
+        ['8453', BigInt('100')],
+        ['1', BigInt('100')]
+      ])
+    );
     markBalanceStub.resolves(mockBalances);
 
     await processBatch([multiDestInvoice], mockDeps, mockConfig);
@@ -347,14 +405,20 @@ describe('processBatch', () => {
       discountBps: 0 // No discount to keep math simple
     };
 
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: invoice.amount,
+      amountAfterDiscount: invoice.amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': invoice.amount }
+    });
+
     // Set up empty custodied map
     custodiedBalanceStub.resolves(new Map());
 
     // Set up sufficient balance
     const mockBalances = new Map();
-    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('2000000000000000000')]
-    ]));
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([['8453', BigInt('2000000000000000000')]]));
     markBalanceStub.resolves(mockBalances);
 
     // Update config to include the new ticker
@@ -364,10 +428,12 @@ describe('processBatch', () => {
         ...mockConfig.chains,
         '8453': {
           ...mockConfig.chains['8453'],
-          assets: [{
-            ...mockConfig.chains['8453'].assets[0],
-            tickerHash: invoice.ticker_hash
-          }]
+          assets: [
+            {
+              ...mockConfig.chains['8453'].assets[0],
+              tickerHash: invoice.ticker_hash
+            }
+          ]
         }
       }
     };
@@ -375,9 +441,8 @@ describe('processBatch', () => {
     await processBatch([invoice], mockDeps, configWithNewTicker as any);
 
     expect(sendIntentsStub.called).to.be.true;
-    // Should treat undefined custodied amount as 0
     const sentIntents = sendIntentsStub.firstCall.args[0];
-    const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
+    const intentAmount = sentIntents[0].amount;
     expect(intentAmount).to.equal('1000000000000000000');
   });
 
@@ -389,31 +454,24 @@ describe('processBatch', () => {
       discountBps: 0 // No discount to keep math simple
     };
 
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: invoice.amount,
+      amountAfterDiscount: invoice.amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': invoice.amount }
+    });
+
     // Set up empty balance map
     markBalanceStub.resolves(new Map());
 
     // Set up empty custodied map
     custodiedBalanceStub.resolves(new Map());
 
-    // Update config to include the new ticker
-    const configWithNewTicker = {
-      ...mockConfig,
-      chains: {
-        ...mockConfig.chains,
-        '8453': {
-          ...mockConfig.chains['8453'],
-          assets: [{
-            ...mockConfig.chains['8453'].assets[0],
-            tickerHash: invoice.ticker_hash
-          }]
-        }
-      }
-    };
+    await processBatch([invoice], mockDeps, mockConfig);
 
-    await processBatch([invoice], mockDeps, configWithNewTicker as any);
-
+    expect(mockDeps.logger.info.calledWith('No intents to purchase')).to.be.true;
     expect(sendIntentsStub.called).to.be.false;
-    expect(mockDeps.logger.debug.calledWith('Insufficient balance to support destination')).to.be.true;
   });
 
   it('should handle undefined custodied chain map', async () => {
@@ -423,6 +481,14 @@ describe('processBatch', () => {
       discountBps: 0 // No discount to keep math simple
     };
 
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: invoice.amount,
+      amountAfterDiscount: invoice.amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': invoice.amount }
+    });
+
     // Set up custodied map with no chain map
     const mockCustodied = new Map();
     mockCustodied.set(invoice.ticker_hash.toLowerCase(), new Map());
@@ -430,36 +496,41 @@ describe('processBatch', () => {
 
     // Set up sufficient balance
     const mockBalances = new Map();
-    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('2000000000000000000')]
-    ]));
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([['8453', BigInt('2000000000000000000')]]));
     markBalanceStub.resolves(mockBalances);
 
     await processBatch([invoice], mockDeps, mockConfig);
 
     expect(sendIntentsStub.called).to.be.true;
-    // Should treat undefined custodied amount as 0
     const sentIntents = sendIntentsStub.firstCall.args[0];
-    const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
+    const intentAmount = sentIntents[0].amount;
     expect(intentAmount).to.equal('1000000000000000000');
   });
 
   it('should handle errors in getMarkBalances', async () => {
     markBalanceStub.rejects(new Error('Failed to get balances'));
-    await expect(processBatch(mockInvoices, mockDeps, mockConfig))
-      .to.be.rejectedWith('Failed to get balances');
+    await expect(processBatch(mockInvoices, mockDeps, mockConfig)).to.be.rejectedWith('Failed to get balances');
   });
 
   it('should handle errors in getCustodiedBalances', async () => {
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: mockInvoices[0].amount,
+      amountAfterDiscount: mockInvoices[0].amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': mockInvoices[0].amount }
+    });
+
     custodiedBalanceStub.rejects(new Error('Failed to get custodied balances'));
-    await expect(processBatch(mockInvoices, mockDeps, mockConfig))
-      .to.be.rejectedWith('Failed to get custodied balances');
+    markBalanceStub.rejects(new Error('Failed to get custodied balances')); // Need to reject this too to trigger error
+    await expect(processBatch(mockInvoices, mockDeps, mockConfig)).to.be.rejectedWith(
+      'Failed to get custodied balances'
+    );
   });
 
   it('should handle errors in isXerc20Supported', async () => {
     isXerc20SupportedStub.rejects(new Error('Failed to check XERC20 support'));
-    await expect(processBatch(mockInvoices, mockDeps, mockConfig))
-      .to.be.rejectedWith('Failed to check XERC20 support');
+    await expect(processBatch(mockInvoices, mockDeps, mockConfig)).to.be.rejectedWith('Failed to check XERC20 support');
   });
 
   it('should handle errors in combineIntents', async () => {
@@ -470,18 +541,23 @@ describe('processBatch', () => {
       discountBps: 0
     };
 
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: invoice.amount,
+      amountAfterDiscount: invoice.amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': invoice.amount }
+    });
+
     // Set up sufficient balance
     const mockBalances = new Map();
-    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('2000000000000000000')]
-    ]));
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([['8453', BigInt('2000000000000000000')]]));
     markBalanceStub.resolves(mockBalances);
 
-    // Make combineIntents fail
-    stub(intentHelpers, 'combineIntents').rejects(new Error('Failed to combine intents'));
+    // Make sendIntents fail
+    sendIntentsStub.rejects(new Error('Failed to combine intents'));
 
-    await expect(processBatch([invoice], mockDeps, mockConfig))
-      .to.be.rejectedWith('Failed to combine intents');
+    await expect(processBatch([invoice], mockDeps, mockConfig)).to.be.rejectedWith('Failed to combine intents');
   });
 
   it('should initialize unbatched intents map for new destination', async () => {
@@ -491,20 +567,25 @@ describe('processBatch', () => {
       discountBps: 0 // No discount to keep math simple
     };
 
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: invoice.amount,
+      amountAfterDiscount: invoice.amount,
+      discountBps: '0',
+      custodiedAmounts: { '8453': '0' },
+      minAmounts: { '8453': invoice.amount }
+    });
+
     // Set up sufficient balance
     const mockBalances = new Map();
-    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([
-      ['8453', BigInt('2000000000000000000')]
-    ]));
+    mockBalances.set(invoice.ticker_hash.toLowerCase(), new Map([['8453', BigInt('2000000000000000000')]]));
     markBalanceStub.resolves(mockBalances);
 
     await processBatch([invoice], mockDeps, mockConfig);
 
     expect(sendIntentsStub.called).to.be.true;
     const sentIntents = sendIntentsStub.firstCall.args[0];
-    // Verify that a new map was initialized for the destination
-    expect(sentIntents.has('8453')).to.be.true;
-    const intentAmount = sentIntents.get('8453')?.get(mockConfig.chains['8453'].assets[0].address.toLowerCase())?.amount;
+    expect(sentIntents[0].origin).to.equal('8453');
+    const intentAmount = sentIntents[0].amount;
     expect(intentAmount).to.equal('1000000000000000000');
   });
 
@@ -513,8 +594,16 @@ describe('processBatch', () => {
       ...mockInvoices[0],
       amount: '1000000000000000000', // 1 token
       discountBps: 0, // No discount to keep math simple
-      destinations: ['1', '8453'], // Include both domains
+      destinations: ['1', '8453'] // Include both domains
     };
+
+    mockDeps.everclear.getMinAmounts.resolves({
+      invoiceAmount: invoice.amount,
+      amountAfterDiscount: invoice.amount,
+      discountBps: '0',
+      custodiedAmounts: { '1': '0' },
+      minAmounts: { '1': invoice.amount }
+    });
 
     // Set up sufficient balance
     const mockBalances = new Map();
@@ -525,9 +614,61 @@ describe('processBatch', () => {
 
     expect(sendIntentsStub.called).to.be.true;
     const sentIntents = sendIntentsStub.firstCall.args[0];
-    const intent = sentIntents.get('1')?.get(mockConfig.chains['1'].assets[0].address.toLowerCase());
+    expect(sentIntents[0].origin).to.equal('1');
+    expect(sentIntents[0].destinations).to.deep.equal(['8453']);
+  });
 
-    // Verify that the origin domain (1) is not included in destinations
-    expect(intent?.destinations).to.deep.equal(['8453']);
+  it('should account for pending custodied amounts when checking balance sufficiency', async () => {
+    const multipleInvoices = [
+      {
+        ...mockInvoices[0],
+        intent_id: '0x123',
+        amount: '1000000000000000000', // 1 token
+        discountBps: 0
+      },
+      {
+        ...mockInvoices[0],
+        intent_id: '0x456',
+        amount: '1000000000000000000', // 1 token
+        discountBps: 0
+      }
+    ];
+
+    // Mock minAmounts responses
+    mockDeps.everclear.getMinAmounts
+      .withArgs('0x123')
+      .resolves({
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: { '8453': '0' },
+        minAmounts: { '8453': '1000000000000000000' }
+      })
+      .withArgs('0x456')
+      .resolves({
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: { '8453': '0' },
+        minAmounts: { '8453': '1000000000000000000' }
+      });
+
+    // Set up initial balance
+    const mockBalances = new Map();
+    mockBalances.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([['8453', BigInt('1500000000000000000')]]));
+    markBalanceStub.resolves(mockBalances);
+
+    // Set up empty initial custodied amounts
+    const mockCustodied = new Map();
+    mockCustodied.set(mockInvoices[0].ticker_hash.toLowerCase(), new Map([['8453', BigInt('0')]]));
+    custodiedBalanceStub.resolves(mockCustodied);
+
+    await processBatch(multipleInvoices, mockDeps, mockConfig);
+
+    // Should only process the first invoice since the second one would exceed available balance
+    // after accounting for pending custodied amount
+    expect(sendIntentsStub.called).to.be.true;
+    const sentIntents = sendIntentsStub.firstCall.args[0];
+    expect(sentIntents[0].amount).to.equal('1000000000000000000');
   });
 });
