@@ -1,3 +1,3 @@
 export * from './pollAndProcess';
-export * from './processBatch';
+export * from './processInvoices';
 export * from './validation';

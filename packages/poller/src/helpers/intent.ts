@@ -5,57 +5,6 @@ import { encodeFunctionData, erc20Abi } from 'viem';
 import { jsonifyMap } from '@mark/logger';
 
 /**
- * Receives a mapping of new intent params designed to purchase a single invoice, keyed
- * on the origin of the created intent.
- *
- * Will return a single intent per origin - asset combo that groups all origin-asset intents into a single
- * created intent. i.e. all USDC intents from optimism will be aggregated into a single USDC on optimism
- * intent.
- */
-export const combineIntents = async (
-  unbatched: Map<string, NewIntentParams[]>,
-  deps: ProcessInvoicesDependencies,
-): Promise<Map<string, Map<string, NewIntentParams>>> => {
-  const { logger } = deps;
-  try {
-    // Initialize the result map
-    logger.debug('Method started', { method: combineIntents.name, unbatched: jsonifyMap(unbatched) });
-    const result = new Map<string, Map<string, NewIntentParams>>();
-
-    // Iterate over the unbatched map
-    for (const [origin, intents] of unbatched.entries()) {
-      logger.info('Combining intents for domain', { domain: origin, intents: intents.length });
-      const assetMap = new Map<string, NewIntentParams>();
-
-      for (const intent of intents) {
-        const { inputAsset, amount, destinations, to, callData, maxFee } = intent;
-
-        // If the asset already exists, update the existing intent
-        if (assetMap.has(inputAsset.toLowerCase())) {
-          const existingIntent = assetMap.get(inputAsset.toLowerCase())!;
-          existingIntent.amount = (BigInt(existingIntent.amount) + BigInt(amount)).toString();
-        } else {
-          assetMap.set(inputAsset.toLowerCase(), { origin, destinations, to, inputAsset, amount, callData, maxFee });
-        }
-      }
-      logger.info('Combined intents for domain + asset', {
-        domain: origin,
-        assets: [...assetMap.keys()],
-        intents: intents.length,
-      });
-
-      result.set(origin, assetMap);
-    }
-    logger.info('Batched intents mapping', { domains: [...result.keys()] });
-    return result;
-  } catch (err: unknown) {
-    const error = err as Error;
-    logger.error('Error combining intents', { message: error.message, name: error.name, stack: error.stack });
-    throw new Error(`combineIntents failed ${(err as unknown as Error).message || err}`);
-  }
-};
-
-/**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required. Takes in the origin-asset batched intents.
  */
 export const sendIntents = async (

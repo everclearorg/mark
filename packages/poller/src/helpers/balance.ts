@@ -2,16 +2,6 @@ import { getDecimalsFromConfig, getTokenAddressFromConfig, MarkConfiguration } f
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 
-export const walletBalance = async (tokenAddress: string, chainId: string, config: MarkConfiguration) => {
-  try {
-    const tokenContract = await getERC20Contract(config, chainId, tokenAddress as `0x${string}`);
-    const balance = await tokenContract.read.balanceOf([config.ownAddress]);
-    return balance;
-  } catch (err) {
-    console.log('Not able to fetch the wallet balance!', err);
-  }
-};
-
 /**
  * Returns the gas balance of mark on all chains.
  * @param config Mark configuration

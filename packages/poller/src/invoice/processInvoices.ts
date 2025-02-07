@@ -17,7 +17,7 @@ import { ChainService } from '@mark/chainservice';
 
 interface ProcessInvoicesParams {
   invoices: Invoice[];
-  purchaseCache: PurchaseCache;
+  cache: PurchaseCache;
   logger: Logger;
   everclear: EverclearAdapter;
   chainService: ChainService;
@@ -27,7 +27,7 @@ interface ProcessInvoicesParams {
 export async function processInvoices({
   invoices,
   everclear,
-  purchaseCache,
+  cache,
   chainService,
   logger,
   config,
@@ -54,7 +54,7 @@ export async function processInvoices({
   logger.debug('Retrieved gas balances', { requestId, balances: jsonifyMap(gas) });
 
   // Get existing purchase actions
-  const cachedPurchases = await purchaseCache.getAllPurchases();
+  const cachedPurchases = await cache.getAllPurchases();
 
   // Remove cached purchases that no longer apply to an invoice.
   const invoiceIds = invoices.map(({ intent_id }) => intent_id);
@@ -66,7 +66,7 @@ export async function processInvoices({
 
   const pendingPurchases = cachedPurchases.filter(({ target }) => invoiceIds.includes(target.intent_id));
   try {
-    await purchaseCache.removePurchases(toRemove);
+    await cache.removePurchases(toRemove);
     logger.info('Removed stale purchases', { requestId, toRemove });
   } catch (e) {
     logger.warn('Failed to clear pending cache', { requestId, error: jsonifyError(e, { toRemove }) });
@@ -185,7 +185,7 @@ export async function processInvoices({
         try {
           const [{ transactionHash }] = await sendIntents(
             [params],
-            { everclear, chainService, logger, cache: purchaseCache },
+            { everclear, chainService, logger, cache: cache },
             config,
           );
 
@@ -217,7 +217,7 @@ export async function processInvoices({
 
   // Store purchases in cache
   try {
-    await purchaseCache.addPurchases(pendingPurchases);
+    await cache.addPurchases(pendingPurchases);
     logger.info('Stored purchases in cache', { requestId, purchases: pendingPurchases });
   } catch (e) {
     logger.error('Failed to add purchases to cache', { requestId, error: jsonifyError(e, { toRemove }) });
