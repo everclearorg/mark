@@ -50,6 +50,10 @@ export interface MarkConfiguration {
     url: string;
     key: string;
   };
+  redis: {
+    host: string;
+    port: number;
+  };
   ownAddress: string;
   stage: Stage;
   environment: Environment;
