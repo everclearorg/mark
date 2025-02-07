@@ -10,6 +10,7 @@ import {
   isXerc20Supported,
   logBalanceThresholds,
   logGasThresholds,
+  convertInvoiceToLocalDecimals,
   sendIntents,
 } from '../helpers';
 import { jsonifyMap } from '@mark/logger';
