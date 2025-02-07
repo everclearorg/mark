@@ -9,8 +9,17 @@ export interface PurchaseAction {
 
 export class PurchaseCache {
   private readonly prefix = 'purchases';
+  private readonly store: Redis;
 
-  constructor(private readonly store: Redis) {}
+  constructor(host: string, port: number) {
+    this.store = new Redis({
+      host,
+      port,
+      connectTimeout: 17000,
+      maxRetriesPerRequest: 4,
+      retryStrategy: (times) => Math.min(times * 30, 1000),
+    });
+  }
 
   /**
    * Stores purchase actions for given targets
