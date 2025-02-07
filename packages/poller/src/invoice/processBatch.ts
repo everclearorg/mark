@@ -48,8 +48,9 @@ export async function processBatch(
   // These are the intents we'll send to purchase invoices
   const intents: NewIntentParams[] = [];
 
-  // Track already handled invoices
-  const handledInvoices = new Set<string>();
+  // Track already handled invoices -- keyed on id, value is destination it was
+  // handled on
+  const handledInvoices = new Map<string, { settlementDomain: string; purchaseAmount: bigint }>();
 
   // Construct the invoicesByTickerDest map
   for (const invoice of invoices) {
@@ -102,23 +103,34 @@ export async function processBatch(
         minAmounts: minAmountsResponse,
       });
 
-      // Get required amount and adjust for any handled invoices
+      // Get required amount and adjust for any handled invoices on this destination
       let minAmount = BigInt(minAmountsResponse.minAmounts[destination] || '0');
       if (minAmount === 0n) continue;
 
-      // Subtract amounts for already handled prior invoices
+      // The min amount does _not_ assume any of the pre-existing invoices have been purchased.
+      // This means if the invoice queue for this ticker is A, B and query the `minAmount` for `B`,
+      // the API would return the amount to purchase A and B.
+
+      // When iterating through the invoices, you should decrement the returned `minAmount` by the
+      // handled invoice amount for the given destination.
       for (const priorInvoice of invoices) {
         if (!handledInvoices.has(priorInvoice.intent_id)) {
           // not handled
           continue;
         }
+        const { settlementDomain, purchaseAmount } = handledInvoices.get(priorInvoice.intent_id)!;
+        if (settlementDomain !== destination) {
+          // the handled invoice was settled to a different destination, dont decrememnt min
+          continue;
+        }
+
         if (priorInvoice.hub_invoice_enqueued_timestamp > invoice.hub_invoice_enqueued_timestamp) {
           // prior invoice is newer, not doesnt impact liquidity
           continue;
         }
-        // Subtract the discounted amount for this invoice
-        const discountedAmount = (BigInt(priorInvoice.amount) * BigInt(10000 - priorInvoice.discountBps)) / 10000n;
-        minAmount -= discountedAmount;
+
+        // Subtract the amount the handled invoice sent in for purchase
+        minAmount -= purchaseAmount;
       }
 
       if (minAmount <= 0n) continue;
@@ -151,7 +163,7 @@ export async function processBatch(
         // Flag all invoices up to this one as handled
         for (const priorInvoice of invoices) {
           if (priorInvoice.hub_invoice_enqueued_timestamp <= invoice.hub_invoice_enqueued_timestamp) {
-            handledInvoices.add(priorInvoice.intent_id);
+            handledInvoices.set(priorInvoice.intent_id, { settlementDomain: destination, purchaseAmount: minAmount });
           }
         }
 
