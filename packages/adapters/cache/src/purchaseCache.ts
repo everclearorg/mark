@@ -50,6 +50,7 @@ export class PurchaseCache {
    * @returns Number of removed items
    */
   public async removePurchases(targetIds: string[]): Promise<number> {
+    if (targetIds.length === 0) return 0;
     const key = `${this.prefix}:data`;
     return await this.store.hdel(key, ...targetIds);
   }
@@ -66,6 +67,17 @@ export class PurchaseCache {
       throw new Error(`Failed to clear store: ${JSON.stringify(ret)}`);
     }
     return;
+  }
+
+  /**
+   * Gets all stored purchase actions
+   * @returns Array of all PurchaseActions in the cache
+   */
+  public async getAllPurchases(): Promise<PurchaseAction[]> {
+    const key = `${this.prefix}:data`;
+    const all = await this.store.hgetall(key);
+
+    return Object.values(all).map((result) => JSON.parse(result) as PurchaseAction);
   }
 
   /**

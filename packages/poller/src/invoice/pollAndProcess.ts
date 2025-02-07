@@ -1,24 +1,32 @@
 import { MarkConfiguration } from '@mark/core';
-import { processBatch } from './processBatch';
 import { ChainService } from '@mark/chainservice';
 import { EverclearAdapter } from '@mark/everclear';
 import { Logger } from '@mark/logger';
+import { processInvoices } from './processInvoices';
+import { PurchaseCache } from '@mark/cache';
 
 export interface ProcessInvoicesDependencies {
   everclear: EverclearAdapter;
   chainService: ChainService;
   logger: Logger;
+  cache: PurchaseCache;
 }
 
 export async function pollAndProcess(config: MarkConfiguration, deps: ProcessInvoicesDependencies): Promise<void> {
-  const { everclear, logger } = deps;
+  const { everclear, logger, chainService, cache } = deps;
 
   try {
     const invoices = await everclear.fetchInvoices(config.chains);
-    await processBatch(invoices, deps, config);
+    await processInvoices({
+      invoices,
+      everclear,
+      logger,
+      chainService,
+      purchaseCache: cache,
+      config,
+    });
   } catch (_error: unknown) {
     const error = _error as Error;
-    // console.log('error:', error);
     logger.error('Failed to process invoices', { message: error.message, stack: error.stack, name: error.name });
     throw error;
   }

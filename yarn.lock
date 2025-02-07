@@ -3003,7 +3003,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@mark/cache@workspace:packages/adapters/cache":
+"@mark/cache@workspace:*, @mark/cache@workspace:packages/adapters/cache":
   version: 0.0.0-use.local
   resolution: "@mark/cache@workspace:packages/adapters/cache"
   dependencies:
@@ -3087,6 +3087,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/poller@workspace:packages/poller"
   dependencies:
+    "@mark/cache": "workspace:*"
     "@mark/chainservice": "workspace:*"
     "@mark/core": "workspace:*"
     "@mark/everclear": "workspace:*"
