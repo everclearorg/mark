@@ -1,1 +1,1 @@
-export { PurchaseCache } from './purchaseCache';
+export { PurchaseCache, PurchaseAction } from './purchaseCache';
