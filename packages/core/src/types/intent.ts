@@ -20,3 +20,9 @@ export interface Invoice {
   hub_status: string; // TODO: opinionated type
   hub_invoice_enqueued_timestamp: number;
 }
+
+export interface PurchaseAction {
+  target: Invoice;
+  purchase: NewIntentParams;
+  transactionHash: `0x${string}`;
+}
