@@ -169,7 +169,11 @@ export async function processInvoices({
         };
 
         try {
-          const [{ transactionHash }] = await sendIntents([params], { everclear, chainService, logger }, config);
+          const [{ transactionHash }] = await sendIntents(
+            [params],
+            { everclear, chainService, logger, cache: purchaseCache },
+            config,
+          );
 
           const purchase = {
             target: invoice,

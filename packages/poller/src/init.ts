@@ -5,6 +5,7 @@ import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
 import { Wallet } from 'ethers';
 import { pollAndProcess } from './invoice';
+import { PurchaseCache } from '@mark/cache';
 
 function initializeAdapters(config: MarkConfiguration, logger: Logger) {
   // Initialize adapters in the correct order
@@ -25,10 +26,13 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger) {
 
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
+  const cache = new PurchaseCache(config.redis.host, config.redis.port);
+
   return {
     chainService,
     web3Signer,
     everclear,
+    cache,
   };
 }
 
