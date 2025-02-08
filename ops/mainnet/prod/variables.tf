@@ -99,3 +99,21 @@ variable "dd_api_key" {
   type      = string
   sensitive = true
 }
+
+variable "blast_key" {
+  description = "Blast API KEY"
+  type      = string
+  sensitive = true
+}
+
+variable "drpc_key" {
+  description = "DRPC API KEY"
+  type      = string
+  sensitive = true
+}
+
+variable "alchemy_key" {
+  description = "Alchemy API KEY"
+  type      = string
+  sensitive = true
+}
