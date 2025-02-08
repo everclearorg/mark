@@ -2,7 +2,6 @@ import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
 import { getERC20Contract } from './contracts';
 import { encodeFunctionData, erc20Abi } from 'viem';
-import { jsonifyMap } from '@mark/logger';
 
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required. Takes in the origin-asset batched intents.
