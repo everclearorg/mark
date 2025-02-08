@@ -117,33 +117,33 @@ export async function processInvoices({
         break;
       }
 
+      // Add XERC20 check here
+      const isXerc20 = await isXerc20Supported(invoice.ticker_hash, invoice.destinations, config);
+      if (isXerc20) {
+        logger.info('XERC20 strategy enabled for invoice destination, skipping', {
+          requestId,
+          invoiceId,
+          destinations: invoice.destinations,
+          invoice,
+          ticker: invoice.ticker_hash,
+        });
+        continue;
+      }
+
       // Get the minimum amounts for invoice
       const { minAmounts } = await everclear.getMinAmounts(invoiceId);
 
       // For each invoice destination
-      for (const [destination, minAmount] of Object(minAmounts).entries()) {
+      for (const [destination, minAmount] of Object.entries(minAmounts)) {
         // Check if we have sufficient balance. If not, check other destinations.
         const markBalance = balances.get(ticker)?.get(destination) ?? BigInt(0);
-        if (markBalance < minAmount) {
+        if (markBalance < BigInt(minAmount)) {
           logger.debug('Insufficient balance for destination', {
             requestId,
             invoiceId,
             destination,
             required: minAmount.toString(),
             available: markBalance.toString(),
-          });
-          continue;
-        }
-
-        // Add XERC20 check here
-        const isXerc20 = await isXerc20Supported(invoice.ticker_hash, [destination], config);
-        if (isXerc20) {
-          logger.info('XERC20 strategy enabled for destination, skipping', {
-            requestId,
-            invoiceId,
-            destination,
-            invoice,
-            ticker: invoice.ticker_hash,
           });
           continue;
         }
@@ -177,7 +177,7 @@ export async function processInvoices({
             .map((s) => s.toString()),
           to: config.ownAddress,
           inputAsset,
-          amount: convertHubAmountToLocalDecimals(minAmount, inputAsset, destination, config).toString(),
+          amount: convertHubAmountToLocalDecimals(BigInt(minAmount), inputAsset, destination, config).toString(),
           callData: '0x',
           maxFee: '0',
         };
@@ -213,6 +213,12 @@ export async function processInvoices({
         }
       }
     }
+  }
+
+  if (pendingPurchases.length === 0) {
+    logger.info('No pending purchases', { requestId });
+    logger.info('Method complete', { requestId, pendingPurchases, invoices });
+    return;
   }
 
   // Store purchases in cache

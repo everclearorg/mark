@@ -13,9 +13,14 @@ export const getMarkGasBalances = async (config: MarkConfiguration): Promise<Map
 
   await Promise.all(
     Object.keys(chains).map(async (chain) => {
-      const client = createClient(chain, config);
-      const native = await client.getBalance({ address: ownAddress as `0x${string}` });
-      markBalances.set(chain, native);
+      try {
+        const client = createClient(chain, config);
+        const native = await client.getBalance({ address: ownAddress as `0x${string}` });
+        markBalances.set(chain, native);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      } catch (e) {
+        markBalances.set(chain, 0n);
+      }
     }),
   );
   return markBalances;
@@ -34,23 +39,28 @@ export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<st
   for (const ticker of tickers) {
     const domainBalances = new Map<string, bigint>();
     for (const domain of Object.keys(chains)) {
-      // get asset address
-      const tokenAddr = getTokenAddressFromConfig(ticker, domain, config) as `0x${string}`;
-      // get decimals
-      const decimals = getDecimalsFromConfig(ticker, domain, config);
-      if (!tokenAddr || !decimals) {
-        continue;
-      }
-      const tokenContract = await getERC20Contract(config, domain, tokenAddr);
-      // get balance
-      let balance = await tokenContract.read.balanceOf([ownAddress]);
+      try {
+        // get asset address
+        const tokenAddr = getTokenAddressFromConfig(ticker, domain, config) as `0x${string}`;
+        // get decimals
+        const decimals = getDecimalsFromConfig(ticker, domain, config);
+        if (!tokenAddr || !decimals) {
+          continue;
+        }
+        const tokenContract = await getERC20Contract(config, domain, tokenAddr);
+        // get balance
+        let balance = await tokenContract.read.balanceOf([ownAddress]);
 
-      // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
-      if (decimals !== 18) {
-        const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
-        balance = BigInt(balance as string) * 10n ** DECIMALS_DIFFERENCE;
+        // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
+        if (decimals !== 18) {
+          const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
+          balance = BigInt(balance as string) * 10n ** DECIMALS_DIFFERENCE;
+        }
+        domainBalances.set(domain, balance as bigint);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      } catch (error) {
+        domainBalances.set(domain, 0n); // Set zero balance on error
       }
-      domainBalances.set(domain, balance as bigint);
     }
     markBalances.set(ticker, domainBalances);
   }
@@ -78,16 +88,21 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
   for (const ticker of tickers) {
     const domainBalances = new Map<string, bigint>();
     for (const domain of Object.keys(chains)) {
-      // get asset hash
-      const assetHash = getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
-      if (!assetHash) {
-        // not registered on this domain
-        domainBalances.set(domain, 0n);
-        continue;
+      try {
+        // get asset hash
+        const assetHash = getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
+        if (!assetHash) {
+          // not registered on this domain
+          domainBalances.set(domain, 0n);
+          continue;
+        }
+        // get custodied balance
+        const custodied = await contract.read.custodiedAssets([assetHash]);
+        domainBalances.set(domain, custodied as bigint);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      } catch (error) {
+        domainBalances.set(domain, 0n); // Set zero balance on error
       }
-      // get custodied balance
-      const custodied = await contract.read.custodiedAssets([assetHash]);
-      domainBalances.set(domain, custodied as bigint);
     }
     custodiedBalances.set(ticker, domainBalances);
   }
