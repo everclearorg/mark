@@ -75,6 +75,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
             key: requireEnv('RELAYER_API_KEY'),
           }
         : undefined,
+      redis: {
+        host: requireEnv('REDIS_HOST'),
+        port: parseInt(requireEnv('REDIS_PORT')),
+      },
       ownAddress: requireEnv('SIGNER_ADDRESS'),
       supportedSettlementDomains: parseSettlementDomains(requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
       supportedAssets,

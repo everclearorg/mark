@@ -29,6 +29,19 @@ export function jsonifyMap(map: Map<string, unknown>): Record<string, unknown> {
   return jsonObject;
 }
 
+interface ErrorWithContext extends Error {
+  context: object;
+}
+export const jsonifyError = (err: unknown, ctx: object = {}): ErrorWithContext => {
+  const error = err as Error;
+  return {
+    name: error?.name ?? 'unknown',
+    message: error?.message ?? 'unknown',
+    stack: error?.stack ?? 'unknown',
+    context: ctx,
+  };
+};
+
 export class Logger implements ILogger {
   private readonly logger: pino.Logger;
 

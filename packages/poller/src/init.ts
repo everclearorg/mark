@@ -5,8 +5,16 @@ import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
 import { Wallet } from 'ethers';
 import { pollAndProcess } from './invoice';
+import { PurchaseCache } from '@mark/cache';
 
-function initializeAdapters(config: MarkConfiguration, logger: Logger) {
+export interface MarkAdapters {
+  cache: PurchaseCache;
+  chainService: ChainService;
+  everclear: EverclearAdapter;
+  web3Signer: Web3Signer | Wallet;
+  logger: Logger;
+}
+function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdapters {
   // Initialize adapters in the correct order
   const web3Signer = config.web3SignerUrl.startsWith('http')
     ? new Web3Signer(config.web3SignerUrl)
@@ -25,10 +33,14 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger) {
 
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
+  const cache = new PurchaseCache(config.redis.host, config.redis.port);
+
   return {
+    logger,
     chainService,
     web3Signer,
     everclear,
+    cache,
   };
 }
 
