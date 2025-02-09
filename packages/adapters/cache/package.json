@@ -1,0 +1,40 @@
+{
+    "name": "@mark/cache",
+    "version": "0.0.1",
+    "private": true,
+    "description": "Everclear cache adapter for Mark.",
+    "author": "Everclear",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist/**/*",
+        "src/**/*"
+    ],
+    "scripts": {
+        "build": "tsc --build ./tsconfig.json",
+        "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+        "docker:redis:up": "docker run -it --rm --name redis -p 6379:6379 redis",
+        "lint": "yarn lint:package && yarn lint:ts",
+        "lint:fix": "yarn lint --fix",
+        "lint:package": "sort-package-json",
+        "lint:ts": "eslint ./src",
+        "purge": "yarn clean && rimraf ./coverage ./node_modules",
+        "test": "jest",
+        "test:unit": "jest --coverage"
+    },
+    "dependencies": {
+        "@mark/core": "workspace:*",
+        "@mark/logger": "workspace:*",
+        "ioredis": "5.5.0"
+    },
+    "devDependencies": {
+        "@types/jest": "^29.5.12",
+        "@types/node": "20.17.12",
+        "eslint": "9.17.0",
+        "jest": "^29.7.0",
+        "rimraf": "6.0.1",
+        "sort-package-json": "2.12.0",
+        "ts-jest": "^29.1.2",
+        "typescript": "5.7.2"
+    }
+}

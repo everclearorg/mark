@@ -1,18 +1,13 @@
 import { Logger } from '@mark/logger';
 import { axiosPost, axiosGet } from '@mark/core';
-import { ChainConfiguration, NewIntentParams, TransactionRequest } from '@mark/core';
+import { ChainConfiguration, NewIntentParams, TransactionRequest, Invoice } from '@mark/core';
 
-export interface Invoice {
-  amount: string;
-  intent_id: string;
-  owner: string;
-  entry_epoch: number;
-  origin: string;
-  destinations: string[];
-  ticker_hash: string;
-  discountBps: number;
-  hub_status: string; // TODO: opinionated type
-  hub_invoice_enqueued_timestamp: number;
+export interface MinAmountsResponse {
+  invoiceAmount: string;
+  amountAfterDiscount: string;
+  discountBps: string;
+  custodiedAmounts: Record<string, string>;
+  minAmounts: Record<string, string>;
 }
 
 export class EverclearAdapter {
@@ -106,8 +101,9 @@ export class EverclearAdapter {
     }
   }
 
-  // Method stub for future implementation
-  async updateInvoiceStatus(/* invoiceId: string, status: string */): Promise<void> {
-    throw new Error('Not implemented');
+  async getMinAmounts(intentId: string): Promise<MinAmountsResponse> {
+    const url = `${this.apiUrl}/invoices/${intentId}/min-amounts`;
+    const { data } = await axiosGet<MinAmountsResponse>(url);
+    return data;
   }
 }
