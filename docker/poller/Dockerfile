@@ -48,6 +48,7 @@ COPY packages/adapters/logger/package.json /tmp/build/packages/adapters/logger/
 COPY packages/adapters/chainservice/package.json /tmp/build/packages/adapters/chainservice/
 COPY packages/adapters/everclear/package.json /tmp/build/packages/adapters/everclear/
 COPY packages/adapters/web3signer/package.json /tmp/build/packages/adapters/web3signer/
+COPY packages/adapters/cache/package.json /tmp/build/packages/adapters/cache/
 COPY yarn.lock /tmp/build/
 
 # Install dependencies including devDependencies
@@ -61,6 +62,7 @@ COPY packages/adapters/logger /tmp/build/packages/adapters/logger
 COPY packages/adapters/chainservice /tmp/build/packages/adapters/chainservice
 COPY packages/adapters/everclear /tmp/build/packages/adapters/everclear
 COPY packages/adapters/web3signer /tmp/build/packages/adapters/web3signer
+COPY packages/adapters/cache /tmp/build/packages/adapters/cache
 COPY tsconfig.json /tmp/build/
 
 # Build packages
