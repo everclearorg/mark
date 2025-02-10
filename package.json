@@ -10,6 +10,7 @@
     "packages/core",
     "packages/poller",
     "packages/adapters/logger",
+    "packages/adapters/cache",
     "packages/adapters/chainservice",
     "packages/adapters/everclear",
     "packages/adapters/web3signer"
@@ -17,6 +18,7 @@
   "scripts": {
     "build": "yarn workspaces foreach -Av --parallel --topological-dev run build",
     "clean": "yarn workspaces foreach -A --parallel run clean",
+    "docker:up": "yarn workspace @mark/cache docker:redis:up",
     "lint": "yarn lint:package && yarn workspaces foreach -A --parallel run lint",
     "lint:fix": "yarn workspaces foreach -A --parallel run lint:fix",
     "lint:package": "sort-package-json",

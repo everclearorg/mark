@@ -51,6 +51,18 @@ module "sgs" {
   vpc_id         = module.network.vpc_id
 }
 
+module "cache" {
+  source                        = "../../modules/redis"
+  stage                         = var.stage
+  environment                   = var.environment
+  family                        = "mark"
+  sg_id                         = module.network.ecs_task_sg
+  vpc_id                        = module.network.vpc_id
+  cache_subnet_group_subnet_ids = module.network.public_subnets
+  node_type                     = "cache.t3.small"
+  public_redis                  = true
+}
+
 module "mark_web3signer" {
   source              = "../../modules/service"
   stage               = var.stage

@@ -1,5 +1,5 @@
 import { getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
-import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex } from 'viem';
+import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex, formatUnits } from 'viem';
 import { getHubStorageContract } from './contracts';
 
 export const getTickers = (config: MarkConfiguration) => {
@@ -8,6 +8,24 @@ export const getTickers = (config: MarkConfiguration) => {
     .map((c) => c.map((a) => a.tickerHash.toLowerCase()))
     .flat();
   return tickers;
+};
+
+/**
+ * @notice Invoices are always normalized to 18 decimal units. This will convert the given invoice amount
+ * to the local units (ie USDC is 6 decimals on ethereum, but represents as an 18 decimal invoice)
+ * @dev This will round up if there is precision loss
+ */
+export const convertHubAmountToLocalDecimals = (
+  amount: bigint,
+  asset: string,
+  domain: string,
+  config: MarkConfiguration,
+): string => {
+  const assetDecimals =
+    (config.chains[domain]?.assets ?? []).find((a) => a.address.toLowerCase() === asset.toLowerCase())?.decimals ?? 18;
+  const [integer, decimal] = formatUnits(amount, 18 - assetDecimals).split('.');
+  const ret = decimal ? (BigInt(integer) + 1n).toString() : integer;
+  return ret;
 };
 
 export const getAssetHash = (
