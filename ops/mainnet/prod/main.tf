@@ -56,7 +56,7 @@ module "cache" {
   stage                         = var.stage
   environment                   = var.environment
   family                        = "mark"
-  sg_id                         = module.network.ecs_task_sg
+  sg_id                         = module.sgs.lambda_sg_id
   vpc_id                        = module.network.vpc_id
   cache_subnet_group_subnet_ids = module.network.public_subnets
   node_type                     = "cache.t3.small"
