@@ -110,7 +110,7 @@ export class PrometheusAdapter {
   }
 
   // Record successful invoice fill
-  public recordSuccessfulInvoice(labels: InvoiceLabels): void {
+  public recordSuccessfulPurchase(labels: InvoiceLabels): void {
     this.successfulPurchases.labels(labels).inc();
   }
 

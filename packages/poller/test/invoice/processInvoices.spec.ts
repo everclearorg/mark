@@ -117,7 +117,7 @@ describe('processInvoices', () => {
         prometheus.updateChainBalance.resolves();
         prometheus.updateGasBalance.resolves();
         prometheus.recordPossibleInvoice.resolves();
-        prometheus.recordSuccessfulInvoice.resolves();
+        prometheus.recordSuccessfulPurchase.resolves();
 
         // Setup everclear stubs
         everclear.createNewIntent.resolves({
@@ -160,7 +160,7 @@ describe('processInvoices', () => {
         expect(purchases).to.have.lengthOf(1);
         expect(purchases[0].target).to.deep.equal(validInvoice);
         expect(purchases[0].transactionHash).to.equal('0xtx');
-        expect(prometheus.recordSuccessfulInvoice.calledOnceWith({
+        expect(prometheus.recordSuccessfulPurchase.calledOnceWith({
             ...labels,
             destination: validInvoice.destinations[0]
         })).to.be.true;
@@ -274,7 +274,7 @@ describe('processInvoices', () => {
         expect(purchases[0].target.intent_id).to.equal('0x123');
         // Does record as a possible invoices w.failure reason
         expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(2);
-        expect(prometheus.recordSuccessfulInvoice.calledOnceWith({ ...labels, destination: validInvoice.destinations[0] })).to.be.true;
+        expect(prometheus.recordSuccessfulPurchase.calledOnceWith({ ...labels, destination: validInvoice.destinations[0] })).to.be.true;
         expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.PendingPurchaseRecord, { ...labels, id: secondInvoice.intent_id })).to.be.true;
     });
 
@@ -318,7 +318,7 @@ describe('processInvoices', () => {
         expect(purchases[1].target.intent_id).to.equal(secondInvoice.intent_id);
         // Does record as a possible invoices w.failure reason
         expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(2);
-        expect(prometheus.recordSuccessfulInvoice.callCount).to.be.eq(2);
+        expect(prometheus.recordSuccessfulPurchase.callCount).to.be.eq(2);
         expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.PendingPurchaseRecord, { ...labels, id: secondInvoice.intent_id })).to.be.true;
     });
 
@@ -394,7 +394,7 @@ describe('processInvoices', () => {
         expect(purchases[0].purchase.origin).to.equal('8453'); // Should use second destination
         expect(purchases[0].transactionHash).to.equal('0xtx');
         expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(1);
-        expect(prometheus.recordSuccessfulInvoice.calledOnceWith({ ...labels, destination: '8453' }))
+        expect(prometheus.recordSuccessfulPurchase.calledOnceWith({ ...labels, destination: '8453' }))
         expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.InsufficientBalance, { ...labels, destination: '1' })).to.be.true;
     });
 
@@ -423,7 +423,7 @@ describe('processInvoices', () => {
         expect(logger.warn.called).to.be.true;
         // Should continue processing despite cache error
         expect(everclear.getMinAmounts.called).to.be.true;
-        expect(prometheus.recordSuccessfulInvoice.called).to.be.true;
+        expect(prometheus.recordSuccessfulPurchase.called).to.be.true;
     });
 
     it('should handle missing input asset in config', async () => {
@@ -481,7 +481,7 @@ describe('processInvoices', () => {
             expect(error.message).to.include('Failed to add purchases');
             expect(logger.error.called).to.be.true;
             expect(cache.addPurchases.calledOnce).to.be.true;
-            expect(prometheus.recordSuccessfulInvoice.called).to.be.true;
+            expect(prometheus.recordSuccessfulPurchase.called).to.be.true;
         }
     });
 });

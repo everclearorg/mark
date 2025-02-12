@@ -37,7 +37,7 @@ describe('PrometheusAdapter', () => {
     });
 
     it('should record successful invoice', async () => {
-      adapter.recordSuccessfulInvoice(invoiceLabels);
+      adapter.recordSuccessfulPurchase(invoiceLabels);
       const metrics = await adapter.getMetrics();
       expect(metrics).toContain('mark_success_purchases_total{origin="ethereum",ticker="0xtickerhash",id="123",destination="undefined"} 1');
     });

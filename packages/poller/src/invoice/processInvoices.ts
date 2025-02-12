@@ -213,7 +213,7 @@ export async function processInvoices({
             { everclear, chainService, logger, cache, prometheus },
             config,
           );
-          prometheus.recordSuccessfulInvoice({ ...labels, destination });
+          prometheus.recordSuccessfulPurchase({ ...labels, destination });
 
           const purchase = {
             target: invoice,
