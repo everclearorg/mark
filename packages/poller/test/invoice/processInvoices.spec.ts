@@ -6,9 +6,11 @@ import { PurchaseCache } from '@mark/cache';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter, MinAmountsResponse } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
+import { PrometheusAdapter } from '@mark/prometheus';
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as assetHelpers from '../../src/helpers/asset'
+import * as contractHelpers from '../../src/helpers/contracts';
 
 describe('processInvoices', () => {
     // Setup common test objects
@@ -42,41 +44,90 @@ describe('processInvoices', () => {
         ownAddress: '0xmark',
         supportedSettlementDomains: [8453],
         chains: {
-            '8453': {
+            '1': {
                 invoiceAge: 3600,
                 providers: ['provider'],
+                gasThreshold: '1000000000000000000',
                 assets: [{
                     tickerHash: '0xtickerhash',
                     address: '0xtoken',
                     decimals: 18,
-                    symbol: 'TEST'
+                    symbol: 'TEST',
+                    isNative: false,
+                    balanceThreshold: '1000000000000000000'
+                }]
+            },
+            '8453': {
+                invoiceAge: 3600,
+                providers: ['provider'],
+                gasThreshold: '1000000000000000000',
+                assets: [{
+                    tickerHash: '0xtickerhash',
+                    address: '0xtoken',
+                    decimals: 18,
+                    symbol: 'TEST',
+                    isNative: false,
+                    balanceThreshold: '1000000000000000000'
                 }]
             }
+        },
+        logLevel: 'info',
+        everclearApiUrl: 'http://localhost:3000',
+        stage: 'development',
+        environment: 'testnet',
+        supportedAssets: ['TEST'],
+        redis: {
+            host: 'localhost',
+            port: 6379
+        },
+        hub: {
+            domain: '1',
+            providers: ['provider']
         }
-    } as unknown as MarkConfiguration;
+    };
 
     // Setup mocks
     let cache: SinonStubbedInstance<PurchaseCache>;
     let logger: SinonStubbedInstance<Logger>;
     let everclear: SinonStubbedInstance<EverclearAdapter>;
     let chainService: SinonStubbedInstance<ChainService>;
+    let prometheus: SinonStubbedInstance<PrometheusAdapter>;
 
     beforeEach(() => {
         cache = createStubInstance(PurchaseCache);
         logger = createStubInstance(Logger);
         everclear = createStubInstance(EverclearAdapter);
         chainService = createStubInstance(ChainService);
+        prometheus = createStubInstance(PrometheusAdapter);
 
         // Setup default stubs
         cache.getAllPurchases.resolves([]);
         cache.removePurchases.resolves();
         cache.addPurchases.resolves();
 
+        // Setup prometheus stubs
+        prometheus.updateChainBalance.resolves();
+        prometheus.updateGasBalance.resolves();
+        prometheus.recordPossibleInvoice.resolves();
+        prometheus.recordSuccessfulInvoice.resolves();
+
+        // Setup everclear stubs
+        everclear.createNewIntent.resolves({
+            to: '0xdestination',
+            data: '0xdata',
+            chainId: 8453,
+            value: '0'
+        });
+
         stub(balanceHelpers, 'getMarkBalances').resolves(new Map([
-            ['0xtickerhash', new Map([['8453', BigInt('2000000000000000000')]])]
+            ['0xtickerhash', new Map([
+                ['8453', BigInt('2000000000000000000')],
+                ['1', BigInt('0')]
+            ])]
         ]));
         stub(balanceHelpers, 'getMarkGasBalances').resolves(new Map([
-            ['8453', BigInt('1000000000000000000')]
+            ['8453', BigInt('1000000000000000000')],
+            ['1', BigInt('0')]
         ]));
         stub(intentHelpers, 'sendIntents').resolves([{ transactionHash: '0xtx', chainId: '8453' }]);
         stub(assetHelpers, 'isXerc20Supported').resolves(false);
@@ -91,9 +142,11 @@ describe('processInvoices', () => {
             logger,
             everclear,
             chainService,
+            prometheus,
             config: validConfig
         });
-
+        expect(prometheus.updateChainBalance.callCount).to.be.eq(Object.keys(validConfig.chains).length);
+        expect(prometheus.updateGasBalance.callCount).to.be.eq(Object.keys(validConfig.chains).length);
         expect(cache.addPurchases.calledOnce).to.be.true;
         const purchases = cache.addPurchases.firstCall.args[0];
         console.log('purchases', purchases);
@@ -116,6 +169,7 @@ describe('processInvoices', () => {
             logger,
             everclear,
             chainService,
+            prometheus,
             config: validConfig
         });
 
@@ -138,6 +192,7 @@ describe('processInvoices', () => {
             logger,
             everclear,
             chainService,
+            prometheus,
             config: validConfig
         });
 
@@ -151,7 +206,7 @@ describe('processInvoices', () => {
     it('should skip processing if insufficient balance', async () => {
         (balanceHelpers.getMarkBalances as any).restore();
         stub(balanceHelpers, 'getMarkBalances').resolves(new Map([
-            ['0xtickerhash', new Map([['8453', BigInt('500000000000000000')]])] // Less than required
+            ['TEST', new Map([['8453', BigInt('500000000000000000')]])] // Less than required
         ]));
 
         everclear.getMinAmounts.resolves(validMinApiResponse);
@@ -162,6 +217,7 @@ describe('processInvoices', () => {
             logger,
             everclear,
             chainService,
+            prometheus,
             config: validConfig
         });
 
@@ -186,6 +242,7 @@ describe('processInvoices', () => {
             logger,
             everclear,
             chainService,
+            prometheus,
             config: validConfig
         });
 
@@ -208,6 +265,7 @@ describe('processInvoices', () => {
             logger,
             everclear,
             chainService,
+            prometheus,
             config: validConfig
         });
 
@@ -254,6 +312,7 @@ describe('processInvoices', () => {
             logger,
             everclear,
             chainService,
+            prometheus,
             config: validConfig
         });
 
@@ -283,6 +342,7 @@ describe('processInvoices', () => {
             logger,
             everclear,
             chainService,
+            prometheus,
             config: validConfig
         });
 
@@ -317,6 +377,7 @@ describe('processInvoices', () => {
                 logger,
                 everclear,
                 chainService,
+                prometheus,
                 config: invalidConfig
             });
             expect.fail('Should have thrown an error');
@@ -337,6 +398,7 @@ describe('processInvoices', () => {
                 logger,
                 everclear,
                 chainService,
+                prometheus,
                 config: validConfig
             });
             expect.fail('Should have thrown an error');
