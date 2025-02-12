@@ -231,6 +231,7 @@ export async function processInvoices({
           // Break to next invoice once we've made a purchase
           break;
         } catch (error) {
+          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, { ...labels, destination });
           logger.error('Failed to submit purchase transaction', {
             error,
             invoiceId: invoice.intent_id,
