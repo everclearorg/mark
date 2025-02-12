@@ -24,7 +24,7 @@ export class ConfigurationError extends Error {
 }
 
 export const DEFAULT_GAS_THRESHOLD = '5000000000000000'; // 0.005 eth
-export const DEFAULT_BALANCE_THRESHOLD = '100000000000000000'; // 0.1 eth
+export const DEFAULT_BALANCE_THRESHOLD = '0'; // 0
 export const DEFAULT_INVOICE_AGE = '600';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
 export const EVERCLEAR_TESTNET_CONFIG_URL =
@@ -71,9 +71,9 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       everclearApiUrl: requireEnv('EVERCLEAR_API_URL'),
       relayer: process.env.RELAYER_URL
         ? {
-            url: process.env.RELAYER_URL,
-            key: requireEnv('RELAYER_API_KEY'),
-          }
+          url: process.env.RELAYER_URL,
+          key: requireEnv('RELAYER_API_KEY'),
+        }
         : undefined,
       redis: {
         host: requireEnv('REDIS_HOST'),
@@ -185,7 +185,7 @@ function parseHubConfigurations(
 
   const assets =
     (process.env[`CHAIN_${chainId}_ASSETS`] ? parseAssets(process.env[`CHAIN_${chainId}_ASSETS`]!) : undefined) ??
-    Object.values(config?.hub.assets ?? {});
+    Object.values(config?.hub.assets ?? {}).map((a) => ({ ...a, balanceThreshold: '0' }));
 
   const providers =
     (process.env[`CHAIN_${chainId}_PROVIDERS`]
@@ -212,7 +212,7 @@ function parseAssets(assets: string): AssetConfiguration[] {
       address,
       decimals: parseInt(decimals, 10),
       tickerHash,
-      isNative: isNative === 'true',
+      isNative: isNative?.toLowerCase() === 'true',
       balanceThreshold,
     };
   });
