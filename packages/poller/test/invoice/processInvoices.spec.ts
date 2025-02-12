@@ -1,12 +1,12 @@
 import { expect } from 'chai';
 import { stub, SinonStubbedInstance, createStubInstance, SinonStub } from 'sinon';
 import { processInvoices } from '../../src/invoice/processInvoices';
-import { MarkConfiguration, Invoice, NewIntentParams, PurchaseAction } from '@mark/core';
+import { MarkConfiguration, Invoice, NewIntentParams, PurchaseAction, InvalidPurchaseReasons } from '@mark/core';
 import { PurchaseCache } from '@mark/cache';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter, MinAmountsResponse } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
-import { PrometheusAdapter } from '@mark/prometheus';
+import { InvoiceLabels, PrometheusAdapter } from '@mark/prometheus';
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as assetHelpers from '../../src/helpers/asset'
@@ -20,8 +20,8 @@ describe('processInvoices', () => {
         entry_epoch: 186595,
         amount: '1000000000000000000',
         discountBps: 1.2,
-        origin: '1',
-        destinations: ['8453'],
+        origin: '8453',
+        destinations: ['1'],
         hub_status: 'INVOICED',
         ticker_hash: '0xtickerhash',
         hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600,
@@ -32,17 +32,17 @@ describe('processInvoices', () => {
         discountBps: '1.2',
         amountAfterDiscount: '1020',
         custodiedAmounts: {
-            '8453': '1000000000000000000'
+            '1': '1000000000000000000'
         },
         minAmounts: {
-            '8453': '1000000000000000000'
+            '1': '1000000000000000000'
         }
     }
 
     const validConfig: MarkConfiguration = {
         web3SignerUrl: 'http://localhost:8545',
         ownAddress: '0xmark',
-        supportedSettlementDomains: [8453],
+        supportedSettlementDomains: [8453, 1],
         chains: {
             '1': {
                 invoiceAge: 3600,
@@ -86,12 +86,20 @@ describe('processInvoices', () => {
         }
     };
 
+    // Setup label constants
+    const labels: InvoiceLabels = {
+        origin: validInvoice.origin,
+        id: validInvoice.intent_id,
+        ticker: validInvoice.ticker_hash,
+    }
+
     // Setup mocks
     let cache: SinonStubbedInstance<PurchaseCache>;
     let logger: SinonStubbedInstance<Logger>;
     let everclear: SinonStubbedInstance<EverclearAdapter>;
     let chainService: SinonStubbedInstance<ChainService>;
     let prometheus: SinonStubbedInstance<PrometheusAdapter>;
+    let markBalanceStub: SinonStub;
 
     beforeEach(() => {
         cache = createStubInstance(PurchaseCache);
@@ -115,21 +123,21 @@ describe('processInvoices', () => {
         everclear.createNewIntent.resolves({
             to: '0xdestination',
             data: '0xdata',
-            chainId: 8453,
+            chainId: 1,
             value: '0'
         });
 
-        stub(balanceHelpers, 'getMarkBalances').resolves(new Map([
+        markBalanceStub = stub(balanceHelpers, 'getMarkBalances').resolves(new Map([
             ['0xtickerhash', new Map([
-                ['8453', BigInt('2000000000000000000')],
-                ['1', BigInt('0')]
+                ['1', BigInt('2000000000000000000')],
+                ['8453', BigInt('0')]
             ])]
         ]));
         stub(balanceHelpers, 'getMarkGasBalances').resolves(new Map([
-            ['8453', BigInt('1000000000000000000')],
-            ['1', BigInt('0')]
+            ['1', BigInt('1000000000000000000')],
+            ['8453', BigInt('0')]
         ]));
-        stub(intentHelpers, 'sendIntents').resolves([{ transactionHash: '0xtx', chainId: '8453' }]);
+        stub(intentHelpers, 'sendIntents').resolves([{ transactionHash: '0xtx', chainId: '1' }]);
         stub(assetHelpers, 'isXerc20Supported').resolves(false);
         stub(monitorHelpers, 'logBalanceThresholds').returns();
         stub(monitorHelpers, 'logGasThresholds').returns();
@@ -152,6 +160,11 @@ describe('processInvoices', () => {
         expect(purchases).to.have.lengthOf(1);
         expect(purchases[0].target).to.deep.equal(validInvoice);
         expect(purchases[0].transactionHash).to.equal('0xtx');
+        expect(prometheus.recordSuccessfulInvoice.calledOnceWith({
+            ...labels,
+            destination: validInvoice.destinations[0]
+        })).to.be.true;
+        expect(prometheus.recordPossibleInvoice.calledOnceWith(labels)).to.be.true;
     });
 
     it('should skip processing if invoice already has a pending purchase', async () => {
@@ -177,6 +190,9 @@ describe('processInvoices', () => {
         expect((intentHelpers.sendIntents as SinonStub).called).to.be.false;
         // adds pending purchases, handled at cache level
         expect(cache.addPurchases.calledOnceWith([existingPurchase])).to.be.true;
+        // Does record as a possible invoice w.failure reason
+        expect(prometheus.recordPossibleInvoice.calledOnceWith(labels)).to.be.true;
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.PendingPurchaseRecord, labels)).to.be.true;
     });
 
     it('should skip processing if XERC20 is supported for the destination', async () => {
@@ -200,6 +216,9 @@ describe('processInvoices', () => {
         expect(chainService.submitAndMonitor.called).to.be.false;
         expect((intentHelpers.sendIntents as SinonStub).called).to.be.false;
         expect(cache.addPurchases.called).to.be.false;
+        // Does record as a possible invoice w.failure reason
+        expect(prometheus.recordPossibleInvoice.calledOnceWith(labels)).to.be.true;
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.DestinationXerc20, labels)).to.be.true;
     });
 
     it('should skip processing if insufficient balance', async () => {
@@ -224,9 +243,12 @@ describe('processInvoices', () => {
         expect(chainService.submitAndMonitor.called).to.be.false;
         expect((intentHelpers.sendIntents as SinonStub).called).to.be.false;
         expect(cache.addPurchases.called).to.be.false;
+        // Does record as a possible invoice w.failure reason
+        expect(prometheus.recordPossibleInvoice.calledOnceWith(labels)).to.be.true;
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.InsufficientBalance, { ...labels, destination: validInvoice.destinations[0] })).to.be.true;
     });
 
-    it('should not handle multiple invoices with same ticker', async () => {
+    it('should not handle multiple invoices with same ticker + destinations', async () => {
         const secondInvoice = {
             ...validInvoice,
             intent_id: '0x456',
@@ -250,6 +272,54 @@ describe('processInvoices', () => {
         const purchases = cache.addPurchases.firstCall.args[0];
         expect(purchases).to.have.lengthOf(1);
         expect(purchases[0].target.intent_id).to.equal('0x123');
+        // Does record as a possible invoices w.failure reason
+        expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(2);
+        expect(prometheus.recordSuccessfulInvoice.calledOnceWith({ ...labels, destination: validInvoice.destinations[0] })).to.be.true;
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.PendingPurchaseRecord, { ...labels, id: secondInvoice.intent_id })).to.be.true;
+    });
+
+    it('should handle multiple invoices with same ticker + destinations, but second invoice has unique dest (settle to second invoice second dest)', async () => {
+        const secondInvoice = {
+            ...validInvoice,
+            intent_id: '0x456',
+            destinations: [validInvoice.destinations[0], '8453'],
+            hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600 // 15 minutes ago
+        };
+
+        everclear.getMinAmounts.onFirstCall().resolves(validMinApiResponse);
+        everclear.getMinAmounts.onSecondCall().resolves({
+            minAmounts: {
+                '8453': '1000000000000000000',
+                '1': '1000000000000000000',
+            }
+        } as unknown as MinAmountsResponse);
+        markBalanceStub.resolves(new Map([
+            [validInvoice.ticker_hash, new Map([
+                ['8453', BigInt('2000000000000000000')],
+                ['1', BigInt('2000000000000000000')]
+            ])]
+        ]));
+
+        await processInvoices({
+            invoices: [validInvoice, secondInvoice],
+            cache,
+            logger,
+            everclear,
+            chainService,
+            prometheus,
+            config: validConfig
+        });
+
+        // Should only process the older invoice
+        expect(cache.addPurchases.calledOnce).to.be.true;
+        const purchases = cache.addPurchases.firstCall.args[0];
+        expect(purchases).to.have.lengthOf(2);
+        expect(purchases[0].target.intent_id).to.equal(validInvoice.intent_id);
+        expect(purchases[1].target.intent_id).to.equal(secondInvoice.intent_id);
+        // Does record as a possible invoices w.failure reason
+        expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(2);
+        expect(prometheus.recordSuccessfulInvoice.callCount).to.be.eq(2);
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.PendingPurchaseRecord, { ...labels, id: secondInvoice.intent_id })).to.be.true;
     });
 
     it('should handle errors during purchase transaction', async () => {
@@ -270,6 +340,8 @@ describe('processInvoices', () => {
 
         expect(logger.error.called).to.be.true;
         expect(cache.addPurchases.called).to.be.false;
+        expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(1);
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.TransactionFailed, { ...labels, destination: validInvoice.destinations[0] })).to.be.true;
     });
 
     it('should try next destination if first has insufficient balance', async () => {
@@ -280,8 +352,7 @@ describe('processInvoices', () => {
         };
 
         // Setup balances where first destination has insufficient funds but second has enough
-        (balanceHelpers.getMarkBalances as any).restore();
-        stub(balanceHelpers, 'getMarkBalances').resolves(new Map([
+        markBalanceStub.resolves(new Map([
             ['0xtickerhash', new Map([
                 ['1', BigInt('500000000000000000')], // Insufficient for first destination
                 ['8453', BigInt('2000000000000000000')] // Sufficient for second destination
@@ -322,6 +393,9 @@ describe('processInvoices', () => {
         expect(purchases[0].target).to.deep.equal(multiDestInvoice);
         expect(purchases[0].purchase.origin).to.equal('8453'); // Should use second destination
         expect(purchases[0].transactionHash).to.equal('0xtx');
+        expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(1);
+        expect(prometheus.recordSuccessfulInvoice.calledOnceWith({ ...labels, destination: '8453' }))
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.InsufficientBalance, { ...labels, destination: '1' })).to.be.true;
     });
 
     it('should handle errors when removing stale purchases from cache', async () => {
@@ -349,6 +423,7 @@ describe('processInvoices', () => {
         expect(logger.warn.called).to.be.true;
         // Should continue processing despite cache error
         expect(everclear.getMinAmounts.called).to.be.true;
+        expect(prometheus.recordSuccessfulInvoice.called).to.be.true;
     });
 
     it('should handle missing input asset in config', async () => {
@@ -384,6 +459,7 @@ describe('processInvoices', () => {
             expect(error.message).to.include('No input asset found');
             expect(logger.error.called).to.be.true;
         }
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.InvalidTokenConfiguration, { ...labels, destination: validInvoice.destinations[0] })).to.be.true;
     });
 
     it('should handle errors when adding purchases to cache', async () => {
@@ -405,6 +481,7 @@ describe('processInvoices', () => {
             expect(error.message).to.include('Failed to add purchases');
             expect(logger.error.called).to.be.true;
             expect(cache.addPurchases.calledOnce).to.be.true;
+            expect(prometheus.recordSuccessfulInvoice.called).to.be.true;
         }
     });
 });
