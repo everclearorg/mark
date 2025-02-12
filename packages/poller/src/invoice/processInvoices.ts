@@ -69,6 +69,9 @@ export async function processInvoices({
   const invoiceIds = invoices.map(({ intent_id }) => intent_id);
   const toRemove = cachedPurchases
     .filter((purchase) => {
+      prometheus.recordPurchaseClearanceDuration(
+        Math.floor(Date.now()) - purchase.target.hub_invoice_enqueued_timestamp,
+      );
       return !invoiceIds.includes(purchase.target.intent_id);
     })
     .map(({ target }) => target.intent_id);
@@ -214,6 +217,7 @@ export async function processInvoices({
             config,
           );
           prometheus.recordSuccessfulPurchase({ ...labels, destination });
+          prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
 
           const purchase = {
             target: invoice,

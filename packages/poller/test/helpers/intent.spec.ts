@@ -3,12 +3,12 @@ import { sendIntents } from '../../src/helpers/intent';
 import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { Logger } from '@mark/logger';
 import * as contractHelpers from '../../src/helpers/contracts';
-import { GetContractReturnType, zeroAddress } from 'viem';
+import { GetContractReturnType, transactionType, zeroAddress } from 'viem';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { expect } from '../globalTestHook';
 import { MarkAdapters } from '../../src/init';
-import { Wallet } from 'ethers';
+import { BigNumber, Wallet } from 'ethers';
 import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 
@@ -170,8 +170,8 @@ describe('sendIntents', () => {
 
         stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
         (mockDeps.chainService.submitAndMonitor as SinonStub)
-            .onFirstCall().resolves('0xapprovalTx')
-            .onSecondCall().resolves('0xintentTx');
+            .onFirstCall().resolves({ transactionHash: '0xapprovalTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1') })
+            .onSecondCall().resolves({ transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1') });
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
@@ -200,7 +200,7 @@ describe('sendIntents', () => {
         } as unknown as GetContractReturnType;
 
         stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);
-        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves('0xintentTx');
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({ transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1') });
 
         const result = await sendIntents(
             Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values())),

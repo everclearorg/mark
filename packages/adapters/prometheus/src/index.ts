@@ -8,6 +8,11 @@ export type InvoiceLabels = Omit<Record<(typeof InvoiceLabelKeys)[number], strin
   reason?: InvalidPurchaseReasonConcise;
 };
 
+export enum TransactionReason {
+  Approval = 'Approval',
+  CreateIntent = 'CreateIntent',
+}
+
 const RewardLabelKeys = ['chain', 'asset', 'id', 'ticker'] as const;
 export type RewardLabels = Record<(typeof RewardLabelKeys)[number], string>;
 
@@ -17,6 +22,7 @@ export class PrometheusAdapter {
   // Balance metrics
   private chainBalance: Gauge<string>;
   private gasBalance: Gauge<string>;
+  private gasSpent: Counter<string>;
 
   // Invoice metrics
   private possibleInvoices: Counter<string>;
@@ -24,8 +30,8 @@ export class PrometheusAdapter {
   private invalidInvoices: Counter<string>;
 
   // Timing metrics
-  private settlementTime: Histogram<string>;
-  private invoiceFillTime: Histogram<string>;
+  private clearanceDuration: Histogram<string>;
+  private purchaseDuration: Histogram<string>;
 
   // Rewards metrics
   private rewards: Gauge<string>;
@@ -46,6 +52,14 @@ export class PrometheusAdapter {
       name: 'mark_gas_balance',
       help: 'Current gas balance of Mark across different chains',
       labelNames: ['chain'],
+      registers: [this.registry],
+    });
+
+    // Initialize gas spend tracker
+    this.gasSpent = new Counter({
+      name: 'mark_gas_spend',
+      help: 'Marks gas spend across different chains',
+      labelNames: ['chain', 'reason'],
       registers: [this.registry],
     });
 
@@ -72,16 +86,16 @@ export class PrometheusAdapter {
     });
 
     // Initialize timing metrics
-    this.settlementTime = new Histogram({
-      name: 'mark_settlement_duration_seconds',
-      help: 'Time taken to settle targets',
+    this.clearanceDuration = new Histogram({
+      name: 'mark_clearance_duration_seconds',
+      help: 'Time taken to clear targets from cache',
       buckets: [1, 5, 10, 30, 60, 120, 300, 600],
       registers: [this.registry],
     });
 
-    this.invoiceFillTime = new Histogram({
-      name: 'mark_invoice_fill_duration_seconds',
-      help: 'Time taken to fill invoices',
+    this.purchaseDuration = new Histogram({
+      name: 'mark_invoice_purchase_duration_seconds',
+      help: 'Time taken to purchase invoices from hub enqueued timestamps',
       buckets: [1, 5, 10, 30, 60, 120, 300, 600],
       registers: [this.registry],
     });
@@ -104,6 +118,10 @@ export class PrometheusAdapter {
     this.gasBalance.labels({ chain }).set(+formatUnits(balance, 18));
   }
 
+  public updateGasSpent(chain: string, reason: TransactionReason, gas: bigint): void {
+    this.gasSpent.labels({ chain, reason }).inc(+formatUnits(gas, 18));
+  }
+
   // Record possible invoice
   public recordPossibleInvoice(labels: InvoiceLabels): void {
     this.possibleInvoices.labels(labels).inc();
@@ -123,14 +141,14 @@ export class PrometheusAdapter {
     this.invalidInvoices.labels({ ...labels, reason: Object.keys(InvalidPurchaseReasons)[idx] }).inc();
   }
 
-  // Record settlement time
-  public recordSettlementTime(durationSeconds: number): void {
-    this.settlementTime.observe(durationSeconds);
+  // Record duration from invoice to go from seen -> purchased
+  public recordInvoicePurchaseDuration(durationSeconds: number): void {
+    this.purchaseDuration.observe(durationSeconds);
   }
 
-  // Record invoice fill time
-  public recordInvoiceFillTime(durationSeconds: number): void {
-    this.invoiceFillTime.observe(durationSeconds);
+  // Record time from invoice to go from seen -> removed from cache
+  public recordPurchaseClearanceDuration(durationSeconds: number): void {
+    this.clearanceDuration.observe(durationSeconds);
   }
 
   // Update rewards

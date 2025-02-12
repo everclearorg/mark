@@ -45,7 +45,10 @@ export class ChainService {
     });
   }
 
-  async submitAndMonitor(chainId: string, transaction: providers.TransactionRequest): Promise<string> {
+  async submitAndMonitor(
+    chainId: string,
+    transaction: providers.TransactionRequest,
+  ): Promise<providers.TransactionReceipt> {
     const { requestContext } = createLoggingContext('submitAndMonitor');
     const context = { ...requestContext, origin: 'chainservice' };
 
@@ -61,14 +64,15 @@ export class ChainService {
       from: transaction.from,
     };
     try {
-      const tx = await this.txService.sendTx(writeTransaction, context);
+      // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
+      const tx = (await this.txService.sendTx(writeTransaction, context)) as unknown as providers.TransactionReceipt;
 
       this.logger.info('Transaction mined', {
         chainId,
         txHash: tx.transactionHash,
       });
 
-      return tx.transactionHash;
+      return tx;
     } catch (error) {
       this.logger.error('Failed to submit transaction', {
         chainId,

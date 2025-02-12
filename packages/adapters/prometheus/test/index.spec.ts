@@ -50,16 +50,16 @@ describe('PrometheusAdapter', () => {
   });
 
   describe('timing metrics', () => {
-    it('should record settlement time', async () => {
-      adapter.recordSettlementTime(10);
+    it('should record invoice purchase time', async () => {
+      adapter.recordInvoicePurchaseDuration(5);
       const metrics = await adapter.getMetrics();
-      expect(metrics).toContain('mark_settlement_duration_seconds_bucket{le="30"} 1');
+      expect(metrics).toContain('mark_invoice_purchase_duration_seconds_bucket{le="10"} 1');
     });
 
-    it('should record invoice fill time', async () => {
-      adapter.recordInvoiceFillTime(5);
+    it('should record invoice clearance time', async () => {
+      adapter.recordPurchaseClearanceDuration(5);
       const metrics = await adapter.getMetrics();
-      expect(metrics).toContain('mark_invoice_fill_duration_seconds_bucket{le="10"} 1');
+      expect(metrics).toContain('mark_clearance_duration_seconds_bucket{le="10"} 1');
     });
   });
 
