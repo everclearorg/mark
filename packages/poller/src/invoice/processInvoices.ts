@@ -3,6 +3,7 @@ import { PurchaseCache } from '@mark/cache';
 import { jsonifyError, jsonifyMap, Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { hexlify, randomBytes } from 'ethers/lib/utils';
+import { PrometheusAdapter } from '@mark/prometheus';
 import {
   getMarkBalances,
   logBalanceThresholds,
@@ -21,6 +22,7 @@ interface ProcessInvoicesParams {
   logger: Logger;
   everclear: EverclearAdapter;
   chainService: ChainService;
+  prometheus: PrometheusAdapter;
   config: MarkConfiguration;
 }
 
@@ -30,6 +32,7 @@ export async function processInvoices({
   cache,
   chainService,
   logger,
+  prometheus,
   config,
 }: ProcessInvoicesParams): Promise<void> {
   const requestId = hexlify(randomBytes(32));
@@ -47,11 +50,27 @@ export async function processInvoices({
   logBalanceThresholds(balances, config, logger);
   logger.debug('Retrieved balances', { requestId, balances: jsonifyMap(balances) });
 
+  // Update balance metrics
+  for (const [tickerHash, chainBalances] of balances.entries()) {
+    for (const [chain, balance] of chainBalances.entries()) {
+      const asset = (config.chains[chain]?.assets ?? []).find((a) => a.tickerHash === tickerHash);
+      if (asset) {
+        prometheus.updateChainBalance(chain, asset.address, balance, asset.decimals);
+      }
+    }
+  }
+
   // Query all of marks gas balances across chains
   logger.info('Getting mark gas balances', { requestId, chains: Object.keys(config.chains) });
-  const gas = await getMarkGasBalances(config);
-  logGasThresholds(gas, config, logger);
-  logger.debug('Retrieved gas balances', { requestId, balances: jsonifyMap(gas) });
+  const gasBalances = await getMarkGasBalances(config);
+  logGasThresholds(gasBalances, config, logger);
+  console.log('gas balances', jsonifyMap(gasBalances));
+  logger.debug('Retrieved gas balances', { requestId, gasBalances: jsonifyMap(gasBalances) });
+
+  // Update gas balance metrics
+  for (const [chain, balance] of gasBalances.entries()) {
+    prometheus.updateGasBalance(chain, balance);
+  }
 
   // Get existing purchase actions
   const cachedPurchases = await cache.getAllPurchases();
@@ -185,7 +204,7 @@ export async function processInvoices({
         try {
           const [{ transactionHash }] = await sendIntents(
             [params],
-            { everclear, chainService, logger, cache: cache },
+            { everclear, chainService, logger, cache, prometheus },
             config,
           );
 
