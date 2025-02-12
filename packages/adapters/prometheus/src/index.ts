@@ -1,8 +1,15 @@
+import { InvalidPurchaseReasons, InvalidPurchaseReasonConcise, InvalidPurchaseReasonVerbose } from '@mark/core';
 import { Gauge, Counter, Histogram, Registry } from 'prom-client';
 import { formatUnits } from 'viem';
 
-type InvoiceLabels = Record<'origin' | 'asset' | 'id', string>;
-type RewardLabels = Record<'origin' | 'asset' | 'id' | 'ticker', string>;
+const InvoiceLabelKeys = ['origin', 'ticker', 'id', 'destination', 'reason'] as const;
+export type InvoiceLabels = Omit<Record<(typeof InvoiceLabelKeys)[number], string>, 'destination' | 'reason'> & {
+  destination?: string;
+  reason?: InvalidPurchaseReasonConcise;
+};
+
+const RewardLabelKeys = ['chain', 'asset', 'id', 'ticker'] as const;
+export type RewardLabels = Record<(typeof RewardLabelKeys)[number], string>;
 
 export class PrometheusAdapter {
   private registry: Registry;
@@ -13,7 +20,7 @@ export class PrometheusAdapter {
 
   // Invoice metrics
   private possibleInvoices: Counter<string>;
-  private successfulInvoices: Counter<string>;
+  private successfulPurchases: Counter<string>;
   private invalidInvoices: Counter<string>;
 
   // Timing metrics
@@ -46,22 +53,22 @@ export class PrometheusAdapter {
     this.possibleInvoices = new Counter({
       name: 'mark_invoices_possible_total',
       help: 'Total number of invoices Mark could potentially fill',
-      labelNames: ['origin', 'asset', 'id'],
+      labelNames: InvoiceLabelKeys,
       registers: [this.registry],
     });
 
-    this.successfulInvoices = new Counter({
-      name: 'mark_invoices_success_total',
+    this.successfulPurchases = new Counter({
+      name: 'mark_success_purchases_total',
       help: 'Total number of successfully filled invoices',
-      labelNames: ['origin', 'asset', 'id'],
+      labelNames: InvoiceLabelKeys,
       registers: [this.registry],
     });
 
     this.invalidInvoices = new Counter({
       name: 'mark_invoices_invalid_total',
       help: 'Total number of invalid invoices',
+      labelNames: InvoiceLabelKeys,
       registers: [this.registry],
-      labelNames: ['reason', 'origin', 'asset', 'id'],
     });
 
     // Initialize timing metrics
@@ -83,7 +90,7 @@ export class PrometheusAdapter {
     this.rewards = new Gauge({
       name: 'mark_rewards_total',
       help: 'Total rewards earned by Mark',
-      labelNames: ['origin', 'asset', 'id', 'ticker'],
+      labelNames: RewardLabelKeys,
       registers: [this.registry],
     });
   }
@@ -104,12 +111,16 @@ export class PrometheusAdapter {
 
   // Record successful invoice fill
   public recordSuccessfulInvoice(labels: InvoiceLabels): void {
-    this.successfulInvoices.labels(labels).inc();
+    this.successfulPurchases.labels(labels).inc();
   }
 
   // Record invalid invoice
-  public recordInvalidInvoice(reason: string, labels: InvoiceLabels): void {
-    this.invalidInvoices.labels({ ...labels, reason }).inc();
+  public recordInvalidPurchase(reason: InvalidPurchaseReasonVerbose, labels: InvoiceLabels): void {
+    // Convert reason string to key
+    const idx = (Object.values(InvalidPurchaseReasons) as InvalidPurchaseReasonVerbose[]).findIndex(
+      (value) => value === reason,
+    );
+    this.invalidInvoices.labels({ ...labels, reason: Object.keys(InvalidPurchaseReasons)[idx] }).inc();
   }
 
   // Record settlement time
