@@ -1057,11 +1057,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/chainservice@npm:0.0.1-alpha.1":
-  version: 0.0.1-alpha.1
-  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.1"
+"@chimera-monorepo/chainservice@npm:0.0.1-alpha.3":
+  version: 0.0.1-alpha.3
+  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.3"
   dependencies:
-    "@chimera-monorepo/utils": 0.0.1-alpha.1
+    "@chimera-monorepo/utils": 0.0.1-alpha.3
     "@safe-global/api-kit": ^2.5.6
     "@safe-global/protocol-kit": ^5.1.1
     "@safe-global/types-kit": ^1.0.1
@@ -1069,13 +1069,13 @@ __metadata:
     ethers: 5.7.2
     interval-promise: 1.4.0
     p-queue: 6.6.2
-  checksum: 9b041b2eb803b95644c0167112d386f854d5b1855fb64786bffd924c8fe9d99ad778097e0c8c341a849358df851c5d018a0c5659990bffc5caf2f89f123174a0
+  checksum: 1819fce80609c1868bbd316753dc229663bedc8d0df867397632b696ec079b2e477a5f9e9c76767dd63d6f88b4a6414da1abce0bc006fafb081e1589080e3694
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/contracts@npm:0.0.1-alpha.1":
-  version: 0.0.1-alpha.1
-  resolution: "@chimera-monorepo/contracts@npm:0.0.1-alpha.1"
+"@chimera-monorepo/contracts@npm:0.0.1-alpha.3":
+  version: 0.0.1-alpha.3
+  resolution: "@chimera-monorepo/contracts@npm:0.0.1-alpha.3"
   dependencies:
     "@hyperlane-xyz/core": 3.8.1
     "@inquirer/prompts": ^5.3.8
@@ -1085,15 +1085,16 @@ __metadata:
     solmate: ^6.8.0
     ts-node: ^10.9.2
     viem: ^2.19.8
-  checksum: 68003151283294640fb9443fe6acb390754556db6c90fc3771e7e4dd5b7a67bd82a5ba333fc9b0c8f3e8e31513472aa6c0b8ceb88038c4049171cb5609836f16
+  checksum: fb3754d9be847076e578efc62895be6a7009f1722464c3ce09a8f5353a75e79f751760d71ebcf1167a77e0634ed7381192701d4715f26e28aeca10e96c2f67b2
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/utils@npm:0.0.1-alpha.1":
-  version: 0.0.1-alpha.1
-  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.1"
+"@chimera-monorepo/utils@npm:0.0.1-alpha.3":
+  version: 0.0.1-alpha.3
+  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.3"
   dependencies:
-    "@chimera-monorepo/contracts": 0.0.1-alpha.1
+    "@aws-sdk/client-ssm": ^3.735.0
+    "@chimera-monorepo/contracts": 0.0.1-alpha.3
     "@hyperlane-xyz/sdk": 3.15.1
     "@sinclair/typebox": 0.25.21
     "@urql/core": 5.0.4
@@ -1106,7 +1107,7 @@ __metadata:
     hyperid: 3.2.0
     secp256k1: 4.0.3
     sinon-chai: 3.7.0
-  checksum: 7abe383a79acf1292297854d91075041542b9b420d6c69de8256b3e26d3174aafee56f266a1e6a0c7aec586392193f20ce82a1784e6277bd684297f2b4a84caa
+  checksum: 7d9278794940b0029395307a89abe9a5864a473a2b2bd1d56b708186dddb09e85cec624e2fbd6513db3d3aed441e12de6e03cc479237b819c12c4a91a34980d8
   languageName: node
   linkType: hard
 
@@ -3026,7 +3027,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/chainservice@workspace:packages/adapters/chainservice"
   dependencies:
-    "@chimera-monorepo/chainservice": 0.0.1-alpha.1
+    "@chimera-monorepo/chainservice": 0.0.1-alpha.3
     "@connext/nxtp-txservice": 2.5.0-alpha.6
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
@@ -4892,6 +4893,13 @@ __metadata:
   version: 8.3.4
   resolution: "@types/uuid@npm:8.3.4"
   checksum: 6f11f3ff70f30210edaa8071422d405e9c1d4e53abbe50fdce365150d3c698fe7bbff65c1e71ae080cbfb8fded860dbb5e174da96fdbbdfcaa3fb3daa474d20f
+  languageName: node
+  linkType: hard
+
+"@types/uuid@npm:^9.0.1":
+  version: 9.0.8
+  resolution: "@types/uuid@npm:9.0.8"
+  checksum: b8c60b7ba8250356b5088302583d1704a4e1a13558d143c549c408bf8920535602ffc12394ede77f8a8083511b023704bc66d1345792714002bfa261b17c5275
   languageName: node
   linkType: hard
 
@@ -8512,11 +8520,11 @@ __metadata:
   linkType: hard
 
 "for-each@npm:^0.3.3":
-  version: 0.3.4
-  resolution: "for-each@npm:0.3.4"
+  version: 0.3.5
+  resolution: "for-each@npm:0.3.5"
   dependencies:
     is-callable: ^1.2.7
-  checksum: 7c094a28f9edd56ad92db03a7c1197032edad18df5dc8bad0351c725e929b70a6a54b3af3301845aadf2ee407ef7e242fa49d31fce56ad3822e6ff6ee50de356
+  checksum: 3c986d7e11f4381237cc98baa0a2f87eabe74719eee65ed7bed275163082b940ede19268c61d04c6260e0215983b12f8d885e3c8f9aa8c2113bf07c37051745c
   languageName: node
   linkType: hard
 
@@ -10001,11 +10009,11 @@ __metadata:
   linkType: hard
 
 "jackspeak@npm:^4.0.1":
-  version: 4.0.2
-  resolution: "jackspeak@npm:4.0.2"
+  version: 4.0.3
+  resolution: "jackspeak@npm:4.0.3"
   dependencies:
     "@isaacs/cliui": ^8.0.2
-  checksum: 210030029edfa1658328799ad88c3d0fc057c4cb8a069fc4137cc8d2cc4b65c9721c6e749e890f9ca77a954bb54f200f715b8896e50d330e5f3e902e72b40974
+  checksum: 2d016061abb2857d8106c481b5ee12e34aaa3334f5b703503036381661904297a5e79f49c13daa0398ea0bd56624fa5f8fbb98982fe698b9480b3a3490676c7a
   languageName: node
   linkType: hard
 
@@ -15915,8 +15923,8 @@ __metadata:
   linkType: hard
 
 "zod@npm:^3.21.2":
-  version: 3.24.1
-  resolution: "zod@npm:3.24.1"
-  checksum: dcd5334725b29555593c186fd6505878bb7ccb4f5954f728d2de24bf71f9397492d83bdb69d5b8a376eb500a02273ae0691b57deb1eb8718df3f64c77cc5534a
+  version: 3.24.2
+  resolution: "zod@npm:3.24.2"
+  checksum: c02455c09678c5055c636d64f9fcda2424fea0aa46ac7d9681e7f41990bc55f488bcd84b9d7cfef0f6e906f51f55b245239d92a9f726248aa74c5b84edf00c2d
   languageName: node
   linkType: hard
