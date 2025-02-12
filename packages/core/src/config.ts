@@ -64,16 +64,16 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const hostedConfig = await getEverclearConfig(url);
 
-    const supportedAssets = parseSupportedAssets(requireEnv('SUPPORTED_ASSETS'));
+    const supportedAssets = parseSupportedAssets(requireEnv('SUPPORTED_ASSET_SYMBOLS'));
 
     const config: MarkConfiguration = {
       web3SignerUrl: requireEnv('SIGNER_URL'),
       everclearApiUrl: requireEnv('EVERCLEAR_API_URL'),
       relayer: process.env.RELAYER_URL
         ? {
-          url: process.env.RELAYER_URL,
-          key: requireEnv('RELAYER_API_KEY'),
-        }
+            url: process.env.RELAYER_URL,
+            key: requireEnv('RELAYER_API_KEY'),
+          }
         : undefined,
       redis: {
         host: requireEnv('REDIS_HOST'),
