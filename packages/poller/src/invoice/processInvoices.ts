@@ -46,31 +46,15 @@ export async function processInvoices({
 
   // Query all of marks balances across chains
   logger.info('Getting mark balances', { requestId, chains: Object.keys(config.chains) });
-  const balances = await getMarkBalances(config);
+  const balances = await getMarkBalances(config, prometheus);
   logBalanceThresholds(balances, config, logger);
   logger.debug('Retrieved balances', { requestId, balances: jsonifyMap(balances) });
 
-  // Update balance metrics
-  for (const [tickerHash, chainBalances] of balances.entries()) {
-    for (const [chain, balance] of chainBalances.entries()) {
-      const asset = (config.chains[chain]?.assets ?? []).find((a) => a.tickerHash === tickerHash);
-      if (asset) {
-        prometheus.updateChainBalance(chain, asset.address, balance, asset.decimals);
-      }
-    }
-  }
-
   // Query all of marks gas balances across chains
   logger.info('Getting mark gas balances', { requestId, chains: Object.keys(config.chains) });
-  const gasBalances = await getMarkGasBalances(config);
+  const gasBalances = await getMarkGasBalances(config, prometheus);
   logGasThresholds(gasBalances, config, logger);
-  console.log('gas balances', jsonifyMap(gasBalances));
   logger.debug('Retrieved gas balances', { requestId, gasBalances: jsonifyMap(gasBalances) });
-
-  // Update gas balance metrics
-  for (const [chain, balance] of gasBalances.entries()) {
-    prometheus.updateGasBalance(chain, balance);
-  }
 
   // Get existing purchase actions
   const cachedPurchases = await cache.getAllPurchases();

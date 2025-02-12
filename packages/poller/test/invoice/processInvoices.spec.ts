@@ -10,7 +10,7 @@ import { PrometheusAdapter } from '@mark/prometheus';
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as assetHelpers from '../../src/helpers/asset'
-import * as contractHelpers from '../../src/helpers/contracts';
+import * as monitorHelpers from '../../src/helpers/monitor';
 
 describe('processInvoices', () => {
     // Setup common test objects
@@ -131,6 +131,8 @@ describe('processInvoices', () => {
         ]));
         stub(intentHelpers, 'sendIntents').resolves([{ transactionHash: '0xtx', chainId: '8453' }]);
         stub(assetHelpers, 'isXerc20Supported').resolves(false);
+        stub(monitorHelpers, 'logBalanceThresholds').returns();
+        stub(monitorHelpers, 'logGasThresholds').returns();
     });
 
     it('should process a valid invoice and create a purchase', async () => {
@@ -145,11 +147,8 @@ describe('processInvoices', () => {
             prometheus,
             config: validConfig
         });
-        expect(prometheus.updateChainBalance.callCount).to.be.eq(Object.keys(validConfig.chains).length);
-        expect(prometheus.updateGasBalance.callCount).to.be.eq(Object.keys(validConfig.chains).length);
         expect(cache.addPurchases.calledOnce).to.be.true;
         const purchases = cache.addPurchases.firstCall.args[0];
-        console.log('purchases', purchases);
         expect(purchases).to.have.lengthOf(1);
         expect(purchases[0].target).to.deep.equal(validInvoice);
         expect(purchases[0].transactionHash).to.equal('0xtx');
