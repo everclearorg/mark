@@ -1,13 +1,17 @@
 import { getDecimalsFromConfig, getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
+import { PrometheusAdapter } from '@mark/prometheus';
 
 /**
  * Returns the gas balance of mark on all chains.
  * @param config Mark configuration
  * @returns Map of native asset balances on all configured chains
  */
-export const getMarkGasBalances = async (config: MarkConfiguration): Promise<Map<string, bigint>> => {
+export const getMarkGasBalances = async (
+  config: MarkConfiguration,
+  prometheus: PrometheusAdapter,
+): Promise<Map<string, bigint>> => {
   const { chains, ownAddress } = config;
   const markBalances = new Map<string, bigint>();
 
@@ -17,6 +21,7 @@ export const getMarkGasBalances = async (config: MarkConfiguration): Promise<Map
         const client = createClient(chain, config);
         const native = await client.getBalance({ address: ownAddress as `0x${string}` });
         markBalances.set(chain, native);
+        prometheus.updateGasBalance(chain, native);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (e) {
         markBalances.set(chain, 0n);
@@ -30,7 +35,10 @@ export const getMarkGasBalances = async (config: MarkConfiguration): Promise<Map
  * Returns all of the balances for supported assets across all chains.
  * @returns Mapping of balances keyed on tickerhash - chain - amount in 18 decimal units
  */
-export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<string, Map<string, bigint>>> => {
+export const getMarkBalances = async (
+  config: MarkConfiguration,
+  prometheus: PrometheusAdapter,
+): Promise<Map<string, Map<string, bigint>>> => {
   const { chains, ownAddress } = config;
   const markBalances = new Map<string, Map<string, bigint>>();
 
@@ -49,14 +57,16 @@ export const getMarkBalances = async (config: MarkConfiguration): Promise<Map<st
         }
         const tokenContract = await getERC20Contract(config, domain, tokenAddr);
         // get balance
-        let balance = await tokenContract.read.balanceOf([ownAddress]);
+        let balance = (await tokenContract.read.balanceOf([ownAddress])) as bigint;
 
         // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
         if (decimals !== 18) {
           const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
-          balance = BigInt(balance as string) * 10n ** DECIMALS_DIFFERENCE;
+          balance = BigInt(balance) * 10n ** DECIMALS_DIFFERENCE;
         }
-        domainBalances.set(domain, balance as bigint);
+        domainBalances.set(domain, balance);
+        // Update tracker
+        prometheus.updateChainBalance(domain, tokenAddr, balance, decimals);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (error) {
         domainBalances.set(domain, 0n); // Set zero balance on error
