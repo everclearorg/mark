@@ -26,3 +26,18 @@ export interface PurchaseAction {
   purchase: NewIntentParams;
   transactionHash: `0x${string}`;
 }
+
+export const InvalidPurchaseReasons = {
+  InvalidAmount: `Invalid amount, could not convert to BigInt.`,
+  InvalidFormat: `Invalid invoice format in either amount, invoice presence, or id.`,
+  InvalidOwner: `This is our invoice, will not settle.`,
+  InvalidDestinations: `No matched destinations.`,
+  InvalidTickers: `No matched tickers.`,
+  InvalidAge: `Invoice not yet old enough.`,
+  InsufficientBalance: `Insufficient balance to support purchase.`,
+  InvalidTokenConfiguration: `Destination tokey not configured.`,
+  DestinationXerc20: `Invoice destinations support xerc20.`,
+  TransactionFailed: `Transaction to purchase intent failed.`,
+} as const;
+export type InvalidPurchaseReasonConcise = keyof typeof InvalidPurchaseReasons;
+export type InvalidPurchaseReasonVerbose = (typeof InvalidPurchaseReasons)[InvalidPurchaseReasonConcise];

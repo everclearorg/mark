@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { isValidInvoice } from '../../src/invoice';
-import { MarkConfiguration, Invoice } from '@mark/core';
+import { MarkConfiguration, Invoice, InvalidPurchaseReasons } from '@mark/core';
 import * as assetHelpers from '../../src/helpers/asset';
 import sinon from 'sinon';
 
@@ -58,12 +58,8 @@ describe('isValidInvoice', () => {
       const nullResult = isValidInvoice(null as any, validConfig, Math.floor(Date.now() / 1000));
       const undefinedResult = isValidInvoice(undefined as any, validConfig, Math.floor(Date.now() / 1000));
 
-      expect(nullResult).to.equal(
-        'Invalid invoice format: amount (undefined), invoice presence (false), or id (undefined)'
-      );
-      expect(undefinedResult).to.equal(
-        'Invalid invoice format: amount (undefined), invoice presence (false), or id (undefined)'
-      );
+      expect(nullResult).to.equal(InvalidPurchaseReasons.InvalidFormat);
+      expect(undefinedResult).to.equal(InvalidPurchaseReasons.InvalidFormat);
     });
 
     it('should return error string if intent_id is not a string', () => {
@@ -72,7 +68,7 @@ describe('isValidInvoice', () => {
         intent_id: 123 as any
       };
       expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        'Invalid invoice format: amount (4506224658731513369685), invoice presence (true), or id (123)'
+        InvalidPurchaseReasons.InvalidFormat
       );
     });
 
@@ -91,13 +87,13 @@ describe('isValidInvoice', () => {
       };
 
       expect(isValidInvoice(invalidInvoice1, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        'Invalid amount: not a number -- could not convert to BigInt'
+        InvalidPurchaseReasons.InvalidAmount
       );
       expect(isValidInvoice(invalidInvoice2, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        'Invalid invoice format: amount (0), invoice presence (true), or id (0x60d2ec64161aed1c3846304775134d9da6d716b1f718176e6f24cb34b26950d0)'
+        InvalidPurchaseReasons.InvalidFormat
       );
       expect(isValidInvoice(invalidInvoice3, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        'Invalid invoice format: amount (-100), invoice presence (true), or id (0x60d2ec64161aed1c3846304775134d9da6d716b1f718176e6f24cb34b26950d0)'
+        InvalidPurchaseReasons.InvalidFormat
       );
     });
   });
@@ -109,7 +105,7 @@ describe('isValidInvoice', () => {
         owner: validConfig.ownAddress
       };
       expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        `This is our invoice (owner: ${validConfig.ownAddress}, us: ${validConfig.ownAddress})`
+        InvalidPurchaseReasons.InvalidOwner
       );
     });
 
@@ -119,7 +115,7 @@ describe('isValidInvoice', () => {
         owner: validConfig.ownAddress.toUpperCase()
       };
       expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        `This is our invoice (owner: ${validConfig.ownAddress.toUpperCase()}, us: ${validConfig.ownAddress})`
+        InvalidPurchaseReasons.InvalidOwner
       );
     });
   });
@@ -131,7 +127,7 @@ describe('isValidInvoice', () => {
         destinations: ['999999'] // Unsupported domain
       };
       expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        'No matched destinations. Invoice: 999999, configured: 8453'
+        InvalidPurchaseReasons.InvalidDestinations
       );
     });
 
@@ -155,7 +151,7 @@ describe('isValidInvoice', () => {
         ticker_hash: unsupportedTicker
       };
       expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        `No matched tickers. Invoice: ${unsupportedTicker}, supported: ${supportedTicker}`
+        InvalidPurchaseReasons.InvalidTickers
       );
     });
 
