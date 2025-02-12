@@ -1,4 +1,5 @@
-import { PrometheusAdapter } from '../src';
+import { InvalidPurchaseReasons } from '@mark/core';
+import { PrometheusAdapter, RewardLabels, InvoiceLabels } from '../src';
 
 describe('PrometheusAdapter', () => {
   let adapter: PrometheusAdapter;
@@ -22,28 +23,29 @@ describe('PrometheusAdapter', () => {
   });
 
   describe('invoice metrics', () => {
-    const invoiceLabels = {
+    const invoiceLabels: InvoiceLabels = {
       origin: 'ethereum',
-      asset: 'ETH',
-      id: '123'
+      ticker: '0xtickerhash',
+      id: '123',
+      destination: undefined,
     };
 
     it('should record possible invoice', async () => {
       adapter.recordPossibleInvoice(invoiceLabels);
       const metrics = await adapter.getMetrics();
-      expect(metrics).toContain('mark_invoices_possible_total{origin="ethereum",asset="ETH",id="123"} 1');
+      expect(metrics).toContain('mark_invoices_possible_total{origin="ethereum",ticker="0xtickerhash",id="123",destination="undefined"} 1');
     });
 
     it('should record successful invoice', async () => {
       adapter.recordSuccessfulInvoice(invoiceLabels);
       const metrics = await adapter.getMetrics();
-      expect(metrics).toContain('mark_invoices_success_total{origin="ethereum",asset="ETH",id="123"} 1');
+      expect(metrics).toContain('mark_success_purchases_total{origin="ethereum",ticker="0xtickerhash",id="123",destination="undefined"} 1');
     });
 
     it('should record invalid invoice', async () => {
-      adapter.recordInvalidInvoice('insufficient_balance', invoiceLabels);
+      adapter.recordInvalidPurchase(InvalidPurchaseReasons.InvalidOwner, invoiceLabels);
       const metrics = await adapter.getMetrics();
-      expect(metrics).toContain('mark_invoices_invalid_total{origin="ethereum",asset="ETH",id="123",reason="insufficient_balance"} 1');
+      expect(metrics).toContain('mark_invoices_invalid_total{origin="ethereum",ticker="0xtickerhash",id="123",destination="undefined",reason="InvalidOwner"} 1');
     });
   });
 
@@ -63,15 +65,15 @@ describe('PrometheusAdapter', () => {
 
   describe('rewards metrics', () => {
     it('should update rewards', async () => {
-      const rewardLabels = {
-        origin: 'ethereum',
-        asset: 'ETH',
+      const rewardLabels: RewardLabels = {
+        chain: 'ethereum',
+        asset: '0xtoken',
         id: '123',
         ticker: 'ETH'
       };
       adapter.updateRewards(rewardLabels, 0.1);
       const metrics = await adapter.getMetrics();
-      expect(metrics).toContain('mark_rewards_total{origin="ethereum",asset="ETH",id="123",ticker="ETH"} 0.1');
+      expect(metrics).toContain('mark_rewards_total{chain="ethereum",asset="0xtoken",id="123",ticker="ETH"} 0.1');
     });
   });
 });
