@@ -37,6 +37,7 @@ export const InvalidPurchaseReasons = {
   InsufficientBalance: `Insufficient balance to support purchase.`,
   InvalidTokenConfiguration: `Destination tokey not configured.`,
   DestinationXerc20: `Invoice destinations support xerc20.`,
+  PendingPurchaseRecord: `Invoice has a cached purchase attempt.`,
   TransactionFailed: `Transaction to purchase intent failed.`,
 } as const;
 export type InvalidPurchaseReasonConcise = keyof typeof InvalidPurchaseReasons;
