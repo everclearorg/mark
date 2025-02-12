@@ -10,6 +10,7 @@ import { expect } from '../globalTestHook';
 import { MarkAdapters } from '../../src/init';
 import { Wallet } from 'ethers';
 import { PurchaseCache } from '@mark/cache';
+import { PrometheusAdapter } from '@mark/prometheus';
 
 describe('sendIntents', () => {
     let mockDeps: SinonStubbedInstance<MarkAdapters>;
@@ -42,6 +43,7 @@ describe('sendIntents', () => {
             logger: createStubInstance(Logger),
             web3Signer: createStubInstance(Wallet),
             cache: createStubInstance(PurchaseCache),
+            prometheus: createStubInstance(PrometheusAdapter),
         }
     });
 

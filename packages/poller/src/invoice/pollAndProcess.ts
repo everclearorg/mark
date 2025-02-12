@@ -1,3 +1,4 @@
+import { PrometheusAdapter } from '@mark/prometheus';
 import { MarkConfiguration } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { EverclearAdapter } from '@mark/everclear';
@@ -10,10 +11,11 @@ export interface ProcessInvoicesDependencies {
   chainService: ChainService;
   logger: Logger;
   cache: PurchaseCache;
+  prometheus: PrometheusAdapter;
 }
 
 export async function pollAndProcess(config: MarkConfiguration, deps: ProcessInvoicesDependencies): Promise<void> {
-  const { everclear, logger, chainService, cache } = deps;
+  const { everclear, logger, chainService, cache, prometheus } = deps;
 
   try {
     const invoices = await everclear.fetchInvoices(config.chains);
@@ -23,6 +25,7 @@ export async function pollAndProcess(config: MarkConfiguration, deps: ProcessInv
       logger,
       chainService,
       cache,
+      prometheus,
       config,
     });
   } catch (_error: unknown) {
