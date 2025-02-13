@@ -10,7 +10,7 @@
         "build": "tsc",
         "clean": "rm -rf dist",
         "test": "jest",
-        "lint": "eslint src --ext .ts"
+        "lint": "eslint src"
     },
     "dependencies": {
         "@mark/core": "workspace:*",
