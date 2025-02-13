@@ -14,7 +14,7 @@ locals {
     RELAYER_URL                   = var.relayer_url
     RELAYER_API_KEY               = var.relayer_api_key
     SUPPORTED_SETTLEMENT_DOMAINS  = var.supported_settlement_domains
-    SUPPORTED_ASSET_SYMBOLS       = var.supported_assets
+    SUPPORTED_ASSET_SYMBOLS       = var.supported_asset_symbols
     LOG_LEVEL                     = var.log_level
     ENVIRONMENT                   = var.environment
     STAGE                         = var.stage
