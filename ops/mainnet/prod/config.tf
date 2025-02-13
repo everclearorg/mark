@@ -1,4 +1,9 @@
 locals {
+  prometheus_env_vars = {
+    ENVIRONMENT                   = var.environment
+    STAGE                         = var.stage
+  }
+
   poller_env_vars = {
     INVOICE_AGE                   = var.invoice_age
     SIGNER_URL                    = "http://${module.mark_web3signer.service_url}:9000"
@@ -14,6 +19,8 @@ locals {
     ENVIRONMENT                   = var.environment
     STAGE                         = var.stage
     CHAIN_IDS                     = var.chain_ids
+    PROMETHEUS_URL                = "http://${module.mark_prometheus.service_url}:9090"
+    PROMETHEUS_ENABLED            = "true"
     DD_LOGS_ENABLED               = true
     DD_ENV                        = "${var.environment}-${var.stage}"
     DD_API_KEY                    = var.dd_api_key
