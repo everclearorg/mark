@@ -1,8 +1,15 @@
-import { getTokenAddressFromConfig, Invoice, MarkConfiguration, NewIntentParams } from '@mark/core';
+import {
+  getTokenAddressFromConfig,
+  InvalidPurchaseReasons,
+  Invoice,
+  MarkConfiguration,
+  NewIntentParams,
+} from '@mark/core';
 import { PurchaseCache } from '@mark/cache';
 import { jsonifyError, jsonifyMap, Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { hexlify, randomBytes } from 'ethers/lib/utils';
+import { InvoiceLabels, PrometheusAdapter } from '@mark/prometheus';
 import {
   getMarkBalances,
   logBalanceThresholds,
@@ -21,6 +28,7 @@ interface ProcessInvoicesParams {
   logger: Logger;
   everclear: EverclearAdapter;
   chainService: ChainService;
+  prometheus: PrometheusAdapter;
   config: MarkConfiguration;
 }
 
@@ -30,6 +38,7 @@ export async function processInvoices({
   cache,
   chainService,
   logger,
+  prometheus,
   config,
 }: ProcessInvoicesParams): Promise<void> {
   const requestId = hexlify(randomBytes(32));
@@ -43,15 +52,15 @@ export async function processInvoices({
 
   // Query all of marks balances across chains
   logger.info('Getting mark balances', { requestId, chains: Object.keys(config.chains) });
-  const balances = await getMarkBalances(config);
+  const balances = await getMarkBalances(config, prometheus);
   logBalanceThresholds(balances, config, logger);
   logger.debug('Retrieved balances', { requestId, balances: jsonifyMap(balances) });
 
   // Query all of marks gas balances across chains
   logger.info('Getting mark gas balances', { requestId, chains: Object.keys(config.chains) });
-  const gas = await getMarkGasBalances(config);
-  logGasThresholds(gas, config, logger);
-  logger.debug('Retrieved gas balances', { requestId, balances: jsonifyMap(gas) });
+  const gasBalances = await getMarkGasBalances(config, prometheus);
+  logGasThresholds(gasBalances, config, logger);
+  logger.debug('Retrieved gas balances', { requestId, gasBalances: jsonifyMap(gasBalances) });
 
   // Get existing purchase actions
   const cachedPurchases = await cache.getAllPurchases();
@@ -60,6 +69,9 @@ export async function processInvoices({
   const invoiceIds = invoices.map(({ intent_id }) => intent_id);
   const toRemove = cachedPurchases
     .filter((purchase) => {
+      prometheus.recordPurchaseClearanceDuration(
+        Math.floor(Date.now()) - purchase.target.hub_invoice_enqueued_timestamp,
+      );
       return !invoiceIds.includes(purchase.target.intent_id);
     })
     .map(({ target }) => target.intent_id);
@@ -81,6 +93,7 @@ export async function processInvoices({
         invoiceQueues.set(invoice.ticker_hash, []);
       }
       invoiceQueues.get(invoice.ticker_hash)!.push(invoice);
+      prometheus.recordPossibleInvoice({ origin: invoice.origin, id: invoice.intent_id, ticker: invoice.ticker_hash });
     });
 
   // Process each ticker group. Goal is to process the first invoice in each queue.
@@ -97,6 +110,8 @@ export async function processInvoices({
             invoice: i,
             reason,
           });
+          console.log('invalid invoice', i.intent_id, reason);
+          prometheus.recordInvalidPurchase(reason, { origin: i.origin, id: i.intent_id, ticker: i.ticker_hash });
           return undefined;
         }
         return i;
@@ -106,14 +121,20 @@ export async function processInvoices({
     // Process invoices until we find one we've already purchased
     for (const invoice of toEvaluate) {
       const invoiceId = invoice.intent_id;
+      const labels: InvoiceLabels = {
+        origin: invoice.origin,
+        id: invoice.intent_id,
+        ticker,
+      };
       // Skip entire ticker if we already have a purchase for this invoice
       if (pendingPurchases.find(({ target }) => target.intent_id === invoiceId)) {
         logger.debug('Found existing purchase, stopping ticker processing', {
           requestId,
           ticker,
           invoiceId,
-          invoice: invoice,
+          invoice,
         });
+        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, labels);
         break;
       }
 
@@ -125,8 +146,9 @@ export async function processInvoices({
           invoiceId,
           destinations: invoice.destinations,
           invoice,
-          ticker: invoice.ticker_hash,
+          ticker,
         });
+        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.DestinationXerc20, labels);
         continue;
       }
 
@@ -135,22 +157,9 @@ export async function processInvoices({
 
       // For each invoice destination
       for (const [destination, minAmount] of Object.entries(minAmounts)) {
-        // Check if we have sufficient balance. If not, check other destinations.
-        const markBalance = balances.get(ticker)?.get(destination) ?? BigInt(0);
-        if (markBalance < BigInt(minAmount)) {
-          logger.debug('Insufficient balance for destination', {
-            requestId,
-            invoiceId,
-            destination,
-            required: minAmount.toString(),
-            available: markBalance.toString(),
-          });
-          continue;
-        }
-
         // If there is already a purchase created or pending with this existing destination-ticker
         // combo, we are impacting the custodied assets and invalidating the minAmounts for subsequent
-        // intents in the queue so exit ticker.
+        // intents in the queue, so exit ticker-domain.
         const existing = pendingPurchases.filter(
           (action) => action.target.ticker_hash === ticker && action.purchase.origin === destination,
         );
@@ -161,6 +170,21 @@ export async function processInvoices({
             existingCount: existing.length,
             existing,
           });
+          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, labels);
+          continue;
+        }
+
+        // Check if we have sufficient balance. If not, check other destinations.
+        const markBalance = balances.get(ticker)?.get(destination) ?? BigInt(0);
+        if (markBalance < BigInt(minAmount)) {
+          logger.debug('Insufficient balance for destination', {
+            requestId,
+            invoiceId,
+            destination,
+            required: minAmount.toString(),
+            available: markBalance.toString(),
+          });
+          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.InsufficientBalance, { ...labels, destination });
           continue;
         }
 
@@ -168,6 +192,10 @@ export async function processInvoices({
         const inputAsset = getTokenAddressFromConfig(ticker, destination, config);
         if (!inputAsset) {
           logger.error('No input asset found', { requestId, invoiceId, ticker, destination, config });
+          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.InvalidTokenConfiguration, {
+            ...labels,
+            destination,
+          });
           throw new Error(`No input asset found for ticker (${ticker}) and domain (${destination}) in config.`);
         }
         const params: NewIntentParams = {
@@ -185,9 +213,11 @@ export async function processInvoices({
         try {
           const [{ transactionHash }] = await sendIntents(
             [params],
-            { everclear, chainService, logger, cache: cache },
+            { everclear, chainService, logger, cache, prometheus },
             config,
           );
+          prometheus.recordSuccessfulPurchase({ ...labels, destination });
+          prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
 
           const purchase = {
             target: invoice,
@@ -205,6 +235,7 @@ export async function processInvoices({
           // Break to next invoice once we've made a purchase
           break;
         } catch (error) {
+          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, { ...labels, destination });
           logger.error('Failed to submit purchase transaction', {
             error,
             invoiceId: invoice.intent_id,

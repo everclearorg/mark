@@ -2,6 +2,7 @@ import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
 import { getERC20Contract } from './contracts';
 import { encodeFunctionData, erc20Abi } from 'viem';
+import { TransactionReason } from '@mark/prometheus';
 
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required. Takes in the origin-asset batched intents.
@@ -11,7 +12,7 @@ export const sendIntents = async (
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
 ): Promise<{ transactionHash: string; chainId: string }[]> => {
-  const { everclear, logger, chainService } = deps;
+  const { everclear, logger, chainService, prometheus } = deps;
   const results: { transactionHash: string; chainId: string }[] = [];
   logger.info('Attempting to send batched intents', { batch: intents });
 
@@ -46,11 +47,16 @@ export const sendIntents = async (
         };
 
         logger.debug('Sending approval transaction', { transaction, chainId: txData.chainId });
-        const approvalTxHash = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
+        const approvalTx = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
+        prometheus.updateGasSpent(
+          intent.origin,
+          TransactionReason.Approval,
+          BigInt(approvalTx.cumulativeGasUsed.mul(approvalTx.effectiveGasPrice).toString()),
+        );
 
         logger.info('Approval transaction sent successfully', {
           chain: txData.chainId,
-          approvalTxHash,
+          approvalTxHash: approvalTx.transactionHash,
           allowance,
           asset: tokenContract.address,
           amount: intent.amount,
@@ -76,7 +82,7 @@ export const sendIntents = async (
         },
       });
 
-      const intentTxHash = await chainService.submitAndMonitor(txData.chainId.toString(), {
+      const intentTx = await chainService.submitAndMonitor(txData.chainId.toString(), {
         to: txData.to as string,
         value: txData.value ?? '0',
         data: txData.data,
@@ -84,12 +90,17 @@ export const sendIntents = async (
       });
 
       logger.info('Create intent transaction sent successfully', {
-        intentTxHash,
+        intentTxHash: intentTx.transactionHash,
         chainId: intent.origin,
       });
+      prometheus.updateGasSpent(
+        intent.origin,
+        TransactionReason.CreateIntent,
+        BigInt(intentTx.cumulativeGasUsed.mul(intentTx.effectiveGasPrice).toString()),
+      );
 
       // Add result to the output array
-      results.push({ transactionHash: intentTxHash, chainId: intent.origin });
+      results.push({ transactionHash: intentTx.transactionHash, chainId: intent.origin });
     }
     return results;
   } catch (err) {
