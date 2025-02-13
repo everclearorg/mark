@@ -84,6 +84,27 @@ module "mark_web3signer" {
   container_env_vars  = local.web3signer_env_vars
 }
 
+module "mark_prometheus" {
+  source              = "../../modules/service"
+  stage               = var.stage
+  environment         = var.environment
+  domain              = var.domain
+  region              = var.region
+  dd_api_key          = var.dd_api_key
+  execution_role_arn  = data.aws_iam_role.ecr_admin_role.arn
+  cluster_id          = module.ecs.ecs_cluster_id
+  vpc_id              = module.network.vpc_id
+  lb_subnets          = module.network.private_subnets
+  docker_image        = "prom/prometheus:latest"
+  container_family    = "mark-prometheus"
+  container_port      = 9090
+  cpu                 = 512
+  memory              = 1024
+  instance_count      = 1
+  service_security_groups = [module.sgs.prometheus_sg_id]
+  container_env_vars  = local.prometheus_env_vars
+}
+
 module "mark_poller" {
   source              = "../../modules/lambda"
   stage               = var.stage
