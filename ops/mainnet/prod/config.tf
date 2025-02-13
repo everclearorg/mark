@@ -1,8 +1,14 @@
 locals {
-  prometheus_env_vars = {
-    ENVIRONMENT                   = var.environment
-    STAGE                         = var.stage
-  }
+  prometheus_env_vars = [
+    {
+      name  = "ENVIRONMENT"
+      value = var.environment
+    },
+    {
+      name  = "STAGE"
+      value = var.stage
+    }
+  ]
 
   poller_env_vars = {
     INVOICE_AGE                   = var.invoice_age
