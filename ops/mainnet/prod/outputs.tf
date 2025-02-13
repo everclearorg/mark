@@ -8,6 +8,11 @@ output "web3signer_service_url" {
   value       = module.mark_web3signer.service_url
 }
 
+output "prometheus_service_url" {
+  description = "URL of the Prometheus service"
+  value       = module.mark_prometheus.service_url
+}
+
 output "lambda_function_name" {
   description = "Name of the Lambda function"
   value       = module.mark_poller.function_name
