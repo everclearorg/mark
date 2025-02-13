@@ -107,13 +107,17 @@ resource "aws_ecs_service" "service" {
   }
 
   service_registries {
-    registry_arn = aws_service_discovery_service.web3signer.arn
+    registry_arn = aws_service_discovery_service.service.arn
   }
 
   tags = {
     Environment = var.environment
     Stage       = var.stage
     Domain      = var.domain
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -122,7 +126,7 @@ data "aws_service_discovery_dns_namespace" "namespace" {
   type = "DNS_PRIVATE"
 }
 
-resource "aws_service_discovery_service" "web3signer" {
+resource "aws_service_discovery_service" "service" {
   name = "${var.container_family}-${var.environment}-${var.stage}"
 
   dns_config {
@@ -136,5 +140,9 @@ resource "aws_service_discovery_service" "web3signer" {
 
   health_check_custom_config {
     failure_threshold = 1
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
