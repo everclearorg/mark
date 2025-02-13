@@ -19,11 +19,12 @@
   "scripts": {
     "build": "yarn workspaces foreach -Av --parallel --topological-dev run build",
     "clean": "yarn workspaces foreach -A --parallel run clean",
-    "docker:up": "yarn workspace @mark/cache docker:redis:up",
     "lint": "yarn lint:package && yarn workspaces foreach -A --parallel run lint",
     "lint:fix": "yarn workspaces foreach -A --parallel run lint:fix",
     "lint:package": "sort-package-json",
+    "monitoring:up": "docker compose -f docker/docker-compose.yml up",
     "purge": "yarn workspaces foreach -A --parallel run clean && rimraf node_modules packages/*/node_modules packages/adapters/*/node_modules .yarn/cache .yarn/install-state.gz",
+    "redis:up": "yarn workspace @mark/cache docker:redis:up",
     "test": "yarn workspaces foreach -A --parallel run test",
     "test:unit": "yarn workspaces foreach -v -A --parallel run test:unit"
   },
