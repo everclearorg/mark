@@ -117,17 +117,16 @@ resource "aws_ecs_service" "service" {
   }
 }
 
-resource "aws_service_discovery_private_dns_namespace" "namespace" {
-  name        = "mark.internal"
-  vpc         = var.vpc_id
-  description = "Private DNS namespace for mark services"
+data "aws_service_discovery_dns_namespace" "namespace" {
+  name = "mark.internal"
+  type = "DNS_PRIVATE"
 }
 
 resource "aws_service_discovery_service" "web3signer" {
   name = "${var.container_family}-${var.environment}-${var.stage}"
 
   dns_config {
-    namespace_id = aws_service_discovery_private_dns_namespace.namespace.id
+    namespace_id = data.aws_service_discovery_dns_namespace.namespace.id
 
     dns_records {
       ttl  = 10
