@@ -1,13 +1,17 @@
-import { MarkConfiguration, Invoice } from '@mark/core';
-import { getTickers } from '#/helpers';
+import { MarkConfiguration, Invoice, InvalidPurchaseReasonVerbose, InvalidPurchaseReasons } from '@mark/core';
+import { getTickers } from '../helpers';
 
-export function isValidInvoice(invoice: Invoice, config: MarkConfiguration, currentTime: number): string | undefined {
+export function isValidInvoice(
+  invoice: Invoice,
+  config: MarkConfiguration,
+  currentTime: number,
+): InvalidPurchaseReasonVerbose | undefined {
   // Check formatting of invoice // TODO: ajv?
   try {
     BigInt(invoice?.amount ?? '0');
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
   } catch (_) {
-    return `Invalid amount: ${invoice?.amount} -- could not convert to BigInt`;
+    return InvalidPurchaseReasons.InvalidAmount;
   }
   const validFormat =
     invoice &&
@@ -15,12 +19,12 @@ export function isValidInvoice(invoice: Invoice, config: MarkConfiguration, curr
     typeof invoice?.amount === 'string' &&
     BigInt(invoice?.amount) > 0;
   if (!validFormat) {
-    return `Invalid invoice format: amount (${invoice?.amount}), invoice presence (${!!invoice}), or id (${invoice?.intent_id})`;
+    return InvalidPurchaseReasons.InvalidFormat;
   }
 
   // Check it is not our invoice
   if (invoice.owner.toLowerCase() === config.ownAddress.toLowerCase()) {
-    return `This is our invoice (owner: ${invoice.owner}, us: ${config.ownAddress})`;
+    return InvalidPurchaseReasons.InvalidOwner;
   }
 
   // Check at least one destination is supported
@@ -28,20 +32,23 @@ export function isValidInvoice(invoice: Invoice, config: MarkConfiguration, curr
     config.supportedSettlementDomains.includes(+destination),
   );
   if (matchedDest.length < 1) {
-    return `No matched destinations. Invoice: ${invoice.destinations}, configured: ${config.supportedSettlementDomains}`;
+    return InvalidPurchaseReasons.InvalidDestinations;
   }
 
   // Check that the ticker hash is supported
   const tickers = getTickers(config);
   if (!tickers.includes(invoice.ticker_hash)) {
-    return `No matched tickers. Invoice: ${invoice.ticker_hash}, supported: ${tickers}`;
+    return InvalidPurchaseReasons.InvalidTickers;
   }
 
   // Verify invoice is old enough to consider
   const age = currentTime - invoice.hub_invoice_enqueued_timestamp;
-  const minAge = config.chains[invoice.destinations[0]]?.invoiceAge ?? 3600;
-  if (age < minAge) {
-    return `Invoice too new: age ${age}, required ${minAge}`;
+  const noOldDestinations = invoice.destinations.every((dest) => {
+    const minAge = config.chains[dest]?.invoiceAge ?? 3600;
+    return age < minAge;
+  });
+  if (noOldDestinations) {
+    return InvalidPurchaseReasons.InvalidAge;
   }
 
   // Valid invoice
