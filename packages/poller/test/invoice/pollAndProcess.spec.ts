@@ -9,6 +9,7 @@ import { ChainService } from '@mark/chainservice';
 import { MarkAdapters } from '../../src/init';
 import { PurchaseCache } from '@mark/cache';
 import { Wallet } from 'ethers';
+import { PrometheusAdapter } from '@mark/prometheus';
 
 describe('pollAndProcess', () => {
     let mockDeps: SinonStubbedInstance<MarkAdapters>;
@@ -44,6 +45,7 @@ describe('pollAndProcess', () => {
             chainService: createStubInstance(ChainService),
             cache: createStubInstance(PurchaseCache),
             web3Signer: createStubInstance(Wallet),
+            prometheus: createStubInstance(PrometheusAdapter),
         };
 
         (mockDeps.everclear.fetchInvoices as SinonStub).resolves(mockInvoices);

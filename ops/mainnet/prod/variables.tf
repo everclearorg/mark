@@ -76,8 +76,8 @@ variable "supported_settlement_domains" {
   default     = "1,10,56,137,8453,33139,42161,43114,48900,59144,81457,167000,534352"
 }
 
-variable "supported_assets" {
-  description = "Comma-separated list of supported assets"
+variable "supported_asset_symbols" {
+  description = "Comma-separated list of supported asset symbols"
   type        = string
   default     = "USDC,USDT,WETH"
 }
