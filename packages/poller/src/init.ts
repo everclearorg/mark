@@ -38,7 +38,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
 
   const cache = new PurchaseCache(config.redis.host, config.redis.port);
 
-  const prometheus = new PrometheusAdapter();
+  const prometheus = new PrometheusAdapter(logger, 'mark-poller', config.pushGatewayUrl);
 
   return {
     logger,
