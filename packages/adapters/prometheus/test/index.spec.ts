@@ -1,11 +1,32 @@
 import { InvalidPurchaseReasons } from '@mark/core';
 import { PrometheusAdapter, RewardLabels, InvoiceLabels } from '../src';
+import { Logger } from '@mark/logger';
+
+// mock logger
+jest.mock('@mark/logger', () => {
+  return {
+    jsonifyError: jest.fn(),
+    Logger: jest.fn().mockImplementation(() => ({
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+      logger: {}
+    }))
+  };
+});
 
 describe('PrometheusAdapter', () => {
   let adapter: PrometheusAdapter;
+  let mockLogger: Logger;
 
   beforeEach(() => {
-    adapter = new PrometheusAdapter();
+    mockLogger = new Logger({ service: 'test-service' });
+    adapter = new PrometheusAdapter(
+      mockLogger,
+      'test-job',
+      'http://localhost:9091'
+    );
   });
 
   describe('chain balance metrics', () => {
