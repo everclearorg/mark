@@ -10,5 +10,5 @@ output "task_definition_arn" {
 
 output "service_url" {
   description = "URL of the service"
-  value       = "${aws_service_discovery_service.web3signer.name}.${aws_service_discovery_private_dns_namespace.namespace.name}"
+  value       = "${aws_service_discovery_service.service.name}.${data.aws_service_discovery_dns_namespace.namespace.name}"
 }
