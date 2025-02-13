@@ -154,12 +154,10 @@ function parseChainConfigurations(
         : undefined) ??
       config?.chains[chainId]?.providers ??
       [];
-    const assets =
-      (process.env[`CHAIN_${chainId}_ASSETS`] ? parseAssets(process.env[`CHAIN_${chainId}_ASSETS`]!) : undefined) ??
-      Object.values(config?.chains[chainId]?.assets ?? {}).map((a) => ({
-        ...a,
-        balanceThreshold: DEFAULT_BALANCE_THRESHOLD,
-      }));
+    const assets = Object.values(config?.chains[chainId]?.assets ?? {}).map((a) => ({
+      ...a,
+      balanceThreshold: process.env[`${a.symbol.toUpperCase()}_${chainId}_THRESHOLD`] ?? DEFAULT_BALANCE_THRESHOLD,
+    }));
 
     // Get the invoice age
     // First, check if there is a configured invoice age in the env
