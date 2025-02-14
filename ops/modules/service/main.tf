@@ -128,6 +128,12 @@ resource "aws_ecs_service" "service" {
   lifecycle {
     create_before_destroy = true
   }
+
+  depends_on = [
+    aws_cloudwatch_log_group.service,
+    aws_alb.lb,
+    aws_alb_target_group.front_end
+  ]
 }
 
 resource "aws_alb" "lb" {
@@ -146,7 +152,8 @@ resource "aws_alb" "lb" {
 }
 
 resource "aws_alb_target_group" "front_end" {
-  count = var.create_alb ? 1 : 0
+  count       = var.create_alb ? 1 : 0
+  name        = "${var.container_family}-${var.environment}-${var.stage}"
   port        = var.loadbalancer_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
@@ -157,10 +164,16 @@ resource "aws_alb_target_group" "front_end" {
     matcher  = "200,302"
     interval = var.timeout + 10
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [aws_alb.lb]
 }
 
 resource "aws_lb_listener" "https" {
-  count = var.create_alb ? 1 : 0
+  count             = var.create_alb ? 1 : 0
   load_balancer_arn = aws_alb.lb[0].arn
   port              = "443"
   protocol          = "HTTPS"
@@ -169,8 +182,10 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_alb_target_group.front_end.arn
+    target_group_arn = aws_alb_target_group.front_end[0].arn
   }
+
+  depends_on = [aws_alb.lb, aws_alb_target_group.front_end]
 }
 
 resource "aws_security_group" "lb" {
