@@ -36,6 +36,7 @@ locals {
     ENVIRONMENT                   = var.environment
     STAGE                         = var.stage
     CHAIN_IDS                     = var.chain_ids
+    PUSH_GATEWAY_URL              = "http://${module.mark_pushgateway.service_url}:9091"
     PROMETHEUS_URL                = "http://${module.mark_pushgateway.service_url}:9091"
     PROMETHEUS_ENABLED            = true
     DD_LOGS_ENABLED               = true
