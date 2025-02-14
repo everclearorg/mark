@@ -105,6 +105,27 @@ module "mark_prometheus" {
   container_env_vars      = local.prometheus_env_vars
 }
 
+module "mark_pushgateway" {
+  source                  = "../../modules/service"
+  stage                   = var.stage
+  environment             = var.environment
+  domain                  = var.domain
+  region                  = var.region
+  dd_api_key              = var.dd_api_key
+  execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
+  cluster_id              = module.ecs.ecs_cluster_id
+  vpc_id                  = module.network.vpc_id
+  lb_subnets              = module.network.private_subnets
+  docker_image            = "prom/pushgateway:latest"
+  container_family        = "mark-pushgateway"
+  container_port          = 9091
+  cpu                     = 256
+  memory                  = 512
+  instance_count          = 1
+  service_security_groups = [module.sgs.prometheus_sg_id]
+  container_env_vars      = local.pushgateway_env_vars
+}
+
 module "mark_poller" {
   source              = "../../modules/lambda"
   stage               = var.stage

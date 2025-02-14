@@ -44,6 +44,7 @@ export type Environment = 'mainnet' | 'testnet' | 'devnet';
 export type Stage = 'development' | 'staging' | 'production';
 
 export interface MarkConfiguration {
+  pushGatewayUrl: string;
   web3SignerUrl: string;
   everclearApiUrl: string;
   relayer?: {
