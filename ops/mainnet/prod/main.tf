@@ -82,6 +82,7 @@ module "mark_web3signer" {
   instance_count      = 1
   service_security_groups = [module.sgs.web3signer_sg_id]
   container_env_vars  = local.web3signer_env_vars
+  zone_id             = var.zone_id
 }
 
 module "mark_prometheus" {
@@ -94,7 +95,7 @@ module "mark_prometheus" {
   execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
   cluster_id              = module.ecs.ecs_cluster_id
   vpc_id                  = module.network.vpc_id
-  lb_subnets              = module.network.private_subnets
+  lb_subnets              = module.network.public_subnets
   docker_image            = "prom/prometheus:latest"
   container_family        = "mark-prometheus"
   container_port          = 9090
@@ -103,6 +104,11 @@ module "mark_prometheus" {
   instance_count          = 1
   service_security_groups = [module.sgs.prometheus_sg_id]
   container_env_vars      = local.prometheus_env_vars
+  cert_arn                = var.cert_arn
+  ingress_cdir_blocks     = ["0.0.0.0/0"]
+  ingress_ipv6_cdir_blocks = []
+  create_alb              = true
+  zone_id                 = var.zone_id
 }
 
 module "mark_pushgateway" {
@@ -124,6 +130,7 @@ module "mark_pushgateway" {
   instance_count          = 1
   service_security_groups = [module.sgs.prometheus_sg_id]
   container_env_vars      = local.pushgateway_env_vars
+  zone_id                 = var.zone_id
 }
 
 module "mark_poller" {

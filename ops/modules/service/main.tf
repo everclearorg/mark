@@ -106,6 +106,15 @@ resource "aws_ecs_service" "service" {
     subnets         = var.lb_subnets
   }
 
+  dynamic "load_balancer" {
+    for_each = var.create_alb ? [1] : []
+    content {
+      target_group_arn = aws_alb_target_group.front_end[0].arn
+      container_name   = var.container_family
+      container_port   = var.container_port
+    }
+  }
+
   service_registries {
     registry_arn = aws_service_discovery_service.service.arn
   }
@@ -118,6 +127,101 @@ resource "aws_ecs_service" "service" {
 
   lifecycle {
     create_before_destroy = true
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.service,
+    aws_alb.lb,
+    aws_alb_target_group.front_end
+  ]
+}
+
+resource "aws_alb" "lb" {
+  count                      = var.create_alb ? 1 : 0
+  name                       = "${var.container_family}-${var.environment}-${var.stage}"
+  internal                   = var.internal_lb
+  security_groups            = [aws_security_group.lb[0].id]
+  subnets                    = var.lb_subnets
+  enable_deletion_protection = false
+  idle_timeout               = var.timeout
+  
+  tags = {
+    Name        = "${var.container_family}-${var.environment}-${var.stage}"
+    Environment = var.environment
+    Stage       = var.stage
+    Domain      = var.domain
+  }
+}
+
+resource "aws_alb_target_group" "front_end" {
+  count       = var.create_alb ? 1 : 0
+  name        = "${var.container_family}-${var.environment}-${var.stage}"
+  port        = var.loadbalancer_port
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path     = var.health_check_path
+    matcher  = "200,302"
+    interval = var.timeout + 10
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [aws_alb.lb]
+}
+
+resource "aws_lb_listener" "https" {
+  count             = var.create_alb ? 1 : 0
+  load_balancer_arn = aws_alb.lb[0].arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = var.cert_arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_alb_target_group.front_end[0].arn
+  }
+
+  depends_on = [aws_alb.lb, aws_alb_target_group.front_end]
+}
+
+resource "aws_security_group" "lb" {
+  count       = var.create_alb ? 1 : 0
+  name        = "${var.container_family}-alb-${var.environment}-${var.stage}"
+  description = "Controls access to the ALB"
+  vpc_id      = var.vpc_id
+
+  # Allow all egress
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.container_family}-alb-${var.environment}-${var.stage}"
+    Environment = var.environment
+    Stage       = var.stage
+    Domain      = var.domain
+  }
+}
+
+resource "aws_route53_record" "alb" {
+  count   = var.create_alb ? 1 : 0
+  zone_id = var.zone_id
+  name    = "${var.container_family}.${var.domain}"
+  type    = "A"
+
+  alias {
+    name                   = aws_alb.lb[0].dns_name
+    zone_id               = aws_alb.lb[0].zone_id
+    evaluate_target_health = true
   }
 }
 
@@ -145,4 +249,37 @@ resource "aws_service_discovery_service" "service" {
   lifecycle {
     create_before_destroy = true
   }
+}
+
+resource "aws_security_group_rule" "alb_https" {
+  count             = var.create_alb ? 1 : 0
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = var.ingress_cdir_blocks
+  security_group_id = aws_security_group.lb[0].id
+  description       = "Allow HTTPS inbound traffic"
+}
+
+resource "aws_security_group_rule" "alb_to_container" {
+  count                    = var.create_alb ? 1 : 0
+  type                     = "egress"
+  from_port                = var.container_port
+  to_port                  = var.container_port
+  protocol                 = "tcp"
+  source_security_group_id = var.service_security_groups[0]
+  security_group_id        = aws_security_group.lb[0].id
+  description             = "Allow outbound traffic to container"
+}
+
+resource "aws_security_group_rule" "container_from_alb" {
+  count                    = var.create_alb ? 1 : 0
+  type                     = "ingress"
+  from_port                = var.container_port
+  to_port                  = var.container_port
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.lb[0].id
+  security_group_id        = var.service_security_groups[0]
+  description             = "Allow inbound traffic from ALB"
 }
