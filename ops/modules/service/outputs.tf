@@ -15,5 +15,5 @@ output "service_url" {
 
 output "alb_dns_name" {
   description = "DNS name of the ALB"
-  value       = aws_alb.lb.dns_name
+  value       = var.create_alb ? aws_alb.lb[0].dns_name : null
 }
