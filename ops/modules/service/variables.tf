@@ -97,3 +97,49 @@ variable "dd_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "create_alb" {
+  description = "Whether to create an ALB for this service"
+  type        = bool
+  default     = false
+}
+
+variable "cert_arn" {
+  description = "ACM certificate ARN"
+  type        = string
+  default     = ""
+}
+
+variable "internal_lb" {
+  description = "Whether the ALB is internal"
+  type        = bool
+  default     = false
+}
+
+variable "loadbalancer_port" {
+  description = "Port for the load balancer"
+  type        = number
+  default     = 80
+}
+
+variable "timeout" {
+  description = "ALB timeout"
+  type        = number
+  default     = 60
+}
+
+variable "ingress_cdir_blocks" {
+  description = "CIDR blocks for ALB ingress"
+  type        = list(string)
+  default     = []
+}
+
+variable "ingress_ipv6_cdir_blocks" {
+  description = "IPv6 CIDR blocks for ALB ingress"
+  type        = list(string)
+  default     = []
+}
+
+variable "allow_all_cdir_blocks" {
+  default = ["0.0.0.0/0"]
+}

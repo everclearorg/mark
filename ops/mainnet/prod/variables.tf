@@ -117,3 +117,8 @@ variable "alchemy_key" {
   type      = string
   sensitive = true
 }
+
+variable "cert_arn" {
+  description = "ACM certificate"
+  default = "arn:aws:acm:ap-northeast-1:679752396206:certificate/0c43e36e-702c-4623-94d1-4d2a1cdfa302"
+}
