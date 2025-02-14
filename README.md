@@ -38,8 +38,28 @@ yarn test
 
 ## Local Dev
 
+1. Start local redis
+
+```sh
+yarn redis:up
 ```
+
+2. Copy and populate the `.env`
+
+```sh
+cp packages/poller/.env.example packages/poller/.env
+```
+
+3. Start local poller in dev-mode
+
+```sh
 yarn workspace @mark/poller dev
+```
+
+4. (optional) Start monitoring services
+
+```sh
+yarn monitoring:up
 ```
 
 ## Local Image
@@ -47,21 +67,26 @@ yarn workspace @mark/poller dev
 The poller image can be run locally.
 
 1. Build the image
+
 ```
 DOCKER_BUILDKIT=1 docker build -f docker/poller/Dockerfile -t mark-poller:local .
 ```
 
 2. Create a network for peripherals
+
 ```
 docker network create mark-network
 ```
 
 3. Start redis
+
 ```
 docker run --name redis --network mark-network -d redis
 
 ```
+
 4. Run the Mark image with necessary env vars
+
 ```
 docker run --network mark-network -p 9000:8080 \
   -e DD_API_KEY=dummy_key \
@@ -94,6 +119,7 @@ docker run --network mark-network -p 9000:8080 \
 ```
 
 5. Send an invocation request
+
 ```
 curl -X POST http://localhost:9000/2015-03-31/functions/function/invocations -d '{}'
 ```
