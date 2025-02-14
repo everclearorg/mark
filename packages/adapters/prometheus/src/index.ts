@@ -117,8 +117,8 @@ export class PrometheusAdapter {
   }
 
   // Update chain balance
-  public async updateChainBalance(chain: string, token: string, balance: bigint, decimals: number): Promise<void> {
-    this.chainBalance.labels({ chain, token }).set(+formatUnits(balance, decimals));
+  public async updateChainBalance(chain: string, token: string, balance: bigint): Promise<void> {
+    this.chainBalance.labels({ chain, token }).set(+formatUnits(balance, 18));
     await this.pushMetrics();
   }
 
