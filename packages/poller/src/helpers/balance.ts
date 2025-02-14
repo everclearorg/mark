@@ -66,7 +66,7 @@ export const getMarkBalances = async (
         }
         domainBalances.set(domain, balance);
         // Update tracker
-        prometheus.updateChainBalance(domain, tokenAddr, balance, decimals);
+        prometheus.updateChainBalance(domain, tokenAddr, balance);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (error) {
         domainBalances.set(domain, 0n); // Set zero balance on error
