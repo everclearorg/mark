@@ -103,6 +103,10 @@ module "mark_prometheus" {
   instance_count          = 1
   service_security_groups = [module.sgs.prometheus_sg_id]
   container_env_vars      = local.prometheus_env_vars
+  cert_arn                = var.cert_arn
+  ingress_cdir_blocks     = ["0.0.0.0/0"]
+  ingress_ipv6_cdir_blocks = []
+  create_alb              = true
 }
 
 module "mark_pushgateway" {
