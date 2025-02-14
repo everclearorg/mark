@@ -3176,6 +3176,7 @@ __metadata:
   resolution: "@mark/prometheus@workspace:packages/adapters/prometheus"
   dependencies:
     "@mark/core": "workspace:*"
+    "@mark/logger": "workspace:*"
     "@types/jest": 29.5.0
     "@types/node": 20.0.0
     jest: 29.5.0
