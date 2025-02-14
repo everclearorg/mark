@@ -140,8 +140,7 @@ resource "aws_alb" "lb" {
   count                      = var.create_alb ? 1 : 0
   name                       = "${var.container_family}-${var.environment}-${var.stage}"
   internal                   = var.internal_lb
-  # security_groups            = concat([aws_security_group.lb[0].id], var.service_security_groups)
-  security_groups            = var.service_security_groups
+  security_groups            = [aws_security_group.lb[0].id]
   subnets                    = var.lb_subnets
   enable_deletion_protection = false
   idle_timeout               = var.timeout
@@ -197,30 +196,12 @@ resource "aws_security_group" "lb" {
   description = "Controls access to the ALB"
   vpc_id      = var.vpc_id
 
-  # Allow HTTPS ingress
-  ingress {
-    protocol         = "tcp"
-    from_port        = 443
-    to_port          = 443
-    cidr_blocks      = var.ingress_cdir_blocks
-    ipv6_cidr_blocks = var.ingress_ipv6_cdir_blocks
-  }
-
-  # Allow HTTP ingress
-  ingress {
-    protocol         = "tcp"
-    from_port        = var.loadbalancer_port
-    to_port          = var.container_port
-    cidr_blocks      = var.ingress_cdir_blocks
-    ipv6_cidr_blocks = var.ingress_ipv6_cdir_blocks
-  }
-
   # Allow all egress
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = var.allow_all_cdir_blocks
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {
@@ -231,10 +212,10 @@ resource "aws_security_group" "lb" {
   }
 }
 
-resource "aws_route53_record" "prometheus" {
+resource "aws_route53_record" "alb" {
   count   = var.create_alb ? 1 : 0
   zone_id = var.zone_id
-  name    = "mark-prometheus.${var.domain}"
+  name    = "${var.container_family}.${var.domain}"
   type    = "A"
 
   alias {
@@ -268,4 +249,37 @@ resource "aws_service_discovery_service" "service" {
   lifecycle {
     create_before_destroy = true
   }
+}
+
+resource "aws_security_group_rule" "alb_https" {
+  count             = var.create_alb ? 1 : 0
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = var.ingress_cdir_blocks
+  security_group_id = aws_security_group.lb[0].id
+  description       = "Allow HTTPS inbound traffic"
+}
+
+resource "aws_security_group_rule" "alb_to_container" {
+  count                    = var.create_alb ? 1 : 0
+  type                     = "egress"
+  from_port                = var.container_port
+  to_port                  = var.container_port
+  protocol                 = "tcp"
+  source_security_group_id = var.service_security_groups[0]
+  security_group_id        = aws_security_group.lb[0].id
+  description             = "Allow outbound traffic to container"
+}
+
+resource "aws_security_group_rule" "container_from_alb" {
+  count                    = var.create_alb ? 1 : 0
+  type                     = "ingress"
+  from_port                = var.container_port
+  to_port                  = var.container_port
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.lb[0].id
+  security_group_id        = var.service_security_groups[0]
+  description             = "Allow inbound traffic from ALB"
 }

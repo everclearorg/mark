@@ -120,8 +120,8 @@ variable "alchemy_key" {
 
 
 variable "zone_id" {
-  description = "Route 53 hosted zone ID for the domain"
-  default     = "Z03634792TWUEHHQ5L0YX"
+  description = "Route 53 hosted zone ID for the everclear.ninja domain"
+  default     = "Z0605920184MNEP9DVKIX"
 }
 
 variable "cert_arn" {
