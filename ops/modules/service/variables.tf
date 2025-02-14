@@ -143,3 +143,8 @@ variable "ingress_ipv6_cdir_blocks" {
 variable "allow_all_cdir_blocks" {
   default = ["0.0.0.0/0"]
 }
+
+variable "zone_id" {
+  description = "Route 53 hosted zone ID"
+  type = string
+}

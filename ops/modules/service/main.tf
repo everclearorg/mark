@@ -137,14 +137,17 @@ resource "aws_ecs_service" "service" {
 }
 
 resource "aws_alb" "lb" {
-  count = var.create_alb ? 1 : 0
+  count                      = var.create_alb ? 1 : 0
+  name                       = "${var.container_family}-${var.environment}-${var.stage}"
   internal                   = var.internal_lb
+  # security_groups            = concat([aws_security_group.lb[0].id], var.service_security_groups)
   security_groups            = var.service_security_groups
   subnets                    = var.lb_subnets
   enable_deletion_protection = false
   idle_timeout               = var.timeout
   
   tags = {
+    Name        = "${var.container_family}-${var.environment}-${var.stage}"
     Environment = var.environment
     Stage       = var.stage
     Domain      = var.domain
@@ -189,10 +192,21 @@ resource "aws_lb_listener" "https" {
 }
 
 resource "aws_security_group" "lb" {
-  count = var.create_alb ? 1 : 0
-  description = "controls access to the ALB"
+  count       = var.create_alb ? 1 : 0
+  name        = "${var.container_family}-alb-${var.environment}-${var.stage}"
+  description = "Controls access to the ALB"
   vpc_id      = var.vpc_id
 
+  # Allow HTTPS ingress
+  ingress {
+    protocol         = "tcp"
+    from_port        = 443
+    to_port          = 443
+    cidr_blocks      = var.ingress_cdir_blocks
+    ipv6_cidr_blocks = var.ingress_ipv6_cdir_blocks
+  }
+
+  # Allow HTTP ingress
   ingress {
     protocol         = "tcp"
     from_port        = var.loadbalancer_port
@@ -201,11 +215,32 @@ resource "aws_security_group" "lb" {
     ipv6_cidr_blocks = var.ingress_ipv6_cdir_blocks
   }
 
+  # Allow all egress
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = var.allow_all_cdir_blocks
+  }
+
+  tags = {
+    Name        = "${var.container_family}-alb-${var.environment}-${var.stage}"
+    Environment = var.environment
+    Stage       = var.stage
+    Domain      = var.domain
+  }
+}
+
+resource "aws_route53_record" "prometheus" {
+  count   = var.create_alb ? 1 : 0
+  zone_id = var.zone_id
+  name    = "mark-prometheus.${var.domain}"
+  type    = "A"
+
+  alias {
+    name                   = aws_alb.lb[0].dns_name
+    zone_id               = aws_alb.lb[0].zone_id
+    evaluate_target_health = true
   }
 }
 

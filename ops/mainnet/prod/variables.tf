@@ -19,7 +19,7 @@ variable "stage" {
 variable "domain" {
   description = "Domain name"
   type        = string
-  default     = "mark"
+  default     = "everclear.ninja"
 }
 
 variable "cidr_block" {
@@ -116,6 +116,12 @@ variable "alchemy_key" {
   description = "Alchemy API KEY"
   type      = string
   sensitive = true
+}
+
+
+variable "zone_id" {
+  description = "Route 53 hosted zone ID for the domain"
+  default     = "Z03634792TWUEHHQ5L0YX"
 }
 
 variable "cert_arn" {
