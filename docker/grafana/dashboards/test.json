@@ -1,0 +1,422 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "grafana",
+                    "uid": "-- Grafana --"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "type": "dashboard"
+            }
+        ]
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": 3,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+            },
+            "description": "Mark's USDC balance across chains.",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": 0,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": [
+                    {
+                        "__systemRef": "hideSeriesFrom",
+                        "matcher": {
+                            "id": "byNames",
+                            "options": {
+                                "mode": "exclude",
+                                "names": [
+                                    "{__name__=\"mark_chain_balance\", chain=\"1\", job=\"mark-poller\", token=\"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\"}"
+                                ],
+                                "prefix": "All except:",
+                                "readOnly": true
+                            }
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.hideFrom",
+                                "value": {
+                                    "legend": false,
+                                    "tooltip": false,
+                                    "viz": true
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 0
+            },
+            "id": 2,
+            "options": {
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": true
+                },
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\"}",
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "A"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "B"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "C"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "D"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0xaf88d065e77c8cC2239327C5EDb3A432268e5831\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "E"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x3b952c8C9C44e8Fe201e2b26F6B2200203214cfF\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "F"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x176211869cA2b568f2A7D4EE941E073a821EE1ff\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "G"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "H"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "I"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "J"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x07d83526730c7438048D55A4fc0b850e2aaB6f0b\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "K"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0xd988097fb8612cc24eeC14542bC03424c656005f\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "L"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x078D782b760474a361dDA0AF3839290b0EF57AD6\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "M"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance{token=\"0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4\"}",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "N"
+                },
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_chain_balance",
+                    "hide": false,
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "O"
+                }
+            ],
+            "title": "USDC Balance",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+            },
+            "description": "Gas balance of mark across all chains.",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "axisCenteredZero": false,
+                        "axisColorMode": "text",
+                        "axisLabel": "",
+                        "axisPlacement": "auto",
+                        "barAlignment": -1,
+                        "drawStyle": "line",
+                        "fillOpacity": 0,
+                        "gradientMode": "none",
+                        "hideFrom": {
+                            "legend": false,
+                            "tooltip": false,
+                            "viz": false
+                        },
+                        "lineInterpolation": "linear",
+                        "lineWidth": 1,
+                        "pointSize": 5,
+                        "scaleDistribution": {
+                            "type": "linear"
+                        },
+                        "showPoints": "auto",
+                        "spanNulls": false,
+                        "stacking": {
+                            "group": "A",
+                            "mode": "none"
+                        },
+                        "thresholdsStyle": {
+                            "mode": "off"
+                        }
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 11,
+                "w": 12,
+                "x": 0,
+                "y": 8
+            },
+            "id": 1,
+            "options": {
+                "legend": {
+                    "calcs": [],
+                    "displayMode": "list",
+                    "placement": "bottom",
+                    "showLegend": false
+                },
+                "tooltip": {
+                    "mode": "single",
+                    "sort": "none"
+                }
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "prometheus",
+                        "uid": "abe5d1b7-9897-4670-8d28-b7dba9d2130c"
+                    },
+                    "editorMode": "builder",
+                    "expr": "mark_gas_balance",
+                    "legendFormat": "__auto",
+                    "range": true,
+                    "refId": "A"
+                }
+            ],
+            "title": "Gas",
+            "type": "timeseries"
+        }
+    ],
+    "refresh": "",
+    "schemaVersion": 38,
+    "style": "dark",
+    "tags": [],
+    "templating": {
+        "list": []
+    },
+    "time": {
+        "from": "now-6h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "title": "Test",
+    "uid": "d25a3480-e767-4d38-b659-47bd95cf6814",
+    "version": 1,
+    "weekStart": ""
+}
