@@ -13,6 +13,11 @@ output "prometheus_service_url" {
   value       = module.mark_prometheus.service_url
 }
 
+output "pushgateway_service_url" {
+  description = "URL of the Prometheus Pushgateway service"
+  value       = module.mark_pushgateway.service_url
+}
+
 output "lambda_function_name" {
   description = "Name of the Lambda function"
   value       = module.mark_poller.function_name
