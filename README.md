@@ -62,6 +62,8 @@ yarn workspace @mark/poller dev
 yarn monitoring:up
 ```
 
+If running with prometheus and grafana, grafana will be accessible with the user and password as `admin` at `localhost:3030` and prometheus is accessible at `localhost:9090`.
+
 ## Local Image
 
 The poller image can be run locally.
