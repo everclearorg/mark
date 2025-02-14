@@ -42,12 +42,12 @@ resource "aws_security_group" "prometheus" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Allow inbound traffic on port 9090 from within VPC
+  # Allow inbound traffic on port 9090 from anywhere (ALB will handle external access)
   ingress {
     from_port   = 9090
     to_port     = 9090
     protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr_block]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {

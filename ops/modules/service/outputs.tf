@@ -17,3 +17,8 @@ output "alb_dns_name" {
   description = "DNS name of the ALB"
   value       = var.create_alb ? aws_alb.lb[0].dns_name : null
 }
+
+output "alb_zone_id" {
+  description = "Zone ID of the ALB"
+  value       = var.create_alb ? aws_alb.lb[0].zone_id : null
+}
