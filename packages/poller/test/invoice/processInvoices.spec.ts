@@ -40,6 +40,7 @@ describe('processInvoices', () => {
     }
 
     const validConfig: MarkConfiguration = {
+        pushGatewayUrl: 'http://localhost:9090',
         web3SignerUrl: 'http://localhost:8545',
         ownAddress: '0xmark',
         supportedSettlementDomains: [8453, 1],

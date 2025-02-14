@@ -1,6 +1,7 @@
 import { InvalidPurchaseReasons, InvalidPurchaseReasonConcise, InvalidPurchaseReasonVerbose } from '@mark/core';
-import { Gauge, Counter, Histogram, Registry } from 'prom-client';
+import { Gauge, Counter, Histogram, Registry, Pushgateway, PrometheusContentType } from 'prom-client';
 import { formatUnits } from 'viem';
+import { jsonifyError, Logger } from '@mark/logger';
 
 const InvoiceLabelKeys = ['origin', 'ticker', 'id', 'destination', 'reason'] as const;
 export type InvoiceLabels = Omit<Record<(typeof InvoiceLabelKeys)[number], string>, 'destination' | 'reason'> & {
@@ -18,6 +19,7 @@ export type RewardLabels = Record<(typeof RewardLabelKeys)[number], string>;
 
 export class PrometheusAdapter {
   private registry: Registry;
+  private pushGateway: Pushgateway<PrometheusContentType>;
 
   // Balance metrics
   private chainBalance: Gauge<string>;
@@ -36,8 +38,13 @@ export class PrometheusAdapter {
   // Rewards metrics
   private rewards: Gauge<string>;
 
-  constructor() {
+  constructor(
+    private logger: Logger,
+    private jobName: string,
+    pushGatewayUri: string,
+  ) {
     this.registry = new Registry();
+    this.pushGateway = new Pushgateway(pushGatewayUri, undefined, this.registry);
 
     // Initialize chain balance gauge
     this.chainBalance = new Gauge({
@@ -110,54 +117,72 @@ export class PrometheusAdapter {
   }
 
   // Update chain balance
-  public updateChainBalance(chain: string, token: string, balance: bigint, decimals: number): void {
-    this.chainBalance.labels({ chain, token }).set(+formatUnits(balance, decimals));
+  public async updateChainBalance(chain: string, token: string, balance: bigint): Promise<void> {
+    this.chainBalance.labels({ chain, token }).set(+formatUnits(balance, 18));
+    await this.pushMetrics();
   }
 
-  public updateGasBalance(chain: string, balance: bigint): void {
+  public async updateGasBalance(chain: string, balance: bigint): Promise<void> {
     this.gasBalance.labels({ chain }).set(+formatUnits(balance, 18));
+    await this.pushMetrics();
   }
 
-  public updateGasSpent(chain: string, reason: TransactionReason, gas: bigint): void {
+  public async updateGasSpent(chain: string, reason: TransactionReason, gas: bigint): Promise<void> {
     this.gasSpent.labels({ chain, reason }).inc(+formatUnits(gas, 18));
+    await this.pushMetrics();
   }
 
   // Record possible invoice
-  public recordPossibleInvoice(labels: InvoiceLabels): void {
+  public async recordPossibleInvoice(labels: InvoiceLabels): Promise<void> {
     this.possibleInvoices.labels(labels).inc();
+    await this.pushMetrics();
   }
 
   // Record successful invoice fill
-  public recordSuccessfulPurchase(labels: InvoiceLabels): void {
+  public async recordSuccessfulPurchase(labels: InvoiceLabels): Promise<void> {
     this.successfulPurchases.labels(labels).inc();
+    await this.pushMetrics();
   }
 
   // Record invalid invoice
-  public recordInvalidPurchase(reason: InvalidPurchaseReasonVerbose, labels: InvoiceLabels): void {
+  public async recordInvalidPurchase(reason: InvalidPurchaseReasonVerbose, labels: InvoiceLabels): Promise<void> {
     // Convert reason string to key
     const idx = (Object.values(InvalidPurchaseReasons) as InvalidPurchaseReasonVerbose[]).findIndex(
       (value) => value === reason,
     );
     this.invalidInvoices.labels({ ...labels, reason: Object.keys(InvalidPurchaseReasons)[idx] }).inc();
+    await this.pushMetrics();
   }
 
   // Record duration from invoice to go from seen -> purchased
-  public recordInvoicePurchaseDuration(durationSeconds: number): void {
+  public async recordInvoicePurchaseDuration(durationSeconds: number): Promise<void> {
     this.purchaseDuration.observe(durationSeconds);
+    await this.pushMetrics();
   }
 
   // Record time from invoice to go from seen -> removed from cache
-  public recordPurchaseClearanceDuration(durationSeconds: number): void {
+  public async recordPurchaseClearanceDuration(durationSeconds: number): Promise<void> {
     this.clearanceDuration.observe(durationSeconds);
+    await this.pushMetrics();
   }
 
   // Update rewards
-  public updateRewards(labels: RewardLabels, amount: number): void {
+  public async updateRewards(labels: RewardLabels, amount: number): Promise<void> {
     this.rewards.labels(labels).set(amount);
+    await this.pushMetrics();
   }
 
   // Get metrics
   public async getMetrics(): Promise<string> {
     return await this.registry.metrics();
+  }
+
+  // Push metrics to Pushgateway
+  private async pushMetrics(): Promise<void> {
+    try {
+      await this.pushGateway.pushAdd({ jobName: this.jobName });
+    } catch (error) {
+      this.logger.error('Failed to push metrics to Pushgateway:', { error: jsonifyError(error) });
+    }
   }
 }

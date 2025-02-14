@@ -67,6 +67,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const supportedAssets = parseSupportedAssets(requireEnv('SUPPORTED_ASSET_SYMBOLS'));
 
     const config: MarkConfiguration = {
+      pushGatewayUrl: requireEnv('PUSH_GATEWAY_URL'),
       web3SignerUrl: requireEnv('SIGNER_URL'),
       everclearApiUrl: requireEnv('EVERCLEAR_API_URL'),
       relayer: process.env.RELAYER_URL
