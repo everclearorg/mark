@@ -1,5 +1,5 @@
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
-import { sendIntents } from '../../src/helpers/intent';
+import { INTENT_ADDED_TOPIC0, sendIntents } from '../../src/helpers/intent';
 import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { Logger } from '@mark/logger';
 import * as contractHelpers from '../../src/helpers/contracts';
@@ -170,15 +170,23 @@ describe('sendIntents', () => {
 
         stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
         (mockDeps.chainService.submitAndMonitor as SinonStub)
-            .onFirstCall().resolves({ transactionHash: '0xapprovalTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1') })
-            .onSecondCall().resolves({ transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1') });
+            .onFirstCall().resolves({
+                transactionHash: '0xapprovalTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
+                    topics: [INTENT_ADDED_TOPIC0, '0xintentid']
+                }]
+            })
+            .onSecondCall().resolves({
+                transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
+                    topics: [INTENT_ADDED_TOPIC0, '0xintentid']
+                }]
+            });
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
         const result = await sendIntents(intentsArray, mockDeps, mockConfig);
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(2); // Called for both approval and intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1' }]);
+        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0xintentid' }]);
     });
 
     it('should handle cases where there is sufficient allowance', async () => {
@@ -200,7 +208,11 @@ describe('sendIntents', () => {
         } as unknown as GetContractReturnType;
 
         stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);
-        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({ transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1') });
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
+                topics: [INTENT_ADDED_TOPIC0, '0xintentid']
+            }]
+        });
 
         const result = await sendIntents(
             Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values())),
@@ -209,6 +221,6 @@ describe('sendIntents', () => {
         );
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1); // Called only for intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1' }]);
+        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0xintentid' }]);
     });
 });

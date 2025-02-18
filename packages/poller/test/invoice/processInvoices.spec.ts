@@ -1,8 +1,8 @@
 import { expect } from 'chai';
 import { stub, SinonStubbedInstance, createStubInstance, SinonStub } from 'sinon';
 import { processInvoices } from '../../src/invoice/processInvoices';
-import { MarkConfiguration, Invoice, NewIntentParams, PurchaseAction, InvalidPurchaseReasons } from '@mark/core';
-import { PurchaseCache } from '@mark/cache';
+import { MarkConfiguration, Invoice, NewIntentParams, InvalidPurchaseReasons } from '@mark/core';
+import { PurchaseCache, PurchaseAction, } from '@mark/cache';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter, MinAmountsResponse } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
@@ -138,7 +138,7 @@ describe('processInvoices', () => {
             ['1', BigInt('1000000000000000000')],
             ['8453', BigInt('0')]
         ]));
-        stub(intentHelpers, 'sendIntents').resolves([{ transactionHash: '0xtx', chainId: '1' }]);
+        stub(intentHelpers, 'sendIntents').resolves([{ transactionHash: '0xtx', chainId: '1', intentId: '0xintent' }]);
         stub(assetHelpers, 'isXerc20Supported').resolves(false);
         stub(monitorHelpers, 'logBalanceThresholds').returns();
         stub(monitorHelpers, 'logGasThresholds').returns();
@@ -171,7 +171,7 @@ describe('processInvoices', () => {
     it('should skip processing if invoice already has a pending purchase', async () => {
         const existingPurchase: PurchaseAction = {
             target: validInvoice,
-            purchase: {} as NewIntentParams,
+            purchase: { intentId: '0xintent', params: {} as NewIntentParams },
             transactionHash: '0xexisting'
         };
         cache.getAllPurchases.resolves([existingPurchase]);
@@ -392,7 +392,7 @@ describe('processInvoices', () => {
         const purchases = cache.addPurchases.firstCall.args[0];
         expect(purchases).to.have.lengthOf(1);
         expect(purchases[0].target).to.deep.equal(multiDestInvoice);
-        expect(purchases[0].purchase.origin).to.equal('8453'); // Should use second destination
+        expect(purchases[0].purchase.params.origin).to.equal('8453'); // Should use second destination
         expect(purchases[0].transactionHash).to.equal('0xtx');
         expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(1);
         expect(prometheus.recordSuccessfulPurchase.calledOnceWith({ ...labels, destination: '8453' }))
@@ -403,7 +403,7 @@ describe('processInvoices', () => {
         // Setup a cached purchase that no longer matches any invoice
         const stalePurchase = {
             target: { ...validInvoice, intent_id: '0xstale' },
-            purchase: {} as NewIntentParams,
+            purchase: { intentId: '0xintent', params: {} as NewIntentParams },
             transactionHash: '0xold'
         };
         cache.getAllPurchases.resolves([stalePurchase]);
