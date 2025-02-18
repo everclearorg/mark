@@ -7,7 +7,7 @@ import {
 } from '@mark/core';
 import { PurchaseCache } from '@mark/cache';
 import { jsonifyError, jsonifyMap, Logger } from '@mark/logger';
-import { EverclearAdapter } from '@mark/everclear';
+import { EverclearAdapter, IntentStatus } from '@mark/everclear';
 import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { InvoiceLabels, PrometheusAdapter } from '@mark/prometheus';
 import {
@@ -47,6 +47,7 @@ export async function processInvoices({
     invoiceCount: invoices.length,
     invoices: invoices.map((i) => i.intent_id),
   });
+
   // Get current time to measure invoice age
   const time = Math.floor(Date.now() / 1000);
 
@@ -67,21 +68,37 @@ export async function processInvoices({
 
   // Remove cached purchases that no longer apply to an invoice.
   const invoiceIds = invoices.map(({ intent_id }) => intent_id);
-  const toRemove = cachedPurchases
-    .filter((purchase) => {
-      prometheus.recordPurchaseClearanceDuration(
-        Math.floor(Date.now()) - purchase.target.hub_invoice_enqueued_timestamp,
-      );
-      return !invoiceIds.includes(purchase.target.intent_id);
-    })
-    .map(({ target }) => target.intent_id);
+  const targetsToRemove = (
+    await Promise.all(
+      cachedPurchases.map(async (purchase) => {
+        // Remove purchases that are invoiced or settled
+        const status = await everclear.intentStatus(purchase.purchase.intentId);
+        console.log('status of', purchase.purchase.intentId, ':', status);
+        const spentStatuses = [
+          IntentStatus.INVOICED,
+          IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
+          IntentStatus.SETTLED,
+          IntentStatus.SETTLED_AND_COMPLETED,
+          IntentStatus.DISPATCHED_HUB,
+          IntentStatus.DISPATCHED_UNSUPPORTED,
+          IntentStatus.UNSUPPORTED,
+          IntentStatus.UNSUPPORTED_RETURNED,
+        ];
+        if (!spentStatuses.includes(status)) {
+          // Purchase intent could still be used to pay down target invoice
+          return undefined;
+        }
+        return purchase.target.intent_id;
+      }),
+    )
+  ).filter((x: string | undefined) => !!x);
 
   const pendingPurchases = cachedPurchases.filter(({ target }) => invoiceIds.includes(target.intent_id));
   try {
-    await cache.removePurchases(toRemove);
-    logger.info('Removed stale purchases', { requestId, toRemove });
+    await cache.removePurchases(targetsToRemove as string[]);
+    logger.info('Removed stale purchases', { requestId, targetsToRemove });
   } catch (e) {
-    logger.warn('Failed to clear pending cache', { requestId, error: jsonifyError(e, { toRemove }) });
+    logger.warn('Failed to clear pending cache', { requestId, error: jsonifyError(e, { targetsToRemove }) });
   }
 
   // Group invoices by ticker
@@ -110,7 +127,6 @@ export async function processInvoices({
             invoice: i,
             reason,
           });
-          console.log('invalid invoice', i.intent_id, reason);
           prometheus.recordInvalidPurchase(reason, { origin: i.origin, id: i.intent_id, ticker: i.ticker_hash });
           return undefined;
         }
@@ -126,6 +142,7 @@ export async function processInvoices({
         id: invoice.intent_id,
         ticker,
       };
+
       // Skip entire ticker if we already have a purchase for this invoice
       if (pendingPurchases.find(({ target }) => target.intent_id === invoiceId)) {
         logger.debug('Found existing purchase, stopping ticker processing', {
@@ -154,14 +171,29 @@ export async function processInvoices({
 
       // Get the minimum amounts for invoice
       const { minAmounts } = await everclear.getMinAmounts(invoiceId);
+      logger.debug('Got minimum amounts for invoice', {
+        requestId,
+        invoiceId,
+        invoice,
+        minAmounts,
+      });
 
       // For each invoice destination
       for (const [destination, minAmount] of Object.entries(minAmounts)) {
+        if (BigInt(minAmount) <= 0) {
+          logger.error('Min amount is <= 0, API error.', {
+            requestId,
+            invoiceId,
+            destination,
+            minAmount,
+          });
+          continue;
+        }
         // If there is already a purchase created or pending with this existing destination-ticker
         // combo, we are impacting the custodied assets and invalidating the minAmounts for subsequent
         // intents in the queue, so exit ticker-domain.
         const existing = pendingPurchases.filter(
-          (action) => action.target.ticker_hash === ticker && action.purchase.origin === destination,
+          (action) => action.target.ticker_hash === ticker && action.purchase.params.origin === destination,
         );
         if (existing.length > 0) {
           logger.info('Action exists for destination-ticker combo', {
@@ -181,7 +213,7 @@ export async function processInvoices({
             requestId,
             invoiceId,
             destination,
-            required: minAmount.toString(),
+            required: minAmount,
             available: markBalance.toString(),
           });
           prometheus.recordInvalidPurchase(InvalidPurchaseReasons.InsufficientBalance, { ...labels, destination });
@@ -209,9 +241,16 @@ export async function processInvoices({
           callData: '0x',
           maxFee: '0',
         };
+        logger.debug('Created new intent params for purchase', {
+          requestId,
+          invoiceId,
+          params,
+          minAmount,
+          destination,
+        });
 
         try {
-          const [{ transactionHash }] = await sendIntents(
+          const [{ transactionHash, intentId }] = await sendIntents(
             [params],
             { everclear, chainService, logger, cache, prometheus },
             config,
@@ -221,7 +260,7 @@ export async function processInvoices({
 
           const purchase = {
             target: invoice,
-            purchase: params,
+            purchase: { intentId, params },
             transactionHash,
           };
           pendingPurchases.push(purchase);
@@ -257,7 +296,7 @@ export async function processInvoices({
     await cache.addPurchases(pendingPurchases);
     logger.info('Stored purchases in cache', { requestId, purchases: pendingPurchases });
   } catch (e) {
-    logger.error('Failed to add purchases to cache', { requestId, error: jsonifyError(e, { toRemove }) });
+    logger.error('Failed to add purchases to cache', { requestId, error: jsonifyError(e, { pendingPurchases }) });
     throw e;
   }
 

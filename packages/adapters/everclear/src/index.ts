@@ -10,6 +10,59 @@ export interface MinAmountsResponse {
   minAmounts: Record<string, string>;
 }
 
+export enum IntentStatus {
+  NONE = 'NONE',
+  ADDED = 'ADDED',
+  ADDED_SPOKE = 'ADDED_SPOKE',
+  ADDED_HUB = 'ADDED_HUB',
+  DEPOSIT_PROCESSED = 'DEPOSIT_PROCESSED',
+  FILLED = 'FILLED',
+  ADDED_AND_FILLED = 'ADDED_AND_FILLED',
+  INVOICED = 'INVOICED',
+  SETTLED = 'SETTLED',
+  SETTLED_AND_COMPLETED = 'SETTLED_AND_COMPLETED',
+  SETTLED_AND_MANUALLY_EXECUTED = 'SETTLED_AND_MANUALLY_EXECUTED',
+  UNSUPPORTED = 'UNSUPPORTED',
+  UNSUPPORTED_RETURNED = 'UNSUPPORTED_RETURNED',
+  DISPATCHED_HUB = 'DISPATCHED_HUB',
+  DISPATCHED_SPOKE = 'DISPATCHED_SPOKE',
+  DISPATCHED_UNSUPPORTED = 'DISPATCHED_UNSUPPORTED',
+}
+
+export interface IntentStatusResponse {
+  intent: {
+    intent_id: string;
+    queue_idx: number;
+    message_id: string;
+    status: IntentStatus;
+    receiver: string;
+    input_asset: string;
+    output_asset: string;
+    origin_amount: string;
+    destination_amount: string;
+    origin: string;
+    nonce: number;
+    transaction_hash: string;
+    receive_tx_hash: string;
+    intent_created_timestamp: number;
+    settlement_timestamp: number;
+    intent_created_block_number: number;
+    receive_blocknumber: number;
+    tx_origin: string;
+    tx_nonce: number;
+    auto_id: number;
+    max_fee: string;
+    call_data: string;
+    filled: boolean;
+    initiator: string;
+    origin_gas_fees: string;
+    destination_gas_fees: string;
+    hub_settlement_domain: string;
+    ttl: number;
+    destinations: string[];
+  }
+}
+
 export class EverclearAdapter {
   private readonly apiUrl: string;
   private readonly logger: Logger;
@@ -105,5 +158,11 @@ export class EverclearAdapter {
     const url = `${this.apiUrl}/invoices/${intentId}/min-amounts`;
     const { data } = await axiosGet<MinAmountsResponse>(url);
     return data;
+  }
+
+  async intentStatus(intentId: string): Promise<IntentStatus> {
+    const url = `${this.apiUrl}/intents/${intentId}`;
+    const { data } = await axiosGet<IntentStatusResponse>(url);
+    return data?.intent.status ?? IntentStatus.NONE;
   }
 }
