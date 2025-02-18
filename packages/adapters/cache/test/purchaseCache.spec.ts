@@ -25,13 +25,16 @@ describe('PurchaseCache', () => {
     const mockPurchaseAction: PurchaseAction = {
         target: mockInvoice,
         purchase: {
-            origin: '1',
-            destinations: ['1', '10'],
-            to: '0xowner',
-            inputAsset: '0xasset',
-            amount: '100000',
-            callData: '0x',
-            maxFee: '0'
+            intentId: '0xpurchaseid',
+            params: {
+                origin: '1',
+                destinations: ['1', '10'],
+                to: '0xowner',
+                inputAsset: '0xasset',
+                amount: '100000',
+                callData: '0x',
+                maxFee: '0'
+            }
         },
         transactionHash: '0x123',
     };
