@@ -4,6 +4,8 @@ import { getERC20Contract } from './contracts';
 import { encodeFunctionData, erc20Abi } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 
+const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
+
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required. Takes in the origin-asset batched intents.
  */
@@ -11,9 +13,9 @@ export const sendIntents = async (
   intents: NewIntentParams[],
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
-): Promise<{ transactionHash: string; chainId: string }[]> => {
+): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
   const { everclear, logger, chainService, prometheus } = deps;
-  const results: { transactionHash: string; chainId: string }[] = [];
+  const results: { transactionHash: string; chainId: string; intentId: string }[] = [];
   logger.info('Attempting to send batched intents', { batch: intents });
 
   try {
@@ -89,9 +91,14 @@ export const sendIntents = async (
         from: txData.from ?? config.ownAddress,
       });
 
+      // Get the intent id
+      const event = intentTx.logs.find((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0)!;
+      const intentId = event.topics[1];
+
       logger.info('Create intent transaction sent successfully', {
         intentTxHash: intentTx.transactionHash,
         chainId: intent.origin,
+        intentId,
       });
       prometheus.updateGasSpent(
         intent.origin,
@@ -100,7 +107,7 @@ export const sendIntents = async (
       );
 
       // Add result to the output array
-      results.push({ transactionHash: intentTx.transactionHash, chainId: intent.origin });
+      results.push({ transactionHash: intentTx.transactionHash, chainId: intent.origin, intentId });
     }
     return results;
   } catch (err) {
