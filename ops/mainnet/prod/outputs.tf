@@ -27,3 +27,8 @@ output "ecs_cluster_name" {
   description = "Name of the ECS cluster"
   value       = module.ecs.ecs_cluster_name
 }
+
+output "prometheus_debug_info" {
+  description = "Debug information for Prometheus service"
+  value       = module.mark_prometheus.debug_info
+}

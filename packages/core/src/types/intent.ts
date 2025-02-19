@@ -21,12 +21,6 @@ export interface Invoice {
   hub_invoice_enqueued_timestamp: number;
 }
 
-export interface PurchaseAction {
-  target: Invoice;
-  purchase: NewIntentParams;
-  transactionHash: `0x${string}`;
-}
-
 export const InvalidPurchaseReasons = {
   InvalidAmount: `Invalid amount, could not convert to BigInt.`,
   InvalidFormat: `Invalid invoice format in either amount, invoice presence, or id.`,
