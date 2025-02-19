@@ -109,6 +109,14 @@ module "mark_prometheus" {
   ingress_ipv6_cdir_blocks = []
   create_alb              = true
   zone_id                 = var.zone_id
+  health_check_settings   = {
+    path                = "/-/healthy"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
 }
 
 module "mark_pushgateway" {
