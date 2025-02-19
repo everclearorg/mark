@@ -23,6 +23,7 @@ resource "aws_ecs_task_definition" "service" {
       image        = var.docker_image
       essential    = true
       environment  = concat(var.container_env_vars, [{ name = "DD_SERVICE", value = var.container_family }])
+      command      = var.command
       portMappings = [
         {
           containerPort = var.container_port
@@ -103,7 +104,7 @@ resource "aws_ecs_service" "service" {
 
   network_configuration {
     security_groups = var.service_security_groups
-    subnets         = var.lb_subnets
+    subnets         = var.task_subnets
   }
 
   dynamic "load_balancer" {
