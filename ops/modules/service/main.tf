@@ -23,7 +23,7 @@ resource "aws_ecs_task_definition" "service" {
       image        = var.docker_image
       essential    = true
       environment  = concat(var.container_env_vars, [{ name = "DD_SERVICE", value = var.container_family }])
-      command      = var.command
+      entrypoint   = var.entrypoint
       portMappings = [
         {
           containerPort = var.container_port

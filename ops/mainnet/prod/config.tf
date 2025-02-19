@@ -37,6 +37,10 @@ locals {
     {
       name  = "PROMETHEUS_STORAGE_PATH"
       value = "/prometheus"
+    },
+    {
+      name  = "PROMETHEUS_LOG_LEVEL"
+      value = "debug"
     }
   ]
 

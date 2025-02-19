@@ -169,8 +169,8 @@ variable "health_check_settings" {
   }
 }
 
-variable "command" {
-  description = "Command to run in the container"
+variable "entrypoint" {
+  description = "Entrypoint for the container"
   type        = list(string)
   default     = null
 }

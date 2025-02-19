@@ -114,10 +114,10 @@ module "mark_prometheus" {
       }
     ]
   )
-  command                 = [
+  entrypoint = [
     "/bin/sh",
     "-c",
-    "mkdir -p /etc/prometheus && chown -R nobody:nobody /etc/prometheus && echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && chmod 644 /etc/prometheus/prometheus.yml && /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.retention.time=15d --web.enable-lifecycle"
+    "mkdir -p /etc/prometheus && echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && chmod 644 /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
   ]
   cert_arn                = var.cert_arn
   ingress_cdir_blocks     = ["0.0.0.0/0"]
