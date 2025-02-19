@@ -148,3 +148,34 @@ variable "zone_id" {
   description = "Route 53 hosted zone ID"
   type = string
 }
+
+variable "health_check_settings" {
+  description = "Custom health check settings for the target group"
+  type = object({
+    path                = string
+    matcher             = string
+    interval            = number
+    timeout             = number
+    healthy_threshold   = number
+    unhealthy_threshold = number
+  })
+  default = {
+    path                = "/"
+    matcher             = "200,302"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+}
+
+variable "entrypoint" {
+  description = "Entrypoint for the container"
+  type        = list(string)
+  default     = null
+}
+
+variable "task_subnets" {
+  description = "Subnets for the ECS tasks"
+  type        = list(string)
+}
