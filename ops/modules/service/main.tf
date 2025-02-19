@@ -162,9 +162,12 @@ resource "aws_alb_target_group" "front_end" {
   target_type = "ip"
 
   health_check {
-    path     = var.health_check_path
-    matcher  = "200,302"
-    interval = var.timeout + 10
+    path                = var.health_check_settings.path
+    matcher             = var.health_check_settings.matcher
+    interval            = var.health_check_settings.interval
+    timeout             = var.health_check_settings.timeout
+    healthy_threshold   = var.health_check_settings.healthy_threshold
+    unhealthy_threshold = var.health_check_settings.unhealthy_threshold
   }
 
   lifecycle {
