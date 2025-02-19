@@ -97,3 +97,85 @@ variable "dd_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "create_alb" {
+  description = "Whether to create an ALB for this service"
+  type        = bool
+  default     = false
+}
+
+variable "cert_arn" {
+  description = "ACM certificate ARN"
+  type        = string
+  default     = ""
+}
+
+variable "internal_lb" {
+  description = "Whether the ALB is internal"
+  type        = bool
+  default     = false
+}
+
+variable "loadbalancer_port" {
+  description = "Port for the load balancer"
+  type        = number
+  default     = 80
+}
+
+variable "timeout" {
+  description = "ALB timeout"
+  type        = number
+  default     = 60
+}
+
+variable "ingress_cdir_blocks" {
+  description = "CIDR blocks for ALB ingress"
+  type        = list(string)
+  default     = []
+}
+
+variable "ingress_ipv6_cdir_blocks" {
+  description = "IPv6 CIDR blocks for ALB ingress"
+  type        = list(string)
+  default     = []
+}
+
+variable "allow_all_cdir_blocks" {
+  default = ["0.0.0.0/0"]
+}
+
+variable "zone_id" {
+  description = "Route 53 hosted zone ID"
+  type = string
+}
+
+variable "health_check_settings" {
+  description = "Custom health check settings for the target group"
+  type = object({
+    path                = string
+    matcher             = string
+    interval            = number
+    timeout             = number
+    healthy_threshold   = number
+    unhealthy_threshold = number
+  })
+  default = {
+    path                = "/"
+    matcher             = "200,302"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+}
+
+variable "entrypoint" {
+  description = "Entrypoint for the container"
+  type        = list(string)
+  default     = null
+}
+
+variable "task_subnets" {
+  description = "Subnets for the ECS tasks"
+  type        = list(string)
+}

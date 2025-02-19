@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 
 export interface PurchaseAction {
   target: Invoice;
-  purchase: NewIntentParams;
+  purchase: { params: NewIntentParams; intentId: string };
   transactionHash: string;
 }
 

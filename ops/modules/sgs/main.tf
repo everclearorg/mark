@@ -42,12 +42,22 @@ resource "aws_security_group" "prometheus" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Allow inbound traffic on port 9090 from within VPC
+  # Allow inbound traffic on port 9091 for Pushgateway metrics ingestion
+  ingress {
+    from_port   = 9091
+    to_port     = 9091
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr_block]
+    description = "Allow Pushgateway metrics ingestion"
+  }
+
+  # Allow inbound traffic on port 9090 for Prometheus UI/API
   ingress {
     from_port   = 9090
     to_port     = 9090
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr_block]
+    description = "Allow Prometheus API access"
   }
 
   tags = {
