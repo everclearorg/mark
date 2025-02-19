@@ -168,3 +168,14 @@ variable "health_check_settings" {
     unhealthy_threshold = 3
   }
 }
+
+variable "command" {
+  description = "Command to run in the container"
+  type        = list(string)
+  default     = null
+}
+
+variable "task_subnets" {
+  description = "Subnets for the ECS tasks"
+  type        = list(string)
+}
