@@ -32,7 +32,7 @@ interface ProcessInvoicesParams {
   config: MarkConfiguration;
 }
 
-const MAX_DESTINATIONS = 10; // enforced onchain
+const MAX_DESTINATIONS = 7; // enforced onchain at 10, we only want first 7 in our config
 
 export async function processInvoices({
   invoices,
