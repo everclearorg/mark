@@ -120,6 +120,8 @@ locals {
     CHAIN_34443_PROVIDERS         = "https://mode-mainnet.blastapi.io/${var.blast_key}, https://mainnet.mode.network"
 
     CHAIN_324_PROVIDERS           = "https://zksync-mainnet.g.alchemy.com/v2/${var.alchemy_key}, https://mainnet.era.zksync.io"
+
+    CHAIN_130_PROVIDERS           = "https://unichain-mainnet.g.alchemy.com/v2/${var.alchemy_key}, https://mainnet.unichain.org"
   }
 
   web3signer_env_vars = [
