@@ -32,6 +32,8 @@ interface ProcessInvoicesParams {
   config: MarkConfiguration;
 }
 
+const MAX_DESTINATIONS = 10; // enforced onchain
+
 export async function processInvoices({
   invoices,
   everclear,
@@ -234,7 +236,8 @@ export async function processInvoices({
           origin: destination,
           destinations: config.supportedSettlementDomains
             .filter((domain) => domain.toString() !== destination)
-            .map((s) => s.toString()),
+            .map((s) => s.toString())
+            .slice(0, MAX_DESTINATIONS),
           to: config.ownAddress,
           inputAsset,
           amount: convertHubAmountToLocalDecimals(BigInt(minAmount), inputAsset, destination, config).toString(),
