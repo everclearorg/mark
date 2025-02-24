@@ -172,13 +172,25 @@ export async function processInvoices({
       }
 
       // Get the minimum amounts for invoice
-      const { minAmounts } = await everclear.getMinAmounts(invoiceId);
-      logger.debug('Got minimum amounts for invoice', {
-        requestId,
-        invoiceId,
-        invoice,
-        minAmounts,
-      });
+      let minAmounts: Record<string, string>;
+      try {
+        const { minAmounts: _minAmounts } = await everclear.getMinAmounts(invoiceId);
+        minAmounts = _minAmounts;
+        logger.debug('Got minimum amounts for invoice', {
+          requestId,
+          invoiceId,
+          invoice,
+          minAmounts,
+        });
+      } catch (e) {
+        logger.error('Failed to get min amounts for invoice', {
+          requestId,
+          invoiceId,
+          invoice,
+          error: jsonifyError(e),
+        });
+        minAmounts = Object.fromEntries(invoice.destinations.map((d) => [d, '0']));
+      }
 
       // For each invoice destination
       for (const [destination, minAmount] of Object.entries(minAmounts)) {
