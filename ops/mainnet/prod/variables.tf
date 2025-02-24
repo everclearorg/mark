@@ -73,7 +73,7 @@ variable "relayer_api_key" {
 variable "supported_settlement_domains" {
   description = "Comma-separated list of supported settlement domains"
   type        = string
-  default     = "1,10,56,137,8453,33139,42161,43114,48900,59144,81457,167000,534352"
+  default     = "42161,10,8453,56,137,1,43114,33139,48900,59144,81457,167000,534352"
 }
 
 variable "supported_asset_symbols" {
