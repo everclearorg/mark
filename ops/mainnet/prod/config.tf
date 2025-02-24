@@ -105,7 +105,7 @@ locals {
     USDC_42161_THRESHOLD          = "4000000000"
     USDT_42161_THRESHOLD          = "1000000000"
     
-    CHAIN_43114_PROVIDERS         = "https://ava-mainnet.blastapi.io/${var.blast_key}/ext/bc/C/rpc, https://avalanche-mainnet.g.alchemy.com/v2/${var.alchemy_key}"
+    CHAIN_43114_PROVIDERS         = "https://ava-mainnet.blastapi.io/${var.blast_key}/ext/bc/C/rpc, https://avax-mainnet.g.alchemy.com/v2/${var.alchemy_key}"
 
     CHAIN_48900_PROVIDERS         = "https://zircuit1-mainnet.p2pify.com, https://lb.drpc.org/ogrpc?network=zircuit-mainnet&dkey=${var.drpc_key}"
 
