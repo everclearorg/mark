@@ -69,7 +69,6 @@ export async function processInvoices({
   const cachedPurchases = await cache.getAllPurchases();
 
   // Remove cached purchases that no longer apply to an invoice.
-  const invoiceIds = invoices.map(({ intent_id }) => intent_id);
   const targetsToRemove = (
     await Promise.all(
       cachedPurchases.map(async (purchase) => {
@@ -95,7 +94,7 @@ export async function processInvoices({
     )
   ).filter((x: string | undefined) => !!x);
 
-  const pendingPurchases = cachedPurchases.filter(({ target }) => invoiceIds.includes(target.intent_id));
+  const pendingPurchases = cachedPurchases.filter(({ target }) => targetsToRemove.includes(target.intent_id));
   try {
     await cache.removePurchases(targetsToRemove as string[]);
     logger.info('Removed stale purchases', { requestId, targetsToRemove });
