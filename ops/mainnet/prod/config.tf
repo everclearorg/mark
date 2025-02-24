@@ -116,6 +116,8 @@ locals {
     CHAIN_167000_PROVIDERS        = "https://lb.drpc.org/ogrpc?network=taiko&dkey=${var.drpc_key}"
 
     CHAIN_534352_PROVIDERS        = "https://scroll-mainnet.g.alchemy.com/v2/${var.alchemy_key}"
+
+    CHAIN_34443_PROVIDERS        = "https://mode-mainnet.blastapi.io/${var.blast_key}, https://mainnet.mode.network"
   }
 
   web3signer_env_vars = [
