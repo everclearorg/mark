@@ -33,10 +33,10 @@
     "viem": "2.22.8"
   },
   "devDependencies": {
-    "@types/aws-lambda": "^8.10.147",
-    "@types/chai": "^5.0.1",
+    "@types/aws-lambda": "8.10.147",
+    "@types/chai": "5.0.1",
     "@types/chai-as-promised": "7.1.1",
-    "@types/mocha": "^10.0.10",
+    "@types/mocha": "10.0.10",
     "@types/node": "20.17.12",
     "@types/sinon": "17.0.3",
     "chai": "4.2.0",
@@ -48,7 +48,7 @@
     "sinon": "17.0.1",
     "ts-node": "10.9.2",
     "ts-node-dev": "2.0.0",
-    "tsc-alias": "^1.8.10",
+    "tsc-alias": "1.8.10",
     "tsconfig-paths": "4.2.0",
     "typescript": "5.7.2"
   }
