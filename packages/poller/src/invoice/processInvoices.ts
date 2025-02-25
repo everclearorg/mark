@@ -74,7 +74,6 @@ export async function processInvoices({
       cachedPurchases.map(async (purchase) => {
         // Remove purchases that are invoiced or settled
         const status = await everclear.intentStatus(purchase.purchase.intentId);
-        console.log('status of', purchase.purchase.intentId, ':', status);
         const spentStatuses = [
           IntentStatus.INVOICED,
           IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
@@ -94,7 +93,8 @@ export async function processInvoices({
     )
   ).filter((x: string | undefined) => !!x);
 
-  const pendingPurchases = cachedPurchases.filter(({ target }) => targetsToRemove.includes(target.intent_id));
+  const pendingPurchases = cachedPurchases.filter(({ target }) => !targetsToRemove.includes(target.intent_id));
+
   try {
     await cache.removePurchases(targetsToRemove as string[]);
     logger.info('Removed stale purchases', { requestId, targetsToRemove });
