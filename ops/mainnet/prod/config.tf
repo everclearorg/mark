@@ -97,8 +97,6 @@ locals {
     CHAIN_8453_PROVIDERS          = "https://base-mainnet.blastapi.io/${var.blast_key}, https://base-mainnet.g.alchemy.com/v2/${var.alchemy_key}"
     WETH_8453_THRESHOLD           = "1600000000000000000"
     USDC_8453_THRESHOLD           = "4000000000"
-    
-    CHAIN_33139_PROVIDERS         = "https://apechain-mainnet.blastapi.io/${var.blast_key}, https://apechain-mainnet.g.alchemy.com/v2/${var.alchemy_key}"
 
     CHAIN_42161_PROVIDERS         = "https://arbitrum-one.blastapi.io/${var.blast_key}, https://arb-mainnet.g.alchemy.com/v2/${var.alchemy_key}"
     WETH_42161_THRESHOLD          = "1600000000000000000"
@@ -122,6 +120,8 @@ locals {
     CHAIN_324_PROVIDERS           = "https://zksync-mainnet.g.alchemy.com/v2/${var.alchemy_key}, https://mainnet.era.zksync.io"
 
     CHAIN_130_PROVIDERS           = "https://unichain-mainnet.g.alchemy.com/v2/${var.alchemy_key}, https://mainnet.unichain.org"
+
+    CHAIN_33139_PROVIDERS         = "https://apechain-mainnet.blastapi.io/${var.blast_key}, https://apechain-mainnet.g.alchemy.com/v2/${var.alchemy_key}"
   }
 
   web3signer_env_vars = [
