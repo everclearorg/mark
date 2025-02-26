@@ -73,7 +73,7 @@ variable "relayer_api_key" {
 variable "supported_settlement_domains" {
   description = "Comma-separated list of supported settlement domains"
   type        = string
-  default     = "42161,1,10,8453,56,137,43114,130,48900,59144,81457,167000,534352,34443,324,130,33139"
+  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,130,33139"
 }
 
 variable "supported_asset_symbols" {
@@ -91,7 +91,7 @@ variable "log_level" {
 variable "chain_ids" {
   description = "Comma-separated list of chain IDs"
   type        = string
-  default     = "42161,1,10,8453,56,137,43114,130,48900,59144,81457,167000,534352,34443,324,130,33139"
+  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,130,33139"
 }
 
 variable "dd_api_key" {
