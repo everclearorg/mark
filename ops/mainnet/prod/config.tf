@@ -122,6 +122,8 @@ locals {
     CHAIN_130_PROVIDERS           = "https://unichain-mainnet.g.alchemy.com/v2/${var.alchemy_key}, https://mainnet.unichain.org"
 
     CHAIN_33139_PROVIDERS         = "https://apechain-mainnet.blastapi.io/${var.blast_key}, https://apechain-mainnet.g.alchemy.com/v2/${var.alchemy_key}"
+
+    CHAIN_2020_PROVIDERS          = "https://ronin-mainnet.g.alchemy.com/v2/${var.alchemy_key}, https://api.roninchain.com/rpc"
   }
 
   web3signer_env_vars = [
