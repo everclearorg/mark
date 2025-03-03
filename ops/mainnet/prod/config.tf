@@ -56,12 +56,10 @@ locals {
   ]
 
   poller_env_vars = {
-    INVOICE_AGE                   = var.invoice_age
     SIGNER_URL                    = "http://${module.mark_web3signer.service_url}:9000"
     SIGNER_ADDRESS                = var.signer_address
     REDIS_HOST                    = module.cache.redis_instance_address
     REDIS_PORT                    = module.cache.redis_instance_port
-    EVERCLEAR_API_URL             = var.everclear_api_url
     RELAYER_URL                   = var.relayer_url
     RELAYER_API_KEY               = var.relayer_api_key
     SUPPORTED_SETTLEMENT_DOMAINS  = var.supported_settlement_domains
