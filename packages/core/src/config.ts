@@ -30,6 +30,9 @@ export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/c
 export const EVERCLEAR_TESTNET_CONFIG_URL =
   'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
 
+export const EVERCLEAR_MAINNET_API_URL = 'https://api.everclear.org';
+export const EVERCLEAR_TESTNET_API_URL = 'https://api.testnet.everclear.org';
+
 export const getEverclearConfig = async (_configUrl?: string): Promise<EverclearConfig | undefined> => {
   const configUrl = _configUrl ?? EVERCLEAR_MAINNET_CONFIG_URL;
 
@@ -61,6 +64,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
     const environment = (process.env.ENVIRONMENT ?? 'local') as Environment;
     const url = environment === 'mainnet' ? EVERCLEAR_MAINNET_CONFIG_URL : EVERCLEAR_TESTNET_CONFIG_URL;
+    const apiUrl = environment === 'mainnet' ? EVERCLEAR_MAINNET_API_URL : EVERCLEAR_TESTNET_API_URL;
 
     const hostedConfig = await getEverclearConfig(url);
 
@@ -69,7 +73,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const config: MarkConfiguration = {
       pushGatewayUrl: requireEnv('PUSH_GATEWAY_URL'),
       web3SignerUrl: requireEnv('SIGNER_URL'),
-      everclearApiUrl: requireEnv('EVERCLEAR_API_URL'),
+      everclearApiUrl: process.env['EVERCLEAR_API_URL'] ?? apiUrl,
       relayer: process.env.RELAYER_URL
         ? {
             url: process.env.RELAYER_URL,
