@@ -10,7 +10,7 @@ export interface MinAmountsResponse {
   minAmounts: Record<string, string>;
 }
 
-export interface TickerCustodiedAssetsResponse {
+export interface CustodiedAssetsResponse {
   custodiedAmount: string;
 }
 
@@ -170,9 +170,9 @@ export class EverclearAdapter {
     return data?.intent.status ?? IntentStatus.NONE;
   }
 
-  async getTickerCustodiedAssets(tickerHash: string, domain: string): Promise<TickerCustodiedAssetsResponse> {
+  async getCustodiedAssets(tickerHash: string, domain: string): Promise<CustodiedAssetsResponse> {
     const url = `${this.apiUrl}/tickers/${tickerHash}/domains/${domain}/custodied-assets`;
-    const { data } = await axiosGet<TickerCustodiedAssetsResponse>(url);
+    const { data } = await axiosGet<CustodiedAssetsResponse>(url);
     return data;
   }
 }
