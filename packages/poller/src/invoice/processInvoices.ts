@@ -245,10 +245,13 @@ export async function processInvoices({
         }
         const params: NewIntentParams = {
           origin: destination,
-          destinations: config.supportedSettlementDomains
-            .filter((domain) => domain.toString() !== destination)
-            .map((s) => s.toString())
-            .slice(0, MAX_DESTINATIONS),
+          destinations: [
+            ...config.supportedSettlementDomains
+              .filter((domain) => domain.toString() !== destination)
+              .map((s) => s.toString())
+              .slice(0, MAX_DESTINATIONS),
+            invoice.origin,
+          ],
           to: config.ownAddress,
           inputAsset,
           amount: convertHubAmountToLocalDecimals(BigInt(minAmount), inputAsset, destination, config).toString(),
