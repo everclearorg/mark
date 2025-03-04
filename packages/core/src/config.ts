@@ -31,6 +31,8 @@ export const DEFAULT_INVOICE_AGE = '600';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
 export const EVERCLEAR_TESTNET_CONFIG_URL =
   'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
+export const EVERCLEAR_MAINNET_API_URL = 'https://api.everclear.org';
+export const EVERCLEAR_TESTNET_API_URL = 'https://api.testnet.everclear.org';
 
 export const getEverclearConfig = async (_configUrl?: string): Promise<EverclearConfig | undefined> => {
   const configUrl = _configUrl ?? EVERCLEAR_MAINNET_CONFIG_URL;
@@ -63,6 +65,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
     const environment = ((await fromEnv('ENVIRONMENT')) ?? 'local') as Environment;
     const url = environment === 'mainnet' ? EVERCLEAR_MAINNET_CONFIG_URL : EVERCLEAR_TESTNET_CONFIG_URL;
+    const apiUrl = environment === 'mainnet' ? EVERCLEAR_MAINNET_API_URL : EVERCLEAR_TESTNET_API_URL;
 
     const hostedConfig = await getEverclearConfig(url);
 
@@ -77,10 +80,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
       web3SignerUrl: configJson.web3SignerUrl ?? (await requireEnv('SIGNER_URL')),
-      everclearApiUrl: configJson.everclearApiUrl ?? (await requireEnv('EVERCLEAR_API_URL')),
-      relayer: configJson.relayer ?? {
-        url: (await fromEnv('RELAYER_URL')) ?? '',
-        key: (await fromEnv('RELAYER_API_KEY')) ?? '',
+      everclearApiUrl: configJson.everclearApiUrl ?? (await fromEnv('EVERCLEAR_API_URL')) ?? apiUrl,
+      relayer: {
+        url: configJson?.relayer?.url ?? (await fromEnv('RELAYER_URL')) ?? undefined,
+        key: configJson?.relayer?.ket ?? (await fromEnv('RELAYER_API_KEY')) ?? undefined,
       },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
@@ -176,7 +179,7 @@ const parseChainConfigurations = async (
     ).concat(config?.chains[chainId]?.providers ?? []);
     const assets = await Promise.all(
       Object.values(config?.chains[chainId]?.assets ?? {}).map(async (a) => {
-        const jsonThreshold = configJson.chains[chainId].assets.find(
+        const jsonThreshold = (configJson.chains[chainId]?.assets ?? []).find(
           (asset: { symbol: string; balanceThreshold: string }) =>
             a.symbol.toLowerCase() === asset.symbol.toLowerCase(),
         )?.balanceThreshold;
