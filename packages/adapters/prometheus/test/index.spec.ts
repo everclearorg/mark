@@ -31,7 +31,7 @@ describe('PrometheusAdapter', () => {
 
   describe('chain balance metrics', () => {
     it('should update chain balance', async () => {
-      adapter.updateChainBalance('ethereum', 'ETH', BigInt('1500000000000000000'), 18);
+      adapter.updateChainBalance('ethereum', 'ETH', BigInt('1500000000000000000'));
       const metrics = await adapter.getMetrics();
       expect(metrics).toContain('mark_chain_balance{chain="ethereum",token="ETH"} 1.5');
     });
