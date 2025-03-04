@@ -10,6 +10,10 @@ export interface MinAmountsResponse {
   minAmounts: Record<string, string>;
 }
 
+export interface TickerCustodiedAssetsResponse {
+  custodiedAmount: string;
+}
+
 export enum IntentStatus {
   NONE = 'NONE',
   ADDED = 'ADDED',
@@ -164,5 +168,11 @@ export class EverclearAdapter {
     const url = `${this.apiUrl}/intents/${intentId}`;
     const { data } = await axiosGet<IntentStatusResponse>(url);
     return data?.intent.status ?? IntentStatus.NONE;
+  }
+
+  async getTickerCustodiedAssets(tickerHash: string, domain: string): Promise<TickerCustodiedAssetsResponse> {
+    const url = `${this.apiUrl}/tickers/${tickerHash}/domains/${domain}/custodied-assets`;
+    const { data } = await axiosGet<TickerCustodiedAssetsResponse>(url);
+    return data;
   }
 }
