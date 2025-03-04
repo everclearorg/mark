@@ -18,6 +18,7 @@ import {
   convertHubAmountToLocalDecimals,
   sendIntents,
   isXerc20Supported,
+  calculateSplitIntents,
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { ChainService } from '@mark/chainservice';
@@ -32,7 +33,7 @@ interface ProcessInvoicesParams {
   config: MarkConfiguration;
 }
 
-const MAX_DESTINATIONS = 7; // enforced onchain at 10, we only want first 7 in our config
+export const MAX_DESTINATIONS = 7; // enforced onchain at 10, we only want first 7 in our config
 
 export async function processInvoices({
   invoices,
@@ -189,6 +190,85 @@ export async function processInvoices({
           error: jsonifyError(e),
         });
         minAmounts = Object.fromEntries(invoice.destinations.map((d) => [d, '0']));
+      }
+
+      // Check if we can process with a single destination
+      let singleDestinationValid = false;
+      for (const [destination, minAmount] of Object.entries(minAmounts)) {
+        const markBalance = balances.get(ticker)?.get(destination) ?? BigInt(0);
+        if (markBalance >= BigInt(minAmount)) {
+          singleDestinationValid = true;
+          break;
+        }
+      }
+
+      // If no single destination can fulfill the invoice, try split intents
+      if (!singleDestinationValid) {
+        logger.info('No single destination can fulfill invoice, trying split intents', {
+          requestId,
+          invoiceId,
+          minAmounts,
+        });
+        
+        const { intents: splitIntents, originDomain, totalAllocated } = await calculateSplitIntents(
+          invoice,
+          minAmounts,
+          config,
+          balances,
+          everclear,
+          logger
+        );
+        
+        // If we have valid split intents, send them with multicall
+        if (splitIntents.length > 0) {
+          try {
+            // TODO: multicall all split intents, sequential for now
+            const intentResults = await sendIntents(
+              splitIntents,
+              { everclear, chainService, logger, cache, prometheus },
+              config,
+            );
+            
+            // Record successful purchases and create purchases for cache
+            const purchases = intentResults.map((result, index) => ({
+              target: invoice,
+              purchase: { intentId: result.intentId, params: splitIntents[index] },
+              transactionHash: result.transactionHash,
+            }));
+            
+            pendingPurchases.push(...purchases);
+            
+            prometheus.recordSuccessfulPurchase({ 
+              ...labels, 
+              destination: 'split_intent',
+            });
+            prometheus.recordInvoicePurchaseDuration(
+              Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp
+            );
+            
+            logger.info('Created new split purchases', {
+              requestId,
+              invoiceId: invoice.intent_id,
+              purchases,
+              splitCount: splitIntents.length,
+              totalAllocated: totalAllocated.toString(),
+              coverage: `${(Number(totalAllocated) * 100 / Number(invoice.amount)).toFixed(2)}%`,
+            });
+            
+            // Break to next invoice once we've made purchases
+            break;
+          } catch (error) {
+            prometheus.recordInvalidPurchase(
+              InvalidPurchaseReasons.TransactionFailed, 
+              { ...labels, destination: 'split_intent' }
+            );
+            logger.error('Failed to submit split purchase transactions', {
+              error,
+              invoiceId: invoice.intent_id,
+              splitCount: splitIntents.length,
+            });
+          }
+        }
       }
 
       // For each invoice destination
