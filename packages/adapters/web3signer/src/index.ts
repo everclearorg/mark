@@ -89,22 +89,22 @@ export class Web3Signer extends Signer {
   public async signTypedData(
     domain: TypedDataDomain,
     types: Record<string, Array<TypedDataField>>,
-    value: Record<string, any>
+    value: Record<string, any>,
   ): Promise<string> {
     // Get the public key/address to sign with
     const identifier = await this.api.getPublicKey();
-    
+
     // Determine the primaryType (the main message type, excluding EIP712Domain)
-    const primaryType = Object.keys(types).find(key => key !== 'EIP712Domain') || '';
-    
+    const primaryType = Object.keys(types).find((key) => key !== 'EIP712Domain') || '';
+
     // Construct the complete typedData object according to EIP-712
     const typedData = {
       types,
       primaryType,
       domain,
-      message: value
+      message: value,
     };
-    
+
     return await this.api.signTypedData(identifier, typedData);
   }
 }

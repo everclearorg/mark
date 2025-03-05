@@ -1,6 +1,12 @@
 import { Logger } from '@mark/logger';
 import { axiosPost, axiosGet } from '@mark/core';
-import { ChainConfiguration, NewIntentParams, TransactionRequest, Invoice, NewIntentWithPermit2Params } from '@mark/core';
+import {
+  ChainConfiguration,
+  NewIntentParams,
+  TransactionRequest,
+  Invoice,
+  NewIntentWithPermit2Params,
+} from '@mark/core';
 
 export interface MinAmountsResponse {
   invoiceAmount: string;
@@ -64,7 +70,7 @@ export interface IntentStatusResponse {
     hub_settlement_domain: string;
     ttl: number;
     destinations: string[];
-  }
+  };
 }
 
 export class EverclearAdapter {
