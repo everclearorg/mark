@@ -1,6 +1,7 @@
-import { Address, PublicClient, WalletClient, parseAbi, maxUint256 } from 'viem';
+import { Address, PublicClient, parseAbi, maxUint256 } from 'viem';
 import { Wallet } from 'ethers';
 import { Web3Signer } from '@mark/web3signer';
+import { ChainService } from '@mark/chainservice';
 
 /**
  * Before using Permit2, Mark needs to perform a one-time approval for each token:
@@ -40,62 +41,56 @@ import { Web3Signer } from '@mark/web3signer';
 export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
 /**
- * Checks if Mark has already approved Permit2 for a specific token
- * 
- * @param tokenAddress The ERC20 token address
- * @param ownerAddress Mark's address
- * @param publicClient viem's PublicClient for reading blockchain data
- * @returns True if Permit2 has sufficient allowance, false otherwise
- */
-export async function hasPermit2Allowance(
-  tokenAddress: Address,
-  ownerAddress: Address,
-  publicClient: PublicClient
-): Promise<boolean> {
-  const erc20Abi = parseAbi([
-    'function allowance(address owner, address spender) view returns (uint256)',
-  ]);
-  
-  const allowance = await publicClient.readContract({
-    address: tokenAddress,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: [ownerAddress, PERMIT2_ADDRESS],
-  });
-  
-  // Check if allowance is sufficient (should be very large for Permit2)
-  // A reasonable threshold might be 2^200 or higher
-  return allowance >= 2n ** 200n;
-}
-
-/**
  * Approves the Permit2 contract to spend tokens on Mark's behalf
  * This is a one-time setup that needs to be done for each token
  * 
  * @param tokenAddress The ERC20 token address
- * @param walletClient viem's WalletClient for sending transactions
+ * @param chainService The ChainService instance
  * @param ownerAddress Mark's address
  * @returns The transaction hash
  */
 export async function approvePermit2(
   tokenAddress: Address,
-  walletClient: WalletClient,
+  chainService: ChainService,
   ownerAddress: Address
-): Promise<`0x${string}`> {
-  const erc20Abi = parseAbi([
-    'function approve(address spender, uint256 amount) returns (bool)',
-  ]);
+): Promise<string> {
+  const chainConfig = Object.entries(chainService['config'].chains).find(
+    ([_, config]: [string, any]) => config.assets?.some((asset: { address: string }) => 
+      asset.address.toLowerCase() === tokenAddress.toLowerCase()
+    )
+  );
   
-  const hash = await walletClient.writeContract({
-    account: ownerAddress,
-    address: tokenAddress,
-    abi: erc20Abi,
-    functionName: 'approve',
-    args: [PERMIT2_ADDRESS, maxUint256],
-    chain: walletClient.chain,
-  });
+  if (!chainConfig) {
+    throw new Error(`Could not find chain configuration for token ${tokenAddress}`);
+  }
   
-  return hash;
+  const chainId = chainConfig[0];
+  
+  const receipt = await chainService.submitAndMonitor(
+    chainId,
+    {
+      to: tokenAddress,
+      data: createApproveTxData(PERMIT2_ADDRESS as Address, maxUint256),
+      value: '0x0',
+    }
+  );
+  
+  return receipt.transactionHash;
+}
+
+// Helper function to create the transaction data for an ERC20 approve call
+function createApproveTxData(spender: Address, amount: bigint): string {
+  const approveSignature = '0x095ea7b3'; // approve(address,uint256)
+  
+  // Pad address to 32 bytes (remove 0x, then pad with leading zeros to 64 chars, then add 0x)
+  const paddedAddress = '0x' + spender.slice(2).padStart(64, '0');
+  
+  // Pad amount to 32 bytes (convert to hex, remove 0x, then pad with leading zeros to 64 chars, then add 0x)
+  const amountHex = amount.toString(16);
+  const paddedAmount = '0x' + amountHex.padStart(64, '0');
+  
+  // Combine the signature and encoded parameters
+  return approveSignature + paddedAddress.slice(2) + paddedAmount.slice(2);
 }
 
 /**
@@ -107,7 +102,6 @@ export async function approvePermit2(
  * @param amount The amount to approve
  * @param nonce The nonce for the permit
  * @param deadline The deadline for the permit
- * @param permit2Address The Permit2 contract address
  * @returns The signature
  */
 export async function getPermit2Signature(
@@ -118,13 +112,12 @@ export async function getPermit2Signature(
   amount: string,
   nonce: string,
   deadline: number,
-  permit2Address: string
 ): Promise<string> {
   // Create the domain for the Permit2 contract
   const domain = {
     name: 'Permit2',
     chainId: chainId,
-    verifyingContract: permit2Address
+    verifyingContract: PERMIT2_ADDRESS
   };
 
   // Define the types for the permit

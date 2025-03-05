@@ -1,6 +1,6 @@
 import { Logger } from '@mark/logger';
 import { axiosPost, axiosGet } from '@mark/core';
-import { ChainConfiguration, NewIntentParams, TransactionRequest, Invoice } from '@mark/core';
+import { ChainConfiguration, NewIntentParams, TransactionRequest, Invoice, NewIntentWithPermit2Params } from '@mark/core';
 
 export interface MinAmountsResponse {
   invoiceAmount: string;
@@ -148,7 +148,7 @@ export class EverclearAdapter {
     // ];
   }
 
-  async createNewIntent(params: NewIntentParams): Promise<TransactionRequest> {
+  async createNewIntent(params: NewIntentParams | NewIntentWithPermit2Params): Promise<TransactionRequest> {
     try {
       const url = `${this.apiUrl}/intents`;
       const { data } = await axiosPost<TransactionRequest>(url, params);
