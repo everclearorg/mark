@@ -2,6 +2,7 @@ import { Address, maxUint256 } from 'viem';
 import { Wallet } from 'ethers';
 import { Web3Signer } from '@mark/web3signer';
 import { ChainService } from '@mark/chainservice';
+import { ChainConfiguration } from '@mark/core';
 
 /**
  * Before using Permit2, Mark needs to perform a one-time approval for each token:
@@ -50,7 +51,8 @@ export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
  * @returns The transaction hash
  */
 export async function approvePermit2(tokenAddress: Address, chainService: ChainService): Promise<string> {
-  const chainConfig = Object.entries(chainService['config'].chains).find(([, config]) =>
+  const chains = chainService['config'].chains as Record<string, ChainConfiguration>;
+  const chainConfig = Object.entries(chains).find(([, config]) =>
     config.assets?.some((asset: { address: string }) => asset.address.toLowerCase() === tokenAddress.toLowerCase()),
   );
 
