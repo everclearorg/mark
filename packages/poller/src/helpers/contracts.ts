@@ -316,6 +316,65 @@ const hubStorageAbi = [
   },
 ];
 
+export const multicallAbi = [
+  {
+    name: 'aggregate3Value',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'calls',
+        type: 'tuple[]',
+        components: [
+          { name: 'target', type: 'address' },
+          { name: 'allowFailure', type: 'bool' },
+          { name: 'value', type: 'uint256' },
+          { name: 'callData', type: 'bytes' }
+        ]
+      }
+    ],
+    outputs: [
+      {
+        name: 'returnData',
+        type: 'tuple[]',
+        components: [
+          { name: 'success', type: 'bool' },
+          { name: 'returnData', type: 'bytes' }
+        ]
+      }
+    ]
+  },
+  {
+    name: 'aggregate3',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'calls',
+        type: 'tuple[]',
+        components: [
+          { name: 'target', type: 'address' },
+          { name: 'allowFailure', type: 'bool' },
+          { name: 'callData', type: 'bytes' }
+        ]
+      }
+    ],
+    outputs: [
+      {
+        name: 'returnData',
+        type: 'tuple[]',
+        components: [
+          { name: 'success', type: 'bool' },
+          { name: 'returnData', type: 'bytes' }
+        ]
+      }
+    ]
+  }
+];
+
+// Multicall3 is deployed at the same address on all chains
+export const MULTICALL_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+
 const HUB_MAINNET_ADDR = '0xa05A3380889115bf313f1Db9d5f335157Be4D816';
 const HUB_TESTNET_ADDR = '0x4C526917051ee1981475BB6c49361B0756F505a8';
 

@@ -1,7 +1,7 @@
 import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
-import { getERC20Contract } from './contracts';
-import { encodeFunctionData, erc20Abi, parseAbi } from 'viem';
+import { getERC20Contract, MULTICALL_ADDRESS, multicallAbi } from './contracts';
+import { encodeFunctionData, erc20Abi } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
   generatePermit2Nonce,
@@ -12,14 +12,6 @@ import {
 } from './permit2';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
-
-// Multicall3 is deployed at the same address on all chains
-export const MULTICALL_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
-
-export const MULTICALL_ABI = parseAbi([
-  'function aggregate3Value(tuple(address target, bool allowFailure, uint256 value, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
-  'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
-]);
 
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required. Takes in the origin-asset batched intents.
@@ -173,7 +165,7 @@ export const prepareMulticall = (
 
     // Encode the multicall function call using aggregate3Value
     calldata = encodeFunctionData({
-      abi: MULTICALL_ABI,
+      abi: multicallAbi,
       functionName: 'aggregate3Value',
       args: [multicallCalls],
     });
@@ -189,7 +181,7 @@ export const prepareMulticall = (
 
     // Encode the multicall function call using aggregate3
     calldata = encodeFunctionData({
-      abi: MULTICALL_ABI,
+      abi: multicallAbi,
       functionName: 'aggregate3',
       args: [multicallCalls],
     });
