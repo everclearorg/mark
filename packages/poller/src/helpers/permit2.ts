@@ -5,10 +5,10 @@ import { ChainService } from '@mark/chainservice';
 
 /**
  * Before using Permit2, Mark needs to perform a one-time approval for each token:
- * 
+ *
  * 1. Mark must approve the Permit2 contract to spend tokens on its behalf.
  *    This is a standard ERC20 approval transaction that needs to happen once per token:
- *    
+ *
  *    // Approve Permit2 for maximum amount (effectively infinite approval)
  *    ```
  *    const tokenContract = getContract({
@@ -21,15 +21,15 @@ import { ChainService } from '@mark/chainservice';
  *      MaxUint256 // 2^256 - 1
  *    ]);
  *    ```
- *    
+ *
  * 2. This approval allows Permit2 to transfer tokens on Mark's behalf when provided
  *    with a valid signature.
- *    
+ *
  * 3. After this approval, Mark can use Permit2 signatures to authorize transfers
  *    without needing additional on-chain approvals.
- *    
+ *
  * 4. The approval is permanent until explicitly revoked by setting the allowance to zero.
- *    
+ *
  * 5. Security considerations:
  *    - Approving Permit2 gives it permission to move tokens, so ensure you're using
  *      the canonical Permit2 contract address (0x000000000022D473030F116dDEE9F6B43aC78BA3)
@@ -43,7 +43,7 @@ export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 /**
  * Approves the Permit2 contract to spend tokens on Mark's behalf
  * This is a one-time setup that needs to be done for each token
- * 
+ *
  * @param tokenAddress The ERC20 token address
  * @param chainService The ChainService instance
  * @param ownerAddress Mark's address
@@ -52,43 +52,38 @@ export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 export async function approvePermit2(
   tokenAddress: Address,
   chainService: ChainService,
-  ownerAddress: Address
+  ownerAddress: Address,
 ): Promise<string> {
-  const chainConfig = Object.entries(chainService['config'].chains).find(
-    ([_, config]: [string, any]) => config.assets?.some((asset: { address: string }) => 
-      asset.address.toLowerCase() === tokenAddress.toLowerCase()
-    )
+  const chainConfig = Object.entries(chainService['config'].chains).find(([_, config]: [string, any]) =>
+    config.assets?.some((asset: { address: string }) => asset.address.toLowerCase() === tokenAddress.toLowerCase()),
   );
-  
+
   if (!chainConfig) {
     throw new Error(`Could not find chain configuration for token ${tokenAddress}`);
   }
-  
+
   const chainId = chainConfig[0];
-  
-  const receipt = await chainService.submitAndMonitor(
-    chainId,
-    {
-      to: tokenAddress,
-      data: createApproveTxData(PERMIT2_ADDRESS as Address, maxUint256),
-      value: '0x0',
-    }
-  );
-  
+
+  const receipt = await chainService.submitAndMonitor(chainId, {
+    to: tokenAddress,
+    data: createApproveTxData(PERMIT2_ADDRESS as Address, maxUint256),
+    value: '0x0',
+  });
+
   return receipt.transactionHash;
 }
 
 // Helper function to create the transaction data for an ERC20 approve call
 function createApproveTxData(spender: Address, amount: bigint): string {
   const approveSignature = '0x095ea7b3'; // approve(address,uint256)
-  
+
   // Pad address to 32 bytes (remove 0x, then pad with leading zeros to 64 chars, then add 0x)
   const paddedAddress = '0x' + spender.slice(2).padStart(64, '0');
-  
+
   // Pad amount to 32 bytes (convert to hex, remove 0x, then pad with leading zeros to 64 chars, then add 0x)
   const amountHex = amount.toString(16);
   const paddedAmount = '0x' + amountHex.padStart(64, '0');
-  
+
   // Combine the signature and encoded parameters
   return approveSignature + paddedAddress.slice(2) + paddedAmount.slice(2);
 }
@@ -117,7 +112,7 @@ export async function getPermit2Signature(
   const domain = {
     name: 'Permit2',
     chainId: chainId,
-    verifyingContract: PERMIT2_ADDRESS
+    verifyingContract: PERMIT2_ADDRESS,
   };
 
   // Define the types for the permit
@@ -125,14 +120,14 @@ export async function getPermit2Signature(
     PermitSingle: [
       { name: 'details', type: 'PermitDetails' },
       { name: 'spender', type: 'address' },
-      { name: 'sigDeadline', type: 'uint256' }
+      { name: 'sigDeadline', type: 'uint256' },
     ],
     PermitDetails: [
       { name: 'token', type: 'address' },
       { name: 'amount', type: 'uint256' },
       { name: 'expiration', type: 'uint256' },
-      { name: 'nonce', type: 'uint256' }
-    ]
+      { name: 'nonce', type: 'uint256' },
+    ],
   };
 
   // Create the permit data
@@ -141,28 +136,20 @@ export async function getPermit2Signature(
       token: token,
       amount: amount,
       expiration: deadline,
-      nonce: nonce
+      nonce: nonce,
     },
     spender: spender,
-    sigDeadline: deadline
+    sigDeadline: deadline,
   };
 
   try {
     // Check if signer is Web3Signer (has signTypedData method)
     if ('signTypedData' in signer && typeof signer.signTypedData === 'function') {
       // Use Web3Signer's signTypedData method
-      return await signer.signTypedData(
-        domain,
-        types,
-        value
-      );
+      return await signer.signTypedData(domain, types, value);
     } else if (signer instanceof Wallet) {
       // Use ethers Wallet's _signTypedData method - allows for local using private key
-      return await signer._signTypedData(
-        domain,
-        types,
-        value
-      );
+      return await signer._signTypedData(domain, types, value);
     } else {
       throw new Error('Signer does not support signTypedData method');
     }
@@ -177,9 +164,7 @@ export async function getPermit2Signature(
  * @returns A unique nonce as a string
  */
 export function generatePermit2Nonce(): string {
-  return BigInt(Date.now())
-    .toString(16)
-    .padStart(16, '0');
+  return BigInt(Date.now()).toString(16).padStart(16, '0');
 }
 
 /**

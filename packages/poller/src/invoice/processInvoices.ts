@@ -214,16 +214,13 @@ export async function processInvoices({
           invoiceId,
           minAmounts,
         });
-        
-        const { intents: splitIntents, originDomain, totalAllocated } = await calculateSplitIntents(
-          invoice,
-          minAmounts,
-          config,
-          balances,
-          everclear,
-          logger
-        );
-        
+
+        const {
+          intents: splitIntents,
+          originDomain,
+          totalAllocated,
+        } = await calculateSplitIntents(invoice, minAmounts, config, balances, everclear, logger);
+
         // If we have valid split intents, send them with multicall
         if (splitIntents.length > 0) {
           try {
@@ -231,43 +228,41 @@ export async function processInvoices({
               splitIntents,
               { everclear, chainService, logger, cache, prometheus, web3Signer },
               config,
-              originDomain
+              originDomain,
             );
-            
+
             // Record successful purchase and create a purchase for cache
             const purchase = {
               target: invoice,
               purchase: { intentId: intentResult.intentId, params: splitIntents[0] },
               transactionHash: intentResult.transactionHash,
             };
-            
+
             pendingPurchases.push(purchase);
-            
-            prometheus.recordSuccessfulPurchase({ 
-              ...labels, 
+
+            prometheus.recordSuccessfulPurchase({
+              ...labels,
               destination: 'split_intent',
             });
-            prometheus.recordInvoicePurchaseDuration(
-              Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp
-            );
-            
+            prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
+
             logger.info('Created new split purchases via multicall', {
               requestId,
               invoiceId: invoice.intent_id,
               purchase,
               totalAmount: invoice.amount,
               totalAllocated: totalAllocated.toString(),
-              coverage: `${(Number(totalAllocated) * 100 / Number(invoice.amount)).toFixed(2)}%`,
+              coverage: `${((Number(totalAllocated) * 100) / Number(invoice.amount)).toFixed(2)}%`,
               transactionHash: intentResult.transactionHash,
             });
-            
+
             // Break to next invoice once we've made purchases
             break;
           } catch (error) {
-            prometheus.recordInvalidPurchase(
-              InvalidPurchaseReasons.TransactionFailed, 
-              { ...labels, destination: 'split_intent' }
-            );
+            prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
+              ...labels,
+              destination: 'split_intent',
+            });
             logger.error('Failed to submit split purchase transactions via multicall', {
               error,
               invoiceId: invoice.intent_id,

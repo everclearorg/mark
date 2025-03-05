@@ -1,9 +1,4 @@
-import {
-  getTokenAddressFromConfig,
-  Invoice,
-  MarkConfiguration,
-  NewIntentParams,
-} from '@mark/core';
+import { getTokenAddressFromConfig, Invoice, MarkConfiguration, NewIntentParams } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { convertHubAmountToLocalDecimals } from './asset';
@@ -28,10 +23,10 @@ async function fetchCustodiedAssets(
   ticker: string,
   domains: string[],
   everclear: EverclearAdapter,
-  logger: Logger
+  logger: Logger,
 ): Promise<Map<string, bigint>> {
   const custodiedAssets = new Map<string, bigint>();
-  
+
   // Fetch custodied assets for each domain using the API
   await Promise.all(
     domains.map(async (domain) => {
@@ -46,9 +41,9 @@ async function fetchCustodiedAssets(
         });
         custodiedAssets.set(domain, BigInt(0));
       }
-    })
+    }),
   );
-  
+
   return custodiedAssets;
 }
 
@@ -66,34 +61,34 @@ function evaluateDomainForOrigin(
     allocations: [],
     totalAllocated: BigInt(0),
   };
-  
+
   // Go through config domains in order
   for (const domain of configDomains) {
     // Skip the origin domain - can't use as a destination
     if (domain === origin) continue;
-    
+
     const available = custodiedAssets.get(domain) ?? BigInt(0);
     if (available <= 0) continue;
-    
+
     // Calculate how much to use from this domain
     const remaining = requiredAmount - allocation.totalAllocated;
     if (remaining <= 0) break;
-    
+
     const amountToAllocate = available < remaining ? available : remaining;
-    
+
     // TODO: min allocation size?
 
     allocation.allocations.push({
       domain,
       amount: amountToAllocate,
     });
-    
+
     allocation.totalAllocated += amountToAllocate;
-    
+
     // If we've allocated enough, break out of the loop
     if (allocation.totalAllocated >= requiredAmount) break;
   }
-  
+
   return allocation;
 }
 
@@ -110,16 +105,16 @@ export async function calculateSplitIntents(
 ): Promise<SplitIntentResult> {
   const ticker = invoice.ticker_hash;
   const totalNeeded = BigInt(invoice.amount);
-  
+
   // Get all domains from config
-  const configDomains = config.supportedSettlementDomains.map(d => d.toString());
-  
+  const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
+
   // Fetch custodied assets for all domains using API
   const allCustodiedAssets = await fetchCustodiedAssets(ticker, configDomains, everclear, logger);
-  
+
   // Evaluate each possible origin domain
   const possibleAllocations: SplitIntentAllocation[] = [];
-  
+
   // First, try the invoice destinations as origins
   for (const origin of Object.keys(minAmounts)) {
     // Check if Mark has balance on this origin
@@ -132,7 +127,7 @@ export async function calculateSplitIntents(
       });
       continue;
     }
-    
+
     // Try allocating with top-N domains first
     const topNAllocation = evaluateDomainForOrigin(
       origin,
@@ -140,28 +135,21 @@ export async function calculateSplitIntents(
       allCustodiedAssets,
       configDomains.slice(0, MAX_DESTINATIONS),
     );
-    
+
     if (topNAllocation.totalAllocated >= totalNeeded) {
       possibleAllocations.push(topNAllocation);
       continue;
     }
-    
+
     // If top-N is not enough, try with all domains
-    const allDomainsAllocation = evaluateDomainForOrigin(
-      origin,
-      totalNeeded,
-      allCustodiedAssets,
-      configDomains,
-    );
-    
+    const allDomainsAllocation = evaluateDomainForOrigin(origin, totalNeeded, allCustodiedAssets, configDomains);
+
     possibleAllocations.push(allDomainsAllocation);
   }
-  
+
   // Find the best allocation (one that covers the most)
-  possibleAllocations.sort((a, b) => 
-    Number(b.totalAllocated - a.totalAllocated)
-  );
-  
+  possibleAllocations.sort((a, b) => Number(b.totalAllocated - a.totalAllocated));
+
   // If no allocations found, return empty result
   if (possibleAllocations.length === 0) {
     logger.info('No valid allocations found for split intent', {
@@ -170,26 +158,24 @@ export async function calculateSplitIntents(
     });
     return { intents: [], originDomain: '', totalAllocated: BigInt(0) };
   }
-  
+
   const bestAllocation = possibleAllocations[0];
-  
+
   logger.info('Best allocation found for split intent', {
     invoice: invoice.intent_id,
     origin: bestAllocation.origin,
     totalAllocated: bestAllocation.totalAllocated.toString(),
     needed: totalNeeded.toString(),
-    coverage: `${(Number(bestAllocation.totalAllocated) * 100 / Number(totalNeeded)).toFixed(2)}%`,
+    coverage: `${((Number(bestAllocation.totalAllocated) * 100) / Number(totalNeeded)).toFixed(2)}%`,
     allocationCount: bestAllocation.allocations.length,
   });
-  
+
   // Generate the intent parameters for each allocation
   const intents: NewIntentParams[] = [];
-  
+
   // Generate destinations array (excluding origin, limited to MAX_DESTINATIONS)
-  const destinations = configDomains
-    .filter(d => d !== bestAllocation.origin)
-    .slice(0, MAX_DESTINATIONS);
-  
+  const destinations = configDomains.filter((d) => d !== bestAllocation.origin).slice(0, MAX_DESTINATIONS);
+
   // Create an intent for each allocation
   for (const { domain, amount } of bestAllocation.allocations) {
     const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config);
@@ -202,28 +188,23 @@ export async function calculateSplitIntents(
       });
       continue;
     }
-    
+
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
       destinations: destinations,
       to: config.ownAddress,
       inputAsset,
-      amount: convertHubAmountToLocalDecimals(
-        amount,
-        inputAsset,
-        bestAllocation.origin,
-        config
-      ).toString(),
+      amount: convertHubAmountToLocalDecimals(amount, inputAsset, bestAllocation.origin, config).toString(),
       callData: '0x',
       maxFee: '0',
     };
-    
+
     intents.push(params);
   }
-  
+
   return {
     intents,
     originDomain: bestAllocation.origin,
     totalAllocated: bestAllocation.totalAllocated,
   };
-} 
+}
