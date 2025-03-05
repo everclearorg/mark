@@ -89,7 +89,7 @@ export class Web3Signer extends Signer {
   public async signTypedData(
     domain: TypedDataDomain,
     types: Record<string, Array<TypedDataField>>,
-    value: Record<string, any>,
+    value: Record<string, unknown>,
   ): Promise<string> {
     // Get the public key/address to sign with
     const identifier = await this.api.getPublicKey();
@@ -101,8 +101,8 @@ export class Web3Signer extends Signer {
     const typedData = {
       types,
       primaryType,
-      domain,
-      message: value,
+      domain: domain as unknown as Record<string, string>,
+      message: value as unknown as Record<string, string>,
     };
 
     return await this.api.signTypedData(identifier, typedData);

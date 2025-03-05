@@ -1,4 +1,4 @@
-import { Address, PublicClient, parseAbi, maxUint256 } from 'viem';
+import { Address, maxUint256 } from 'viem';
 import { Wallet } from 'ethers';
 import { Web3Signer } from '@mark/web3signer';
 import { ChainService } from '@mark/chainservice';
@@ -49,12 +49,8 @@ export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
  * @param ownerAddress Mark's address
  * @returns The transaction hash
  */
-export async function approvePermit2(
-  tokenAddress: Address,
-  chainService: ChainService,
-  ownerAddress: Address,
-): Promise<string> {
-  const chainConfig = Object.entries(chainService['config'].chains).find(([_, config]: [string, any]) =>
+export async function approvePermit2(tokenAddress: Address, chainService: ChainService): Promise<string> {
+  const chainConfig = Object.entries(chainService['config'].chains).find(([, config]) =>
     config.assets?.some((asset: { address: string }) => asset.address.toLowerCase() === tokenAddress.toLowerCase()),
   );
 

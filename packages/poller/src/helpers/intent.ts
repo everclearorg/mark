@@ -243,8 +243,6 @@ export const sendIntentsMulticall = async (
   try {
     // Check Permit2 allowances for each token
     for (const tokenAddress of uniqueTokens) {
-      const markAddress = intents[0].to;
-
       try {
         // Check if Mark already has sufficient allowance for Permit2
         const tokenContract = await getERC20Contract(config, chainId, tokenAddress as `0x${string}`);
@@ -255,7 +253,7 @@ export const sendIntentsMulticall = async (
         if (hasAllowance) continue;
 
         // If not approved yet, set infinite approve on Permit2
-        await approvePermit2(tokenAddress as `0x${string}`, chainService, markAddress as `0x${string}`);
+        await approvePermit2(tokenAddress as `0x${string}`, chainService);
 
         logger.info('Successfully signed and submitted Permit2 approval', {
           tokenAddress,

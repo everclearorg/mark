@@ -46,8 +46,8 @@ export class Web3SignerApi {
     typedData: {
       types: Record<string, Array<{ name: string; type: string }>>;
       primaryType: string;
-      domain: Record<string, any>;
-      message: Record<string, any>;
+      domain: Record<string, string>;
+      message: Record<string, string>;
     },
   ): Promise<string> {
     const payload = {
