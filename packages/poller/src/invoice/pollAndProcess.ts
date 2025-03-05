@@ -5,6 +5,8 @@ import { EverclearAdapter } from '@mark/everclear';
 import { Logger } from '@mark/logger';
 import { processInvoices } from './processInvoices';
 import { PurchaseCache } from '@mark/cache';
+import { Web3Signer } from '@mark/web3signer';
+import { Wallet } from 'ethers';
 
 export interface ProcessInvoicesDependencies {
   everclear: EverclearAdapter;
@@ -12,10 +14,11 @@ export interface ProcessInvoicesDependencies {
   logger: Logger;
   cache: PurchaseCache;
   prometheus: PrometheusAdapter;
+  web3Signer: Web3Signer | Wallet;
 }
 
 export async function pollAndProcess(config: MarkConfiguration, deps: ProcessInvoicesDependencies): Promise<void> {
-  const { everclear, logger, chainService, cache, prometheus } = deps;
+  const { everclear, logger, chainService, cache, prometheus, web3Signer } = deps;
 
   try {
     const invoices = await everclear.fetchInvoices(config.chains);
@@ -27,6 +30,7 @@ export async function pollAndProcess(config: MarkConfiguration, deps: ProcessInv
       cache,
       prometheus,
       config,
+      web3Signer,
     });
   } catch (_error: unknown) {
     const error = _error as Error;

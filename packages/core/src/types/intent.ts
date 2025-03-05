@@ -8,6 +8,23 @@ export interface NewIntentParams {
   maxFee: string | number;
 }
 
+export interface Permit2Params {
+  nonce: string | number;
+  deadline: string | number;
+  signature: string;
+}
+
+export interface NewIntentWithPermit2Params {
+  origin: string;
+  destinations: string[];
+  to: string;
+  inputAsset: string;
+  amount: string | number;
+  callData: string;
+  maxFee: string | number;
+  permit2Params: Permit2Params;
+}
+
 export interface Invoice {
   amount: string;
   intent_id: string;

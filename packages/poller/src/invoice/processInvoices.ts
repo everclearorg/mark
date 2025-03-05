@@ -19,9 +19,12 @@ import {
   sendIntents,
   isXerc20Supported,
   calculateSplitIntents,
+  sendIntentsMulticall,
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { ChainService } from '@mark/chainservice';
+import { Web3Signer } from '@mark/web3signer';
+import { Wallet } from 'ethers';
 
 interface ProcessInvoicesParams {
   invoices: Invoice[];
@@ -31,6 +34,7 @@ interface ProcessInvoicesParams {
   chainService: ChainService;
   prometheus: PrometheusAdapter;
   config: MarkConfiguration;
+  web3Signer: Web3Signer | Wallet;
 }
 
 export const MAX_DESTINATIONS = 7; // enforced onchain at 10, we only want first 7 in our config
@@ -43,6 +47,7 @@ export async function processInvoices({
   logger,
   prometheus,
   config,
+  web3Signer,
 }: ProcessInvoicesParams): Promise<void> {
   const requestId = hexlify(randomBytes(32));
   logger.info('Starting invoice processing', {
@@ -222,21 +227,21 @@ export async function processInvoices({
         // If we have valid split intents, send them with multicall
         if (splitIntents.length > 0) {
           try {
-            // TODO: multicall all split intents, sequential for now
-            const intentResults = await sendIntents(
+            const intentResult = await sendIntentsMulticall(
               splitIntents,
-              { everclear, chainService, logger, cache, prometheus },
+              { everclear, chainService, logger, cache, prometheus, web3Signer },
               config,
+              originDomain
             );
             
-            // Record successful purchases and create purchases for cache
-            const purchases = intentResults.map((result, index) => ({
+            // Record successful purchase and create a purchase for cache
+            const purchase = {
               target: invoice,
-              purchase: { intentId: result.intentId, params: splitIntents[index] },
-              transactionHash: result.transactionHash,
-            }));
+              purchase: { intentId: intentResult.intentId, params: splitIntents[0] },
+              transactionHash: intentResult.transactionHash,
+            };
             
-            pendingPurchases.push(...purchases);
+            pendingPurchases.push(purchase);
             
             prometheus.recordSuccessfulPurchase({ 
               ...labels, 
@@ -246,13 +251,14 @@ export async function processInvoices({
               Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp
             );
             
-            logger.info('Created new split purchases', {
+            logger.info('Created new split purchases via multicall', {
               requestId,
               invoiceId: invoice.intent_id,
-              purchases,
-              splitCount: splitIntents.length,
+              purchase,
+              totalAmount: invoice.amount,
               totalAllocated: totalAllocated.toString(),
               coverage: `${(Number(totalAllocated) * 100 / Number(invoice.amount)).toFixed(2)}%`,
+              transactionHash: intentResult.transactionHash,
             });
             
             // Break to next invoice once we've made purchases
@@ -262,7 +268,7 @@ export async function processInvoices({
               InvalidPurchaseReasons.TransactionFailed, 
               { ...labels, destination: 'split_intent' }
             );
-            logger.error('Failed to submit split purchase transactions', {
+            logger.error('Failed to submit split purchase transactions via multicall', {
               error,
               invoiceId: invoice.intent_id,
               splitCount: splitIntents.length,
@@ -349,7 +355,7 @@ export async function processInvoices({
         try {
           const [{ transactionHash, intentId }] = await sendIntents(
             [params],
-            { everclear, chainService, logger, cache, prometheus },
+            { everclear, chainService, logger, cache, prometheus, web3Signer },
             config,
           );
           prometheus.recordSuccessfulPurchase({ ...labels, destination });
