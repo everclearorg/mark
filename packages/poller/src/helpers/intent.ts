@@ -1,6 +1,6 @@
 import { MarkConfiguration, NewIntentParams } from '@mark/core';
 import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
-import { getERC20Contract, MULTICALL_ADDRESS, multicallAbi } from './contracts';
+import { getERC20Contract } from './contracts';
 import { encodeFunctionData, erc20Abi } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
@@ -10,6 +10,7 @@ import {
   approvePermit2,
   PERMIT2_ADDRESS,
 } from './permit2';
+import { prepareMulticall } from './multicall';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 
@@ -126,72 +127,6 @@ export const sendIntents = async (
     });
     throw new Error(`Failed to send intents: ${error.message || err}`);
   }
-};
-
-/**
- * Prepares a multicall transaction to batch multiple intent creation calls
- * @param calls - Array of transaction data objects from createNewIntent calls
- * @param sendValues - Whether the calls include ETH values
- * @returns The multicall transaction data
- */
-export const prepareMulticall = (
-  calls: Array<{
-    to: string;
-    data: string;
-    value?: string;
-  }>,
-  sendValues = false,
-): {
-  to: string;
-  data: string;
-  value?: string;
-} => {
-  let calldata: string;
-  let totalValue = BigInt(0);
-
-  if (sendValues) {
-    // Format the calls for the multicall contract with values
-    const multicallCalls = calls.map((call) => {
-      const value = BigInt(call.value || '0');
-      totalValue += value;
-
-      return {
-        target: call.to as `0x${string}`,
-        allowFailure: false,
-        value: value,
-        callData: call.data as `0x${string}`,
-      };
-    });
-
-    // Encode the multicall function call using aggregate3Value
-    calldata = encodeFunctionData({
-      abi: multicallAbi,
-      functionName: 'aggregate3Value',
-      args: [multicallCalls],
-    });
-  } else {
-    // Format the calls for the multicall contract without values
-    const multicallCalls = calls.map((call) => {
-      return {
-        target: call.to as `0x${string}`,
-        allowFailure: false,
-        callData: call.data as `0x${string}`,
-      };
-    });
-
-    // Encode the multicall function call using aggregate3
-    calldata = encodeFunctionData({
-      abi: multicallAbi,
-      functionName: 'aggregate3',
-      args: [multicallCalls],
-    });
-  }
-
-  return {
-    to: MULTICALL_ADDRESS,
-    data: calldata,
-    value: totalValue.toString(),
-  };
 };
 
 /**
