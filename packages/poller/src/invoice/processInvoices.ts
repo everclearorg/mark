@@ -1,10 +1,4 @@
-import {
-  getTokenAddressFromConfig,
-  InvalidPurchaseReasons,
-  Invoice,
-  MarkConfiguration,
-  NewIntentParams,
-} from '@mark/core';
+import { InvalidPurchaseReasons, Invoice, MarkConfiguration } from '@mark/core';
 import { PurchaseCache } from '@mark/cache';
 import { jsonifyError, jsonifyMap, Logger } from '@mark/logger';
 import { EverclearAdapter, IntentStatus } from '@mark/everclear';
@@ -15,7 +9,6 @@ import {
   logBalanceThresholds,
   getMarkGasBalances,
   logGasThresholds,
-  convertHubAmountToLocalDecimals,
   sendIntents,
   isXerc20Supported,
   calculateSplitIntents,
@@ -198,11 +191,14 @@ export async function processInvoices({
       }
 
       // Calculate optimal intents to fire using split intents calc
-      const {
-        intents,
-        originDomain,
-        totalAllocated,
-      } = await calculateSplitIntents(invoice, minAmounts, config, balances, everclear, logger);
+      const { intents, originDomain, totalAllocated } = await calculateSplitIntents(
+        invoice,
+        minAmounts,
+        config,
+        balances,
+        everclear,
+        logger,
+      );
 
       if (intents.length === 0) {
         logger.info('No valid intents can be generated for invoice', {
@@ -218,7 +214,7 @@ export async function processInvoices({
 
       try {
         let intentResult;
-        
+
         // Send intent transactions appropriately
         if (intents.length === 1) {
           // Single intent
@@ -271,13 +267,16 @@ export async function processInvoices({
           ...labels,
           destination: originDomain,
         });
-        logger.error(`Failed to submit ${intents.length > 1 ? 'split ' : ''}purchase transaction${intents.length > 1 ? 's' : ''}`, {
-          error: jsonifyError(error),
-          invoiceId: invoice.intent_id,
-          intentCount: intents.length,
-          originDomain,
-        });
-        
+        logger.error(
+          `Failed to submit ${intents.length > 1 ? 'split ' : ''}purchase transaction${intents.length > 1 ? 's' : ''}`,
+          {
+            error: jsonifyError(error),
+            invoiceId: invoice.intent_id,
+            intentCount: intents.length,
+            originDomain,
+          },
+        );
+
         // Continue to next invoice if this one failed
         continue;
       }

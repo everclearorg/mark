@@ -60,13 +60,13 @@ export async function approvePermit2(tokenAddress: Address, chainService: ChainS
   }
 
   const chainId = chainConfig[0];
-  
+
   const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: 'approve',
-    args: [PERMIT2_ADDRESS as Address, maxUint256]
+    args: [PERMIT2_ADDRESS as Address, maxUint256],
   });
-  
+
   const receipt = await chainService.submitAndMonitor(chainId, {
     to: tokenAddress,
     data: data,
