@@ -1,10 +1,13 @@
 import { expect } from 'chai';
 import { stub, SinonStubbedInstance, createStubInstance, SinonStub } from 'sinon';
+import sinon from 'sinon';
 import { processInvoices } from '../../src/invoice/processInvoices';
 import { MarkConfiguration, Invoice, NewIntentParams, InvalidPurchaseReasons } from '@mark/core';
-import { PurchaseCache, PurchaseAction, } from '@mark/cache';
+import { PurchaseCache, PurchaseAction } from '@mark/cache';
 import { Logger } from '@mark/logger';
-import { EverclearAdapter, MinAmountsResponse } from '@mark/everclear';
+import { EverclearAdapter, MinAmountsResponse, IntentStatus } from '@mark/everclear';
+import { Web3Signer } from '@mark/web3signer';
+import { Wallet } from '@ethersproject/wallet';
 import { ChainService } from '@mark/chainservice';
 import { InvoiceLabels, PrometheusAdapter } from '@mark/prometheus';
 import * as balanceHelpers from '../../src/helpers/balance';
@@ -100,6 +103,8 @@ describe('processInvoices', () => {
     let everclear: SinonStubbedInstance<EverclearAdapter>;
     let chainService: SinonStubbedInstance<ChainService>;
     let prometheus: SinonStubbedInstance<PrometheusAdapter>;
+    let web3Signer: SinonStubbedInstance<Web3Signer>;
+    let typedWeb3Signer: Web3Signer & Wallet;
     let markBalanceStub: SinonStub;
 
     beforeEach(() => {
@@ -108,6 +113,8 @@ describe('processInvoices', () => {
         everclear = createStubInstance(EverclearAdapter);
         chainService = createStubInstance(ChainService);
         prometheus = createStubInstance(PrometheusAdapter);
+        web3Signer = createStubInstance(Web3Signer);
+        typedWeb3Signer = web3Signer as unknown as Web3Signer & Wallet;
 
         // Setup default stubs
         cache.getAllPurchases.resolves([]);
@@ -121,6 +128,8 @@ describe('processInvoices', () => {
         prometheus.recordSuccessfulPurchase.resolves();
 
         // Setup everclear stubs
+        everclear.getMinAmounts.resolves(validMinApiResponse);
+        everclear.intentStatus.resolves(IntentStatus.ADDED);
         everclear.createNewIntent.resolves({
             to: '0xdestination',
             data: '0xdata',
@@ -134,14 +143,26 @@ describe('processInvoices', () => {
                 ['8453', BigInt('0')]
             ])]
         ]));
+        
         stub(balanceHelpers, 'getMarkGasBalances').resolves(new Map([
             ['1', BigInt('1000000000000000000')],
             ['8453', BigInt('0')]
         ]));
-        stub(intentHelpers, 'sendIntents').resolves([{ transactionHash: '0xtx', chainId: '1', intentId: '0xintent' }]);
+        
+        stub(intentHelpers, 'sendIntents').resolves([{ 
+            transactionHash: '0xtx', 
+            chainId: '1', 
+            intentId: '0xintent'
+        }]);
+        
         stub(assetHelpers, 'isXerc20Supported').resolves(false);
+        stub(assetHelpers, 'getTickers').returns(['0xtickerhash']);
         stub(monitorHelpers, 'logBalanceThresholds').returns();
         stub(monitorHelpers, 'logGasThresholds').returns();
+    });
+
+    afterEach(() => {
+        sinon.restore();
     });
 
     it('should process a valid invoice and create a purchase', async () => {
@@ -154,7 +175,8 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
         expect(cache.addPurchases.calledOnce).to.be.true;
         const purchases = cache.addPurchases.firstCall.args[0];
@@ -183,7 +205,8 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
 
         expect(everclear.getMinAmounts.called).to.be.false;
@@ -209,13 +232,13 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
 
         expect((intentHelpers.sendIntents as SinonStub).called).to.be.false;
         expect(everclear.getMinAmounts.called).to.be.false;
         expect(chainService.submitAndMonitor.called).to.be.false;
-        expect((intentHelpers.sendIntents as SinonStub).called).to.be.false;
         expect(cache.addPurchases.called).to.be.false;
         // Does record as a possible invoice w.failure reason
         expect(prometheus.recordPossibleInvoice.calledOnceWith(labels)).to.be.true;
@@ -237,7 +260,8 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
 
         expect(everclear.getMinAmounts.called).to.be.true;
@@ -265,7 +289,8 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
 
         // Should only process the older invoice
@@ -308,7 +333,8 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
 
         // Should only process the older invoice
@@ -336,7 +362,8 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
 
         expect(logger.error.called).to.be.true;
@@ -384,7 +411,8 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
 
         // Verify a purchase was created
@@ -395,7 +423,7 @@ describe('processInvoices', () => {
         expect(purchases[0].purchase.params.origin).to.equal('8453'); // Should use second destination
         expect(purchases[0].transactionHash).to.equal('0xtx');
         expect(prometheus.recordPossibleInvoice.callCount).to.be.eq(1);
-        expect(prometheus.recordSuccessfulPurchase.calledOnceWith({ ...labels, destination: '8453' }))
+        expect(prometheus.recordSuccessfulPurchase.calledOnceWith({ ...labels, destination: '8453' }));
         expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.InsufficientBalance, { ...labels, destination: '1' })).to.be.true;
     });
 
@@ -417,7 +445,8 @@ describe('processInvoices', () => {
             everclear,
             chainService,
             prometheus,
-            config: validConfig
+            config: validConfig,
+            web3Signer: typedWeb3Signer
         });
 
         expect(cache.removePurchases.calledOnce).to.be.true;
@@ -453,7 +482,8 @@ describe('processInvoices', () => {
                 everclear,
                 chainService,
                 prometheus,
-                config: invalidConfig
+                config: invalidConfig,
+                web3Signer: typedWeb3Signer
             });
             expect.fail('Should have thrown an error');
         } catch (error: any) {
@@ -475,7 +505,8 @@ describe('processInvoices', () => {
                 everclear,
                 chainService,
                 prometheus,
-                config: validConfig
+                config: validConfig,
+                web3Signer: typedWeb3Signer
             });
             expect.fail('Should have thrown an error');
         } catch (error: any) {
