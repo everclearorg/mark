@@ -197,188 +197,89 @@ export async function processInvoices({
         minAmounts = Object.fromEntries(invoice.destinations.map((d) => [d, '0']));
       }
 
-      // Check if we can process with a single destination
-      let singleDestinationValid = false;
-      for (const [destination, minAmount] of Object.entries(minAmounts)) {
-        const markBalance = balances.get(ticker)?.get(destination) ?? BigInt(0);
-        if (markBalance >= BigInt(minAmount)) {
-          singleDestinationValid = true;
-          break;
-        }
-      }
+      // Calculate optimal intents to fire using split intents calc
+      const {
+        intents,
+        originDomain,
+        totalAllocated,
+      } = await calculateSplitIntents(invoice, minAmounts, config, balances, everclear, logger);
 
-      // If no single destination can fulfill the invoice, try split intents
-      if (!singleDestinationValid) {
-        logger.info('No single destination can fulfill invoice, trying split intents', {
+      if (intents.length === 0) {
+        logger.info('No valid intents can be generated for invoice', {
           requestId,
           invoiceId,
           minAmounts,
         });
-
-        const {
-          intents: splitIntents,
-          originDomain,
-          totalAllocated,
-        } = await calculateSplitIntents(invoice, minAmounts, config, balances, everclear, logger);
-
-        // If we have valid split intents, send them with multicall
-        if (splitIntents.length > 0) {
-          try {
-            const intentResult = await sendIntentsMulticall(
-              splitIntents,
-              { everclear, chainService, logger, cache, prometheus, web3Signer },
-              config,
-              originDomain,
-            );
-
-            // Record successful purchase and create a purchase for cache
-            const purchase = {
-              target: invoice,
-              purchase: { intentId: intentResult.intentId, params: splitIntents[0] },
-              transactionHash: intentResult.transactionHash,
-            };
-
-            pendingPurchases.push(purchase);
-
-            prometheus.recordSuccessfulPurchase({
-              ...labels,
-              destination: 'split_intent',
-            });
-            prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
-
-            logger.info('Created new split purchases via multicall', {
-              requestId,
-              invoiceId: invoice.intent_id,
-              purchase,
-              totalAmount: invoice.amount,
-              totalAllocated: totalAllocated.toString(),
-              coverage: `${((Number(totalAllocated) * 100) / Number(invoice.amount)).toFixed(2)}%`,
-              transactionHash: intentResult.transactionHash,
-            });
-
-            // Break to next invoice once we've made purchases
-            break;
-          } catch (error) {
-            prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
-              ...labels,
-              destination: 'split_intent',
-            });
-            logger.error('Failed to submit split purchase transactions via multicall', {
-              error,
-              invoiceId: invoice.intent_id,
-              splitCount: splitIntents.length,
-            });
-          }
-        }
+        // Record insufficient balance as the reason since calculateSplitIntents returned no intents
+        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.InsufficientBalance, labels);
+        // Skip to next invoice
+        continue;
       }
 
-      // For each invoice destination
-      for (const [destination, minAmount] of Object.entries(minAmounts)) {
-        if (BigInt(minAmount) <= 0) {
-          logger.error('Min amount is <= 0, API error.', {
-            requestId,
-            invoiceId,
-            destination,
-            minAmount,
-          });
-          continue;
-        }
-        // If there is already a purchase created or pending with this existing destination-ticker
-        // combo, we are impacting the custodied assets and invalidating the minAmounts for subsequent
-        // intents in the queue, so exit ticker-domain.
-        const existing = pendingPurchases.filter(
-          (action) => action.target.ticker_hash === ticker && action.purchase.params.origin === destination,
-        );
-        if (existing.length > 0) {
-          logger.info('Action exists for destination-ticker combo', {
-            requestId,
-            invoiceId,
-            existingCount: existing.length,
-            existing,
-          });
-          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, labels);
-          continue;
-        }
-
-        // Check if we have sufficient balance. If not, check other destinations.
-        const markBalance = balances.get(ticker)?.get(destination) ?? BigInt(0);
-        if (markBalance < BigInt(minAmount)) {
-          logger.debug('Insufficient balance for destination', {
-            requestId,
-            invoiceId,
-            destination,
-            required: minAmount,
-            available: markBalance.toString(),
-          });
-          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.InsufficientBalance, { ...labels, destination });
-          continue;
-        }
-
-        // Create purchase parameters
-        const inputAsset = getTokenAddressFromConfig(ticker, destination, config);
-        if (!inputAsset) {
-          logger.error('No input asset found', { requestId, invoiceId, ticker, destination, config });
-          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.InvalidTokenConfiguration, {
-            ...labels,
-            destination,
-          });
-          throw new Error(`No input asset found for ticker (${ticker}) and domain (${destination}) in config.`);
-        }
-        const params: NewIntentParams = {
-          origin: destination,
-          destinations: [
-            ...config.supportedSettlementDomains
-              .filter((domain) => domain.toString() !== destination)
-              .map((s) => s.toString())
-              .slice(0, MAX_DESTINATIONS),
-            invoice.origin,
-          ],
-          to: config.ownAddress,
-          inputAsset,
-          amount: convertHubAmountToLocalDecimals(BigInt(minAmount), inputAsset, destination, config).toString(),
-          callData: '0x',
-          maxFee: '0',
-        };
-        logger.debug('Created new intent params for purchase', {
-          requestId,
-          invoiceId,
-          params,
-          minAmount,
-          destination,
-        });
-
-        try {
-          const [{ transactionHash, intentId }] = await sendIntents(
-            [params],
+      try {
+        let intentResult;
+        
+        // Send intent transactions appropriately
+        if (intents.length === 1) {
+          // Single intent
+          [intentResult] = await sendIntents(
+            intents,
             { everclear, chainService, logger, cache, prometheus, web3Signer },
             config,
           );
-          prometheus.recordSuccessfulPurchase({ ...labels, destination });
-          prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
-
-          const purchase = {
-            target: invoice,
-            purchase: { intentId, params },
-            transactionHash,
-          };
-          pendingPurchases.push(purchase);
-
-          logger.info('Created new purchase', {
-            requestId,
-            invoiceId: invoice.intent_id,
-            purchase,
-          });
-
-          // Break to next invoice once we've made a purchase
-          break;
-        } catch (error) {
-          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, { ...labels, destination });
-          logger.error('Failed to submit purchase transaction', {
-            error,
-            invoiceId: invoice.intent_id,
-            destination,
-          });
+        } else {
+          // Multiple intents
+          intentResult = await sendIntentsMulticall(
+            intents,
+            { everclear, chainService, logger, cache, prometheus, web3Signer },
+            config,
+            originDomain,
+          );
         }
+
+        // Record successful purchase and create a purchase for cache
+        const purchase = {
+          target: invoice,
+          purchase: { intentId: intentResult.intentId, params: intents[0] },
+          transactionHash: intentResult.transactionHash,
+        };
+
+        pendingPurchases.push(purchase);
+
+        // Record metrics
+        prometheus.recordSuccessfulPurchase({
+          ...labels,
+          destination: originDomain,
+        });
+        prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
+
+        logger.info(`Created new ${intents.length > 1 ? 'split ' : ''}purchase`, {
+          requestId,
+          invoiceId: invoice.intent_id,
+          purchase,
+          totalAmount: invoice.amount,
+          totalAllocated: totalAllocated.toString(),
+          intentCount: intents.length,
+          coverage: `${((Number(totalAllocated) * 100) / Number(invoice.amount)).toFixed(2)}%`,
+          transactionHash: intentResult.transactionHash,
+        });
+
+        // Break to next invoice once we've made a successful purchase
+        break;
+      } catch (error) {
+        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
+          ...labels,
+          destination: originDomain,
+        });
+        logger.error(`Failed to submit ${intents.length > 1 ? 'split ' : ''}purchase transaction${intents.length > 1 ? 's' : ''}`, {
+          error: jsonifyError(error),
+          invoiceId: invoice.intent_id,
+          intentCount: intents.length,
+          originDomain,
+        });
+        
+        // Continue to next invoice if this one failed
+        continue;
       }
     }
   }
