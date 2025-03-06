@@ -1,4 +1,4 @@
-import { Address, maxUint256 } from 'viem';
+import { Address, maxUint256, encodeFunctionData, erc20Abi } from 'viem';
 import { Wallet } from 'ethers';
 import { Web3Signer } from '@mark/web3signer';
 import { ChainService } from '@mark/chainservice';
@@ -47,7 +47,6 @@ export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
  *
  * @param tokenAddress The ERC20 token address
  * @param chainService The ChainService instance
- * @param ownerAddress Mark's address
  * @returns The transaction hash
  */
 export async function approvePermit2(tokenAddress: Address, chainService: ChainService): Promise<string> {
@@ -61,29 +60,20 @@ export async function approvePermit2(tokenAddress: Address, chainService: ChainS
   }
 
   const chainId = chainConfig[0];
-
+  
+  const data = encodeFunctionData({
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [PERMIT2_ADDRESS as Address, maxUint256]
+  });
+  
   const receipt = await chainService.submitAndMonitor(chainId, {
     to: tokenAddress,
-    data: createApproveTxData(PERMIT2_ADDRESS as Address, maxUint256),
+    data: data,
     value: '0x0',
   });
 
   return receipt.transactionHash;
-}
-
-// Helper function to create the transaction data for an ERC20 approve call
-function createApproveTxData(spender: Address, amount: bigint): string {
-  const approveSignature = '0x095ea7b3'; // approve(address,uint256)
-
-  // Pad address to 32 bytes (remove 0x, then pad with leading zeros to 64 chars, then add 0x)
-  const paddedAddress = '0x' + spender.slice(2).padStart(64, '0');
-
-  // Pad amount to 32 bytes (convert to hex, remove 0x, then pad with leading zeros to 64 chars, then add 0x)
-  const amountHex = amount.toString(16);
-  const paddedAmount = '0x' + amountHex.padStart(64, '0');
-
-  // Combine the signature and encoded parameters
-  return approveSignature + paddedAddress.slice(2) + paddedAmount.slice(2);
 }
 
 /**
