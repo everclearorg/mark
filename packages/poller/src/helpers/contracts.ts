@@ -329,9 +329,9 @@ export const multicallAbi = [
           { name: 'target', type: 'address' },
           { name: 'allowFailure', type: 'bool' },
           { name: 'value', type: 'uint256' },
-          { name: 'callData', type: 'bytes' }
-        ]
-      }
+          { name: 'callData', type: 'bytes' },
+        ],
+      },
     ],
     outputs: [
       {
@@ -339,10 +339,10 @@ export const multicallAbi = [
         type: 'tuple[]',
         components: [
           { name: 'success', type: 'bool' },
-          { name: 'returnData', type: 'bytes' }
-        ]
-      }
-    ]
+          { name: 'returnData', type: 'bytes' },
+        ],
+      },
+    ],
   },
   {
     name: 'aggregate3',
@@ -355,9 +355,9 @@ export const multicallAbi = [
         components: [
           { name: 'target', type: 'address' },
           { name: 'allowFailure', type: 'bool' },
-          { name: 'callData', type: 'bytes' }
-        ]
-      }
+          { name: 'callData', type: 'bytes' },
+        ],
+      },
     ],
     outputs: [
       {
@@ -365,11 +365,11 @@ export const multicallAbi = [
         type: 'tuple[]',
         components: [
           { name: 'success', type: 'bool' },
-          { name: 'returnData', type: 'bytes' }
-        ]
-      }
-    ]
-  }
+          { name: 'returnData', type: 'bytes' },
+        ],
+      },
+    ],
+  },
 ];
 
 // Multicall3 is deployed at the same address on all chains
