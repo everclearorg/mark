@@ -112,23 +112,25 @@ export async function calculateSplitIntents(
     }
 
     // If top-N is not enough, try with all domains
+    // NOTE: This is unconditionally added as a possible allocation. This is deliberate
+    //       because Mark should settle the invoice regardless if liquidity can cover his intent. 
     const allDomainsAllocation = evaluateDomainForOrigin(origin, totalNeeded, allCustodiedAssets, configDomains);
 
     possibleAllocations.push(allDomainsAllocation);
   }
 
-  // Find the best allocation (one that covers the most)
-  possibleAllocations.sort((a, b) => Number(b.totalAllocated - a.totalAllocated));
-
   // If no allocations found, return empty result
+  // This means there were no origins where Mark had enough balance
   if (possibleAllocations.length === 0) {
-    logger.info('No valid allocations found for split intent', {
+    logger.info('No origins where Mark had enough balance', {
       invoice: invoice.intent_id,
       ticker,
     });
     return { intents: [], originDomain: '', totalAllocated: BigInt(0) };
   }
 
+  // Find the best allocation (one that covers the most)
+  possibleAllocations.sort((a, b) => Number(b.totalAllocated - a.totalAllocated));
   const bestAllocation = possibleAllocations[0];
 
   logger.info('Best allocation found for split intent', {

@@ -152,7 +152,7 @@ describe('Split Intent Helper Functions', () => {
         ['WETH', new Map([
           ['1', BigInt('0')], // 0 WETH on Ethereum
           ['10', BigInt('0')], // 0 WETH on Optimism
-          ['8453', BigInt('100000000000000000000')], // 100 WETH on Base
+          ['8453', BigInt('100000000000000000000')], // 100 WETH on Base (will be origin)
           ['42161', BigInt('0')], // 0 WETH on Arbitrum
         ])],
       ]);
@@ -185,7 +185,7 @@ describe('Split Intent Helper Functions', () => {
       expect(result.intents.length).to.equal(2);
 
       // Verify the intent that allocates to destination 1
-      const intentFor1 = result.intents[0]; // First intent with 60 WETH
+      const intentFor1 = result.intents[0]; // First intent with 50 WETH
       expect(intentFor1?.origin).to.equal('8453');
       expect(intentFor1?.destinations).to.include('1');
       expect(intentFor1?.destinations).to.include('42161');
@@ -193,7 +193,7 @@ describe('Split Intent Helper Functions', () => {
       expect(intentFor1?.amount).to.equal('50000000000000000000');
       
       // Verify the intent that allocates to destination 42161
-      const intentFor42161 = result.intents[1]; // Second intent with 40 WETH
+      const intentFor42161 = result.intents[1]; // Second intent with 50 WETH
       expect(intentFor42161?.origin).to.equal('8453');
       expect(intentFor42161?.destinations).to.include('1');
       expect(intentFor42161?.destinations).to.include('42161');
@@ -206,7 +206,7 @@ describe('Split Intent Helper Functions', () => {
         intent_id: '0xinvoice-a',
         origin: '1',
         destinations: ['10', '8453'],
-        amount: '200000000000000000000', // 200 WETH (more than available)
+        amount: '200000000000000000000', // 200 WETH
         ticker_hash: 'WETH',
         owner: '0xowner',
         hub_invoice_enqueued_timestamp: 1234567890,
