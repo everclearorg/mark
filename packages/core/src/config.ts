@@ -10,6 +10,8 @@ import {
   HubConfig,
 } from './types/config';
 import { LogLevel } from './types/logging';
+import { getSsmParameter } from './ssm';
+import { existsSync, readFileSync } from 'fs';
 
 config();
 
@@ -29,6 +31,8 @@ export const DEFAULT_INVOICE_AGE = '600';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
 export const EVERCLEAR_TESTNET_CONFIG_URL =
   'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
+export const EVERCLEAR_MAINNET_API_URL = 'https://api.everclear.org';
+export const EVERCLEAR_TESTNET_API_URL = 'https://api.testnet.everclear.org';
 
 export const getEverclearConfig = async (_configUrl?: string): Promise<EverclearConfig | undefined> => {
   const configUrl = _configUrl ?? EVERCLEAR_MAINNET_CONFIG_URL;
@@ -59,35 +63,42 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
 
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
-    const environment = (process.env.ENVIRONMENT ?? 'local') as Environment;
+    const environment = ((await fromEnv('ENVIRONMENT')) ?? 'local') as Environment;
     const url = environment === 'mainnet' ? EVERCLEAR_MAINNET_CONFIG_URL : EVERCLEAR_TESTNET_CONFIG_URL;
+    const apiUrl = environment === 'mainnet' ? EVERCLEAR_MAINNET_API_URL : EVERCLEAR_TESTNET_API_URL;
 
     const hostedConfig = await getEverclearConfig(url);
 
-    const supportedAssets = parseSupportedAssets(requireEnv('SUPPORTED_ASSET_SYMBOLS'));
+    const configStr = await fromEnv('MARK_CONFIG_' + environment.toUpperCase(), true);
+    const configJson = existsSync('config.json')
+      ? JSON.parse(readFileSync('config.json', 'utf8'))
+      : JSON.parse(configStr ?? '{}');
+
+    const supportedAssets =
+      configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
 
     const config: MarkConfiguration = {
-      pushGatewayUrl: requireEnv('PUSH_GATEWAY_URL'),
-      web3SignerUrl: requireEnv('SIGNER_URL'),
-      everclearApiUrl: requireEnv('EVERCLEAR_API_URL'),
-      relayer: process.env.RELAYER_URL
-        ? {
-            url: process.env.RELAYER_URL,
-            key: requireEnv('RELAYER_API_KEY'),
-          }
-        : undefined,
-      redis: {
-        host: requireEnv('REDIS_HOST'),
-        port: parseInt(requireEnv('REDIS_PORT')),
+      pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
+      web3SignerUrl: configJson.web3SignerUrl ?? (await requireEnv('SIGNER_URL')),
+      everclearApiUrl: configJson.everclearApiUrl ?? (await fromEnv('EVERCLEAR_API_URL')) ?? apiUrl,
+      relayer: {
+        url: configJson?.relayer?.url ?? (await fromEnv('RELAYER_URL')) ?? undefined,
+        key: configJson?.relayer?.ket ?? (await fromEnv('RELAYER_API_KEY')) ?? undefined,
       },
-      ownAddress: requireEnv('SIGNER_ADDRESS'),
-      supportedSettlementDomains: parseSettlementDomains(requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
+      redis: configJson.redis ?? {
+        host: await requireEnv('REDIS_HOST'),
+        port: parseInt(await requireEnv('REDIS_PORT')),
+      },
+      ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
+      supportedSettlementDomains:
+        configJson.supportedSettlementDomains ??
+        parseSettlementDomains(await requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
       supportedAssets,
-      chains: parseChainConfigurations(hostedConfig, supportedAssets),
-      logLevel: (process.env.LOG_LEVEL ?? 'debug') as LogLevel,
-      stage: (process.env.STAGE ?? 'development') as Stage,
-      environment: (process.env.ENVIRONMENT ?? 'local') as Environment,
-      hub: parseHubConfigurations(hostedConfig, environment),
+      chains: await parseChainConfigurations(hostedConfig, supportedAssets, configJson),
+      logLevel: ((await fromEnv('LOG_LEVEL')) ?? 'debug') as LogLevel,
+      stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
+      environment,
+      hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
     };
 
     validateConfiguration(config);
@@ -123,13 +134,21 @@ function validateConfiguration(config: MarkConfiguration): void {
   }
 }
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
+const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
+  const value = await fromEnv(name, checkSsm);
   if (!value) {
     throw new ConfigurationError(`Environment variable ${name} is required`);
   }
   return value;
-}
+};
+
+const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
+  let value = undefined;
+  if (checkSsm) {
+    value = await getSsmParameter(name);
+  }
+  return value ?? process.env[name];
+};
 
 function parseSettlementDomains(domains: string): number[] {
   return domains.split(',').map((domain) => parseInt(domain.trim(), 10));
@@ -139,32 +158,48 @@ const parseSupportedAssets = (symbols: string): string[] => {
   return symbols.split(',').map((symbol) => symbol.trim());
 };
 
-function parseChainConfigurations(
+const parseChainConfigurations = async (
   config: EverclearConfig | undefined,
   supportedAssets: string[],
-): Record<string, ChainConfiguration> {
-  const chainIds = requireEnv('CHAIN_IDS')
-    .split(',')
-    .map((id) => id.trim());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  configJson: any,
+): Promise<Record<string, ChainConfiguration>> => {
+  const chainIds = configJson.chains
+    ? Object.keys(configJson.chains)
+    : (await requireEnv('CHAIN_IDS')).split(',').map((id) => id.trim());
   const chains: Record<string, ChainConfiguration> = {};
 
   for (const chainId of chainIds) {
-    const providers =
-      (process.env[`CHAIN_${chainId}_PROVIDERS`]
-        ? parseProviders(process.env[`CHAIN_${chainId}_PROVIDERS`]!)
+    const providers = (
+      configJson.chains[chainId]?.providers ??
+      ((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))
+        ? parseProviders((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))!)
         : undefined) ??
-      config?.chains[chainId]?.providers ??
-      [];
-    const assets = Object.values(config?.chains[chainId]?.assets ?? {}).map((a) => ({
-      ...a,
-      balanceThreshold: process.env[`${a.symbol.toUpperCase()}_${chainId}_THRESHOLD`] ?? DEFAULT_BALANCE_THRESHOLD,
-    }));
+      []
+    ).concat(config?.chains[chainId]?.providers ?? []);
+    const assets = await Promise.all(
+      Object.values(config?.chains[chainId]?.assets ?? {}).map(async (a) => {
+        const jsonThreshold = (configJson.chains[chainId]?.assets ?? []).find(
+          (asset: { symbol: string; balanceThreshold: string }) =>
+            a.symbol.toLowerCase() === asset.symbol.toLowerCase(),
+        )?.balanceThreshold;
+        const envThreshold = await fromEnv(`${a.symbol.toUpperCase()}_${chainId}_THRESHOLD`);
+        return {
+          ...a,
+          balanceThreshold: jsonThreshold ?? envThreshold ?? DEFAULT_BALANCE_THRESHOLD,
+        };
+      }),
+    );
 
     // Get the invoice age
     // First, check if there is a configured invoice age in the env
-    const invoiceAge = process.env[`CHAIN_${chainId}_INVOICE_AGE`] ?? process.env[`INVOICE_AGE`] ?? DEFAULT_INVOICE_AGE;
+    const invoiceAge =
+      (await fromEnv(`CHAIN_${chainId}_INVOICE_AGE`)) ?? (await fromEnv('INVOICE_AGE')) ?? DEFAULT_INVOICE_AGE;
     const gasThreshold =
-      process.env[`CHAIN_${chainId}_GAS_THRESHOLD`] ?? process.env[`GAS_THRESHOLD`] ?? DEFAULT_GAS_THRESHOLD;
+      configJson?.chains[chainId].gasThreshold ??
+      (await fromEnv(`CHAIN_${chainId}_GAS_THRESHOLD`)) ??
+      (await fromEnv(`GAS_THRESHOLD`)) ??
+      DEFAULT_GAS_THRESHOLD;
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
@@ -174,7 +209,7 @@ function parseChainConfigurations(
   }
 
   return chains;
-}
+};
 
 function parseHubConfigurations(
   config: EverclearConfig | undefined,
