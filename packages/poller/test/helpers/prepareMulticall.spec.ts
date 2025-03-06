@@ -5,7 +5,8 @@ import sinon from 'sinon';
 import { multicallAbi } from '../../src/helpers/contracts';
 import { encodeFunctionData } from 'viem';
 
-describe('prepareMulticall', () => {
+describe('Multicall Helper Functions', () => {
+  describe('prepareMulticall', () => {
     afterEach(() => {
         sinon.restore();
     });
@@ -194,4 +195,5 @@ describe('prepareMulticall', () => {
         expect(result.data).to.equal(expectedCalldata);
         expect(result.value).to.equal('1000000000');
     });
+  })
 }); 
