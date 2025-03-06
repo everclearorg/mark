@@ -3,6 +3,7 @@ import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS } from '../invoice/processInvoices';
+import { getCustodiedBalances } from './balance';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -14,37 +15,6 @@ interface SplitIntentResult {
   intents: NewIntentParams[];
   originDomain: string;
   totalAllocated: bigint;
-}
-
-/**
- * Fetches custodied assets for a ticker across all specified domains
- */
-async function fetchCustodiedAssets(
-  ticker: string,
-  domains: string[],
-  everclear: EverclearAdapter,
-  logger: Logger,
-): Promise<Map<string, bigint>> {
-  const custodiedAssets = new Map<string, bigint>();
-
-  // Fetch custodied assets for each domain using the API
-  await Promise.all(
-    domains.map(async (domain) => {
-      try {
-        const { custodiedAmount } = await everclear.getCustodiedAssets(ticker, domain);
-        custodiedAssets.set(domain, BigInt(custodiedAmount || '0'));
-      } catch (error) {
-        logger.warn('Failed to fetch custodied assets for domain', {
-          ticker,
-          domain,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        custodiedAssets.set(domain, BigInt(0));
-      }
-    }),
-  );
-
-  return custodiedAssets;
 }
 
 /**
@@ -109,8 +79,8 @@ export async function calculateSplitIntents(
   // Get all domains from config
   const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
 
-  // Fetch custodied assets for all domains using API
-  const allCustodiedAssets = await fetchCustodiedAssets(ticker, configDomains, everclear, logger);
+  const custodiedBalances = await getCustodiedBalances(config);
+  const allCustodiedAssets = custodiedBalances.get(ticker) || new Map<string, bigint>();
 
   // Evaluate each possible origin domain
   const possibleAllocations: SplitIntentAllocation[] = [];

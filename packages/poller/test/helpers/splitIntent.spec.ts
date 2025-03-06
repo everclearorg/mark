@@ -1,19 +1,21 @@
 import { expect } from 'chai';
-import { stub, createStubInstance, SinonStubbedInstance } from 'sinon';
+import { stub, createStubInstance, SinonStubbedInstance, restore as sinonRestore, SinonStub } from 'sinon';
 import { EverclearAdapter } from '@mark/everclear';
 import { Logger } from '@mark/logger';
 import { Invoice, MarkConfiguration } from '@mark/core';
 import { calculateSplitIntents } from '../../src/helpers/splitIntent';
+import * as balanceHelpers from '../../src/helpers/balance';
 
 describe('Split Intent Helper Functions', () => {
   let everclear: SinonStubbedInstance<EverclearAdapter>;
   let logger: SinonStubbedInstance<Logger>;
   let config: MarkConfiguration;
+  let getCustodiedBalancesStub: SinonStub;
 
   beforeEach(() => {
     everclear = createStubInstance(EverclearAdapter);
-    everclear.getCustodiedAssets.resolves({ custodiedAmount: '10000000000000000000' }); // 10 WETH
     logger = createStubInstance(Logger);
+    getCustodiedBalancesStub = stub(balanceHelpers, 'getCustodiedBalances');
 
     config = {
       ownAddress: '0xmarkAddress',
@@ -83,6 +85,10 @@ describe('Split Intent Helper Functions', () => {
     } as unknown as MarkConfiguration;
   });
 
+  afterEach(() => {
+    sinonRestore();
+  });
+
   describe('calculateSplitIntents', () => {
     it('should handle the case when no balances are available', async () => {
       const invoice = {
@@ -109,6 +115,7 @@ describe('Split Intent Helper Functions', () => {
           ['42161', BigInt('0')],
         ])],
       ]);
+      getCustodiedBalancesStub.resolves(balances);
 
       const result = await calculateSplitIntents(
         invoice,
@@ -122,49 +129,6 @@ describe('Split Intent Helper Functions', () => {
       expect(result.intents).to.be.an('array');
       expect(result.intents.length).to.equal(0);
       expect(result.totalAllocated).to.equal(BigInt(0));
-    });
-
-    it('should handle errors when fetching custodied assets', async () => {
-      const invoice = {
-        intent_id: '0xinvoice-a',
-        origin: '1',
-        destinations: ['10', '8453'],
-        amount: '100000000000000000000', // 100 WETH
-        ticker_hash: 'WETH',
-        owner: '0xowner',
-        hub_invoice_enqueued_timestamp: 1234567890,
-      } as unknown as Invoice;
-
-      // Min amounts for each destination
-      const minAmounts = {
-        '10': '100000000000000000000', // 100 WETH
-        '8453': '100000000000000000000', // 100 WETH
-      };
-
-      // Mark has enough balance on Base only
-      const balances = new Map([
-        ['WETH', new Map([
-          ['1', BigInt('0')], // 0 WETH on Ethereum
-          ['10', BigInt('0')], // 0 WETH on Optimism
-          ['8453', BigInt('100000000000000000000')], // 100 WETH on Base
-          ['42161', BigInt('0')], // 0 WETH on Arbitrum
-        ])],
-      ]);
-
-      // Make the API call fail
-      everclear.getCustodiedAssets.rejects(new Error('API error'));
-
-      const result = await calculateSplitIntents(
-        invoice,
-        minAmounts,
-        config,
-        balances,
-        everclear,
-        logger
-      );
-
-      expect(result.intents).to.be.an('array');
-      expect(logger.warn.called).to.be.true;
     });
 
     it('should successfully create split intents when single destination is insufficient', async () => {
@@ -194,10 +158,16 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       // Ethereum and Arbitrum have 50 WETH custodied each
-      everclear.getCustodiedAssets.withArgs('WETH', '1').resolves({ custodiedAmount: '50000000000000000000' }); // 50 WETH on Ethereum
-      everclear.getCustodiedAssets.withArgs('WETH', '10').resolves({ custodiedAmount: '0' }); // 0 WETH on Optimism
-      everclear.getCustodiedAssets.withArgs('WETH', '8453').resolves({ custodiedAmount: '0' }); // 0 WETH on Base
-      everclear.getCustodiedAssets.withArgs('WETH', '42161').resolves({ custodiedAmount: '50000000000000000000' }); // 50 WETH on Arbitrum
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('50000000000000000000')],     // 50 WETH on Ethereum
+        ['10', BigInt('0')],                       // 0 WETH on Optimism
+        ['8453', BigInt('0')],                     // 0 WETH on Base
+        ['42161', BigInt('50000000000000000000')], // 50 WETH on Arbitrum
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+      getCustodiedBalancesStub.resolves(custodiedBalances);
 
       const result = await calculateSplitIntents(
         invoice,
@@ -258,10 +228,16 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       // Set up limited custodied assets
-      everclear.getCustodiedAssets.withArgs('WETH', '1').resolves({ custodiedAmount: '40000000000000000000' }); // 40 WETH
-      everclear.getCustodiedAssets.withArgs('WETH', '10').resolves({ custodiedAmount: '10000000000000000000' }); // 10 WETH
-      everclear.getCustodiedAssets.withArgs('WETH', '8453').resolves({ custodiedAmount: '30000000000000000000' }); // 30 WETH
-      everclear.getCustodiedAssets.withArgs('WETH', '42161').resolves({ custodiedAmount: '0' }); // 0 WETH
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('40000000000000000000')],     // 40 WETH on Ethereum
+        ['10', BigInt('10000000000000000000')],    // 10 WETH on Optimism
+        ['8453', BigInt('30000000000000000000')],  // 30 WETH on Base
+        ['42161', BigInt('0')],                    // 0 WETH on Arbitrum
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+      getCustodiedBalancesStub.resolves(custodiedBalances);
 
       const result = await calculateSplitIntents(
         invoice,
@@ -321,10 +297,16 @@ describe('Split Intent Helper Functions', () => {
 
       // Using origin 10 will have most available custodied assets
       // even if using 8453 will fully settle as well
-      everclear.getCustodiedAssets.withArgs('WETH', '1').resolves({ custodiedAmount: '90000000000000000000' }); // 90 WETH
-      everclear.getCustodiedAssets.withArgs('WETH', '10').resolves({ custodiedAmount: '0' }); // 0 WETH
-      everclear.getCustodiedAssets.withArgs('WETH', '8453').resolves({ custodiedAmount: '90000000000000000000' }); // 90 WETH
-      everclear.getCustodiedAssets.withArgs('WETH', '42161').resolves({ custodiedAmount: '10000000000000000000' }); // 10 WETH
+      const custodiedWETHBalances2 = new Map<string, bigint>([
+        ['1', BigInt('90000000000000000000')],     // 90 WETH on Ethereum
+        ['10', BigInt('0')],                       // 0 WETH on Optimism
+        ['8453', BigInt('90000000000000000000')],  // 90 WETH on Base
+        ['42161', BigInt('10000000000000000000')], // 10 WETH on Arbitrum
+      ]);
+      const custodiedBalances2 = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances2]
+      ]);
+      getCustodiedBalancesStub.resolves(custodiedBalances2);
 
       const result = await calculateSplitIntents(
         invoice,
