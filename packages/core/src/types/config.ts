@@ -47,9 +47,9 @@ export interface MarkConfiguration {
   pushGatewayUrl: string;
   web3SignerUrl: string;
   everclearApiUrl: string;
-  relayer?: {
-    url: string;
-    key: string;
+  relayer: {
+    url?: string;
+    key?: string;
   };
   redis: {
     host: string;
