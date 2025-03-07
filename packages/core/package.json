@@ -22,6 +22,7 @@
     "test:unit": ""
   },
   "dependencies": {
+    "@aws-sdk/client-ssm": "3.759.0",
     "axios": "1.7.9",
     "dotenv": "16.4.7",
     "uuid": "9.0.0"
