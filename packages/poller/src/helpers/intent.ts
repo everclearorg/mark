@@ -283,10 +283,28 @@ export const sendIntentsMulticall = async (
       value: '0',
     });
 
+    // Extract individual intent IDs from transaction logs
+    const intentEvents = receipt.logs.filter(
+      (log) => log.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0
+    );
+    const individualIntentIds = intentEvents.map((event) => event.topics[1]);
+
     logger.info('Multicall transaction confirmed', {
       transactionHash: receipt.transactionHash,
       chainId,
       combinedIntentId,
+      individualIntentIds,
+    });
+
+    // Log each individual intent ID for DD searching
+    individualIntentIds.forEach((intentId, index) => {
+      logger.info('Individual intent created via multicall', {
+        transactionHash: receipt.transactionHash,
+        chainId,
+        intentId,
+        intentIndex: index,
+        totalIntents: individualIntentIds.length
+      });
     });
 
     // Track gas spent for the multicall transaction
