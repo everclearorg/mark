@@ -2,7 +2,7 @@ import { Address, maxUint256, encodeFunctionData, erc20Abi } from 'viem';
 import { Wallet } from 'ethers';
 import { Web3Signer } from '@mark/web3signer';
 import { ChainService } from '@mark/chainservice';
-import { ChainConfiguration } from '@mark/core';
+import { ChainConfiguration, MarkConfiguration } from '@mark/core';
 
 /**
  * Before using Permit2, Mark needs to perform a one-time approval for each token:
@@ -38,8 +38,16 @@ import { ChainConfiguration } from '@mark/core';
  *    - Deadlines should be set reasonably to limit the validity period of signatures
  */
 
-// Permit2 is deployed at the same address on all chains
-export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+export function getPermit2Address(chainId: string, config: MarkConfiguration): Address {
+  const chains = config.chains as Record<string, ChainConfiguration>;
+  const chainConfig = chains[chainId];
+
+  if (!chainConfig) {
+    throw new Error(`Chain configuration not found for chain ID: ${chainId}`);
+  }
+
+  return chainConfig.deployments.permit2 as Address;
+}
 
 /**
  * Approves the Permit2 contract to spend tokens on Mark's behalf
@@ -49,7 +57,11 @@ export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
  * @param chainService The ChainService instance
  * @returns The transaction hash
  */
-export async function approvePermit2(tokenAddress: Address, chainService: ChainService): Promise<string> {
+export async function approvePermit2(
+  tokenAddress: Address,
+  chainService: ChainService,
+  config: MarkConfiguration,
+): Promise<string> {
   const chains = chainService['config'].chains as Record<string, ChainConfiguration>;
   const chainConfig = Object.entries(chains).find(([, config]) =>
     config.assets?.some((asset: { address: string }) => asset.address.toLowerCase() === tokenAddress.toLowerCase()),
@@ -60,11 +72,12 @@ export async function approvePermit2(tokenAddress: Address, chainService: ChainS
   }
 
   const chainId = chainConfig[0];
+  const permit2Address = getPermit2Address(chainId, config);
 
   const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: 'approve',
-    args: [PERMIT2_ADDRESS as Address, maxUint256],
+    args: [permit2Address, maxUint256],
   });
 
   const receipt = await chainService.submitAndMonitor(chainId, {
@@ -85,6 +98,7 @@ export async function approvePermit2(tokenAddress: Address, chainService: ChainS
  * @param amount The amount to approve
  * @param nonce The nonce for the permit
  * @param deadline The deadline for the permit
+ * @param config The MarkConfiguration
  * @returns The signature
  */
 export async function getPermit2Signature(
@@ -95,12 +109,16 @@ export async function getPermit2Signature(
   amount: string,
   nonce: string,
   deadline: number,
+  config: MarkConfiguration,
 ): Promise<string> {
+  // Get the Permit2 address for this chain
+  const permit2Address = getPermit2Address(chainId.toString(), config);
+
   // Create the domain for the Permit2 contract
   const domain = {
     name: 'Permit2',
     chainId: chainId,
-    verifyingContract: PERMIT2_ADDRESS,
+    verifyingContract: permit2Address,
   };
 
   // Define the types for the permit

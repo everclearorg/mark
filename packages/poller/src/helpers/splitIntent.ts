@@ -1,6 +1,5 @@
 import { getTokenAddressFromConfig, Invoice, MarkConfiguration, NewIntentParams } from '@mark/core';
 import { Logger } from '@mark/logger';
-import { EverclearAdapter } from '@mark/everclear';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS } from '../invoice/processInvoices';
 import { getCustodiedBalances } from './balance';
