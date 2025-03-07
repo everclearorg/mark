@@ -12,6 +12,7 @@ import {
   sendIntents,
   isXerc20Supported,
   calculateSplitIntents,
+  getCustodiedBalances,
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { ChainService } from '@mark/chainservice';
@@ -62,6 +63,11 @@ export async function processInvoices({
   const gasBalances = await getMarkGasBalances(config, prometheus);
   logGasThresholds(gasBalances, config, logger);
   logger.debug('Retrieved gas balances', { requestId, gasBalances: jsonifyMap(gasBalances) });
+
+  // Get all custodied assets
+  logger.info('Getting custodied assets', { requestId, chains: Object.keys(config.chains) });
+  const custodiedAssets = await getCustodiedBalances(config);
+  logger.debug('Retrieved custodied assets', { requestId, custodiedAssets: jsonifyMap(custodiedAssets) });
 
   // Get existing purchase actions
   const cachedPurchases = await cache.getAllPurchases();
@@ -226,6 +232,7 @@ export async function processInvoices({
         filteredMinAmounts,
         config,
         balances,
+        custodiedAssets,
         logger,
       );
 
