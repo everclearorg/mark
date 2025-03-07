@@ -230,6 +230,80 @@ describe('sendIntents', () => {
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1); // Called only for intent
         expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0xintentid' }]);
     });
+
+    it('should throw an error when sending multiple intents with different origins', async () => {
+        const intentsWithDifferentOrigins = [
+            {
+                origin: '1',
+                destinations: ['8453'],
+                to: '0xto1',
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            },
+            {
+                origin: '8453',  // Different origin
+                destinations: ['1'],
+                to: '0xto2',
+                inputAsset: '0xtoken2',
+                amount: '2000',
+                callData: '0x',
+                maxFee: '0',
+            }
+        ];
+
+        await expect(sendIntents(intentsWithDifferentOrigins, mockDeps, mockConfig))
+            .to.be.rejectedWith('Cannot process multiple intents with different origin domains');
+    });
+
+    it('should use sendIntentsMulticall when sending multiple intents with the same origin', async () => {
+        const sameOriginIntents = [
+            {
+                origin: '1',
+                destinations: ['8453'],
+                to: '0xto1',
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            },
+            {
+                origin: '1',  // Same origin
+                destinations: ['42161'],
+                to: '0xto2',
+                inputAsset: '0xtoken2',
+                amount: '2000',
+                callData: '0x',
+                maxFee: '0',
+            }
+        ];
+
+        // Set up sendIntentsMulticall to return a success response
+        const multicallResultStub = {
+            transactionHash: '0xmulticallTxHash',
+            chainId: '1',
+            intentId: '0xcombinedIntentId',
+        };
+        
+        // Create a spy on sendIntentsMulticall
+        const sendIntentsMulticallSpy = stub(require('../../src/helpers/intent'), 'sendIntentsMulticall')
+            .resolves(multicallResultStub);
+
+        const result = await sendIntents(sameOriginIntents, mockDeps, mockConfig);
+
+        // Verify sendIntentsMulticall was called with the correct parameters
+        expect(sendIntentsMulticallSpy.calledOnce).to.be.true;
+        expect(sendIntentsMulticallSpy.firstCall.args[0]).to.deep.equal(sameOriginIntents);
+        expect(sendIntentsMulticallSpy.firstCall.args[1]).to.equal(mockDeps);
+        expect(sendIntentsMulticallSpy.firstCall.args[2]).to.equal(mockConfig);
+        
+        // Verify the result is correctly wrapped in an array
+        expect(result).to.deep.equal([multicallResultStub]);
+        
+        // Restore the stub
+        sendIntentsMulticallSpy.restore();
+    });
 });
 
 describe('sendIntentsMulticall', () => {
@@ -271,7 +345,12 @@ describe('sendIntentsMulticall', () => {
         mockConfig = {
             ownAddress: '0xdeadbeef1234567890deadbeef1234567890dead',
             chains: {
-                '1': { providers: ['provider1'] },
+                '1': { 
+                    providers: ['provider1'],
+                    deployments: {
+                        everclear: '0xspoke'
+                    }
+                },
             },
         } as unknown as MarkConfiguration;
         
@@ -303,7 +382,7 @@ describe('sendIntentsMulticall', () => {
     });
 
     it('should throw an error when intents array is empty', async () => {
-        await expect(sendIntentsMulticall([], mockDeps, mockConfig, ZERO_ADDRESS))
+        await expect(sendIntentsMulticall([], mockDeps, mockConfig))
             .to.be.rejectedWith('No intents provided for multicall');
     });
 
@@ -350,7 +429,6 @@ describe('sendIntentsMulticall', () => {
             intents,
             mockDeps,
             mockConfig,
-            ZERO_ADDRESS
         );
         
         // Verify the structure of the result
@@ -412,7 +490,7 @@ describe('sendIntentsMulticall', () => {
             { ...mockIntent, inputAsset: MOCK_TOKEN2, to: MOCK_DEST2 },
         ];
         
-        await sendIntentsMulticall(intents, mockDeps, mockConfig, ZERO_ADDRESS);
+        await sendIntentsMulticall(intents, mockDeps, mockConfig);
         
         // Verify ERC20 contracts were checked for both tokens
         expect(getERC20ContractStub.callCount).to.equal(2);
@@ -459,7 +537,7 @@ describe('sendIntentsMulticall', () => {
             { ...mockIntent, to: MOCK_DEST2 }
         ];
         
-        await sendIntentsMulticall(intents, mockDeps, mockConfig, ZERO_ADDRESS);
+        await sendIntentsMulticall(intents, mockDeps, mockConfig);
         
         // Check that chainService was called with correct multicall data
         const submitCall = (mockDeps.chainService.submitAndMonitor as SinonStub).firstCall.args[1];
@@ -501,7 +579,7 @@ describe('sendIntentsMulticall', () => {
         ];
         
         // The function passes through the original error
-        await expect(sendIntentsMulticall(intents, mockDeps, mockConfig, ZERO_ADDRESS))
+        await expect(sendIntentsMulticall(intents, mockDeps, mockConfig))
             .to.be.rejectedWith(txError);
             
         // Verify the error was logged

@@ -53,6 +53,9 @@ describe('processInvoices', () => {
                 invoiceAge: 3600,
                 providers: ['provider'],
                 gasThreshold: '1000000000000000000',
+                deployments: {
+                    everclear: '0xspoke'
+                },
                 assets: [{
                     tickerHash: '0xtickerhash',
                     address: '0xtoken',
@@ -66,6 +69,9 @@ describe('processInvoices', () => {
                 invoiceAge: 3600,
                 providers: ['provider'],
                 gasThreshold: '1000000000000000000',
+                deployments: {
+                    everclear: '0xspoke'
+                },
                 assets: [{
                     tickerHash: '0xtickerhash',
                     address: '0xtoken',
@@ -222,8 +228,18 @@ describe('processInvoices', () => {
         // Verify calculateSplitIntents was called
         expect(calcSplitIntentsStub.calledOnce).to.be.true;
         
-        // Verify sendIntents was called (for single intent) and multicall was not
+        // Verify sendIntents was called with the correct parameters
         expect(sendIntentsStub.calledOnce).to.be.true;
+        expect(sendIntentsStub.firstCall.args[0]).to.deep.equal([{
+            origin: '1',
+            destinations: ['8453'],
+            to: '0xdestination',
+            inputAsset: '0xtoken',
+            amount: '1000000000000000000',
+            callData: '0xdata',
+            maxFee: '0'
+        }]);
+        expect(sendIntentsStub.firstCall.args[2]).to.equal(validConfig);
         expect(sendIntentsMulticallStub.called).to.be.false;
         
         // Verify purchase was added to cache
@@ -243,14 +259,14 @@ describe('processInvoices', () => {
     });
 
     it('should process a valid invoice with multiple intents', async () => {
-        // Setup for a multi-intent scenario
+        // Setup for a multiple intent scenario
         calcSplitIntentsStub.resolves({
             intents: [
                 {
                     origin: '1',
                     destinations: ['8453'],
                     to: '0xdestination1',
-                    inputAsset: '0xtoken',
+                    inputAsset: '0xtoken1',
                     amount: '500000000000000000',
                     callData: '0xdata1',
                     maxFee: '0'
@@ -259,7 +275,7 @@ describe('processInvoices', () => {
                     origin: '1',
                     destinations: ['8453'],
                     to: '0xdestination2',
-                    inputAsset: '0xtoken',
+                    inputAsset: '0xtoken2',
                     amount: '500000000000000000',
                     callData: '0xdata2',
                     maxFee: '0'
@@ -268,6 +284,13 @@ describe('processInvoices', () => {
             originDomain: '1',
             totalAllocated: BigInt('1000000000000000000')
         });
+
+        // For multicall testing, update the sendIntents stub
+        sendIntentsStub.resolves([{
+            transactionHash: '0xmulticall_tx',
+            chainId: '1',
+            intentId: '0xmulticall_intent'
+        }]);
 
         await processInvoices({
             invoices: [validInvoice],
@@ -283,9 +306,10 @@ describe('processInvoices', () => {
         // Verify calculateSplitIntents was called
         expect(calcSplitIntentsStub.calledOnce).to.be.true;
         
-        // Verify sendIntentsMulticall was called (for multiple intents) and sendIntents was not
-        expect(sendIntentsMulticallStub.calledOnce).to.be.true;
-        expect(sendIntentsStub.called).to.be.false;
+        // Verify sendIntents was called with multiple intents and originDomain
+        expect(sendIntentsStub.calledOnce).to.be.true;
+        expect(sendIntentsStub.firstCall.args[0]).to.have.lengthOf(2);
+        expect(sendIntentsMulticallStub.called).to.be.false; // Should not be called directly anymore
         
         // Verify purchase was added to cache
         expect(cache.addPurchases.calledOnce).to.be.true;
@@ -363,8 +387,8 @@ describe('processInvoices', () => {
         expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.DestinationXerc20, labels)).to.be.true;
     });
 
-    it('should skip processing if no valid intents can be generated', async () => {
-        // Setup calculateSplitIntents to return no intents
+    it('should skip invoices where calculateSplitIntents returns no intents', async () => {
+        // Set up calculateSplitIntents to return no intents
         calcSplitIntentsStub.resolves({
             intents: [],
             originDomain: '',
@@ -385,7 +409,6 @@ describe('processInvoices', () => {
         // Verify we called calculateSplitIntents but didn't try to send intents
         expect(calcSplitIntentsStub.calledOnce).to.be.true;
         expect(sendIntentsStub.called).to.be.false;
-        expect(sendIntentsMulticallStub.called).to.be.false;
         expect(cache.addPurchases.called).to.be.false;
         
         // Verify proper metrics were recorded
@@ -447,8 +470,9 @@ describe('processInvoices', () => {
             totalAllocated: BigInt('1000000000000000000')
         });
         
-        // Setup sendIntentsMulticall to fail
-        sendIntentsMulticallStub.rejects(new Error('Multicall transaction failed'));
+        // Setup sendIntents to fail for multiple intents
+        sendIntentsStub.rejects(new Error('Transaction failed'));
+        sendIntentsMulticallStub.resolves({ transactionHash: '0xtx', chainId: '1', intentId: '0xintent' });
 
         await processInvoices({
             invoices: [validInvoice],
@@ -464,6 +488,11 @@ describe('processInvoices', () => {
         // Verify error was logged and no purchase was added
         expect(logger.error.called).to.be.true;
         expect(cache.addPurchases.called).to.be.false;
+        
+        // Verify sendIntents was called with multiple intents and originDomain
+        expect(sendIntentsStub.calledOnce).to.be.true;
+        expect(sendIntentsStub.firstCall.args[0]).to.have.lengthOf(2);
+        expect(sendIntentsMulticallStub.called).to.be.false;
         
         // Verify proper metrics were recorded
         expect(prometheus.recordPossibleInvoice.calledOnceWith(labels)).to.be.true;
