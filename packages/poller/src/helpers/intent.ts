@@ -284,9 +284,7 @@ export const sendIntentsMulticall = async (
     });
 
     // Extract individual intent IDs from transaction logs
-    const intentEvents = receipt.logs.filter(
-      (log) => log.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0
-    );
+    const intentEvents = receipt.logs.filter((log) => log.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0);
     const individualIntentIds = intentEvents.map((event) => event.topics[1]);
 
     logger.info('Multicall transaction confirmed', {
@@ -303,7 +301,7 @@ export const sendIntentsMulticall = async (
         chainId,
         intentId,
         intentIndex: index,
-        totalIntents: individualIntentIds.length
+        totalIntents: individualIntentIds.length,
       });
     });
 
