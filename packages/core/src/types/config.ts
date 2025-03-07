@@ -27,6 +27,8 @@ export interface ChainConfiguration {
   gasThreshold: string;
   deployments: {
     everclear: string;
+    permit2: string;
+    multicall3: string;
   };
 }
 

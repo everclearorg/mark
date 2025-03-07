@@ -1,10 +1,13 @@
 import { encodeFunctionData } from 'viem';
-import { MULTICALL_ADDRESS, multicallAbi } from './contracts';
+import { getMulticallAddress, multicallAbi } from './contracts';
+import { MarkConfiguration } from '@mark/core';
 
 /**
  * Prepares a multicall transaction to batch multiple intent creation calls
  * @param calls - Array of transaction data objects from createNewIntent calls
  * @param sendValues - Whether the calls include ETH values
+ * @param chainId - The chain ID to get the correct Multicall3 address
+ * @param config - The MarkConfiguration object
  * @returns The multicall transaction data
  */
 export const prepareMulticall = (
@@ -14,6 +17,8 @@ export const prepareMulticall = (
     value?: string;
   }>,
   sendValues = false,
+  chainId: string,
+  config: MarkConfiguration,
 ): {
   to: string;
   data: string;
@@ -60,8 +65,11 @@ export const prepareMulticall = (
     });
   }
 
+  // Get the chain-specific Multicall3 address
+  const multicallAddress = getMulticallAddress(chainId, config);
+
   return {
-    to: MULTICALL_ADDRESS,
+    to: multicallAddress,
     data: calldata,
     value: totalValue.toString(),
   };

@@ -30,6 +30,29 @@ export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/c
 export const EVERCLEAR_TESTNET_CONFIG_URL =
   'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
 
+export const UTILITY_CONTRACTS_DEFAULT = {
+  permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+  multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
+};
+export const UTILITY_CONTRACTS_OVERRIDE: Record<string, { permit2?: string; multicall3?: string }> = {
+  '324': {
+    permit2: '0x0000000000225e31D15943971F47aD3022F714Fa',
+    multicall3: '0xF9cda624FBC7e059355ce98a31693d299FACd963',
+  },
+  '2020': {
+    permit2: '0x771ca29e483df5447e20a89e0f00e1daf09ef534',
+  },
+  // '167000': {
+  //   // Contract exists here but unverified: https://taikoscan.io/address/0x000000000022D473030F116dDEE9F6B43aC78BA3
+  //   permit2: '0x0000000000225e31D15943971F47aD3022F714Fa',
+  // },
+  // '33139': {
+  //   // Contract exists here but unverified: https://apescan.io/address/0x000000000022D473030F116dDEE9F6B43aC78BA3
+  //   permit2: '0x0000000000225e31D15943971F47aD3022F714Fa',
+  // },
+};
+
+
 export const getEverclearConfig = async (_configUrl?: string): Promise<EverclearConfig | undefined> => {
   const configUrl = _configUrl ?? EVERCLEAR_MAINNET_CONFIG_URL;
 
@@ -163,21 +186,30 @@ function parseChainConfigurations(
     // Get the invoice age
     // First, check if there is a configured invoice age in the env
     const invoiceAge =
-      process.env[`CHAIN_${chainId}_INVOICE_AGE`] ??
-      process.env[`INVOICE_AGE`] ??
-      DEFAULT_INVOICE_AGE.toString();
+      process.env[`CHAIN_${chainId}_INVOICE_AGE`] ?? process.env[`INVOICE_AGE`] ?? DEFAULT_INVOICE_AGE.toString();
 
     const gasThreshold =
       process.env[`CHAIN_${chainId}_GAS_THRESHOLD`] ?? process.env[`GAS_THRESHOLD`] ?? DEFAULT_GAS_THRESHOLD;
-    
+
     // Extract Everclear spoke address from the config
     const everclear = config?.chains[chainId]?.deployments?.everclear;
-    
+
     if (!everclear) {
       throw new ConfigurationError(
-        `No spoke address found for chain ${chainId}. Make sure it's defined in the config under chains.${chainId}.deployments.everclear`
+        `No spoke address found for chain ${chainId}. Make sure it's defined in the config under chains.${chainId}.deployments.everclear`,
       );
     }
+
+    // Get chain-specific contract addresses or use config values if provided
+    const permit2 =
+      config?.chains[chainId]?.deployments?.permit2 ||
+      UTILITY_CONTRACTS_OVERRIDE[chainId]?.permit2 ||
+      UTILITY_CONTRACTS_DEFAULT.permit2;
+
+    const multicall3 =
+      config?.chains[chainId]?.deployments?.multicall3 ||
+      UTILITY_CONTRACTS_OVERRIDE[chainId]?.multicall3 ||
+      UTILITY_CONTRACTS_DEFAULT.multicall3;
 
     chains[chainId] = {
       providers,
@@ -186,6 +218,8 @@ function parseChainConfigurations(
       gasThreshold,
       deployments: {
         everclear,
+        permit2,
+        multicall3,
       },
     };
   }

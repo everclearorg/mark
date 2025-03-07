@@ -307,24 +307,15 @@ describe('sendIntents', () => {
 });
 
 describe('sendIntentsMulticall', () => {
-    const multicallAddress = contractHelpers.MULTICALL_ADDRESS;
-    
-    let mockDeps: SinonStubbedInstance<MarkAdapters>;
-    let mockConfig: MarkConfiguration;
     let mockIntent: NewIntentParams;
-    let mockPermit2Functions: {
-        generatePermit2Nonce: SinonStub;
-        generatePermit2Deadline: SinonStub;
-        getPermit2Signature: SinonStub;
-        approvePermit2: SinonStub;
-    };
-    
-    // Valid test Ethereum addresses
-    const MOCK_TOKEN1 = '0x1111111111111111111111111111111111111111';
-    const MOCK_TOKEN2 = '0x2222222222222222222222222222222222222222';
-    const MOCK_DEST1 = '0xd1111111111111111111111111111111111111d1';
-    const MOCK_DEST2 = '0xd2222222222222222222222222222222222222d2';
-    const ZERO_ADDRESS = zeroAddress;
+    let mockDeps: any;
+    let mockConfig: MarkConfiguration;
+    let mockPermit2Functions: any;
+    const MOCK_TOKEN1 = '0x1234567890123456789012345678901234567890';
+    const MOCK_TOKEN2 = '0x0987654321098765432109876543210987654321';
+    const MOCK_DEST1 = '0xddddddddddddddddddddddddddddddddddddddd1';
+    const MOCK_DEST2 = '0xddddddddddddddddddddddddddddddddddddddd2';
+    const MOCK_MULTICALL_ADDRESS = '0xmulticall3';
     
     beforeEach(async () => {
         mockDeps = {
@@ -348,7 +339,9 @@ describe('sendIntentsMulticall', () => {
                 '1': { 
                     providers: ['provider1'],
                     deployments: {
-                        everclear: '0xspoke'
+                        everclear: '0xspoke',
+                        multicall3: MOCK_MULTICALL_ADDRESS,
+                        permit2: '0xpermit2address'
                     }
                 },
             },
@@ -399,7 +392,7 @@ describe('sendIntentsMulticall', () => {
         
         // Mock everclear.createNewIntent to return valid transaction data
         (mockDeps.everclear.createNewIntent as SinonStub).resolves({
-            to: ZERO_ADDRESS,
+            to: zeroAddress,
             data: '0xintentdata',
             chainId: 1,
         });
@@ -444,7 +437,7 @@ describe('sendIntentsMulticall', () => {
         // Verify chainService.submitAndMonitor was called with multicall data
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1);
         const submitCall = (mockDeps.chainService.submitAndMonitor as SinonStub).firstCall.args[1];
-        expect(submitCall.to).to.equal(multicallAddress);
+        expect(submitCall.to).to.equal(MOCK_MULTICALL_ADDRESS);
         
         // Verify prometheus metrics were updated
         expect((mockDeps.prometheus.updateGasSpent as SinonStub).calledOnce).to.be.true;
@@ -465,7 +458,7 @@ describe('sendIntentsMulticall', () => {
         
         // Mock the rest similar to success case
         (mockDeps.everclear.createNewIntent as SinonStub).resolves({
-            to: ZERO_ADDRESS,
+            to: zeroAddress,
             data: '0xintentdata',
             chainId: 1,
         });
@@ -510,8 +503,8 @@ describe('sendIntentsMulticall', () => {
         
         // Mock intent creation to return different data for each intent
         const intentData = [
-            { to: ZERO_ADDRESS, data: '0xintent1data', chainId: 1 },
-            { to: ZERO_ADDRESS, data: '0xintent2data', chainId: 1 }
+            { to: zeroAddress, data: '0xintent1data', chainId: 1 },
+            { to: zeroAddress, data: '0xintent2data', chainId: 1 }
         ];
         
         const createNewIntentStub = mockDeps.everclear.createNewIntent as SinonStub;
@@ -537,7 +530,7 @@ describe('sendIntentsMulticall', () => {
         const submitCall = (mockDeps.chainService.submitAndMonitor as SinonStub).firstCall.args[1];
         
         // The multicall should contain both intent calls
-        expect(submitCall.to).to.equal(multicallAddress);
+        expect(submitCall.to).to.equal(MOCK_MULTICALL_ADDRESS);
         // The data should be a multicall encoding containing both intent data
         const data = submitCall.data;
         expect(data).to.match(/^0x/); // Should be hex
@@ -559,7 +552,7 @@ describe('sendIntentsMulticall', () => {
         
         // Mock intent creation success
         (mockDeps.everclear.createNewIntent as SinonStub).resolves({
-            to: ZERO_ADDRESS,
+            to: zeroAddress,
             data: '0xintentdata',
             chainId: 1,
         });

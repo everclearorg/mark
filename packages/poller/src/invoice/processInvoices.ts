@@ -12,7 +12,6 @@ import {
   sendIntents,
   isXerc20Supported,
   calculateSplitIntents,
-  sendIntentsMulticall,
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { ChainService } from '@mark/chainservice';
@@ -189,32 +188,34 @@ export async function processInvoices({
         });
         minAmounts = Object.fromEntries(invoice.destinations.map((d) => [d, '0']));
       }
-      
+
       // Set for ticker-destination pair lookup
       const existingDestinations = new Set(
-        pendingPurchases
-          .filter(p => p.target.ticker_hash === ticker)
-          .map(p => p.purchase.params.origin)
+        pendingPurchases.filter((p) => p.target.ticker_hash === ticker).map((p) => p.purchase.params.origin),
       );
-      
+
       // Filter out origins that already have pending purchases for this destination-ticker combo
       const filteredMinAmounts = { ...minAmounts };
       for (const destination of Object.keys(filteredMinAmounts)) {
         if (existingDestinations.has(destination)) {
           logger.info('Action exists for destination-ticker combo, removing from consideration', {
-            requestId, invoiceId, destination
+            requestId,
+            invoiceId,
+            destination,
           });
-          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, { 
-            ...labels, destination 
+          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, {
+            ...labels,
+            destination,
           });
           delete filteredMinAmounts[destination];
         }
       }
-      
+
       // Skip if no valid origins remain
       if (Object.keys(filteredMinAmounts).length === 0) {
         logger.info('No valid origins remain after filtering existing purchases', {
-          requestId, invoiceId
+          requestId,
+          invoiceId,
         });
         continue;
       }
@@ -246,7 +247,7 @@ export async function processInvoices({
         [intentResult] = await sendIntents(
           intents,
           { everclear, chainService, logger, cache, prometheus, web3Signer },
-          config
+          config,
         );
 
         // Record successful purchase and create a purchase for cache
@@ -272,7 +273,7 @@ export async function processInvoices({
           totalAmount: invoice.amount,
           totalAllocated: totalAllocated.toString(),
           intentCount: intents.length,
-          coverage: `${(Number((BigInt(totalAllocated) * BigInt(100)) / BigInt(invoice.amount))).toFixed(2)}%`,
+          coverage: `${Number((BigInt(totalAllocated) * BigInt(100)) / BigInt(invoice.amount)).toFixed(2)}%`,
           transactionHash: intentResult.transactionHash,
         });
 

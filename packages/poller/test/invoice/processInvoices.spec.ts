@@ -54,7 +54,9 @@ describe('processInvoices', () => {
                 providers: ['provider'],
                 gasThreshold: '1000000000000000000',
                 deployments: {
-                    everclear: '0xspoke'
+                    everclear: '0xspoke',
+                    permit2: '0xpermit2',
+                    multicall3: '0xmulticall3'
                 },
                 assets: [{
                     tickerHash: '0xtickerhash',
@@ -70,7 +72,9 @@ describe('processInvoices', () => {
                 providers: ['provider'],
                 gasThreshold: '1000000000000000000',
                 deployments: {
-                    everclear: '0xspoke'
+                    everclear: '0xspoke',
+                    permit2: '0xpermit2',
+                    multicall3: '0xmulticall3'
                 },
                 assets: [{
                     tickerHash: '0xtickerhash',

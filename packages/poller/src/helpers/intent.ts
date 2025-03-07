@@ -8,7 +8,7 @@ import {
   generatePermit2Deadline,
   getPermit2Signature,
   approvePermit2,
-  PERMIT2_ADDRESS,
+  getPermit2Address,
 } from './permit2';
 import { prepareMulticall } from './multicall';
 
@@ -29,14 +29,17 @@ export const sendIntents = async (
     logger.info('No intents to process');
     return [];
   }
-  
+
   // If there's more than one intent, check they all have the same origin domain
   if (intents.length > 1) {
-    const origins = new Set(intents.map(intent => intent.origin));
-    
+    const origins = new Set(intents.map((intent) => intent.origin));
+
     // If all intents have the same origin domain, use multicall
     if (origins.size === 1) {
-      logger.info('Multiple intents with same origin detected, using multicall', { count: intents.length, origin: intents[0].origin });
+      logger.info('Multiple intents with same origin detected, using multicall', {
+        count: intents.length,
+        origin: intents[0].origin,
+      });
       const result = await sendIntentsMulticall(intents, deps, config);
       return [result];
     } else {
@@ -44,10 +47,10 @@ export const sendIntents = async (
       throw new Error('Cannot process multiple intents with different origin domains');
     }
   }
-  
+
   logger.info('Processing a single intent', { intent: intents[0] });
   const results: { transactionHash: string; chainId: string; intentId: string }[] = [];
-  
+
   try {
     const intent = intents[0];
     logger.info('Processing intent for new transaction', { intent });
@@ -188,14 +191,15 @@ export const sendIntentsMulticall = async (
     try {
       // Check if Mark already has sufficient allowance for Permit2
       const tokenContract = await getERC20Contract(config, chainId, intents[0].inputAsset as `0x${string}`);
-      const allowance = await tokenContract.read.allowance([config.ownAddress, PERMIT2_ADDRESS as `0x${string}`]);
+      const permit2Address = getPermit2Address(chainId, config);
+      const allowance = await tokenContract.read.allowance([config.ownAddress, permit2Address as `0x${string}`]);
 
       // Simplification here, we assume Mark sets infinite approve on Permit2
       const hasAllowance = BigInt(allowance as string) > 0n;
 
       // If not approved yet, set infinite approve on Permit2
       if (!hasAllowance) {
-        await approvePermit2(tokenContract.address as `0x${string}`, chainService);
+        await approvePermit2(tokenContract.address as `0x${string}`, chainService, config);
       }
 
       logger.info('Successfully signed and submitted Permit2 approval', {
@@ -229,6 +233,7 @@ export const sendIntentsMulticall = async (
           amount,
           nonce,
           deadline,
+          config,
         );
 
         // Add Permit2 parameters to the intent
@@ -264,7 +269,7 @@ export const sendIntentsMulticall = async (
     }
 
     // Prepare the multicall transaction (not sending native)
-    const multicallTx = prepareMulticall(txs, false);
+    const multicallTx = prepareMulticall(txs, false, chainId, config);
 
     logger.info('Preparing to submit multicall transaction', {
       to: multicallTx.to,

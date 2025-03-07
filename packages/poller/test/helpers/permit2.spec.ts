@@ -2,15 +2,15 @@ import { expect } from 'chai';
 import { stub, SinonStub, restore } from 'sinon';
 import { Wallet } from 'ethers';
 import { Web3Signer } from '@mark/web3signer';
-import { Address, encodeFunctionData, erc20Abi, verifyTypedData } from 'viem';
+import { Address, encodeFunctionData, erc20Abi } from 'viem';
 import {
-  PERMIT2_ADDRESS,
   approvePermit2,
   getPermit2Signature,
   generatePermit2Nonce,
   generatePermit2Deadline,
 } from '../../src/helpers/permit2';
 import { ChainService } from '@mark/chainservice';
+import { MarkConfiguration } from '@mark/core';
 
 describe('Permit2 Helper Functions', () => {
   afterEach(() => {
@@ -68,6 +68,18 @@ describe('Permit2 Helper Functions', () => {
   describe('approvePermit2', () => {
     let chainService: any;
     let submitStub: SinonStub;
+    const TEST_PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+    const mockConfig = {
+      chains: {
+        '1': {
+          deployments: {
+            permit2: TEST_PERMIT2_ADDRESS,
+            everclear: '0xeverclear',
+            multicall3: '0xmulticall3'
+          }
+        }
+      }
+    } as unknown as MarkConfiguration;
 
     beforeEach(() => {
       chainService = {
@@ -89,7 +101,7 @@ describe('Permit2 Helper Functions', () => {
     it('should create an approval transaction with proper transaction data', async () => {
       const tokenAddress = '0xTOKEN_ADDRESS' as Address;
       
-      const txHash = await approvePermit2(tokenAddress, chainService as ChainService);
+      const txHash = await approvePermit2(tokenAddress, chainService as ChainService, mockConfig);
       
       // Verify submitAndMonitor was called with the expected arguments
       expect(submitStub.calledOnce).to.be.true;
@@ -109,7 +121,7 @@ describe('Permit2 Helper Functions', () => {
       const expectedData = encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
-        args: [PERMIT2_ADDRESS as Address, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')]
+        args: [TEST_PERMIT2_ADDRESS as Address, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')]
       });
       
       expect(txData.data).to.equal(expectedData);
@@ -122,7 +134,7 @@ describe('Permit2 Helper Functions', () => {
       const unknownTokenAddress = '0xUNKNOWN_TOKEN' as Address;
       
       try {
-        await approvePermit2(unknownTokenAddress, chainService as ChainService);
+        await approvePermit2(unknownTokenAddress, chainService as ChainService, mockConfig);
         expect.fail('Should have thrown an error');
       } catch (error) {
         expect(error).to.be.instanceOf(Error);
@@ -132,6 +144,19 @@ describe('Permit2 Helper Functions', () => {
   });
 
   describe('getPermit2Signature', () => {
+    const TEST_PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+    const mockConfig = {
+      chains: {
+        '1': {
+          deployments: {
+            permit2: TEST_PERMIT2_ADDRESS,
+            everclear: '0xeverclear',
+            multicall3: '0xmulticall3'
+          }
+        }
+      }
+    } as unknown as MarkConfiguration;
+    
     it('should throw an error if signer type is not supported', async () => {
       const invalidSigner = {} as any;
       
@@ -146,7 +171,8 @@ describe('Permit2 Helper Functions', () => {
           '0x5678',
           '1000',
           '1',
-          123456
+          123456,
+          mockConfig
         );
         expect.fail('Should have thrown an error');
       } catch (error) {
@@ -178,7 +204,8 @@ describe('Permit2 Helper Functions', () => {
         spender,
         amount,
         nonce,
-        deadline
+        deadline,
+        mockConfig
       );
       
       // Verify the signature should be a hex string starting with 0x
@@ -192,7 +219,7 @@ describe('Permit2 Helper Functions', () => {
       
       expect(calledDomain.name).to.equal('Permit2');
       expect(calledDomain.chainId).to.equal(chainId);
-      expect(calledDomain.verifyingContract).to.equal(PERMIT2_ADDRESS);
+      expect(calledDomain.verifyingContract).to.equal(TEST_PERMIT2_ADDRESS);
       
       expect(calledTypes.PermitSingle).to.exist;
       expect(calledTypes.PermitDetails).to.exist;
@@ -231,7 +258,8 @@ describe('Permit2 Helper Functions', () => {
         spender,
         amount,
         nonce,
-        deadline
+        deadline,
+        mockConfig
       );
       
       expect(mockSignTypedData.calledOnce).to.be.true;
@@ -242,7 +270,7 @@ describe('Permit2 Helper Functions', () => {
       
       expect(domain.name).to.equal('Permit2');
       expect(domain.chainId).to.equal(chainId);
-      expect(domain.verifyingContract).to.equal(PERMIT2_ADDRESS);
+      expect(domain.verifyingContract).to.equal(TEST_PERMIT2_ADDRESS);
       
       expect(types.PermitSingle).to.exist;
       expect(types.PermitDetails).to.exist;

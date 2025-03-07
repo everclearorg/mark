@@ -1,5 +1,5 @@
 import { MarkConfiguration } from '@mark/core';
-import { createPublicClient, getContract, http, Abi, Chain } from 'viem';
+import { createPublicClient, getContract, http, Abi, Chain, Address } from 'viem';
 
 const erc20Abi = [
   {
@@ -372,11 +372,18 @@ export const multicallAbi = [
   },
 ];
 
-// Multicall3 is deployed at the same address on all chains
-export const MULTICALL_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
-
 const HUB_MAINNET_ADDR = '0xa05A3380889115bf313f1Db9d5f335157Be4D816';
 const HUB_TESTNET_ADDR = '0x4C526917051ee1981475BB6c49361B0756F505a8';
+
+export const getMulticallAddress = (chainId: string, config: MarkConfiguration): Address => {
+  const chainConfig = config.chains[chainId];
+
+  if (!chainConfig) {
+    throw new Error(`Chain configuration not found for chain ID: ${chainId}`);
+  }
+
+  return chainConfig.deployments.multicall3 as Address;
+};
 
 export const getProviderUrl = (chainId: string, config: MarkConfiguration): string | undefined => {
   return chainId === config.hub.domain ? config.hub.providers[0] : config.chains[chainId]?.providers[0];
