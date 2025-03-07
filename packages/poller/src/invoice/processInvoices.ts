@@ -189,11 +189,40 @@ export async function processInvoices({
         });
         minAmounts = Object.fromEntries(invoice.destinations.map((d) => [d, '0']));
       }
+      
+      // Set for ticker-destination pair lookup
+      const existingDestinations = new Set(
+        pendingPurchases
+          .filter(p => p.target.ticker_hash === ticker)
+          .map(p => p.purchase.params.origin)
+      );
+      
+      // Filter out origins that already have pending purchases for this destination-ticker combo
+      const filteredMinAmounts = { ...minAmounts };
+      for (const destination of Object.keys(filteredMinAmounts)) {
+        if (existingDestinations.has(destination)) {
+          logger.info('Action exists for destination-ticker combo, removing from consideration', {
+            requestId, invoiceId, destination
+          });
+          prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, { 
+            ...labels, destination 
+          });
+          delete filteredMinAmounts[destination];
+        }
+      }
+      
+      // Skip if no valid origins remain
+      if (Object.keys(filteredMinAmounts).length === 0) {
+        logger.info('No valid origins remain after filtering existing purchases', {
+          requestId, invoiceId
+        });
+        continue;
+      }
 
       // Calculate optimal intents to fire using split intents calc
       const { intents, originDomain, totalAllocated } = await calculateSplitIntents(
         invoice,
-        minAmounts,
+        filteredMinAmounts,
         config,
         balances,
         everclear,
