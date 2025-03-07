@@ -184,36 +184,30 @@ export const sendIntentsMulticall = async (
     combinedIntentId,
   });
 
-  // Get unique tokens from all intents
-  const uniqueTokens = [...new Set(intents.map((intent) => intent.inputAsset))];
-
   try {
-    // Check Permit2 allowances for each token
-    for (const tokenAddress of uniqueTokens) {
-      try {
-        // Check if Mark already has sufficient allowance for Permit2
-        const tokenContract = await getERC20Contract(config, chainId, tokenAddress as `0x${string}`);
-        const allowance = await tokenContract.read.allowance([config.ownAddress, PERMIT2_ADDRESS as `0x${string}`]);
+    try {
+      // Check if Mark already has sufficient allowance for Permit2
+      const tokenContract = await getERC20Contract(config, chainId, intents[0].inputAsset as `0x${string}`);
+      const allowance = await tokenContract.read.allowance([config.ownAddress, PERMIT2_ADDRESS as `0x${string}`]);
 
-        // Simplification here, we assume Mark sets infinite approve on Permit2
-        const hasAllowance = BigInt(allowance as string) > 0n;
-        if (hasAllowance) continue;
+      // Simplification here, we assume Mark sets infinite approve on Permit2
+      const hasAllowance = BigInt(allowance as string) > 0n;
 
-        // If not approved yet, set infinite approve on Permit2
-        await approvePermit2(tokenAddress as `0x${string}`, chainService);
-
-        logger.info('Successfully signed and submitted Permit2 approval', {
-          tokenAddress,
-          chainId,
-        });
-      } catch (error) {
-        logger.error('Error signing/submitting Permit2 approval', {
-          error: error instanceof Error ? error.message : error,
-          tokenAddress,
-          chainId,
-        });
-        throw error;
+      // If not approved yet, set infinite approve on Permit2
+      if (!hasAllowance) {
+        await approvePermit2(tokenContract.address as `0x${string}`, chainService);
       }
+
+      logger.info('Successfully signed and submitted Permit2 approval', {
+        tokenContract,
+        chainId,
+      });
+    } catch (error) {
+      logger.error('Error signing/submitting Permit2 approval', {
+        error: error instanceof Error ? error.message : error,
+        chainId,
+      });
+      throw error;
     }
 
     // Generate a unique nonce for this batch of permits
