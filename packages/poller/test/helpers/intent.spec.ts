@@ -450,26 +450,18 @@ describe('sendIntentsMulticall', () => {
         expect((mockDeps.prometheus.updateGasSpent as SinonStub).calledOnce).to.be.true;
     });
 
-    it('should check and get permit2 allowances for each token', async () => {
-        // Two different tokens with different allowance status
-        const tokenContract1 = {
+    it('should check permit2 allowance for the token used in all intents', async () => {
+        // All intents use the same token in multicall
+        const tokenContract = {
             address: MOCK_TOKEN1,
-            read: {
-                allowance: stub().resolves(BigInt('1000000000000000000')), // Already approved
-            },
-        } as unknown as GetContractReturnType;
-        
-        const tokenContract2 = {
-            address: MOCK_TOKEN2,
             read: {
                 allowance: stub().resolves(BigInt('0')), // Needs approval
             },
         } as unknown as GetContractReturnType;
         
-        // Use dynamic stub responses
+        // Use stub for the token contract
         const getERC20ContractStub = stub(contractHelpers, 'getERC20Contract');
-        getERC20ContractStub.withArgs(mockConfig, '1', MOCK_TOKEN1).resolves(tokenContract1 as any);
-        getERC20ContractStub.withArgs(mockConfig, '1', MOCK_TOKEN2).resolves(tokenContract2 as any);
+        getERC20ContractStub.withArgs(mockConfig, '1', MOCK_TOKEN1).resolves(tokenContract as any);
         
         // Mock the rest similar to success case
         (mockDeps.everclear.createNewIntent as SinonStub).resolves({
@@ -485,21 +477,23 @@ describe('sendIntentsMulticall', () => {
             logs: []
         });
         
+        // Create multiple intents with the same token but different destinations
         const intents = [
             { ...mockIntent, inputAsset: MOCK_TOKEN1, to: MOCK_DEST1 },
-            { ...mockIntent, inputAsset: MOCK_TOKEN2, to: MOCK_DEST2 },
+            { ...mockIntent, inputAsset: MOCK_TOKEN1, to: MOCK_DEST2 },
         ];
         
         await sendIntentsMulticall(intents, mockDeps, mockConfig);
         
-        // Verify ERC20 contracts were checked for both tokens
-        expect(getERC20ContractStub.callCount).to.equal(2);
+        // Verify ERC20 contract was checked only once for the token
+        expect(getERC20ContractStub.callCount).to.equal(1);
+        expect(getERC20ContractStub.firstCall.args[2]).to.equal(MOCK_TOKEN1);
         
-        // Verify approvePermit2 was called only for the token that needed approval
+        // Verify approvePermit2 was called since allowance was zero
         expect(mockPermit2Functions.approvePermit2.callCount).to.equal(1);
-        expect(mockPermit2Functions.approvePermit2.firstCall.args[0]).to.equal(MOCK_TOKEN2);
+        expect(mockPermit2Functions.approvePermit2.firstCall.args[0]).to.equal(MOCK_TOKEN1);
         
-        // Verify getPermit2Signature was called for each token/intent
+        // Verify getPermit2Signature was called for each intent
         expect(mockPermit2Functions.getPermit2Signature.callCount).to.equal(2);
     });
 
