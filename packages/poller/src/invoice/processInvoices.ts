@@ -115,7 +115,14 @@ export async function processInvoices({
         invoiceQueues.set(invoice.ticker_hash, []);
       }
       invoiceQueues.get(invoice.ticker_hash)!.push(invoice);
-      prometheus.recordPossibleInvoice({ origin: invoice.origin, id: invoice.intent_id, ticker: invoice.ticker_hash });
+      
+      // Record invoice as seen
+      const labels: InvoiceLabels = {
+        origin: invoice.origin,
+        id: invoice.intent_id,
+        ticker: invoice.ticker_hash
+      };
+      prometheus.recordPossibleInvoice(labels);
     });
 
   // Process each ticker group. Goal is to process the first invoice in each queue.
@@ -270,6 +277,8 @@ export async function processInvoices({
         prometheus.recordSuccessfulPurchase({
           ...labels,
           destination: originDomain,
+          isSplit: intents.length > 1 ? 'true' : 'false',
+          splitCount: intents.length.toString(),
         });
         prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
 
