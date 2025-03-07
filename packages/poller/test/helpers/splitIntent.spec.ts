@@ -122,7 +122,6 @@ describe('Split Intent Helper Functions', () => {
         minAmounts,
         config,
         balances,
-        everclear,
         logger
       );
 
@@ -174,7 +173,6 @@ describe('Split Intent Helper Functions', () => {
         minAmounts,
         config,
         balances,
-        everclear,
         logger
       );
 
@@ -244,7 +242,6 @@ describe('Split Intent Helper Functions', () => {
         minAmounts,
         config,
         balances,
-        everclear,
         logger
       );
 
@@ -313,7 +310,6 @@ describe('Split Intent Helper Functions', () => {
         minAmounts,
         config,
         balances,
-        everclear,
         logger
       );
 
