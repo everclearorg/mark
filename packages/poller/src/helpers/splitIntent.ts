@@ -2,7 +2,6 @@ import { getTokenAddressFromConfig, Invoice, MarkConfiguration, NewIntentParams 
 import { Logger } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS } from '../invoice/processInvoices';
-import { getCustodiedBalances } from './balance';
 
 interface SplitIntentAllocation {
   origin: string;

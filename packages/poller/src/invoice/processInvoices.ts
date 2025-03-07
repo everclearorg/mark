@@ -115,12 +115,12 @@ export async function processInvoices({
         invoiceQueues.set(invoice.ticker_hash, []);
       }
       invoiceQueues.get(invoice.ticker_hash)!.push(invoice);
-      
+
       // Record invoice as seen
       const labels: InvoiceLabels = {
         origin: invoice.origin,
         id: invoice.intent_id,
-        ticker: invoice.ticker_hash
+        ticker: invoice.ticker_hash,
       };
       prometheus.recordPossibleInvoice(labels);
     });
