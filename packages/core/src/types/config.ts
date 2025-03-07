@@ -25,6 +25,9 @@ export interface ChainConfiguration {
   assets: AssetConfiguration[];
   invoiceAge: number;
   gasThreshold: string;
+  deployments: {
+    everclear: string;
+  };
 }
 
 export interface HubConfig {
