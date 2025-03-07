@@ -225,7 +225,6 @@ export async function processInvoices({
         filteredMinAmounts,
         config,
         balances,
-        everclear,
         logger,
       );
 
@@ -244,23 +243,11 @@ export async function processInvoices({
       try {
         let intentResult;
 
-        // Send intent transactions appropriately
-        if (intents.length === 1) {
-          // Single intent
-          [intentResult] = await sendIntents(
-            intents,
-            { everclear, chainService, logger, cache, prometheus, web3Signer },
-            config,
-          );
-        } else {
-          // Multiple intents
-          intentResult = await sendIntentsMulticall(
-            intents,
-            { everclear, chainService, logger, cache, prometheus, web3Signer },
-            config,
-            originDomain,
-          );
-        }
+        [intentResult] = await sendIntents(
+          intents,
+          { everclear, chainService, logger, cache, prometheus, web3Signer },
+          config
+        );
 
         // Record successful purchase and create a purchase for cache
         const purchase = {

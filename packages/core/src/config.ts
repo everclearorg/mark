@@ -162,14 +162,31 @@ function parseChainConfigurations(
 
     // Get the invoice age
     // First, check if there is a configured invoice age in the env
-    const invoiceAge = process.env[`CHAIN_${chainId}_INVOICE_AGE`] ?? process.env[`INVOICE_AGE`] ?? DEFAULT_INVOICE_AGE;
+    const invoiceAge =
+      process.env[`CHAIN_${chainId}_INVOICE_AGE`] ??
+      process.env[`INVOICE_AGE`] ??
+      DEFAULT_INVOICE_AGE.toString();
+
     const gasThreshold =
       process.env[`CHAIN_${chainId}_GAS_THRESHOLD`] ?? process.env[`GAS_THRESHOLD`] ?? DEFAULT_GAS_THRESHOLD;
+    
+    // Extract Everclear spoke address from the config
+    const everclear = config?.chains[chainId]?.deployments?.everclear;
+    
+    if (!everclear) {
+      throw new ConfigurationError(
+        `No spoke address found for chain ${chainId}. Make sure it's defined in the config under chains.${chainId}.deployments.everclear`
+      );
+    }
+
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
       invoiceAge: parseInt(invoiceAge),
       gasThreshold,
+      deployments: {
+        everclear,
+      },
     };
   }
 
