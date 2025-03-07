@@ -70,7 +70,6 @@ export async function calculateSplitIntents(
   minAmounts: Record<string, string>,
   config: MarkConfiguration,
   balances: Map<string, Map<string, bigint>>,
-  everclear: EverclearAdapter,
   logger: Logger,
 ): Promise<SplitIntentResult> {
   const ticker = invoice.ticker_hash;
