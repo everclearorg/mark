@@ -582,4 +582,196 @@ describe('processInvoices', () => {
             expect(prometheus.recordSuccessfulPurchase.called).to.be.true;
         }
     });
+
+    it('should filter out destinations with existing purchases', async () => {
+        // Create existing purchase for a specific destination
+        const existingPurchase: PurchaseAction = {
+            target: {
+                ...validInvoice,
+                intent_id: '0xdifferent' // Different invoice but same ticker
+            },
+            purchase: { 
+                intentId: '0xexisting_intent', 
+                params: {
+                    origin: '1', // This destination will be filtered out
+                    destinations: ['8453'],
+                    to: '0xdestination',
+                    inputAsset: '0xtoken',
+                    amount: '1000000000000000000',
+                    callData: '0xdata',
+                    maxFee: '0'
+                } as NewIntentParams 
+            },
+            transactionHash: '0xexisting'
+        };
+        
+        cache.getAllPurchases.resolves([existingPurchase]);
+        
+        // Modify minAmounts to include multiple destinations
+        const multiDestResponse = {
+            ...validMinApiResponse,
+            minAmounts: {
+                '1': '1000000000000000000', // Will be filtered out
+                '42161': '500000000000000000' // Should remain
+            }
+        };
+        everclear.getMinAmounts.resolves(multiDestResponse);
+        
+        await processInvoices({
+            invoices: [validInvoice],
+            cache,
+            logger,
+            everclear,
+            chainService,
+            prometheus,
+            config: validConfig,
+            web3Signer: typedWeb3Signer
+        });
+
+        // Verify calcSplitIntents was called with filtered minAmounts
+        expect(calcSplitIntentsStub.calledOnce).to.be.true;
+        const filteredMinAmounts = calcSplitIntentsStub.firstCall.args[1];
+        expect(filteredMinAmounts).to.not.have.property('1'); // Should be filtered out
+        expect(filteredMinAmounts).to.have.property('42161'); // Should remain
+        
+        // Verify destination filtering was logged
+        expect(logger.info.calledWith('Action exists for destination-ticker combo, removing from consideration', 
+            sinon.match({ destination: '1' }))).to.be.true;
+            
+        // Verify metrics for filtered destination
+        expect(prometheus.recordInvalidPurchase.calledWith(
+            InvalidPurchaseReasons.PendingPurchaseRecord,
+            sinon.match({ destination: '1' })
+        )).to.be.true;
+    });
+    
+    it('should skip invoice when all destinations are filtered out', async () => {
+        // Create a specific invoice with known values
+        const testInvoice = {
+            ...validInvoice,
+            ticker_hash: '0xspecific_ticker_hash',
+            intent_id: '0xtest_invoice_id'
+        };
+        
+        // Create existing purchase that exactly matches our test invoice's ticker_hash
+        const existingPurchase: PurchaseAction = {
+            target: {
+                ...testInvoice,
+                intent_id: '0xdifferent' // Different invoice ID but same ticker_hash
+            },
+            purchase: { 
+                intentId: '0xexisting_intent', 
+                params: {
+                    origin: '1', // This is the only destination in our minAmounts
+                    destinations: ['8453'],
+                    to: '0xdestination',
+                    inputAsset: '0xtoken',
+                    amount: '1000000000000000000',
+                    callData: '0xdata',
+                    maxFee: '0'
+                } as NewIntentParams 
+            },
+            transactionHash: '0xexisting'
+        };
+        
+        cache.getAllPurchases.resolves([existingPurchase]);
+        
+        // Set up minAmounts to ONLY include the destination that will be filtered
+        const singleDestResponse = {
+            ...validMinApiResponse,
+            minAmounts: {
+                '1': '1000000000000000000' // Only this destination, which will be filtered out
+            }
+        };
+        everclear.getMinAmounts.resolves(singleDestResponse);
+        
+        await processInvoices({
+            invoices: [testInvoice],
+            cache,
+            logger,
+            everclear,
+            chainService,
+            prometheus,
+            config: validConfig,
+            web3Signer: typedWeb3Signer
+        });
+        
+        expect(calcSplitIntentsStub.called).to.be.false;
+        expect(sendIntentsStub.called).to.be.false;
+        expect(sendIntentsMulticallStub.called).to.be.false;
+    });
+    
+    it('should correctly handle multiple pending purchases with different ticker-destination combinations', async () => {
+        // Create two existing purchases for different ticker-destination combinations
+        const existingPurchases: PurchaseAction[] = [
+            {
+                target: {
+                    ...validInvoice,
+                    intent_id: '0xdifferent1'
+                },
+                purchase: { 
+                    intentId: '0xexisting_intent1', 
+                    params: {
+                        origin: '1',
+                        destinations: ['8453'],
+                        to: '0xdestination1',
+                        inputAsset: '0xtoken',
+                        amount: '1000000000000000000',
+                        callData: '0xdata1',
+                        maxFee: '0'
+                    } as NewIntentParams 
+                },
+                transactionHash: '0xexisting1'
+            },
+            {
+                target: {
+                    ...validInvoice,
+                    ticker_hash: '0xdifferent_ticker',
+                    intent_id: '0xdifferent2'
+                },
+                purchase: { 
+                    intentId: '0xexisting_intent2', 
+                    params: {
+                        origin: '42161', // Different destination
+                        destinations: ['8453'],
+                        to: '0xdestination2',
+                        inputAsset: '0xtoken2',
+                        amount: '1000000000000000000',
+                        callData: '0xdata2',
+                        maxFee: '0'
+                    } as NewIntentParams 
+                },
+                transactionHash: '0xexisting2'
+            }
+        ];
+        
+        cache.getAllPurchases.resolves(existingPurchases);
+        
+        // Modify minAmounts to include multiple destinations
+        const multiDestResponse = {
+            ...validMinApiResponse,
+            minAmounts: {
+                '1': '1000000000000000000', // Should be filtered (same ticker)
+                '42161': '500000000000000000' // Should remain (different ticker)
+            }
+        };
+        everclear.getMinAmounts.resolves(multiDestResponse);
+        
+        await processInvoices({
+            invoices: [validInvoice],
+            cache,
+            logger,
+            everclear,
+            chainService,
+            prometheus,
+            config: validConfig,
+            web3Signer: typedWeb3Signer
+        });
+
+        // Verify calcSplitIntents was called with correctly filtered minAmounts
+        expect(calcSplitIntentsStub.calledOnce).to.be.true;
+        const filteredMinAmounts = calcSplitIntentsStub.firstCall.args[1];
+        expect(filteredMinAmounts).to.not.have.property('1'); // Should be filtered out (same ticker)
+        expect(filteredMinAmounts).to.have.property('42161'); // Should remain (different ticker)
+    });
 });
