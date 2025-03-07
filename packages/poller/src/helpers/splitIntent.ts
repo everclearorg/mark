@@ -129,7 +129,11 @@ export async function calculateSplitIntents(
   }
 
   // Find the best allocation (one that covers the most)
-  possibleAllocations.sort((a, b) => Number(b.totalAllocated - a.totalAllocated));
+  possibleAllocations.sort((a, b) => {
+    if (b.totalAllocated > a.totalAllocated) return 1;
+    if (b.totalAllocated < a.totalAllocated) return -1;
+    return 0;
+  });
   const bestAllocation = possibleAllocations[0];
 
   logger.info('Best allocation found for split intent', {

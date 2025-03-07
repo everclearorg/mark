@@ -272,7 +272,7 @@ export async function processInvoices({
           totalAmount: invoice.amount,
           totalAllocated: totalAllocated.toString(),
           intentCount: intents.length,
-          coverage: `${((Number(totalAllocated) * 100) / Number(invoice.amount)).toFixed(2)}%`,
+          coverage: `${(Number((BigInt(totalAllocated) * BigInt(100)) / BigInt(invoice.amount))).toFixed(2)}%`,
           transactionHash: intentResult.transactionHash,
         });
 
