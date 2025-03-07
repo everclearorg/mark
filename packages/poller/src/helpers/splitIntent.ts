@@ -69,6 +69,7 @@ export async function calculateSplitIntents(
   minAmounts: Record<string, string>,
   config: MarkConfiguration,
   balances: Map<string, Map<string, bigint>>,
+  custodiedAssets: Map<string, Map<string, bigint>>,
   logger: Logger,
 ): Promise<SplitIntentResult> {
   const ticker = invoice.ticker_hash;
@@ -77,8 +78,7 @@ export async function calculateSplitIntents(
   // Get all domains from config
   const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
 
-  const custodiedBalances = await getCustodiedBalances(config);
-  const allCustodiedAssets = custodiedBalances.get(ticker) || new Map<string, bigint>();
+  const allCustodiedAssets = custodiedAssets.get(ticker) || new Map<string, bigint>();
 
   // Evaluate each possible origin domain
   const possibleAllocations: SplitIntentAllocation[] = [];

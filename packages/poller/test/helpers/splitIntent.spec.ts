@@ -1,21 +1,15 @@
 import { expect } from 'chai';
-import { stub, createStubInstance, SinonStubbedInstance, restore as sinonRestore, SinonStub } from 'sinon';
-import { EverclearAdapter } from '@mark/everclear';
+import { createStubInstance, SinonStubbedInstance, restore as sinonRestore } from 'sinon';
 import { Logger } from '@mark/logger';
 import { Invoice, MarkConfiguration } from '@mark/core';
 import { calculateSplitIntents } from '../../src/helpers/splitIntent';
-import * as balanceHelpers from '../../src/helpers/balance';
 
 describe('Split Intent Helper Functions', () => {
-  let everclear: SinonStubbedInstance<EverclearAdapter>;
   let logger: SinonStubbedInstance<Logger>;
   let config: MarkConfiguration;
-  let getCustodiedBalancesStub: SinonStub;
 
   beforeEach(() => {
-    everclear = createStubInstance(EverclearAdapter);
     logger = createStubInstance(Logger);
-    getCustodiedBalancesStub = stub(balanceHelpers, 'getCustodiedBalances');
 
     config = {
       ownAddress: '0xmarkAddress',
@@ -115,12 +109,12 @@ describe('Split Intent Helper Functions', () => {
           ['42161', BigInt('0')],
         ])],
       ]);
-      getCustodiedBalancesStub.resolves(balances);
 
       const result = await calculateSplitIntents(
         invoice,
         minAmounts,
         config,
+        balances,
         balances,
         logger
       );
@@ -166,13 +160,13 @@ describe('Split Intent Helper Functions', () => {
       const custodiedBalances = new Map<string, Map<string, bigint>>([
         ['WETH', custodiedWETHBalances]
       ]);
-      getCustodiedBalancesStub.resolves(custodiedBalances);
 
       const result = await calculateSplitIntents(
         invoice,
         minAmounts,
         config,
         balances,
+        custodiedBalances,
         logger
       );
 
@@ -235,13 +229,13 @@ describe('Split Intent Helper Functions', () => {
       const custodiedBalances = new Map<string, Map<string, bigint>>([
         ['WETH', custodiedWETHBalances]
       ]);
-      getCustodiedBalancesStub.resolves(custodiedBalances);
 
       const result = await calculateSplitIntents(
         invoice,
         minAmounts,
         config,
         balances,
+        custodiedBalances,
         logger
       );
 
@@ -303,13 +297,13 @@ describe('Split Intent Helper Functions', () => {
       const custodiedBalances2 = new Map<string, Map<string, bigint>>([
         ['WETH', custodiedWETHBalances2]
       ]);
-      getCustodiedBalancesStub.resolves(custodiedBalances2);
 
       const result = await calculateSplitIntents(
         invoice,
         minAmounts,
         config,
         balances,
+        custodiedBalances2,
         logger
       );
 
