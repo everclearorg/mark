@@ -53,7 +53,7 @@ export class Web3SignerApi {
     const payload = {
       jsonrpc: '2.0',
       method: Web3SignerApi.JSON_RPC_METHODS.SIGN_TYPED_DATA,
-      params: [identifier, typedData],
+      params: [identifier, JSON.stringify(typedData)],
       id: 1,
     };
 
