@@ -16,141 +16,146 @@ export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f1
 
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required.
- * Automatically handles batching through multicall if multiple intents are provided.
  */
 export const sendIntents = async (
   intents: NewIntentParams[],
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
 ): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
-  const { everclear, logger, chainService, prometheus } = deps;
-
-  if (intents.length === 0) {
+  const { everclear, chainService, prometheus, logger } = deps;
+  
+  if (!intents.length) {
     logger.info('No intents to process');
     return [];
   }
 
-  // If there's more than one intent, check they all have the same origin domain
-  if (intents.length > 1) {
-    const origins = new Set(intents.map((intent) => intent.origin));
-
-    // If all intents have the same origin domain, use multicall
-    if (origins.size === 1) {
-      logger.info('Multiple intents with same origin detected, using multicall', {
-        count: intents.length,
-        origin: intents[0].origin,
-      });
-      const result = await sendIntentsMulticall(intents, deps, config);
-      return [result];
-    } else {
-      // Should not have different origins
-      throw new Error('Cannot process multiple intents with different origin domains');
-    }
+  // Verify all intents have the same origin
+  const origins = new Set(intents.map((intent) => intent.origin));
+  if (origins.size !== 1) {
+    throw new Error('Cannot process multiple intents with different origin domains');
   }
 
-  logger.info('Processing a single intent', { intent: intents[0] });
+  // Verify all intents have the same input asset
+  const tokens = new Set(intents.map((intent) => intent.inputAsset));
+  if (tokens.size !== 1) {
+    throw new Error('Cannot process multiple intents with different input assets');
+  }
+
   const results: { transactionHash: string; chainId: string; intentId: string }[] = [];
-
+  
   try {
-    const intent = intents[0];
-    logger.info('Processing intent for new transaction', { intent });
-
-    // Fetch transaction data for creating a new intent
-    const txData = await everclear.createNewIntent(intent);
-
-    logger.debug('Received transaction data for new intent', { txData });
-
-    // Ensure allowance for the transaction
-    const tokenContract = await getERC20Contract(config, intent.origin, intent.inputAsset as `0x${string}`);
+    // First, check if we need a token approval
+    // Get transaction data for the first intent to use for approval
+    const firstIntent = intents[0];
+    const txData = await everclear.createNewIntent(firstIntent);
+    
+    // Get total amount needed across all intents
+    const totalAmount = intents.reduce((sum, intent) => {
+      return BigInt(sum) + BigInt(intent.amount);
+    }, BigInt(0));
+    
+    logger.info('Total amount for approvals', {
+      totalAmount: totalAmount.toString(),
+      intentCount: intents.length,
+    });
+    
+    const tokenContract = await getERC20Contract(config, firstIntent.origin, firstIntent.inputAsset as `0x${string}`);
     const allowance = await tokenContract.read.allowance([config.ownAddress, txData.to]);
-
-    if (BigInt(allowance as string) < BigInt(intent.amount)) {
-      logger.info('Allowance insufficient, preparing approval transaction', {
-        requiredAmount: intent.amount,
+    
+    if (BigInt(allowance as string) < totalAmount) {
+      logger.info('Allowance insufficient for total amount, preparing approval transaction', {
+        requiredAmount: totalAmount.toString(),
         currentAllowance: allowance,
       });
-
+      
       const approveCalldata = encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
-        args: [txData.to as `0x${string}`, BigInt(intent.amount)],
+        args: [txData.to as `0x${string}`, totalAmount],
       });
       const transaction = {
         to: tokenContract.address,
         data: approveCalldata,
         from: config.ownAddress,
       };
-
+      
       logger.debug('Sending approval transaction', { transaction, chainId: txData.chainId });
       const approvalTx = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
       prometheus.updateGasSpent(
-        intent.origin,
+        firstIntent.origin,
         TransactionReason.Approval,
         BigInt(approvalTx.cumulativeGasUsed.mul(approvalTx.effectiveGasPrice).toString()),
       );
-
+      
       logger.info('Approval transaction sent successfully', {
         chain: txData.chainId,
         approvalTxHash: approvalTx.transactionHash,
         allowance,
         asset: tokenContract.address,
-        amount: intent.amount,
+        amount: totalAmount.toString(),
       });
     } else {
-      logger.info('Sufficient allowance already available', {
+      logger.info('Sufficient allowance already available for all intents', {
         allowance,
         chain: txData.chainId,
         asset: tokenContract.address,
-        amount: intent.amount,
+        totalAmount: totalAmount.toString(),
       });
     }
-
-    // Submit the create intent transaction
-    logger.info('Submitting create intent transaction', {
-      intent,
-      transaction: {
-        to: txData.to,
-        value: txData.value,
-        data: txData.data,
-        from: txData.from,
-        chain: txData.chainId,
-      },
+    
+    logger.info(`Processing ${intents.length} total intent(s)`, { 
+      count: intents.length, 
+      origin: intents[0].origin,
+      token: intents[0].inputAsset
     });
 
-    const intentTx = await chainService.submitAndMonitor(txData.chainId.toString(), {
-      to: txData.to as string,
-      value: txData.value ?? '0',
-      data: txData.data,
-      from: txData.from ?? config.ownAddress,
-    });
-
-    // Get the intent id
-    const event = intentTx.logs.find((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0)!;
-    const intentId = event.topics[1];
-
-    logger.info('Create intent transaction sent successfully', {
-      intentTxHash: intentTx.transactionHash,
-      chainId: intent.origin,
-      intentId,
-    });
-    prometheus.updateGasSpent(
-      intent.origin,
-      TransactionReason.CreateIntent,
-      BigInt(intentTx.cumulativeGasUsed.mul(intentTx.effectiveGasPrice).toString()),
-    );
-
-    // Add result to the output array
-    results.push({ transactionHash: intentTx.transactionHash, chainId: intent.origin, intentId });
-    return results;
-  } catch (err) {
-    const error = err as Error;
-    logger.error('Error encountered while sending intents', {
-      message: error.message,
-      name: error.name,
-      stack: error.stack,
-    });
-    throw new Error(`Failed to send intents: ${error.message || err}`);
+    for (const intent of intents) {
+      // Fetch transaction data for creating the intent
+      const intentTxData = await everclear.createNewIntent(intent);
+      
+      // Submit the create intent transaction
+      logger.info('Submitting create intent transaction', {
+        intent,
+        transaction: {
+          to: intentTxData.to,
+          value: intentTxData.value,
+          data: intentTxData.data,
+          from: intentTxData.from,
+          chain: intentTxData.chainId,
+        },
+      });
+      
+      const intentTx = await chainService.submitAndMonitor(intentTxData.chainId.toString(), {
+        to: intentTxData.to as string,
+        value: intentTxData.value ?? '0',
+        data: intentTxData.data,
+        from: intentTxData.from ?? config.ownAddress,
+      });
+      
+      // Get the intent id
+      const event = intentTx.logs.find((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0)!;
+      const intentId = event.topics[1];
+      
+      logger.info('Create intent transaction sent successfully', {
+        intentTxHash: intentTx.transactionHash,
+        chainId: intent.origin,
+        intentId,
+      });
+      prometheus.updateGasSpent(
+        intent.origin,
+        TransactionReason.CreateIntent,
+        BigInt(intentTx.cumulativeGasUsed.mul(intentTx.effectiveGasPrice).toString()),
+      );
+      
+      // Add result to the output array
+      results.push({ transactionHash: intentTx.transactionHash, chainId: intent.origin, intentId });
+    }
+  } catch (error) {
+    logger.error('Error processing intents', { error, intentCount: intents.length });
+    throw error;
   }
+  
+  return results;
 };
 
 /**
@@ -197,46 +202,19 @@ export const sendIntentsMulticall = async (
       // Simplification here, we assume Mark sets infinite approve on Permit2
       const hasAllowance = BigInt(allowance as string) > 0n;
 
-      console.log('------------Current Permit2 allowance:', {
-        tokenAddress: tokenContract.address,
-        permit2Address,
-        allowance: (allowance as bigint).toString(),
-        hasAllowance
-      });
-
       // If not approved yet, set infinite approve on Permit2
       if (!hasAllowance) {
-        console.log('------------Insufficient allowance, submitting approval');
         const txHash = await approvePermit2(tokenContract.address as `0x${string}`, chainService, config);
-        logger.info('Permit2 approval transaction submitted', {
-          txHash,
-          tokenAddress: tokenContract.address,
-          chainId,
-        });
         
         // Verify allowance again after approval to ensure it worked
         const newAllowance = await tokenContract.read.allowance([config.ownAddress, permit2Address as `0x${string}`]);
         const newHasAllowance = BigInt(newAllowance as string) > 0n;
         
-        console.log('------------New Permit2 allowance after approval:', {
-          tokenAddress: tokenContract.address,
-          permit2Address,
-          allowance: (newAllowance as bigint).toString(),
-          hasAllowance: newHasAllowance,
-          txHash
-        });
-        
         if (!newHasAllowance) {
           throw new Error(`Permit2 approval transaction was submitted (${txHash}) but allowance is still zero`);
         }
-      } else {
-        console.log('------------Sufficient Permit2 allowance already exists');
       }
 
-      logger.info('Successfully checked Permit2 approval', {
-        tokenAddress: tokenContract.address,
-        chainId,
-      });
     } catch (error) {
       logger.error('Error signing/submitting Permit2 approval', {
         error: error instanceof Error ? error.message : error,
@@ -288,22 +266,6 @@ export const sendIntentsMulticall = async (
         // Add to used nonces set to track uniqueness
         usedNonces.add(nonceForApi);
         
-        // Log what was signed vs what's being sent to the API
-        console.log(`------------Intent ${i + 1} Permit2 params:`, {
-          signedWith: {
-            nonce: intentNonce,
-            token: tokenAddress,
-            spender: spender,
-            amount: amount,
-            deadline: deadline
-          },
-          sendingToApi: {
-            nonce: nonceForApi,
-            deadline: deadline.toString(),
-            signature: signature
-          }
-        });
-
         // Add Permit2 parameters to the intent
         const intentWithPermit = {
           ...intent,
@@ -316,16 +278,6 @@ export const sendIntentsMulticall = async (
 
         // Fetch transaction data for Permit2-enabled newIntent
         const txData = await everclear.createNewIntent(intentWithPermit);
-
-        // Log details of the transaction data for debugging
-        console.log(`------------Intent ${txs.length + 1} txData:`, {
-          to: txData.to,
-          dataPrefix: txData.data,
-          dataLength: txData.data.length,
-          value: txData.value || '0',
-          tokenAddress,
-          amount
-        });
 
         // Add transaction to the batch
         txs.push({
@@ -411,8 +363,6 @@ export const sendIntentsMulticall = async (
       chainId,
       intentCount: intents.length,
     });
-    // Log detailed error information
-    console.error('------------Multicall transaction submission failed:', error);
     throw error;
   }
 };

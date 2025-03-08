@@ -12,7 +12,7 @@ import {
 import { ChainService } from '@mark/chainservice';
 import { MarkConfiguration } from '@mark/core';
 
-describe.only('Permit2 Helper Functions', () => {
+describe('Permit2 Helper Functions', () => {
   afterEach(() => {
     restore();
   });

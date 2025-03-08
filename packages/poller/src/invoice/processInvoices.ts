@@ -256,13 +256,14 @@ export async function processInvoices({
       }
 
       try {
-        let intentResult;
-
-        [intentResult] = await sendIntents(
+        const intentResults = await sendIntents(
           intents,
           { everclear, chainService, logger, cache, prometheus, web3Signer },
           config,
         );
+
+        // Use the first result for the purchase record
+        const intentResult = intentResults[0];
 
         // Record successful purchase and create a purchase for cache
         const purchase = {
