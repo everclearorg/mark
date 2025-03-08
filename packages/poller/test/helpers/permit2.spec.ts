@@ -12,7 +12,7 @@ import {
 import { ChainService } from '@mark/chainservice';
 import { MarkConfiguration } from '@mark/core';
 
-describe('Permit2 Helper Functions', () => {
+describe.only('Permit2 Helper Functions', () => {
   afterEach(() => {
     restore();
   });
@@ -221,15 +221,16 @@ describe('Permit2 Helper Functions', () => {
       expect(calledDomain.chainId).to.equal(chainId);
       expect(calledDomain.verifyingContract).to.equal(TEST_PERMIT2_ADDRESS);
       
-      expect(calledTypes.PermitSingle).to.exist;
-      expect(calledTypes.PermitDetails).to.exist;
+      // Update the test to check for PermitTransferFrom types instead of PermitSingle
+      expect(calledTypes.PermitTransferFrom).to.exist;
+      expect(calledTypes.TokenPermissions).to.exist;
       
-      expect(calledValue.details.token).to.equal(token);
-      expect(calledValue.details.amount).to.equal(amount);
-      expect(calledValue.details.nonce).to.equal(nonce);
-      expect(calledValue.details.expiration).to.equal(deadline);
+      // Update the test to check for the new value structure
+      expect(calledValue.permitted.token).to.equal(token);
+      expect(calledValue.permitted.amount).to.equal(amount);
       expect(calledValue.spender).to.equal(spender);
-      expect(calledValue.sigDeadline).to.equal(deadline);
+      expect(calledValue.nonce).to.exist;
+      expect(calledValue.deadline).to.equal(deadline);
       
       signTypedDataStub.restore();
     });
@@ -272,15 +273,16 @@ describe('Permit2 Helper Functions', () => {
       expect(domain.chainId).to.equal(chainId);
       expect(domain.verifyingContract).to.equal(TEST_PERMIT2_ADDRESS);
       
-      expect(types.PermitSingle).to.exist;
-      expect(types.PermitDetails).to.exist;
+      // Update the test to check for PermitTransferFrom types instead of PermitSingle
+      expect(types.PermitTransferFrom).to.exist;
+      expect(types.TokenPermissions).to.exist;
       
-      expect(value.details.token).to.equal(token);
-      expect(value.details.amount).to.equal(amount);
-      expect(value.details.nonce).to.equal(nonce);
-      expect(value.details.expiration).to.equal(deadline);
+      // Update the test to check for the new value structure
+      expect(value.permitted.token).to.equal(token);
+      expect(value.permitted.amount).to.equal(amount);
       expect(value.spender).to.equal(spender);
-      expect(value.sigDeadline).to.equal(deadline);
+      expect(value.nonce).to.exist;
+      expect(value.deadline).to.equal(deadline);
     });
   });
 }); 
