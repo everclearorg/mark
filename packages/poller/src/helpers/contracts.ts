@@ -314,7 +314,7 @@ const hubStorageAbi = [
     ],
     stateMutability: 'view',
   },
-];
+] as const;
 
 export const multicallAbi = [
   {
@@ -370,7 +370,7 @@ export const multicallAbi = [
       },
     ],
   },
-];
+] as const;
 
 const HUB_MAINNET_ADDR = '0xa05A3380889115bf313f1Db9d5f335157Be4D816';
 const HUB_TESTNET_ADDR = '0x4C526917051ee1981475BB6c49361B0756F505a8';

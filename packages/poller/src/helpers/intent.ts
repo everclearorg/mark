@@ -197,13 +197,44 @@ export const sendIntentsMulticall = async (
       // Simplification here, we assume Mark sets infinite approve on Permit2
       const hasAllowance = BigInt(allowance as string) > 0n;
 
+      console.log('------------Current Permit2 allowance:', {
+        tokenAddress: tokenContract.address,
+        permit2Address,
+        allowance: (allowance as bigint).toString(),
+        hasAllowance
+      });
+
       // If not approved yet, set infinite approve on Permit2
       if (!hasAllowance) {
-        await approvePermit2(tokenContract.address as `0x${string}`, chainService, config);
+        console.log('------------Insufficient allowance, submitting approval');
+        const txHash = await approvePermit2(tokenContract.address as `0x${string}`, chainService, config);
+        logger.info('Permit2 approval transaction submitted', {
+          txHash,
+          tokenAddress: tokenContract.address,
+          chainId,
+        });
+        
+        // Verify allowance again after approval to ensure it worked
+        const newAllowance = await tokenContract.read.allowance([config.ownAddress, permit2Address as `0x${string}`]);
+        const newHasAllowance = BigInt(newAllowance as string) > 0n;
+        
+        console.log('------------New Permit2 allowance after approval:', {
+          tokenAddress: tokenContract.address,
+          permit2Address,
+          allowance: (newAllowance as bigint).toString(),
+          hasAllowance: newHasAllowance,
+          txHash
+        });
+        
+        if (!newHasAllowance) {
+          throw new Error(`Permit2 approval transaction was submitted (${txHash}) but allowance is still zero`);
+        }
+      } else {
+        console.log('------------Sufficient Permit2 allowance already exists');
       }
 
-      logger.info('Successfully signed and submitted Permit2 approval', {
-        tokenContract,
+      logger.info('Successfully checked Permit2 approval', {
+        tokenAddress: tokenContract.address,
         chainId,
       });
     } catch (error) {
@@ -217,10 +248,22 @@ export const sendIntentsMulticall = async (
     // Generate a unique nonce for this batch of permits
     const nonce = generatePermit2Nonce();
     const deadline = generatePermit2Deadline();
-
-    for (const intent of intents) {
+    
+    // Track used nonces to avoid duplicates
+    const usedNonces = new Set();
+    for (let i = 0; i < intents.length; i++) {
+      const intent = intents[i];
+      // Generate a unique nonce for each intent to avoid conflicts
+      // Add an index suffix to ensure uniqueness within this batch
+      const intentNonce = nonce + i.toString().padStart(2, '0');
       const tokenAddress = intent.inputAsset;
       const spender = config!.chains[chainId]!.deployments!.everclear;
+      
+      // Verify the spender address is properly set
+      if (!spender) {
+        throw new Error(`Everclear contract address not found for chain ID: ${chainId}`);
+      }
+      
       const amount = intent.amount.toString();
 
       // Get the Permit2 signature and request transaction data
@@ -231,16 +274,41 @@ export const sendIntentsMulticall = async (
           tokenAddress,
           spender,
           amount,
-          nonce,
+          intentNonce, // Use the unique nonce
           deadline,
           config,
         );
+
+        // Ensure nonce has 0x prefix when sending to the API
+        let nonceForApi = intentNonce; // Use the unique nonce
+        if (typeof intentNonce === 'string' && !intentNonce.startsWith('0x')) {
+          nonceForApi = '0x' + intentNonce;
+        }
+
+        // Add to used nonces set to track uniqueness
+        usedNonces.add(nonceForApi);
+        
+        // Log what was signed vs what's being sent to the API
+        console.log(`------------Intent ${i + 1} Permit2 params:`, {
+          signedWith: {
+            nonce: intentNonce,
+            token: tokenAddress,
+            spender: spender,
+            amount: amount,
+            deadline: deadline
+          },
+          sendingToApi: {
+            nonce: nonceForApi,
+            deadline: deadline.toString(),
+            signature: signature
+          }
+        });
 
         // Add Permit2 parameters to the intent
         const intentWithPermit = {
           ...intent,
           permit2Params: {
-            nonce,
+            nonce: nonceForApi,
             deadline: deadline.toString(),
             signature,
           },
@@ -248,6 +316,16 @@ export const sendIntentsMulticall = async (
 
         // Fetch transaction data for Permit2-enabled newIntent
         const txData = await everclear.createNewIntent(intentWithPermit);
+
+        // Log details of the transaction data for debugging
+        console.log(`------------Intent ${txs.length + 1} txData:`, {
+          to: txData.to,
+          dataPrefix: txData.data,
+          dataLength: txData.data.length,
+          value: txData.value || '0',
+          tokenAddress,
+          amount
+        });
 
         // Add transaction to the batch
         txs.push({
@@ -275,6 +353,14 @@ export const sendIntentsMulticall = async (
       to: multicallTx.to,
       chainId,
       combinedIntentId,
+    });
+
+    // Log transaction data for debugging
+    logger.info('Multicall transaction details', {
+      to: multicallTx.to,
+      data: multicallTx.data,
+      dataLength: multicallTx.data.length,
+      value: '0',
     });
 
     const receipt = await chainService.submitAndMonitor(chainId.toString(), {
@@ -325,6 +411,8 @@ export const sendIntentsMulticall = async (
       chainId,
       intentCount: intents.length,
     });
+    // Log detailed error information
+    console.error('------------Multicall transaction submission failed:', error);
     throw error;
   }
 };

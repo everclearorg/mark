@@ -33,7 +33,7 @@ import { ChainConfiguration, MarkConfiguration } from '@mark/core';
  *
  * 5. Security considerations:
  *    - Approving Permit2 gives it permission to move tokens, so ensure you're using
- *      the canonical Permit2 contract address (0x000000000022D473030F116dDEE9F6B43aC78BA3)
+ *      the correct Permit2 contract address (defined in config.ts)
  *    - Nonces should be managed carefully to prevent replay attacks
  *    - Deadlines should be set reasonably to limit the validity period of signatures
  */
@@ -74,10 +74,22 @@ export async function approvePermit2(
   const chainId = chainConfig[0];
   const permit2Address = getPermit2Address(chainId, config);
 
+  console.log('------------Approving Permit2:', {
+    tokenAddress,
+    permit2Address,
+    chainId
+  });
+
   const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: 'approve',
     args: [permit2Address, maxUint256],
+  });
+
+  console.log('------------Permit2 approval tx ready:', {
+    to: tokenAddress,
+    data: data,
+    value: '0x0'
   });
 
   const receipt = await chainService.submitAndMonitor(chainId, {
@@ -86,6 +98,12 @@ export async function approvePermit2(
     value: '0x0',
   });
 
+  console.log('------------Permit2 approval receipt:', JSON.stringify({
+    transactionHash: receipt.transactionHash,
+    status: receipt.status,
+    chainId
+  }));
+  
   return receipt.transactionHash;
 }
 
@@ -111,6 +129,16 @@ export async function getPermit2Signature(
   deadline: number,
   config: MarkConfiguration,
 ): Promise<string> {
+  // Log inputs for debugging
+  console.log(`------------getPermit2Signature inputs:`, {
+    chainId,
+    token,
+    spender,
+    amount,
+    nonce,
+    deadline
+  });
+
   // Get the Permit2 address for this chain
   const permit2Address = getPermit2Address(chainId.toString(), config);
 
@@ -121,31 +149,35 @@ export async function getPermit2Signature(
     verifyingContract: permit2Address,
   };
 
-  // Define the types for the permit
+  // Define the types for PermitTransferFrom (not PermitSingle)
   const types = {
-    PermitSingle: [
-      { name: 'details', type: 'PermitDetails' },
+    PermitTransferFrom: [
+      { name: 'permitted', type: 'TokenPermissions' },
       { name: 'spender', type: 'address' },
-      { name: 'sigDeadline', type: 'uint256' },
-    ],
-    PermitDetails: [
-      { name: 'token', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-      { name: 'expiration', type: 'uint256' },
       { name: 'nonce', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' }
     ],
+    TokenPermissions: [
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' }
+    ]
   };
 
-  // Create the permit data
+  // Ensure nonce has 0x prefix for signing
+  let nonceWithPrefix = nonce;
+  if (typeof nonce === 'string' && !nonce.startsWith('0x')) {
+    nonceWithPrefix = '0x' + nonce;
+  }
+
+  // Create the PermitTransferFrom data
   const value = {
-    details: {
+    permitted: {
       token: token,
-      amount: amount,
-      expiration: deadline,
-      nonce: nonce,
+      amount: amount
     },
     spender: spender,
-    sigDeadline: deadline,
+    nonce: nonceWithPrefix,
+    deadline: deadline
   };
 
   try {
