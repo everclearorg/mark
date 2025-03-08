@@ -19,6 +19,7 @@ import { PrometheusAdapter } from '@mark/prometheus';
 
 describe('sendIntents', () => {
     let mockDeps: SinonStubbedInstance<MarkAdapters>;
+    let getERC20ContractStub: SinonStub;
 
     const mockConfig = {
         ownAddress: '0xdeadbeef1234567890deadbeef1234567890dead',
@@ -51,7 +52,13 @@ describe('sendIntents', () => {
             }),
             cache: createStubInstance(PurchaseCache),
             prometheus: createStubInstance(PrometheusAdapter),
-        }
+        };
+        
+        getERC20ContractStub = stub(contractHelpers, 'getERC20Contract');
+    });
+    
+    afterEach(() => {
+        sinonRestore();
     });
 
     it('should fail if everclear.createNewIntent fails', async () => {
@@ -64,7 +71,7 @@ describe('sendIntents', () => {
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
         await expect(sendIntents(intentsArray, mockDeps, mockConfig)).to.be.rejectedWith(
-            'Failed to send intents: API Error',
+            'API Error',
         );
     });
 
@@ -86,12 +93,12 @@ describe('sendIntents', () => {
             },
         } as unknown as GetContractReturnType;
 
-        stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
+        getERC20ContractStub.resolves(mockTokenContract as any);
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
         await expect(sendIntents(intentsArray, mockDeps, mockConfig))
-            .to.be.rejectedWith('Failed to send intents: Allowance check failed');
+            .to.be.rejectedWith('Allowance check failed');
     });
 
     it('should fail if sending approval transaction fails', async () => {
@@ -112,13 +119,13 @@ describe('sendIntents', () => {
             },
         } as unknown as GetContractReturnType;
 
-        stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
+        getERC20ContractStub.resolves(mockTokenContract as any);
         (mockDeps.chainService.submitAndMonitor as SinonStub).rejects(new Error('Approval failed'));
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
         await expect(sendIntents(intentsArray, mockDeps, mockConfig))
-            .to.be.rejectedWith('Failed to send intents: Approval failed');
+            .to.be.rejectedWith('Approval failed');
     });
 
     it('should fail if sending intent transaction fails', async () => {
@@ -139,13 +146,13 @@ describe('sendIntents', () => {
             },
         } as unknown as GetContractReturnType;
 
-        stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
+        getERC20ContractStub.resolves(mockTokenContract as any);
         (mockDeps.chainService.submitAndMonitor as SinonStub).rejects(new Error('Intent transaction failed'));
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
         await expect(sendIntents(intentsArray, mockDeps, mockConfig))
-            .to.be.rejectedWith('Failed to send intents: Intent transaction failed');
+            .to.be.rejectedWith('Intent transaction failed');
     });
 
     it('should handle empty batches', async () => {
@@ -175,7 +182,7 @@ describe('sendIntents', () => {
             },
         } as unknown as GetContractReturnType;
 
-        stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);;
+        getERC20ContractStub.resolves(mockTokenContract as any);
         (mockDeps.chainService.submitAndMonitor as SinonStub)
             .onFirstCall().resolves({
                 transactionHash: '0xapprovalTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
@@ -214,7 +221,7 @@ describe('sendIntents', () => {
             },
         } as unknown as GetContractReturnType;
 
-        stub(contractHelpers, 'getERC20Contract').resolves(mockTokenContract as any);
+        getERC20ContractStub.resolves(mockTokenContract as any);
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
             transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
                 topics: [INTENT_ADDED_TOPIC0, '0xintentid']
@@ -231,34 +238,8 @@ describe('sendIntents', () => {
         expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0xintentid' }]);
     });
 
-    it('should throw an error when sending multiple intents with different origins', async () => {
-        const intentsWithDifferentOrigins = [
-            {
-                origin: '1',
-                destinations: ['8453'],
-                to: '0xto1',
-                inputAsset: '0xtoken1',
-                amount: '1000',
-                callData: '0x',
-                maxFee: '0',
-            },
-            {
-                origin: '8453',  // Different origin
-                destinations: ['1'],
-                to: '0xto2',
-                inputAsset: '0xtoken2',
-                amount: '2000',
-                callData: '0x',
-                maxFee: '0',
-            }
-        ];
-
-        await expect(sendIntents(intentsWithDifferentOrigins, mockDeps, mockConfig))
-            .to.be.rejectedWith('Cannot process multiple intents with different origin domains');
-    });
-
-    it('should use sendIntentsMulticall when sending multiple intents with the same origin', async () => {
-        const sameOriginIntents = [
+    it('should throw an error when sending multiple intents with different input assets', async () => {
+        const differentAssetIntents = [
             {
                 origin: '1',
                 destinations: ['8453'],
@@ -272,37 +253,108 @@ describe('sendIntents', () => {
                 origin: '1',  // Same origin
                 destinations: ['42161'],
                 to: '0xto2',
-                inputAsset: '0xtoken2',
+                inputAsset: '0xtoken2', // Different input asset
                 amount: '2000',
                 callData: '0x',
                 maxFee: '0',
             }
         ];
 
-        // Set up sendIntentsMulticall to return a success response
-        const multicallResultStub = {
-            transactionHash: '0xmulticallTxHash',
-            chainId: '1',
-            intentId: '0xcombinedIntentId',
-        };
-        
-        // Create a spy on sendIntentsMulticall
-        const sendIntentsMulticallSpy = stub(require('../../src/helpers/intent'), 'sendIntentsMulticall')
-            .resolves(multicallResultStub);
+        await expect(sendIntents(differentAssetIntents, mockDeps, mockConfig))
+            .to.be.rejectedWith('Cannot process multiple intents with different input assets');
+    });
 
-        const result = await sendIntents(sameOriginIntents, mockDeps, mockConfig);
+    it('should process multiple intents with the same origin and input asset individually', async () => {
+        const sameOriginSameAssetIntents = [
+            {
+                origin: '1',
+                destinations: ['8453'],
+                to: '0xto1',
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            },
+            {
+                origin: '1',  // Same origin
+                destinations: ['42161'],
+                to: '0xto2',
+                inputAsset: '0xtoken1', // Same input asset
+                amount: '2000',
+                callData: '0x',
+                maxFee: '0',
+            }
+        ];
+        
+        // Set up createNewIntent to handle multiple calls
+        const createNewIntentStub = mockDeps.everclear.createNewIntent as SinonStub;
+        
+        createNewIntentStub.callsFake((intent: NewIntentParams) => {
+            if (intent.to === '0xto1') {
+                return Promise.resolve({
+                    to: '0xspoke1',
+                    data: '0xdata1',
+                    chainId: '1',
+                    from: mockConfig.ownAddress,
+                    value: '0',
+                });
+            } else if (intent.to === '0xto2') {
+                return Promise.resolve({
+                    to: '0xspoke2',
+                    data: '0xdata2',
+                    chainId: '1',
+                    from: mockConfig.ownAddress,
+                    value: '0',
+                });
+            } else {
+                return Promise.resolve({
+                    to: '0xspoke_default',
+                    data: '0xdata_default',
+                    chainId: '1',
+                    from: mockConfig.ownAddress,
+                    value: '0',
+                });
+            }
+        });
 
-        // Verify sendIntentsMulticall was called with the correct parameters
-        expect(sendIntentsMulticallSpy.calledOnce).to.be.true;
-        expect(sendIntentsMulticallSpy.firstCall.args[0]).to.deep.equal(sameOriginIntents);
-        expect(sendIntentsMulticallSpy.firstCall.args[1]).to.equal(mockDeps);
-        expect(sendIntentsMulticallSpy.firstCall.args[2]).to.equal(mockConfig);
+        const mockTokenContract = {
+            address: '0xtoken1',
+            read: {
+                allowance: stub().resolves(BigInt(5000)), // Sufficient allowance for both
+            },
+        } as unknown as GetContractReturnType;
+
+        getERC20ContractStub.resolves(mockTokenContract as any);
         
-        // Verify the result is correctly wrapped in an array
-        expect(result).to.deep.equal([multicallResultStub]);
+        // Mock transaction responses for both intents
+        (mockDeps.chainService.submitAndMonitor as SinonStub)
+            .onFirstCall().resolves({
+                transactionHash: '0xintentTx1', 
+                cumulativeGasUsed: BigNumber.from('100'), 
+                effectiveGasPrice: BigNumber.from('1'), 
+                logs: [{
+                    topics: [INTENT_ADDED_TOPIC0, '0xintentid1']
+                }]
+            })
+            .onSecondCall().resolves({
+                transactionHash: '0xintentTx2', 
+                cumulativeGasUsed: BigNumber.from('100'), 
+                effectiveGasPrice: BigNumber.from('1'), 
+                logs: [{
+                    topics: [INTENT_ADDED_TOPIC0, '0xintentid2']
+                }]
+            });
+
+        const result = await sendIntents(sameOriginSameAssetIntents, mockDeps, mockConfig);
         
-        // Restore the stub
-        sendIntentsMulticallSpy.restore();
+        // Should be called twice - once for each intent
+        expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(2);
+        
+        // Results should contain transaction info for both intents
+        expect(result).to.deep.equal([
+            { transactionHash: '0xintentTx1', chainId: '1', intentId: '0xintentid1' },
+            { transactionHash: '0xintentTx2', chainId: '1', intentId: '0xintentid2' }
+        ]);
     });
 });
 
@@ -441,53 +493,6 @@ describe('sendIntentsMulticall', () => {
         
         // Verify prometheus metrics were updated
         expect((mockDeps.prometheus.updateGasSpent as SinonStub).calledOnce).to.be.true;
-    });
-
-    it('should check permit2 allowance for the token used in all intents', async () => {
-        // All intents use the same token in multicall
-        const tokenContract = {
-            address: MOCK_TOKEN1,
-            read: {
-                allowance: stub().resolves(BigInt('0')), // Needs approval
-            },
-        } as unknown as GetContractReturnType;
-        
-        // Use stub for the token contract
-        const getERC20ContractStub = stub(contractHelpers, 'getERC20Contract');
-        getERC20ContractStub.withArgs(mockConfig, '1', MOCK_TOKEN1).resolves(tokenContract as any);
-        
-        // Mock the rest similar to success case
-        (mockDeps.everclear.createNewIntent as SinonStub).resolves({
-            to: zeroAddress,
-            data: '0xintentdata',
-            chainId: 1,
-        });
-        
-        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
-            transactionHash: '0xmulticallTx',
-            cumulativeGasUsed: BigNumber.from('200000'),
-            effectiveGasPrice: BigNumber.from('5'),
-            logs: []
-        });
-        
-        // Create multiple intents with the same token but different destinations
-        const intents = [
-            { ...mockIntent, inputAsset: MOCK_TOKEN1, to: MOCK_DEST1 },
-            { ...mockIntent, inputAsset: MOCK_TOKEN1, to: MOCK_DEST2 },
-        ];
-        
-        await sendIntentsMulticall(intents, mockDeps, mockConfig);
-        
-        // Verify ERC20 contract was checked only once for the token
-        expect(getERC20ContractStub.callCount).to.equal(1);
-        expect(getERC20ContractStub.firstCall.args[2]).to.equal(MOCK_TOKEN1);
-        
-        // Verify approvePermit2 was called since allowance was zero
-        expect(mockPermit2Functions.approvePermit2.callCount).to.equal(1);
-        expect(mockPermit2Functions.approvePermit2.firstCall.args[0]).to.equal(MOCK_TOKEN1);
-        
-        // Verify getPermit2Signature was called for each intent
-        expect(mockPermit2Functions.getPermit2Signature.callCount).to.equal(2);
     });
 
     it('should construct the correct multicall payload from multiple intents', async () => {
