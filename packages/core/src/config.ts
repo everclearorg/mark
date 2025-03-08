@@ -186,12 +186,11 @@ const parseChainConfigurations = async (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   configJson: any,
 ): Promise<Record<string, ChainConfiguration>> => {
-  
   // If config is undefined or doesn't have chains, we can't proceed
   if (!config?.chains) {
     throw new ConfigurationError('No chain configurations found in the Everclear config');
   }
-  
+
   // Use chainIds from configJson if available, otherwise from environment variable,
   // or as a last resort, use the keys from the hosted config
   const chainIds = configJson.chains
@@ -199,7 +198,7 @@ const parseChainConfigurations = async (
     : (await fromEnv('CHAIN_IDS'))
       ? (await fromEnv('CHAIN_IDS'))!.split(',').map((id) => id.trim())
       : Object.keys(config.chains);
-      
+
   const chains: Record<string, ChainConfiguration> = {};
 
   for (const chainId of chainIds) {
@@ -207,17 +206,17 @@ const parseChainConfigurations = async (
       console.log(`Chain ${chainId} not found in Everclear config, skipping`);
       continue;
     }
-    
+
     const chainConfig = config.chains[chainId]!;
-    
+
     const providers = (
-      (configJson.chains?.[chainId]?.providers ??
+      configJson.chains?.[chainId]?.providers ??
       ((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))
         ? parseProviders((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))!)
         : undefined) ??
-      [])
+      []
     ).concat(chainConfig.providers ?? []);
-    
+
     const assets = await Promise.all(
       Object.values(chainConfig.assets ?? {}).map(async (a) => {
         const jsonThreshold = (configJson.chains?.[chainId]?.assets ?? []).find(

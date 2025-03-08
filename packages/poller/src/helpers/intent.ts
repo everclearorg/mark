@@ -23,7 +23,7 @@ export const sendIntents = async (
   config: MarkConfiguration,
 ): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, prometheus, logger } = deps;
-  
+
   if (!intents.length) {
     logger.info('No intents to process');
     return [];
@@ -42,32 +42,32 @@ export const sendIntents = async (
   }
 
   const results: { transactionHash: string; chainId: string; intentId: string }[] = [];
-  
+
   try {
     // First, check if we need a token approval
     // Get transaction data for the first intent to use for approval
     const firstIntent = intents[0];
     const txData = await everclear.createNewIntent(firstIntent);
-    
+
     // Get total amount needed across all intents
     const totalAmount = intents.reduce((sum, intent) => {
       return BigInt(sum) + BigInt(intent.amount);
     }, BigInt(0));
-    
+
     logger.info('Total amount for approvals', {
       totalAmount: totalAmount.toString(),
       intentCount: intents.length,
     });
-    
+
     const tokenContract = await getERC20Contract(config, firstIntent.origin, firstIntent.inputAsset as `0x${string}`);
     const allowance = await tokenContract.read.allowance([config.ownAddress, txData.to]);
-    
+
     if (BigInt(allowance as string) < totalAmount) {
       logger.info('Allowance insufficient for total amount, preparing approval transaction', {
         requiredAmount: totalAmount.toString(),
         currentAllowance: allowance,
       });
-      
+
       const approveCalldata = encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
@@ -78,7 +78,7 @@ export const sendIntents = async (
         data: approveCalldata,
         from: config.ownAddress,
       };
-      
+
       logger.debug('Sending approval transaction', { transaction, chainId: txData.chainId });
       const approvalTx = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
       prometheus.updateGasSpent(
@@ -86,7 +86,7 @@ export const sendIntents = async (
         TransactionReason.Approval,
         BigInt(approvalTx.cumulativeGasUsed.mul(approvalTx.effectiveGasPrice).toString()),
       );
-      
+
       logger.info('Approval transaction sent successfully', {
         chain: txData.chainId,
         approvalTxHash: approvalTx.transactionHash,
@@ -102,17 +102,17 @@ export const sendIntents = async (
         totalAmount: totalAmount.toString(),
       });
     }
-    
-    logger.info(`Processing ${intents.length} total intent(s)`, { 
-      count: intents.length, 
+
+    logger.info(`Processing ${intents.length} total intent(s)`, {
+      count: intents.length,
       origin: intents[0].origin,
-      token: intents[0].inputAsset
+      token: intents[0].inputAsset,
     });
 
     for (const intent of intents) {
       // Fetch transaction data for creating the intent
       const intentTxData = await everclear.createNewIntent(intent);
-      
+
       // Submit the create intent transaction
       logger.info('Submitting create intent transaction', {
         intent,
@@ -124,18 +124,18 @@ export const sendIntents = async (
           chain: intentTxData.chainId,
         },
       });
-      
+
       const intentTx = await chainService.submitAndMonitor(intentTxData.chainId.toString(), {
         to: intentTxData.to as string,
         value: intentTxData.value ?? '0',
         data: intentTxData.data,
         from: intentTxData.from ?? config.ownAddress,
       });
-      
+
       // Get the intent id
       const event = intentTx.logs.find((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0)!;
       const intentId = event.topics[1];
-      
+
       logger.info('Create intent transaction sent successfully', {
         intentTxHash: intentTx.transactionHash,
         chainId: intent.origin,
@@ -146,7 +146,7 @@ export const sendIntents = async (
         TransactionReason.CreateIntent,
         BigInt(intentTx.cumulativeGasUsed.mul(intentTx.effectiveGasPrice).toString()),
       );
-      
+
       // Add result to the output array
       results.push({ transactionHash: intentTx.transactionHash, chainId: intent.origin, intentId });
     }
@@ -154,7 +154,7 @@ export const sendIntents = async (
     logger.error('Error processing intents', { error, intentCount: intents.length });
     throw error;
   }
-  
+
   return results;
 };
 
@@ -205,16 +205,15 @@ export const sendIntentsMulticall = async (
       // If not approved yet, set infinite approve on Permit2
       if (!hasAllowance) {
         const txHash = await approvePermit2(tokenContract.address as `0x${string}`, chainService, config);
-        
+
         // Verify allowance again after approval to ensure it worked
         const newAllowance = await tokenContract.read.allowance([config.ownAddress, permit2Address as `0x${string}`]);
         const newHasAllowance = BigInt(newAllowance as string) > 0n;
-        
+
         if (!newHasAllowance) {
           throw new Error(`Permit2 approval transaction was submitted (${txHash}) but allowance is still zero`);
         }
       }
-
     } catch (error) {
       logger.error('Error signing/submitting Permit2 approval', {
         error: error instanceof Error ? error.message : error,
@@ -226,7 +225,7 @@ export const sendIntentsMulticall = async (
     // Generate a unique nonce for this batch of permits
     const nonce = generatePermit2Nonce();
     const deadline = generatePermit2Deadline();
-    
+
     // Track used nonces to avoid duplicates
     const usedNonces = new Set();
     for (let i = 0; i < intents.length; i++) {
@@ -236,12 +235,12 @@ export const sendIntentsMulticall = async (
       const intentNonce = nonce + i.toString().padStart(2, '0');
       const tokenAddress = intent.inputAsset;
       const spender = config!.chains[chainId]!.deployments!.everclear;
-      
+
       // Verify the spender address is properly set
       if (!spender) {
         throw new Error(`Everclear contract address not found for chain ID: ${chainId}`);
       }
-      
+
       const amount = intent.amount.toString();
 
       // Get the Permit2 signature and request transaction data
@@ -265,7 +264,7 @@ export const sendIntentsMulticall = async (
 
         // Add to used nonces set to track uniqueness
         usedNonces.add(nonceForApi);
-        
+
         // Add Permit2 parameters to the intent
         const intentWithPermit = {
           ...intent,
