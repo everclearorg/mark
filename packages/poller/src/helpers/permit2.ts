@@ -74,22 +74,10 @@ export async function approvePermit2(
   const chainId = chainConfig[0];
   const permit2Address = getPermit2Address(chainId, config);
 
-  console.log('------------Approving Permit2:', {
-    tokenAddress,
-    permit2Address,
-    chainId
-  });
-
   const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: 'approve',
     args: [permit2Address, maxUint256],
-  });
-
-  console.log('------------Permit2 approval tx ready:', {
-    to: tokenAddress,
-    data: data,
-    value: '0x0'
   });
 
   const receipt = await chainService.submitAndMonitor(chainId, {
@@ -98,12 +86,6 @@ export async function approvePermit2(
     value: '0x0',
   });
 
-  console.log('------------Permit2 approval receipt:', JSON.stringify({
-    transactionHash: receipt.transactionHash,
-    status: receipt.status,
-    chainId
-  }));
-  
   return receipt.transactionHash;
 }
 
@@ -129,16 +111,6 @@ export async function getPermit2Signature(
   deadline: number,
   config: MarkConfiguration,
 ): Promise<string> {
-  // Log inputs for debugging
-  console.log(`------------getPermit2Signature inputs:`, {
-    chainId,
-    token,
-    spender,
-    amount,
-    nonce,
-    deadline
-  });
-
   // Get the Permit2 address for this chain
   const permit2Address = getPermit2Address(chainId.toString(), config);
 
