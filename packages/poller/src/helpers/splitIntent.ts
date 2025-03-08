@@ -1,7 +1,7 @@
 import { getTokenAddressFromConfig, Invoice, MarkConfiguration, NewIntentParams } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
-import { MAX_DESTINATIONS } from '../invoice/processInvoices';
+import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -95,23 +95,33 @@ export async function calculateSplitIntents(
       continue;
     }
 
+    // Sort domains by custodied assets (highest first)
+    const sortedConfigDomains = [...configDomains].sort((a, b) => {
+      const aAssets = allCustodiedAssets.get(a) ?? BigInt(0);
+      const bAssets = allCustodiedAssets.get(b) ?? BigInt(0);
+      return Number(bAssets - aAssets); // Sort descending
+    });
+
+    // Define top-N domains (sorted by custodied assets)
+    const topNDomains = sortedConfigDomains.slice(0, TOP_N_DESTINATIONS);
+
     // Try allocating with top-N domains first
-    const topNAllocation = evaluateDomainForOrigin(
-      origin,
-      totalNeeded,
-      allCustodiedAssets,
-      configDomains.slice(0, MAX_DESTINATIONS),
-    );
+    const topNAllocation = evaluateDomainForOrigin(origin, totalNeeded, allCustodiedAssets, topNDomains);
 
     if (topNAllocation.totalAllocated >= totalNeeded) {
       possibleAllocations.push(topNAllocation);
       continue;
     }
 
-    // If top-N is not enough, try with all domains
+    // If top-N is not enough, try with all domains (limited to MAX_DESTINATIONS)
     // NOTE: This is unconditionally added as a possible allocation. This is deliberate
     //       because Mark should settle the invoice regardless if liquidity can cover his intent.
-    const allDomainsAllocation = evaluateDomainForOrigin(origin, totalNeeded, allCustodiedAssets, configDomains);
+    const allDomainsAllocation = evaluateDomainForOrigin(
+      origin,
+      totalNeeded,
+      allCustodiedAssets,
+      sortedConfigDomains.slice(0, MAX_DESTINATIONS),
+    );
 
     possibleAllocations.push(allDomainsAllocation);
   }
@@ -126,8 +136,26 @@ export async function calculateSplitIntents(
     return { intents: [], originDomain: '', totalAllocated: BigInt(0) };
   }
 
-  // Find the best allocation (one that covers the most)
+  // Find the best allocation:
+  // 1. Prefer allocations with fewer intents (allocations)
+  // 2. For the same number of intents, prefer allocations that only use top-N chains
+  // 3. Lastly, consider total allocated amount as a tiebreaker
   possibleAllocations.sort((a, b) => {
+    // 1. Sort by number of allocations (fewer is better)
+    if (a.allocations.length !== b.allocations.length) {
+      return a.allocations.length - b.allocations.length;
+    }
+
+    // 2. Prefer allocations that only use top-N chains
+    const topNDomains = configDomains.slice(0, TOP_N_DESTINATIONS);
+    const aUsesOnlyTopN = a.allocations.every((alloc) => topNDomains.includes(alloc.domain));
+    const bUsesOnlyTopN = b.allocations.every((alloc) => topNDomains.includes(alloc.domain));
+
+    if (aUsesOnlyTopN !== bUsesOnlyTopN) {
+      return aUsesOnlyTopN ? -1 : 1;
+    }
+
+    // 3. Use totalAllocated as a tiebreaker (higher is better)
     if (b.totalAllocated > a.totalAllocated) return 1;
     if (b.totalAllocated < a.totalAllocated) return -1;
     return 0;
