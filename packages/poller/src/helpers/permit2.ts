@@ -127,12 +127,12 @@ export async function getPermit2Signature(
       { name: 'permitted', type: 'TokenPermissions' },
       { name: 'spender', type: 'address' },
       { name: 'nonce', type: 'uint256' },
-      { name: 'deadline', type: 'uint256' }
+      { name: 'deadline', type: 'uint256' },
     ],
     TokenPermissions: [
       { name: 'token', type: 'address' },
-      { name: 'amount', type: 'uint256' }
-    ]
+      { name: 'amount', type: 'uint256' },
+    ],
   };
 
   // Ensure nonce has 0x prefix for signing
@@ -145,11 +145,11 @@ export async function getPermit2Signature(
   const value = {
     permitted: {
       token: token,
-      amount: amount
+      amount: amount,
     },
     spender: spender,
     nonce: nonceWithPrefix,
-    deadline: deadline
+    deadline: deadline,
   };
 
   try {
