@@ -30,7 +30,8 @@ interface ProcessInvoicesParams {
   web3Signer: Web3Signer | Wallet;
 }
 
-export const MAX_DESTINATIONS = 7; // enforced onchain at 10, we only want first 7 in our config
+export const MAX_DESTINATIONS = 10; // enforced onchain at 10
+export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
 
 export async function processInvoices({
   invoices,
