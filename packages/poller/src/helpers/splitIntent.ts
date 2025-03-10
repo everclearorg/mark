@@ -77,6 +77,14 @@ export async function calculateSplitIntents(
   // Get all domains from config
   const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
 
+  // Get all the domains from config that support the given asset
+  const assetSupportedDomains = Object.entries(config.chains)
+    .filter(([domain, chainConfig]) => {
+      const tickers = chainConfig.assets.map((a) => a.tickerHash.toLowerCase());
+      return configDomains.includes(domain) && tickers.includes(invoice.ticker_hash.toLowerCase());
+    })
+    .map(([domain]) => domain.toString());
+
   const allCustodiedAssets = custodiedAssets.get(ticker) || new Map<string, bigint>();
 
   // Evaluate each possible origin domain
@@ -96,7 +104,7 @@ export async function calculateSplitIntents(
     }
 
     // Sort domains by custodied assets (highest first)
-    const sortedConfigDomains = [...configDomains].sort((a, b) => {
+    const sortedConfigDomains = [...assetSupportedDomains].sort((a, b) => {
       const aAssets = allCustodiedAssets.get(a) ?? BigInt(0);
       const bAssets = allCustodiedAssets.get(b) ?? BigInt(0);
       return Number(bAssets - aAssets); // Sort descending
@@ -147,7 +155,7 @@ export async function calculateSplitIntents(
     }
 
     // 2. Prefer allocations that only use top-N chains
-    const topNDomains = configDomains.slice(0, TOP_N_DESTINATIONS);
+    const topNDomains = assetSupportedDomains.slice(0, TOP_N_DESTINATIONS);
     const aUsesOnlyTopN = a.allocations.every((alloc) => topNDomains.includes(alloc.domain));
     const bUsesOnlyTopN = b.allocations.every((alloc) => topNDomains.includes(alloc.domain));
 
@@ -175,7 +183,7 @@ export async function calculateSplitIntents(
   const intents: NewIntentParams[] = [];
 
   // Generate destinations array (excluding origin, limited to MAX_DESTINATIONS)
-  const destinations = configDomains.filter((d) => d !== bestAllocation.origin).slice(0, MAX_DESTINATIONS);
+  const destinations = assetSupportedDomains.filter((d) => d !== bestAllocation.origin).slice(0, MAX_DESTINATIONS);
 
   // Create an intent for each allocation
   for (const { domain, amount } of bestAllocation.allocations) {
