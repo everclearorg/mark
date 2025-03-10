@@ -17,7 +17,7 @@ import { BigNumber, Wallet } from 'ethers';
 import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 
-describe.only('sendIntents', () => {
+describe('sendIntents', () => {
     let mockDeps: SinonStubbedInstance<MarkAdapters>;
     let getERC20ContractStub: SinonStub;
 
@@ -185,7 +185,7 @@ describe.only('sendIntents', () => {
         expect((mockDeps.everclear.createNewIntent as SinonStub).called).to.be.false;
     });
 
-    it.only('should handle when min amounts are smaller than intent amounts', async () => {
+    it('should handle when min amounts are smaller than intent amounts', async () => {
         const batch = new Map([
             ['1', new Map([['0xtoken1', mockIntent]])],
         ]);
