@@ -258,6 +258,7 @@ export async function processInvoices({
 
       try {
         const intentResults = await sendIntents(
+          invoiceId,
           intents,
           { everclear, chainService, logger, cache, prometheus, web3Signer },
           config,
