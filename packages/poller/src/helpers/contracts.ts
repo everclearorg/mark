@@ -1,5 +1,5 @@
 import { MarkConfiguration } from '@mark/core';
-import { createPublicClient, getContract, http, Abi, Chain } from 'viem';
+import { createPublicClient, getContract, http, Abi, Chain, Address } from 'viem';
 
 const erc20Abi = [
   {
@@ -314,10 +314,76 @@ const hubStorageAbi = [
     ],
     stateMutability: 'view',
   },
-];
+] as const;
+
+export const multicallAbi = [
+  {
+    name: 'aggregate3Value',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'calls',
+        type: 'tuple[]',
+        components: [
+          { name: 'target', type: 'address' },
+          { name: 'allowFailure', type: 'bool' },
+          { name: 'value', type: 'uint256' },
+          { name: 'callData', type: 'bytes' },
+        ],
+      },
+    ],
+    outputs: [
+      {
+        name: 'returnData',
+        type: 'tuple[]',
+        components: [
+          { name: 'success', type: 'bool' },
+          { name: 'returnData', type: 'bytes' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'aggregate3',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'calls',
+        type: 'tuple[]',
+        components: [
+          { name: 'target', type: 'address' },
+          { name: 'allowFailure', type: 'bool' },
+          { name: 'callData', type: 'bytes' },
+        ],
+      },
+    ],
+    outputs: [
+      {
+        name: 'returnData',
+        type: 'tuple[]',
+        components: [
+          { name: 'success', type: 'bool' },
+          { name: 'returnData', type: 'bytes' },
+        ],
+      },
+    ],
+  },
+] as const;
 
 const HUB_MAINNET_ADDR = '0xa05A3380889115bf313f1Db9d5f335157Be4D816';
 const HUB_TESTNET_ADDR = '0x4C526917051ee1981475BB6c49361B0756F505a8';
+
+export const getMulticallAddress = (chainId: string, config: MarkConfiguration): Address => {
+  const chainConfig = config.chains[chainId];
+
+  if (!chainConfig) {
+    throw new Error(`Chain configuration not found for chain ID: ${chainId}`);
+  }
+
+  return chainConfig.deployments.multicall3 as Address;
+};
 
 export const getProviderUrl = (chainId: string, config: MarkConfiguration): string | undefined => {
   return chainId === config.hub.domain ? config.hub.providers[0] : config.chains[chainId]?.providers[0];

@@ -25,6 +25,11 @@ export interface ChainConfiguration {
   assets: AssetConfiguration[];
   invoiceAge: number;
   gasThreshold: string;
+  deployments: {
+    everclear: string;
+    permit2: string;
+    multicall3: string;
+  };
 }
 
 export interface HubConfig {
