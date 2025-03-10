@@ -3,10 +3,13 @@ import { Gauge, Counter, Histogram, Registry, Pushgateway, PrometheusContentType
 import { formatUnits } from 'viem';
 import { jsonifyError, Logger } from '@mark/logger';
 
-const InvoiceLabelKeys = ['origin', 'ticker', 'id', 'destination', 'reason'] as const;
-export type InvoiceLabels = Omit<Record<(typeof InvoiceLabelKeys)[number], string>, 'destination' | 'reason'> & {
+const InvoiceLabelKeys = ['origin', 'ticker', 'id', 'destination', 'reason', 'isSplit', 'splitCount'] as const;
+
+export type InvoiceLabels = Omit<Record<(typeof InvoiceLabelKeys)[number], string>, 'destination' | 'reason' | 'isSplit' | 'splitCount'> & {
   destination?: string;
   reason?: InvalidPurchaseReasonConcise;
+  isSplit?: string;
+  splitCount?: string;
 };
 
 export enum TransactionReason {
