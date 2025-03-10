@@ -1,6 +1,12 @@
 import { Logger } from '@mark/logger';
 import { axiosPost, axiosGet } from '@mark/core';
-import { ChainConfiguration, NewIntentParams, TransactionRequest, Invoice } from '@mark/core';
+import {
+  ChainConfiguration,
+  NewIntentParams,
+  TransactionRequest,
+  Invoice,
+  NewIntentWithPermit2Params,
+} from '@mark/core';
 
 export interface MinAmountsResponse {
   invoiceAmount: string;
@@ -8,6 +14,10 @@ export interface MinAmountsResponse {
   discountBps: string;
   custodiedAmounts: Record<string, string>;
   minAmounts: Record<string, string>;
+}
+
+export interface CustodiedAssetsResponse {
+  custodiedAmount: string;
 }
 
 export enum IntentStatus {
@@ -60,7 +70,7 @@ export interface IntentStatusResponse {
     hub_settlement_domain: string;
     ttl: number;
     destinations: string[];
-  }
+  };
 }
 
 export class EverclearAdapter {
@@ -144,7 +154,7 @@ export class EverclearAdapter {
     // ];
   }
 
-  async createNewIntent(params: NewIntentParams): Promise<TransactionRequest> {
+  async createNewIntent(params: NewIntentParams | NewIntentWithPermit2Params): Promise<TransactionRequest> {
     try {
       const url = `${this.apiUrl}/intents`;
       const { data } = await axiosPost<TransactionRequest>(url, params);
@@ -164,5 +174,11 @@ export class EverclearAdapter {
     const url = `${this.apiUrl}/intents/${intentId}`;
     const { data } = await axiosGet<IntentStatusResponse>(url);
     return data?.intent.status ?? IntentStatus.NONE;
+  }
+
+  async getCustodiedAssets(tickerHash: string, domain: string): Promise<CustodiedAssetsResponse> {
+    const url = `${this.apiUrl}/tickers/${tickerHash}/domains/${domain}/custodied-assets`;
+    const { data } = await axiosGet<CustodiedAssetsResponse>(url);
+    return data;
   }
 }
