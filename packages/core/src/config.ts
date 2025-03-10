@@ -34,6 +34,28 @@ export const EVERCLEAR_TESTNET_CONFIG_URL =
 export const EVERCLEAR_MAINNET_API_URL = 'https://api.everclear.org';
 export const EVERCLEAR_TESTNET_API_URL = 'https://api.testnet.everclear.org';
 
+export const UTILITY_CONTRACTS_DEFAULT = {
+  permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+  multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
+};
+export const UTILITY_CONTRACTS_OVERRIDE: Record<string, { permit2?: string; multicall3?: string }> = {
+  '324': {
+    permit2: '0x0000000000225e31D15943971F47aD3022F714Fa',
+    multicall3: '0xF9cda624FBC7e059355ce98a31693d299FACd963',
+  },
+  '2020': {
+    permit2: '0x771ca29e483df5447e20a89e0f00e1daf09ef534',
+  },
+  // '167000': {
+  //   // Contract exists here but unverified: https://taikoscan.io/address/0x000000000022D473030F116dDEE9F6B43aC78BA3
+  //   permit2: '0x0000000000225e31D15943971F47aD3022F714Fa',
+  // },
+  // '33139': {
+  //   // Contract exists here but unverified: https://apescan.io/address/0x000000000022D473030F116dDEE9F6B43aC78BA3
+  //   permit2: '0x0000000000225e31D15943971F47aD3022F714Fa',
+  // },
+};
+
 export const getEverclearConfig = async (_configUrl?: string): Promise<EverclearConfig | undefined> => {
   const configUrl = _configUrl ?? EVERCLEAR_MAINNET_CONFIG_URL;
 
@@ -164,22 +186,40 @@ const parseChainConfigurations = async (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   configJson: any,
 ): Promise<Record<string, ChainConfiguration>> => {
+  // If config is undefined or doesn't have chains, we can't proceed
+  if (!config?.chains) {
+    throw new ConfigurationError('No chain configurations found in the Everclear config');
+  }
+
+  // Use chainIds from configJson if available, otherwise from environment variable,
+  // or as a last resort, use the keys from the hosted config
   const chainIds = configJson.chains
     ? Object.keys(configJson.chains)
-    : (await requireEnv('CHAIN_IDS')).split(',').map((id) => id.trim());
+    : (await fromEnv('CHAIN_IDS'))
+      ? (await fromEnv('CHAIN_IDS'))!.split(',').map((id) => id.trim())
+      : Object.keys(config.chains);
+
   const chains: Record<string, ChainConfiguration> = {};
 
   for (const chainId of chainIds) {
+    if (!config.chains[chainId]) {
+      console.log(`Chain ${chainId} not found in Everclear config, skipping`);
+      continue;
+    }
+
+    const chainConfig = config.chains[chainId]!;
+
     const providers = (
-      configJson.chains[chainId]?.providers ??
+      configJson.chains?.[chainId]?.providers ??
       ((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))
         ? parseProviders((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))!)
         : undefined) ??
       []
-    ).concat(config?.chains[chainId]?.providers ?? []);
+    ).concat(chainConfig.providers ?? []);
+
     const assets = await Promise.all(
-      Object.values(config?.chains[chainId]?.assets ?? {}).map(async (a) => {
-        const jsonThreshold = (configJson.chains[chainId]?.assets ?? []).find(
+      Object.values(chainConfig.assets ?? {}).map(async (a) => {
+        const jsonThreshold = (configJson.chains?.[chainId]?.assets ?? []).find(
           (asset: { symbol: string; balanceThreshold: string }) =>
             a.symbol.toLowerCase() === asset.symbol.toLowerCase(),
         )?.balanceThreshold;
@@ -196,15 +236,41 @@ const parseChainConfigurations = async (
     const invoiceAge =
       (await fromEnv(`CHAIN_${chainId}_INVOICE_AGE`)) ?? (await fromEnv('INVOICE_AGE')) ?? DEFAULT_INVOICE_AGE;
     const gasThreshold =
-      configJson?.chains[chainId].gasThreshold ??
+      configJson?.chains?.[chainId]?.gasThreshold ??
       (await fromEnv(`CHAIN_${chainId}_GAS_THRESHOLD`)) ??
       (await fromEnv(`GAS_THRESHOLD`)) ??
       DEFAULT_GAS_THRESHOLD;
+
+    // Extract Everclear spoke address from the config
+    const everclear = chainConfig.deployments?.everclear;
+
+    if (!everclear) {
+      throw new ConfigurationError(
+        `No spoke address found for chain ${chainId}. Make sure it's defined in the config under chains.${chainId}.deployments.everclear`,
+      );
+    }
+
+    // Get chain-specific contract addresses or use config values if provided
+    const permit2 =
+      chainConfig.deployments?.permit2 ||
+      UTILITY_CONTRACTS_OVERRIDE[chainId]?.permit2 ||
+      UTILITY_CONTRACTS_DEFAULT.permit2;
+
+    const multicall3 =
+      chainConfig.deployments?.multicall3 ||
+      UTILITY_CONTRACTS_OVERRIDE[chainId]?.multicall3 ||
+      UTILITY_CONTRACTS_DEFAULT.multicall3;
+
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
       invoiceAge: parseInt(invoiceAge),
       gasThreshold,
+      deployments: {
+        everclear,
+        permit2,
+        multicall3,
+      },
     };
   }
 

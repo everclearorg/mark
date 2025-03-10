@@ -12,6 +12,10 @@ export class Web3SignerApi {
     PUBLIC_KEY: 'api/v1/eth1/publicKeys',
   };
 
+  private static JSON_RPC_METHODS = {
+    SIGN_TYPED_DATA: 'eth_signTypedData',
+  };
+
   constructor(private readonly url: string) {}
 
   public async sign(identifier: string, data: string | Bytes): Promise<string> {
@@ -35,6 +39,31 @@ export class Web3SignerApi {
     let response = await axiosGet(this.formatUrl(endpoint));
     response = this.sanitizeResponse(response, endpoint);
     return response.data[0];
+  }
+
+  public async signTypedData(
+    identifier: string,
+    typedData: {
+      types: Record<string, Array<{ name: string; type: string }>>;
+      primaryType: string;
+      domain: Record<string, string>;
+      message: Record<string, string>;
+    },
+  ): Promise<string> {
+    const payload = {
+      jsonrpc: '2.0',
+      method: Web3SignerApi.JSON_RPC_METHODS.SIGN_TYPED_DATA,
+      params: [identifier, JSON.stringify(typedData)],
+      id: 1,
+    };
+
+    let response = await axiosPost(this.url, payload);
+
+    if (!response || !response.data || !response.data.result) {
+      throw new NxtpError('Received bad response from web3signer instance for signTypedData.', { response });
+    }
+
+    return response.data.result;
   }
 
   private formatUrl(
