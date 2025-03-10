@@ -516,6 +516,159 @@ describe('sendIntentsMulticall', () => {
             .to.be.rejectedWith('No intents provided for multicall');
     });
 
+    it('should handle errors when Permit2 approval fails', async () => {
+        // Mock token contract with zero allowance for Permit2
+        const tokenContract = {
+            address: MOCK_TOKEN1,
+            read: {
+                allowance: stub().resolves(BigInt('0')), // No allowance for Permit2
+            },
+        } as unknown as GetContractReturnType;
+
+        stub(contractHelpers, 'getERC20Contract').resolves(tokenContract as any);
+
+        // Mock approvePermit2 to throw an error
+        const errorMessage = 'Failed to approve Permit2';
+        mockPermit2Functions.approvePermit2.rejects(new Error(errorMessage));
+
+        // Create an intent to test
+        const intents = [mockIntent];
+
+        // Verify that the error is properly caught, logged, and rethrown
+        await expect(sendIntentsMulticall(intents, mockDeps, mockConfig))
+            .to.be.rejectedWith(errorMessage);
+
+        // Verify that the error was logged with the correct parameters
+        expect((mockDeps.logger.error as SinonStub).calledWith(
+            'Error signing/submitting Permit2 approval',
+            {
+                error: errorMessage,
+                chainId: '1',
+            }
+        )).to.be.true;
+    });
+
+    it('should throw an error when Permit2 approval transaction is submitted but allowance is still zero', async () => {
+        // Create a token contract stub that returns zero allowance initially
+        // and still returns zero after approval (simulating a failed approval)
+        const allowanceStub = stub();
+        allowanceStub.onFirstCall().resolves(BigInt('0')); // Initial zero allowance
+        allowanceStub.onSecondCall().resolves(BigInt('0')); // Still zero after approval
+
+        const tokenContract = {
+            address: MOCK_TOKEN1,
+            read: {
+                allowance: allowanceStub,
+            },
+        } as unknown as GetContractReturnType;
+
+        stub(contractHelpers, 'getERC20Contract').resolves(tokenContract as any);
+
+        // Mock approvePermit2 to succeed but not actually change the allowance
+        const txHash = '0xapprovalTxHash';
+        mockPermit2Functions.approvePermit2.resolves(txHash);
+
+        // Create an intent to test
+        const intents = [mockIntent];
+
+        // Verify that the error is properly thrown with the expected message
+        await expect(sendIntentsMulticall(intents, mockDeps, mockConfig))
+            .to.be.rejectedWith(`Permit2 approval transaction was submitted (${txHash}) but allowance is still zero`);
+    });
+
+    it('should handle errors when signing Permit2 message or fetching transaction data', async () => {
+        // Mock token contract with sufficient allowance for Permit2
+        const tokenContract = {
+            address: MOCK_TOKEN1,
+            read: {
+                allowance: stub().resolves(BigInt('1000000000000000000')), // Already approved for Permit2
+            },
+        } as unknown as GetContractReturnType;
+
+        stub(contractHelpers, 'getERC20Contract').resolves(tokenContract as any);
+
+        // Mock getPermit2Signature to succeed
+        mockPermit2Functions.getPermit2Signature.resolves('0xsignature');
+
+        // Mock everclear.createNewIntent to throw an error
+        const errorMessage = 'API error when creating intent';
+        (mockDeps.everclear.createNewIntent as SinonStub).rejects(new Error(errorMessage));
+
+        // Create two intents to test the error handling in the loop
+        const intents = [
+            mockIntent,
+            {
+                ...mockIntent,
+                to: MOCK_DEST2
+            }
+        ];
+
+        // Verify that the error is properly caught, logged, and rethrown
+        await expect(sendIntentsMulticall(intents, mockDeps, mockConfig))
+            .to.be.rejectedWith(errorMessage);
+
+        // Verify that the error was logged with the correct parameters
+        expect((mockDeps.logger.error as SinonStub).calledWith(
+            'Error signing Permit2 message or fetching transaction data',
+            {
+                error: errorMessage,
+                tokenAddress: MOCK_TOKEN1,
+                spender: '0xspoke',
+                amount: '1000',
+                nonce: '0x123456',
+                deadline: '1735689600',
+            }
+        )).to.be.true;
+    });
+
+    it('should add 0x prefix to nonce when it does not have one', async () => {
+        // Mock token contract with sufficient allowance for Permit2
+        const tokenContract = {
+            address: MOCK_TOKEN1,
+            read: {
+                allowance: stub().resolves(BigInt('1000000000000000000')), // Already approved for Permit2
+            },
+        } as unknown as GetContractReturnType;
+
+        stub(contractHelpers, 'getERC20Contract').resolves(tokenContract as any);
+
+        // Return a nonce without 0x prefix
+        mockPermit2Functions.generatePermit2Nonce.returns('123456');
+
+        // Mock getPermit2Signature to succeed
+        mockPermit2Functions.getPermit2Signature.resolves('0xsignature');
+
+        // Mock everclear.createNewIntent to return valid transaction data
+        (mockDeps.everclear.createNewIntent as SinonStub).callsFake((intentWithPermit) => {
+            // Verify that the nonce has been prefixed with 0x
+            // The nonce will have the index suffix (00) appended to it
+            expect(intentWithPermit.permit2Params.nonce).to.equal('0x12345600');
+            return Promise.resolve({
+                to: zeroAddress,
+                data: '0xintentdata',
+                chainId: 1,
+            });
+        });
+
+        // Mock chainService to return a successful receipt
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xmulticallTx',
+            cumulativeGasUsed: BigNumber.from('200000'),
+            effectiveGasPrice: BigNumber.from('5'),
+            logs: [
+                {
+                    topics: [INTENT_ADDED_TOPIC0, '0xintentid1']
+                }
+            ]
+        });
+
+        // Call the function with a single intent
+        await sendIntentsMulticall([mockIntent], mockDeps, mockConfig);
+
+        // Verify that createNewIntent was called with the correct parameters
+        expect((mockDeps.everclear.createNewIntent as SinonStub).called).to.be.true;
+    });
+
     it('should prepare and send a multicall transaction with multiple intents', async () => {
         // Mock token contract with sufficient allowance for Permit2
         const tokenContract = {

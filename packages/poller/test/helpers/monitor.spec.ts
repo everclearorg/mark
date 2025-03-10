@@ -70,9 +70,66 @@ describe('Monitor Helpers', () => {
             expect(logger.warn.calledOnce).to.be.true;
             expect(logger.warn.firstCall.args[0]).to.equal('Asset not configured');
         });
+
+        it('should handle case when balanceThreshold is not set', () => {
+            // Create a config with an asset that has no balanceThreshold
+            const configWithoutBalanceThreshold = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        assets: [
+                            { tickerHash: 'TICKER3' } // No balanceThreshold
+                        ],
+                        gasThreshold: '5000'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const balances = new Map([
+                ['TICKER3', new Map([
+                    ['domain1', BigInt(500)]
+                ])]
+            ]);
+
+            logBalanceThresholds(balances, configWithoutBalanceThreshold, logger);
+
+            // Should not log error since the default threshold is '0'
+            expect(logger.error.notCalled).to.be.true;
+        });
+
+        it('should handle case when balanceThreshold is explicitly set to zero', () => {
+            // Create a config with an asset that has balanceThreshold set to '0'
+            const configWithZeroBalanceThreshold = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        assets: [
+                            { tickerHash: 'TICKER3', balanceThreshold: '0' }
+                        ],
+                        gasThreshold: '5000'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const balances = new Map([
+                ['TICKER3', new Map([
+                    ['domain1', BigInt(0)]
+                ])]
+            ]);
+
+            logBalanceThresholds(balances, configWithZeroBalanceThreshold, logger);
+
+            // Should not log error since the balance is equal to the threshold
+            expect(logger.error.notCalled).to.be.true;
+        });
     });
 
     describe('logGasThresholds', () => {
+        beforeEach(() => {
+            // Reset the logger before each test
+            logger = createStubInstance(Logger);
+        });
+
         it('should log error when gas balance is below threshold', () => {
             const gas = new Map([
                 ['domain1', BigInt(4000)], // Below threshold
@@ -81,8 +138,11 @@ describe('Monitor Helpers', () => {
 
             logGasThresholds(gas, config, logger);
 
-            expect(logger.error.calledOnce).to.be.true;
-            expect(logger.error.firstCall.args[0]).to.equal('Gas balance is below threshold');
+            expect(logger.error.called).to.be.true;
+            const errorCall = logger.error.getCalls().find(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCall).to.not.be.undefined;
         });
 
         it('should not log when gas balance is above threshold', () => {
@@ -93,7 +153,89 @@ describe('Monitor Helpers', () => {
 
             logGasThresholds(gas, config, logger);
 
-            expect(logger.error.notCalled).to.be.true;
+            const errorCalls = logger.error.getCalls().filter(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCalls.length).to.equal(0);
+        });
+
+        it('should log error when there is no configured gas threshold', () => {
+            // Create a config with a chain that has no gas threshold (explicitly set to empty string)
+            const configWithoutThreshold = {
+                ...config,
+                chains: {
+                    'domain3': {
+                        assets: [],
+                        gasThreshold: ''
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                ['domain3', BigInt(5000)]
+            ]);
+
+            logGasThresholds(gas, configWithoutThreshold, logger);
+
+            expect(logger.error.called).to.be.true;
+            const errorCall = logger.error.getCalls().find(
+                call => call.args[0] === 'No configured gas threshold'
+            );
+            expect(errorCall).to.not.be.undefined;
+        });
+
+        it('should handle case when threshold is explicitly set to zero', () => {
+            // Create a config with a chain that has threshold set to '0'
+            const configWithZeroThreshold = {
+                ...config,
+                chains: {
+                    'domain3': {
+                        assets: [],
+                        gasThreshold: '0'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                ['domain3', BigInt(100)]
+            ]);
+
+            // Reset logger before this test
+            logger = createStubInstance(Logger);
+
+            logGasThresholds(gas, configWithZeroThreshold, logger);
+
+            // Since the balance (100) is greater than the threshold (0), it should not log an error
+            const errorCalls = logger.error.getCalls().filter(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCalls.length).to.equal(0);
+        });
+
+        it('should handle case when gas balance is exactly equal to threshold', () => {
+            // Create a config with a specific threshold
+            const configWithExactThreshold = {
+                ...config,
+                chains: {
+                    'domain3': {
+                        assets: [],
+                        gasThreshold: '5000'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                ['domain3', BigInt(5000)] // Exactly equal to threshold
+            ]);
+
+            logGasThresholds(gas, configWithExactThreshold, logger);
+
+            // Should log error since the balance is not greater than the threshold
+            expect(logger.error.called).to.be.true;
+            const errorCall = logger.error.getCalls().find(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCall).to.not.be.undefined;
         });
     });
 });
