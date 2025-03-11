@@ -266,17 +266,18 @@ export async function processInvoices({
           requestId,
         );
 
-        // Use the first result for the purchase record
-        const intentResult = intentResults[0];
-
-        // Record successful purchase and create a purchase for cache
-        const purchase = {
-          target: invoice,
-          purchase: { intentId: intentResult.intentId, params: intents[0] },
-          transactionHash: intentResult.transactionHash,
-        };
-
-        pendingPurchases.push(purchase);
+        // Store all purchases in pendingPurchases
+        for (let i = 0; i < intentResults.length; i++) {
+          const purchase = {
+            target: invoice,
+            purchase: { 
+              intentId: intentResults[i].intentId, 
+              params: intents[i] 
+            },
+            transactionHash: intentResults[i].transactionHash,
+          };
+          pendingPurchases.push(purchase);
+        }
 
         // Record metrics
         prometheus.recordSuccessfulPurchase({
@@ -287,15 +288,21 @@ export async function processInvoices({
         });
         prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
 
-        logger.info(`Created new ${intents.length > 1 ? 'split ' : ''}purchase`, {
+        // Log all intent results together with the invoice ID
+        logger.info(`Created ${intents.length > 1 ? 'split ' : ''}purchases for invoice`, {
           requestId,
           invoiceId: invoice.intent_id,
-          purchase,
+          allIntentResults: intentResults.map((result, index) => ({
+            intentIndex: index,
+            intentId: result.intentId,
+            transactionHash: result.transactionHash,
+            params: intents[index]
+          })),
           totalAmount: invoice.amount,
           totalAllocated: totalAllocated.toString(),
           intentCount: intents.length,
           coverage: `${Number((BigInt(totalAllocated) * BigInt(100)) / BigInt(invoice.amount)).toFixed(2)}%`,
-          transactionHash: intentResult.transactionHash,
+          transactionHashes: intentResults.map((result) => result.transactionHash),
         });
 
         // Break to next invoice once we've made a successful purchase
