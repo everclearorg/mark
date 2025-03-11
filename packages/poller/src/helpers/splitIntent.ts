@@ -8,6 +8,7 @@ interface SplitIntentAllocation {
   allocations: { domain: string; amount: bigint }[];
   totalAllocated: bigint;
   destinations: string[];
+  isTopN: boolean;
 }
 
 interface SplitIntentResult {
@@ -24,12 +25,14 @@ function evaluateDomainForOrigin(
   requiredAmount: bigint,
   custodiedAssets: Map<string, bigint>,
   domainCandidates: string[],
+  isTopN: boolean,
 ): SplitIntentAllocation {
   const allocation: SplitIntentAllocation = {
     origin,
     allocations: [],
     totalAllocated: BigInt(0),
     destinations: [],
+    isTopN,
   };
 
   // Go through domain candidates in order
@@ -130,6 +133,7 @@ export async function calculateSplitIntents(
       totalNeeded,
       allCustodiedAssets,
       topNDomainsSortedByCustodied,
+      true,
     );
     logger.info('Evaluated top-N domains for invoice', {
       requestId,
@@ -155,6 +159,7 @@ export async function calculateSplitIntents(
       totalNeeded,
       allCustodiedAssets,
       topMaxDestinations,
+      false,
     );
     logger.info('Evaluated top-MAX domains for invoice', {
       requestId,
@@ -217,7 +222,21 @@ export async function calculateSplitIntents(
 
   // Generate the intent parameters for each allocation
   const intents: NewIntentParams[] = []; 
+
+  // Create the destinations to use for the intent
   const destinations = bestAllocation.destinations;
+  if (bestAllocation.isTopN) {
+    // If the allocation is top-N, we should pad to N destinations
+    const remainingTopNDomains = topNDomainsSortedByCustodied
+      .filter(domain => !destinations.includes(domain) && domain !== bestAllocation.origin);
+    destinations.push(...remainingTopNDomains);
+  } else {
+    // If the allocation is top-MAX, we should pad to MAX_DESTINATIONS
+    const remainingDomains = allDomainsSortedByCustodied
+      .filter(domain => !destinations.includes(domain) && domain !== bestAllocation.origin);
+    const domainsToAdd = remainingDomains.slice(0, MAX_DESTINATIONS - destinations.length);
+    destinations.push(...domainsToAdd);
+  }
 
   // Create an intent for each allocation
   for (const { domain, amount } of bestAllocation.allocations) {
