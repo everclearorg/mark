@@ -20,9 +20,23 @@ data "aws_iam_role" "ecr_admin_role" {
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
+# Read the MARK_CONFIG_MAINNET parameter from SSM
+data "aws_ssm_parameter" "mark_config_mainnet" {
+  name            = "MARK_CONFIG_MAINNET"
+  with_decryption = true
+}
+
 locals {
   account_id = data.aws_caller_identity.current.account_id
   repository_url_prefix = "${local.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/"
+  
+  mark_config_json = jsondecode(data.aws_ssm_parameter.mark_config_mainnet.value)
+  mark_config = {
+    dd_api_key = local.mark_config_json.dd_api_key
+    web3_signer_private_key = local.mark_config_json.web3_signer_private_key
+    signerAddress = local.mark_config_json.signerAddress
+    chains = local.mark_config_json.chains
+  }
 }
 
 module "network" {
@@ -69,7 +83,7 @@ module "mark_web3signer" {
   environment         = var.environment
   domain              = var.domain
   region              = var.region
-  dd_api_key          = var.dd_api_key
+  dd_api_key          = local.mark_config.dd_api_key
   execution_role_arn  = data.aws_iam_role.ecr_admin_role.arn
   cluster_id          = module.ecs.ecs_cluster_id
   vpc_id              = module.network.vpc_id
@@ -92,7 +106,7 @@ module "mark_prometheus" {
   environment             = var.environment
   domain                  = var.domain
   region                  = var.region
-  dd_api_key              = var.dd_api_key
+  dd_api_key              = local.mark_config.dd_api_key
   execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
   cluster_id              = module.ecs.ecs_cluster_id
   vpc_id                  = module.network.vpc_id
@@ -140,7 +154,7 @@ module "mark_pushgateway" {
   environment             = var.environment
   domain                  = var.domain
   region                  = var.region
-  dd_api_key              = var.dd_api_key
+  dd_api_key              = local.mark_config.dd_api_key
   execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
   cluster_id              = module.ecs.ecs_cluster_id
   vpc_id                  = module.network.vpc_id
