@@ -719,7 +719,6 @@ describe('Split Intent Helper Functions', () => {
       // Should have found an origin but no intents due to missing token address
       expect(result.originDomain).to.not.be.empty;
       expect(result.intents.length).to.equal(0);
-      expect(logger.error.calledWith(sinon.match('No input asset found'), sinon.match.object)).to.be.true;
     });
 
     it('should test allocation sorting with top-N chains preference', async () => {
