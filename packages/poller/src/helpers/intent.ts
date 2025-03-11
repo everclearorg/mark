@@ -18,6 +18,7 @@ export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f1
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required.
  */
 export const sendIntents = async (
+  targetId: string,
   intents: NewIntentParams[],
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
@@ -110,6 +111,19 @@ export const sendIntents = async (
     });
 
     for (const intent of intents) {
+      // Sanity check -- intent.amount < minAmounts
+      const { minAmounts } = await everclear.getMinAmounts(targetId);
+      if (BigInt(minAmounts[intent.origin] ?? '0') < BigInt(intent.amount)) {
+        logger.warn('Latest min amount for origin is smaller than intent size', {
+          minAmount: minAmounts[intent.origin] ?? '0',
+          intent,
+          invoiceId: targetId,
+        });
+        continue;
+        // NOTE: continue instead of exit in case other intents are still below the min amount,
+        // then you would still be contributing to invoice to settlement. The invoice will be handled
+        // again on the next polling cycle.
+      }
       // Fetch transaction data for creating the intent
       const intentTxData = await everclear.createNewIntent(intent);
 

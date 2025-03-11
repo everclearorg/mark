@@ -105,7 +105,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       everclearApiUrl: configJson.everclearApiUrl ?? (await fromEnv('EVERCLEAR_API_URL')) ?? apiUrl,
       relayer: {
         url: configJson?.relayer?.url ?? (await fromEnv('RELAYER_URL')) ?? undefined,
-        key: configJson?.relayer?.ket ?? (await fromEnv('RELAYER_API_KEY')) ?? undefined,
+        key: configJson?.relayer?.key ?? (await fromEnv('RELAYER_API_KEY')) ?? undefined,
       },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),

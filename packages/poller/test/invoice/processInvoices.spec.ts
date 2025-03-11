@@ -162,25 +162,25 @@ describe('processInvoices', () => {
                 ['8453', BigInt('0')]
             ])]
         ]));
-        
+
         stub(balanceHelpers, 'getMarkGasBalances').resolves(new Map([
             ['1', BigInt('1000000000000000000')],
             ['8453', BigInt('0')]
         ]));
-        
+
         // Setup intent helper stubs
-        sendIntentsStub = stub(intentHelpers, 'sendIntents').resolves([{ 
-            transactionHash: '0xtx', 
-            chainId: '1', 
+        sendIntentsStub = stub(intentHelpers, 'sendIntents').resolves([{
+            transactionHash: '0xtx',
+            chainId: '1',
             intentId: '0xintent'
         }]);
-        
-        sendIntentsMulticallStub = stub(intentHelpers, 'sendIntentsMulticall').resolves({ 
-            transactionHash: '0xmulticall_tx', 
-            chainId: '1', 
+
+        sendIntentsMulticallStub = stub(intentHelpers, 'sendIntentsMulticall').resolves({
+            transactionHash: '0xmulticall_tx',
+            chainId: '1',
             intentId: '0xmulticall_intent'
         });
-        
+
         // Setup calculateSplitIntents stub with default single intent behavior
         calcSplitIntentsStub = stub(splitIntentHelpers, 'calculateSplitIntents').resolves({
             intents: [{
@@ -195,7 +195,7 @@ describe('processInvoices', () => {
             originDomain: '1',
             totalAllocated: BigInt('1000000000000000000')
         });
-        
+
         stub(assetHelpers, 'isXerc20Supported').resolves(false);
         stub(assetHelpers, 'getTickers').returns(['0xtickerhash']);
         stub(monitorHelpers, 'logBalanceThresholds').returns();
@@ -232,13 +232,13 @@ describe('processInvoices', () => {
             config: validConfig,
             web3Signer: typedWeb3Signer
         });
-        
+
         // Verify calculateSplitIntents was called
         expect(calcSplitIntentsStub.calledOnce).to.be.true;
-        
+
         // Verify sendIntents was called with the correct parameters
         expect(sendIntentsStub.calledOnce).to.be.true;
-        expect(sendIntentsStub.firstCall.args[0]).to.deep.equal([{
+        expect(sendIntentsStub.firstCall.args[1]).to.deep.equal([{
             origin: '1',
             destinations: ['8453'],
             to: '0xdestination',
@@ -247,16 +247,16 @@ describe('processInvoices', () => {
             callData: '0xdata',
             maxFee: '0'
         }]);
-        expect(sendIntentsStub.firstCall.args[2]).to.equal(validConfig);
+        expect(sendIntentsStub.firstCall.args[3]).to.equal(validConfig);
         expect(sendIntentsMulticallStub.called).to.be.false;
-        
+
         // Verify purchase was added to cache
         expect(cache.addPurchases.calledOnce).to.be.true;
         const purchases = cache.addPurchases.firstCall.args[0];
         expect(purchases).to.have.lengthOf(1);
         expect(purchases[0].target).to.deep.equal(validInvoice);
         expect(purchases[0].transactionHash).to.equal('0xtx');
-        
+
         // Verify metrics were recorded
         expect(prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
         const successfulPurchaseCall2 = prometheus.recordSuccessfulPurchase.firstCall;
@@ -314,22 +314,22 @@ describe('processInvoices', () => {
             config: validConfig,
             web3Signer: typedWeb3Signer
         });
-        
+
         // Verify calculateSplitIntents was called
         expect(calcSplitIntentsStub.calledOnce).to.be.true;
-        
+
         // Verify sendIntents was called with multiple intents and originDomain
         expect(sendIntentsStub.calledOnce).to.be.true;
-        expect(sendIntentsStub.firstCall.args[0]).to.have.lengthOf(2);
+        expect(sendIntentsStub.firstCall.args[1]).to.have.lengthOf(2);
         expect(sendIntentsMulticallStub.called).to.be.false; // Should not be called directly anymore
-        
+
         // Verify purchase was added to cache
         expect(cache.addPurchases.calledOnce).to.be.true;
         const purchases = cache.addPurchases.firstCall.args[0];
         expect(purchases).to.have.lengthOf(1);
         expect(purchases[0].target).to.deep.equal(validInvoice);
         expect(purchases[0].transactionHash).to.equal('0xmulticall_tx');
-        
+
         // Verify metrics were recorded
         expect(prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
         const successfulPurchaseCall2 = prometheus.recordSuccessfulPurchase.firstCall;
@@ -367,10 +367,10 @@ describe('processInvoices', () => {
         expect(calcSplitIntentsStub.called).to.be.false;
         expect(sendIntentsStub.called).to.be.false;
         expect(sendIntentsMulticallStub.called).to.be.false;
-        
+
         // Verify we add the existing purchase to the cache
         expect(cache.addPurchases.calledOnceWith([existingPurchase])).to.be.true;
-        
+
         // Verify proper metrics were recorded
         expect(prometheus.recordPossibleInvoice.called).to.be.true;
         expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.PendingPurchaseRecord, labels)).to.be.true;
@@ -397,7 +397,7 @@ describe('processInvoices', () => {
         expect(sendIntentsStub.called).to.be.false;
         expect(sendIntentsMulticallStub.called).to.be.false;
         expect(cache.addPurchases.called).to.be.false;
-        
+
         // Verify proper metrics were recorded
         expect(prometheus.recordPossibleInvoice.called).to.be.true;
         expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.DestinationXerc20, labels)).to.be.true;
@@ -426,7 +426,7 @@ describe('processInvoices', () => {
         expect(calcSplitIntentsStub.calledOnce).to.be.true;
         expect(sendIntentsStub.called).to.be.false;
         expect(cache.addPurchases.called).to.be.false;
-        
+
         // Verify proper metrics were recorded
         expect(prometheus.recordPossibleInvoice.called).to.be.true;
         expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.InsufficientBalance, labels)).to.be.true;
@@ -450,12 +450,12 @@ describe('processInvoices', () => {
         // Verify error was logged and no purchase was added
         expect(logger.error.called).to.be.true;
         expect(cache.addPurchases.called).to.be.false;
-        
+
         // Verify proper metrics were recorded
         expect(prometheus.recordPossibleInvoice.called).to.be.true;
-        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.TransactionFailed, { 
-            ...labels, 
-            destination: '1' 
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.TransactionFailed, {
+            ...labels,
+            destination: '1'
         })).to.be.true;
     });
 
@@ -485,7 +485,7 @@ describe('processInvoices', () => {
             originDomain: '1',
             totalAllocated: BigInt('1000000000000000000')
         });
-        
+
         // Setup sendIntents to fail for multiple intents
         sendIntentsStub.rejects(new Error('Transaction failed'));
         sendIntentsMulticallStub.resolves({ transactionHash: '0xtx', chainId: '1', intentId: '0xintent' });
@@ -504,17 +504,17 @@ describe('processInvoices', () => {
         // Verify error was logged and no purchase was added
         expect(logger.error.called).to.be.true;
         expect(cache.addPurchases.called).to.be.false;
-        
+
         // Verify sendIntents was called with multiple intents and originDomain
         expect(sendIntentsStub.calledOnce).to.be.true;
-        expect(sendIntentsStub.firstCall.args[0]).to.have.lengthOf(2);
+        expect(sendIntentsStub.firstCall.args[1]).to.have.lengthOf(2);
         expect(sendIntentsMulticallStub.called).to.be.false;
-        
+
         // Verify proper metrics were recorded
         expect(prometheus.recordPossibleInvoice.called).to.be.true;
-        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.TransactionFailed, { 
-            ...labels, 
-            destination: '1' 
+        expect(prometheus.recordInvalidPurchase.calledOnceWith(InvalidPurchaseReasons.TransactionFailed, {
+            ...labels,
+            destination: '1'
         })).to.be.true;
     });
 
@@ -542,7 +542,7 @@ describe('processInvoices', () => {
 
         // Add specific stub to track metrics correctly
         prometheus.recordInvalidPurchase.withArgs(
-            InvalidPurchaseReasons.PendingPurchaseRecord, 
+            InvalidPurchaseReasons.PendingPurchaseRecord,
             { ...labels, id: secondInvoice.intent_id }
         ).resolves(undefined);
 
@@ -562,10 +562,10 @@ describe('processInvoices', () => {
         const purchases = cache.addPurchases.firstCall.args[0];
         expect(purchases).to.have.lengthOf(1);
         expect(purchases[0].target.intent_id).to.equal('0x123');
-        
+
         // Verify proper metrics were recorded
         expect(prometheus.recordPossibleInvoice.callCount >= 2).to.be.true;
-        
+
         // Replace the exact parameter matching with a more flexible approach using sinon.match
         expect(prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
         const successfulPurchaseCall2 = prometheus.recordSuccessfulPurchase.firstCall;
@@ -575,11 +575,11 @@ describe('processInvoices', () => {
             ticker: labels.ticker,
             destination: '1'
         });
-        
+
         // Check that the second invoice was marked with PendingPurchaseRecord
-        const secondLabels = { 
-            ...labels, 
-            id: secondInvoice.intent_id 
+        const secondLabels = {
+            ...labels,
+            id: secondInvoice.intent_id
         };
         expect(prometheus.recordPossibleInvoice.callCount >= 2).to.be.true;
     });
@@ -607,7 +607,7 @@ describe('processInvoices', () => {
 
         expect(cache.removePurchases.calledOnce).to.be.true;
         expect(logger.warn.called).to.be.true;
-        
+
         // Should continue processing despite cache error
         expect(calcSplitIntentsStub.calledOnce).to.be.true;
         expect(sendIntentsStub.calledOnce).to.be.true;
@@ -644,8 +644,8 @@ describe('processInvoices', () => {
                 ...validInvoice,
                 intent_id: '0xdifferent' // Different invoice but same ticker
             },
-            purchase: { 
-                intentId: '0xexisting_intent', 
+            purchase: {
+                intentId: '0xexisting_intent',
                 params: {
                     origin: '1', // This destination will be filtered out
                     destinations: ['8453'],
@@ -654,13 +654,13 @@ describe('processInvoices', () => {
                     amount: '1000000000000000000',
                     callData: '0xdata',
                     maxFee: '0'
-                } as NewIntentParams 
+                } as NewIntentParams
             },
             transactionHash: '0xexisting'
         };
-        
+
         cache.getAllPurchases.resolves([existingPurchase]);
-        
+
         // Modify minAmounts to include multiple destinations
         const multiDestResponse = {
             ...validMinApiResponse,
@@ -670,7 +670,7 @@ describe('processInvoices', () => {
             }
         };
         everclear.getMinAmounts.resolves(multiDestResponse);
-        
+
         await processInvoices({
             invoices: [validInvoice],
             cache,
@@ -687,18 +687,18 @@ describe('processInvoices', () => {
         const filteredMinAmounts = calcSplitIntentsStub.firstCall.args[1];
         expect(filteredMinAmounts).to.not.have.property('1'); // Should be filtered out
         expect(filteredMinAmounts).to.have.property('42161'); // Should remain
-        
+
         // Verify destination filtering was logged
-        expect(logger.info.calledWith('Action exists for destination-ticker combo, removing from consideration', 
+        expect(logger.info.calledWith('Action exists for destination-ticker combo, removing from consideration',
             sinon.match({ destination: '1' }))).to.be.true;
-            
+
         // Verify metrics for filtered destination
         expect(prometheus.recordInvalidPurchase.calledWith(
             InvalidPurchaseReasons.PendingPurchaseRecord,
             sinon.match({ destination: '1' })
         )).to.be.true;
     });
-    
+
     it('should skip invoice when all destinations are filtered out', async () => {
         // Create a specific invoice with known values
         const testInvoice = {
@@ -706,15 +706,15 @@ describe('processInvoices', () => {
             ticker_hash: '0xspecific_ticker_hash',
             intent_id: '0xtest_invoice_id'
         };
-        
+
         // Create existing purchase that exactly matches our test invoice's ticker_hash
         const existingPurchase: PurchaseAction = {
             target: {
                 ...testInvoice,
                 intent_id: '0xdifferent' // Different invoice ID but same ticker_hash
             },
-            purchase: { 
-                intentId: '0xexisting_intent', 
+            purchase: {
+                intentId: '0xexisting_intent',
                 params: {
                     origin: '1', // This is the only destination in our minAmounts
                     destinations: ['8453'],
@@ -723,13 +723,13 @@ describe('processInvoices', () => {
                     amount: '1000000000000000000',
                     callData: '0xdata',
                     maxFee: '0'
-                } as NewIntentParams 
+                } as NewIntentParams
             },
             transactionHash: '0xexisting'
         };
-        
+
         cache.getAllPurchases.resolves([existingPurchase]);
-        
+
         // Set up minAmounts to ONLY include the destination that will be filtered
         const singleDestResponse = {
             ...validMinApiResponse,
@@ -738,7 +738,7 @@ describe('processInvoices', () => {
             }
         };
         everclear.getMinAmounts.resolves(singleDestResponse);
-        
+
         await processInvoices({
             invoices: [testInvoice],
             cache,
@@ -749,12 +749,12 @@ describe('processInvoices', () => {
             config: validConfig,
             web3Signer: typedWeb3Signer
         });
-        
+
         expect(calcSplitIntentsStub.called).to.be.false;
         expect(sendIntentsStub.called).to.be.false;
         expect(sendIntentsMulticallStub.called).to.be.false;
     });
-    
+
     it('should correctly handle multiple pending purchases with different ticker-destination combinations', async () => {
         // Create two existing purchases for different ticker-destination combinations
         const existingPurchases: PurchaseAction[] = [
@@ -763,8 +763,8 @@ describe('processInvoices', () => {
                     ...validInvoice,
                     intent_id: '0xdifferent1'
                 },
-                purchase: { 
-                    intentId: '0xexisting_intent1', 
+                purchase: {
+                    intentId: '0xexisting_intent1',
                     params: {
                         origin: '1',
                         destinations: ['8453'],
@@ -773,7 +773,7 @@ describe('processInvoices', () => {
                         amount: '1000000000000000000',
                         callData: '0xdata1',
                         maxFee: '0'
-                    } as NewIntentParams 
+                    } as NewIntentParams
                 },
                 transactionHash: '0xexisting1'
             },
@@ -783,8 +783,8 @@ describe('processInvoices', () => {
                     ticker_hash: '0xdifferent_ticker',
                     intent_id: '0xdifferent2'
                 },
-                purchase: { 
-                    intentId: '0xexisting_intent2', 
+                purchase: {
+                    intentId: '0xexisting_intent2',
                     params: {
                         origin: '42161', // Different destination
                         destinations: ['8453'],
@@ -793,14 +793,14 @@ describe('processInvoices', () => {
                         amount: '1000000000000000000',
                         callData: '0xdata2',
                         maxFee: '0'
-                    } as NewIntentParams 
+                    } as NewIntentParams
                 },
                 transactionHash: '0xexisting2'
             }
         ];
-        
+
         cache.getAllPurchases.resolves(existingPurchases);
-        
+
         // Modify minAmounts to include multiple destinations
         const multiDestResponse = {
             ...validMinApiResponse,
@@ -810,7 +810,7 @@ describe('processInvoices', () => {
             }
         };
         everclear.getMinAmounts.resolves(multiDestResponse);
-        
+
         await processInvoices({
             invoices: [validInvoice],
             cache,
