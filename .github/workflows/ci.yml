@@ -155,10 +155,6 @@ jobs:
           key: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
           secret: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
 
-      - name: Decrypt Mainnet Secrets
-        id: decrypt
-        run: sops -d ops/env/mainnet/secrets.prod.json > ops/mainnet/prod/tfvars.json
-
       - name: Terraform Init
         working-directory: ./ops/mainnet/prod
         run: terraform init
