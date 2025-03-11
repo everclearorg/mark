@@ -297,12 +297,19 @@ describe('processInvoices', () => {
             totalAllocated: BigInt('1000000000000000000')
         });
 
-        // For multicall testing, update the sendIntents stub
-        sendIntentsStub.resolves([{
-            transactionHash: '0xmulticall_tx',
-            chainId: '1',
-            intentId: '0xmulticall_intent'
-        }]);
+        // For multiple intents testing, update the sendIntents stub to return multiple results
+        sendIntentsStub.resolves([
+            {
+                transactionHash: '0xtx1',
+                chainId: '1',
+                intentId: '0xintent1'
+            },
+            {
+                transactionHash: '0xtx2',
+                chainId: '1',
+                intentId: '0xintent2'
+            }
+        ]);
 
         await processInvoices({
             invoices: [validInvoice],
@@ -323,12 +330,14 @@ describe('processInvoices', () => {
         expect(sendIntentsStub.firstCall.args[1]).to.have.lengthOf(2);
         expect(sendIntentsMulticallStub.called).to.be.false; // Should not be called directly anymore
 
-        // Verify purchase was added to cache
+        // Verify purchases were added to cache - now we should have multiple purchases
         expect(cache.addPurchases.calledOnce).to.be.true;
         const purchases = cache.addPurchases.firstCall.args[0];
-        expect(purchases).to.have.lengthOf(1);
+        expect(purchases).to.have.lengthOf(2); // Now expecting 2 purchases
         expect(purchases[0].target).to.deep.equal(validInvoice);
-        expect(purchases[0].transactionHash).to.equal('0xmulticall_tx');
+        expect(purchases[0].transactionHash).to.equal('0xtx1');
+        expect(purchases[1].target).to.deep.equal(validInvoice);
+        expect(purchases[1].transactionHash).to.equal('0xtx2');
 
         // Verify metrics were recorded
         expect(prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
