@@ -242,6 +242,7 @@ export async function processInvoices({
         balances,
         custodiedAssets,
         logger,
+        requestId,
       );
 
       if (intents.length === 0) {
@@ -262,6 +263,7 @@ export async function processInvoices({
           intents,
           { everclear, chainService, logger, cache, prometheus, web3Signer },
           config,
+          requestId,
         );
 
         // Use the first result for the purchase record
