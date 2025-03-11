@@ -128,7 +128,7 @@ export const sendIntents = async (
 
     for (const intent of intents) {
       // Sanity check -- intent.amount < minAmounts
-      const { minAmounts } = await everclear.getMinAmounts(targetId);
+      const { minAmounts } = await everclear.getMinAmounts(invoiceId);
       if (BigInt(minAmounts[intent.origin] ?? '0') < BigInt(intent.amount)) {
         logger.warn('Latest min amount for origin is smaller than intent size', {
           minAmount: minAmounts[intent.origin] ?? '0',
