@@ -33,22 +33,11 @@ variable "image_uri" {
   type        = string
 }
 
-variable "web3_signer_private_key" {
-  description = "Private key for web3signer"
-  type        = string
-  sensitive   = true
-}
-
 # Poller-specific variables
 variable "invoice_age" {
   description = "Maximum age of invoices to process (in seconds)"
   type        = string
   default     = "600"
-}
-
-variable "signer_address" {
-  description = "Ethereum address of the signer"
-  type        = string
 }
 
 variable "everclear_api_url" {
@@ -93,32 +82,6 @@ variable "chain_ids" {
   type        = string
   default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,130,33139,2020"
 }
-
-variable "dd_api_key" {
-  description = "Datadog API KEY"
-  type      = string
-  sensitive = true
-}
-
-variable "blast_key" {
-  description = "Blast API KEY"
-  type      = string
-  sensitive = true
-}
-
-variable "drpc_key" {
-  description = "DRPC API KEY"
-  type      = string
-  sensitive = true
-}
-
-variable "alchemy_key" {
-  description = "Alchemy API KEY"
-  type      = string
-  sensitive = true
-}
-
-
 variable "zone_id" {
   description = "Route 53 hosted zone ID for the everclear.ninja domain"
   default     = "Z0605920184MNEP9DVKIX"
