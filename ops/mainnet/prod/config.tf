@@ -59,7 +59,7 @@ locals {
 
   poller_env_vars = {
     SIGNER_URL                    = "http://${module.mark_web3signer.service_url}:9000"
-    SIGNER_ADDRESS                = var.signer_address
+    SIGNER_ADDRESS                = local.mark_config.signerAddress
     REDIS_HOST                    = module.cache.redis_instance_address
     REDIS_PORT                    = module.cache.redis_instance_port
     SUPPORTED_SETTLEMENT_DOMAINS  = var.supported_settlement_domains
@@ -73,7 +73,7 @@ locals {
     PROMETHEUS_ENABLED            = true
     DD_LOGS_ENABLED               = true
     DD_ENV                        = "${var.environment}-${var.stage}"
-    DD_API_KEY                    = var.dd_api_key
+    DD_API_KEY                    = local.mark_config.dd_api_key
     DD_LAMBDA_HANDLER             = "packages/poller/dist/index.handler"
     
     WETH_1_THRESHOLD              = "800000000000000000"
@@ -99,7 +99,7 @@ locals {
   web3signer_env_vars = [
     {
       name  = "WEB3_SIGNER_PRIVATE_KEY"
-      value = var.web3_signer_private_key
+      value = local.mark_config.web3_signer_private_key
     },
     {
       name  = "WEB3SIGNER_HTTP_HOST_ALLOWLIST"
