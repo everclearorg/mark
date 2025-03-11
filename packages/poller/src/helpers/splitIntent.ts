@@ -1,5 +1,5 @@
 import { getTokenAddressFromConfig, Invoice, MarkConfiguration, NewIntentParams } from '@mark/core';
-import { Logger } from '@mark/logger';
+import { jsonifyMap, Logger } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 
@@ -70,6 +70,7 @@ export async function calculateSplitIntents(
   balances: Map<string, Map<string, bigint>>,
   custodiedAssets: Map<string, Map<string, bigint>>,
   logger: Logger,
+  requestId?: string,
 ): Promise<SplitIntentResult> {
   const ticker = invoice.ticker_hash;
   const totalNeeded = BigInt(invoice.amount);
@@ -84,6 +85,10 @@ export async function calculateSplitIntents(
       return configDomains.includes(domain) && tickers.includes(invoice.ticker_hash.toLowerCase());
     })
     .map(([domain]) => domain.toString());
+  logger.info('Got supported domains to evaluate', {
+    requestId,
+    invoiceId: invoice.intent_id,
+  });
 
   const allCustodiedAssets = custodiedAssets.get(ticker) || new Map<string, bigint>();
 
@@ -96,6 +101,8 @@ export async function calculateSplitIntents(
     const markOriginBalance = balances.get(ticker)?.get(origin) ?? BigInt(0);
     if (markOriginBalance < totalNeeded) {
       logger.debug('Skipping origin due to insufficient balance', {
+        requestId,
+        invoiceId: invoice.intent_id,
         origin,
         required: totalNeeded.toString(),
         available: markOriginBalance.toString(),
@@ -112,9 +119,23 @@ export async function calculateSplitIntents(
 
     // Define top-N domains (sorted by custodied assets)
     const topNDomains = sortedConfigDomains.slice(0, TOP_N_DESTINATIONS);
+    logger.info('Selected top domains for invoice', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      topNDomains,
+      allCustodiedAssets: jsonifyMap(allCustodiedAssets),
+    });
 
     // Try allocating with top-N domains first
     const topNAllocation = evaluateDomainForOrigin(origin, totalNeeded, allCustodiedAssets, topNDomains);
+    logger.info('Evaluated top allocations for invoice from origin', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      origin,
+      totalNeeded,
+      topNAllocation,
+      allCustodiedAssets: jsonifyMap(allCustodiedAssets),
+    });
 
     if (topNAllocation.totalAllocated >= totalNeeded) {
       possibleAllocations.push(topNAllocation);
@@ -130,6 +151,14 @@ export async function calculateSplitIntents(
       allCustodiedAssets,
       sortedConfigDomains.slice(0, MAX_DESTINATIONS),
     );
+    logger.info('Evaluated all domains for invoice from origin', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      origin,
+      totalNeeded,
+      allDomainsAllocation,
+      allCustodiedAssets: jsonifyMap(allCustodiedAssets),
+    });
 
     possibleAllocations.push(allDomainsAllocation);
   }
@@ -138,7 +167,8 @@ export async function calculateSplitIntents(
   // This means there were no origins where Mark had enough balance
   if (possibleAllocations.length === 0) {
     logger.info('No origins where Mark had enough balance', {
-      invoice: invoice.intent_id,
+      requestId,
+      invoiceId: invoice.intent_id,
       ticker,
     });
     return { intents: [], originDomain: '', totalAllocated: BigInt(0) };
@@ -171,7 +201,8 @@ export async function calculateSplitIntents(
   const bestAllocation = possibleAllocations[0];
 
   logger.info('Best allocation found for split intent', {
-    invoice: invoice.intent_id,
+    requestId,
+    invoiceId: invoice.intent_id,
     origin: bestAllocation.origin,
     totalAllocated: bestAllocation.totalAllocated.toString(),
     needed: totalNeeded.toString(),
@@ -190,6 +221,8 @@ export async function calculateSplitIntents(
     const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config);
     if (!inputAsset) {
       logger.error('No input asset found', {
+        requestId,
+        invoiceId: invoice.intent_id,
         ticker,
         origin: bestAllocation.origin,
         domain,

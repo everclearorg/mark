@@ -5,18 +5,8 @@ FROM public.ecr.aws/lambda/nodejs:18 AS node
 # ----------------------------------------
 
 FROM node AS build
-RUN yum update -y && yum install -y \
-    git \
-    python3 \
-    python3-pip \
-    make \
-    gcc \
-    gcc-c++ \
-    python3-devel \
-    libsecret-devel \
-    libuuid-devel \
-    openssl-devel \
-    zlib-devel
+RUN yum update -y
+RUN yum install -y git
 
 RUN npm install --global yarn@1.22.19 node-gyp
 

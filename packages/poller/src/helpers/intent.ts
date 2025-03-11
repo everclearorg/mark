@@ -18,15 +18,16 @@ export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f1
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required.
  */
 export const sendIntents = async (
-  targetId: string,
+  invoiceId: string,
   intents: NewIntentParams[],
   deps: ProcessInvoicesDependencies,
   config: MarkConfiguration,
+  requestId?: string,
 ): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, prometheus, logger } = deps;
 
   if (!intents.length) {
-    logger.info('No intents to process');
+    logger.info('No intents to process', { invoiceId });
     return [];
   }
 
@@ -56,6 +57,8 @@ export const sendIntents = async (
     }, BigInt(0));
 
     logger.info('Total amount for approvals', {
+      requestId,
+      invoiceId,
       totalAmount: totalAmount.toString(),
       intentCount: intents.length,
     });
@@ -65,6 +68,8 @@ export const sendIntents = async (
 
     if (BigInt(allowance as string) < totalAmount) {
       logger.info('Allowance insufficient for total amount, preparing approval transaction', {
+        requestId,
+        invoiceId,
         requiredAmount: totalAmount.toString(),
         currentAllowance: allowance,
       });
@@ -80,7 +85,12 @@ export const sendIntents = async (
         from: config.ownAddress,
       };
 
-      logger.debug('Sending approval transaction', { transaction, chainId: txData.chainId });
+      logger.debug('Sending approval transaction', {
+        requestId,
+        invoiceId,
+        transaction,
+        chainId: txData.chainId,
+      });
       const approvalTx = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
       prometheus.updateGasSpent(
         firstIntent.origin,
@@ -89,6 +99,8 @@ export const sendIntents = async (
       );
 
       logger.info('Approval transaction sent successfully', {
+        requestId,
+        invoiceId,
         chain: txData.chainId,
         approvalTxHash: approvalTx.transactionHash,
         allowance,
@@ -97,6 +109,8 @@ export const sendIntents = async (
       });
     } else {
       logger.info('Sufficient allowance already available for all intents', {
+        requestId,
+        invoiceId,
         allowance,
         chain: txData.chainId,
         asset: tokenContract.address,
@@ -105,19 +119,22 @@ export const sendIntents = async (
     }
 
     logger.info(`Processing ${intents.length} total intent(s)`, {
+      requestId,
+      invoiceId,
       count: intents.length,
       origin: intents[0].origin,
       token: intents[0].inputAsset,
     });
 
     for (const intent of intents) {
-      // Sanity check -- intent.amount < minAmounts
-      const { minAmounts } = await everclear.getMinAmounts(targetId);
+      // Sanity check -- minAmounts < intent.amount
+      const { minAmounts } = await everclear.getMinAmounts(invoiceId);
       if (BigInt(minAmounts[intent.origin] ?? '0') < BigInt(intent.amount)) {
         logger.warn('Latest min amount for origin is smaller than intent size', {
           minAmount: minAmounts[intent.origin] ?? '0',
           intent,
-          invoiceId: targetId,
+          invoiceId,
+          requestId,
         });
         continue;
         // NOTE: continue instead of exit in case other intents are still below the min amount,
@@ -129,6 +146,8 @@ export const sendIntents = async (
 
       // Submit the create intent transaction
       logger.info('Submitting create intent transaction', {
+        invoiceId,
+        requestId,
         intent,
         transaction: {
           to: intentTxData.to,
@@ -151,6 +170,8 @@ export const sendIntents = async (
       const intentId = event.topics[1];
 
       logger.info('Create intent transaction sent successfully', {
+        invoiceId,
+        requestId,
         intentTxHash: intentTx.transactionHash,
         chainId: intent.origin,
         intentId,
@@ -165,7 +186,12 @@ export const sendIntents = async (
       results.push({ transactionHash: intentTx.transactionHash, chainId: intent.origin, intentId });
     }
   } catch (error) {
-    logger.error('Error processing intents', { error, intentCount: intents.length });
+    logger.error('Error processing intents', {
+      invoiceId,
+      requestId,
+      error,
+      intentCount: intents.length,
+    });
     throw error;
   }
 

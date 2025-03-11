@@ -1,4 +1,10 @@
-import { MarkConfiguration, Invoice, InvalidPurchaseReasonVerbose, InvalidPurchaseReasons } from '@mark/core';
+import {
+  MarkConfiguration,
+  Invoice,
+  InvalidPurchaseReasonVerbose,
+  InvalidPurchaseReasons,
+  DEFAULT_INVOICE_AGE,
+} from '@mark/core';
 import { getTickers } from '../helpers';
 
 export function isValidInvoice(
@@ -44,7 +50,7 @@ export function isValidInvoice(
   // Verify invoice is old enough to consider
   const age = currentTime - invoice.hub_invoice_enqueued_timestamp;
   const noOldDestinations = invoice.destinations.every((dest) => {
-    const minAge = config.chains[dest]?.invoiceAge ?? 3600;
+    const minAge = config.chains[dest]?.invoiceAge ?? DEFAULT_INVOICE_AGE;
     return age < minAge;
   });
   if (noOldDestinations) {
