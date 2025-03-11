@@ -162,6 +162,6 @@ jobs:
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod
         run: |
-          terraform apply -var "image_uri=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" -var-file=tfvars.json -auto-approve
+          terraform apply -var "image_uri=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" -auto-approve
         env:
           TF_LOG: INFO
