@@ -79,7 +79,6 @@ export async function calculateSplitIntents(
   requestId?: string,
 ): Promise<SplitIntentResult> {
   const ticker = invoice.ticker_hash;
-  const totalNeeded = BigInt(invoice.amount);
   const allCustodiedAssets = custodiedAssets.get(ticker) || new Map<string, bigint>();
   const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
 
@@ -114,6 +113,8 @@ export async function calculateSplitIntents(
   // Evaluate each possible origin domain
   const possibleAllocations: SplitIntentAllocation[] = [];
   for (const origin of Object.keys(minAmounts)) {
+    const totalNeeded = BigInt(minAmounts[origin]);
+
     // Check if Mark has balance on this origin
     const markOriginBalance = balances.get(ticker)?.get(origin) ?? BigInt(0);
     if (markOriginBalance < totalNeeded) {
@@ -209,6 +210,7 @@ export async function calculateSplitIntents(
     return 0;
   });
   const bestAllocation = possibleAllocations[0];
+  const totalNeeded = BigInt(minAmounts[bestAllocation.origin]);
 
   logger.info('Best allocation found for split intent', {
     requestId,
