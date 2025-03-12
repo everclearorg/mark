@@ -1321,5 +1321,214 @@ describe('Split Intent Helper Functions', () => {
         expect(intent.destinations).to.deep.equal(destinations);
       });
     });
+
+    it('should evaluate each origin with its specific minAmount value', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-diff-min-amounts',
+        origin: '1',
+        destinations: ['10', '8453'],
+        amount: '200000000000000000000', // 200 WETH - split calc should NOT use this amount
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      // Different min amounts for different origins
+      const minAmounts = {
+        '1': '120000000000000000000',   // 120 WETH needed from Ethereum
+        '10': '80000000000000000000',   // 80 WETH needed from Optimism
+        '8453': '100000000000000000000', // 100 WETH needed from Base
+      };
+
+      // Mark has different balances on each origin
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('110000000000000000000')],  // 110 WETH (not enough for minAmount of 120)
+          ['10', BigInt('100000000000000000000')], // 100 WETH (enough for minAmount of 80)
+          ['8453', BigInt('90000000000000000000')], // 90 WETH (not enough for minAmount of 100)
+          ['42161', BigInt('200000000000000000000')], // 200 WETH (not in minAmounts)
+        ])],
+      ]);
+
+      // Set up custodied assets
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('0')],                        // 0 WETH on Ethereum
+        ['10', BigInt('0')],                       // 0 WETH on Optimism
+        ['8453', BigInt('0')],                     // 0 WETH on Base
+        ['42161', BigInt('0')],                    // 0 WETH on Arbitrum
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        invoice,
+        minAmounts,
+        config,
+        balances,
+        custodiedBalances,
+        logger
+      );
+      console.log('result', result);
+
+      // Should choose origin '10' as it's the only one with sufficient balance
+      expect(result.originDomain).to.equal('10');
+      expect(result.totalAllocated).to.equal(BigInt('0'));
+
+      // Verify origins 1 and 8453 were skipped due to insufficient balance
+      expect(logger.debug.calledWith(
+        'Skipping origin due to insufficient balance',
+        sinon.match({ origin: '1', required: '120000000000000000000', available: '110000000000000000000' })
+      )).to.be.true;
+      
+      expect(logger.debug.calledWith(
+        'Skipping origin due to insufficient balance',
+        sinon.match({ origin: '8453', required: '100000000000000000000', available: '90000000000000000000' })
+      )).to.be.true;
+    });
+
+    it('should pick the origin with higher allocation when multiple origins have sufficient balance', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-multi-sufficient',
+        origin: '1',
+        destinations: ['10', '8453', '42161'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '10': '80000000000000000000',   // 80 WETH needed from Optimism 
+        '8453': '60000000000000000000', // 60 WETH needed from Base
+        '42161': '100000000000000000000', // 100 WETH needed from Arbitrum
+      };
+
+      // Mark has sufficient balance on all origins
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')],  // 100 WETH (not in minAmounts)
+          ['10', BigInt('100000000000000000000')], // 100 WETH
+          ['8453', BigInt('100000000000000000000')], // 100 WETH
+          ['42161', BigInt('100000000000000000000')], // 100 WETH
+        ])],
+      ]);
+
+      // Set up custodied assets to make origin '10' have the highest allocation
+      // Origin 10 needs 80 WETH and can settle out with one split
+      // Origin 8453 needs 60 WETH but would need multiple splits
+      // Origin 42161 needs 100 WETH but would need multiple splits
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['10', BigInt('40000000000000000000')],
+        ['8453', BigInt('80000000000000000000')],
+        ['42161', BigInt('200000000000000000000')],
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        invoice,
+        minAmounts,
+        config,
+        balances,
+        custodiedBalances,
+        logger
+      );
+
+      // Should choose origin '10'
+      expect(result.originDomain).to.equal('10');
+      expect(result.totalAllocated).to.equal(BigInt('80000000000000000000'));
+      expect(result.intents.length).to.equal(1); // Single intent
+
+      // Verify the intent uses 42161 as destination
+      const intent = result.intents[0];
+      expect(intent.origin).to.equal('10');
+      expect(intent.destinations).to.include('42161');
+      expect(intent.amount).to.equal('80000000000000000000');
+    });
+
+    it('should filter out domains that do not support the ticker', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-filter-unsupported',
+        origin: '1',
+        destinations: ['10', '8453'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '10': '100000000000000000000', // 100 WETH
+        '8453': '100000000000000000000', // 100 WETH
+      };
+
+      // Mark has sufficient balance on all origins
+      const balances = new Map([
+        ['WETH', new Map([
+          ['10', BigInt('200000000000000000000')], // 200 WETH
+          ['8453', BigInt('200000000000000000000')], // 200 WETH
+          ['137', BigInt('200000000000000000000')], // 200 WETH on Polygon (unsupported)
+        ])],
+      ]);
+
+      // Create a modified config where Polygon doesn't support WETH
+      const testConfig = {
+        ...config,
+        supportedSettlementDomains: [1, 10, 8453, 137], // Added Polygon
+        chains: {
+          ...config.chains,
+          '137': {
+            assets: [
+              {
+                tickerHash: 'USDC', // Only supports USDC, not WETH
+                address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+                decimals: 6,
+                symbol: 'USDC',
+                isNative: false,
+                balanceThreshold: '0',
+              }
+            ],
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+        },
+      } as unknown as MarkConfiguration;
+
+      // Set up custodied assets with assets on Polygon that shouldn't be used
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('20000000000000000000')],     // 20 WETH on Ethereum
+        ['10', BigInt('30000000000000000000')],    // 30 WETH on Optimism
+        ['8453', BigInt('40000000000000000000')],  // 40 WETH on Base
+        ['137', BigInt('90000000000000000000')],   // 90 WETH on Polygon (should be ignored)
+      ]);
+      
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        invoice,
+        minAmounts,
+        testConfig,
+        balances,
+        custodiedBalances,
+        logger
+      );
+
+      // Should choose an origin and create intents for supported domains only
+      expect(result.originDomain).to.be.equal('10');
+      expect(result.totalAllocated).to.be.equal(BigInt(60000000000000000000));
+      
+      // Verify none of the intents allocate to Polygon
+      result.intents.forEach(intent => {
+        // Domain 137 shouldn't be used for allocation
+        const hasAllocationToPolygon = intent.destinations.includes('137') && 
+          custodiedWETHBalances.get('137')! > BigInt(0);
+        expect(hasAllocationToPolygon).to.be.false;
+      });
+    });
   });
 });
