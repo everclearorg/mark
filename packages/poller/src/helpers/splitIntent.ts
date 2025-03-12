@@ -186,22 +186,22 @@ export async function calculateSplitIntents(
   }
 
   // Find the best allocation:
-  // 1. Prefer allocations with fewer intents (allocations)
-  // 2. For the same number of intents, prefer allocations that only use top-N chains
+  // 1. Prefer top-N allocations
+  // 2. Then prefer fewer allocations
   // 3. Lastly, consider total allocated amount as a tiebreaker
   possibleAllocations.sort((a, b) => {
-    // 1. Sort by number of allocations (fewer is better)
-    if (a.allocations.length !== b.allocations.length) {
-      return a.allocations.length - b.allocations.length;
-    }
-
-    // 2. Prefer allocations that only use top-N chains
-    const topNDomains = assetSupportedDomains.slice(0, TOP_N_DESTINATIONS);
-    const aUsesOnlyTopN = a.allocations.every((alloc) => topNDomains.includes(alloc.domain));
-    const bUsesOnlyTopN = b.allocations.every((alloc) => topNDomains.includes(alloc.domain));
+    // 1. Prefer top-N allocations (these are only added as possible allocations 
+    //   if they fully cover the amount needed)
+    const aUsesOnlyTopN = a.isTopN;
+    const bUsesOnlyTopN = b.isTopN;
 
     if (aUsesOnlyTopN !== bUsesOnlyTopN) {
       return aUsesOnlyTopN ? -1 : 1;
+    }
+
+    // 2. Sort by number of allocations (fewer is better)
+    if (a.allocations.length !== b.allocations.length) {
+      return a.allocations.length - b.allocations.length;
     }
 
     // 3. Use totalAllocated as a tiebreaker (higher is better)
