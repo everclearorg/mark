@@ -1530,5 +1530,163 @@ describe('Split Intent Helper Functions', () => {
         expect(hasAllocationToPolygon).to.be.false;
       });
     });
+
+    it('should prioritize full coverage over fewer intents', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-coverage-vs-intents',
+        origin: '1',
+        destinations: ['10', '8453', '42161'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '10': '100000000000000000000', // 100 WETH needed
+      };
+
+      // Only Optimism can be origin
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('0')],
+          ['10', BigInt('100000000000000000000')], // 100 WETH on Optimism
+          ['8453', BigInt('0')],
+          ['42161', BigInt('0')],
+        ])],
+      ]);
+
+      const custodiedAssets = new Map<string, bigint>([
+        ['1', BigInt('80000000000000000000')],    // 80 WETH on Ethereum
+        ['10', BigInt('0')],
+        ['8453', BigInt('60000000000000000000')], // 60 WETH on Base
+        ['42161', BigInt('40000000000000000000')],// 40 WETH on Arbitrum
+      ]);
+      
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedAssets]
+      ]);
+
+      const result = await calculateSplitIntents(
+        invoice,
+        minAmounts,
+        config,
+        balances,
+        custodiedBalances,
+        logger
+      );
+      
+      // The result should show full coverage with 2 intents
+      expect(result.originDomain).to.equal('10');
+      expect(result.totalAllocated).to.equal(BigInt('100000000000000000000')); // 100 WETH (full coverage)
+      expect(result.intents.length).to.equal(2); // Two intents (one per domain with assets)
+    });
+
+    it('should prioritize top-N allocation when all options fully cover amount needed', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-topn-preference',
+        origin: '1',
+        destinations: ['10', '8453', '42161'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '10': '100000000000000000000', // 100 WETH needed
+      };
+
+      // Only Optimism can be origin
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('0')],
+          ['10', BigInt('200000000000000000000')],
+          ['8453', BigInt('0')],
+          ['42161', BigInt('0')],
+          ['43114', BigInt('0')],
+          ['56', BigInt('0')],
+          ['48900', BigInt('0')],
+          ['137', BigInt('0')],
+        ])],
+      ]);
+
+      const mockAssetsConfig = [
+        {
+          tickerHash: 'WETH',
+          address: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
+          decimals: 18,
+          symbol: 'WETH',
+          isNative: false,
+          balanceThreshold: '0',
+        },
+      ];
+
+      // Create a modified config with 8 domains, first 7 are top-N
+      const testConfig = {
+        ...config,
+        supportedSettlementDomains: [1, 10, 8453, 42161, 43114, 56, 48900, 137],
+        chains: {
+          ...config.chains,
+          '43114': {
+            assets: mockAssetsConfig,
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+          '56': {
+            assets: mockAssetsConfig,
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+          '48900': {
+            assets: mockAssetsConfig,
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+          '137': {
+            assets: mockAssetsConfig,
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+        },
+      } as unknown as MarkConfiguration;
+
+      // possibleAllocation1: 100 WETH using only top-N chains (1, 8453) - should be preferred
+      // possibleAllocation2: 110 WETH using top-MAX chains (1, 137)
+      const custodiedAssets = new Map<string, bigint>([
+        ['1', BigInt('50000000000000000000')],    // 50 WETH on Ethereum (top-N)
+        ['10', BigInt('0')],                      // Origin - can't allocate here
+        ['8453', BigInt('50000000000000000000')], // 50 WETH on Base (top-N)
+        ['42161', BigInt('0')],                   // 0 WETH on Arbitrum (top-N)
+        ['43114', BigInt('0')],                   // 0 WETH on Avalanche (top-N)
+        ['56', BigInt('0')],                      // 0 WETH on BSC (top-N)
+        ['48900', BigInt('0')],                   // 0 WETH on Zircuit (top-N)
+        ['137', BigInt('60000000000000000000')],  // 60 WETH on Polygon (not top-N)
+      ]);
+      
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedAssets]
+      ]);
+
+      const result = await calculateSplitIntents(
+        invoice,
+        minAmounts,
+        testConfig,
+        balances,
+        custodiedBalances,
+        logger
+      );
+      
+      // Should choose the top-N allocation
+      expect(result.originDomain).to.equal('10');
+      expect(result.totalAllocated).to.equal(BigInt('100000000000000000000'));
+      expect(result.intents.length).to.equal(2); // 2 intents
+      expect(result.intents[0].amount).to.equal('50000000000000000000'); // allocated to Ethereum
+      expect(result.intents[1].amount).to.equal('50000000000000000000'); // allocated to Base
+    });
   });
 });
