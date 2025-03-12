@@ -7,6 +7,8 @@ interface SplitIntentAllocation {
   origin: string;
   allocations: { domain: string; amount: bigint }[];
   totalAllocated: bigint;
+  destinations: string[];
+  isTopN: boolean;
 }
 
 interface SplitIntentResult {
@@ -22,16 +24,19 @@ function evaluateDomainForOrigin(
   origin: string,
   requiredAmount: bigint,
   custodiedAssets: Map<string, bigint>,
-  configDomains: string[],
+  domainCandidates: string[],
+  isTopN: boolean,
 ): SplitIntentAllocation {
   const allocation: SplitIntentAllocation = {
     origin,
     allocations: [],
     totalAllocated: BigInt(0),
+    destinations: [],
+    isTopN,
   };
 
-  // Go through config domains in order
-  for (const domain of configDomains) {
+  // Go through domain candidates in order
+  for (const domain of domainCandidates) {
     // Skip the origin domain - can't use as a destination
     if (domain === origin) continue;
 
@@ -52,6 +57,7 @@ function evaluateDomainForOrigin(
     });
 
     allocation.totalAllocated += amountToAllocate;
+    allocation.destinations.push(domain);
 
     // If we've allocated enough, break out of the loop
     if (allocation.totalAllocated >= requiredAmount) break;
@@ -74,28 +80,39 @@ export async function calculateSplitIntents(
 ): Promise<SplitIntentResult> {
   const ticker = invoice.ticker_hash;
   const totalNeeded = BigInt(invoice.amount);
-
-  // Get all domains from config
+  const allCustodiedAssets = custodiedAssets.get(ticker) || new Map<string, bigint>();
   const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
 
-  // Get all the domains from config that support the given asset
-  const assetSupportedDomains = Object.entries(config.chains)
-    .filter(([domain, chainConfig]) => {
-      const tickers = chainConfig.assets.map((a) => a.tickerHash.toLowerCase());
-      return configDomains.includes(domain) && tickers.includes(invoice.ticker_hash.toLowerCase());
-    })
-    .map(([domain]) => domain.toString());
+  // Filter for domains that support the given asset, maintaining the
+  // original config order
+  const assetSupportedDomains = configDomains.filter(domain => {
+    const chainConfig = config.chains[domain];
+    if (!chainConfig) return false;
+    const tickers = chainConfig.assets.map((a) => a.tickerHash.toLowerCase());
+    return tickers.includes(invoice.ticker_hash.toLowerCase());
+  });
   logger.info('Got supported domains to evaluate', {
     requestId,
     invoiceId: invoice.intent_id,
   });
 
-  const allCustodiedAssets = custodiedAssets.get(ticker) || new Map<string, bigint>();
+  // Sort the top-N domains by custodied assets
+  const topNDomainsFromConfig = assetSupportedDomains.slice(0, TOP_N_DESTINATIONS);
+  const topNDomainsSortedByCustodied = [...topNDomainsFromConfig].sort((a, b) => {
+    const aAssets = allCustodiedAssets.get(a) ?? BigInt(0);
+    const bAssets = allCustodiedAssets.get(b) ?? BigInt(0);
+    return Number(bAssets - aAssets); // Sort descending
+  });
+
+  // Sort all domains by custodied assets
+  const allDomainsSortedByCustodied = [...assetSupportedDomains].sort((a, b) => {
+    const aAssets = allCustodiedAssets.get(a) ?? BigInt(0);
+    const bAssets = allCustodiedAssets.get(b) ?? BigInt(0);
+    return Number(bAssets - aAssets); // Sort descending
+  });
 
   // Evaluate each possible origin domain
   const possibleAllocations: SplitIntentAllocation[] = [];
-
-  // First, try the invoice destinations as origins
   for (const origin of Object.keys(minAmounts)) {
     // Check if Mark has balance on this origin
     const markOriginBalance = balances.get(ticker)?.get(origin) ?? BigInt(0);
@@ -110,30 +127,21 @@ export async function calculateSplitIntents(
       continue;
     }
 
-    // Sort domains by custodied assets (highest first)
-    const sortedConfigDomains = [...assetSupportedDomains].sort((a, b) => {
-      const aAssets = allCustodiedAssets.get(a) ?? BigInt(0);
-      const bAssets = allCustodiedAssets.get(b) ?? BigInt(0);
-      return Number(bAssets - aAssets); // Sort descending
-    });
-
-    // Define top-N domains (sorted by custodied assets)
-    const topNDomains = sortedConfigDomains.slice(0, TOP_N_DESTINATIONS);
-    logger.info('Selected top domains for invoice', {
-      requestId,
-      invoiceId: invoice.intent_id,
-      topNDomains,
-      allCustodiedAssets: jsonifyMap(allCustodiedAssets),
-    });
-
-    // Try allocating with top-N domains first
-    const topNAllocation = evaluateDomainForOrigin(origin, totalNeeded, allCustodiedAssets, topNDomains);
-    logger.info('Evaluated top allocations for invoice from origin', {
+    // Try allocating with top-N domains
+    const topNAllocation = evaluateDomainForOrigin(
+      origin,
+      totalNeeded,
+      allCustodiedAssets,
+      topNDomainsSortedByCustodied,
+      true,
+    );
+    logger.info('Evaluated top-N domains for invoice', {
       requestId,
       invoiceId: invoice.intent_id,
       origin,
       totalNeeded,
       topNAllocation,
+      topNDomainsSortedByCustodied,
       allCustodiedAssets: jsonifyMap(allCustodiedAssets),
     });
 
@@ -142,25 +150,27 @@ export async function calculateSplitIntents(
       continue;
     }
 
-    // If top-N is not enough, try with all domains (limited to MAX_DESTINATIONS)
+    // If top-N is not enough, try with the top MAX_DESTINATIONS domains
     // NOTE: This is unconditionally added as a possible allocation. This is deliberate
     //       because Mark should settle the invoice regardless if liquidity can cover his intent.
-    const allDomainsAllocation = evaluateDomainForOrigin(
+    const topMaxDestinations = allDomainsSortedByCustodied.slice(0, MAX_DESTINATIONS);
+    const topMaxAllocation = evaluateDomainForOrigin(
       origin,
       totalNeeded,
       allCustodiedAssets,
-      sortedConfigDomains.slice(0, MAX_DESTINATIONS),
+      topMaxDestinations,
+      false,
     );
-    logger.info('Evaluated all domains for invoice from origin', {
+    logger.info('Evaluated top-MAX domains for invoice', {
       requestId,
       invoiceId: invoice.intent_id,
       origin,
       totalNeeded,
-      allDomainsAllocation,
+      topMaxAllocation,
       allCustodiedAssets: jsonifyMap(allCustodiedAssets),
     });
 
-    possibleAllocations.push(allDomainsAllocation);
+    possibleAllocations.push(topMaxAllocation);
   }
 
   // If no allocations found, return empty result
@@ -208,13 +218,26 @@ export async function calculateSplitIntents(
     needed: totalNeeded.toString(),
     coverage: `${((Number(bestAllocation.totalAllocated) * 100) / Number(totalNeeded)).toFixed(2)}%`,
     allocationCount: bestAllocation.allocations.length,
+    isTopN: bestAllocation.isTopN,
   });
 
   // Generate the intent parameters for each allocation
-  const intents: NewIntentParams[] = [];
+  const intents: NewIntentParams[] = []; 
 
-  // Generate destinations array (excluding origin, limited to MAX_DESTINATIONS)
-  const destinations = assetSupportedDomains.filter((d) => d !== bestAllocation.origin).slice(0, MAX_DESTINATIONS);
+  // Create the destinations to use for the intent
+  const destinations = bestAllocation.destinations;
+  if (bestAllocation.isTopN) {
+    // If the allocation is top-N, we should pad to N destinations
+    const remainingTopNDomains = topNDomainsSortedByCustodied
+      .filter(domain => !destinations.includes(domain) && domain !== bestAllocation.origin);
+    destinations.push(...remainingTopNDomains);
+  } else {
+    // If the allocation is top-MAX, we should pad to MAX_DESTINATIONS
+    const remainingDomains = allDomainsSortedByCustodied
+      .filter(domain => !destinations.includes(domain) && domain !== bestAllocation.origin);
+    const domainsToAdd = remainingDomains.slice(0, MAX_DESTINATIONS - destinations.length);
+    destinations.push(...domainsToAdd);
+  }
 
   // Create an intent for each allocation
   for (const { domain, amount } of bestAllocation.allocations) {

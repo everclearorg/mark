@@ -1099,5 +1099,227 @@ describe('Split Intent Helper Functions', () => {
       expect(result.intents.length).to.equal(0);
       expect(result.totalAllocated).to.equal(BigInt('0'));
     });
+
+    it('should properly pad top-N destinations to TOP_N_DESTINATIONS length', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-top-n-padding',
+        origin: '1',
+        destinations: ['10', '8453'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '100000000000000000000', // 100 WETH
+      };
+
+      // Mark has enough balance on Ethereum
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('200000000000000000000')], // 200 WETH on Ethereum
+          ['10', BigInt('10000000000000000000')],
+          ['8453', BigInt('10000000000000000000')],
+          ['42161', BigInt('10000000000000000000')],
+        ])],
+      ]);
+
+      // Set up custodied assets where only 2 domains (of the 4 possible) have assets
+      // This will create a top-N allocation with only 2 destinations used for allocation
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('0')],                        // Origin - not available for allocation
+        ['10', BigInt('60000000000000000000')],    // 60 WETH on Optimism - used for allocation
+        ['8453', BigInt('40000000000000000000')],  // 40 WETH on Base - used for allocation
+        ['42161', BigInt('0')],                    // 0 WETH on Arbitrum - not used for allocation
+      ]);
+      
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        invoice,
+        minAmounts,
+        config,
+        balances,
+        custodiedBalances,
+        logger
+      );
+
+      // Verify results
+      expect(result.originDomain).to.equal('1'); // Origin should be Ethereum
+      expect(result.totalAllocated).to.equal(BigInt('100000000000000000000')); // 100 WETH allocated
+      expect(result.intents.length).to.equal(2); // Two intents (one per domain with assets)
+
+      // Both intents should have the same destinations array
+      const destinations = result.intents[0].destinations;
+      
+      // The destinations array should include all domains (except origin)
+      // Original allocation was only to domains 10 and 8453
+      // Domain 42161 should be included in padded destinations
+      expect(destinations).to.include('10');
+      expect(destinations).to.include('8453');
+      expect(destinations).to.include('42161');
+      expect(destinations).to.not.include('1'); // Not origin
+      
+      // All intents should have the same destinations array
+      result.intents.forEach(intent => {
+        expect(intent.destinations).to.deep.equal(destinations);
+      });
+    });
+
+    it('should properly pad top-MAX destinations to MAX_DESTINATIONS length', async () => {
+      // Configure more domains to test MAX_DESTINATIONS padding
+      const manyDomains = [1, 10, 8453, 42161, 137, 43114, 1101, 56, 100, 250, 324, 11155111];
+      const testConfig = {
+        ...config,
+        supportedSettlementDomains: manyDomains,
+        chains: {
+          ...config.chains,
+          '137': {
+            assets: [
+              {
+                tickerHash: 'WETH',
+                address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
+                decimals: 18,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }
+            ],
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+          '43114': {
+            assets: [
+              {
+                tickerHash: 'WETH',
+                address: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
+                decimals: 18,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }
+            ],
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+          '1101': {
+            assets: [
+              {
+                tickerHash: 'WETH',
+                address: '0x4F9A0e7FD2Bf6067db6994CF12E4495Df938E6e9',
+                decimals: 18,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }
+            ],
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+          '56': {
+            assets: [
+              {
+                tickerHash: 'WETH',
+                address: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
+                decimals: 18,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }
+            ],
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+          },
+          '100': { assets: [{ tickerHash: 'WETH', address: '0xWETHonGnosis', decimals: 18, symbol: 'WETH', isNative: false, balanceThreshold: '0' }], providers: ['provider1'], invoiceAge: 0, gasThreshold: '0' },
+          '250': { assets: [{ tickerHash: 'WETH', address: '0xWETHonFantom', decimals: 18, symbol: 'WETH', isNative: false, balanceThreshold: '0' }], providers: ['provider1'], invoiceAge: 0, gasThreshold: '0' },
+          '324': { assets: [{ tickerHash: 'WETH', address: '0xWETHonZkSync', decimals: 18, symbol: 'WETH', isNative: false, balanceThreshold: '0' }], providers: ['provider1'], invoiceAge: 0, gasThreshold: '0' },
+          '11155111': { assets: [{ tickerHash: 'WETH', address: '0xWETHonSepolia', decimals: 18, symbol: 'WETH', isNative: false, balanceThreshold: '0' }], providers: ['provider1'], invoiceAge: 0, gasThreshold: '0' },
+        },
+      } as unknown as MarkConfiguration;
+
+      const invoice = {
+        intent_id: '0xinvoice-max-padding',
+        origin: '1',
+        destinations: ['10', '8453'],
+        amount: '200000000000000000000', // 200 WETH - ensure top-N isn't sufficient
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '10': '200000000000000000000', // 200 WETH
+      };
+
+      // Mark has enough balance on Optimism
+      const balances = new Map<string, Map<string, bigint>>([
+        ['WETH', new Map<string, bigint>([
+          ['1', BigInt('0')],
+          ['10', BigInt('300000000000000000000')], // 300 WETH on Optimism
+          ...manyDomains.slice(2).map(domain => [domain.toString(), BigInt('10000000000000000000')] as [string, bigint])
+        ])],
+      ]);
+
+      // Setup custodied assets in a way that forces a top-MAX allocation
+      // First ensure top-N doesn't cover the full amount by placing assets outside of top-N domains
+      const custodiedWETHBalances = new Map<string, bigint>();
+      // Add zero balance for all domains initially
+      manyDomains.forEach(domain => {
+        custodiedWETHBalances.set(domain.toString(), BigInt('0'));
+      });
+      
+      // Now set actual balances for a few domains
+      custodiedWETHBalances.set('1', BigInt('0'));                          // First domain - zero balance
+      custodiedWETHBalances.set('42161', BigInt('0'));                      // A top-N domain - zero balance  
+      custodiedWETHBalances.set('137', BigInt('40000000000000000000'));     // 40 WETH - outside top-N
+      custodiedWETHBalances.set('1101', BigInt('40000000000000000000'));    // 40 WETH - outside top-N
+      custodiedWETHBalances.set('56', BigInt('40000000000000000000'));      // 40 WETH - outside top-N
+      custodiedWETHBalances.set('100', BigInt('40000000000000000000'));     // 40 WETH - outside top-N
+      custodiedWETHBalances.set('250', BigInt('40000000000000000000'));     // 40 WETH - outside top-N
+      
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        invoice,
+        minAmounts,
+        testConfig,
+        balances,
+        custodiedBalances,
+        logger
+      );
+
+      // Verify results
+      expect(result.originDomain).to.equal('10'); // Origin should be Optimism
+      expect(result.totalAllocated).to.equal(BigInt('200000000000000000000')); // 200 WETH allocated
+      expect(result.intents.length).to.equal(5); // Five intents (one per domain with assets)
+
+      // All intents should have the same destinations array
+      const destinations = result.intents[0].destinations;
+      
+      // The destinations array should have MAX_DESTINATIONS (10) domains
+      expect(destinations.length).to.equal(10, 'Destinations array should be padded to MAX_DESTINATIONS (10)');
+      
+      // Check that destinations includes the domains we allocated to
+      expect(destinations).to.include('137');
+      expect(destinations).to.include('1101');
+      expect(destinations).to.include('56');
+      expect(destinations).to.include('100');
+      expect(destinations).to.include('250');
+      expect(destinations).to.not.include('10'); // Origin can't be a destination
+      
+      // All intents should have the same destinations array
+      result.intents.forEach(intent => {
+        expect(intent.destinations).to.deep.equal(destinations);
+      });
+    });
   });
 });
