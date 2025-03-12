@@ -102,7 +102,7 @@ export async function processInvoices({
 
   try {
     await cache.removePurchases(targetsToRemove as string[]);
-    logger.info('Removed stale purchases', { requestId, targetsToRemove });
+    logger.info(`Removed ${targetsToRemove.length} stale purchase(s)`, { requestId, targetsToRemove });
   } catch (e) {
     logger.warn('Failed to clear pending cache', { requestId, error: jsonifyError(e, { targetsToRemove }) });
   }
@@ -126,7 +126,7 @@ export async function processInvoices({
       prometheus.recordPossibleInvoice(labels);
     });
 
-  // Process each ticker group. Goal is to process the first invoice in each queue.
+  // Process each ticker group. Goal is to process the first (earliest) invoice in each queue.
   for (const [ticker, invoiceQueue] of invoiceQueues.entries()) {
     logger.debug('Processing ticker group', { requestId, ticker, invoiceCount: invoiceQueue.length });
     const toEvaluate = invoiceQueue
@@ -329,19 +329,18 @@ export async function processInvoices({
   }
 
   if (pendingPurchases.length === 0) {
-    logger.info('No pending purchases', { requestId });
-    logger.info('Method complete', { requestId, pendingPurchases, invoices });
+    logger.info('Method complete with 0 purchases', { requestId, pendingPurchases, invoices });
     return;
   }
 
   // Store purchases in cache
   try {
     await cache.addPurchases(pendingPurchases);
-    logger.info('Stored purchases in cache', { requestId, purchases: pendingPurchases });
+    logger.info(`Stored ${pendingPurchases.length} purchases in cache`, { requestId, purchases: pendingPurchases });
   } catch (e) {
     logger.error('Failed to add purchases to cache', { requestId, error: jsonifyError(e, { pendingPurchases }) });
     throw e;
   }
 
-  logger.info('Method complete', { requestId, pendingPurchases, invoices });
+  logger.info(`Method complete with ${pendingPurchases.length} purchase(s)`, { requestId, pendingPurchases, invoices });
 }
