@@ -218,6 +218,7 @@ export async function calculateSplitIntents(
     needed: totalNeeded.toString(),
     coverage: `${((Number(bestAllocation.totalAllocated) * 100) / Number(totalNeeded)).toFixed(2)}%`,
     allocationCount: bestAllocation.allocations.length,
+    isTopN: bestAllocation.isTopN,
   });
 
   // Generate the intent parameters for each allocation
