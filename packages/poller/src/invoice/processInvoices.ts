@@ -270,9 +270,9 @@ export async function processInvoices({
         for (let i = 0; i < intentResults.length; i++) {
           const purchase = {
             target: invoice,
-            purchase: { 
-              intentId: intentResults[i].intentId, 
-              params: intents[i] 
+            purchase: {
+              intentId: intentResults[i].intentId,
+              params: intents[i]
             },
             transactionHash: intentResults[i].transactionHash,
           };
@@ -304,9 +304,6 @@ export async function processInvoices({
           coverage: `${Number((BigInt(totalAllocated) * BigInt(100)) / BigInt(invoice.amount)).toFixed(2)}%`,
           transactionHashes: intentResults.map((result) => result.transactionHash),
         });
-
-        // Break to next invoice once we've made a successful purchase
-        break;
       } catch (error) {
         prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
           ...labels,
