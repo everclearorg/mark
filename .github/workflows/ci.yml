@@ -157,11 +157,9 @@ jobs:
 
       - name: Terraform Init
         working-directory: ./ops/mainnet/prod
-        run: terraform init
+        run: terraform init > /dev/null 2>&1 
 
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod
         run: |
-          terraform apply -var "image_uri=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" -auto-approve
-        env:
-          TF_LOG: INFO
+          terraform apply -var "image_uri=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" -auto-approve > /dev/null 2>&1
