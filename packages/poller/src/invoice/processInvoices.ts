@@ -120,8 +120,9 @@ export async function processInvoices({
 
   try {
     await cache.removePurchases(targetsToRemove as string[]);
-    logger.info(`Removed ${targetsToRemove.length} stale purchase(s)`, {
+    logger.info(`Removed stale purchase(s)`, {
       requestId,
+      removed: targetsToRemove.length,
       targetsToRemove,
       duration: getTimeSeconds() - start,
     });
@@ -275,6 +276,13 @@ export async function processInvoices({
         logger,
         requestId,
       );
+      logger.info('Calculated split intents for invoice', {
+        requestId,
+        invoiceId,
+        intents,
+        origin: originDomain,
+        totalAllocated,
+      });
 
       if (intents.length === 0) {
         logger.info('No valid intents can be generated for invoice', {
@@ -321,7 +329,7 @@ export async function processInvoices({
         prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
 
         // Log all intent results together with the invoice ID
-        logger.info(`Created ${intents.length > 1 ? 'split ' : ''}purchases for invoice`, {
+        logger.info(`Created purchases for invoice`, {
           requestId,
           invoiceId: invoice.intent_id,
           allIntentResults: intentResults.map((result, index) => ({
@@ -342,16 +350,13 @@ export async function processInvoices({
           ...labels,
           destination: originDomain,
         });
-        logger.error(
-          `Failed to submit ${intents.length > 1 ? 'split ' : ''}purchase transaction${intents.length > 1 ? 's' : ''}`,
-          {
-            error: jsonifyError(error),
-            invoiceId: invoice.intent_id,
-            intentCount: intents.length,
-            originDomain,
-            duration: getTimeSeconds() - start,
-          },
-        );
+        logger.error(`Failed to submit purchase transaction('s')}`, {
+          error: jsonifyError(error),
+          invoiceId: invoice.intent_id,
+          intentCount: intents.length,
+          originDomain,
+          duration: getTimeSeconds() - start,
+        });
 
         // Continue to next invoice if this one failed
         continue;
