@@ -6,7 +6,6 @@ import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { InvoiceLabels, PrometheusAdapter } from '@mark/prometheus';
 import {
   getMarkBalances,
-  logBalanceThresholds,
   getMarkGasBalances,
   logGasThresholds,
   sendIntents,
@@ -33,6 +32,8 @@ interface ProcessInvoicesParams {
 export const MAX_DESTINATIONS = 10; // enforced onchain at 10
 export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
 
+const getTimeSeconds = () => Math.floor(Date.now() / 1000);
+
 export async function processInvoices({
   invoices,
   everclear,
@@ -43,35 +44,52 @@ export async function processInvoices({
   config,
   web3Signer,
 }: ProcessInvoicesParams): Promise<void> {
+  // Create request id tracker for polling
   const requestId = hexlify(randomBytes(32));
+
+  // Get current time to measure invoice age
+  const time = getTimeSeconds();
+  let start = time;
+  logger.debug('Method start', { requestId, start });
+
   logger.info('Starting invoice processing', {
     requestId,
     invoiceCount: invoices.length,
     invoices: invoices.map((i) => i.intent_id),
   });
 
-  // Get current time to measure invoice age
-  const time = Math.floor(Date.now() / 1000);
-
   // Query all of marks balances across chains
   logger.info('Getting mark balances', { requestId, chains: Object.keys(config.chains) });
   const balances = await getMarkBalances(config, prometheus);
-  logBalanceThresholds(balances, config, logger);
-  logger.debug('Retrieved balances', { requestId, balances: jsonifyMap(balances) });
+  logger.debug('Retrieved balances', { requestId, balances: jsonifyMap(balances), duration: getTimeSeconds() - start });
 
   // Query all of marks gas balances across chains
   logger.info('Getting mark gas balances', { requestId, chains: Object.keys(config.chains) });
+  start = getTimeSeconds();
   const gasBalances = await getMarkGasBalances(config, prometheus);
   logGasThresholds(gasBalances, config, logger);
-  logger.debug('Retrieved gas balances', { requestId, gasBalances: jsonifyMap(gasBalances) });
+  logger.debug('Retrieved gas balances', {
+    requestId,
+    gasBalances: jsonifyMap(gasBalances),
+    duration: getTimeSeconds() - start,
+  });
 
   // Get all custodied assets
   logger.info('Getting custodied assets', { requestId, chains: Object.keys(config.chains) });
+  start = getTimeSeconds();
   const custodiedAssets = await getCustodiedBalances(config);
-  logger.debug('Retrieved custodied assets', { requestId, custodiedAssets: jsonifyMap(custodiedAssets) });
+  logger.debug('Retrieved custodied assets', {
+    requestId,
+    custodiedAssets: jsonifyMap(custodiedAssets),
+    duration: getTimeSeconds() - start,
+  });
 
   // Get existing purchase actions
+  logger.debug('Getting cached purchases', { requestId });
+  start = getTimeSeconds();
   const cachedPurchases = await cache.getAllPurchases();
+  logger.debug('Retrieved cached purchases', { requestId, duration: getTimeSeconds() - start });
+  start = getTimeSeconds();
 
   // Remove cached purchases that no longer apply to an invoice.
   const targetsToRemove = (
@@ -102,7 +120,11 @@ export async function processInvoices({
 
   try {
     await cache.removePurchases(targetsToRemove as string[]);
-    logger.info(`Removed ${targetsToRemove.length} stale purchase(s)`, { requestId, targetsToRemove });
+    logger.info(`Removed ${targetsToRemove.length} stale purchase(s)`, {
+      requestId,
+      targetsToRemove,
+      duration: getTimeSeconds() - start,
+    });
   } catch (e) {
     logger.warn('Failed to clear pending cache', { requestId, error: jsonifyError(e, { targetsToRemove }) });
   }
@@ -127,6 +149,7 @@ export async function processInvoices({
     });
 
   // Process each ticker group. Goal is to process the first (earliest) invoice in each queue.
+  start = getTimeSeconds();
   for (const [ticker, invoiceQueue] of invoiceQueues.entries()) {
     logger.debug('Processing ticker group', { requestId, ticker, invoiceCount: invoiceQueue.length });
     const toEvaluate = invoiceQueue
@@ -139,6 +162,7 @@ export async function processInvoices({
             ticker,
             invoice: i,
             reason,
+            duration: getTimeSeconds() - start,
           });
           prometheus.recordInvalidPurchase(reason, { origin: i.origin, id: i.intent_id, ticker: i.ticker_hash });
           return undefined;
@@ -149,6 +173,7 @@ export async function processInvoices({
 
     // Process invoices until we find one we've already purchased
     for (const invoice of toEvaluate) {
+      start = getTimeSeconds();
       const invoiceId = invoice.intent_id;
       const labels: InvoiceLabels = {
         origin: invoice.origin,
@@ -163,6 +188,7 @@ export async function processInvoices({
           ticker,
           invoiceId,
           invoice,
+          duration: getTimeSeconds() - start,
         });
         prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, labels);
         break;
@@ -177,6 +203,7 @@ export async function processInvoices({
           destinations: invoice.destinations,
           invoice,
           ticker,
+          duration: getTimeSeconds() - start,
         });
         prometheus.recordInvalidPurchase(InvalidPurchaseReasons.DestinationXerc20, labels);
         continue;
@@ -192,6 +219,7 @@ export async function processInvoices({
           invoiceId,
           invoice,
           minAmounts,
+          duration: getTimeSeconds() - start,
         });
       } catch (e) {
         logger.error('Failed to get min amounts for invoice', {
@@ -199,6 +227,7 @@ export async function processInvoices({
           invoiceId,
           invoice,
           error: jsonifyError(e),
+          duration: getTimeSeconds() - start,
         });
         minAmounts = Object.fromEntries(invoice.destinations.map((d) => [d, '0']));
       }
@@ -216,6 +245,7 @@ export async function processInvoices({
             requestId,
             invoiceId,
             destination,
+            duration: getTimeSeconds() - start,
           });
           prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, {
             ...labels,
@@ -230,6 +260,7 @@ export async function processInvoices({
         logger.info('No valid origins remain after filtering existing purchases', {
           requestId,
           invoiceId,
+          duration: getTimeSeconds() - start,
         });
         continue;
       }
@@ -250,6 +281,7 @@ export async function processInvoices({
           requestId,
           invoiceId,
           minAmounts,
+          duration: getTimeSeconds() - start,
         });
         // Record insufficient balance as the reason since calculateSplitIntents returned no intents
         prometheus.recordInvalidPurchase(InvalidPurchaseReasons.InsufficientBalance, labels);
@@ -272,7 +304,7 @@ export async function processInvoices({
             target: invoice,
             purchase: {
               intentId: intentResults[i].intentId,
-              params: intents[i]
+              params: intents[i],
             },
             transactionHash: intentResults[i].transactionHash,
           };
@@ -296,13 +328,14 @@ export async function processInvoices({
             intentIndex: index,
             intentId: result.intentId,
             transactionHash: result.transactionHash,
-            params: intents[index]
+            params: intents[index],
           })),
           totalAmount: invoice.amount,
           totalAllocated: totalAllocated.toString(),
           intentCount: intents.length,
           coverage: `${Number((BigInt(totalAllocated) * BigInt(100)) / BigInt(invoice.amount)).toFixed(2)}%`,
           transactionHashes: intentResults.map((result) => result.transactionHash),
+          duration: getTimeSeconds() - start,
         });
       } catch (error) {
         prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
@@ -316,6 +349,7 @@ export async function processInvoices({
             invoiceId: invoice.intent_id,
             intentCount: intents.length,
             originDomain,
+            duration: getTimeSeconds() - start,
           },
         );
 
@@ -326,7 +360,12 @@ export async function processInvoices({
   }
 
   if (pendingPurchases.length === 0) {
-    logger.info('Method complete with 0 purchases', { requestId, pendingPurchases, invoices });
+    logger.info('Method complete with 0 purchases', {
+      requestId,
+      pendingPurchases,
+      invoices,
+      duration: getTimeSeconds() - time,
+    });
     return;
   }
 
@@ -339,5 +378,10 @@ export async function processInvoices({
     throw e;
   }
 
-  logger.info(`Method complete with ${pendingPurchases.length} purchase(s)`, { requestId, pendingPurchases, invoices });
+  logger.info(`Method complete with ${pendingPurchases.length} purchase(s)`, {
+    requestId,
+    pendingPurchases,
+    invoices,
+    duration: getTimeSeconds() - start,
+  });
 }
