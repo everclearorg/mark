@@ -84,7 +84,7 @@ export async function calculateSplitIntents(
 
   // Filter for domains that support the given asset, maintaining the
   // original config order
-  const assetSupportedDomains = configDomains.filter(domain => {
+  const assetSupportedDomains = configDomains.filter((domain) => {
     const chainConfig = config.chains[domain];
     if (!chainConfig) return false;
     const tickers = chainConfig.assets.map((a) => a.tickerHash.toLowerCase());
@@ -190,7 +190,7 @@ export async function calculateSplitIntents(
   // 2. Then prefer fewer allocations
   // 3. Lastly, consider total allocated amount as a tiebreaker
   possibleAllocations.sort((a, b) => {
-    // 1. Prefer top-N allocations (these are only added as possible allocations 
+    // 1. Prefer top-N allocations (these are only added as possible allocations
     //   if they fully cover the amount needed)
     const aUsesOnlyTopN = a.isTopN;
     const bUsesOnlyTopN = b.isTopN;
@@ -224,19 +224,21 @@ export async function calculateSplitIntents(
   });
 
   // Generate the intent parameters for each allocation
-  const intents: NewIntentParams[] = []; 
+  const intents: NewIntentParams[] = [];
 
   // Create the destinations to use for the intent
   const destinations = bestAllocation.destinations;
   if (bestAllocation.isTopN) {
     // If the allocation is top-N, we should pad to N destinations
-    const remainingTopNDomains = topNDomainsSortedByCustodied
-      .filter(domain => !destinations.includes(domain) && domain !== bestAllocation.origin);
+    const remainingTopNDomains = topNDomainsSortedByCustodied.filter(
+      (domain) => !destinations.includes(domain) && domain !== bestAllocation.origin,
+    );
     destinations.push(...remainingTopNDomains);
   } else {
     // If the allocation is top-MAX, we should pad to MAX_DESTINATIONS
-    const remainingDomains = allDomainsSortedByCustodied
-      .filter(domain => !destinations.includes(domain) && domain !== bestAllocation.origin);
+    const remainingDomains = allDomainsSortedByCustodied.filter(
+      (domain) => !destinations.includes(domain) && domain !== bestAllocation.origin,
+    );
     const domainsToAdd = remainingDomains.slice(0, MAX_DESTINATIONS - destinations.length);
     destinations.push(...domainsToAdd);
   }
