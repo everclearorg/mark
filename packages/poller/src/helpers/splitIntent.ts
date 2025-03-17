@@ -17,6 +17,7 @@ interface SplitIntentResult {
   totalAllocated: bigint;
 }
 
+const DEFAULT_BUFFER_DBPS = 15_000; // buffer on custodied assets when breaking up intents
 /**
  * Evaluates a domain as a potential origin for split intents
  */
@@ -40,8 +41,12 @@ function evaluateDomainForOrigin(
     // Skip the origin domain - can't use as a destination
     if (domain === origin) continue;
 
-    const available = custodiedAssets.get(domain) ?? BigInt(0);
-    if (available <= 0) continue;
+    const totalCustodied = custodiedAssets.get(domain) ?? BigInt(0);
+    if (totalCustodied <= 0) continue;
+
+    // Reduce the amount available by the buffer. This allows us to create multiple
+    // smaller intents rather than one large one.
+    const available = totalCustodied - (totalCustodied * BigInt(DEFAULT_BUFFER_DBPS)) / BigInt(100_000);
 
     // Calculate how much to use from this domain
     const remaining = requiredAmount - allocation.totalAllocated;
