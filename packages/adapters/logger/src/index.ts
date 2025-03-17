@@ -48,6 +48,7 @@ export class Logger implements ILogger {
   constructor(config: LoggerConfig) {
     // Initialize DataDog tracer
     ddTrace.init({
+      profiling: true,
       service: config.service,
       env: config.environment || process.env.NODE_ENV || 'development',
     });
