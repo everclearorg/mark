@@ -148,6 +148,10 @@ export async function calculateSplitIntents(
 
     if (topNAllocation.totalAllocated >= totalNeeded) {
       possibleAllocations.push(topNAllocation);
+      logger.debug('Allocating amongst top-N domains', {
+        requestId,
+        invoiceId: invoice.intent_id,
+      });
       continue;
     }
 
