@@ -22,7 +22,7 @@ ENV HOME=/tmp/build \
     DD_SKIP_NATIVE_METRICS=true \
     DD_TRACE_ENABLED=true \
     DD_PROFILING_ENABLED=true \
-    DD_VERSION=5.42.0 \
+    DD_SITE=datadoghq.com \
     BUFFERUTIL_SKIP_INSTALL=true \
     UTF_8_VALIDATE_SKIP_INSTALL=true
 
@@ -79,4 +79,5 @@ COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/ext
 
 EXPOSE 8080
 
+RUN rm node_modules/datadog-lambda-js/dist/handler.js
 CMD ["node_modules/datadog-lambda-js/dist/handler.handler"]
