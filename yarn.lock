@@ -1901,13 +1901,20 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@datadog/native-appsec@npm:2.0.0":
-  version: 2.0.0
-  resolution: "@datadog/native-appsec@npm:2.0.0"
+"@datadog/libdatadog@npm:^0.5.0":
+  version: 0.5.0
+  resolution: "@datadog/libdatadog@npm:0.5.0"
+  checksum: e5113291d7e762b40dcdf8760b427cd61bd26e97eec3aefbe087ce60436a6d920dc80e5105ea5aa48b88402067724c4e3f7ac2cb066c3725d3e73a269c9e4c17
+  languageName: node
+  linkType: hard
+
+"@datadog/native-appsec@npm:8.5.0":
+  version: 8.5.0
+  resolution: "@datadog/native-appsec@npm:8.5.0"
   dependencies:
     node-gyp: latest
     node-gyp-build: ^3.9.0
-  checksum: 357e9ab5af9ac5e6d25ffa84440e27f0498888c8aae5064f7d384297769f000cf36fa9056168f8bc7fc5ee7fd15e2f49340a61b2732b57c876b91d1e48a63285
+  checksum: e1cf9ba9838d59370563afd9bac8377ea3f8b3ef05f00148f43a1d525dc226c65c99f6dfaf528cae67230243775ad4546b933e1ac7023ee7ce66ffc26f4d31b6
   languageName: node
   linkType: hard
 
@@ -1921,15 +1928,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@datadog/native-iast-rewriter@npm:1.1.2":
-  version: 1.1.2
-  resolution: "@datadog/native-iast-rewriter@npm:1.1.2"
-  dependencies:
-    node-gyp-build: ^4.5.0
-  checksum: 3d080a8f5aaebc9759f8976e916358fdf0e1bcb532f7f0f5b3d4a11893f33d95b86b0477d64dbe9b1a84d9dd4bf167f3622b54f407e2a584256e31ec9eccae43
-  languageName: node
-  linkType: hard
-
 "@datadog/native-iast-rewriter@npm:2.0.1":
   version: 2.0.1
   resolution: "@datadog/native-iast-rewriter@npm:2.0.1"
@@ -1939,13 +1937,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@datadog/native-iast-taint-tracking@npm:1.1.0":
-  version: 1.1.0
-  resolution: "@datadog/native-iast-taint-tracking@npm:1.1.0"
+"@datadog/native-iast-rewriter@npm:2.8.0":
+  version: 2.8.0
+  resolution: "@datadog/native-iast-rewriter@npm:2.8.0"
+  dependencies:
+    lru-cache: ^7.14.0
+    node-gyp-build: ^4.5.0
+  checksum: 41ebea1038f2a6567b8304377ed1304969d5879ee83bb3910ce43bb69329b6eafe0dbbba3bd9bd5944749dd8ea35f1ddc246d2c3581ebb914cd635aaffd911bc
+  languageName: node
+  linkType: hard
+
+"@datadog/native-iast-taint-tracking@npm:3.3.0":
+  version: 3.3.0
+  resolution: "@datadog/native-iast-taint-tracking@npm:3.3.0"
   dependencies:
     node-gyp: latest
     node-gyp-build: ^3.9.0
-  checksum: 5d5cfdc90395f9d9339989eaf3f72429943d79b300c99de4d27dbabdab3f4896735d1690f4d6254ff39e7b84ac55928a398f8e89c0adc31d321a28664ab2d899
+  checksum: 37160299e0400c29d96a87a159dcaf8811f2ab4d27974a4f37d691ddc8f923a8bde9a286ab0657d2afcb227f6b5b5a8c4bc8a293cabb45af3a7e4abb8ec0ea3a
   languageName: node
   linkType: hard
 
@@ -1956,16 +1964,6 @@ __metadata:
     node-gyp: latest
     node-gyp-build: ^3.9.0
   checksum: fb5e3b5e071bcc98d859364164ec5fc0da9d2afaa3baaf18d0f324fc12bf9e8b2a7ac4e07dd0287ef9daed06841c16c9586c6612e81dfbd9906a47b3ea949970
-  languageName: node
-  linkType: hard
-
-"@datadog/native-metrics@npm:^1.5.0":
-  version: 1.6.0
-  resolution: "@datadog/native-metrics@npm:1.6.0"
-  dependencies:
-    node-gyp: latest
-    node-gyp-build: ^3.9.0
-  checksum: aad021e79687683d1b058b1534387f998cd090a60b786d4996cf1f7408a2b11e246a7486e5dffd3f7cf723f5cfde8763ad3928e521e7c0f51a33a12db03af9c0
   languageName: node
   linkType: hard
 
@@ -1980,20 +1978,28 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@datadog/pprof@npm:^1.1.1":
-  version: 1.1.1
-  resolution: "@datadog/pprof@npm:1.1.1"
+"@datadog/native-metrics@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "@datadog/native-metrics@npm:3.1.0"
   dependencies:
-    delay: ^5.0.0
-    findit2: ^2.2.3
+    node-addon-api: ^6.1.0
     node-gyp: latest
     node-gyp-build: ^3.9.0
+  checksum: a9cb2a5fd56b53525c9f645d4d2359b44d18651fa121c7352d89115404748564d9fd1ae09209abd2955ae884bb2a8ce171258f1bc3e5a9ca6bedc25f0f81ad0b
+  languageName: node
+  linkType: hard
+
+"@datadog/pprof@npm:5.5.1":
+  version: 5.5.1
+  resolution: "@datadog/pprof@npm:5.5.1"
+  dependencies:
+    delay: ^5.0.0
+    node-gyp: latest
+    node-gyp-build: <4.0
     p-limit: ^3.1.0
-    pify: ^5.0.0
-    protobufjs: ^7.0.0
-    source-map: ^0.7.3
-    split: ^1.0.1
-  checksum: b2b68de84a9857cfbcb7c1e50e0b65062240ec1b7c68fd02e20cbbeb234fc2341c0f3fdc02ec584dccbc18136b502f650d68578ded1940f60757ab307df001d9
+    pprof-format: ^2.1.0
+    source-map: ^0.7.4
+  checksum: 3867ea4d4272d6f64546fc3854786d5738dd36ab4d0a22dde682d6df5014368bcea57dfada5b4b849b802e82f5a4b5d7056f214870f0d750a3025bfbe89623bf
   languageName: node
   linkType: hard
 
@@ -2979,6 +2985,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@isaacs/ttlcache@npm:^1.4.1":
+  version: 1.4.1
+  resolution: "@isaacs/ttlcache@npm:1.4.1"
+  checksum: b99f0918faf1eba405b6bc3421584282b2edc46cca23f8d8e112a643bf6e4506c6c53a4525901118e229d19c5719bbec3028ec438d758fd71081f6c32af871ec
+  languageName: node
+  linkType: hard
+
 "@istanbuljs/load-nyc-config@npm:^1.0.0":
   version: 1.1.0
   resolution: "@istanbuljs/load-nyc-config@npm:1.1.0"
@@ -3483,7 +3496,7 @@ __metadata:
     chai: 4.2.0
     chai-as-promised: 7.1.1
     datadog-lambda-js: 10.123.0
-    dd-trace: 3.13.2
+    dd-trace: 5.42.0
     eslint: 9.17.0
     mocha: 11.0.1
     nyc: 17.1.0
@@ -3679,10 +3692,35 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@opentelemetry/api@npm:>=1.0.0 <1.9.0":
+  version: 1.8.0
+  resolution: "@opentelemetry/api@npm:1.8.0"
+  checksum: 0e32079975f05bee6de2ad8ade097f0afdc63f462c76550150fce2444c73ab92aaf851ac85e638b6e3b269da6640ac7e63f33913a0fd7df9f9beec2e100759df
+  languageName: node
+  linkType: hard
+
 "@opentelemetry/api@npm:^1.4.0":
   version: 1.9.0
   resolution: "@opentelemetry/api@npm:1.9.0"
   checksum: 9e88e59d53ced668f3daaecfd721071c5b85a67dd386f1c6f051d1be54375d850016c881f656ffbe9a03bedae85f7e89c2f2b635313f9c9b195ad033cdc31020
+  languageName: node
+  linkType: hard
+
+"@opentelemetry/core@npm:^1.14.0":
+  version: 1.30.1
+  resolution: "@opentelemetry/core@npm:1.30.1"
+  dependencies:
+    "@opentelemetry/semantic-conventions": 1.28.0
+  peerDependencies:
+    "@opentelemetry/api": ">=1.0.0 <1.10.0"
+  checksum: fe71452fffc6b5efe4bd1f0ab18b0424e744825f9a837f5bf08be80fe6d2c90c443743cb3d220cffad27b7d83dc38e0a7861c91ec965be156394e752c95e583c
+  languageName: node
+  linkType: hard
+
+"@opentelemetry/semantic-conventions@npm:1.28.0":
+  version: 1.28.0
+  resolution: "@opentelemetry/semantic-conventions@npm:1.28.0"
+  checksum: 1d708afa654990236cdb6b5da84f7ab899b70bff9f753bc49d93616a5c7f7f339ba1eba6a9fbb57dee596995334f4e7effa57a4624741882ab5b3c419c3511e2
   languageName: node
   linkType: hard
 
@@ -7400,45 +7438,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dc-polyfill@npm:^0.1.3":
+"dc-polyfill@npm:^0.1.3, dc-polyfill@npm:^0.1.4":
   version: 0.1.6
   resolution: "dc-polyfill@npm:0.1.6"
   checksum: 10ef2cc568d27b2f51d3efed4ce045ff906c0934767f50d7bbb7a5b322c4ea9f096216bfa4ba8b328711342e05e7c765d5fa7503fab34eba997c783ffcfcb2bf
-  languageName: node
-  linkType: hard
-
-"dd-trace@npm:3.13.2":
-  version: 3.13.2
-  resolution: "dd-trace@npm:3.13.2"
-  dependencies:
-    "@datadog/native-appsec": 2.0.0
-    "@datadog/native-iast-rewriter": 1.1.2
-    "@datadog/native-iast-taint-tracking": 1.1.0
-    "@datadog/native-metrics": ^1.5.0
-    "@datadog/pprof": ^1.1.1
-    "@datadog/sketches-js": ^2.1.0
-    crypto-randomuuid: ^1.0.0
-    diagnostics_channel: ^1.1.0
-    ignore: ^5.2.0
-    import-in-the-middle: ^1.3.4
-    ipaddr.js: ^2.0.1
-    istanbul-lib-coverage: 3.2.0
-    koalas: ^1.0.2
-    limiter: ^1.1.4
-    lodash.kebabcase: ^4.1.1
-    lodash.pick: ^4.4.0
-    lodash.sortby: ^4.7.0
-    lodash.uniq: ^4.5.0
-    lru-cache: ^7.14.0
-    methods: ^1.1.2
-    module-details-from-path: ^1.0.3
-    node-abort-controller: ^3.0.1
-    opentracing: ">=0.12.1"
-    path-to-regexp: ^0.1.2
-    protobufjs: ^7.1.2
-    retry: ^0.10.1
-    semver: ^5.5.0
-  checksum: 1b431a98efc8744cfd9591a503bd683e0bbe3f6818dc3edc79b1bb463905d75ecd9fc1f14bf3a7af222d1b93aab8a9d3d66bcf303e2ad8c43857301eaf172188
   languageName: node
   linkType: hard
 
@@ -7474,6 +7477,46 @@ __metadata:
     retry: ^0.10.1
     semver: ^7.3.8
   checksum: 87c276c72f371e1a04369621c5245afb7340fef2300b65563900e8b1d6841cd264bc277b7fd51a8bd85db7419ee16d68bb384b247b5e4726f22dfd7ae30998a2
+  languageName: node
+  linkType: hard
+
+"dd-trace@npm:5.42.0":
+  version: 5.42.0
+  resolution: "dd-trace@npm:5.42.0"
+  dependencies:
+    "@datadog/libdatadog": ^0.5.0
+    "@datadog/native-appsec": 8.5.0
+    "@datadog/native-iast-rewriter": 2.8.0
+    "@datadog/native-iast-taint-tracking": 3.3.0
+    "@datadog/native-metrics": ^3.1.0
+    "@datadog/pprof": 5.5.1
+    "@datadog/sketches-js": ^2.1.0
+    "@isaacs/ttlcache": ^1.4.1
+    "@opentelemetry/api": ">=1.0.0 <1.9.0"
+    "@opentelemetry/core": ^1.14.0
+    crypto-randomuuid: ^1.0.0
+    dc-polyfill: ^0.1.4
+    ignore: ^5.2.4
+    import-in-the-middle: 1.13.1
+    istanbul-lib-coverage: 3.2.0
+    jest-docblock: ^29.7.0
+    koalas: ^1.0.2
+    limiter: 1.1.5
+    lodash.sortby: ^4.7.0
+    lru-cache: ^7.14.0
+    module-details-from-path: ^1.0.3
+    opentracing: ">=0.12.1"
+    path-to-regexp: ^0.1.12
+    pprof-format: ^2.1.0
+    protobufjs: ^7.2.5
+    retry: ^0.13.1
+    rfdc: ^1.3.1
+    semifies: ^1.0.0
+    shell-quote: ^1.8.1
+    source-map: ^0.7.4
+    tlhunter-sorted-set: ^0.1.0
+    ttl-set: ^1.0.0
+  checksum: f551c3cbb8e0c1ee8727c62b7276e6eafc25615afa6b39880a28fa464681a91e60124330ff318ace79e4f0f0810008e9070b7ccd1847311399ad1f28521cfaae
   languageName: node
   linkType: hard
 
@@ -8784,6 +8827,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"fast-fifo@npm:^1.3.2":
+  version: 1.3.2
+  resolution: "fast-fifo@npm:1.3.2"
+  checksum: 6bfcba3e4df5af7be3332703b69a7898a8ed7020837ec4395bb341bd96cc3a6d86c3f6071dd98da289618cf2234c70d84b2a6f09a33dd6f988b1ff60d8e54275
+  languageName: node
+  linkType: hard
+
 "fast-glob@npm:^3.2.9, fast-glob@npm:^3.3.2":
   version: 3.3.3
   resolution: "fast-glob@npm:3.3.3"
@@ -8952,13 +9002,6 @@ __metadata:
     path-exists: ^5.0.0
     unicorn-magic: ^0.1.0
   checksum: e1c63860f9c04355ab2aa19f4be51c1a6e14a7d8cfbd8090e2be6da2a36a76995907cb45337a4b582b19b164388f71d6ab118869dc7bffb2093f2c089ecb95ee
-  languageName: node
-  linkType: hard
-
-"findit2@npm:^2.2.3":
-  version: 2.2.3
-  resolution: "findit2@npm:2.2.3"
-  checksum: 70738b5610b44a101baa9b55b0b023851641357ca673e0dd6f3bb3e836369aed7eda9ee93953ce633dacbdd8fde5a1ec3341556de5beaf7853f1cb5649a93918
   languageName: node
   linkType: hard
 
@@ -9822,7 +9865,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ignore@npm:^5.1.1, ignore@npm:^5.2.0, ignore@npm:^5.3.1":
+"ignore@npm:^5.1.1, ignore@npm:^5.2.0, ignore@npm:^5.2.4, ignore@npm:^5.3.1":
   version: 5.3.2
   resolution: "ignore@npm:5.3.2"
   checksum: 2acfd32a573260ea522ea0bfeff880af426d68f6831f973129e2ba7363f422923cf53aab62f8369cbf4667c7b25b6f8a3761b34ecdb284ea18e87a5262a865be
@@ -9853,7 +9896,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"import-in-the-middle@npm:^1.3.4, import-in-the-middle@npm:^1.3.5":
+"import-in-the-middle@npm:1.13.1":
+  version: 1.13.1
+  resolution: "import-in-the-middle@npm:1.13.1"
+  dependencies:
+    acorn: ^8.14.0
+    acorn-import-attributes: ^1.9.5
+    cjs-module-lexer: ^1.2.2
+    module-details-from-path: ^1.0.3
+  checksum: 9cff1da9fc6ec6e2224ac9f60f7818baa7b238ba3350da7f4f213220e40893f254f3674a2b517fc663de1672215aff5c6cce1ef6c8cff91281772393fb50b0fa
+  languageName: node
+  linkType: hard
+
+"import-in-the-middle@npm:^1.3.5":
   version: 1.13.0
   resolution: "import-in-the-middle@npm:1.13.0"
   dependencies:
@@ -11337,7 +11392,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"limiter@npm:^1.1.4":
+"limiter@npm:1.1.5, limiter@npm:^1.1.4":
   version: 1.1.5
   resolution: "limiter@npm:1.1.5"
   checksum: 2d51d3a8bef131aada820b76530f8223380a0079aa0fffdfd3ec47ac2f65763225cb4c62a2f22347f4898c5eeb248edfec991c4a4f5b608dfca0aaa37ac48071
@@ -12273,7 +12328,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-gyp-build@npm:^3.9.0":
+"node-gyp-build@npm:<4.0, node-gyp-build@npm:^3.9.0":
   version: 3.9.0
   resolution: "node-gyp-build@npm:3.9.0"
   bin:
@@ -12888,7 +12943,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"path-to-regexp@npm:0.1.12, path-to-regexp@npm:^0.1.2":
+"path-to-regexp@npm:0.1.12, path-to-regexp@npm:^0.1.12, path-to-regexp@npm:^0.1.2":
   version: 0.1.12
   resolution: "path-to-regexp@npm:0.1.12"
   checksum: ab237858bee7b25ecd885189f175ab5b5161e7b712b360d44f5c4516b8d271da3e4bf7bf0a7b9153ecb04c7d90ce8ff5158614e1208819cf62bac2b08452722e
@@ -13103,7 +13158,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pprof-format@npm:^2.0.7":
+"pprof-format@npm:^2.0.7, pprof-format@npm:^2.1.0":
   version: 2.1.0
   resolution: "pprof-format@npm:2.1.0"
   checksum: f51beeaeac6d1409571a64132836ec5c48ba11a29da9e8da12a61b9689c67933488df77efa644089218da7d54de96e4fafedeaef835dfdfc94da37016a1b64fa
@@ -13237,7 +13292,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"protobufjs@npm:^7.0.0, protobufjs@npm:^7.1.2":
+"protobufjs@npm:^7.1.2, protobufjs@npm:^7.2.5":
   version: 7.4.0
   resolution: "protobufjs@npm:7.4.0"
   dependencies:
@@ -13717,10 +13772,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"retry@npm:^0.13.1":
+  version: 0.13.1
+  resolution: "retry@npm:0.13.1"
+  checksum: 47c4d5be674f7c13eee4cfe927345023972197dbbdfba5d3af7e461d13b44de1bfd663bfc80d2f601f8ef3fc8164c16dd99655a221921954a65d044a2fc1233b
+  languageName: node
+  linkType: hard
+
 "reusify@npm:^1.0.4":
   version: 1.0.4
   resolution: "reusify@npm:1.0.4"
   checksum: c3076ebcc22a6bc252cb0b9c77561795256c22b757f40c0d8110b1300723f15ec0fc8685e8d4ea6d7666f36c79ccc793b1939c748bf36f18f542744a4e379fcc
+  languageName: node
+  linkType: hard
+
+"rfdc@npm:^1.3.1":
+  version: 1.4.1
+  resolution: "rfdc@npm:1.4.1"
+  checksum: 3b05bd55062c1d78aaabfcea43840cdf7e12099968f368e9a4c3936beb744adb41cbdb315eac6d4d8c6623005d6f87fdf16d8a10e1ff3722e84afea7281c8d13
   languageName: node
   linkType: hard
 
@@ -13944,6 +14013,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"semifies@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "semifies@npm:1.0.0"
+  checksum: 839e2209abc0b9239fc37b4ddd76a866cef6bc628ce4cc367c064f7a70c8a115cdbf591f136bebacb8766a02ef7d3169e85c63046966994a0c2ab75399879b6b
+  languageName: node
+  linkType: hard
+
 "semver@npm:7.3.2":
   version: 7.3.2
   resolution: "semver@npm:7.3.2"
@@ -13959,15 +14035,6 @@ __metadata:
   bin:
     semver: bin/semver.js
   checksum: 586b825d36874007c9382d9e1ad8f93888d8670040add24a28e06a910aeebd673a2eb9e3bf169c6679d9245e66efb9057e0852e70d9daa6c27372aab1dda7104
-  languageName: node
-  linkType: hard
-
-"semver@npm:^5.5.0":
-  version: 5.7.2
-  resolution: "semver@npm:5.7.2"
-  bin:
-    semver: bin/semver
-  checksum: fb4ab5e0dd1c22ce0c937ea390b4a822147a9c53dbd2a9a0132f12fe382902beef4fbf12cf51bb955248d8d15874ce8cd89532569756384f994309825f10b686
   languageName: node
   linkType: hard
 
@@ -14127,6 +14194,13 @@ __metadata:
   version: 3.0.0
   resolution: "shebang-regex@npm:3.0.0"
   checksum: 1a2bcae50de99034fcd92ad4212d8e01eedf52c7ec7830eedcf886622804fe36884278f2be8be0ea5fde3fd1c23911643a4e0f726c8685b61871c8908af01222
+  languageName: node
+  linkType: hard
+
+"shell-quote@npm:^1.8.1":
+  version: 1.8.2
+  resolution: "shell-quote@npm:1.8.2"
+  checksum: 1e97b62ced1c4c5135015978ebf273bed1f425a68cf84163e83fbb0f34b3ff9471e656720dab2b7cbb4ae0f58998e686d17d166c28dfb3662acd009e8bd7faed
   languageName: node
   linkType: hard
 
@@ -14351,7 +14425,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"source-map@npm:^0.7.3":
+"source-map@npm:^0.7.3, source-map@npm:^0.7.4":
   version: 0.7.4
   resolution: "source-map@npm:0.7.4"
   checksum: 01cc5a74b1f0e1d626a58d36ad6898ea820567e87f18dfc9d24a9843a351aaa2ec09b87422589906d6ff1deed29693e176194dc88bcae7c9a852dc74b311dbf5
@@ -14797,6 +14871,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"tlhunter-sorted-set@npm:^0.1.0":
+  version: 0.1.0
+  resolution: "tlhunter-sorted-set@npm:0.1.0"
+  checksum: e87bb43bb43e06cf533d14037bbf5decd4b4efa4cd4681c7e3ac10e035864732b38e5c35f89b76884d5ca4edd285188a219b4d128289db4f6b8f96dc2f3423d3
+  languageName: node
+  linkType: hard
+
 "tmp@npm:^0.0.33":
   version: 0.0.33
   resolution: "tmp@npm:0.0.33"
@@ -15064,6 +15145,15 @@ __metadata:
   version: 2.8.1
   resolution: "tslib@npm:2.8.1"
   checksum: e4aba30e632b8c8902b47587fd13345e2827fa639e7c3121074d5ee0880723282411a8838f830b55100cbe4517672f84a2472667d355b81e8af165a55dc6203a
+  languageName: node
+  linkType: hard
+
+"ttl-set@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "ttl-set@npm:1.0.0"
+  dependencies:
+    fast-fifo: ^1.3.2
+  checksum: 50dd6b56edfb1335c5a4977c6f21eecf3e18f2138fa57b093a779f445a38a57cf3511a0ecf6c45762612a8bb867d6bd1c43525a3c2979429433fbf3f603de35a
   languageName: node
   linkType: hard
 
