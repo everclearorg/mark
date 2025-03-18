@@ -20,7 +20,8 @@ ENV HOME=/tmp/build \
     YARN_CACHE_FOLDER=/tmp/yarn-cache \
     SKIP_OPTIONAL_DEPENDENCIES=true \
     DD_SKIP_NATIVE_METRICS=true \
-    DD_TRACE_ENABLED=false \
+    DD_TRACE_ENABLED=true \
+    DD_PROFILING_ENABLED=true \
     BUFFERUTIL_SKIP_INSTALL=true \
     UTF_8_VALIDATE_SKIP_INSTALL=true
 
