@@ -3482,7 +3482,7 @@ __metadata:
     aws-lambda: 1.0.7
     chai: 4.2.0
     chai-as-promised: 7.1.1
-    datadog-lambda-js: 6.86.0
+    datadog-lambda-js: 10.123.0
     dd-trace: 3.13.2
     eslint: 9.17.0
     mocha: 11.0.1
@@ -7386,17 +7386,24 @@ __metadata:
   languageName: node
   linkType: hard
 
-"datadog-lambda-js@npm:6.86.0":
-  version: 6.86.0
-  resolution: "datadog-lambda-js@npm:6.86.0"
+"datadog-lambda-js@npm:10.123.0":
+  version: 10.123.0
+  resolution: "datadog-lambda-js@npm:10.123.0"
   dependencies:
-    bignumber.js: ^9.0.1
+    "@aws-crypto/sha256-js": 5.2.0
+    dc-polyfill: ^0.1.3
     hot-shots: 8.5.0
     promise-retry: ^2.0.1
     serialize-error: ^8.1.0
-    shimmer: ^1.2.1
-    ts-md5: 1.3.1
-  checksum: 669cd77d9b9cc1a64284ae838bd59e0a2f10803b0e8b9576ac8bdfe108aa87bc5854585c1c387661615e6127f1551fc1b18f119ed58a3ea26454d350de3a961e
+    shimmer: 1.2.1
+  checksum: 42512dcc5fcf80c5d762b9e0c8f58d945ab5c94af35928533dafa4f5be66721756c1ddc5e8d2eb39822b1b79dffbdfc10522960cbfe1b75f3957f9cc91d35232
+  languageName: node
+  linkType: hard
+
+"dc-polyfill@npm:^0.1.3":
+  version: 0.1.6
+  resolution: "dc-polyfill@npm:0.1.6"
+  checksum: 10ef2cc568d27b2f51d3efed4ce045ff906c0934767f50d7bbb7a5b322c4ea9f096216bfa4ba8b328711342e05e7c765d5fa7503fab34eba997c783ffcfcb2bf
   languageName: node
   linkType: hard
 
@@ -14123,7 +14130,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"shimmer@npm:^1.2.1":
+"shimmer@npm:1.2.1":
   version: 1.2.1
   resolution: "shimmer@npm:1.2.1"
   checksum: aa0d6252ad1c682a4fdfda69e541be987f7a265ac7b00b1208e5e48cc68dc55f293955346ea4c71a169b7324b82c70f8400b3d3d2d60b2a7519f0a3522423250
@@ -14927,13 +14934,6 @@ __metadata:
   bin:
     ts-jest: cli.js
   checksum: a0ce0affc1b716c78c9ab55837829c42cb04b753d174a5c796bb1ddf9f0379fc20647b76fbe30edb30d9b23181908138d6b4c51ef2ae5e187b66635c295cefd5
-  languageName: node
-  linkType: hard
-
-"ts-md5@npm:1.3.1":
-  version: 1.3.1
-  resolution: "ts-md5@npm:1.3.1"
-  checksum: 88fc4df837e17949fef92a8e71a0691b20e2f8b02a002876a162a102e7c9d364f1eb00cbd217f9578fec5fa07bb66ffa14ed054cdfe164486fab2173c8e9ea23
   languageName: node
   linkType: hard
 
