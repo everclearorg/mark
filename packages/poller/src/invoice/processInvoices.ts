@@ -131,9 +131,9 @@ export async function processInvoices({
   }
 
   // Group invoices by ticker
-  const invoiceQueues = new Map<string, Invoice[]>(); // [tickerHash]: invoice[] (oldest first)
+  const invoiceQueues = new Map<string, Invoice[]>(); // [tickerHash]: invoice[] (newest first)
   invoices
-    .sort((a, b) => a.hub_invoice_enqueued_timestamp - b.hub_invoice_enqueued_timestamp)
+    .sort((a, b) => b.hub_invoice_enqueued_timestamp - a.hub_invoice_enqueued_timestamp)
     .forEach((invoice) => {
       if (!invoiceQueues.has(invoice.ticker_hash)) {
         invoiceQueues.set(invoice.ticker_hash, []);
@@ -149,7 +149,7 @@ export async function processInvoices({
       prometheus.recordPossibleInvoice(labels);
     });
 
-  // Process each ticker group. Goal is to process the first (earliest) invoice in each queue.
+  // Process each ticker group. Goal is to process the newest invoice in each queue first
   start = getTimeSeconds();
   for (const [ticker, invoiceQueue] of invoiceQueues.entries()) {
     logger.debug('Processing ticker group', { requestId, ticker, invoiceCount: invoiceQueue.length });
