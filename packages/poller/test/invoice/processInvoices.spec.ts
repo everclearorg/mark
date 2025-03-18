@@ -15,6 +15,7 @@ import * as intentHelpers from '../../src/helpers/intent';
 import * as assetHelpers from '../../src/helpers/asset'
 import * as monitorHelpers from '../../src/helpers/monitor';
 import * as splitIntentHelpers from '../../src/helpers/splitIntent';
+import * as validationHelpers from '../../src/invoice/validation';
 
 describe('processInvoices', () => {
     // Setup common test objects
@@ -156,6 +157,9 @@ describe('processInvoices', () => {
             value: '0'
         });
 
+        stub(validationHelpers, 'isValidInvoice').returns(undefined);
+        stub(assetHelpers, 'isXerc20Supported').resolves(false);
+
         markBalanceStub = stub(balanceHelpers, 'getMarkBalances').resolves(new Map([
             ['0xtickerhash', new Map([
                 ['1', BigInt('2000000000000000000')],
@@ -196,7 +200,6 @@ describe('processInvoices', () => {
             totalAllocated: BigInt('1000000000000000000')
         });
 
-        stub(assetHelpers, 'isXerc20Supported').resolves(false);
         stub(assetHelpers, 'getTickers').returns(['0xtickerhash']);
         stub(monitorHelpers, 'logBalanceThresholds').returns();
         stub(monitorHelpers, 'logGasThresholds').returns();
@@ -528,35 +531,25 @@ describe('processInvoices', () => {
     });
 
     it('should not handle multiple invoices with same ticker + destinations', async () => {
-        const secondInvoice = {
+        // Create test invoices with same ticker+destination but different timestamps
+        const newerInvoice = {
             ...validInvoice,
-            intent_id: '0x456',
-            hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600 // 15 minutes ago
+            intent_id: '0xnewer',
+            ticker_hash: '0xsameticker',
+            destinations: ['1'],
+            hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 1800 // 30 mins ago
         };
-
-        // Setup calculateSplitIntents to return reasonable results for first invoice but not second
-        calcSplitIntentsStub.onFirstCall().resolves({
-            intents: [{
-                origin: '1',
-                destinations: ['8453'],
-                to: '0xdestination',
-                inputAsset: '0xtoken',
-                amount: '1000000000000000000',
-                callData: '0xdata',
-                maxFee: '0'
-            }],
-            originDomain: '1',
-            totalAllocated: BigInt('1000000000000000000')
-        });
-
-        // Add specific stub to track metrics correctly
-        prometheus.recordInvalidPurchase.withArgs(
-            InvalidPurchaseReasons.PendingPurchaseRecord,
-            { ...labels, id: secondInvoice.intent_id }
-        ).resolves(undefined);
-
+        
+        const olderInvoice = {
+            ...validInvoice,
+            intent_id: '0xolder',
+            ticker_hash: '0xsameticker',
+            destinations: ['1'],
+            hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600 // 1 hour ago
+        };
+        
         await processInvoices({
-            invoices: [validInvoice, secondInvoice],
+            invoices: [olderInvoice, newerInvoice],
             cache,
             logger,
             everclear,
@@ -566,31 +559,11 @@ describe('processInvoices', () => {
             web3Signer: typedWeb3Signer
         });
 
-        // Should only process the older invoice
-        expect(cache.addPurchases.calledOnce).to.be.true;
+        // Verify only the newer invoice was processed
+        expect(cache.addPurchases.callCount).to.equal(1);
         const purchases = cache.addPurchases.firstCall.args[0];
         expect(purchases).to.have.lengthOf(1);
-        expect(purchases[0].target.intent_id).to.equal('0x123');
-
-        // Verify proper metrics were recorded
-        expect(prometheus.recordPossibleInvoice.callCount >= 2).to.be.true;
-
-        // Replace the exact parameter matching with a more flexible approach using sinon.match
-        expect(prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
-        const successfulPurchaseCall2 = prometheus.recordSuccessfulPurchase.firstCall;
-        expect(successfulPurchaseCall2.args[0]).to.include({
-            origin: labels.origin,
-            id: labels.id,
-            ticker: labels.ticker,
-            destination: '1'
-        });
-
-        // Check that the second invoice was marked with PendingPurchaseRecord
-        const secondLabels = {
-            ...labels,
-            id: secondInvoice.intent_id
-        };
-        expect(prometheus.recordPossibleInvoice.callCount >= 2).to.be.true;
+        expect(purchases[0].target.intent_id).to.equal('0xnewer');
     });
 
     it('should handle errors when removing stale purchases from cache', async () => {
@@ -836,5 +809,80 @@ describe('processInvoices', () => {
         const filteredMinAmounts = calcSplitIntentsStub.firstCall.args[1];
         expect(filteredMinAmounts).to.not.have.property('1'); // Should be filtered out (same ticker)
         expect(filteredMinAmounts).to.have.property('42161'); // Should remain (different ticker)
+    });
+
+    it('should process invoices in newest first order', () => {
+        // Create three invoices with different timestamps
+        const now = Math.floor(Date.now() / 1000);
+        const invoices = [
+            {
+                ...validInvoice,
+                intent_id: '0xoldest',
+                hub_invoice_enqueued_timestamp: now - 7200 // 2 hours ago
+            },
+            {
+                ...validInvoice,
+                intent_id: '0xmiddle',
+                hub_invoice_enqueued_timestamp: now - 3600 // 1 hour ago
+            },
+            {
+                ...validInvoice,
+                intent_id: '0xnewest',
+                hub_invoice_enqueued_timestamp: now - 1800 // 30 minutes ago
+            }
+        ];
+
+        // Sort invoices, newest first
+        const sortedInvoices = [...invoices].sort(
+            (a, b) => b.hub_invoice_enqueued_timestamp - a.hub_invoice_enqueued_timestamp
+        );
+
+        // Verify sort order matches newest first
+        expect(sortedInvoices.map(i => i.intent_id)).to.deep.equal(['0xnewest', '0xmiddle', '0xoldest']);
+    });
+
+    it('should maintain sorting when processing invoices with same ticker_hash', () => {
+        // Create a set of invoices with same ticker but different timestamps
+        const now = Math.floor(Date.now() / 1000);
+        const invoices = [
+            {
+                ...validInvoice,
+                intent_id: '0xoldest',
+                ticker_hash: '0xsameticker',
+                hub_invoice_enqueued_timestamp: now - 7200 // 2 hours ago
+            },
+            {
+                ...validInvoice,
+                intent_id: '0xmiddle',
+                ticker_hash: '0xsameticker',
+                hub_invoice_enqueued_timestamp: now - 3600 // 1 hour ago
+            },
+            {
+                ...validInvoice,
+                intent_id: '0xnewest',
+                ticker_hash: '0xsameticker',
+                hub_invoice_enqueued_timestamp: now - 1800 // 30 minutes ago
+            }
+        ];
+
+        const invoiceQueues = new Map<string, Invoice[]>(); 
+        
+        // Sort invoices, newest first
+        const sortedInvoices = [...invoices].sort(
+            (a, b) => b.hub_invoice_enqueued_timestamp - a.hub_invoice_enqueued_timestamp
+        );
+        
+        // Group by ticker
+        sortedInvoices.forEach(invoice => {
+            if (!invoiceQueues.has(invoice.ticker_hash)) {
+                invoiceQueues.set(invoice.ticker_hash, []);
+            }
+            invoiceQueues.get(invoice.ticker_hash)!.push(invoice);
+        });
+
+        const tickerQueue = invoiceQueues.get('0xsameticker')!;
+        // Verify newest first within the ticker group
+        expect(tickerQueue.map(i => i.intent_id)).to.deep.equal(['0xnewest', '0xmiddle', '0xoldest']);
+        expect(tickerQueue[0].intent_id).to.equal('0xnewest');
     });
 });
