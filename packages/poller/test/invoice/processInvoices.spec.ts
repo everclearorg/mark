@@ -530,7 +530,7 @@ describe('processInvoices', () => {
         })).to.be.true;
     });
 
-    it('should not handle multiple invoices with same ticker + destinations', async () => {
+    it('should not purchase multiple invoices with same ticker + destinations', async () => {
         // Create test invoices with same ticker+destination but different timestamps
         const newerInvoice = {
             ...validInvoice,
@@ -559,7 +559,7 @@ describe('processInvoices', () => {
             web3Signer: typedWeb3Signer
         });
 
-        // Verify only the newer invoice was processed
+        // Verify only the newer invoice was purchased
         expect(cache.addPurchases.callCount).to.equal(1);
         const purchases = cache.addPurchases.firstCall.args[0];
         expect(purchases).to.have.lengthOf(1);
@@ -884,5 +884,89 @@ describe('processInvoices', () => {
         // Verify newest first within the ticker group
         expect(tickerQueue.map(i => i.intent_id)).to.deep.equal(['0xnewest', '0xmiddle', '0xoldest']);
         expect(tickerQueue[0].intent_id).to.equal('0xnewest');
+    });
+
+    it('should continue processing older invoices when newer ones cannot be purchased due to insufficient balance', async () => {
+        // Create a set of invoices with same ticker but different timestamps
+        const now = Math.floor(Date.now() / 1000);
+        const invoices = [
+            {
+                ...validInvoice,
+                intent_id: '0xoldest',
+                ticker_hash: '0xsameticker',
+                hub_invoice_enqueued_timestamp: now - 7200 // 2 hours ago
+            },
+            {
+                ...validInvoice,
+                intent_id: '0xmiddle',
+                ticker_hash: '0xsameticker',
+                hub_invoice_enqueued_timestamp: now - 3600 // 1 hour ago
+            },
+            {
+                ...validInvoice,
+                intent_id: '0xnewest',
+                ticker_hash: '0xsameticker',
+                hub_invoice_enqueued_timestamp: now - 1800 // 30 minutes ago
+            }
+        ];
+
+        // Configure evaluation results of the invoices
+        calcSplitIntentsStub.callsFake((invoice) => {
+            if (invoice.intent_id === '0xoldest') {
+                // Only oldest invoice has sufficient balance
+                return Promise.resolve({
+                    intents: [{
+                        origin: '1',
+                        destinations: ['8453'],
+                        to: '0xdestination',
+                        inputAsset: '0xtoken',
+                        amount: '100000000000000000',
+                        callData: '0xdata',
+                        maxFee: '0'
+                    }],
+                    originDomain: '1',
+                    totalAllocated: BigInt('100000000000000000')
+                });
+            } else {
+                // Newer invoices return empty intents (aka. insufficient balance)
+                return Promise.resolve({
+                    intents: [],
+                    originDomain: '',
+                    totalAllocated: BigInt('0')
+                });
+            }
+        });
+
+        await processInvoices({
+            invoices,
+            cache,
+            logger,
+            everclear,
+            chainService,
+            prometheus,
+            config: validConfig,
+            web3Signer: typedWeb3Signer
+        });
+
+        expect(calcSplitIntentsStub.callCount).to.equal(3);
+        expect(sendIntentsStub.callCount).to.equal(1);
+        
+        // Verify only the oldest invoice was purchased
+        const purchases = cache.addPurchases.firstCall.args[0];
+        expect(purchases).to.have.lengthOf(1);
+        expect(purchases[0].target.intent_id).to.equal('0xoldest');
+        
+        // Verify correct metrics were recorded
+        expect(prometheus.recordInvalidPurchase.calledWith(
+            InvalidPurchaseReasons.InsufficientBalance,
+            sinon.match({ id: '0xnewest' })
+        )).to.be.true;
+        expect(prometheus.recordInvalidPurchase.calledWith(
+            InvalidPurchaseReasons.InsufficientBalance,
+            sinon.match({ id: '0xmiddle' })
+        )).to.be.true;
+        expect(prometheus.recordSuccessfulPurchase.calledWith(
+            sinon.match({ id: '0xoldest' })
+        )).to.be.true;
     });
 });
