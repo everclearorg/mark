@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@mark/core": "workspace:*",
-    "dd-trace": "4.0.0",
+    "dd-trace": "5.42.0",
     "pino": "8.0.0"
   },
   "devDependencies": {
