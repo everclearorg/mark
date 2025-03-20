@@ -26,8 +26,6 @@ export interface TickerGroup {
   remainingBalances: Map<string, Map<string, bigint>>;
   remainingCustodied: Map<string, Map<string, bigint>>;
   chosenOrigin: string | null;
-  batchedInvoices: Invoice[];
-  batchedIntents: NewIntentParams[];
 }
 
 /**
@@ -275,37 +273,36 @@ export async function processTickerGroup(
         duration: getTimeSeconds() - start,
       });
 
-      // Return the actual purchases with real intent IDs and transaction hashes
+      // Return the purchases with intent IDs and transaction hashes
       return {
-        purchases: batchedInvoices.flatMap(batchedInvoice => 
-          intentResults.map((result, i) => ({
-            target: batchedInvoice,
-            purchase: {
-              intentId: result.intentId,
-              params: batchedIntents[i],
-            },
-            transactionHash: result.transactionHash,
-            batchedWith: batchedInvoices
-              .map(inv => inv.intent_id)
-              .filter(id => id !== batchedInvoice.intent_id),
-          }))
-        ),
+        purchases: intentResults.map((result, index) => ({
+          target: batchedInvoices[index],
+          purchase: {
+            intentId: result.intentId,
+            params: batchedIntents[index],
+          },
+          transactionHash: result.transactionHash,
+        })),
         remainingBalances,
         remainingCustodied,
       };
     } catch (error) {
-      prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
-        origin: batchedInvoices[0].origin,
-        id: batchedInvoices[0].intent_id,
-        ticker: batchedInvoices[0].ticker_hash,
-        destination: batchedIntents[0].origin,
+      // Record invalid purchase for each invoice in the batch
+      batchedInvoices.forEach(invoice => {
+        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
+          origin: invoice.origin,
+          id: invoice.intent_id,
+          ticker: invoice.ticker_hash
+        });
       });
+
       logger.error(`Failed to submit purchase transaction(s) for batch`, {
         error: jsonifyError(error),
         batchedInvoiceIds: batchedInvoices.map(inv => inv.intent_id),
         intentCount: batchedIntents.length,
         duration: getTimeSeconds() - start,
       });
+      
       throw error;
     }
   }
@@ -413,8 +410,6 @@ export async function processInvoices(
       remainingBalances,
       remainingCustodied,
       chosenOrigin: null,
-      batchedInvoices: [],
-      batchedIntents: [],
     };
 
     try {
