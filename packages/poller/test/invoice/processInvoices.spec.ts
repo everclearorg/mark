@@ -1,7 +1,7 @@
 import { expect } from '../globalTestHook';
 import sinon, { createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
 import { ProcessingContext } from '../../src/init';
-import { processInvoices, processTickerGroup, TickerGroup } from '../../src/invoice/processInvoices';
+import { groupInvoicesByTicker, processInvoices, processTickerGroup, TickerGroup } from '../../src/invoice/processInvoices';
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as assetHelpers from '../../src/helpers/asset';
 import { IntentStatus } from '@mark/everclear';
@@ -16,6 +16,7 @@ import { PrometheusAdapter } from '@mark/prometheus';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as splitIntentHelpers from '../../src/helpers/splitIntent';
 import { MAX_DESTINATIONS } from '../../src/invoice/processInvoices';
+import { mockConfig, createMockInvoice } from '../mocks';
 
 describe('Invoice Processing', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -34,33 +35,7 @@ describe('Invoice Processing', () => {
     cache: SinonStubbedInstance<PurchaseCache>;
     web3Signer: SinonStubbedInstance<Wallet>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
-    config: MarkConfiguration;
   };
-
-  // Default single-dest mock invoice
-  function createMockInvoice(overrides?: Partial<Invoice>): Invoice {
-    return {
-      intent_id: '0x123',
-      amount: '1000000000000000000',
-      origin: '1',
-      destinations: ['8453'],
-      ticker_hash: '0xticker1',
-      hub_invoice_enqueued_timestamp: Date.now() - 7200000,
-      source_domain: '1',
-      target_domain: '8453',
-      source_address: '0xsource',
-      target_address: '0xtarget',
-      source_token_address: '0xtoken1',
-      target_token_address: '0xtoken2',
-      status: 'PENDING',
-      owner: '0xowner',
-      entry_epoch: 0,
-      discountBps: 0,
-      hub_status: 'PENDING',
-      severity: 0,
-      ...overrides,
-    } as Invoice;
-  }
 
   beforeEach(() => {
     // Init with fresh stubs and mocks
@@ -71,7 +46,6 @@ describe('Invoice Processing', () => {
     calculateSplitIntentsStub = sinon.stub(splitIntentHelpers, 'calculateSplitIntents');
     sendIntentsStub = sinon.stub(intentHelpers, 'sendIntents');
 
-    // Default mock config supports 1, 8453, 10 and one token on each
     mockDeps = {
       logger: createStubInstance(Logger),
       everclear: createStubInstance(EverclearAdapter),
@@ -79,104 +53,11 @@ describe('Invoice Processing', () => {
       cache: createStubInstance(PurchaseCache),
       web3Signer: createStubInstance(Wallet),
       prometheus: createStubInstance(PrometheusAdapter),
-      config: {
-        chains: {
-          '1': {
-            providers: ['http://localhost:8545'],
-            assets: [{
-              tickerHash: '0xticker1',
-              address: '0xtoken1',
-              decimals: 18,
-              symbol: 'TEST',
-              isNative: false,
-              balanceThreshold: '1000000000000000000',
-            }],
-            deployments: {
-              everclear: '0x1234567890123456789012345678901234567890',
-              permit2: '0x1234567890123456789012345678901234567890',
-              multicall3: '0x1234567890123456789012345678901234567890'
-            },
-            invoiceAge: 3600,
-            gasThreshold: '1000000000000000000'
-          },
-          '8453': {
-            providers: ['http://localhost:8545'],
-            assets: [{
-              tickerHash: '0xticker1',
-              address: '0xtoken1',
-              decimals: 18,
-              symbol: 'TEST',
-              isNative: false,
-              balanceThreshold: '1000000000000000000',
-            }],
-            deployments: {
-              everclear: '0x1234567890123456789012345678901234567890',
-              permit2: '0x1234567890123456789012345678901234567890',
-              multicall3: '0x1234567890123456789012345678901234567890'
-            },
-            invoiceAge: 3600,
-            gasThreshold: '1000000000000000000'
-          },
-          '10': {
-            providers: ['http://localhost:8545'],
-            assets: [{
-              tickerHash: '0xticker1',
-              address: '0xtoken1',
-              decimals: 18,
-              symbol: 'TEST',
-              isNative: false,
-              balanceThreshold: '1000000000000000000',
-            }],
-            deployments: {
-              everclear: '0x1234567890123456789012345678901234567890',
-              permit2: '0x1234567890123456789012345678901234567890',
-              multicall3: '0x1234567890123456789012345678901234567890'
-            },
-            invoiceAge: 3600,
-            gasThreshold: '1000000000000000000'
-          },
-        },
-        prioritizeOldestInvoice: false,
-        pushGatewayUrl: 'http://localhost:9091',
-        web3SignerUrl: 'http://localhost:8545',
-        everclearApiUrl: 'http://localhost:3000',
-        relayer: {
-          url: 'http://localhost:8080',
-          apiKey: 'test'
-        },
-        hubChain: 1,
-        hubMainnetChain: 1,
-        hubStorageAddress: '0x1234567890123456789012345678901234567890',
-        permit2Address: '0x1234567890123456789012345678901234567890',
-        multicallAddress: '0x1234567890123456789012345678901234567890',
-        balanceThresholds: {},
-        gasThresholds: {},
-        redis: {
-          host: 'localhost',
-          port: 6379
-        },
-        ownAddress: '0x1234567890123456789012345678901234567890',
-        stage: 'development',
-        environment: 'devnet',
-        logLevel: 'debug',
-        supportedAssets: ['0xticker1'],
-        supportedSettlementDomains: [1, 8453],
-        hub: {
-          domain: '1',
-          providers: ['http://localhost:8545'],
-          assets: [{
-            tickerHash: '0xticker1',
-            address: '0xtoken1',
-            decimals: 18,
-            symbol: 'TEST',
-            isNative: false,
-            balanceThreshold: '1000000000000000000'
-          }]
-        }
-      } as MarkConfiguration
     };
 
+    // Default mock config supports 1, 8453, 10 and one token on each
     mockContext = {
+      config: mockConfig,
       requestId: 'test-request-id',
       startTime: Date.now(),
       ...mockDeps
@@ -185,6 +66,114 @@ describe('Invoice Processing', () => {
 
   afterEach(() => {
     sinon.restore();
+  });
+
+  describe('groupInvoicesByTicker', () => {
+    it('should group multiple invoices with the same ticker correctly', () => {
+      const invoices = [
+        createMockInvoice({ intent_id: '0x1', ticker_hash: '0xticker1' }),
+        createMockInvoice({ intent_id: '0x2', ticker_hash: '0xticker1' }),
+        createMockInvoice({ intent_id: '0x3', ticker_hash: '0xticker1' })
+      ];
+      
+      const grouped = groupInvoicesByTicker(mockContext, invoices);
+      
+      expect(grouped.size).to.equal(1);
+      expect(grouped.get('0xticker1')?.length).to.equal(3);
+    });
+
+    it('should group invoices with different tickers separately', () => {
+      const invoices = [
+        createMockInvoice({ intent_id: '0x1', ticker_hash: '0xticker1' }),
+        createMockInvoice({ intent_id: '0x2', ticker_hash: '0xticker2' }),
+        createMockInvoice({ intent_id: '0x3', ticker_hash: '0xticker1' })
+      ];
+      
+      const grouped = groupInvoicesByTicker(mockContext, invoices);
+      
+      expect(grouped.size).to.equal(2);
+      expect(grouped.get('0xticker1')?.length).to.equal(2);
+      expect(grouped.get('0xticker2')?.length).to.equal(1);
+    });
+
+    it('should sort invoices by age within groups', () => {
+      const now = Date.now();
+      const invoices = [
+        createMockInvoice({ 
+          intent_id: '0x1', 
+          ticker_hash: '0xticker1',
+          hub_invoice_enqueued_timestamp: now - 1000 // 1 second ago
+        }),
+        createMockInvoice({ 
+          intent_id: '0x2', 
+          ticker_hash: '0xticker1',
+          hub_invoice_enqueued_timestamp: now - 3000 // 3 seconds ago
+        }),
+        createMockInvoice({ 
+          intent_id: '0x3', 
+          ticker_hash: '0xticker1',
+          hub_invoice_enqueued_timestamp: now - 2000 // 2 seconds ago
+        })
+      ];
+      
+      const grouped = groupInvoicesByTicker(mockContext, invoices);
+      const groupedInvoices = grouped.get('0xticker1');
+      expect(groupedInvoices).to.not.be.undefined;
+      
+      // Should be sorted oldest to newest
+      expect(groupedInvoices?.[0].intent_id).to.equal('0x2');
+      expect(groupedInvoices?.[1].intent_id).to.equal('0x3');
+      expect(groupedInvoices?.[2].intent_id).to.equal('0x1');
+    });
+
+    it('should handle empty invoice list', () => {
+      const grouped = groupInvoicesByTicker(mockContext, []);
+      
+      expect(grouped.size).to.equal(0);
+    });
+
+    it('should handle single invoice', () => {
+      const invoices = [
+        createMockInvoice({ intent_id: '0x1', ticker_hash: '0xticker1' })
+      ];
+      
+      const grouped = groupInvoicesByTicker(mockContext, invoices);
+      
+      expect(grouped.size).to.equal(1);
+      const groupedInvoices = grouped.get('0xticker1');
+      expect(groupedInvoices).to.not.be.undefined;
+      expect(groupedInvoices?.length).to.equal(1);
+      expect(groupedInvoices?.[0].intent_id).to.equal('0x1');
+    });
+
+    it('should record metrics for each invoice', () => {
+      const invoices = [
+        createMockInvoice({ 
+          intent_id: '0x1', 
+          ticker_hash: '0xticker1',
+          origin: '1'
+        }),
+        createMockInvoice({ 
+          intent_id: '0x2', 
+          ticker_hash: '0xticker2',
+          origin: '2'
+        })
+      ];
+      
+      groupInvoicesByTicker(mockContext, invoices);
+      
+      expect(mockDeps.prometheus.recordPossibleInvoice.calledTwice).to.be.true;
+      expect(mockDeps.prometheus.recordPossibleInvoice.firstCall.args[0]).to.deep.equal({
+        origin: '1',
+        id: '0x1',
+        ticker: '0xticker1'
+      });
+      expect(mockDeps.prometheus.recordPossibleInvoice.secondCall.args[0]).to.deep.equal({
+        origin: '2',
+        id: '0x2',
+        ticker: '0xticker2'
+      });
+    });
   });
 
   describe('processInvoices', () => {
@@ -282,6 +271,131 @@ describe('Invoice Processing', () => {
       // Verify the correct purchase was stored in cache
       expect(mockDeps.cache.addPurchases.calledOnce).to.be.true;
       expect(mockDeps.cache.addPurchases.firstCall.args[0]).to.deep.equal([expectedPurchase]);
+    });
+
+    it('should handle cache getAllPurchases failure gracefully', async () => {
+      const invoice = createMockInvoice();
+      
+      getMarkBalancesStub.resolves(new Map());
+      getMarkGasBalancesStub.resolves(new Map());
+      getCustodiedBalancesStub.resolves(new Map());
+      isXerc20SupportedStub.resolves(false);
+      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      
+      // Simulate cache failure
+      const cacheError = new Error('Cache error');
+      mockDeps.cache.getAllPurchases.rejects(cacheError);
+
+      let thrownError: Error | undefined;
+      try {
+        await processInvoices(mockContext, [invoice]);
+      } catch (error) {
+        thrownError = error as Error;
+      }
+
+      // Verify error was thrown
+      expect(thrownError?.message).to.equal('Cache error');
+
+      // And no purchases were attempted
+      expect(mockDeps.cache.addPurchases.called).to.be.false;
+      expect(calculateSplitIntentsStub.called).to.be.false;
+      expect(sendIntentsStub.called).to.be.false;
+    });
+
+    it('should handle cache addPurchases failure gracefully', async () => {
+      const invoice = createMockInvoice();
+      
+      getMarkBalancesStub.resolves(new Map());
+      getMarkGasBalancesStub.resolves(new Map());
+      getCustodiedBalancesStub.resolves(new Map());
+      isXerc20SupportedStub.resolves(false);
+      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      mockDeps.cache.getAllPurchases.resolves([]);
+      
+      // Setup successful path until addPurchases
+      mockDeps.everclear.getMinAmounts.resolves({
+        minAmounts: { '8453': '1000000000000000000' },
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {}
+      });
+
+      calculateSplitIntentsStub.resolves({
+        intents: [{
+          amount: '1000000000000000000',
+          origin: '8453',
+          destinations: ['1', '10'],
+          to: '0xowner',
+          inputAsset: '0xtoken1',
+          callData: '0x',
+          maxFee: '0'
+        }],
+        originDomain: '8453',
+        totalAllocated: BigInt('1000000000000000000')
+      });
+
+      sendIntentsStub.resolves([{
+        intentId: '0xabc',
+        transactionHash: '0xabc',
+        chainId: '8453'
+      }]);
+
+      // Simulate cache failure
+      const cacheError = new Error('Cache add error');
+      mockDeps.cache.addPurchases.rejects(cacheError);
+
+      let thrownError: Error | undefined;
+      try {
+        await processInvoices(mockContext, [invoice]);
+      } catch (error) {
+        thrownError = error as Error;
+      }
+
+      // Verify error was thrown
+      expect(thrownError).to.exist;
+      expect(thrownError?.message).to.equal('Cache add error');
+    });
+
+    it('should handle cache removePurchases failure gracefully', async () => {
+      // Setup test data
+      const invoice = createMockInvoice();
+      
+      // Setup basic stubs
+      getMarkBalancesStub.resolves(new Map());
+      getMarkGasBalancesStub.resolves(new Map());
+      getCustodiedBalancesStub.resolves(new Map());
+      isXerc20SupportedStub.resolves(false);
+      mockDeps.everclear.intentStatus.resolves(IntentStatus.SETTLED);
+
+      // Setup cache data for removal
+      mockDeps.cache.getAllPurchases.resolves([{
+        target: invoice,
+        purchase: { 
+          intentId: invoice.intent_id,
+          params: {
+            amount: '1000000000000000000',
+            origin: '1',
+            destinations: ['1'],
+            to: '0x123',
+            inputAsset: '0x123',
+            callData: '',
+            maxFee: 0
+          }
+        },
+        transactionHash: '0xabc'
+      }]);
+
+      // Simulate cache failure
+      mockDeps.cache.removePurchases.rejects(new Error('Cache remove error'));
+
+      await processInvoices(mockContext, [invoice]);
+
+      // Verify warning was logged
+      expect(mockDeps.logger.warn.calledWith('Failed to clear pending cache')).to.be.true;
+
+      // And Prometheus record was called
+      expect(mockDeps.prometheus.recordInvalidPurchase.called).to.be.false;
     });
   });
 
@@ -554,7 +668,7 @@ describe('Invoice Processing', () => {
       });
       const invalidOwnerInvoice = createMockInvoice({ 
         intent_id: '0x789',
-        owner: mockDeps.config.ownAddress
+        owner: mockContext.config.ownAddress
       });
       const tooNewInvoice = createMockInvoice({
         intent_id: '0xabc',
@@ -755,7 +869,7 @@ describe('Invoice Processing', () => {
     });
 
     it('should skip other invoices when prioritizeOldestInvoice is true and oldest invoice has no valid allocation', async () => {
-      mockDeps.config.prioritizeOldestInvoice = true;
+      mockContext.config.prioritizeOldestInvoice = true;
       isXerc20SupportedStub.resolves(false);
 
       const oldestInvoice = createMockInvoice({
@@ -797,7 +911,7 @@ describe('Invoice Processing', () => {
     });
 
     it('should process newer invoices when prioritizeOldestInvoice is false and oldest invoice has no valid allocation', async () => {
-      mockDeps.config.prioritizeOldestInvoice = false;
+      mockContext.config.prioritizeOldestInvoice = false;
       isXerc20SupportedStub.resolves(false);
 
       const oldestInvoice = createMockInvoice({
@@ -1013,14 +1127,17 @@ describe('Invoice Processing', () => {
 
       sendIntentsStub.rejects(new Error('Transaction failed'));
 
+      let thrownError: Error | undefined;
       try {
         await processTickerGroup(mockContext, group, []);
-        expect.fail('Should have thrown an error');
-      } catch (error: any) {
-        expect(error.message).to.equal('Transaction failed');
-        expect(mockDeps.prometheus.recordInvalidPurchase.calledOnce).to.be.true;
-        expect(mockDeps.prometheus.recordInvalidPurchase.firstCall.args[0]).to.equal(InvalidPurchaseReasons.TransactionFailed);
+      } catch (error) {
+        thrownError = error as Error;
       }
+
+      // Verify error was thrown
+      expect(thrownError?.message).to.equal('Transaction failed');
+      expect(mockDeps.prometheus.recordInvalidPurchase.calledOnce).to.be.true;
+      expect(mockDeps.prometheus.recordInvalidPurchase.firstCall.args[0]).to.equal(InvalidPurchaseReasons.TransactionFailed);
     });
 
     it('should map split intents to their respective invoices correctly', async () => {
