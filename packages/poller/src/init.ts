@@ -21,7 +21,7 @@ export interface ProcessingContext extends MarkAdapters {
   config: MarkConfiguration;
   requestId: string;
   startTime: number;
-} 
+}
 
 function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdapters {
   // Initialize adapters in the correct order
