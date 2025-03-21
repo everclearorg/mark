@@ -1,9 +1,7 @@
 import { processInvoices } from './processInvoices';
 import { ProcessingContext } from '../init';
 
-export async function pollAndProcess(
-  context: ProcessingContext,
-): Promise<void> {
+export async function pollAndProcess(context: ProcessingContext): Promise<void> {
   const { config, everclear, logger, requestId } = context;
 
   try {
@@ -17,11 +15,11 @@ export async function pollAndProcess(
     await processInvoices(context, invoices);
   } catch (_error: unknown) {
     const error = _error as Error;
-    logger.error('Failed to process invoices', { 
+    logger.error('Failed to process invoices', {
       requestId,
-      message: error.message, 
-      stack: error.stack, 
-      name: error.name 
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
     });
     throw error;
   }
