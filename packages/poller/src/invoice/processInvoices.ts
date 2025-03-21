@@ -28,6 +28,25 @@ export interface TickerGroup {
   chosenOrigin: string | null;
 }
 
+interface ProcessTickerGroupResult {
+  purchases: PurchaseAction[];
+  remainingBalances: Map<string, Map<string, bigint>>;
+  remainingCustodied: Map<string, Map<string, bigint>>;
+}
+
+interface InvoiceWithIntents {
+  invoice: Invoice;
+  intents: NewIntentParams[];
+  totalAllocated: bigint;
+}
+
+interface BatchedTickerGroup {
+  ticker: string;
+  origin: string;
+  invoicesWithIntents: InvoiceWithIntents[];
+  totalIntents: number;
+}
+
 /**
  * Groups invoices by ticker hash
  * @param context - The processing context
@@ -73,11 +92,7 @@ export async function processTickerGroup(
   context: ProcessingContext,
   group: TickerGroup,
   pendingPurchases: PurchaseAction[]
-): Promise<{
-  purchases: PurchaseAction[];
-  remainingBalances: Map<string, Map<string, bigint>>;
-  remainingCustodied: Map<string, Map<string, bigint>>;
-}> {
+): Promise<ProcessTickerGroupResult> {
   const { config, everclear, cache, logger, prometheus, chainService, web3Signer, requestId, startTime } = context;
   let start = startTime;
 
@@ -106,12 +121,17 @@ export async function processTickerGroup(
     })
     .filter((x) => !!x);
 
-  // Track for batching invoice purchases
+  // Track the batch state for this ticker group
+  const batchedGroup: BatchedTickerGroup = {
+    ticker: group.ticker,
+    origin: '',
+    invoicesWithIntents: [],
+    totalIntents: 0
+  };
+
+  // Track remaining balances
   let remainingBalances = new Map(group.remainingBalances);
   let remainingCustodied = new Map(group.remainingCustodied);
-  let batchedInvoices: Invoice[] = [];
-  let batchedIntents: NewIntentParams[] = [];
-  let chosenOrigin: string | null = null;
   
   for (const invoice of toEvaluate) {
     start = getTimeSeconds();
@@ -182,11 +202,11 @@ export async function processTickerGroup(
 
     // Use all candidate origins in split calc for the first invoice of this ticker.
     // For subsequent invoices, only use the chosen origin.
-    filteredMinAmounts = chosenOrigin ? 
-      { [chosenOrigin]: filteredMinAmounts[chosenOrigin] || '0' } : 
+    filteredMinAmounts = batchedGroup.origin ? 
+      { [batchedGroup.origin]: filteredMinAmounts[batchedGroup.origin] || '0' } : 
       filteredMinAmounts;
 
-    const { intents, originDomain } = await calculateSplitIntents(
+    const { intents, originDomain, totalAllocated } = await calculateSplitIntents(
       invoice,
       filteredMinAmounts,
       config,
@@ -197,7 +217,7 @@ export async function processTickerGroup(
     );
 
     // Oldest invoice, prio enabled, and couldn't find a valid allocation
-    if (!originDomain && batchedInvoices.length === 0 && config.prioritizeOldestInvoice) {
+    if (!originDomain && batchedGroup.invoicesWithIntents.length === 0 && config.prioritizeOldestInvoice) {
       logger.info('Cannot settle oldest invoice in ticker group with prioritization enabled, skipping group', {
         requestId, invoiceId, ticker: invoice.ticker_hash, duration: getTimeSeconds() - start,
       });
@@ -205,14 +225,24 @@ export async function processTickerGroup(
     }
 
     if (intents.length > 0) {
-      // First purchase of the ticker group, use this origin for subsequent invoices
-      if (!chosenOrigin) {
-        chosenOrigin = originDomain;
-        logger.info('Selected origin for ticker group', { requestId, ticker: invoice.ticker_hash, origin: chosenOrigin });
+      // First purchased invoice in the group sets the origin for all subsequent invoices
+      if (!batchedGroup.origin) {
+        batchedGroup.origin = originDomain;
+        logger.info('Selected origin for ticker group', { 
+          requestId, 
+          ticker: group.ticker, 
+          origin: batchedGroup.origin,
+          firstInvoiceId: invoiceId
+        });
       }
 
-      batchedInvoices.push(invoice);
-      batchedIntents.push(...intents);
+      // Add this invoice and its intents to the batch
+      batchedGroup.invoicesWithIntents.push({
+        invoice,
+        intents,
+        totalAllocated
+      });
+      batchedGroup.totalIntents += intents.length;
 
       // Update remaining balance for the chosen origin
       const currentBalance = remainingBalances.get(invoice.ticker_hash)?.get(originDomain) || BigInt('0');
@@ -223,92 +253,116 @@ export async function processTickerGroup(
       // First dest is the actual target of the intent (we pad the others for backup)
       const targetDestination = intents[0].destinations[0];
       const currentCustodied = remainingCustodied.get(invoice.ticker_hash)?.get(targetDestination) || BigInt('0');
-      const totalAllocated = intents.reduce((sum, intent) => sum + BigInt(intent.amount), BigInt('0'));
       remainingCustodied.get(invoice.ticker_hash)?.set(targetDestination, currentCustodied - totalAllocated);
 
       logger.info('Added invoice to batch', {
-        requestId, invoiceId, origin: originDomain, targetDestination, totalAllocated: totalAllocated.toString(),
-        intentCount: intents.length, duration: getTimeSeconds() - start,
+        requestId,
+        invoiceId,
+        origin: originDomain,
+        targetDestination,
+        totalAllocated: totalAllocated.toString(),
+        intentCount: intents.length,
+        isMultiIntent: intents.length > 1,
+        batchSize: batchedGroup.invoicesWithIntents.length,
+        duration: getTimeSeconds() - start,
       });
     }
   }
 
-  // Send all batched intents for this ticker group
-  if (batchedInvoices.length > 0 && batchedIntents.length > 0) {
-    try {
-      const intentResults = await sendIntents(
-        batchedInvoices[0].intent_id,
-        batchedIntents,
-        { everclear, logger, cache, prometheus, chainService, web3Signer },
-        config,
-        requestId
+  if (batchedGroup.totalIntents === 0) {
+    return {
+      purchases: [],
+      remainingBalances: group.remainingBalances,
+      remainingCustodied: group.remainingCustodied,
+    };
+  }
+
+  // Flatten all intents while maintaining their invoice association
+  const allIntents = batchedGroup.invoicesWithIntents.flatMap(({ invoice, intents }) => 
+    intents.map(intent => ({ params: intent, invoice }))
+  );
+
+  // Send all intents in one batch
+  let purchases: PurchaseAction[] = [];
+  try {
+    const intentResults = await sendIntents(
+      allIntents[0].invoice.intent_id,
+      allIntents.map(i => i.params),
+      { everclear, logger, cache, prometheus, chainService, web3Signer },
+      config,
+      requestId
+    );
+
+    // Create purchases maintaining the invoice-intent relationship
+    purchases = intentResults.map((result, index) => ({
+      target: allIntents[index].invoice,
+      purchase: {
+        intentId: result.intentId,
+        params: allIntents[index].params,
+      },
+      transactionHash: result.transactionHash,
+    }));
+
+    // Record metrics per invoice, properly handling split intents
+    for (const { invoice, intents } of batchedGroup.invoicesWithIntents) {
+      prometheus.recordSuccessfulPurchase({
+        origin: invoice.origin,
+        id: invoice.intent_id,
+        ticker: invoice.ticker_hash,
+        destination: intents[0].origin,
+        isSplit: intents.length > 1 ? 'true' : 'false',
+        splitCount: intents.length.toString(),
+      });
+      prometheus.recordInvoicePurchaseDuration(
+        Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp
       );
-
-      // Record metrics for all batched invoices
-      batchedInvoices.forEach(batchedInvoice => {
-        prometheus.recordSuccessfulPurchase({
-          origin: batchedInvoice.origin,
-          id: batchedInvoice.intent_id,
-          ticker: batchedInvoice.ticker_hash,
-          destination: batchedIntents[0].origin,
-          isSplit: batchedIntents.length > 1 ? 'true' : 'false',
-          splitCount: batchedIntents.length.toString(),
-        });
-        prometheus.recordInvoicePurchaseDuration(
-          Math.floor(Date.now()) - batchedInvoice.hub_invoice_enqueued_timestamp
-        );
-      });
-
-      logger.info(`Created purchases for batched invoices`, {
-        requestId,
-        batchedInvoiceIds: batchedInvoices.map(inv => inv.intent_id),
-        allIntentResults: intentResults.map((result, index) => ({
-          intentIndex: index,
-          intentId: result.intentId,
-          transactionHash: result.transactionHash,
-          params: batchedIntents[index],
-        })),
-        intentCount: batchedIntents.length,
-        transactionHashes: intentResults.map((result) => result.transactionHash),
-        duration: getTimeSeconds() - start,
-      });
-
-      // Return the purchases with intent IDs and transaction hashes
-      return {
-        purchases: intentResults.map((result, index) => ({
-          target: batchedInvoices[index],
-          purchase: {
-            intentId: result.intentId,
-            params: batchedIntents[index],
-          },
-          transactionHash: result.transactionHash,
-        })),
-        remainingBalances,
-        remainingCustodied,
-      };
-    } catch (error) {
-      // Record invalid purchase for each invoice in the batch
-      batchedInvoices.forEach(invoice => {
-        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
-          origin: invoice.origin,
-          id: invoice.intent_id,
-          ticker: invoice.ticker_hash
-        });
-      });
-
-      logger.error(`Failed to submit purchase transaction(s) for batch`, {
-        error: jsonifyError(error),
-        batchedInvoiceIds: batchedInvoices.map(inv => inv.intent_id),
-        intentCount: batchedIntents.length,
-        duration: getTimeSeconds() - start,
-      });
-      
-      throw error;
     }
+
+    logger.info(`Created purchases for batched ticker group`, {
+      requestId,
+      ticker: batchedGroup.ticker,
+      origin: batchedGroup.origin,
+      invoiceCount: batchedGroup.invoicesWithIntents.length,
+      totalIntents: batchedGroup.totalIntents,
+      invoiceIds: batchedGroup.invoicesWithIntents.map(i => i.invoice.intent_id),
+      allIntentResults: intentResults.map((result, index) => ({
+        intentIndex: index,
+        intentId: result.intentId,
+        transactionHash: result.transactionHash,
+        invoiceId: allIntents[index].invoice.intent_id,
+        params: allIntents[index].params,
+      })),
+      transactionHashes: intentResults.map(result => result.transactionHash),
+      duration: getTimeSeconds() - start,
+    });
+  } catch (error) {
+    // Record invalid purchase for each invoice in the batch
+    for (const { invoice } of batchedGroup.invoicesWithIntents) {
+      prometheus.recordInvalidPurchase(
+        InvalidPurchaseReasons.TransactionFailed,
+        { 
+          origin: invoice.origin, 
+          id: invoice.intent_id, 
+          ticker: invoice.ticker_hash 
+        }
+      );
+    }
+
+    logger.error('Failed to send intents for ticker group', {
+      requestId,
+      ticker: batchedGroup.ticker,
+      origin: batchedGroup.origin,
+      invoiceCount: batchedGroup.invoicesWithIntents.length,
+      invoiceIds: batchedGroup.invoicesWithIntents.map(i => i.invoice.intent_id),
+      error: jsonifyError(error),
+      duration: getTimeSeconds() - start,
+    });
+
+    throw error;
   }
 
   return {
-    purchases: [],
+    purchases,
     remainingBalances,
     remainingCustodied,
   };
