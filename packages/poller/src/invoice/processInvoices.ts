@@ -390,7 +390,7 @@ export async function processTickerGroup(
  * @param invoices - The invoices to process
  */
 export async function processInvoices(context: ProcessingContext, invoices: Invoice[]): Promise<void> {
-  const { config, everclear, cache, logger, prometheus, chainService, web3Signer, requestId, startTime } = context;
+  const { config, everclear, cache, logger, prometheus, requestId, startTime } = context;
   let start = startTime;
 
   logger.info('Starting invoice processing', {
