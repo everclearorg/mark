@@ -868,6 +868,52 @@ describe('Invoice Processing', () => {
       expect(result.purchases[0].purchase.params.origin).to.equal('10');
     });
 
+    it('should skip invoice when all origins are filtered out due to pending purchases', async () => {
+      isXerc20SupportedStub.resolves(false);
+      mockDeps.everclear.getMinAmounts.resolves({
+        minAmounts: { '8453': '1000000000000000000' },
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {}
+      });
+
+      const invoice = createMockInvoice();
+      const group: TickerGroup = {
+        ticker: '0xticker1',
+        invoices: [invoice],
+        remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('1000000000000000000')]])]]),
+        remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
+        chosenOrigin: null
+      };
+
+      // Create pending purchases that will filter out all origins
+      const pendingPurchases = [
+        {
+          target: createMockInvoice({ intent_id: '0x456' }),
+          purchase: {
+            intentId: '0xexisting1',
+            params: {
+              amount: '1000000000000000000',
+              origin: '8453',
+              destinations: ['1', '10'],
+              to: '0xowner',
+              inputAsset: '0xtoken1',
+              callData: '0x',
+              maxFee: '0'
+            }
+          },
+          transactionHash: '0xabc'
+        }
+      ];
+
+      const result = await processTickerGroup(mockContext, group, pendingPurchases);
+      
+      // Verify the invoice is skipped since no valid origins remain
+      expect(result.purchases).to.deep.equal([]);
+      expect(mockDeps.logger.info.calledWith('No valid origins remain after filtering existing purchases')).to.be.true;
+    });
+
     it('should skip other invoices when prioritizeOldestInvoice is true and oldest invoice has no valid allocation', async () => {
       mockContext.config.prioritizeOldestInvoice = true;
       isXerc20SupportedStub.resolves(false);
@@ -1290,6 +1336,68 @@ describe('Invoice Processing', () => {
       // Verify the correct purchases were stored in cache with proper invoice mapping
       expect(mockDeps.cache.addPurchases.calledOnce).to.be.true;
       expect(mockDeps.cache.addPurchases.firstCall.args[0]).to.deep.equal(expectedPurchases);
+    });
+
+    it('should handle different intent statuses for pending purchases correctly', async () => {
+      getMarkBalancesStub.resolves(new Map());
+      getMarkGasBalancesStub.resolves(new Map());
+      getCustodiedBalancesStub.resolves(new Map());
+      isXerc20SupportedStub.resolves(false);
+      
+      const invoice = createMockInvoice();
+
+      const pendingPurchases = [
+        {
+          target: invoice,
+          purchase: {
+            intentId: '0xexisting1',
+            params: {
+              amount: '1000000000000000000',
+              origin: '8453',
+              destinations: ['1', '10'],
+              to: '0xowner',
+              inputAsset: '0xtoken1',
+              callData: '0x',
+              maxFee: '0'
+            }
+          },
+          transactionHash: '0xexisting1'
+        },
+        {
+          target: invoice,
+          purchase: {
+            intentId: '0xexisting2',
+            params: {
+              amount: '1000000000000000000',
+              origin: '10',
+              destinations: ['1', '8453'],
+              to: '0xowner',
+              inputAsset: '0xtoken1',
+              callData: '0x',
+              maxFee: '0'
+            }
+          },
+          transactionHash: '0xexisting2'
+        }
+      ];
+
+      mockDeps.cache.getAllPurchases.resolves(pendingPurchases);
+
+      mockDeps.everclear.intentStatus
+        .withArgs('0xexisting1')
+        .resolves(IntentStatus.SETTLED);
+      
+      mockDeps.everclear.intentStatus
+        .withArgs('0xexisting2')
+        .resolves(IntentStatus.ADDED);
+
+      await processInvoices(mockContext, [invoice]);
+
+      // Verify that SETTLED intent was removed from consideration
+      expect(mockDeps.cache.removePurchases.calledWith(['0x123'])).to.be.true;
+
+      // Verify that ADDED intent was kept
+      expect(mockDeps.cache.removePurchases.neverCalledWith(['0xexisting2'])).to.be.true;
     });
   });
 });
