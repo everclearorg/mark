@@ -225,13 +225,11 @@ export async function processTickerGroup(
       : filteredMinAmounts;
 
     const { intents, originDomain, totalAllocated } = await calculateSplitIntents(
+      context,
       invoice,
       filteredMinAmounts,
-      config,
       remainingBalances,
       remainingCustodied,
-      logger,
-      requestId,
     );
 
     // Oldest invoice, prio enabled, and couldn't find a valid allocation
