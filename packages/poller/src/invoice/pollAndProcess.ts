@@ -1,40 +1,22 @@
-import { PrometheusAdapter } from '@mark/prometheus';
-import { MarkConfiguration } from '@mark/core';
-import { ChainService } from '@mark/chainservice';
-import { EverclearAdapter } from '@mark/everclear';
-import { Logger } from '@mark/logger';
 import { processInvoices } from './processInvoices';
-import { PurchaseCache } from '@mark/cache';
-import { Web3Signer } from '@mark/web3signer';
-import { Wallet } from 'ethers';
+import { ProcessingContext } from '../init';
+import { jsonifyError } from '@mark/logger';
 
-export interface ProcessInvoicesDependencies {
-  everclear: EverclearAdapter;
-  chainService: ChainService;
-  logger: Logger;
-  cache: PurchaseCache;
-  prometheus: PrometheusAdapter;
-  web3Signer: Web3Signer | Wallet;
-}
-
-export async function pollAndProcess(config: MarkConfiguration, deps: ProcessInvoicesDependencies): Promise<void> {
-  const { everclear, logger, chainService, cache, prometheus, web3Signer } = deps;
+export async function pollAndProcess(context: ProcessingContext): Promise<void> {
+  const { config, everclear, logger, requestId } = context;
 
   try {
     const invoices = await everclear.fetchInvoices(config.chains);
-    await processInvoices({
-      invoices,
-      everclear,
-      logger,
-      chainService,
-      cache,
-      prometheus,
-      config,
-      web3Signer,
-    });
+
+    if (invoices.length === 0) {
+      logger.info('No invoices to process', { requestId });
+      return;
+    }
+
+    await processInvoices(context, invoices);
   } catch (_error: unknown) {
     const error = _error as Error;
-    logger.error('Failed to process invoices', { message: error.message, stack: error.stack, name: error.name });
+    logger.error('Failed to process invoices', { error: jsonifyError(error, { requestId }) });
     throw error;
   }
 }

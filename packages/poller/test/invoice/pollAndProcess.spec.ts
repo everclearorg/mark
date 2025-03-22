@@ -6,13 +6,14 @@ import { MarkConfiguration, Invoice } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
-import { MarkAdapters } from '../../src/init';
+import { MarkAdapters, ProcessingContext } from '../../src/init';
 import { PurchaseCache } from '@mark/cache';
 import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 
 describe('pollAndProcess', () => {
     let mockDeps: SinonStubbedInstance<MarkAdapters>;
+    let mockContext: SinonStubbedInstance<ProcessingContext>;
     let processInvoicesStub: sinon.SinonStub;
 
     const mockConfig: MarkConfiguration = {
@@ -38,6 +39,7 @@ describe('pollAndProcess', () => {
         destinations: ['8453']
     } as Invoice];
 
+
     beforeEach(() => {
         mockDeps = {
             logger: createStubInstance(Logger),
@@ -48,25 +50,48 @@ describe('pollAndProcess', () => {
             prometheus: createStubInstance(PrometheusAdapter),
         };
 
-        (mockDeps.everclear.fetchInvoices as SinonStub).resolves(mockInvoices);
+        mockContext = {
+            config: mockConfig,
+            requestId: '0x123',
+            startTime: Date.now(),
+            logger: mockDeps.logger,
+            everclear: mockDeps.everclear,
+            cache: mockDeps.cache,
+            chainService: mockDeps.chainService,
+            web3Signer: mockDeps.web3Signer,
+            prometheus: mockDeps.prometheus,
+        };
+
+        (mockContext.everclear.fetchInvoices as SinonStub).resolves(mockInvoices);
         processInvoicesStub = stub(processInvoicesModule, 'processInvoices').resolves();
     });
 
     it('should fetch and process invoices successfully', async () => {
-        await pollAndProcess(mockConfig, mockDeps);
+        await pollAndProcess(mockContext);
 
-        expect((mockDeps.everclear.fetchInvoices as SinonStub).calledOnceWith(mockConfig.chains)).to.be.true;
+        expect((mockContext.everclear.fetchInvoices as SinonStub).calledOnceWith(mockConfig.chains)).to.be.true;
         expect(processInvoicesStub.callCount).to.be.eq(1);
-        expect(processInvoicesStub.firstCall.args[0]).contains({
-            invoices: mockInvoices
-        });
+        expect(processInvoicesStub.firstCall.args).to.deep.equal([mockContext, mockInvoices]);
+    });
+
+    it('should handle empty invoice list', async () => {
+        (mockContext.everclear.fetchInvoices as SinonStub).resolves([]);
+
+        await pollAndProcess(mockContext);
+
+        expect((mockContext.everclear.fetchInvoices as SinonStub).calledOnceWith(mockConfig.chains)).to.be.true;
+        expect((mockDeps.logger.info as SinonStub).calledOnceWith(
+            'No invoices to process',
+            { requestId: mockContext.requestId }
+        )).to.be.true;
+        expect(processInvoicesStub.called).to.be.false;
     });
 
     it('should handle fetchInvoices failure', async () => {
         const error = new Error('Fetch failed');
-        (mockDeps.everclear.fetchInvoices as SinonStub).rejects(error);
+        (mockContext.everclear.fetchInvoices as SinonStub).rejects(error);
 
-        await expect(pollAndProcess(mockConfig, mockDeps))
+        await expect(pollAndProcess(mockContext))
             .to.be.rejectedWith('Fetch failed');
 
         expect((mockDeps.logger.error as SinonStub).calledWith('Failed to process invoices')).to.be.true;
@@ -77,7 +102,7 @@ describe('pollAndProcess', () => {
         const error = new Error('Process failed');
         processInvoicesStub.rejects(error);
 
-        await expect(pollAndProcess(mockConfig, mockDeps))
+        await expect(pollAndProcess(mockContext))
             .to.be.rejectedWith('Process failed');
 
         expect((mockDeps.logger.error as SinonStub).calledWith('Failed to process invoices')).to.be.true;

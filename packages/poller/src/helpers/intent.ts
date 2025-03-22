@@ -1,5 +1,4 @@
 import { MarkConfiguration, NewIntentParams } from '@mark/core';
-import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
 import { getERC20Contract } from './contracts';
 import { encodeFunctionData, erc20Abi } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
@@ -11,6 +10,7 @@ import {
   getPermit2Address,
 } from './permit2';
 import { prepareMulticall } from './multicall';
+import { MarkAdapters } from '../init';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 
@@ -20,11 +20,11 @@ export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f1
 export const sendIntents = async (
   invoiceId: string,
   intents: NewIntentParams[],
-  deps: ProcessInvoicesDependencies,
+  adapters: MarkAdapters,
   config: MarkConfiguration,
   requestId?: string,
 ): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
-  const { everclear, chainService, prometheus, logger } = deps;
+  const { everclear, chainService, prometheus, logger } = adapters;
 
   if (!intents.length) {
     logger.info('No intents to process', { invoiceId });
@@ -206,14 +206,14 @@ export const sendIntents = async (
  */
 export const sendIntentsMulticall = async (
   intents: NewIntentParams[],
-  deps: ProcessInvoicesDependencies,
+  adapters: MarkAdapters,
   config: MarkConfiguration,
 ): Promise<{ transactionHash: string; chainId: string; intentId: string }> => {
   if (!intents || intents.length === 0) {
     throw new Error('No intents provided for multicall');
   }
 
-  const { chainService, everclear, logger, prometheus, web3Signer } = deps;
+  const { chainService, everclear, logger, prometheus, web3Signer } = adapters;
 
   const txs = [];
 
