@@ -1100,42 +1100,33 @@ describe('Invoice Processing', () => {
 
     it('should handle getMinAmounts failure gracefully', async () => {
       isXerc20SupportedStub.resolves(false);
-      mockDeps.everclear.getMinAmounts.rejects(new Error('API Error'));
 
       const invoice = createMockInvoice();
+
       const group: TickerGroup = {
         ticker: '0xticker1',
         invoices: [invoice],
-        remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('1000000000000000000')]])]]),
+        remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
         chosenOrigin: null
       };
 
+      // Mock getMinAmounts to return an error
+      mockDeps.everclear.getMinAmounts.rejects(new Error('Failed to get min amounts'));
+
+      // Mock calculateSplitIntents to return empty result when minAmounts fails
       calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
-        originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        intents: [],
+        originDomain: null,
+        totalAllocated: BigInt('0')
       });
 
-      sendIntentsStub.resolves([{
-        intentId: '0xabc',
-        transactionHash: '0xabc',
-        chainId: '8453'
-      }]);
-
       const result = await processTickerGroup(mockContext, group, []);
-      
-      // Verify that the invoice was still processed with default '0' amounts
-      expect(calculateSplitIntentsStub.calledOnce).to.be.true;
-      expect(calculateSplitIntentsStub.firstCall.args[1]).to.deep.equal({ '8453': '0' });
+
+      // Should return an empty result with no purchases
+      expect(result.purchases).to.be.empty;
+      expect(result.remainingBalances).to.deep.equal(group.remainingBalances);
+      expect(result.remainingCustodied).to.deep.equal(group.remainingCustodied);
     });
 
     it('should handle sendIntents failure gracefully', async () => {

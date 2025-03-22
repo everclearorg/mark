@@ -1,7 +1,8 @@
-import { getTokenAddressFromConfig, Invoice, MarkConfiguration, NewIntentParams } from '@mark/core';
-import { jsonifyMap, Logger } from '@mark/logger';
+import { getTokenAddressFromConfig, Invoice, NewIntentParams } from '@mark/core';
+import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
+import { ProcessingContext } from '../init';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -70,14 +71,13 @@ function evaluateDomainForOrigin(
  * Calculates split intents for an invoice
  */
 export async function calculateSplitIntents(
+  context: ProcessingContext,
   invoice: Invoice,
   minAmounts: Record<string, string>,
-  config: MarkConfiguration,
   balances: Map<string, Map<string, bigint>>,
   custodiedAssets: Map<string, Map<string, bigint>>,
-  logger: Logger,
-  requestId?: string,
 ): Promise<SplitIntentResult> {
+  const { config, logger, requestId } = context;
   const ticker = invoice.ticker_hash;
   const allCustodiedAssets = custodiedAssets.get(ticker) || new Map<string, bigint>();
   const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
