@@ -93,6 +93,10 @@ export async function calculateSplitIntents(
   logger.info('Got supported domains to evaluate', {
     requestId,
     invoiceId: invoice.intent_id,
+    assetSupportedDomains,
+    minAmounts,
+    balances: jsonifyMap(balances),
+    custodiedAssets: jsonifyMap(custodiedAssets),
   });
 
   // Sort the top-N domains by custodied assets
