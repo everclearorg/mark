@@ -17,6 +17,24 @@ import { BigNumber, Wallet } from 'ethers';
 import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 
+// Common test constants for transaction logs
+const INTENT_ADDED_TOPIC = '0x5c5c7ce44a0165f76ea4e0a89f0f7ac5cce7b2c1d1b91d0f49c1f219656b7d8c';
+const INTENT_ADDED_LOG_DATA = '0x00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000';
+
+const createMockTransactionReceipt = (transactionHash: string, intentId: string) => ({
+    transactionHash,
+    cumulativeGasUsed: BigNumber.from('100'),
+    effectiveGasPrice: BigNumber.from('1'),
+    logs: [{
+        topics: [
+            INTENT_ADDED_TOPIC,
+            intentId,
+            '0x0000000000000000000000000000000000000000000000000000000000000002'
+        ],
+        data: INTENT_ADDED_LOG_DATA
+    }]
+});
+
 describe('sendIntents', () => {
     let mockDeps: SinonStubbedInstance<MarkAdapters>;
     let getERC20ContractStub: SinonStub;
@@ -204,11 +222,9 @@ describe('sendIntents', () => {
         } as unknown as GetContractReturnType;
 
         getERC20ContractStub.resolves(mockTokenContract as any);
-        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
-            transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
-                topics: [INTENT_ADDED_TOPIC0, '0xintentid']
-            }]
-        });
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
+            createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000')
+        );
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
@@ -225,8 +241,8 @@ describe('sendIntents', () => {
             mockConfig,
         );
 
-        expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(0); // Called only for intent
-        expect(result).to.deep.equal([]);
+        expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1); // Called for intent
+        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should handle cases where there is not sufficient allowance', async () => {
@@ -249,16 +265,8 @@ describe('sendIntents', () => {
 
         getERC20ContractStub.resolves(mockTokenContract as any);
         (mockDeps.chainService.submitAndMonitor as SinonStub)
-            .onFirstCall().resolves({
-                transactionHash: '0xapprovalTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
-                    topics: [INTENT_ADDED_TOPIC0, '0xintentid']
-                }]
-            })
-            .onSecondCall().resolves({
-                transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
-                    topics: [INTENT_ADDED_TOPIC0, '0xintentid']
-                }]
-            });
+            .onFirstCall().resolves(createMockTransactionReceipt('0xapprovalTx', '0x0000000000000000000000000000000000000000000000000000000000000000'))
+            .onSecondCall().resolves(createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000'));
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
@@ -271,7 +279,7 @@ describe('sendIntents', () => {
         const result = await sendIntents(invoiceId, intentsArray, mockDeps, mockConfig);
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(2); // Called for both approval and intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0xintentid' }]);
+        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should handle cases where there is sufficient allowance', async () => {
@@ -293,11 +301,9 @@ describe('sendIntents', () => {
         } as unknown as GetContractReturnType;
 
         getERC20ContractStub.resolves(mockTokenContract as any);
-        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
-            transactionHash: '0xintentTx', cumulativeGasUsed: BigNumber.from('100'), effectiveGasPrice: BigNumber.from('1'), logs: [{
-                topics: [INTENT_ADDED_TOPIC0, '0xintentid']
-            }]
-        });
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
+            createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000')
+        );
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
@@ -315,7 +321,7 @@ describe('sendIntents', () => {
         );
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1); // Called only for intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0xintentid' }]);
+        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should throw an error when sending multiple intents with different input assets', async () => {
@@ -344,7 +350,7 @@ describe('sendIntents', () => {
             .to.be.rejectedWith('Cannot process multiple intents with different input assets');
     });
 
-    it('should process multiple intents with the same origin and input asset individually', async () => {
+    it('should process multiple intents with the same origin and input asset in a single transaction', async () => {
         const sameOriginSameAssetIntents = [
             {
                 origin: '1',
@@ -366,35 +372,14 @@ describe('sendIntents', () => {
             }
         ];
 
-        // Set up createNewIntent to handle multiple calls
+        // Set up createNewIntent to handle the batch call
         const createNewIntentStub = mockDeps.everclear.createNewIntent as SinonStub;
-
-        createNewIntentStub.callsFake((intent: NewIntentParams) => {
-            if (intent.to === '0xto1') {
-                return Promise.resolve({
-                    to: '0xspoke1',
-                    data: '0xdata1',
-                    chainId: '1',
-                    from: mockConfig.ownAddress,
-                    value: '0',
-                });
-            } else if (intent.to === '0xto2') {
-                return Promise.resolve({
-                    to: '0xspoke2',
-                    data: '0xdata2',
-                    chainId: '1',
-                    from: mockConfig.ownAddress,
-                    value: '0',
-                });
-            } else {
-                return Promise.resolve({
-                    to: '0xspoke_default',
-                    data: '0xdata_default',
-                    chainId: '1',
-                    from: mockConfig.ownAddress,
-                    value: '0',
-                });
-            }
+        createNewIntentStub.resolves({
+            to: '0xspoke1',
+            data: '0xdata1',
+            chainId: '1',
+            from: mockConfig.ownAddress,
+            value: '0',
         });
 
         (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
@@ -412,34 +397,30 @@ describe('sendIntents', () => {
 
         getERC20ContractStub.resolves(mockTokenContract as any);
 
-        // Mock transaction responses for both intents
-        (mockDeps.chainService.submitAndMonitor as SinonStub)
-            .onFirstCall().resolves({
-                transactionHash: '0xintentTx1',
-                cumulativeGasUsed: BigNumber.from('100'),
-                effectiveGasPrice: BigNumber.from('1'),
-                logs: [{
-                    topics: [INTENT_ADDED_TOPIC0, '0xintentid1']
-                }]
-            })
-            .onSecondCall().resolves({
-                transactionHash: '0xintentTx2',
-                cumulativeGasUsed: BigNumber.from('100'),
-                effectiveGasPrice: BigNumber.from('1'),
-                logs: [{
-                    topics: [INTENT_ADDED_TOPIC0, '0xintentid2']
-                }]
-            });
+        // Mock transaction response with both intent IDs in the OrderCreated event
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xbatchTx',
+            cumulativeGasUsed: BigNumber.from('100'),
+            effectiveGasPrice: BigNumber.from('1'),
+            logs: [{
+                topics: [
+                    '0x5c5c7ce44a0165f76ea4e0a89f0f7ac5cce7b2c1d1b91d0f49c1f219656b7d8c',
+                    '0x0000000000000000000000000000000000000000000000000000000000000001',
+                    '0x0000000000000000000000000000000000000000000000000000000000000002'
+                ],
+                data: '0x00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+            }]
+        });
 
         const result = await sendIntents(invoiceId, sameOriginSameAssetIntents, mockDeps, mockConfig);
 
-        // Should be called twice - once for each intent
-        expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(2);
+        // Should be called once for the batch
+        expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1);
 
         // Results should contain transaction info for both intents
         expect(result).to.deep.equal([
-            { transactionHash: '0xintentTx1', chainId: '1', intentId: '0xintentid1' },
-            { transactionHash: '0xintentTx2', chainId: '1', intentId: '0xintentid2' }
+            { transactionHash: '0xbatchTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000001' },
+            { transactionHash: '0xbatchTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000002' }
         ]);
     });
 });
@@ -657,7 +638,12 @@ describe('sendIntentsMulticall', () => {
             effectiveGasPrice: BigNumber.from('5'),
             logs: [
                 {
-                    topics: [INTENT_ADDED_TOPIC0, '0xintentid1']
+                    topics: [
+                        '0x5c5c7ce44a0165f76ea4e0a89f0f7ac5cce7b2c1d1b91d0f49c1f219656b7d8c',
+                        '0x0000000000000000000000000000000000000000000000000000000000000001',
+                        '0x0000000000000000000000000000000000000000000000000000000000000002'
+                    ],
+                    data: '0x00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000'
                 }
             ]
         });
@@ -693,12 +679,8 @@ describe('sendIntentsMulticall', () => {
             cumulativeGasUsed: BigNumber.from('200000'),
             effectiveGasPrice: BigNumber.from('5'),
             logs: [
-                {
-                    topics: [INTENT_ADDED_TOPIC0, '0xintentid1']
-                },
-                {
-                    topics: [INTENT_ADDED_TOPIC0, '0xintentid2']
-                }
+                createMockTransactionReceipt('0xmulticallTx', '0x0000000000000000000000000000000000000000000000000000000000000001').logs[0],
+                createMockTransactionReceipt('0xmulticallTx', '0x0000000000000000000000000000000000000000000000000000000000000002').logs[0]
             ]
         });
 

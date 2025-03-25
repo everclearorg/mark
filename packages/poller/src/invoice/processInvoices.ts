@@ -512,7 +512,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   if (allPurchases.length > 0) {
     try {
       await cache.addPurchases(allPurchases);
-      logger.info(`Stored ${allPurchases.length} purchases in cache`, { requestId, purchases: allPurchases });
+      logger.info(`Stored ${allPurchases.length} purchase(s) in cache`, { requestId, purchases: allPurchases });
     } catch (e) {
       logger.error('Failed to add purchases to cache', {
         requestId,
