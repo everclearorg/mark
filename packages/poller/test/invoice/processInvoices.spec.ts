@@ -1390,5 +1390,128 @@ describe('Invoice Processing', () => {
       // Verify that ADDED intent was kept
       expect(mockDeps.cache.removePurchases.neverCalledWith(['0xexisting2'])).to.be.true;
     });
+
+    it('should correctly update remaining custodied balances for split intents', async () => {
+      isXerc20SupportedStub.resolves(false);
+      // First call to getMinAmounts (for first invoice)
+      mockDeps.everclear.getMinAmounts.onFirstCall().resolves({
+        minAmounts: { '8453': '4000000000000000000' }, // 4 WETH needed for first invoice
+        invoiceAmount: '4000000000000000000',
+        amountAfterDiscount: '4000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {
+          '1': '3000000000000000000',
+          '10': '2000000000000000000',
+          '8453': '5000000000000000000'
+        }
+      });
+
+      // Second call to getMinAmounts (for second invoice)
+      mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
+        minAmounts: { '8453': '1000000000000000000' }, // 1 WETH needed for second invoice
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {
+          '1': '0', // 3 WETH used up from first invoice purchase
+          '10': '1000000000000000000', // 1 WETH used up from first invoice purchase
+          '8453': '5000000000000000000'
+        }
+      });
+
+      const invoice1 = createMockInvoice({ intent_id: '0x123' });
+      const invoice2 = createMockInvoice({ intent_id: '0x456' });
+
+      // Set up initial custodied balances for multiple destinations
+      const group: TickerGroup = {
+        ticker: '0xticker1',
+        invoices: [invoice1, invoice2],
+        remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('5000000000000000000')]])]]), // 5 WETH total
+        remainingCustodied: new Map([
+          ['0xticker1', new Map([
+            ['1', BigInt('3000000000000000000')],    // 3 WETH on Ethereum
+            ['10', BigInt('2000000000000000000')],   // 2 WETH on Optimism
+            ['8453', BigInt('5000000000000000000')], // 5 WETH on Base
+          ])]
+        ]),
+        chosenOrigin: null
+      };
+
+      // First invoice gets two split intents targeting different destinations
+      calculateSplitIntentsStub.onFirstCall().resolves({
+        intents: [
+          {
+            amount: '3000000000000000000', // 3 WETH
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0'
+          },
+          {
+            amount: '1000000000000000000', // 1 WETH
+            origin: '8453',
+            destinations: ['10', '1'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0'
+          }
+        ],
+        originDomain: '8453',
+        totalAllocated: BigInt('4000000000000000000') // 4 WETH total for first invoice
+      });
+
+      // Second invoice gets a single intent
+      calculateSplitIntentsStub.onSecondCall().resolves({
+        intents: [{
+          amount: '1000000000000000000', // 1 WETH
+          origin: '8453',
+          destinations: ['10', '1'],
+          to: '0xowner',
+          inputAsset: '0xtoken1',
+          callData: '0x',
+          maxFee: '0'
+        }],
+        originDomain: '8453',
+        totalAllocated: BigInt('1000000000000000000') // 1 WETH for second invoice
+      });
+
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc1',
+          transactionHash: '0xabc1',
+          chainId: '8453'
+        },
+        {
+          intentId: '0xabc2',
+          transactionHash: '0xabc2',
+          chainId: '8453'
+        },
+        {
+          intentId: '0xdef',
+          transactionHash: '0xdef',
+          chainId: '8453'
+        }
+      ]);
+
+      const result = await processTickerGroup(mockContext, group, []);
+
+      // Verify the correct purchases were created
+      expect(result.purchases.length).to.equal(3);
+      expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
+      expect(result.purchases[1].target.intent_id).to.equal(invoice1.intent_id);
+      expect(result.purchases[2].target.intent_id).to.equal(invoice2.intent_id);
+
+      // Verify remaining balances were updated correctly (5 - 4 - 1 = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+
+      // Verify remaining custodied balances were updated correctly
+      const remainingCustodied = result.remainingCustodied.get('0xticker1');
+      expect(remainingCustodied?.get('1')).to.equal(BigInt('0')); // 3 - 2 = 1 left
+      expect(remainingCustodied?.get('10')).to.equal(BigInt('0')); // 2 - 2 = 0 left
+      expect(remainingCustodied?.get('8453')).to.equal(BigInt('5000000000000000000'));
+    });
   });
 });

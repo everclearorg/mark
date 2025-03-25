@@ -268,19 +268,21 @@ export async function processTickerGroup(
       const requiredAmount = BigInt(minAmounts[originDomain]);
       remainingBalances.get(invoice.ticker_hash)?.set(originDomain, currentBalance - requiredAmount);
 
-      // Update remaining custodied for the target destination
-      // First dest is the actual target of the intent (we pad the others for backup)
-      const targetDestination = intents[0].destinations[0];
-      const currentCustodied = remainingCustodied.get(invoice.ticker_hash)?.get(targetDestination) || BigInt('0');
-      remainingCustodied.get(invoice.ticker_hash)?.set(targetDestination, currentCustodied - totalAllocated);
+      // Update remaining custodied for each destination
+      for (const intent of intents) {
+        // First dest is the actual target of the intent (we pad the others for backup)
+        const targetDestination = intent.destinations[0];
+        const amount = BigInt(intent.amount);
+        const currentCustodied = remainingCustodied.get(invoice.ticker_hash)?.get(targetDestination) || BigInt('0');
+        remainingCustodied.get(invoice.ticker_hash)?.set(targetDestination, currentCustodied - amount);
+      }
 
       logger.info('Added invoice to batch', {
         requestId,
         invoiceId,
         origin: originDomain,
-        targetDestination,
         totalAllocated: totalAllocated.toString(),
-        intentCount: intents.length,
+        splitIntentCount: intents.length,
         isMultiIntent: intents.length > 1,
         batchSize: batchedGroup.invoicesWithIntents.length,
         duration: getTimeSeconds() - start,

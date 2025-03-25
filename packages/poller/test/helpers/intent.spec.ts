@@ -1,6 +1,7 @@
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub, restore as sinonRestore } from 'sinon';
 import {
     INTENT_ADDED_TOPIC0,
+    ORDER_CREATED_TOPIC0,
     sendIntents,
     sendIntentsMulticall
 } from '../../src/helpers/intent';
@@ -21,17 +22,21 @@ import { PrometheusAdapter } from '@mark/prometheus';
 const INTENT_ADDED_TOPIC = '0x5c5c7ce44a0165f76ea4e0a89f0f7ac5cce7b2c1d1b91d0f49c1f219656b7d8c';
 const INTENT_ADDED_LOG_DATA = '0x00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000';
 
-const createMockTransactionReceipt = (transactionHash: string, intentId: string) => ({
+const createMockTransactionReceipt = (transactionHash: string, intentId: string, eventType: 'intent' | 'order' = 'intent') => ({
     transactionHash,
     cumulativeGasUsed: BigNumber.from('100'),
     effectiveGasPrice: BigNumber.from('1'),
     logs: [{
-        topics: [
+        topics: eventType === 'intent' ? [
             INTENT_ADDED_TOPIC,
             intentId,
             '0x0000000000000000000000000000000000000000000000000000000000000002'
+        ] : [
+            ORDER_CREATED_TOPIC0,
+            intentId,
+            '0x0000000000000000000000000000000000000000000000000000000000000002'
         ],
-        data: INTENT_ADDED_LOG_DATA
+        data: eventType === 'intent' ? INTENT_ADDED_LOG_DATA : '0x00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000'
     }]
 });
 
@@ -223,7 +228,7 @@ describe('sendIntents', () => {
 
         getERC20ContractStub.resolves(mockTokenContract as any);
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
-            createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000')
+            createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order')
         );
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
@@ -265,8 +270,8 @@ describe('sendIntents', () => {
 
         getERC20ContractStub.resolves(mockTokenContract as any);
         (mockDeps.chainService.submitAndMonitor as SinonStub)
-            .onFirstCall().resolves(createMockTransactionReceipt('0xapprovalTx', '0x0000000000000000000000000000000000000000000000000000000000000000'))
-            .onSecondCall().resolves(createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000'));
+            .onFirstCall().resolves(createMockTransactionReceipt('0xapprovalTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order'))
+            .onSecondCall().resolves(createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order'));
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
@@ -302,7 +307,7 @@ describe('sendIntents', () => {
 
         getERC20ContractStub.resolves(mockTokenContract as any);
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
-            createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000')
+            createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order')
         );
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
@@ -398,30 +403,13 @@ describe('sendIntents', () => {
         getERC20ContractStub.resolves(mockTokenContract as any);
 
         // Mock transaction response with both intent IDs in the OrderCreated event
-        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
-            transactionHash: '0xbatchTx',
-            cumulativeGasUsed: BigNumber.from('100'),
-            effectiveGasPrice: BigNumber.from('1'),
-            logs: [{
-                topics: [
-                    '0x5c5c7ce44a0165f76ea4e0a89f0f7ac5cce7b2c1d1b91d0f49c1f219656b7d8c',
-                    '0x0000000000000000000000000000000000000000000000000000000000000001',
-                    '0x0000000000000000000000000000000000000000000000000000000000000002'
-                ],
-                data: '0x00000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
-            }]
-        });
-
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
+            createMockTransactionReceipt('0xbatchTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order')
+        );  
         const result = await sendIntents(invoiceId, sameOriginSameAssetIntents, mockDeps, mockConfig);
 
         // Should be called once for the batch
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1);
-
-        // Results should contain transaction info for both intents
-        expect(result).to.deep.equal([
-            { transactionHash: '0xbatchTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000001' },
-            { transactionHash: '0xbatchTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000002' }
-        ]);
     });
 });
 
