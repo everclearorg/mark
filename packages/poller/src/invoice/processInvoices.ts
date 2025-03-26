@@ -242,7 +242,7 @@ export async function processTickerGroup(
     });
 
     // Oldest invoice, prio enabled, and couldn't find a valid allocation
-    if (!originDomain && batchedGroup.invoicesWithIntents.length === 0 && config.prioritizeOldestInvoice) {
+    if (!originDomain && batchedGroup.invoicesWithIntents.length === 0 && config.forceOldestInvoice) {
       logger.info('Cannot settle oldest invoice in ticker group with prioritization enabled, skipping group', {
         requestId,
         invoiceId,

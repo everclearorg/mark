@@ -65,7 +65,7 @@ export interface MarkConfiguration {
   environment: Environment;
   logLevel: LogLevel;
   supportedSettlementDomains: number[];
-  prioritizeOldestInvoice?: boolean;
+  forceOldestInvoice?: boolean;
   supportedAssets: string[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id
   hub: Omit<HubConfig, 'confirmations' | 'subgraphUrls'>;

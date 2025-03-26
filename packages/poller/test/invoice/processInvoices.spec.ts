@@ -914,8 +914,8 @@ describe('Invoice Processing', () => {
       expect(mockDeps.logger.info.calledWith('No valid origins remain after filtering existing purchases')).to.be.true;
     });
 
-    it('should skip other invoices when prioritizeOldestInvoice is true and oldest invoice has no valid allocation', async () => {
-      mockContext.config.prioritizeOldestInvoice = true;
+    it('should skip other invoices when forceOldestInvoice is true and oldest invoice has no valid allocation', async () => {
+      mockContext.config.forceOldestInvoice = true;
       isXerc20SupportedStub.resolves(false);
 
       const oldestInvoice = createMockInvoice({
@@ -956,8 +956,8 @@ describe('Invoice Processing', () => {
       expect(result.purchases).to.deep.equal([]);
     });
 
-    it('should process newer invoices when prioritizeOldestInvoice is false and oldest invoice has no valid allocation', async () => {
-      mockContext.config.prioritizeOldestInvoice = false;
+    it('should process newer invoices when forceOldestInvoice is false and oldest invoice has no valid allocation', async () => {
+      mockContext.config.forceOldestInvoice = false;
       isXerc20SupportedStub.resolves(false);
 
       const oldestInvoice = createMockInvoice({
