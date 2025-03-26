@@ -224,13 +224,22 @@ export async function processTickerGroup(
       ? { [batchedGroup.origin]: filteredMinAmounts[batchedGroup.origin] || '0' }
       : filteredMinAmounts;
 
-    const { intents, originDomain, totalAllocated } = await calculateSplitIntents(
+    const { intents, originDomain, totalAllocated, remainder } = await calculateSplitIntents(
       context,
       invoice,
       filteredMinAmounts,
       remainingBalances,
       remainingCustodied,
     );
+
+    logger.debug('Calculated split intents', {
+      requestId,
+      invoiceId,
+      intents,
+      originDomain,
+      totalAllocated,
+      remainder,
+    });
 
     // Oldest invoice, prio enabled, and couldn't find a valid allocation
     if (!originDomain && batchedGroup.invoicesWithIntents.length === 0 && config.prioritizeOldestInvoice) {
@@ -268,13 +277,39 @@ export async function processTickerGroup(
       const requiredAmount = BigInt(minAmounts[originDomain]);
       remainingBalances.get(invoice.ticker_hash)?.set(originDomain, currentBalance - requiredAmount);
 
-      // Update remaining custodied for each destination
+      // Update remaining custodied - handle allocated intents (up to totalAllocated)
+      let runningSum = BigInt('0');
+      const allocatedIntents = [];
       for (const intent of intents) {
-        // First dest is the actual target of the intent (we pad the others for backup)
-        const targetDestination = intent.destinations[0];
         const amount = BigInt(intent.amount);
+        if (runningSum + amount > totalAllocated) {
+          break;
+        }
+        const targetDestination = intent.destinations[0];
         const currentCustodied = remainingCustodied.get(invoice.ticker_hash)?.get(targetDestination) || BigInt('0');
         remainingCustodied.get(invoice.ticker_hash)?.set(targetDestination, currentCustodied - amount);
+        runningSum += amount;
+        allocatedIntents.push(intent);
+      }
+
+      // Update remaining custodied - handle remainder intents by distributing across destinations
+      // This is best effort to make sure we don't over-allocate in subsequent invoices
+      const remainderIntents = intents.slice(allocatedIntents.length);
+      if (remainderIntents.length > 0) {
+        const destinations = remainderIntents[0].destinations;
+        
+        // Distribute remainder across destinations until depleted
+        let remaining = remainder;
+        for (const destination of destinations) {
+          if (remaining <= BigInt('0')) break;
+          
+          const currentCustodied = remainingCustodied.get(invoice.ticker_hash)?.get(destination) || BigInt('0');
+          if (currentCustodied > BigInt('0')) {
+            const decrementAmount = currentCustodied < remaining ? currentCustodied : remaining;
+            remainingCustodied.get(invoice.ticker_hash)?.set(destination, currentCustodied - decrementAmount);
+            remaining -= decrementAmount;
+          }
+        }
       }
 
       logger.info('Added invoice to batch', {

@@ -277,25 +277,29 @@ export async function calculateSplitIntents(
   const remainder = totalNeeded - bestAllocation.totalAllocated;
   if (remainder > BigInt(0)) {
     // Dumb split: create top-N intents to split remainder evenly across top-N chains
-    const splitAmount = remainder / BigInt(topNDomainsFromConfig.length);
+    const validTopNDomains = topNDomainsFromConfig.filter(domain => domain !== bestAllocation.origin);
+    const splitAmount = remainder / BigInt(validTopNDomains.length);
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
-      destinations: topNDomainsFromConfig,
+      destinations: validTopNDomains,
       to: config.ownAddress,
       inputAsset,
       amount: convertHubAmountToLocalDecimals(splitAmount, inputAsset, bestAllocation.origin, config).toString(),
       callData: '0x',
       maxFee: '0',
     };
+    intents.push(...Array(validTopNDomains.length - 1).fill(params));
 
-    // Push the same intent for each top-N destination
-    intents.push(...Array(topNDomainsFromConfig.length).fill(params));
+    // Last one topped up with remainder of remainder
+    const dust = remainder % BigInt(validTopNDomains.length);
+    const lastParams = { ...params, amount: convertHubAmountToLocalDecimals(splitAmount + dust, inputAsset, bestAllocation.origin, config).toString() };
+    intents.push(lastParams);
 
     logger.info('Added remainder intents to allocation', {
       requestId,
       invoiceId: invoice.intent_id,
       remainder: remainder.toString(),
-      intentCount: topNDomainsFromConfig.length,
+      intentCount: validTopNDomains.length,
     });
   }
 
