@@ -41,7 +41,7 @@ export const mockConfig: MarkConfiguration = {
   environment: 'devnet',
   logLevel: 'debug',
   supportedSettlementDomains: [1, 8453],
-  prioritizeOldestInvoice: false,
+  forceOldestInvoice: false,
   supportedAssets: ['0xticker1'],
   chains: {
     '1': {
