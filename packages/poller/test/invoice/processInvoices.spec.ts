@@ -1460,7 +1460,8 @@ describe('Invoice Processing', () => {
           }
         ],
         originDomain: '8453',
-        totalAllocated: BigInt('4000000000000000000') // 4 WETH total for first invoice
+        totalAllocated: BigInt('4000000000000000000'), // 4 WETH total for first invoice
+        remainder: BigInt('0')
       });
 
       // Second invoice gets a single intent
@@ -1475,7 +1476,8 @@ describe('Invoice Processing', () => {
           maxFee: '0'
         }],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000') // 1 WETH for second invoice
+        totalAllocated: BigInt('1000000000000000000'), // 1 WETH for second invoice
+        remainder: BigInt('0')
       });
 
       sendIntentsStub.resolves([
@@ -1509,8 +1511,97 @@ describe('Invoice Processing', () => {
 
       // Verify remaining custodied balances were updated correctly
       const remainingCustodied = result.remainingCustodied.get('0xticker1');
-      expect(remainingCustodied?.get('1')).to.equal(BigInt('0')); // 3 - 2 = 1 left
-      expect(remainingCustodied?.get('10')).to.equal(BigInt('0')); // 2 - 2 = 0 left
+      expect(remainingCustodied?.get('1')).to.equal(BigInt('0')); // 3 - 3 = 0 left
+      expect(remainingCustodied?.get('10')).to.equal(BigInt('0')); // 2 - 1 - 1 = 0 left
+      expect(remainingCustodied?.get('8453')).to.equal(BigInt('5000000000000000000'));
+    });
+
+    it('should correctly distribute remainder intents across destinations', async () => {
+      isXerc20SupportedStub.resolves(false);
+      mockDeps.everclear.getMinAmounts.resolves({
+        minAmounts: { '8453': '6000000000000000000' }, // 6 WETH needed
+        invoiceAmount: '6000000000000000000',
+        amountAfterDiscount: '6000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {
+          '1': '2000000000000000000',    // 2 WETH
+          '10': '3000000000000000000',   // 3 WETH
+          '8453': '5000000000000000000'  // 5 WETH
+        }
+      });
+
+      const invoice = createMockInvoice();
+
+      const group: TickerGroup = {
+        ticker: '0xticker1',
+        invoices: [invoice],
+        remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('6000000000000000000')]])]]),
+        remainingCustodied: new Map([
+          ['0xticker1', new Map([
+            ['1', BigInt('2000000000000000000')],    // 2 WETH
+            ['10', BigInt('3000000000000000000')],   // 3 WETH
+            ['8453', BigInt('5000000000000000000')]  // 5 WETH
+          ])]
+        ]),
+        chosenOrigin: null
+      };
+
+      // Create a scenario with a remainder that needs to be distributed
+      calculateSplitIntentsStub.resolves({
+        intents: [
+          {
+            amount: '2000000000000000000', // 2 WETH allocated to 1
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0'
+          },
+          {
+            amount: '3000000000000000000', // 3 WETH allocated to 10
+            origin: '8453',
+            destinations: ['10', '1'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0'
+          }
+        ],
+        originDomain: '8453',
+        totalAllocated: BigInt('5000000000000000000'), // 5 WETH allocated
+        remainder: BigInt('1000000000000000000') // 1 WETH remainder
+      });
+
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc1',
+          transactionHash: '0xabc1',
+          chainId: '8453'
+        },
+        {
+          intentId: '0xabc2',
+          transactionHash: '0xabc2',
+          chainId: '8453'
+        }
+      ]);
+
+      const result = await processTickerGroup(mockContext, group, []);
+
+      // Verify the correct purchases were created
+      expect(result.purchases.length).to.equal(2);
+      expect(result.purchases[0].target.intent_id).to.equal(invoice.intent_id);
+      expect(result.purchases[1].target.intent_id).to.equal(invoice.intent_id);
+
+      // Verify remaining balances were updated correctly (5 - 5 = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+
+      // Verify remaining custodied balances were updated correctly
+      const remainingCustodied = result.remainingCustodied.get('0xticker1');
+      expect(remainingCustodied?.get('1')).to.equal(BigInt('0'));
+      expect(remainingCustodied?.get('10')).to.equal(BigInt('0'));
+
+      // Base chain balance remains unchanged
       expect(remainingCustodied?.get('8453')).to.equal(BigInt('5000000000000000000'));
     });
   });
