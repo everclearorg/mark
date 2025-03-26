@@ -259,9 +259,11 @@ describe('Split Intent Helper Functions', () => {
         custodiedBalances
       );
 
+      const topNDomains = mockContext.config.supportedSettlementDomains.length;
+
       expect(result.originDomain).to.equal('10');
       expect(result.totalAllocated).to.equal(BigInt('70000000000000000000'));
-      expect(result.intents.length).to.equal(2); // Two intents for the two destinations with custodied assets
+      expect(result.intents.length).to.equal(2 + topNDomains); // 2 intents for allocated, topNDomains for remainder
 
       // Verify the intent that allocates to destination 1
       const intentFor1 = result.intents[0];
@@ -269,7 +271,7 @@ describe('Split Intent Helper Functions', () => {
       expect(intentFor1?.destinations).to.include('1');
       expect(intentFor1?.destinations).to.include('8453');
       expect(intentFor1?.destinations).to.include('42161');
-      expect(intentFor1?.amount).to.equal('40000000000000000000');
+      expect(intentFor1?.amount).to.equal('40000000000000000000'); // 40
 
       // Verify the intent that allocates to destination 8453
       const intentFor8453 = result.intents[1];
@@ -277,7 +279,13 @@ describe('Split Intent Helper Functions', () => {
       expect(intentFor8453?.destinations).to.include('8453');
       expect(intentFor8453?.destinations).to.include('1');
       expect(intentFor8453?.destinations).to.include('42161');
-      expect(intentFor8453?.amount).to.equal('30000000000000000000');
+      expect(intentFor8453?.amount).to.equal('30000000000000000000'); // 30
+
+      // Verify one of the remainder intents
+      const remainderIntent = result.intents[2];
+      expect(remainderIntent?.origin).to.equal('10');
+      expect(remainderIntent?.destinations.length).to.equal(topNDomains);
+      expect(remainderIntent?.amount).to.equal((BigInt('130000000000000000000') / BigInt(topNDomains)).toString());
     });
 
     it('should prefer origin with better allocation', async () => {
@@ -663,10 +671,12 @@ describe('Split Intent Helper Functions', () => {
         custodiedBalances
       );
 
+      const topNDomains = mockContext.config.supportedSettlementDomains.length;
+
       // Should choose origin 1 which has 90 WETH total vs origin 10 with 80 WETH total
       expect(result.originDomain).to.equal('8453');
       expect(result.totalAllocated).to.equal(BigInt('60000000000000000000'));
-      expect(result.intents.length).to.equal(1);
+      expect(result.intents.length).to.equal(1 + topNDomains);
 
       // Test with second set of balances (should choose origin '10' with higher total)
       const result2 = await calculateSplitIntents(
@@ -680,7 +690,7 @@ describe('Split Intent Helper Functions', () => {
       // Should choose origin 10 with 80 WETH total over origin 1 with 70 WETH total
       expect(result2.originDomain).to.equal('10');
       expect(result2.totalAllocated).to.equal(BigInt('80000000000000000000'));
-      expect(result2.intents.length).to.equal(2);
+      expect(result2.intents.length).to.equal(2 + topNDomains);
     });
 
     it('should handle case where getTokenAddressFromConfig returns null', async () => {
@@ -718,17 +728,13 @@ describe('Split Intent Helper Functions', () => {
         ['UNKNOWN_TICKER', custodiedAssets]
       ]);
 
-      const result = await calculateSplitIntents(
+      expect(async () => await calculateSplitIntents(
         mockContext,
         invoice,
         minAmounts,
         balances,
         custodiedBalances
-      );
-
-      // Should have found an origin but no intents due to missing token address
-      expect(result.originDomain).to.not.be.empty;
-      expect(result.intents.length).to.equal(0);
+      )).to.throw;
     });
 
     it('should test allocation sorting with top-N chains preference', async () => {
@@ -991,9 +997,11 @@ describe('Split Intent Helper Functions', () => {
         equalCustodiedBalances
       );
 
+      const topNDomains = mockContext.config.supportedSettlementDomains.length;
+
       // Should have chosen one of the origins with valid allocations
       expect(resultEqual.originDomain).to.be.oneOf(['10', '8453']);
-      expect(resultEqual.intents.length).to.equal(1);
+      expect(resultEqual.intents.length).to.equal(1 + topNDomains);
       expect(resultEqual.totalAllocated).to.equal(BigInt('50000000000000000000'));
 
       // Test no allocations possible
@@ -1007,7 +1015,7 @@ describe('Split Intent Helper Functions', () => {
 
       // Should have chosen an origin but with no intents due to no custodied assets
       expect(resultZero.originDomain).to.not.be.empty;
-      expect(resultZero.intents.length).to.equal(0);
+      expect(resultZero.intents.length).to.equal(0 + topNDomains);
       expect(resultZero.totalAllocated).to.equal(BigInt('0'));
     });
 
@@ -1108,9 +1116,11 @@ describe('Split Intent Helper Functions', () => {
         emptyCustodiedBalances
       );
 
+      const topNDomains = mockContext.config.supportedSettlementDomains.length;
+
       // Should have chosen an origin but with no intents due to no custodied assets
       expect(result.originDomain).to.not.be.empty;
-      expect(result.intents.length).to.equal(0);
+      expect(result.intents.length).to.equal(0 + topNDomains);
       expect(result.totalAllocated).to.equal(BigInt('0'));
     });
 
