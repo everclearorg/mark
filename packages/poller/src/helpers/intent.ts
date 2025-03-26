@@ -16,17 +16,19 @@ import { decodeEventLog } from 'viem';
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const ORDER_CREATED_TOPIC0 = '0xc5929cfdbbc98a41855839bee1396d17ee4a149e40d5c324b6f4332655f5cffd';
 
-const orderCreatedAbi = [{
-  type: 'event',
-  name: 'OrderCreated',
-  inputs: [
-    { indexed: true, type: 'bytes32', name: 'orderId' },
-    { indexed: true, type: 'address', name: 'initiator' },
-    { type: 'bytes32[]', name: 'intentIds' },
-    { type: 'uint256', name: 'tokenFee' },
-    { type: 'uint256', name: 'nativeFee' }
-  ]
-}] as const;
+const orderCreatedAbi = [
+  {
+    type: 'event',
+    name: 'OrderCreated',
+    inputs: [
+      { indexed: true, type: 'bytes32', name: 'orderId' },
+      { indexed: true, type: 'address', name: 'initiator' },
+      { type: 'bytes32[]', name: 'intentIds' },
+      { type: 'uint256', name: 'tokenFee' },
+      { type: 'uint256', name: 'nativeFee' },
+    ],
+  },
+] as const;
 
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required.
@@ -187,14 +189,16 @@ export const sendIntents = async (
         chainId: intents[0].origin,
         logs: newOrderTx.logs,
       });
-      
+
       // Tx was successful but logs weren't fetched correctly - use the tx hash
       // as the intentId so the process can continue
-      return [{
-        transactionHash: newOrderTx.transactionHash,
-        chainId: intents[0].origin,
-        intentId: newOrderTx.transactionHash,
-      }];
+      return [
+        {
+          transactionHash: newOrderTx.transactionHash,
+          chainId: intents[0].origin,
+          intentId: newOrderTx.transactionHash,
+        },
+      ];
     }
 
     const { args } = decodeEventLog({

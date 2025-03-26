@@ -277,7 +277,7 @@ export async function calculateSplitIntents(
   const remainder = totalNeeded - bestAllocation.totalAllocated;
   if (remainder > BigInt(0)) {
     // Dumb split: create top-N intents to split remainder evenly across top-N chains
-    const validTopNDomains = topNDomainsFromConfig.filter(domain => domain !== bestAllocation.origin);
+    const validTopNDomains = topNDomainsFromConfig.filter((domain) => domain !== bestAllocation.origin);
     const splitAmount = remainder / BigInt(validTopNDomains.length);
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
@@ -292,7 +292,10 @@ export async function calculateSplitIntents(
 
     // Last one topped up with remainder of remainder
     const dust = remainder % BigInt(validTopNDomains.length);
-    const lastParams = { ...params, amount: convertHubAmountToLocalDecimals(splitAmount + dust, inputAsset, bestAllocation.origin, config).toString() };
+    const lastParams = {
+      ...params,
+      amount: convertHubAmountToLocalDecimals(splitAmount + dust, inputAsset, bestAllocation.origin, config).toString(),
+    };
     intents.push(lastParams);
 
     logger.info('Added remainder intents to allocation', {
