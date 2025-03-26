@@ -15,7 +15,9 @@ interface SplitIntentAllocation {
 interface SplitIntentResult {
   intents: NewIntentParams[];
   originDomain: string;
+  originNeeded: bigint;
   totalAllocated: bigint;
+  remainder: bigint;
 }
 
 /**
@@ -190,7 +192,7 @@ export async function calculateSplitIntents(
       invoiceId: invoice.intent_id,
       ticker,
     });
-    return { intents: [], originDomain: '', totalAllocated: BigInt(0) };
+    return { intents: [], originDomain: '', originNeeded: BigInt(0), totalAllocated: BigInt(0), remainder: BigInt(0) };
   }
 
   // Find the best allocation:
@@ -251,21 +253,13 @@ export async function calculateSplitIntents(
     destinations.push(...domainsToAdd);
   }
 
-  // Create an intent for each allocation
-  for (const { domain, amount } of bestAllocation.allocations) {
-    const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config);
-    if (!inputAsset) {
-      logger.error('No input asset found', {
-        requestId,
-        invoiceId: invoice.intent_id,
-        ticker,
-        origin: bestAllocation.origin,
-        domain,
-        config: Object.keys(config.chains || {}).length,
-      });
-      continue;
-    }
+  const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config);
+  if (!inputAsset) {
+    throw new Error('No input asset found');
+  }
 
+  // Create intents for the targeted allocations
+  for (const { amount } of bestAllocation.allocations) {
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
       destinations: destinations,
@@ -279,9 +273,37 @@ export async function calculateSplitIntents(
     intents.push(params);
   }
 
+  // If allocation doesn't fully cover the amount, split remainder into smaller intents
+  const remainder = totalNeeded - bestAllocation.totalAllocated;
+  if (remainder > BigInt(0)) {
+    // Dumb split: create top-N intents to split remainder evenly across top-N chains
+    const splitAmount = remainder / BigInt(topNDomainsFromConfig.length);
+    const params: NewIntentParams = {
+      origin: bestAllocation.origin,
+      destinations: topNDomainsFromConfig,
+      to: config.ownAddress,
+      inputAsset,
+      amount: convertHubAmountToLocalDecimals(splitAmount, inputAsset, bestAllocation.origin, config).toString(),
+      callData: '0x',
+      maxFee: '0',
+    };
+
+    // Push the same intent for each top-N destination
+    intents.push(...Array(topNDomainsFromConfig.length).fill(params));
+
+    logger.info('Added remainder intents to allocation', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      remainder: remainder.toString(),
+      intentCount: topNDomainsFromConfig.length,
+    });
+  }
+
   return {
     intents,
     originDomain: bestAllocation.origin,
+    originNeeded: totalNeeded,
     totalAllocated: bestAllocation.totalAllocated,
+    remainder: remainder,
   };
 }
