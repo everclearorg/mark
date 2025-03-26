@@ -155,7 +155,7 @@ export class EverclearAdapter {
   }
 
   async createNewIntent(
-    params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[]
+    params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[],
   ): Promise<TransactionRequest> {
     try {
       const url = `${this.apiUrl}/intents`;
