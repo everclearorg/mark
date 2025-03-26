@@ -279,17 +279,22 @@ export async function processTickerGroup(
 
       // Update remaining custodied - handle allocated intents (up to totalAllocated)
       let runningSum = BigInt('0');
+      let targetIdx = 0;
       const allocatedIntents = [];
       for (const intent of intents) {
         const amount = BigInt(intent.amount);
         if (runningSum + amount > totalAllocated) {
           break;
         }
-        const targetDestination = intent.destinations[0];
+
+        // Get target destination of the allocation
+        const targetDestination = intents[targetIdx].destinations[0];
+
         const currentCustodied = remainingCustodied.get(invoice.ticker_hash)?.get(targetDestination) || BigInt('0');
         remainingCustodied.get(invoice.ticker_hash)?.set(targetDestination, currentCustodied - amount);
         runningSum += amount;
         allocatedIntents.push(intent);
+        targetIdx++;
       }
 
       // Update remaining custodied - handle remainder intents by distributing across destinations
@@ -297,12 +302,12 @@ export async function processTickerGroup(
       const remainderIntents = intents.slice(allocatedIntents.length);
       if (remainderIntents.length > 0) {
         const destinations = remainderIntents[0].destinations;
-        
+
         // Distribute remainder across destinations until depleted
         let remaining = remainder;
         for (const destination of destinations) {
           if (remaining <= BigInt('0')) break;
-          
+
           const currentCustodied = remainingCustodied.get(invoice.ticker_hash)?.get(destination) || BigInt('0');
           if (currentCustodied > BigInt('0')) {
             const decrementAmount = currentCustodied < remaining ? currentCustodied : remaining;
