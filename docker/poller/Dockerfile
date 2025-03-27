@@ -23,6 +23,9 @@ ENV HOME=/tmp/build \
     DD_TRACE_ENABLED=true \
     DD_PROFILING_ENABLED=true \
     DD_SITE=datadoghq.com \
+    DD_ENV=development \
+    DD_SERVICE=mark-poller \
+    DD_VERSION=1.0.0 \
     BUFFERUTIL_SKIP_INSTALL=true \
     UTF_8_VALIDATE_SKIP_INSTALL=true
 
@@ -69,15 +72,41 @@ RUN yarn build
 FROM node AS runtime
 
 ENV NODE_ENV=production \
-    PORT=8080
+    PORT=8080 \
+    DD_LAMBDA_HANDLER="index.handler" \
+    DD_TRACE_ENABLED=true \
+    DD_PROFILING_ENABLED=true \
+    DD_LOGS_ENABLED=true \
+    DD_ENV=development \
+    DD_SERVICE=mark-poller \
+    DD_VERSION=1.0.0 \
+    DD_SITE=datadoghq.com \
+    DD_MERGE_XRAY_TRACES=true \
+    DD_TRACE_OTEL_ENABLED=true
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 
-# Copy the entire build directory
-COPY --from=build /tmp/build ${LAMBDA_TASK_ROOT}
-COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
+# Copy only the necessary files from build
+COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
+COPY --from=build /tmp/build/packages/poller/dist/* ${LAMBDA_TASK_ROOT}/
+COPY --from=build /tmp/build/packages/core/dist ${LAMBDA_TASK_ROOT}/packages/core/dist
+COPY --from=build /tmp/build/packages/adapters/logger/dist ${LAMBDA_TASK_ROOT}/packages/adapters/logger/dist
+COPY --from=build /tmp/build/packages/adapters/chainservice/dist ${LAMBDA_TASK_ROOT}/packages/adapters/chainservice/dist
+COPY --from=build /tmp/build/packages/adapters/everclear/dist ${LAMBDA_TASK_ROOT}/packages/adapters/everclear/dist
+COPY --from=build /tmp/build/packages/adapters/prometheus/dist ${LAMBDA_TASK_ROOT}/packages/adapters/prometheus/dist
+COPY --from=build /tmp/build/packages/adapters/web3signer/dist ${LAMBDA_TASK_ROOT}/packages/adapters/web3signer/dist
+COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/packages/adapters/cache/dist
 
+# Create symlinks for workspace dependencies
+RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
+    rm -rf core logger chainservice everclear prometheus web3signer cache && \
+    ln -s ../../packages/core/dist core && \
+    ln -s ../../packages/adapters/logger/dist logger && \
+    ln -s ../../packages/adapters/chainservice/dist chainservice && \
+    ln -s ../../packages/adapters/everclear/dist everclear && \
+    ln -s ../../packages/adapters/prometheus/dist prometheus && \
+    ln -s ../../packages/adapters/web3signer/dist web3signer && \
+    ln -s ../../packages/adapters/cache/dist cache
+
+CMD [ "index.handler" ]
 EXPOSE 8080
-
-RUN rm node_modules/datadog-lambda-js/dist/handler.js
-CMD ["node_modules/datadog-lambda-js/dist/handler.handler"]
