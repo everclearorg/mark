@@ -31,7 +31,7 @@ export const DEFAULT_INVOICE_AGE = '1';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
 export const EVERCLEAR_TESTNET_CONFIG_URL =
   'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
-export const EVERCLEAR_MAINNET_API_URL = 'https://api.everclear.org';
+export const EVERCLEAR_MAINNET_API_URL = 'https://api.staging.everclear.org';
 export const EVERCLEAR_TESTNET_API_URL = 'https://api.testnet.everclear.org';
 
 export const UTILITY_CONTRACTS_DEFAULT = {
