@@ -1,5 +1,4 @@
-import { MarkConfiguration, NewIntentParams } from '@mark/core';
-import { ProcessInvoicesDependencies } from '../invoice/pollAndProcess';
+import { MarkConfiguration, NewIntentParams, NewIntentWithPermit2Params } from '@mark/core';
 import { getERC20Contract } from './contracts';
 import { encodeFunctionData, erc20Abi } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
@@ -11,8 +10,25 @@ import {
   getPermit2Address,
 } from './permit2';
 import { prepareMulticall } from './multicall';
+import { MarkAdapters } from '../init';
+import { decodeEventLog } from 'viem';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
+export const ORDER_CREATED_TOPIC0 = '0xc5929cfdbbc98a41855839bee1396d17ee4a149e40d5c324b6f4332655f5cffd';
+
+const orderCreatedAbi = [
+  {
+    type: 'event',
+    name: 'OrderCreated',
+    inputs: [
+      { indexed: true, type: 'bytes32', name: 'orderId' },
+      { indexed: true, type: 'address', name: 'initiator' },
+      { type: 'bytes32[]', name: 'intentIds' },
+      { type: 'uint256', name: 'tokenFee' },
+      { type: 'uint256', name: 'nativeFee' },
+    ],
+  },
+] as const;
 
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required.
@@ -20,11 +36,11 @@ export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f1
 export const sendIntents = async (
   invoiceId: string,
   intents: NewIntentParams[],
-  deps: ProcessInvoicesDependencies,
+  adapters: MarkAdapters,
   config: MarkConfiguration,
   requestId?: string,
 ): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
-  const { everclear, chainService, prometheus, logger } = deps;
+  const { everclear, chainService, prometheus, logger } = adapters;
 
   if (!intents.length) {
     logger.info('No intents to process', { invoiceId });
@@ -43,13 +59,12 @@ export const sendIntents = async (
     throw new Error('Cannot process multiple intents with different input assets');
   }
 
-  const results: { transactionHash: string; chainId: string; intentId: string }[] = [];
-
   try {
-    // First, check if we need a token approval
-    // Get transaction data for the first intent to use for approval
+    // Get transaction data for the first intent to use for approval check
     const firstIntent = intents[0];
-    const txData = await everclear.createNewIntent(firstIntent);
+
+    // API call to get txdata for the newOrder call
+    const txData = await everclear.createNewIntent(intents as (NewIntentParams | NewIntentWithPermit2Params)[]);
 
     // Get total amount needed across all intents
     const totalAmount = intents.reduce((sum, intent) => {
@@ -65,6 +80,53 @@ export const sendIntents = async (
 
     const tokenContract = await getERC20Contract(config, firstIntent.origin, firstIntent.inputAsset as `0x${string}`);
     const allowance = await tokenContract.read.allowance([config.ownAddress, txData.to]);
+
+    // Check if we're sending USDT and have to reset the allowance first
+    const chainAssets = config.chains[firstIntent.origin]?.assets ?? [];
+    const isUSDT = chainAssets.some(
+      (asset) =>
+        asset.symbol.toUpperCase() === 'USDT' && asset.address.toLowerCase() === tokenContract.address.toLowerCase(),
+    );
+    if (isUSDT && BigInt(allowance as string) > BigInt(0)) {
+      logger.info('USDT allowance is greater than zero, setting allowance to zero first', {
+        requestId,
+        invoiceId,
+        currentAllowance: allowance,
+        chainId: txData.chainId,
+      });
+
+      const approveCalldata = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [txData.to as `0x${string}`, BigInt(0)],
+      });
+      const transaction = {
+        to: tokenContract.address,
+        data: approveCalldata,
+        from: config.ownAddress,
+      };
+
+      logger.debug('Sending zero allowance transaction for USDT', {
+        requestId,
+        invoiceId,
+        transaction,
+        chainId: txData.chainId,
+      });
+      const zeroAllowanceTx = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
+      prometheus.updateGasSpent(
+        firstIntent.origin,
+        TransactionReason.Approval,
+        BigInt(zeroAllowanceTx.cumulativeGasUsed.mul(zeroAllowanceTx.effectiveGasPrice).toString()),
+      );
+
+      logger.info('Zero allowance transaction for USDT sent successfully', {
+        requestId,
+        invoiceId,
+        chain: txData.chainId,
+        zeroAllowanceTxHash: zeroAllowanceTx.transactionHash,
+        asset: tokenContract.address,
+      });
+    }
 
     if (BigInt(allowance as string) < totalAmount) {
       logger.info('Allowance insufficient for total amount, preparing approval transaction', {
@@ -126,6 +188,7 @@ export const sendIntents = async (
       token: intents[0].inputAsset,
     });
 
+    // Verify min amounts for all intents before sending the batch
     for (const intent of intents) {
       // Sanity check -- minAmounts < intent.amount
       const { minAmounts } = await everclear.getMinAmounts(invoiceId);
@@ -141,52 +204,84 @@ export const sendIntents = async (
         // then you would still be contributing to invoice to settlement. The invoice will be handled
         // again on the next polling cycle.
       }
-      // Fetch transaction data for creating the intent
-      const intentTxData = await everclear.createNewIntent(intent);
-
-      // Submit the create intent transaction
-      logger.info('Submitting create intent transaction', {
-        invoiceId,
-        requestId,
-        intent,
-        transaction: {
-          to: intentTxData.to,
-          value: intentTxData.value,
-          data: intentTxData.data,
-          from: intentTxData.from,
-          chain: intentTxData.chainId,
-        },
-      });
-
-      const intentTx = await chainService.submitAndMonitor(intentTxData.chainId.toString(), {
-        to: intentTxData.to as string,
-        value: intentTxData.value ?? '0',
-        data: intentTxData.data,
-        from: intentTxData.from ?? config.ownAddress,
-      });
-
-      // Get the intent id
-      const event = intentTx.logs.find((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0)!;
-      const intentId = event.topics[1];
-
-      logger.info('Create intent transaction sent successfully', {
-        invoiceId,
-        requestId,
-        intentTxHash: intentTx.transactionHash,
-        chainId: intent.origin,
-        intentId,
-      });
-      prometheus.updateGasSpent(
-        intent.origin,
-        TransactionReason.CreateIntent,
-        BigInt(intentTx.cumulativeGasUsed.mul(intentTx.effectiveGasPrice).toString()),
-      );
-
-      // Add result to the output array
-      results.push({ transactionHash: intentTx.transactionHash, chainId: intent.origin, intentId });
     }
+
+    // Submit the batch transaction
+    logger.info('Submitting batch create intent transaction', {
+      invoiceId,
+      requestId,
+      transaction: {
+        to: txData.to,
+        value: txData.value,
+        data: txData.data,
+        from: txData.from,
+        chain: txData.chainId,
+      },
+    });
+
+    const newOrderTx = await chainService.submitAndMonitor(txData.chainId.toString(), {
+      to: txData.to as string,
+      value: txData.value ?? '0',
+      data: txData.data,
+      from: txData.from ?? config.ownAddress,
+    });
+
+    // Find the OrderCreated event log
+    const orderCreatedLog = newOrderTx.logs.find((l) => l.topics[0].toLowerCase() === ORDER_CREATED_TOPIC0);
+    if (!orderCreatedLog) {
+      logger.warn('OrderCreated event not found in transaction logs, but transaction was successful', {
+        invoiceId,
+        requestId,
+        transactionHash: newOrderTx.transactionHash,
+        chainId: intents[0].origin,
+        logs: newOrderTx.logs,
+      });
+
+      // Tx was successful but logs weren't fetched correctly - use the tx hash
+      // as the intentId so the process can continue
+      return [
+        {
+          transactionHash: newOrderTx.transactionHash,
+          chainId: intents[0].origin,
+          intentId: newOrderTx.transactionHash,
+        },
+      ];
+    }
+
+    const { args } = decodeEventLog({
+      abi: orderCreatedAbi,
+      data: orderCreatedLog.data as `0x${string}`,
+      topics: orderCreatedLog.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
+    });
+
+    const { intentIds, tokenFee, nativeFee } = args;
+
+    logger.info('Batch create intent transaction sent successfully', {
+      invoiceId,
+      requestId,
+      batchTxHash: newOrderTx.transactionHash,
+      chainId: intents[0].origin,
+      orderId: args.orderId,
+      initiator: args.initiator,
+      intentIds,
+      tokenFee: tokenFee.toString(),
+      nativeFee: nativeFee.toString(),
+    });
+
+    prometheus.updateGasSpent(
+      intents[0].origin,
+      TransactionReason.CreateIntent,
+      BigInt(newOrderTx.cumulativeGasUsed.mul(newOrderTx.effectiveGasPrice).toString()),
+    );
+
+    // Return results for each intent in the batch
+    return intentIds.map((intentId) => ({
+      transactionHash: newOrderTx.transactionHash,
+      chainId: intents[0].origin,
+      intentId,
+    }));
   } catch (error) {
-    logger.error('Error processing intents', {
+    logger.error('Error processing batch intents', {
       invoiceId,
       requestId,
       error,
@@ -194,8 +289,6 @@ export const sendIntents = async (
     });
     throw error;
   }
-
-  return results;
 };
 
 /**
@@ -206,14 +299,14 @@ export const sendIntents = async (
  */
 export const sendIntentsMulticall = async (
   intents: NewIntentParams[],
-  deps: ProcessInvoicesDependencies,
+  adapters: MarkAdapters,
   config: MarkConfiguration,
 ): Promise<{ transactionHash: string; chainId: string; intentId: string }> => {
   if (!intents || intents.length === 0) {
     throw new Error('No intents provided for multicall');
   }
 
-  const { chainService, everclear, logger, prometheus, web3Signer } = deps;
+  const { chainService, everclear, logger, prometheus, web3Signer } = adapters;
 
   const txs = [];
 
