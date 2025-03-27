@@ -1604,5 +1604,187 @@ describe('Invoice Processing', () => {
       // Base chain balance remains unchanged
       expect(remainingCustodied?.get('8453')).to.equal(BigInt('5000000000000000000'));
     });
+
+    it('should correctly update balnces and custodied after processing multiple invoices', async () => {
+      isXerc20SupportedStub.resolves(false);
+      
+      // First invoice setup
+      const invoice1 = createMockInvoice({
+        intent_id: '0x123',
+        amount: '10000000000000000000', // 10 WETH
+        origin: '1',
+        destinations: ['8453']
+      });
+
+      // Second invoice setup
+      const invoice2 = createMockInvoice({
+        intent_id: '0x456',
+        amount: '12000000000000000000', // 12 WETH
+        origin: '1',
+        destinations: ['8453']
+      });
+
+      // Set up initial balances and custodied amounts
+      const group: TickerGroup = {
+        ticker: '0xticker1',
+        invoices: [invoice1, invoice2],
+        remainingBalances: new Map([['0xticker1', new Map([
+          ['8453', BigInt('20000000000000000000')],  // 20 WETH - enough to purchase both invoices
+          ['10', BigInt('0')],
+          ['1', BigInt('0')]
+        ])]]),
+        remainingCustodied: new Map([['0xticker1', new Map([
+          ['8453', BigInt('3000000000000000000')],  // 3 WETH
+          ['10', BigInt('5000000000000000000')],   // 5 WETH
+          ['1', BigInt('0')]
+        ])]]),
+        chosenOrigin: null
+      };
+
+      // First invoice minAmounts
+      mockDeps.everclear.getMinAmounts.onFirstCall().resolves({
+        minAmounts: { '8453': '7000000000000000000' }, // 7 WETH needed after custodied (10 - 3)
+        invoiceAmount: '10000000000000000000',
+        amountAfterDiscount: '10000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {
+          '8453': '3000000000000000000',
+          '10': '0',
+          '1': '0'
+        }
+      });
+
+      // Second invoice minAmounts - API will return the minAmount without knowledge that 
+      // the first invoice will deplete the current custodied amount on 8453
+      mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
+        minAmounts: { '8453': '19000000000000000000' }, // 22 WETH needed (10 from inv1 + 12 from inv2 - 3 from custodied)
+        invoiceAmount: '12000000000000000000',
+        amountAfterDiscount: '12000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {
+          '8453': '3000000000000000000',
+          '10': '0',
+          '1': '0'
+        }
+      });
+
+      // First invoice split intents
+      calculateSplitIntentsStub.onFirstCall().resolves({
+        intents: [
+          {
+            amount: '5000000000000000000',
+            origin: '8453',
+            destinations: ['10', '1'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+          {
+            amount: '1000000000000000000', // remainder intent 1
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+          {
+            amount: '1000000000000000000',  // remainder intent 2
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          }
+        ],
+        originDomain: '8453',
+        totalAllocated: BigInt('5000000000000000000'),
+        remainder: BigInt('2000000000000000000'),
+      });
+
+      // Second invoice split intents
+      // No allocated destination, so the full amount will be split into remainder intents
+      calculateSplitIntentsStub.onSecondCall().resolves({
+        intents: [
+          {
+            amount: '6000000000000000000', // 6 WETH
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0'
+          },
+          {
+            amount: '6000000000000000000', // 6 WETH
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0'
+          }
+        ],
+        originDomain: '8453',
+        totalAllocated: BigInt('0'), 
+        remainder: BigInt('12000000000000000000')
+      });
+
+      sendIntentsStub.resolves([
+        // First invoice split intents
+        {
+          intentId: '0xabc1',
+          transactionHash: '0xabc1',
+          chainId: '8453'
+        },
+        {
+          intentId: '0xabc2',
+          transactionHash: '0xabc2',
+          chainId: '8453'
+        },
+        {
+          intentId: '0xabc3',
+          transactionHash: '0xabc3',
+          chainId: '8453'
+        },
+        // Second invoice split intents
+        {
+          intentId: '0xdef1',
+          transactionHash: '0xdef1',
+          chainId: '8453'
+        },
+        {
+          intentId: '0xdef2',
+          transactionHash: '0xdef2',
+          chainId: '8453'
+        }
+      ]);
+
+      const result = await processTickerGroup(mockContext, group, []);
+
+      // Verify both invoices were processed
+      expect(result.purchases.length).to.equal(5)
+
+      // Split purchases for invoice 1
+      expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
+      expect(result.purchases[1].target.intent_id).to.equal(invoice1.intent_id);
+      expect(result.purchases[2].target.intent_id).to.equal(invoice1.intent_id);
+
+      // Split purchases for invoice 2
+      expect(result.purchases[3].target.intent_id).to.equal(invoice2.intent_id);
+      expect(result.purchases[4].target.intent_id).to.equal(invoice2.intent_id);
+
+      // Verify remaining balances were updated correctly
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(
+        BigInt('20000000000000000000') - BigInt('7000000000000000000') - BigInt('19000000000000000000')
+      );
+
+      // Verify remaining custodied for destinations were updated correctly
+      const remainingCustodied = result.remainingCustodied.get('0xticker1');
+      expect(remainingCustodied?.get('10')).to.equal(BigInt('0'));
+      expect(remainingCustodied?.get('1')).to.equal(BigInt('0'));
+    });
   });
 });
