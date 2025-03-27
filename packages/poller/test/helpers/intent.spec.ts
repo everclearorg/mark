@@ -329,6 +329,88 @@ describe('sendIntents', () => {
         expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
+    it('should set USDT allowance to zero before setting new allowance', async () => {
+        // Mock a valid USDT token address and spender address
+        const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+        const SPENDER_ADDRESS = '0x1234567890123456789012345678901234567890';
+
+        const usdtIntent: NewIntentParams = {
+            origin: '1',
+            destinations: ['8453'],
+            to: '0x1234567890123456789012345678901234567890',
+            inputAsset: USDT_ADDRESS,
+            amount: '1000000',  // 1 USDT
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        (mockDeps.everclear.createNewIntent as SinonStub).resolves({
+            to: SPENDER_ADDRESS as `0x${string}`,
+            data: '0xdata',
+            chainId: '1',
+        });
+
+        // Mock USDT contract with existing non-zero allowance
+        const mockUSDTContract = {
+            address: USDT_ADDRESS,
+            read: {
+                allowance: stub().resolves(BigInt(500000)),
+            },
+        } as unknown as GetContractReturnType;
+
+        getERC20ContractStub.resolves(mockUSDTContract as any);
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub)
+            .onFirstCall().resolves(createMockTransactionReceipt('0xzeroTx', '0x0000000000000000000000000000000000000000000000000000000000000001'))  // Zero allowance tx
+            .onSecondCall().resolves(createMockTransactionReceipt('0xapproveTx', '0x0000000000000000000000000000000000000000000000000000000000000002'))  // New allowance tx
+            .onThirdCall().resolves(createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000003', 'order')); // Intent tx
+
+        // Configure mock config with USDT asset
+        const configWithUSDT = {
+            ...mockConfig,
+            ownAddress: '0x1234567890123456789012345678901234567890',
+            chains: {
+                '1': {
+                    providers: ['http://localhost:8545'],
+                    assets: [{
+                        symbol: 'USDT',
+                        address: USDT_ADDRESS,
+                        decimals: 6,
+                        tickerHash: '0xticker1',
+                        isNative: false,
+                        balanceThreshold: '1000000'
+                    }],
+                    invoiceAge: 3600,
+                    gasThreshold: '1000000000000000000',
+                    deployments: {
+                        everclear: SPENDER_ADDRESS,
+                        permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+                        multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11'
+                    }
+                }
+            }
+        } as MarkConfiguration;
+
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '1': '1000000' }
+        });
+
+        await sendIntents(invoiceId, [usdtIntent], mockDeps, configWithUSDT);
+
+        // First tx should zero allowance
+        const zeroAllowanceCall = (mockDeps.chainService.submitAndMonitor as SinonStub).firstCall.args[1];
+        expect(zeroAllowanceCall.to).to.equal(USDT_ADDRESS);
+        expect(zeroAllowanceCall.data).to.include('0000000000000000000000000000000000000000000000000000000000000000'); // Zero amount in approval data
+
+        // Second tx should be new allowance
+        const newAllowanceCall = (mockDeps.chainService.submitAndMonitor as SinonStub).secondCall.args[1];
+        expect(newAllowanceCall.to).to.equal(USDT_ADDRESS);
+
+        // Third tx should be new intent
+        const intentCall = (mockDeps.chainService.submitAndMonitor as SinonStub).thirdCall.args[1];
+        expect(intentCall.data).to.equal('0xdata');
+    });
+
     it('should throw an error when sending multiple intents with different input assets', async () => {
         const differentAssetIntents = [
             {
