@@ -419,3 +419,64 @@ export const getERC20Contract = async (config: MarkConfiguration, chainId: strin
     client,
   });
 };
+
+export const feeAdapterAbi = [
+  {
+    inputs: [
+      { name: '_fee', type: 'uint256' },
+      {
+        name: '_params',
+        type: 'tuple[]',
+        components: [
+          { name: 'destinations', type: 'uint32[]' },
+          { name: 'receiver', type: 'address' },
+          { name: 'inputAsset', type: 'address' },
+          { name: 'outputAsset', type: 'address' },
+          { name: 'amount', type: 'uint256' },
+          { name: 'maxFee', type: 'uint24' },
+          { name: 'ttl', type: 'uint48' },
+          { name: 'data', type: 'bytes' },
+        ],
+      },
+    ],
+    name: 'newOrder',
+    outputs: [
+      { name: '_orderId', type: 'bytes32' },
+      { name: '_intentIds', type: 'bytes32[]' },
+    ],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        name: 'orderId',
+        type: 'bytes32',
+      },
+      {
+        indexed: true,
+        name: 'sender',
+        type: 'bytes32',
+      },
+      {
+        indexed: false,
+        name: 'intentIds',
+        type: 'bytes32[]',
+      },
+      {
+        indexed: false,
+        name: 'tokenFee',
+        type: 'uint256',
+      },
+      {
+        indexed: false,
+        name: 'nativeFee',
+        type: 'uint256',
+      },
+    ],
+    name: 'OrderCreated',
+    type: 'event',
+  },
+] as const;

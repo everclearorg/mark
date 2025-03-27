@@ -5,7 +5,10 @@ import { jsonifyError, Logger } from '@mark/logger';
 
 const InvoiceLabelKeys = ['origin', 'ticker', 'id', 'destination', 'reason', 'isSplit', 'splitCount'] as const;
 
-export type InvoiceLabels = Omit<Record<(typeof InvoiceLabelKeys)[number], string>, 'destination' | 'reason' | 'isSplit' | 'splitCount'> & {
+export type InvoiceLabels = Omit<
+  Record<(typeof InvoiceLabelKeys)[number], string>,
+  'destination' | 'reason' | 'isSplit' | 'splitCount'
+> & {
   destination?: string;
   reason?: InvalidPurchaseReasonConcise;
   isSplit?: string;
