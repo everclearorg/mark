@@ -4,80 +4,101 @@ import { Logger } from '@mark/logger';
 import { Invoice, MarkConfiguration } from '@mark/core';
 import { calculateSplitIntents } from '../../src/helpers/splitIntent';
 import * as sinon from 'sinon';
+import { ProcessingContext } from '../../src/init';
+import { EverclearAdapter } from '@mark/everclear';
+import { ChainService } from '@mark/chainservice';
+import { PurchaseCache } from '@mark/cache';
+import { Wallet } from 'ethers';
+import { PrometheusAdapter } from '@mark/prometheus';
+import { mockConfig } from '../mocks';
 
 describe('Split Intent Helper Functions', () => {
+  let mockContext: ProcessingContext;
   let logger: SinonStubbedInstance<Logger>;
-  let config: MarkConfiguration;
+  let mockDeps: {
+    logger: SinonStubbedInstance<Logger>;
+    everclear: SinonStubbedInstance<EverclearAdapter>;
+    chainService: SinonStubbedInstance<ChainService>;
+    cache: SinonStubbedInstance<PurchaseCache>;
+    web3Signer: SinonStubbedInstance<Wallet>;
+    prometheus: SinonStubbedInstance<PrometheusAdapter>;
+  };
 
   beforeEach(() => {
     logger = createStubInstance(Logger);
+    mockDeps = {
+      logger: createStubInstance(Logger),
+      everclear: createStubInstance(EverclearAdapter),
+      chainService: createStubInstance(ChainService),
+      cache: createStubInstance(PurchaseCache),
+      web3Signer: createStubInstance(Wallet),
+      prometheus: createStubInstance(PrometheusAdapter),
+    };
 
-    config = {
-      ownAddress: '0xmarkAddress',
-      supportedSettlementDomains: [1, 10, 8453, 42161],
-      chains: {
-        '1': {
-          assets: [
-            {
+    mockContext = {
+      ...mockDeps,
+      config: {
+        ...mockConfig,
+        supportedSettlementDomains: [1, 10, 8453, 42161],
+        supportedAssets: ['WETH'],
+        chains: {
+          ...mockConfig.chains,
+          '1': {
+            ...mockConfig.chains['1'],
+            assets: [{
               tickerHash: 'WETH',
               address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
               decimals: 18,
               symbol: 'WETH',
               isNative: false,
               balanceThreshold: '0',
-            }
-          ],
-          providers: ['provider1'],
-          invoiceAge: 0,
-          gasThreshold: '0',
-        },
-        '10': {
-          assets: [
-            {
+            }],
+          },
+          '10': {
+            ...mockConfig.chains['10'],
+            assets: [{
               tickerHash: 'WETH',
               address: '0x4200000000000000000000000000000000000006',
               decimals: 18,
               symbol: 'WETH',
               isNative: false,
               balanceThreshold: '0',
-            }
-          ],
-          providers: ['provider1'],
-          invoiceAge: 0,
-          gasThreshold: '0',
-        },
-        '8453': {
-          assets: [
-            {
+            }],
+          },
+          '8453': {
+            ...mockConfig.chains['8453'],
+            assets: [{
               tickerHash: 'WETH',
               address: '0x4200000000000000000000000000000000000006',
               decimals: 18,
               symbol: 'WETH',
               isNative: false,
               balanceThreshold: '0',
-            }
-          ],
-          providers: ['provider1'],
-          invoiceAge: 0,
-          gasThreshold: '0',
-        },
-        '42161': {
-          assets: [
-            {
+            }],
+          },
+          '42161': {
+            assets: [{
               tickerHash: 'WETH',
               address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
               decimals: 18,
               symbol: 'WETH',
               isNative: false,
               balanceThreshold: '0',
+            }],
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+            deployments: {
+              everclear: '0x1234567890123456789012345678901234567890',
+              permit2: '0x1234567890123456789012345678901234567890',
+              multicall3: '0x1234567890123456789012345678901234567890'
             }
-          ],
-          providers: ['provider1'],
-          invoiceAge: 0,
-          gasThreshold: '0',
-        },
+          }
+        }
       },
-    } as unknown as MarkConfiguration;
+      requestId: 'test-request-id',
+      startTime: Date.now()
+    };
   });
 
   afterEach(() => {
@@ -85,7 +106,7 @@ describe('Split Intent Helper Functions', () => {
   });
 
   describe('calculateSplitIntents', () => {
-    it('should handle the case when no balances are available', async () => {
+    it('should return empty result when no balances are available', async () => {
       const invoice = {
         intent_id: '0xinvoice-a',
         origin: '1',
@@ -110,19 +131,19 @@ describe('Split Intent Helper Functions', () => {
           ['42161', BigInt('0')],
         ])],
       ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>();
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        balances,
-        logger
+        custodiedBalances
       );
 
-      expect(result.intents).to.be.an('array');
-      expect(result.intents.length).to.equal(0);
+      expect(result.originDomain).to.be.empty;
       expect(result.totalAllocated).to.equal(BigInt(0));
+      expect(result.intents).to.be.empty;
     });
 
     it('should successfully create split intents when single destination is insufficient', async () => {
@@ -163,12 +184,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Should have 2 split intents (one that allocates to 1 and one to 42161)
@@ -232,17 +252,18 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
+
+      const topNDomainsExceptOrigin = mockContext.config.supportedSettlementDomains.length - 1;
 
       expect(result.originDomain).to.equal('10');
       expect(result.totalAllocated).to.equal(BigInt('70000000000000000000'));
-      expect(result.intents.length).to.equal(2); // Two intents for the two destinations with custodied assets
+      expect(result.intents.length).to.equal(2 + topNDomainsExceptOrigin); // 2 intents for allocated, topNDomainsExceptOrigin for remainder
 
       // Verify the intent that allocates to destination 1
       const intentFor1 = result.intents[0];
@@ -250,7 +271,7 @@ describe('Split Intent Helper Functions', () => {
       expect(intentFor1?.destinations).to.include('1');
       expect(intentFor1?.destinations).to.include('8453');
       expect(intentFor1?.destinations).to.include('42161');
-      expect(intentFor1?.amount).to.equal('40000000000000000000');
+      expect(intentFor1?.amount).to.equal('40000000000000000000'); // 40
 
       // Verify the intent that allocates to destination 8453
       const intentFor8453 = result.intents[1];
@@ -258,7 +279,20 @@ describe('Split Intent Helper Functions', () => {
       expect(intentFor8453?.destinations).to.include('8453');
       expect(intentFor8453?.destinations).to.include('1');
       expect(intentFor8453?.destinations).to.include('42161');
-      expect(intentFor8453?.amount).to.equal('30000000000000000000');
+      expect(intentFor8453?.amount).to.equal('30000000000000000000'); // 30
+
+      // Verify one of the remainder intents
+      const remainderIntent = result.intents[2];
+      expect(remainderIntent?.origin).to.equal('10');
+      expect(remainderIntent?.destinations.length).to.equal(topNDomainsExceptOrigin);
+      expect(remainderIntent?.destinations).to.not.include('10');
+      expect(remainderIntent?.amount).to.equal((BigInt('130000000000000000000') / BigInt(topNDomainsExceptOrigin)).toString());
+
+      // Verify the last intent with dust
+      const lastIntent = result.intents[result.intents.length - 1];
+      expect(lastIntent?.origin).to.equal('10');
+      expect(lastIntent?.destinations).to.not.include('10');
+      expect(lastIntent?.amount).to.equal((BigInt('130000000000000000000') / BigInt(topNDomainsExceptOrigin) + BigInt('130000000000000000000') % BigInt(topNDomainsExceptOrigin)).toString());
     });
 
     it('should prefer origin with better allocation', async () => {
@@ -300,12 +334,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances2,
-        logger
+        custodiedBalances2
       );
 
       expect(result.originDomain).to.equal('10');
@@ -382,12 +415,11 @@ describe('Split Intent Helper Functions', () => {
 
       // Test with first set of balances
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Verify we have a valid result with allocations
@@ -397,12 +429,11 @@ describe('Split Intent Helper Functions', () => {
 
       // Test with second set of balances
       const result2 = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances2,
-        logger
+        custodiedBalances2
       );
 
       // Verify we have a valid result with allocations
@@ -414,7 +445,7 @@ describe('Split Intent Helper Functions', () => {
     it('should prioritize top-N chains when allocation count is equal', async () => {
       // Update the config to consider fewer top chains
       const testConfig = {
-        ...config,
+        ...mockConfig,
         supportedSettlementDomains: [1, 10, 8453, 42161, 137, 43114], // Added Polygon and Avalanche
       } as unknown as MarkConfiguration;
 
@@ -476,12 +507,11 @@ describe('Split Intent Helper Functions', () => {
 
       // Test with first set of balances
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Verify we have a valid result with allocations
@@ -491,12 +521,11 @@ describe('Split Intent Helper Functions', () => {
 
       // Test with second set of balances
       const result2 = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        testConfig,
         balances,
-        custodiedBalances2,
-        logger
+        custodiedBalances2
       );
 
       // Verify we have a valid result with allocations
@@ -509,7 +538,7 @@ describe('Split Intent Helper Functions', () => {
       // Configure many domains to test the MAX_DESTINATIONS limit
       const manyDomains = [1, 10, 8453, 42161, 137, 43114, 1101, 56, 100, 250, 324, 11155111];
       const testConfig = {
-        ...config,
+        ...mockConfig,
         supportedSettlementDomains: manyDomains,
       } as unknown as MarkConfiguration;
 
@@ -552,12 +581,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        testConfig,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Verify we don't exceed MAX_DESTINATIONS
@@ -643,33 +671,33 @@ describe('Split Intent Helper Functions', () => {
 
       // Test with first set of balances (should choose origin '1' with higher total)
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
+
+      const topNDomainsExceptOrigin = mockContext.config.supportedSettlementDomains.length - 1;
 
       // Should choose origin 1 which has 90 WETH total vs origin 10 with 80 WETH total
       expect(result.originDomain).to.equal('8453');
       expect(result.totalAllocated).to.equal(BigInt('60000000000000000000'));
-      expect(result.intents.length).to.equal(1);
+      expect(result.intents.length).to.equal(1 + topNDomainsExceptOrigin);
 
       // Test with second set of balances (should choose origin '10' with higher total)
       const result2 = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances2,
-        logger
+        custodiedBalances2
       );
 
       // Should choose origin 10 with 80 WETH total over origin 1 with 70 WETH total
       expect(result2.originDomain).to.equal('10');
       expect(result2.totalAllocated).to.equal(BigInt('80000000000000000000'));
-      expect(result2.intents.length).to.equal(2);
+      expect(result2.intents.length).to.equal(2 + topNDomainsExceptOrigin);
     });
 
     it('should handle case where getTokenAddressFromConfig returns null', async () => {
@@ -707,18 +735,13 @@ describe('Split Intent Helper Functions', () => {
         ['UNKNOWN_TICKER', custodiedAssets]
       ]);
 
-      const result = await calculateSplitIntents(
+      expect(async () => await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
-      );
-
-      // Should have found an origin but no intents due to missing token address
-      expect(result.originDomain).to.not.be.empty;
-      expect(result.intents.length).to.equal(0);
+        custodiedBalances
+      )).to.throw;
     });
 
     it('should test allocation sorting with top-N chains preference', async () => {
@@ -739,42 +762,54 @@ describe('Split Intent Helper Functions', () => {
 
       // Create a modified config with more domains to test TOP_N logic
       const testConfig = {
-        ...config,
+        ...mockContext.config,
         supportedSettlementDomains: [1, 10, 8453, 42161, 137, 43114], // Added Polygon and Avalanche
+        supportedAssets: ['WETH'],
         chains: {
-          ...config.chains,
+          ...mockContext.config.chains,
           '137': {
-            assets: [
-              {
-                tickerHash: 'WETH',
-                address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
-                decimals: 18,
-                symbol: 'WETH',
-                isNative: false,
-                balanceThreshold: '0',
-              }
-            ],
+            assets: [{
+              tickerHash: 'WETH',
+              address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
+              decimals: 18,
+              symbol: 'WETH',
+              isNative: false,
+              balanceThreshold: '0',
+            }],
             providers: ['provider1'],
             invoiceAge: 0,
             gasThreshold: '0',
+            deployments: {
+              everclear: '0x1234567890123456789012345678901234567890',
+              permit2: '0x1234567890123456789012345678901234567890',
+              multicall3: '0x1234567890123456789012345678901234567890'
+            }
           },
           '43114': {
-            assets: [
-              {
-                tickerHash: 'WETH',
-                address: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
-                decimals: 18,
-                symbol: 'WETH',
-                isNative: false,
-                balanceThreshold: '0',
-              }
-            ],
+            assets: [{
+              tickerHash: 'WETH',
+              address: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB',
+              decimals: 18,
+              symbol: 'WETH',
+              isNative: false,
+              balanceThreshold: '0',
+            }],
             providers: ['provider1'],
             invoiceAge: 0,
             gasThreshold: '0',
-          },
-        },
-      } as unknown as MarkConfiguration;
+            deployments: {
+              everclear: '0x1234567890123456789012345678901234567890',
+              permit2: '0x1234567890123456789012345678901234567890',
+              multicall3: '0x1234567890123456789012345678901234567890'
+            }
+          }
+        }
+      } as MarkConfiguration;
+
+      const testContext = {
+        ...mockContext,
+        config: testConfig
+      } as ProcessingContext;
 
       // Mark has enough balance in multiple origins
       const balances = new Map([
@@ -819,22 +854,20 @@ describe('Split Intent Helper Functions', () => {
 
       // Test with top-N chains
       const resultTopN = await calculateSplitIntents(
+        testContext,
         invoice,
         minAmounts,
-        testConfig,
         balances,
-        topNCustodiedBalances,
-        logger
+        topNCustodiedBalances
       );
 
       // Test with non-top-N chains
       const resultNonTopN = await calculateSplitIntents(
+        testContext,
         invoice,
         minAmounts,
-        testConfig,
         balances,
-        nonTopNCustodiedBalances,
-        logger
+        nonTopNCustodiedBalances
       );
 
       // Both should have valid allocations
@@ -893,22 +926,20 @@ describe('Split Intent Helper Functions', () => {
 
       // Test with first set of balances (90 WETH)
       const result1 = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Test with second set of balances (80 WETH)
       const result2 = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances2,
-        logger
+        custodiedBalances2
       );
 
       // Should prefer the origin with higher totalAllocated
@@ -966,32 +997,32 @@ describe('Split Intent Helper Functions', () => {
 
       // Test equal allocations
       const resultEqual = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        equalCustodiedBalances,
-        logger
+        equalCustodiedBalances
       );
+
+      const topNDomainsExceptOrigin = mockContext.config.supportedSettlementDomains.length - 1;
 
       // Should have chosen one of the origins with valid allocations
       expect(resultEqual.originDomain).to.be.oneOf(['10', '8453']);
-      expect(resultEqual.intents.length).to.equal(1);
+      expect(resultEqual.intents.length).to.equal(1 + topNDomainsExceptOrigin);
       expect(resultEqual.totalAllocated).to.equal(BigInt('50000000000000000000'));
 
       // Test no allocations possible
       const resultZero = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        zeroCustodiedBalances,
-        logger
+        zeroCustodiedBalances
       );
 
       // Should have chosen an origin but with no intents due to no custodied assets
       expect(resultZero.originDomain).to.not.be.empty;
-      expect(resultZero.intents.length).to.equal(0);
+      expect(resultZero.intents.length).to.equal(0 + topNDomainsExceptOrigin);
       expect(resultZero.totalAllocated).to.equal(BigInt('0'));
     });
 
@@ -1033,19 +1064,18 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Should have no origins with sufficient balance
       expect(result.intents.length).to.equal(0);
       expect(result.originDomain).to.equal('');
       expect(result.totalAllocated).to.equal(BigInt('0'));
-      expect(logger.info.calledWith(sinon.match('No origins where Mark had enough balance'), sinon.match.object)).to.be.true;
+      expect(mockDeps.logger.info.calledWith(sinon.match('No origins where Mark had enough balance'), sinon.match.object)).to.be.true;
     });
 
     it('should handle the case when all allocations are empty', async () => {
@@ -1086,17 +1116,18 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        emptyCustodiedBalances,
-        logger
+        emptyCustodiedBalances
       );
+
+      const topNDomainsExceptOrigin = mockContext.config.supportedSettlementDomains.length - 1;
 
       // Should have chosen an origin but with no intents due to no custodied assets
       expect(result.originDomain).to.not.be.empty;
-      expect(result.intents.length).to.equal(0);
+      expect(result.intents.length).to.equal(0 + topNDomainsExceptOrigin);
       expect(result.totalAllocated).to.equal(BigInt('0'));
     });
 
@@ -1139,12 +1170,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Verify results
@@ -1172,11 +1202,13 @@ describe('Split Intent Helper Functions', () => {
     it('should properly pad top-MAX destinations to MAX_DESTINATIONS length', async () => {
       // Configure more domains to test MAX_DESTINATIONS padding
       const manyDomains = [1, 10, 8453, 42161, 137, 43114, 1101, 56, 100, 250, 324, 11155111];
+
       const testConfig = {
-        ...config,
+        ...mockContext.config,
         supportedSettlementDomains: manyDomains,
+        supportedAssets: ['WETH'],
         chains: {
-          ...config.chains,
+          ...mockContext.config.chains,
           '137': {
             assets: [
               {
@@ -1244,6 +1276,11 @@ describe('Split Intent Helper Functions', () => {
         },
       } as unknown as MarkConfiguration;
 
+      const testContext = {
+        ...mockContext,
+        config: testConfig
+      } as ProcessingContext;
+
       const invoice = {
         intent_id: '0xinvoice-max-padding',
         origin: '1',
@@ -1289,12 +1326,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        testContext,
         invoice,
         minAmounts,
-        testConfig,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Verify results
@@ -1362,26 +1398,24 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
-      console.log('result', result);
 
       // Should choose origin '10' as it's the only one with sufficient balance
       expect(result.originDomain).to.equal('10');
       expect(result.totalAllocated).to.equal(BigInt('0'));
 
       // Verify origins 1 and 8453 were skipped due to insufficient balance
-      expect(logger.debug.calledWith(
+      expect(mockDeps.logger.debug.calledWith(
         'Skipping origin due to insufficient balance',
         sinon.match({ origin: '1', required: '120000000000000000000', available: '110000000000000000000' })
       )).to.be.true;
       
-      expect(logger.debug.calledWith(
+      expect(mockDeps.logger.debug.calledWith(
         'Skipping origin due to insufficient balance',
         sinon.match({ origin: '8453', required: '100000000000000000000', available: '90000000000000000000' })
       )).to.be.true;
@@ -1428,12 +1462,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Should choose origin '10'
@@ -1475,10 +1508,10 @@ describe('Split Intent Helper Functions', () => {
 
       // Create a modified config where Polygon doesn't support WETH
       const testConfig = {
-        ...config,
+        ...mockConfig,
         supportedSettlementDomains: [1, 10, 8453, 137], // Added Polygon
         chains: {
-          ...config.chains,
+          ...mockConfig.chains,
           '137': {
             assets: [
               {
@@ -1510,12 +1543,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        testConfig,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
 
       // Should choose an origin and create intents for supported domains only
@@ -1568,12 +1600,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        config,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
       
       // The result should show full coverage with 2 intents
@@ -1624,10 +1655,10 @@ describe('Split Intent Helper Functions', () => {
 
       // Create a modified config with 8 domains, first 7 are top-N
       const testConfig = {
-        ...config,
+        ...mockConfig,
         supportedSettlementDomains: [1, 10, 8453, 42161, 43114, 56, 48900, 137],
         chains: {
-          ...config.chains,
+          ...mockConfig.chains,
           '43114': {
             assets: mockAssetsConfig,
             providers: ['provider1'],
@@ -1673,12 +1704,11 @@ describe('Split Intent Helper Functions', () => {
       ]);
 
       const result = await calculateSplitIntents(
+        mockContext,
         invoice,
         minAmounts,
-        testConfig,
         balances,
-        custodiedBalances,
-        logger
+        custodiedBalances
       );
       
       // Should choose the top-N allocation

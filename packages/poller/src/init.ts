@@ -7,6 +7,7 @@ import { Wallet } from 'ethers';
 import { pollAndProcess } from './invoice';
 import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
+import { hexlify, randomBytes } from 'ethers/lib/utils';
 
 export interface MarkAdapters {
   cache: PurchaseCache;
@@ -15,6 +16,11 @@ export interface MarkAdapters {
   web3Signer: Web3Signer | Wallet;
   logger: Logger;
   prometheus: PrometheusAdapter;
+}
+export interface ProcessingContext extends MarkAdapters {
+  config: MarkConfiguration;
+  requestId: string;
+  startTime: number;
 }
 
 function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdapters {
@@ -69,10 +75,14 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       environment: config.environment,
     });
 
-    const result = await pollAndProcess(config, {
+    const context: ProcessingContext = {
       ...adapters,
-      logger,
-    });
+      config,
+      requestId: hexlify(randomBytes(32)),
+      startTime: Math.floor(Date.now() / 1000),
+    };
+
+    const result = await pollAndProcess(context);
 
     return {
       statusCode: 200,

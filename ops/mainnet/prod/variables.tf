@@ -43,7 +43,7 @@ variable "invoice_age" {
 variable "everclear_api_url" {
   description = "URL of the Everclear API"
   type        = string
-  default     = "https://api.everclear.org"
+  default     = "https://api.staging.everclear.org"
 }
 
 variable "relayer_url" {

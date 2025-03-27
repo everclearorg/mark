@@ -154,7 +154,9 @@ export class EverclearAdapter {
     // ];
   }
 
-  async createNewIntent(params: NewIntentParams | NewIntentWithPermit2Params): Promise<TransactionRequest> {
+  async createNewIntent(
+    params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[],
+  ): Promise<TransactionRequest> {
     try {
       const url = `${this.apiUrl}/intents`;
       const { data } = await axiosPost<TransactionRequest>(url, params);
