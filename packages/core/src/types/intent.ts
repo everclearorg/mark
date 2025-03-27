@@ -8,6 +8,22 @@ export interface NewIntentParams {
   maxFee: string | number;
 }
 
+export interface OrderParams {
+  destinations: string[];
+  receiver: string;
+  inputAsset: string;
+  outputAsset: string;
+  amount: string | number;
+  maxFee: string | number;
+  ttl: string | number;
+  data: string;
+}
+
+export interface NewOrderParams {
+  fee: string | number;
+  intents: OrderParams[];
+}
+
 export interface Permit2Params {
   nonce: string | number;
   deadline: string | number;
