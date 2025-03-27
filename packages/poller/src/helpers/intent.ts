@@ -81,6 +81,53 @@ export const sendIntents = async (
     const tokenContract = await getERC20Contract(config, firstIntent.origin, firstIntent.inputAsset as `0x${string}`);
     const allowance = await tokenContract.read.allowance([config.ownAddress, txData.to]);
 
+    // Check if we're sending USDT and have to reset the allowance first
+    const chainAssets = config.chains[firstIntent.origin]?.assets ?? [];
+    const isUSDT = chainAssets.some(
+      (asset) =>
+        asset.symbol.toUpperCase() === 'USDT' && asset.address.toLowerCase() === tokenContract.address.toLowerCase(),
+    );
+    if (isUSDT && BigInt(allowance as string) > BigInt(0)) {
+      logger.info('USDT allowance is greater than zero, setting allowance to zero first', {
+        requestId,
+        invoiceId,
+        currentAllowance: allowance,
+        chainId: txData.chainId,
+      });
+
+      const approveCalldata = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [txData.to as `0x${string}`, BigInt(0)],
+      });
+      const transaction = {
+        to: tokenContract.address,
+        data: approveCalldata,
+        from: config.ownAddress,
+      };
+
+      logger.debug('Sending zero allowance transaction for USDT', {
+        requestId,
+        invoiceId,
+        transaction,
+        chainId: txData.chainId,
+      });
+      const zeroAllowanceTx = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
+      prometheus.updateGasSpent(
+        firstIntent.origin,
+        TransactionReason.Approval,
+        BigInt(zeroAllowanceTx.cumulativeGasUsed.mul(zeroAllowanceTx.effectiveGasPrice).toString()),
+      );
+
+      logger.info('Zero allowance transaction for USDT sent successfully', {
+        requestId,
+        invoiceId,
+        chain: txData.chainId,
+        zeroAllowanceTxHash: zeroAllowanceTx.transactionHash,
+        asset: tokenContract.address,
+      });
+    }
+
     if (BigInt(allowance as string) < totalAmount) {
       logger.info('Allowance insufficient for total amount, preparing approval transaction', {
         requestId,
