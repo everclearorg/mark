@@ -283,18 +283,22 @@ export async function processTickerGroup(
       const allocatedIntents = [];
       for (const intent of intents) {
         const amount = BigInt(intent.amount);
-        if (runningSum + amount > totalAllocated) {
-          break;
-        }
 
         // Get target destination of the allocation
         const targetDestination = intents[targetIdx].destinations[0];
 
         const currentCustodied = remainingCustodied.get(invoice.ticker_hash)?.get(targetDestination) || BigInt('0');
-        remainingCustodied.get(invoice.ticker_hash)?.set(targetDestination, currentCustodied - amount);
+        const decrementAmount = currentCustodied < amount ? currentCustodied : amount;
+        remainingCustodied.get(invoice.ticker_hash)?.set(targetDestination, currentCustodied - decrementAmount);
+
         runningSum += amount;
         allocatedIntents.push(intent);
         targetIdx++;
+
+        // Break after processing the intent that puts us over totalAllocated
+        if (runningSum > totalAllocated) {
+          break;
+        }
       }
 
       // Update remaining custodied - handle remainder intents by distributing across destinations
