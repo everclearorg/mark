@@ -1,15 +1,8 @@
 import { Logger } from '@mark/logger';
 import { Context, ScheduledEvent } from 'aws-lambda';
 import { initPoller } from './init';
-import { datadog } from 'datadog-lambda-js';
-import tracer from 'dd-trace';
 
-tracer.init({
-  logInjection: true,
-  runtimeMetrics: true,
-});
-
-const _handler = async (event: ScheduledEvent, context: Context) => {
+export const handler = async (event: ScheduledEvent, context: Context) => {
   const logger = new Logger({
     service: 'mark-poller',
     level: 'info',
@@ -27,5 +20,3 @@ const _handler = async (event: ScheduledEvent, context: Context) => {
   });
   return result;
 };
-
-export const handler = datadog(_handler);
