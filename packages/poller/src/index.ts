@@ -11,7 +11,7 @@ tracer.init({
 
 const _handler = async (event: ScheduledEvent, context: Context) => {
   const logger = new Logger({
-    service: 'poller-lambda',
+    service: 'mark-poller',
     level: 'info',
   });
 
