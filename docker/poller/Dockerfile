@@ -108,5 +108,7 @@ RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
     ln -s ../../packages/adapters/web3signer/dist web3signer && \
     ln -s ../../packages/adapters/cache/dist cache
 
+COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
+
 CMD [ "index.handler" ]
 EXPOSE 8080
