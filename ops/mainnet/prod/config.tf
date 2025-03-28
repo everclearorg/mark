@@ -76,7 +76,7 @@ locals {
     DD_API_KEY                    = local.mark_config.dd_api_key
     DD_LAMBDA_HANDLER             = "index.handler"
     DD_TRACE_ENABLED              = true
-    DD_PROFILING_ENABLED          = true
+    DD_PROFILING_ENABLED          = false
     DD_MERGE_XRAY_TRACES          = true
     DD_TRACE_OTEL_ENABLED         = true
     

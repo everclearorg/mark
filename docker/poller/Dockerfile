@@ -19,13 +19,6 @@ ENV HOME=/tmp/build \
     YARN_ENABLE_SCRIPTS=true \
     YARN_CACHE_FOLDER=/tmp/yarn-cache \
     SKIP_OPTIONAL_DEPENDENCIES=true \
-    DD_SKIP_NATIVE_METRICS=true \
-    DD_TRACE_ENABLED=true \
-    DD_PROFILING_ENABLED=false \
-    DD_SITE=datadoghq.com \
-    DD_ENV=development \
-    DD_SERVICE=mark-poller \
-    DD_VERSION=1.0.0 \
     BUFFERUTIL_SKIP_INSTALL=true \
     UTF_8_VALIDATE_SKIP_INSTALL=true
 
@@ -72,17 +65,7 @@ RUN yarn build
 FROM node AS runtime
 
 ENV NODE_ENV=production \
-    PORT=8080 \
-    DD_LAMBDA_HANDLER="index.handler" \
-    DD_TRACE_ENABLED=true \
-    DD_PROFILING_ENABLED=false \
-    DD_LOGS_ENABLED=true \
-    DD_ENV=development \
-    DD_SERVICE=mark-poller \
-    DD_VERSION=1.0.0 \
-    DD_SITE=datadoghq.com \
-    DD_MERGE_XRAY_TRACES=true \
-    DD_TRACE_OTEL_ENABLED=true
+    PORT=8080
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 
