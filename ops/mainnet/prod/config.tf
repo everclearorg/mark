@@ -78,7 +78,7 @@ locals {
     DD_TRACE_ENABLED              = true
     DD_PROFILING_ENABLED          = false
     DD_MERGE_XRAY_TRACES          = true
-    DD_TRACE_OTEL_ENABLED         = true
+    DD_TRACE_OTEL_ENABLED         = false
     
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"
