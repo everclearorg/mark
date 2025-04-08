@@ -1,4 +1,4 @@
-import { Logger } from '@mark/logger';
+import { jsonifyError, Logger } from '@mark/logger';
 import { axiosPost, axiosGet } from '@mark/core';
 import {
   ChainConfiguration,
@@ -174,8 +174,16 @@ export class EverclearAdapter {
 
   async intentStatus(intentId: string): Promise<IntentStatus> {
     const url = `${this.apiUrl}/intents/${intentId}`;
-    const { data } = await axiosGet<IntentStatusResponse>(url);
-    return data?.intent.status ?? IntentStatus.NONE;
+    try {
+      const { data } = await axiosGet<IntentStatusResponse>(url);
+      return data?.intent.status ?? IntentStatus.NONE;
+    } catch (e) {
+      this.logger.error('Failed to get intent status', {
+        error: jsonifyError(e),
+        intentId,
+      });
+      return IntentStatus.NONE;
+    }
   }
 
   async getCustodiedAssets(tickerHash: string, domain: string): Promise<CustodiedAssetsResponse> {

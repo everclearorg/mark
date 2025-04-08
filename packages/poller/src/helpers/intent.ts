@@ -14,19 +14,95 @@ import { MarkAdapters } from '../init';
 import { decodeEventLog } from 'viem';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
-export const ORDER_CREATED_TOPIC0 = '0xc5929cfdbbc98a41855839bee1396d17ee4a149e40d5c324b6f4332655f5cffd';
+export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
 
-const orderCreatedAbi = [
+const intentAddedAbi = [
   {
-    type: 'event',
-    name: 'OrderCreated',
+    anonymous: false,
     inputs: [
-      { indexed: true, type: 'bytes32', name: 'orderId' },
-      { indexed: true, type: 'address', name: 'initiator' },
-      { type: 'bytes32[]', name: 'intentIds' },
-      { type: 'uint256', name: 'tokenFee' },
-      { type: 'uint256', name: 'nativeFee' },
+      {
+        indexed: true,
+        internalType: 'bytes32',
+        name: '_intentId',
+        type: 'bytes32',
+      },
+      {
+        indexed: false,
+        internalType: 'uint256',
+        name: '_queueIdx',
+        type: 'uint256',
+      },
+      {
+        components: [
+          {
+            internalType: 'bytes32',
+            name: 'initiator',
+            type: 'bytes32',
+          },
+          {
+            internalType: 'bytes32',
+            name: 'receiver',
+            type: 'bytes32',
+          },
+          {
+            internalType: 'bytes32',
+            name: 'inputAsset',
+            type: 'bytes32',
+          },
+          {
+            internalType: 'bytes32',
+            name: 'outputAsset',
+            type: 'bytes32',
+          },
+          {
+            internalType: 'uint24',
+            name: 'maxFee',
+            type: 'uint24',
+          },
+          {
+            internalType: 'uint32',
+            name: 'origin',
+            type: 'uint32',
+          },
+          {
+            internalType: 'uint64',
+            name: 'nonce',
+            type: 'uint64',
+          },
+          {
+            internalType: 'uint48',
+            name: 'timestamp',
+            type: 'uint48',
+          },
+          {
+            internalType: 'uint48',
+            name: 'ttl',
+            type: 'uint48',
+          },
+          {
+            internalType: 'uint256',
+            name: 'amount',
+            type: 'uint256',
+          },
+          {
+            internalType: 'uint32[]',
+            name: 'destinations',
+            type: 'uint32[]',
+          },
+          {
+            internalType: 'bytes',
+            name: 'data',
+            type: 'bytes',
+          },
+        ],
+        indexed: false,
+        internalType: 'struct IEverclear.Intent',
+        name: '_intent',
+        type: 'tuple',
+      },
     ],
+    name: 'IntentAdded',
+    type: 'event',
   },
 ] as const;
 
@@ -219,64 +295,53 @@ export const sendIntents = async (
       },
     });
 
-    const newOrderTx = await chainService.submitAndMonitor(txData.chainId.toString(), {
+    // transaction will be either the newIntent or newOrder
+    const purchaseTx = await chainService.submitAndMonitor(txData.chainId.toString(), {
       to: txData.to as string,
       value: txData.value ?? '0',
       data: txData.data,
       from: txData.from ?? config.ownAddress,
     });
 
-    // Find the OrderCreated event log
-    const orderCreatedLog = newOrderTx.logs.find((l) => l.topics[0].toLowerCase() === ORDER_CREATED_TOPIC0);
-    if (!orderCreatedLog) {
-      logger.warn('OrderCreated event not found in transaction logs, but transaction was successful', {
+    // Find the IntentAdded event logs
+    const intentAddedLogs = purchaseTx.logs.filter((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0);
+    if (!intentAddedLogs.length) {
+      logger.error('No intents created from purchase transaction', {
         invoiceId,
         requestId,
-        transactionHash: newOrderTx.transactionHash,
+        transactionHash: purchaseTx.transactionHash,
         chainId: intents[0].origin,
-        logs: newOrderTx.logs,
+        logs: purchaseTx.logs,
       });
 
-      // Tx was successful but logs weren't fetched correctly - use the tx hash
-      // as the intentId so the process can continue
-      return [
-        {
-          transactionHash: newOrderTx.transactionHash,
-          chainId: intents[0].origin,
-          intentId: newOrderTx.transactionHash,
-        },
-      ];
+      return [];
     }
-
-    const { args } = decodeEventLog({
-      abi: orderCreatedAbi,
-      data: orderCreatedLog.data as `0x${string}`,
-      topics: orderCreatedLog.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
+    const purchaseIntentIds = intentAddedLogs.map((log) => {
+      const { args } = decodeEventLog({
+        abi: intentAddedAbi,
+        data: log.data as `0x${string}`,
+        topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]]
+      });
+      return args._intentId;
     });
-
-    const { intentIds, tokenFee, nativeFee } = args;
 
     logger.info('Batch create intent transaction sent successfully', {
       invoiceId,
       requestId,
-      batchTxHash: newOrderTx.transactionHash,
+      batchTxHash: purchaseTx.transactionHash,
       chainId: intents[0].origin,
-      orderId: args.orderId,
-      initiator: args.initiator,
-      intentIds,
-      tokenFee: tokenFee.toString(),
-      nativeFee: nativeFee.toString(),
+      intentIds: purchaseIntentIds,
     });
 
     prometheus.updateGasSpent(
       intents[0].origin,
       TransactionReason.CreateIntent,
-      BigInt(newOrderTx.cumulativeGasUsed.mul(newOrderTx.effectiveGasPrice).toString()),
+      BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
     );
 
     // Return results for each intent in the batch
-    return intentIds.map((intentId) => ({
-      transactionHash: newOrderTx.transactionHash,
+    return purchaseIntentIds.map((intentId) => ({
+      transactionHash: purchaseTx.transactionHash,
       chainId: intents[0].origin,
       intentId,
     }));
