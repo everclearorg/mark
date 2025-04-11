@@ -2,9 +2,9 @@ import { Logger } from '@mark/logger';
 import { Context, ScheduledEvent } from 'aws-lambda';
 import { initPoller } from './init';
 
-export async function handler(event: ScheduledEvent, context: Context) {
+export const handler = async (event: ScheduledEvent, context: Context) => {
   const logger = new Logger({
-    service: 'poller-lambda',
+    service: 'mark-poller',
     level: 'info',
   });
 
@@ -19,4 +19,4 @@ export async function handler(event: ScheduledEvent, context: Context) {
     result,
   });
   return result;
-}
+};

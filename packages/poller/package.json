@@ -28,8 +28,8 @@
     "@mark/prometheus": "workspace:*",
     "@mark/web3signer": "workspace:*",
     "aws-lambda": "1.0.7",
-    "datadog-lambda-js": "6.86.0",
-    "dd-trace": "3.13.2",
+    "datadog-lambda-js": "10.123.0",
+    "dd-trace": "5.42.0",
     "viem": "2.22.8"
   },
   "devDependencies": {
