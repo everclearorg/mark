@@ -46,11 +46,14 @@ resource "aws_ecs_task_definition" "service" {
     },
     {
       name  = "datadog-agent-${var.environment}-${var.stage}-${var.container_family}"
-      image = "public.ecr.aws/datadog/agent:7.40.1"
+      image = "public.ecr.aws/datadog/agent:7.63.3"
       environment = [
         { name = "DD_API_KEY", value = var.dd_api_key },
         { name = "ECS_FARGATE", value = "true" },
         { name = "DD_APM_ENABLED", value = "true" },
+        { name = "DD_TRACE_ENABLED", value = "true" },
+        { name = "DD_PROFILING_ENABLED", value = "true" },
+        { name = "DD_SITE", value = "datadoghq.com" },
         { name = "DD_DOGSTATSD_NON_LOCAL_TRAFFIC", value = "true" },
         { name = "DD_APM_NON_LOCAL_TRAFFIC", value = "true" },
         { name = "DD_PROCESS_AGENT_ENABLED", value = "true" },
