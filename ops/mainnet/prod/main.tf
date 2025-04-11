@@ -48,6 +48,12 @@ module "network" {
   vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
 }
 
+resource "aws_service_discovery_private_dns_namespace" "mark_internal" {
+  name        = "mark.internal"
+  description = "Mark internal DNS namespace for service discovery"
+  vpc         = module.network.vpc_id 
+}
+
 module "ecs" {
   source                  = "../../modules/ecs"
   stage                   = var.stage
@@ -98,6 +104,7 @@ module "mark_web3signer" {
   service_security_groups = [module.sgs.web3signer_sg_id]
   container_env_vars  = local.web3signer_env_vars
   zone_id             = var.zone_id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_prometheus" {
@@ -146,6 +153,7 @@ module "mark_prometheus" {
     healthy_threshold   = 2
     unhealthy_threshold = 3
   }
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_pushgateway" {
@@ -169,6 +177,7 @@ module "mark_pushgateway" {
   service_security_groups = [module.sgs.prometheus_sg_id]
   container_env_vars      = local.pushgateway_env_vars
   zone_id                 = var.zone_id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_poller" {
