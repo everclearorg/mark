@@ -14,13 +14,13 @@ locals {
       - job_name: 'pushgateway'
         honor_labels: true
         static_configs:
-          - targets: ['mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
+          - targets: ['mark2-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
 
       - job_name: 'mark-poller'
         honor_labels: true
         metrics_path: /metrics
         static_configs:
-          - targets: ['mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
+          - targets: ['mark2-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
     EOT
 
   prometheus_env_vars = [
@@ -68,8 +68,8 @@ locals {
     ENVIRONMENT                   = var.environment
     STAGE                         = var.stage
     CHAIN_IDS                     = var.chain_ids
-    PUSH_GATEWAY_URL              = "http://mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
-    PROMETHEUS_URL                = "http://mark-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+    PUSH_GATEWAY_URL              = "http://mark2-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL                = "http://mark2-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
     PROMETHEUS_ENABLED            = true
     DD_LOGS_ENABLED               = true
     DD_ENV                        = "${var.environment}-${var.stage}"
