@@ -89,5 +89,5 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:eu-south-2:679752396206:certificate/0c43e36e-702c-4623-94d1-4d2a1cdfa302"
+  default = "arn:aws:acm:eu-south-2:679752396206:certificate/3e7c48c9-52c4-4718-928d-897775e73c72"
 }
