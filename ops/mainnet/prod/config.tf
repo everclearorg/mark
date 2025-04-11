@@ -74,7 +74,11 @@ locals {
     DD_LOGS_ENABLED               = true
     DD_ENV                        = "${var.environment}-${var.stage}"
     DD_API_KEY                    = local.mark_config.dd_api_key
-    DD_LAMBDA_HANDLER             = "packages/poller/dist/index.handler"
+    DD_LAMBDA_HANDLER             = "index.handler"
+    DD_TRACE_ENABLED              = true
+    DD_PROFILING_ENABLED          = false
+    DD_MERGE_XRAY_TRACES          = true
+    DD_TRACE_OTEL_ENABLED         = false
     
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"

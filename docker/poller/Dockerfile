@@ -19,8 +19,6 @@ ENV HOME=/tmp/build \
     YARN_ENABLE_SCRIPTS=true \
     YARN_CACHE_FOLDER=/tmp/yarn-cache \
     SKIP_OPTIONAL_DEPENDENCIES=true \
-    DD_SKIP_NATIVE_METRICS=true \
-    DD_TRACE_ENABLED=false \
     BUFFERUTIL_SKIP_INSTALL=true \
     UTF_8_VALIDATE_SKIP_INSTALL=true
 
@@ -71,10 +69,29 @@ ENV NODE_ENV=production \
 
 WORKDIR ${LAMBDA_TASK_ROOT}
 
-# Copy the entire build directory
-COPY --from=build /tmp/build ${LAMBDA_TASK_ROOT}
-COPY --from=public.ecr.aws/datadog/lambda-extension:60 /opt/extensions/ /opt/extensions
+# Copy only the necessary files from build
+COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
+COPY --from=build /tmp/build/packages/poller/dist/* ${LAMBDA_TASK_ROOT}/
+COPY --from=build /tmp/build/packages/core/dist ${LAMBDA_TASK_ROOT}/packages/core/dist
+COPY --from=build /tmp/build/packages/adapters/logger/dist ${LAMBDA_TASK_ROOT}/packages/adapters/logger/dist
+COPY --from=build /tmp/build/packages/adapters/chainservice/dist ${LAMBDA_TASK_ROOT}/packages/adapters/chainservice/dist
+COPY --from=build /tmp/build/packages/adapters/everclear/dist ${LAMBDA_TASK_ROOT}/packages/adapters/everclear/dist
+COPY --from=build /tmp/build/packages/adapters/prometheus/dist ${LAMBDA_TASK_ROOT}/packages/adapters/prometheus/dist
+COPY --from=build /tmp/build/packages/adapters/web3signer/dist ${LAMBDA_TASK_ROOT}/packages/adapters/web3signer/dist
+COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/packages/adapters/cache/dist
 
+# Create symlinks for workspace dependencies
+RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
+    rm -rf core logger chainservice everclear prometheus web3signer cache && \
+    ln -s ../../packages/core/dist core && \
+    ln -s ../../packages/adapters/logger/dist logger && \
+    ln -s ../../packages/adapters/chainservice/dist chainservice && \
+    ln -s ../../packages/adapters/everclear/dist everclear && \
+    ln -s ../../packages/adapters/prometheus/dist prometheus && \
+    ln -s ../../packages/adapters/web3signer/dist web3signer && \
+    ln -s ../../packages/adapters/cache/dist cache
+
+COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
+
+CMD [ "index.handler" ]
 EXPOSE 8080
-
-CMD ["node_modules/datadog-lambda-js/dist/handler.handler"]

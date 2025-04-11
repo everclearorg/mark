@@ -29,7 +29,10 @@ export function isValidInvoice(
   }
 
   // Check it is not our invoice
-  if (invoice.owner.toLowerCase() === config.ownAddress.toLowerCase()) {
+  if (
+    invoice.owner.toLowerCase() === config.ownAddress.toLowerCase() ||
+    invoice.owner.toLowerCase() === '0x6dea30929a575b8b29f459aae1b3b85e52a723f4' // Temp: reject feeAdapter invoices
+  ) {
     return InvalidPurchaseReasons.InvalidOwner;
   }
 
