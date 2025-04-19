@@ -492,7 +492,6 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
           IntentStatus.DISPATCHED_UNSUPPORTED,
           IntentStatus.UNSUPPORTED,
           IntentStatus.UNSUPPORTED_RETURNED,
-          IntentStatus.NONE, // TODO: remove
         ];
         if (!spentStatuses.includes(status)) {
           // Purchase intent could still be used to pay down target invoice
