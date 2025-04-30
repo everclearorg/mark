@@ -397,6 +397,304 @@ describe('Invoice Processing', () => {
       // And Prometheus record was called
       expect(mockDeps.prometheus.recordInvalidPurchase.called).to.be.false;
     });
+
+    it('should adjust custodied balances based on pending intents from economy data', async () => {
+      // Setup basic stubs for the test
+      const ticker = '0xticker1';
+      const domain1 = '8453';
+      const domain2 = '1';
+      
+      // Mock getSupportedDomainsForTicker to return our test domains
+      const getSupportedDomainsStub = sinon.stub(assetHelpers, 'getSupportedDomainsForTicker')
+        .returns([domain1, domain2]);
+      
+      // Mock balances and custodied assets
+      getMarkBalancesStub.resolves(new Map([
+        [ticker, new Map([[domain1, BigInt('5000000000000000000')], [domain2, BigInt('3000000000000000000')]])]
+      ]));
+      getMarkGasBalancesStub.resolves(new Map());
+      
+      // Mock custodied balances - start with 2 ETH custodied in each domain
+      const originalCustodied = new Map([
+        [ticker, new Map([[domain1, BigInt('2000000000000000000')], [domain2, BigInt('2000000000000000000')]])]
+      ]);
+      getCustodiedBalancesStub.resolves(originalCustodied);
+      
+      // Mock cache with no existing purchases
+      mockDeps.cache.getAllPurchases.resolves([]);
+      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      
+      // Create mock economy data with pending intents
+      // Domain1 has 1 ETH in pending intents
+      // Domain2 has 2.5 ETH in pending intents (more than available, should clamp to 0)
+      mockDeps.everclear.fetchEconomyData.callsFake(async (domain, tickerHash) => {
+        if (domain === domain1) {
+          return {
+            currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
+            invoiceQueue: null,
+            depositQueue: null,
+            incomingIntents: {
+              'chain1': [
+                {
+                  intentId: '0xintent1',
+                  initiator: '0xuser1',
+                  amount: '1000000000000000000', // 1 ETH
+                  destinations: [domain2]
+                }
+              ]
+            }
+          };
+        } else if (domain === domain2) {
+          return {
+            currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
+            invoiceQueue: null,
+            depositQueue: null,
+            incomingIntents: {
+              'chain1': [
+                {
+                  intentId: '0xintent2',
+                  initiator: '0xuser2',
+                  amount: '2500000000000000000', // 2.5 ETH (more than custodied)
+                  destinations: [domain1]
+                }
+              ]
+            }
+          };
+        }
+        
+        return {
+          currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
+          invoiceQueue: null,
+          depositQueue: null,
+          incomingIntents: null
+        };
+      });
+      
+      // Mock the calculateSplitIntents to examine the adjusted custodied values
+      calculateSplitIntentsStub.callsFake(async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
+        // Verify the adjustments were made correctly
+        const domain1Custodied = remainingCustodied.get(ticker)?.get(domain1) || BigInt(0);
+        const domain2Custodied = remainingCustodied.get(ticker)?.get(domain2) || BigInt(0);
+        
+        // Domain1 should have 1 ETH less custodied (2 ETH - 1 ETH = 1 ETH)
+        expect(domain1Custodied.toString()).to.equal('1000000000000000000');
+        
+        // Domain2 should have 0 ETH custodied (2 ETH - 2.5 ETH = 0 ETH, clamped at 0)
+        expect(domain2Custodied.toString()).to.equal('0');
+        
+        // Return empty intents to keep the test simple
+        return {
+          intents: [],
+          originDomain: null,
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0)
+        };
+      });
+      
+      // Mock getMinAmounts to return valid amounts
+      mockDeps.everclear.getMinAmounts.resolves({
+        minAmounts: { [domain1]: '1000000000000000000' },
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {}
+      });
+      
+      // Create a test invoice
+      const invoice = createMockInvoice({
+        ticker_hash: ticker,
+        destinations: [domain1, domain2]
+      });
+      
+      // Execute the processInvoices function
+      await processInvoices(mockContext, [invoice]);
+      
+      // Verify fetchEconomyData was called for both domains
+      expect(mockDeps.everclear.fetchEconomyData.calledWith(domain1, ticker)).to.be.true;
+      expect(mockDeps.everclear.fetchEconomyData.calledWith(domain2, ticker)).to.be.true;
+      
+      // Verify domain information logging
+      expect(mockDeps.logger.info.calledWith('Fetching economy data for ticker')).to.be.true;
+      
+      // Verify adjustment logging
+      expect(mockDeps.logger.info.calledWith(
+        'Adjusted custodied assets for domain based on pending intents'
+      )).to.be.true;
+    });
+
+    it('should handle failed fetchEconomyData calls gracefully', async () => {
+      // Setup basic stubs for the test
+      const ticker = '0xticker1';
+      const domain1 = '8453';
+      const domain2 = '1';
+      
+      // Mock getSupportedDomainsForTicker to return our test domains
+      const getSupportedDomainsStub = sinon.stub(assetHelpers, 'getSupportedDomainsForTicker')
+        .returns([domain1, domain2]);
+      
+      // Mock balances and custodied assets
+      getMarkBalancesStub.resolves(new Map([
+        [ticker, new Map([[domain1, BigInt('5000000000000000000')], [domain2, BigInt('3000000000000000000')]])]
+      ]));
+      getMarkGasBalancesStub.resolves(new Map());
+      
+      // Mock custodied balances - start with 2 ETH custodied in each domain
+      const originalCustodied = new Map([
+        [ticker, new Map([[domain1, BigInt('2000000000000000000')], [domain2, BigInt('2000000000000000000')]])]
+      ]);
+      getCustodiedBalancesStub.resolves(originalCustodied);
+      
+      // Mock cache with no existing purchases
+      mockDeps.cache.getAllPurchases.resolves([]);
+      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      
+      // Mock economy data fetch - domain1 succeeds, domain2 fails
+      mockDeps.everclear.fetchEconomyData.callsFake(async (domain, tickerHash) => {
+        if (domain === domain1) {
+          return {
+            currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
+            invoiceQueue: null,
+            depositQueue: null,
+            incomingIntents: {
+              'chain1': [
+                {
+                  intentId: '0xintent1',
+                  initiator: '0xuser1',
+                  amount: '1000000000000000000', // 1 ETH
+                  destinations: [domain2]
+                }
+              ]
+            }
+          };
+        } else if (domain === domain2) {
+          throw new Error('API error');
+        }
+        
+        return {
+          currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
+          invoiceQueue: null,
+          depositQueue: null,
+          incomingIntents: null
+        };
+      });
+      
+      // Mock the calculateSplitIntents to examine the adjusted custodied values
+      calculateSplitIntentsStub.callsFake(async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
+        // Verify domain1 was adjusted
+        const domain1Custodied = remainingCustodied.get(ticker)?.get(domain1) || BigInt(0);
+        expect(domain1Custodied.toString()).to.equal('1000000000000000000');
+        
+        // Verify domain2 was NOT adjusted (since fetchEconomyData failed)
+        const domain2Custodied = remainingCustodied.get(ticker)?.get(domain2) || BigInt(0);
+        expect(domain2Custodied.toString()).to.equal('2000000000000000000');
+        
+        return {
+          intents: [],
+          originDomain: null,
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0)
+        };
+      });
+      
+      // Mock getMinAmounts to return valid amounts
+      mockDeps.everclear.getMinAmounts.resolves({
+        minAmounts: { [domain1]: '1000000000000000000' },
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {}
+      });
+      
+      // Create a test invoice
+      const invoice = createMockInvoice({
+        ticker_hash: ticker,
+        destinations: [domain1, domain2]
+      });
+      
+      // Execute the processInvoices function
+      await processInvoices(mockContext, [invoice]);
+      
+      // Verify that we logged the error for domain2
+      expect(mockDeps.logger.warn.calledWith(
+        'Failed to fetch economy data for domain, continuing without it'
+      )).to.be.true;
+      
+      // Verify adjustment was still made for domain1
+      expect(mockDeps.logger.info.calledWith(
+        'Adjusted custodied assets for domain based on pending intents'
+      )).to.be.true;
+    });
+
+    it('should handle empty incomingIntents correctly', async () => {
+      // Setup basic stubs for the test
+      const ticker = '0xticker1';
+      const domain = '8453';
+      
+      // Mock getSupportedDomainsForTicker to return our test domain
+      const getSupportedDomainsStub = sinon.stub(assetHelpers, 'getSupportedDomainsForTicker')
+        .returns([domain]);
+      
+      // Mock balances and custodied assets
+      getMarkBalancesStub.resolves(new Map([
+        [ticker, new Map([[domain, BigInt('5000000000000000000')]])]
+      ]));
+      getMarkGasBalancesStub.resolves(new Map());
+      
+      // Mock custodied balances - start with 2 ETH custodied
+      const originalCustodied = BigInt('2000000000000000000');
+      getCustodiedBalancesStub.resolves(new Map([
+        [ticker, new Map([[domain, originalCustodied]])]
+      ]));
+      
+      // Mock cache with no existing purchases
+      mockDeps.cache.getAllPurchases.resolves([]);
+      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      
+      // Mock economy data fetch with null incomingIntents
+      mockDeps.everclear.fetchEconomyData.resolves({
+        currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
+        invoiceQueue: null,
+        depositQueue: null,
+        incomingIntents: null  // Null incomingIntents
+      });
+      
+      // Mock the calculateSplitIntents to examine the adjusted custodied values
+      calculateSplitIntentsStub.callsFake(async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
+        // Verify domain custodied was NOT adjusted
+        const domainCustodied = remainingCustodied.get(ticker)?.get(domain) || BigInt(0);
+        expect(domainCustodied).to.equal(originalCustodied);
+        
+        return {
+          intents: [],
+          originDomain: null,
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0)
+        };
+      });
+      
+      // Mock getMinAmounts to return valid amounts
+      mockDeps.everclear.getMinAmounts.resolves({
+        minAmounts: { [domain]: '1000000000000000000' },
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {}
+      });
+      
+      // Create a test invoice
+      const invoice = createMockInvoice({
+        ticker_hash: ticker,
+        destinations: [domain]
+      });
+      
+      // Execute the processInvoices function
+      await processInvoices(mockContext, [invoice]);
+      
+      // Verify that we did NOT log any adjustments
+      const adjustLogCalls = mockDeps.logger.info.getCalls().filter(call => 
+        call.args[0] === 'Adjusted custodied assets for domain based on pending intents');
+      expect(adjustLogCalls.length).to.equal(0);
+    });
   });
 
   describe('processTickerGroup', () => {
