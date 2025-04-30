@@ -91,3 +91,24 @@ export const getAssetConfig = async (assetHash: string, config: MarkConfiguratio
 const addressToBytes32 = (addr: string): `0x${string}` => {
   return bytesToHex(padBytes(hexToBytes(addr as `0x${string}`), { size: 32, dir: 'left' }));
 };
+
+/**
+ * Gets the list of domains that support a given ticker
+ * @param ticker The ticker hash
+ * @param config The Mark configuration
+ * @returns Array of domain IDs that support the ticker
+ */
+export function getSupportedDomainsForTicker(
+  ticker: string,
+  config: MarkConfiguration
+): string[] {
+  const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
+  
+  // Filter for domains that support the given asset, maintaining the original config order
+  return configDomains.filter((domain) => {
+    const chainConfig = config.chains[domain];
+    if (!chainConfig) return false;
+    const tickers = chainConfig.assets.map((a) => a.tickerHash.toLowerCase());
+    return tickers.includes(ticker.toLowerCase());
+  });
+}
