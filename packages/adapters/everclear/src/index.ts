@@ -20,6 +20,35 @@ export interface CustodiedAssetsResponse {
   custodiedAmount: string;
 }
 
+export interface EconomyEpoch {
+  epoch: number;
+  startBlock: number;
+  endBlock: number;
+}
+
+export interface QueueIntent {
+  intentId: string;
+  amount: string;
+  owner: string;
+  entryEpoch?: number;
+  origin?: number;
+  epoch?: number;
+}
+
+export interface IncomingIntent {
+  intentId: string;
+  initiator: string;
+  amount: string;
+  destinations: string[];
+}
+
+export interface EconomyDataResponse {
+  currentEpoch: EconomyEpoch;
+  invoiceQueue: QueueIntent[] | null;
+  depositQueue: QueueIntent[] | null;
+  incomingIntents: Record<string, IncomingIntent[]> | null;
+}
+
 export enum IntentStatus {
   NONE = 'NONE',
   ADDED = 'ADDED',
@@ -190,5 +219,28 @@ export class EverclearAdapter {
     const url = `${this.apiUrl}/tickers/${tickerHash}/domains/${domain}/custodied-assets`;
     const { data } = await axiosGet<CustodiedAssetsResponse>(url);
     return data;
+  }
+
+  /**
+   * Fetches economy data for a specific chain and asset ticker hash
+   * @param chain - The chain ID
+   * @param tickerHash - The asset ticker on the specified chain
+   * @returns Economy data including current epoch, queues, and incoming intents
+   */
+  async fetchEconomyData(chain: string, tickerHash: string): Promise<EconomyDataResponse> {
+    const url = `${this.apiUrl}/economy/${chain}/${tickerHash}`;
+    try {
+      const { data } = await axiosGet<EconomyDataResponse>(url);
+      this.logger.debug('Fetched economy data', { chain, tickerHash });
+      return data;
+    } catch (error) {
+      this.logger.error('Failed to fetch economy data from API', {
+        error: jsonifyError(error),
+        chain,
+        tickerHash,
+        url,
+      });
+      throw new Error(`Failed to fetch economy data for ${chain}/${tickerHash}: ${error}`);
+    }
   }
 }
