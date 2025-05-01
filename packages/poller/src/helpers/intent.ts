@@ -320,7 +320,7 @@ export const sendIntents = async (
       const { args } = decodeEventLog({
         abi: intentAddedAbi,
         data: log.data as `0x${string}`,
-        topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]]
+        topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
       });
       return args._intentId;
     });
