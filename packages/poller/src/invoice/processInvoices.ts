@@ -526,20 +526,20 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
 
   // Process each ticker group
   for (const [ticker, invoiceQueue] of invoiceQueues.entries()) {
-    const adjustedCustodied = new Map(custodiedAssets);
+    const adjustedCustodied = new Map(remainingCustodied);
     if (!adjustedCustodied.has(ticker)) {
       adjustedCustodied.set(ticker, new Map<string, bigint>());
     }
-    
+
     const supportedDomains = getSupportedDomainsForTicker(ticker, config);
-    
+
     logger.info('Fetching economy data for ticker', {
       requestId,
       ticker,
       supportedDomains,
     });
     start = getTimeSeconds();
-    
+
     const economyResults = await Promise.all(
       supportedDomains.map(async (domain) => {
         try {
@@ -555,28 +555,28 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
           });
           return { domain, data: null, success: false };
         }
-      })
+      }),
     );
-    
+
     // Process the economy data to adjust custodied assets
     for (const { domain, data, success } of economyResults) {
       if (!success || !data || !data.incomingIntents) continue;
-      
+
       let pendingAmount = BigInt(0);
-      
+
       for (const chainIntents of Object.values(data.incomingIntents)) {
         for (const intent of chainIntents) {
           pendingAmount += BigInt(intent.amount);
         }
       }
-      
+
       if (pendingAmount > 0n) {
         const currentCustodied = adjustedCustodied.get(ticker)?.get(domain) || BigInt(0);
-        
+
         // Subtract pending amount, clamped to 0
         const newCustodied = currentCustodied > pendingAmount ? currentCustodied - pendingAmount : BigInt(0);
         adjustedCustodied.get(ticker)!.set(domain, newCustodied);
-        
+
         logger.info('Adjusted custodied assets for domain based on pending intents', {
           requestId,
           domain,
@@ -587,13 +587,13 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
         });
       }
     }
-    
+
     logger.debug('Economy data processing completed', {
       requestId,
       ticker,
       duration: getTimeSeconds() - start,
     });
-    
+
     // Use adjusted custodied assets
     const group: TickerGroup = {
       ticker,
