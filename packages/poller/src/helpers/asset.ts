@@ -98,12 +98,9 @@ const addressToBytes32 = (addr: string): `0x${string}` => {
  * @param config The Mark configuration
  * @returns Array of domain IDs that support the ticker
  */
-export function getSupportedDomainsForTicker(
-  ticker: string,
-  config: MarkConfiguration
-): string[] {
+export function getSupportedDomainsForTicker(ticker: string, config: MarkConfiguration): string[] {
   const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
-  
+
   // Filter for domains that support the given asset, maintaining the original config order
   return configDomains.filter((domain) => {
     const chainConfig = config.chains[domain];
