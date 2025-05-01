@@ -59,7 +59,7 @@ describe('Invoice Processing', () => {
     mockContext = {
       config: mockConfig,
       requestId: 'test-request-id',
-      startTime: Date.now(),
+      startTime: Math.floor(Date.now() / 1000),
       ...mockDeps
     };
   });
@@ -97,22 +97,22 @@ describe('Invoice Processing', () => {
     });
 
     it('should sort invoices by age within groups', () => {
-      const now = Date.now();
+      const now = Math.floor(Date.now() / 1000);
       const invoices = [
         createMockInvoice({ 
           intent_id: '0x1', 
           ticker_hash: '0xticker1',
-          hub_invoice_enqueued_timestamp: now - 1000 // 1 second ago
+          hub_invoice_enqueued_timestamp: now - 1 // 1 second ago
         }),
         createMockInvoice({ 
           intent_id: '0x2', 
           ticker_hash: '0xticker1',
-          hub_invoice_enqueued_timestamp: now - 3000 // 3 seconds ago
+          hub_invoice_enqueued_timestamp: now - 3 // 3 seconds ago
         }),
         createMockInvoice({ 
           intent_id: '0x3', 
           ticker_hash: '0xticker1',
-          hub_invoice_enqueued_timestamp: now - 2000 // 2 seconds ago
+          hub_invoice_enqueued_timestamp: now - 2 // 2 seconds ago
         })
       ];
       
@@ -209,6 +209,16 @@ describe('Invoice Processing', () => {
       await processInvoices(mockContext, invoices);
       
       expect(mockDeps.cache.removePurchases.calledWith(['0x123'])).to.be.true;
+
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.calledOnce).to.be.true;
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[0]).to.deep.equal({
+        origin: '1',
+        ticker: '0xticker1',
+        destination: '8453',
+      });
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[1]).to.equal(
+        mockContext.startTime - invoices[0].hub_invoice_enqueued_timestamp,
+      );
     });
 
     it('should correctly store a purchase in the cache', async () => {
@@ -219,7 +229,7 @@ describe('Invoice Processing', () => {
       mockDeps.cache.getAllPurchases.resolves([]);
       mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
 
-      const invoice = createMockInvoice();
+      const invoice = createMockInvoice({ discountBps: 7 });
       
       mockDeps.everclear.getMinAmounts.resolves({
         minAmounts: { '8453': '1000000000000000000' },
@@ -271,6 +281,35 @@ describe('Invoice Processing', () => {
       // Verify the correct purchase was stored in cache
       expect(mockDeps.cache.addPurchases.calledOnce).to.be.true;
       expect(mockDeps.cache.addPurchases.firstCall.args[0]).to.deep.equal([expectedPurchase]);
+
+      expect(mockDeps.prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
+      expect(mockDeps.prometheus.recordSuccessfulPurchase.firstCall.args[0]).to.deep.equal({
+        origin: '1',
+        id: '0x123',
+        ticker: '0xticker1',
+        destination: '8453',
+        isSplit: 'false',
+        splitCount: '1',
+      });
+
+      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.calledOnce).to.be.true;
+      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.firstCall.args[0]).to.deep.equal({
+        origin: '1',
+        ticker: '0xticker1',
+        destination: '8453',
+      });
+      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.firstCall.args[1]).to.equal(
+        mockContext.startTime - invoice.hub_invoice_enqueued_timestamp,
+      );
+
+      expect(mockDeps.prometheus.updateRewards.calledOnce).to.be.true;
+      expect(mockDeps.prometheus.updateRewards.firstCall.args[0]).to.deep.equal({
+        chain: '1',
+        asset: '0xtoken1',
+        id: '0x123',
+        ticker: '0xticker1',
+      });
+      expect(mockDeps.prometheus.updateRewards.firstCall.args[1]).to.equal(700000000000000);
     });
 
     it('should handle cache getAllPurchases failure gracefully', async () => {
@@ -394,8 +433,12 @@ describe('Invoice Processing', () => {
       // Verify warning was logged
       expect(mockDeps.logger.warn.calledWith('Failed to clear pending cache')).to.be.true;
 
-      // And Prometheus record was called
+      // And Prometheus record was not called
       expect(mockDeps.prometheus.recordInvalidPurchase.called).to.be.false;
+      expect(mockDeps.prometheus.recordSuccessfulPurchase.called).to.be.false;
+      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.called).to.be.false;
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.called).to.be.false;
+      expect(mockDeps.prometheus.updateRewards.called).to.be.false;
     });
   });
 
@@ -672,7 +715,7 @@ describe('Invoice Processing', () => {
       });
       const tooNewInvoice = createMockInvoice({
         intent_id: '0xabc',
-        hub_invoice_enqueued_timestamp: Date.now()
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000)
       });
 
       const group: TickerGroup = {
@@ -920,11 +963,11 @@ describe('Invoice Processing', () => {
 
       const oldestInvoice = createMockInvoice({
         intent_id: '0x123',
-        hub_invoice_enqueued_timestamp: Date.now() - 7200000 // 2 hours old
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 7200 // 2 hours old
       });
       const newerInvoice = createMockInvoice({
         intent_id: '0x456',
-        hub_invoice_enqueued_timestamp: Date.now() - 3600000 // 1 hour old
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600 // 1 hour old
       });
 
       const group: TickerGroup = {
@@ -962,11 +1005,11 @@ describe('Invoice Processing', () => {
 
       const oldestInvoice = createMockInvoice({
         intent_id: '0x123',
-        hub_invoice_enqueued_timestamp: Date.now() - 7200000 // 2 hours old
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 7200 // 2 hours old
       });
       const newerInvoice = createMockInvoice({
         intent_id: '0x456',
-        hub_invoice_enqueued_timestamp: Date.now() - 3600000 // 1 hour old
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600 // 1 hour old
       });
 
       const group: TickerGroup = {
@@ -1605,7 +1648,7 @@ describe('Invoice Processing', () => {
       expect(remainingCustodied?.get('8453')).to.equal(BigInt('5000000000000000000'));
     });
 
-    it('should correctly update balnces and custodied after processing multiple invoices', async () => {
+    it('should correctly update balances and custodied after processing multiple invoices', async () => {
       isXerc20SupportedStub.resolves(false);
       
       // First invoice setup
