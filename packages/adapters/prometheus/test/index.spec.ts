@@ -1,5 +1,5 @@
 import { InvalidPurchaseReasons } from '@mark/core';
-import { PrometheusAdapter, RewardLabels, InvoiceLabels } from '../src';
+import { PrometheusAdapter, RewardLabels, InvoiceLabels, InvoiceDurationLabels } from '../src';
 import { Logger } from '@mark/logger';
 
 // mock logger
@@ -71,16 +71,22 @@ describe('PrometheusAdapter', () => {
   });
 
   describe('timing metrics', () => {
+    const labels: InvoiceDurationLabels = {
+      origin: 'ethereum',
+      ticker: '0xtickerhash',
+      destination: 'polygon',
+    };
+
     it('should record invoice purchase time', async () => {
-      adapter.recordInvoicePurchaseDuration(5);
+      adapter.recordInvoicePurchaseDuration(labels, 5);
       const metrics = await adapter.getMetrics();
-      expect(metrics).toContain('mark_invoice_purchase_duration_seconds_bucket{le="10"} 1');
+      expect(metrics).toContain('mark_invoice_purchase_duration_seconds_bucket{le="10",origin="ethereum",ticker="0xtickerhash",destination="polygon"} 1');
     });
 
     it('should record invoice clearance time', async () => {
-      adapter.recordPurchaseClearanceDuration(5);
+      adapter.recordPurchaseClearanceDuration(labels, 5);
       const metrics = await adapter.getMetrics();
-      expect(metrics).toContain('mark_clearance_duration_seconds_bucket{le="10"} 1');
+      expect(metrics).toContain('mark_clearance_duration_seconds_bucket{le="10",origin="ethereum",ticker="0xtickerhash",destination="polygon"} 1');
     });
   });
 

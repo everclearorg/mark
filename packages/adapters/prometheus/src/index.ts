@@ -15,6 +15,9 @@ export type InvoiceLabels = Omit<
   splitCount?: string;
 };
 
+const InvoiceDurationLabelKeys = ['origin', 'destination', 'ticker'] as const;
+export type InvoiceDurationLabels = Record<(typeof InvoiceDurationLabelKeys)[number], string>;
+
 export enum TransactionReason {
   Approval = 'Approval',
   CreateIntent = 'CreateIntent',
@@ -102,6 +105,7 @@ export class PrometheusAdapter {
     this.clearanceDuration = new Histogram({
       name: 'mark_clearance_duration_seconds',
       help: 'Time taken to clear targets from cache',
+      labelNames: InvoiceDurationLabelKeys,
       buckets: [1, 5, 10, 30, 60, 120, 300, 600],
       registers: [this.registry],
     });
@@ -109,6 +113,7 @@ export class PrometheusAdapter {
     this.purchaseDuration = new Histogram({
       name: 'mark_invoice_purchase_duration_seconds',
       help: 'Time taken to purchase invoices from hub enqueued timestamps',
+      labelNames: InvoiceDurationLabelKeys,
       buckets: [1, 5, 10, 30, 60, 120, 300, 600],
       registers: [this.registry],
     });
@@ -161,14 +166,14 @@ export class PrometheusAdapter {
   }
 
   // Record duration from invoice to go from seen -> purchased
-  public async recordInvoicePurchaseDuration(durationSeconds: number): Promise<void> {
-    this.purchaseDuration.observe(durationSeconds);
+  public async recordInvoicePurchaseDuration(labels: InvoiceDurationLabels, durationSeconds: number): Promise<void> {
+    this.purchaseDuration.observe(labels, durationSeconds);
     await this.pushMetrics();
   }
 
   // Record time from invoice to go from seen -> removed from cache
-  public async recordPurchaseClearanceDuration(durationSeconds: number): Promise<void> {
-    this.clearanceDuration.observe(durationSeconds);
+  public async recordPurchaseClearanceDuration(labels: InvoiceDurationLabels, durationSeconds: number): Promise<void> {
+    this.clearanceDuration.observe(labels, durationSeconds);
     await this.pushMetrics();
   }
 

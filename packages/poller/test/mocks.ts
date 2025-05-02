@@ -8,7 +8,7 @@ export function createMockInvoice(overrides?: Partial<Invoice>): Invoice {
     origin: '1',
     destinations: ['8453'],
     ticker_hash: '0xticker1',
-    hub_invoice_enqueued_timestamp: Date.now() - 7200000,
+    hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 7200,
     source_domain: '1',
     target_domain: '8453',
     source_address: '0xsource',
