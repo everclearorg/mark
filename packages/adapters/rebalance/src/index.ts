@@ -1,2 +1,2 @@
-export * from './across';
+export * from './adapters';
 export * from './types';
