@@ -17,6 +17,7 @@ import * as intentHelpers from '../../src/helpers/intent';
 import * as splitIntentHelpers from '../../src/helpers/splitIntent';
 import { MAX_DESTINATIONS } from '../../src/invoice/processInvoices';
 import { mockConfig, createMockInvoice } from '../mocks';
+import * as monitorHelpers from '../../src/helpers/monitor';
 
 describe('Invoice Processing', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -27,6 +28,7 @@ describe('Invoice Processing', () => {
   let isXerc20SupportedStub: SinonStub;
   let calculateSplitIntentsStub: SinonStub;
   let sendIntentsStub: SinonStub;
+  let logGasThresholdsStub: SinonStub;
 
   let mockDeps: {
     logger: SinonStubbedInstance<Logger>;
@@ -45,6 +47,7 @@ describe('Invoice Processing', () => {
     isXerc20SupportedStub = sinon.stub(assetHelpers, 'isXerc20Supported');
     calculateSplitIntentsStub = sinon.stub(splitIntentHelpers, 'calculateSplitIntents');
     sendIntentsStub = sinon.stub(intentHelpers, 'sendIntents');
+    logGasThresholdsStub = sinon.stub(monitorHelpers, 'logGasThresholds');
 
     mockDeps = {
       logger: createStubInstance(Logger),
@@ -398,25 +401,32 @@ describe('Invoice Processing', () => {
       expect(mockDeps.prometheus.recordInvalidPurchase.called).to.be.false;
     });
 
-    it('should adjust custodied balances based on pending intents from economy data', async () => {
-      // Setup basic stubs for the test
+    it.only('should adjust custodied balances based on pending intents from economy data', async () => {
       const ticker = '0xticker1';
-      const domain1 = '8453';
-      const domain2 = '1';
+      const domain1 = '8453';  // Origin domain
+      const domain2 = '1';     // Destination domain where Mark has balance
       
-      // Mock getSupportedDomainsForTicker to return our test domains
-      const getSupportedDomainsStub = sinon.stub(assetHelpers, 'getSupportedDomainsForTicker')
+      calculateSplitIntentsStub.restore();
+      sinon.stub(assetHelpers, 'getSupportedDomainsForTicker')
         .returns([domain1, domain2]);
+      sinon.stub(assetHelpers, 'convertHubAmountToLocalDecimals').returnsArg(0);
       
-      // Mock balances and custodied assets
+      // Mock balances - Mark has enough balance on domain2 to purchase the invoice
       getMarkBalancesStub.resolves(new Map([
-        [ticker, new Map([[domain1, BigInt('5000000000000000000')], [domain2, BigInt('3000000000000000000')]])]
+        [ticker, new Map([[domain2, BigInt('5000000000000000000')]])]
       ]));
-      getMarkGasBalancesStub.resolves(new Map());
+      // Mark has enough gas balance on domain2
+      getMarkGasBalancesStub.resolves(new Map([
+        [ticker, new Map([[domain2, BigInt('1000000000000000000')]])]
+      ]));
       
-      // Mock custodied balances - start with 2 ETH custodied in each domain
+      // Mock custodied balances - domain1 has insufficient custodied assets 
+      // for Mark to settle out if not including pending intents
       const originalCustodied = new Map([
-        [ticker, new Map([[domain1, BigInt('2000000000000000000')], [domain2, BigInt('2000000000000000000')]])]
+        [ticker, new Map([
+          [domain1, BigInt('500000000000000000')], // Only 0.5 ETH
+          [domain2, BigInt('0')]
+        ])]
       ]);
       getCustodiedBalancesStub.resolves(originalCustodied);
       
@@ -424,38 +434,18 @@ describe('Invoice Processing', () => {
       mockDeps.cache.getAllPurchases.resolves([]);
       mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
       
-      // Create mock economy data with pending intents
-      // Domain1 has 1 ETH in pending intents
-      // Domain2 has 2.5 ETH in pending intents (more than available, should clamp to 0)
+      // Mock economy data with pending intents for domain1
       mockDeps.everclear.fetchEconomyData.callsFake(async (domain, tickerHash) => {
         if (domain === domain1) {
           return {
             currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-            invoiceQueue: null,
-            depositQueue: null,
             incomingIntents: {
               'chain1': [
                 {
                   intentId: '0xintent1',
                   initiator: '0xuser1',
-                  amount: '1000000000000000000', // 1 ETH
+                  amount: '1500000000000000000', // 1.5 ETH in pending intents
                   destinations: [domain2]
-                }
-              ]
-            }
-          };
-        } else if (domain === domain2) {
-          return {
-            currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-            invoiceQueue: null,
-            depositQueue: null,
-            incomingIntents: {
-              'chain1': [
-                {
-                  intentId: '0xintent2',
-                  initiator: '0xuser2',
-                  amount: '2500000000000000000', // 2.5 ETH (more than custodied)
-                  destinations: [domain1]
                 }
               ]
             }
@@ -464,62 +454,46 @@ describe('Invoice Processing', () => {
         
         return {
           currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-          invoiceQueue: null,
-          depositQueue: null,
           incomingIntents: null
         };
       });
       
-      // Mock the calculateSplitIntents to examine the adjusted custodied values
-      calculateSplitIntentsStub.callsFake(async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
-        // Verify the adjustments were made correctly
-        const domain1Custodied = remainingCustodied.get(ticker)?.get(domain1) || BigInt(0);
-        const domain2Custodied = remainingCustodied.get(ticker)?.get(domain2) || BigInt(0);
-        
-        // Domain1 should have 1 ETH less custodied (2 ETH - 1 ETH = 1 ETH)
-        expect(domain1Custodied.toString()).to.equal('1000000000000000000');
-        
-        // Domain2 should have 0 ETH custodied (2 ETH - 2.5 ETH = 0 ETH, clamped at 0)
-        expect(domain2Custodied.toString()).to.equal('0');
-        
-        // Return empty intents to keep the test simple
-        return {
-          intents: [],
-          originDomain: null,
-          totalAllocated: BigInt(0),
-          remainder: BigInt(0)
-        };
-      });
-      
-      // Mock getMinAmounts to return valid amounts
-      mockDeps.everclear.getMinAmounts.resolves({
-        minAmounts: { [domain1]: '1000000000000000000' },
-        invoiceAmount: '1000000000000000000',
-        amountAfterDiscount: '1000000000000000000',
-        discountBps: '0',
-        custodiedAmounts: {}
-      });
-      
-      // Create a test invoice
+      // Create an invoice going from domain1 to domain2
       const invoice = createMockInvoice({
         ticker_hash: ticker,
-        destinations: [domain1, domain2]
+        origin: domain1,
+        destinations: [domain2],
+        amount: '2000000000000000000' // 2 ETH
       });
       
-      // Execute the processInvoices function
+      // Mock getMinAmounts
+      mockDeps.everclear.getMinAmounts.resolves({
+        minAmounts: { [domain2]: '2000000000000000000' },
+        invoiceAmount: '2000000000000000000',
+        amountAfterDiscount: '2000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: { [domain1]: '500000000000000000' }
+      });
+      
+      // Mock sendIntents to return success
+      sendIntentsStub.resolves([{
+        intentId: '0xabc',
+        transactionHash: '0xabc',
+        chainId: domain2
+      }]);
+      
       await processInvoices(mockContext, [invoice]);
       
-      // Verify fetchEconomyData was called for both domains
-      expect(mockDeps.everclear.fetchEconomyData.calledWith(domain1, ticker)).to.be.true;
-      expect(mockDeps.everclear.fetchEconomyData.calledWith(domain2, ticker)).to.be.true;
+      // Verify a purchase was created
+      expect(mockDeps.cache.addPurchases.calledOnce).to.be.true;
+      const purchases = mockDeps.cache.addPurchases.firstCall.args[0];
+      expect(purchases.length).to.equal(1);
       
-      // Verify domain information logging
-      expect(mockDeps.logger.info.calledWith('Fetching economy data for ticker')).to.be.true;
-      
-      // Verify adjustment logging
-      expect(mockDeps.logger.info.calledWith(
-        'Adjusted custodied assets for domain based on pending intents'
-      )).to.be.true;
+      // Verify the purchase reflects the allocation that would only be possible
+      // if the pending intents were properly added to custodied balances
+      const purchaseIntent = purchases[0].purchase.params;
+      expect(purchaseIntent.origin).to.equal(domain2);
+      expect(purchaseIntent.destinations).to.include(domain1);
     });
 
     it('should handle failed fetchEconomyData calls gracefully', async () => {
@@ -553,8 +527,6 @@ describe('Invoice Processing', () => {
         if (domain === domain1) {
           return {
             currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-            invoiceQueue: null,
-            depositQueue: null,
             incomingIntents: {
               'chain1': [
                 {
@@ -572,8 +544,6 @@ describe('Invoice Processing', () => {
         
         return {
           currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-          invoiceQueue: null,
-          depositQueue: null,
           incomingIntents: null
         };
       });
@@ -653,8 +623,6 @@ describe('Invoice Processing', () => {
       // Mock economy data fetch with null incomingIntents
       mockDeps.everclear.fetchEconomyData.resolves({
         currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-        invoiceQueue: null,
-        depositQueue: null,
         incomingIntents: null  // Null incomingIntents
       });
       

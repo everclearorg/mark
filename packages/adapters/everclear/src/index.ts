@@ -44,8 +44,6 @@ export interface IncomingIntent {
 
 export interface EconomyDataResponse {
   currentEpoch: EconomyEpoch;
-  invoiceQueue: QueueIntent[] | null;
-  depositQueue: QueueIntent[] | null;
   incomingIntents: Record<string, IncomingIntent[]> | null;
 }
 
