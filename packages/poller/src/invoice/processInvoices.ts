@@ -573,8 +573,8 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       if (pendingAmount > 0n) {
         const currentCustodied = adjustedCustodied.get(ticker)?.get(domain) || BigInt(0);
 
-        // Subtract pending amount, clamped to 0
-        const newCustodied = currentCustodied > pendingAmount ? currentCustodied - pendingAmount : BigInt(0);
+        // Add pending amount, as it should increase custodied when arrived on hub
+        const newCustodied = currentCustodied + pendingAmount;
         adjustedCustodied.get(ticker)!.set(domain, newCustodied);
 
         logger.info('Adjusted custodied assets for domain based on pending intents', {
