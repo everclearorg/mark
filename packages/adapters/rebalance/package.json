@@ -11,6 +11,9 @@
         "lint": "eslint . --ext .ts"
     },
     "dependencies": {
+        "@mark/core": "workspace:*",
+        "@mark/logger": "workspace:*",
+        "axios": "1.9.0",
         "viem": "2.28.1"
     },
     "devDependencies": {
