@@ -3335,6 +3335,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@mark/adapters-rebalance@workspace:packages/adapters/rebalance":
+  version: 0.0.0-use.local
+  resolution: "@mark/adapters-rebalance@workspace:packages/adapters/rebalance"
+  dependencies:
+    "@mark/core": "workspace:*"
+    "@mark/logger": "workspace:*"
+    "@types/node": 20.17.12
+    axios: 1.9.0
+    eslint: 9.17.0
+    rimraf: 6.0.1
+    sort-package-json: 2.12.0
+    typescript: 5.7.2
+    viem: 2.28.1
+  languageName: unknown
+  linkType: soft
+
 "@mark/cache@workspace:*, @mark/cache@workspace:packages/adapters/cache":
   version: 0.0.0-use.local
   resolution: "@mark/cache@workspace:packages/adapters/cache"
