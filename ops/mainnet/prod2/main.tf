@@ -48,6 +48,12 @@ module "network" {
   vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
 }
 
+resource "aws_service_discovery_private_dns_namespace" "mark_internal" {
+  name        = "mark.internal"
+  description = "Mark internal DNS namespace for service discovery"
+  vpc         = module.network.vpc_id
+}
+
 module "ecs" {
   source                  = "../../modules/ecs"
   stage                   = var.stage
@@ -90,7 +96,7 @@ module "mark_web3signer" {
   lb_subnets          = module.network.private_subnets
   task_subnets        = module.network.private_subnets
   docker_image        = "ghcr.io/connext/web3signer:latest"
-  container_family    = "mark-web3signer"
+  container_family    = "mark2-web3signer"
   container_port      = 9000
   cpu                 = 256
   memory              = 512
@@ -98,6 +104,7 @@ module "mark_web3signer" {
   service_security_groups = [module.sgs.web3signer_sg_id]
   container_env_vars  = local.web3signer_env_vars
   zone_id             = var.zone_id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_prometheus" {
@@ -113,7 +120,7 @@ module "mark_prometheus" {
   lb_subnets              = module.network.public_subnets
   task_subnets            = module.network.private_subnets
   docker_image            = "prom/prometheus:latest"
-  container_family        = "mark-prometheus"
+  container_family        = "mark2-prometheus"
   container_port          = 9090
   cpu                     = 512
   memory                  = 1024
@@ -146,6 +153,7 @@ module "mark_prometheus" {
     healthy_threshold   = 2
     unhealthy_threshold = 3
   }
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_pushgateway" {
@@ -161,7 +169,7 @@ module "mark_pushgateway" {
   lb_subnets              = module.network.private_subnets
   task_subnets            = module.network.private_subnets
   docker_image            = "prom/pushgateway:latest"
-  container_family        = "mark-pushgateway"
+  container_family        = "mark2-pushgateway"
   container_port          = 9091
   cpu                     = 256
   memory                  = 512
@@ -169,13 +177,14 @@ module "mark_pushgateway" {
   service_security_groups = [module.sgs.prometheus_sg_id]
   container_env_vars      = local.pushgateway_env_vars
   zone_id                 = var.zone_id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_poller" {
   source              = "../../modules/lambda"
   stage               = var.stage
   environment         = var.environment
-  container_family    = "mark-poller"
+  container_family    = "mark2-poller"
   execution_role_arn  = module.iam.lambda_role_arn
   image_uri           = var.image_uri
   subnet_ids          = module.network.private_subnets
