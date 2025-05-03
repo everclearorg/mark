@@ -14,7 +14,8 @@
     "packages/adapters/chainservice",
     "packages/adapters/everclear",
     "packages/adapters/web3signer",
-    "packages/adapters/prometheus"
+    "packages/adapters/prometheus",
+    "packages/adapters/rebalance"
   ],
   "scripts": {
     "build": "yarn workspaces foreach -Av --parallel --topological-dev run build",
