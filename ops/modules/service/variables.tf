@@ -179,3 +179,13 @@ variable "task_subnets" {
   description = "Subnets for the ECS tasks"
   type        = list(string)
 }
+
+variable "vpc_flow_logs_role_arn" {
+  description = "The ARN of the VPC flow logs role"
+  type        = string
+}
+
+variable "private_dns_namespace_id" {
+  description = "The ID of the private DNS namespace for service discovery"
+  type        = string
+}
