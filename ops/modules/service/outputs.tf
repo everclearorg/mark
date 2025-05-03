@@ -9,8 +9,8 @@ output "task_definition_arn" {
 }
 
 output "service_url" {
-  description = "URL of the service"
-  value       = var.create_alb ? "${var.container_family}.${var.domain}" : "${aws_service_discovery_service.service.name}.${data.aws_service_discovery_dns_namespace.namespace.name}"
+  description = "The URL of the created service (ALB domain or Service Discovery domain)"
+  value       = var.create_alb ? "${var.container_family}.${var.domain}" : "${aws_service_discovery_service.service.name}.mark.internal"
 }
 
 output "alb_dns_name" {
@@ -40,4 +40,24 @@ output "debug_info" {
     alb_sg_id = var.create_alb ? aws_security_group.lb[0].id : null
     ecs_sg_id = var.service_security_groups[0]
   }
+}
+
+output "service_arn" {
+  description = "The ARN of the created ECS service"
+  value       = aws_ecs_service.service.id
+}
+
+output "service_discovery_arn" {
+  description = "The ARN of the created Service Discovery service"
+  value       = aws_service_discovery_service.service.arn
+}
+
+output "lb_dns_name" {
+  description = "The DNS name of the load balancer"
+  value       = var.create_alb ? aws_alb.lb[0].dns_name : null
+}
+
+output "lb_zone_id" {
+  description = "The zone ID of the load balancer"
+  value       = var.create_alb ? aws_alb.lb[0].zone_id : null
 }
