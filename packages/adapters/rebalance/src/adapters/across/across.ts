@@ -23,13 +23,13 @@ const V3_FUNDS_DEPOSITED_EVENT =
 const V3_FUNDS_DEPOSITED_TOPIC = keccak256(toHex(V3_FUNDS_DEPOSITED_EVENT));
 
 // Fill event and topic
-const FILLED_V3_RELAY_EVENT =
+export const FILLED_V3_RELAY_EVENT =
   'FilledV3Relay(address,address,uint256,uint256,uint256,uint256,uint32,uint32,uint32,address,address,address,address,bytes,(address,bytes,uint256,uint8))';
-const FILLED_V3_RELAY_TOPIC = keccak256(toHex(FILLED_V3_RELAY_EVENT));
+export const FILLED_V3_RELAY_TOPIC = '0x571749edf1d5c9599318cdbc4e28a6475d65e87fd3b2ddbe1e9a8d5e7a0f0ff7'; //keccak256(toHex(FILLED_V3_RELAY_EVENT));
 
 // WETH withdrawal event
-const WETH_WITHDRAWAL_EVENT = 'Withdrawal(address,uint256)';
-const WETH_WITHDRAWAL_TOPIC = keccak256(toHex(WETH_WITHDRAWAL_EVENT));
+export const WETH_WITHDRAWAL_EVENT = 'Withdrawal(address,uint256)';
+export const WETH_WITHDRAWAL_TOPIC = '0x3115d1449a7b732c986cba18244e897a450f61e1bb8d589cd2e69e6c8924f9f7';
 
 // Structure to hold callback info
 interface CallbackInfo {
@@ -52,136 +52,37 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   }
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
-    this.logger.debug('getReceivedAmount called', { amount, route });
-
     try {
-      // Find the matching output token on the destination chain
-      const outputToken = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
-      this.logger.debug('Found matching destination asset', {
-        originAsset: route.asset,
-        destinationAsset: outputToken,
-        originChain: route.origin,
-        destinationChain: route.destination,
-      });
+      const feesData = await this.getSuggestedFees(route, amount);
 
-      // Get suggested fees from Across API
-      this.logger.debug('Requesting suggested fees from Across API', {
-        inputToken: route.asset,
-        outputToken,
-        originChainId: route.origin,
-        destinationChainId: route.destination,
-        amount,
-      });
+      if (feesData.isAmountTooLow) {
+        throw new Error('Amount is too low for suggested route via across');
+      }
 
-      const response = await axios.get(`${this.url}/suggested-fees`, {
-        params: {
-          inputToken: route.asset,
-          outputToken,
-          originChainId: route.origin,
-          destinationChainId: route.destination,
-          amount: amount,
-        },
-      });
-
-      const feesData = response.data as SuggestedFeesResponse;
-      this.logger.debug('Received fee data from Across API', {
-        totalRelayFee: feesData.totalRelayFee,
-        lpFee: feesData.lpFee,
-        isAmountTooLow: feesData.isAmountTooLow,
-      });
-
-      // Calculate received amount by subtracting fees
-      const totalRelayFeeBN = BigInt(feesData.totalRelayFee.total);
-      const lpFeeBN = BigInt(feesData.lpFee.total);
-      const totalFees = totalRelayFeeBN + lpFeeBN;
-
-      // Convert amount to BigInt and subtract fees
-      const amountBN = BigInt(amount);
-      const receivedAmount = amountBN - totalFees;
-
-      this.logger.debug('Calculated received amount after fees', {
-        originalAmount: amount,
-        totalFees: totalFees.toString(),
-        receivedAmount: receivedAmount.toString(),
-      });
+      const totalFees = BigInt(feesData.totalRelayFee.total) + BigInt(feesData.lpFee.total);
+      const receivedAmount = BigInt(amount) - totalFees;
 
       return receivedAmount.toString();
     } catch (error) {
-      this.logger.error('Failed to get received amount from Across', {
-        error: jsonifyError(error),
-        amount,
-        route,
-      });
-      throw new Error(`Failed to get received amount from Across: ${error}`);
+      this.handleError(error, 'get received amount from Across', { amount, route });
     }
   }
 
   async send(amount: string, route: RebalanceRoute): Promise<TransactionRequestBase> {
-    this.logger.debug('send called', { amount, route });
-
     try {
-      // Find the matching output token on the destination chain
-      const outputToken = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
-      this.logger.debug('Found matching destination asset', {
-        originAsset: route.asset,
-        destinationAsset: outputToken,
-        originChain: route.origin,
-        destinationChain: route.destination,
-      });
+      const feesData = await this.getSuggestedFees(route, amount);
 
-      // Get suggested fees for the transaction
-      this.logger.debug('Requesting suggested fees from Across API', {
-        inputToken: route.asset,
-        outputToken,
-        originChainId: route.origin,
-        destinationChainId: route.destination,
-        amount,
-      });
-
-      const feesResponse = (await axios.get(`${this.url}/suggested-fees`, {
-        params: {
-          inputToken: route.asset,
-          outputToken,
-          originChainId: route.origin,
-          destinationChainId: route.destination,
-          amount: amount,
-        },
-      })) as { data: SuggestedFeesResponse };
-
-      this.logger.debug('Received fee data from Across API', {
-        totalRelayFee: feesResponse.data.totalRelayFee,
-        lpFee: feesResponse.data.lpFee,
-        isAmountTooLow: feesResponse.data.isAmountTooLow,
-        spokePoolAddress: feesResponse.data.spokePoolAddress,
-      });
-
-      // Check if amount is too low
-      if (feesResponse.data.isAmountTooLow) {
-        this.logger.warn('Amount is too low for bridging via Across', { amount, route });
+      if (feesData.isAmountTooLow) {
         throw new Error('Amount is too low for bridging via Across');
       }
 
-      // Prepare transaction request
-      // This is a simplified version - actual implementation would need contract addresses and ABI
-      const txRequest: TransactionRequestBase = {
-        to: feesResponse.data.spokePoolAddress, // Across spoke pool address from docs
-        data: '0x', // This would be the actual contract call data
-        value: BigInt(0), // For ETH transfers this would be non-zero
+      return {
+        to: feesData.spokePoolAddress,
+        data: '0x',
+        value: BigInt(0),
       };
-
-      this.logger.debug('Prepared transaction request', {
-        to: txRequest.to,
-        value: txRequest.value ? txRequest.value.toString() : '0',
-      });
-
-      return txRequest;
     } catch (error) {
-      this.logger.error('Failed to prepare Across bridge transaction', {
-        error: jsonifyError(error),
-        amount,
-        route,
-      });
-      throw new Error(`Failed to prepare Across bridge transaction: ${error}`);
+      this.handleError(error, 'prepare Across bridge transaction', { amount, route });
     }
   }
 
@@ -190,97 +91,36 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
   ): Promise<TransactionRequestBase | void> {
-    this.logger.debug('destinationCallback called', {
-      amount,
-      route,
-      transactionHash: originTransaction.transactionHash,
-    });
-
     try {
-      // Get deposit status from shared helper method
       const statusData = await this.getDepositStatus(route, originTransaction);
-
-      // If no status found, return
-      if (!statusData) {
-        throw new Error(`Failed to get deposit status for ${originTransaction.transactionHash}`);
+      if (!statusData || statusData.fillStatus !== 'filled' || !statusData.fillTxHash) {
+        throw new Error(`Transaction (depositId: ${statusData?.depositId}) is not yet filled`);
       }
 
-      if (statusData.fillStatus !== 'filled' || !statusData.fillTxHash) {
-        throw new Error(
-          `Transaction (depositId: ${statusData.depositId}) is not yet filled, cannot execute destination callback`,
-        );
-      }
-
-      // Check if callback is needed and get fill information
       const callbackInfo = await this.requiresCallback(route, statusData.fillTxHash);
-
       if (!callbackInfo.needsCallback) {
-        this.logger.debug('No callback needed for deposit', {
-          depositId: statusData.depositId,
-          fillStatus: statusData.fillStatus,
-        });
         return;
       }
 
-      // If we got here, we need to wrap ETH to WETH
-      this.logger.debug('Deposit requires ETH to WETH wrapping', {
-        depositId: statusData.depositId,
-        fillTxHash: statusData.fillTxHash,
-        amount: callbackInfo.amount?.toString(),
-      });
+      const originAsset = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+      this.validateAsset(originAsset, 'WETH', 'origin asset');
 
-      // Find the origin asset configuration
-      const originChainConfig = this.chains[route.origin]!;
-      const originAsset = originChainConfig.assets.find(
-        (a: AssetConfiguration) => a.address.toLowerCase() === route.asset.toLowerCase(),
-      );
-      if (!originAsset) {
-        throw new Error(`Origin asset not found in chain configuration`);
-      }
-      // Verify it's WETH
-      if (originAsset.symbol !== 'WETH') {
-        throw new Error(`Expected WETH, but found ${originAsset.symbol}`);
-      }
-
-      // Find WETH on the destination chain
       const destinationWETH = this.findMatchingDestinationAsset(route.asset, route.destination, route.origin);
       if (!destinationWETH) {
-        throw new Error(`Failed to find destination WETH`);
+        throw new Error('Failed to find destination WETH');
       }
 
-      // Use the amount from the fill transaction
-      const amountToWrap = callbackInfo.amount!;
-
-      this.logger.debug('Found WETH on destination chain', {
-        destinationChain: route.destination,
-        wethAddress: destinationWETH.address,
-        amountToWrap: amountToWrap.toString(),
-      });
-
-      // Prepare transaction to wrap ETH to WETH
-      // Use the deposit() function on WETH with ETH value
-
-      const txRequest: TransactionRequestBase = {
+      return {
         to: destinationWETH.address as `0x${string}`,
-        data: '0xd0e30db0', // Function selector for deposit()
-        value: amountToWrap,
+        data: '0xd0e30db0', // deposit() function selector
+        value: callbackInfo.amount!,
       };
-
-      this.logger.debug('Prepared ETH to WETH wrapping transaction', {
-        to: txRequest.to,
-        data: txRequest.data,
-        value: txRequest.value,
-      });
-
-      return txRequest;
     } catch (error) {
-      this.logger.error('Failed to prepare destination callback', {
-        error: jsonifyError(error),
+      this.handleError(error, 'prepare destination callback', {
         amount,
         route,
         transactionHash: originTransaction.transactionHash,
       });
-      throw new Error(`Failed to prepare destination callback: ${error}`);
     }
   }
 
@@ -308,8 +148,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       const isReady = statusData.fillStatus === 'filled';
       this.logger.debug('Deposit ready status determined', {
         isReady,
-        depositId: statusData.depositId,
-        fillStatus: statusData.fillStatus,
+        statusData,
       });
 
       return isReady;
@@ -330,7 +169,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
    * @param originTransaction The original transaction receipt
    * @returns The deposit status response with depositId or null if no deposit ID found
    */
-  private async getDepositStatus(
+  protected async getDepositStatus(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
   ): Promise<(DepositStatusResponse & { depositId: number }) | undefined> {
@@ -356,14 +195,8 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         depositId,
       });
 
-      const statusResponse = await axios.get(`${this.url}/deposit/status`, {
-        params: {
-          originChainId: route.origin,
-          depositId,
-        },
-      });
+      const statusData = await this.getDepositStatusFromApi(route, depositId);
 
-      const statusData = statusResponse.data as DepositStatusResponse;
       this.logger.debug('Received deposit status from Across API', {
         fillStatus: statusData.fillStatus,
         destinationChainId: statusData.destinationChainId,
@@ -444,7 +277,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   }
 
   // Helper methods to extract data from transaction receipt
-  private extractDepositId(receipt: TransactionReceipt): number | undefined {
+  protected extractDepositId(receipt: TransactionReceipt): number | undefined {
     this.logger.debug('Extracting deposit ID from transaction receipt', {
       transactionHash: receipt.transactionHash,
       logsCount: receipt.logs.length,
@@ -537,104 +370,35 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
    * @param fillTxHash The hash of the fill transaction
    * @returns Object with needsCallback flag and fill information if available
    */
-  private async requiresCallback(route: RebalanceRoute, fillTxHash: string): Promise<CallbackInfo> {
-    this.logger.debug('Checking if callback is required', {
-      asset: route.asset,
-      origin: route.origin,
-      destination: route.destination,
-      fillTxHash,
-    });
-
-    // Get chain configs
-    const originChainConfig = this.chains[route.origin];
-    const destinationChainConfig = this.chains[route.destination];
-    if (!originChainConfig || !destinationChainConfig) {
-      const error = new Error(`Missing chain configs for route`);
-      this.logger.error(error.message, {
-        route,
-        chains: Object.keys(this.chains),
-        error: jsonifyError(error),
-      });
-      throw error;
-    }
-
-    // Find the asset in the origin chain
-    const originAsset = originChainConfig.assets.find(
-      (a: AssetConfiguration) => a.address.toLowerCase() === route.asset.toLowerCase(),
-    );
-
+  protected async requiresCallback(route: RebalanceRoute, fillTxHash: string): Promise<CallbackInfo> {
+    const originAsset = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
     if (!originAsset) {
-      const error = new Error(`Missing asset configs for origin asset`);
-      this.logger.error(error.message, {
-        route,
-        chains: Object.keys(this.chains),
-        error: jsonifyError(error),
-      });
-      throw error;
+      throw new Error('Could not find origin asset');
     }
+    this.validateAsset(originAsset, 'WETH', 'origin asset');
 
-    // Check specifically for WETH symbol
-    const isWETH = originAsset.symbol === 'WETH';
-
-    if (!isWETH) {
-      this.logger.debug('Asset is not WETH, no callback needed', {
-        asset: route.asset,
-        originChain: route.origin,
-        symbol: originAsset.symbol,
-      });
-      return { needsCallback: false };
-    }
-
-    // Verify the destination chain has ETH configured as a native asset
     const destinationNative = this.findMatchingDestinationAsset(zeroAddress, route.origin, route.destination);
     if (!destinationNative || destinationNative.symbol !== 'ETH') {
-      this.logger.debug('Destination chain does not have native ETH', {
-        destination: route.destination,
-      });
       return { needsCallback: false };
     }
 
-    // Now examine the actual fill transaction to determine if ETH was delivered
-    // First, find a provider for the destination chain
-    const provider = destinationChainConfig.providers?.[0];
+    const provider = this.chains[route.destination]?.providers?.[0];
     if (!provider) {
-      this.logger.warn('No provider available for destination chain', {
-        destination: route.destination,
-      });
       return { needsCallback: false };
     }
 
-    // Create a temporary client to fetch the transaction receipt
-    // TODO: chainservice?
-    const client = createPublicClient({
-      transport: http(provider),
-    });
+    const client = createPublicClient({ transport: http(provider) });
+    const fillReceipt = await client.getTransactionReceipt({ hash: fillTxHash as `0x${string}` });
 
-    // Get the fill transaction receipt
-    const fillReceipt = await client.getTransactionReceipt({
-      hash: fillTxHash as `0x${string}`,
-    });
-
-    this.logger.debug('Retrieved fill transaction receipt', {
-      fillTxHash,
-      logsCount: fillReceipt.logs.length,
-    });
-
-    // Check that the received asset is empty (native) OR
-    // destination WETH and there is a withdrawn asset
     const hasFilled = fillReceipt.logs.find((l) => l.topics[0] === FILLED_V3_RELAY_TOPIC);
     const hasWithdrawn = fillReceipt.logs.find((l) => l.topics[0] === WETH_WITHDRAWAL_TOPIC);
+
     if (!hasFilled) {
-      const error = new Error(`No fill event found for fill tx hash`);
-      this.logger.error(error.message, {
-        route,
-        fillTxHash,
-        error: jsonifyError(error),
-      });
-      throw error;
+      console.log('FILLED_V3_RELAY_TOPIC', FILLED_V3_RELAY_TOPIC);
+      throw new Error('No fill event found for fill tx hash');
     }
 
-    const parsedFill = decodeEventLog({
+    const decodedEvent = decodeEventLog({
       abi: ACROSS_SPOKE_ABI,
       data: hasFilled.data,
       topics: hasFilled.topics,
@@ -642,62 +406,84 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     });
 
     if (
-      !parsedFill.args ||
-      !('outputToken' in parsedFill.args) ||
-      !('recipient' in parsedFill.args) ||
-      !('outputAmount' in parsedFill.args)
+      !decodedEvent.args ||
+      !('outputToken' in decodedEvent.args) ||
+      !('recipient' in decodedEvent.args) ||
+      !('outputAmount' in decodedEvent.args)
     ) {
-      const error = new Error(`Failed to parse logs for fill event`);
-      this.logger.error(error.message, {
-        route,
-        fillTxHash,
-        error: jsonifyError(error),
-        parsedFill,
-        topic: FILLED_V3_RELAY_TOPIC,
-      });
-      throw error;
+      throw new Error('Failed to parse logs for fill event');
     }
 
-    // Extract the output amount from the fill event - this is what we need to wrap
-    const outputAmount = BigInt((parsedFill.args.outputAmount as string).toString());
-    const recipient = parsedFill.args.recipient as string;
+    const outputAmount = BigInt(decodedEvent.args.outputAmount as string);
+    const recipient = decodedEvent.args.recipient as string;
 
-    // If the output asset is empty, requires a callback - ETH was delivered
-    if (parsedFill.args.outputToken === zeroHash) {
-      this.logger.debug(`Output token is ETH, needs to be wrapped to WETH`, {
-        outputAmount: outputAmount?.toString(),
-        recipient,
-        route,
-        fillTxHash,
-      });
-      return {
-        needsCallback: true,
-        amount: outputAmount,
-        recipient,
-      };
+    if (decodedEvent.args.outputToken === zeroHash) {
+      return { needsCallback: true, amount: outputAmount, recipient };
     }
 
-    // If the output token is not weth, does not require callback
     const destinationWeth = this.findMatchingDestinationAsset(originAsset.address, route.origin, route.destination);
-    if (
-      parsedFill.args.outputToken !== padHex((destinationWeth?.address ?? zeroAddress) as `0x${string}`, { size: 32 })
-    ) {
-      this.logger.debug(`Output token is not weth, no callback needed`, {
-        parsedFill,
-        destinationWeth,
-        route,
-        fillTxHash,
-      });
+    if (!destinationWeth) {
       return { needsCallback: false };
     }
 
-    // Output token _is_ weth, a callback is required IFF there is a withdrawn event
-    // NOTE: this assumes that there is _not_ a withdraw event from some other operation in the
-    // transaction (ie solver has weth, withdraws, fills in eth)
+    if (decodedEvent.args.outputToken !== padHex(destinationWeth.address as `0x${string}`, { size: 32 })) {
+      return { needsCallback: false };
+    }
+
     return {
       needsCallback: !!hasWithdrawn,
       amount: outputAmount,
       recipient,
     };
+  }
+
+  // Helper methods for API calls
+  protected async getSuggestedFees(route: RebalanceRoute, amount: string): Promise<SuggestedFeesResponse> {
+    const outputToken = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+    if (!outputToken) {
+      throw new Error('Could not find matching destination asset');
+    }
+
+    const response = await axios.get(`${this.url}/suggested-fees`, {
+      params: {
+        inputToken: route.asset,
+        outputToken: outputToken.address,
+        originChainId: route.origin,
+        destinationChainId: route.destination,
+        amount,
+      },
+    });
+
+    return response.data as SuggestedFeesResponse;
+  }
+
+  protected async getDepositStatusFromApi(route: RebalanceRoute, depositId: number): Promise<DepositStatusResponse> {
+    const response = await axios.get(`${this.url}/deposit/status`, {
+      params: {
+        originChainId: route.origin,
+        depositId,
+      },
+    });
+    return response.data as DepositStatusResponse;
+  }
+
+  // Helper for error handling
+  protected handleError(error: Error | unknown, context: string, metadata: Record<string, unknown>): never {
+    this.logger.error(`Failed to ${context}`, {
+      error: jsonifyError(error),
+      ...metadata,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    throw new Error(`Failed to ${context}: ${(error as any)?.message ?? ''}`);
+  }
+
+  // Helper for asset validation
+  protected validateAsset(asset: AssetConfiguration | undefined, expectedSymbol: string, context: string): void {
+    if (!asset) {
+      throw new Error(`Missing asset configs for ${context}`);
+    }
+    if (asset.symbol.toLowerCase() !== expectedSymbol.toLowerCase()) {
+      throw new Error(`Expected ${expectedSymbol}, but found ${asset.symbol}`);
+    }
   }
 }
