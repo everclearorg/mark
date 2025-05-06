@@ -29,6 +29,11 @@ export interface SuggestedFeesResponse {
   };
   isAmountTooLow: boolean;
   spokePoolAddress: `0x${string}`;
+  outputAmount: bigint;
+  timestamp: number;
+  fillDeadline: number;
+  exclusiveRelayer: `0x${string}`;
+  exclusivityDeadline: `0x${string}`;
 }
 
 export interface DepositStatusResponse {
