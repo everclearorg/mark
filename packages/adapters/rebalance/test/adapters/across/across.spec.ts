@@ -2,8 +2,8 @@ import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 import axios from 'axios';
 import { jsonifyError, Logger } from '@mark/logger';
 import { AssetConfiguration, ChainConfiguration } from '@mark/core';
-import { AcrossBridgeAdapter, FILLED_V3_RELAY_TOPIC, WETH_WITHDRAWAL_TOPIC } from '../../../src/adapters/across/across';
-import { SuggestedFeesResponse, DepositStatusResponse } from '../../../src/adapters/across/types';
+import { AcrossBridgeAdapter } from '../../../src/adapters/across/across';
+import { SuggestedFeesResponse, DepositStatusResponse, FILLED_V3_RELAY_TOPIC, WETH_WITHDRAWAL_TOPIC } from '../../../src/adapters/across/types';
 import {
     TransactionReceipt,
     createPublicClient,

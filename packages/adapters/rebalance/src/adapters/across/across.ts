@@ -14,22 +14,13 @@ import axios from 'axios';
 import { AssetConfiguration, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, SupportedBridge, RebalanceRoute } from '../../types';
-import { SuggestedFeesResponse, DepositStatusResponse } from './types';
+import { SuggestedFeesResponse, DepositStatusResponse, FILLED_V3_RELAY_TOPIC, WETH_WITHDRAWAL_TOPIC } from './types';
 import { ACROSS_SPOKE_ABI } from './abi';
 
 // Event signatures
 const V3_FUNDS_DEPOSITED_EVENT =
   'V3FundsDeposited(address,address,uint256,uint256,uint256,uint32,uint32,uint32,uint32,address,address,address,bytes)';
 const V3_FUNDS_DEPOSITED_TOPIC = keccak256(toHex(V3_FUNDS_DEPOSITED_EVENT));
-
-// Fill event and topic
-export const FILLED_V3_RELAY_EVENT =
-  'FilledV3Relay(address,address,uint256,uint256,uint256,uint256,uint32,uint32,uint32,address,address,address,address,bytes,(address,bytes,uint256,uint8))';
-export const FILLED_V3_RELAY_TOPIC = '0x571749edf1d5c9599318cdbc4e28a6475d65e87fd3b2ddbe1e9a8d5e7a0f0ff7'; //keccak256(toHex(FILLED_V3_RELAY_EVENT));
-
-// WETH withdrawal event
-export const WETH_WITHDRAWAL_EVENT = 'Withdrawal(address,uint256)';
-export const WETH_WITHDRAWAL_TOPIC = '0x3115d1449a7b732c986cba18244e897a450f61e1bb8d589cd2e69e6c8924f9f7';
 
 // Structure to hold callback info
 interface CallbackInfo {
