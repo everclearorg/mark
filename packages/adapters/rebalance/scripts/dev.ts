@@ -44,42 +44,38 @@ program
     .option('-d, --destination <chainId>', 'Destination chain ID', '10')
     .option('-t, --token <address>', 'Token address to test with')
     .action(async (type: SupportedBridge, options: AdapterOptions) => {
-        try {
-            // Get private key from env
-            const privateKey = process.env.PRIVATE_KEY;
-            if (!privateKey) {
-                throw new Error('PRIVATE_KEY not found in .env');
-            }
-
-            // Create account from private key
-            const account = privateKeyToAccount(privateKey as `0x${string}`);
-
-            // Get chain configs
-            const configs = await getEverclearConfig();
-            if (!configs) {
-                throw new Error('Failed to get chain configurations');
-            }
-
-            // Create appropriate adapter
-            let adapter: BridgeAdapter;
-            switch (type) {
-                case 'across':
-                    adapter = new AcrossBridgeAdapter(
-                        'https://across-api.example.com', // TODO: Get from config
-                        configs.chains,
-                        logger
-                    );
-                    break;
-                default:
-                    throw new Error(`Unsupported adapter type: ${type}`);
-            }
-
-            // Test the adapter
-            await testBridgeAdapter(adapter, account, configs.chains, options);
-        } catch (error) {
-            logger.error('Command failed', { error });
-            process.exit(1);
+        // Get private key from env
+        const privateKey = process.env.PRIVATE_KEY;
+        if (!privateKey) {
+            throw new Error('PRIVATE_KEY not found in .env');
         }
+
+        // Create account from private key
+        const account = privateKeyToAccount(privateKey as `0x${string}`);
+
+        // Get chain configs
+        const configs = await getEverclearConfig();
+        if (!configs) {
+            throw new Error('Failed to get chain configurations');
+        }
+
+        // Create appropriate adapter
+        let adapter: BridgeAdapter;
+        switch (type) {
+            case 'across':
+                adapter = new AcrossBridgeAdapter(
+                    'https://across-api.example.com', // TODO: Get from config
+                    configs.chains,
+                    logger
+                );
+                break;
+            default:
+                throw new Error(`Unsupported adapter type: ${type}`);
+        }
+
+        // Test the adapter
+        await testBridgeAdapter(adapter, account, configs.chains, options);
+
     });
 
 async function testBridgeAdapter(
