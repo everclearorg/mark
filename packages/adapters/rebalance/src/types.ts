@@ -11,7 +11,7 @@ export interface RebalanceRoute {
 export interface BridgeAdapter {
   type(): SupportedBridge;
   getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string>;
-  send(amount: string, route: RebalanceRoute): Promise<TransactionRequestBase>;
+  send(sender: string, recipient: string, amount: string, route: RebalanceRoute): Promise<TransactionRequestBase>;
   destinationCallback(
     amount: string,
     route: RebalanceRoute,

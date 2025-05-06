@@ -3,6 +3,7 @@ import {
   TransactionRequestBase,
   createPublicClient,
   decodeEventLog,
+  encodeFunctionData,
   http,
   keccak256,
   padHex,
@@ -50,16 +51,18 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         throw new Error('Amount is too low for suggested route via across');
       }
 
-      const totalFees = BigInt(feesData.totalRelayFee.total) + BigInt(feesData.lpFee.total);
-      const receivedAmount = BigInt(amount) - totalFees;
-
-      return receivedAmount.toString();
+      return feesData.outputAmount.toString();
     } catch (error) {
       this.handleError(error, 'get received amount from Across', { amount, route });
     }
   }
 
-  async send(amount: string, route: RebalanceRoute): Promise<TransactionRequestBase> {
+  async send(
+    sender: string,
+    recipient: string,
+    amount: string,
+    route: RebalanceRoute,
+  ): Promise<TransactionRequestBase> {
     try {
       const feesData = await this.getSuggestedFees(route, amount);
 
@@ -69,8 +72,28 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
 
       return {
         to: feesData.spokePoolAddress,
-        data: '0x',
-        value: BigInt(0),
+        data: encodeFunctionData({
+          abi: ACROSS_SPOKE_ABI,
+          functionName: 'deposit',
+          args: [
+            padHex(sender as `0x${string}`, { size: 32 }),
+            padHex(recipient as `0x${string}`, { size: 32 }),
+            padHex(route.asset as `0x${string}`, { size: 32 }),
+            padHex(
+              this.findMatchingDestinationAsset(route.asset, route.origin, route.destination)!.address as `0x${string}`,
+              { size: 32 },
+            ),
+            BigInt(amount), // input amount
+            feesData.outputAmount, // output amount,
+            BigInt(route.destination), // destination
+            padHex(feesData.exclusiveRelayer, { size: 32 }), // exclusive relayer
+            feesData.timestamp, // quote timestamp,
+            feesData.fillDeadline, // fill deadline
+            feesData.exclusivityDeadline, // exclusivity parameter
+            '', // message
+          ],
+        }),
+        value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
       };
     } catch (error) {
       this.handleError(error, 'prepare Across bridge transaction', { amount, route });
@@ -435,7 +458,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       throw new Error('Could not find matching destination asset');
     }
 
-    const response = await axios.get(`${this.url}/suggested-fees`, {
+    const response = await axios.get<SuggestedFeesResponse>(`${this.url}/suggested-fees`, {
       params: {
         inputToken: route.asset,
         outputToken: outputToken.address,
@@ -445,7 +468,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       },
     });
 
-    return response.data as SuggestedFeesResponse;
+    return response.data;
   }
 
   protected async getDepositStatusFromApi(route: RebalanceRoute, depositId: number): Promise<DepositStatusResponse> {
