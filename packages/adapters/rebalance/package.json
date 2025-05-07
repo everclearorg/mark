@@ -7,9 +7,12 @@
     "scripts": {
         "build": "tsc",
         "clean": "rm -rf dist",
-        "test": "jest --coverage",
-        "lint": "eslint . --ext .ts",
-        "dev": "npx tsx scripts/dev.ts"
+        "dev": "npx tsx scripts/dev.ts",
+        "lint": "yarn lint:package && yarn lint:ts",
+        "lint:fix": "yarn lint --fix",
+        "lint:package": "sort-package-json",
+        "lint:ts": "eslint ./src",
+        "test": "jest --coverage"
     },
     "dependencies": {
         "@mark/core": "workspace:*",
