@@ -6,7 +6,8 @@ module.exports = {
         'src/**/*.ts',
         '!src/**/*.d.ts',
         '!src/**/index.ts',
-        '!src/**/types.ts'
+        '!src/**/types.ts',
+        '!src/adapters/across/utils.ts' // taken from across sdk
     ],
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov', 'html'],

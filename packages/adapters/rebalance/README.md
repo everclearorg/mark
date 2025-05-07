@@ -27,11 +27,16 @@ The `dev` script provides a CLI interface for testing bridge adapters. It suppor
 - Handling token approvals
 - Polling for transaction readiness
 - Executing callback transactions
+- Resuming failed or incomplete transactions
 
 #### Basic Usage
 
 ```bash
+# Test a new bridge transaction
 yarn dev adapter <type> [options]
+
+# Resume an existing bridge transaction
+yarn dev resume [options]
 ```
 
 #### Supported Adapters
@@ -42,10 +47,20 @@ Currently supported bridge types:
 
 #### Command Options
 
+For `adapter` command:
+
 - `-a, --amount <amount>` - Amount to test with (in human-readable units, e.g., 0.01)
 - `-o, --origin <chainId>` - Origin chain ID (default: 1 for Ethereum mainnet)
 - `-d, --destination <chainId>` - Destination chain ID (default: 10 for Optimism)
 - `-t, --token <address>` - Token address to test with (default: WETH on Ethereum)
+
+For `resume` command:
+
+- `-o, --origin <chainId>` - Origin chain ID (required)
+- `-h, --hash <txHash>` - Transaction hash to resume from (required)
+- `-d, --destination <chainId>` - Destination chain ID (default: 10)
+- `-a, --amount <amount>` - Original amount (in human units, default: 0.01)
+- `-t, --token <address>` - Token address used in the transaction
 
 #### Examples
 
@@ -65,6 +80,18 @@ yarn dev adapter across -a 0.01 -t 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
 ```bash
 yarn dev adapter across -a 0.01 -o 1 -d 137
+```
+
+4. Resume a failed or incomplete transaction:
+
+```bash
+yarn dev resume -o 1 -h 0x123... -a 0.01
+```
+
+5. Resume a specific token transaction:
+
+```bash
+yarn dev resume -o 1 -h 0x123... -a 0.01 -t 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 ```
 
 #### Output
@@ -97,6 +124,19 @@ Starting to poll for transaction readiness...
 Transaction is ready on destination chain
 ```
 
+#### Error Handling
+
+The script includes comprehensive error handling for:
+
+- Missing environment variables
+- Invalid chain configurations
+- Asset not found
+- Insufficient token allowance
+- Transaction failures
+- Timeout during polling
+- Invalid transaction hashes
+- Chain-specific transaction receipt formats
+
 #### Adding New Adapters
 
 To add support for a new bridge adapter:
@@ -116,3 +156,11 @@ case 'newbridge':
     );
     break;
 ```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
