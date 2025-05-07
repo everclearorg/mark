@@ -11,7 +11,8 @@ module.exports = {
     ],
     coverageProvider: 'babel',
     coverageDirectory: 'coverage',
-    coverageReporters: ['text', 'lcov', 'html'],
+    coverageReporters: ['text', 'lcov'],
+    modulePathIgnorePatterns: ['<rootDir>/dist/'],
     moduleNameMapper: {
         '^@mark/(.*)$': '<rootDir>/../$1/src',
     },
@@ -21,14 +22,6 @@ module.exports = {
         'js', 'jsx',
         'json', 'node'
     ],
-    transform: {
-        '^.+\\.tsx?$': [
-            'ts-jest',
-            {
-                tsconfig: '<rootDir>/tsconfig.json',
-            },
-        ],
-    },
     rootDir: './',
     coverageThreshold: {
         global: {
