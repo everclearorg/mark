@@ -39,8 +39,6 @@ jobs:
       - name: Run unit tests
         shell: bash
         run: yarn test:unit
-        env:
-          TS_JEST_DISABLE_CACHE: true
 
   lint:
     name: Lint
