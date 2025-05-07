@@ -1,22 +1,28 @@
-import { describe, expect, it, jest, beforeEach } from '@jest/globals';
-import axios from 'axios';
-import { jsonifyError, Logger } from '@mark/logger';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { AssetConfiguration, ChainConfiguration } from '@mark/core';
-import { AcrossBridgeAdapter } from '../../../src/adapters/across/across';
-import { SuggestedFeesResponse, DepositStatusResponse, FILLED_V3_RELAY_TOPIC, WETH_WITHDRAWAL_TOPIC } from '../../../src/adapters/across/types';
-import {
-    TransactionReceipt,
-    createPublicClient,
-    decodeEventLog,
-    padHex,
-} from 'viem';
-import { RebalanceRoute } from '../../../src/types';
+import { jsonifyError, Logger } from '@mark/logger';
+import axios from 'axios';
 import { Transaction } from 'ethers';
+import { createPublicClient, decodeEventLog, padHex, TransactionReceipt, encodeFunctionData, zeroAddress } from 'viem';
+import { AcrossBridgeAdapter } from '../../../src/adapters/across/across';
+import {
+    DepositStatusResponse,
+    SuggestedFeesResponse,
+    WETH_WITHDRAWAL_TOPIC,
+} from '../../../src/adapters/across/types';
+import { RebalanceRoute } from '../../../src/types';
+import { ACROSS_SPOKE_ABI } from '../../../src/adapters/across/abi';
+import { getDepositFromLogs, parseFillLogs } from '../../../src/adapters/across/utils';
 
 // Mock the external dependencies
 jest.mock('axios');
 jest.mock('viem');
 jest.mock('@mark/logger');
+jest.mock('../../../src/adapters/across/utils', () => ({
+    getDepositFromLogs: jest.fn(),
+    parseFillLogs: jest.fn(),
+}));
 
 // Test adapter that exposes private methods
 class TestAcrossBridgeAdapter extends AcrossBridgeAdapter {
@@ -44,11 +50,14 @@ class TestAcrossBridgeAdapter extends AcrossBridgeAdapter {
         return super.findMatchingDestinationAsset(asset, origin, destination);
     }
 
-    public extractDepositId(receipt: TransactionReceipt): number | undefined {
-        return super.extractDepositId(receipt);
+    public extractDepositId(origin: number, receipt: TransactionReceipt): number | undefined {
+        return super.extractDepositId(origin, receipt);
     }
 
-    public requiresCallback(route: RebalanceRoute, fillTxHash: string): Promise<{
+    public requiresCallback(
+        route: RebalanceRoute,
+        fillTxHash: string,
+    ): Promise<{
         needsCallback: boolean;
         amount?: bigint;
         recipient?: string;
@@ -69,7 +78,7 @@ const mockLogger = {
 const mockUrl = 'https://across-api.example.com';
 
 const mockAssets: Record<string, AssetConfiguration> = {
-    'ETH': {
+    ETH: {
         address: '0x0000000000000000000000000000000000000000',
         symbol: 'ETH',
         decimals: 18,
@@ -77,7 +86,7 @@ const mockAssets: Record<string, AssetConfiguration> = {
         isNative: true,
         balanceThreshold: '0',
     },
-    'WETH': {
+    WETH: {
         address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
         symbol: 'WETH',
         decimals: 18,
@@ -85,14 +94,14 @@ const mockAssets: Record<string, AssetConfiguration> = {
         isNative: false,
         balanceThreshold: '0',
     },
-    'USDC': {
+    USDC: {
         address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
         symbol: 'USDC',
         decimals: 18,
         tickerHash: '0xUSDCHash',
         isNative: false,
         balanceThreshold: '0',
-    }
+    },
 };
 
 const mockChains: Record<string, any> = {
@@ -120,6 +129,45 @@ const mockChains: Record<string, any> = {
     },
 };
 
+// Mock API response
+const mockFeesResponse: SuggestedFeesResponse = {
+    totalRelayFee: {
+        total: '100000', // 0.1 USDC
+        pct: '0.001',
+    },
+    lpFee: {
+        total: '50000', // 0.05 USDC
+        pct: '0.0005',
+    },
+    relayerCapitalFee: {
+        total: '50000',
+        pct: '0.0005',
+    },
+    relayerGasFee: {
+        total: '50000',
+        pct: '0.0005',
+    },
+    isAmountTooLow: false,
+    spokePoolAddress: '0xSpokePoolAddress' as `0x${string}`,
+    outputAmount: BigInt('500000500000500'),
+    timestamp: Date.now(),
+    fillDeadline: Date.now() + 3600000,
+    exclusiveRelayer: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+    exclusivityDeadline: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+};
+
+// Mock deposit status response
+const mockStatusResponse: DepositStatusResponse = {
+    status: 'filled',
+    fillTx: '0xfilltxhash',
+    destinationChainId: 10,
+    originChainId: 1,
+    depositId: '12312',
+    depositTxHash: '0xdeposittxhash',
+};
+
+const FILLED_V3_RELAY_TOPIC = '0x44b559f101f8fbcc8a0ea43fa91a05a729a5ea6e14a7c75aa750374690137208';
+
 describe('AcrossBridgeAdapter', () => {
     let adapter: TestAcrossBridgeAdapter;
 
@@ -131,6 +179,8 @@ describe('AcrossBridgeAdapter', () => {
         (axios.get as jest.Mock).mockReset();
         (createPublicClient as jest.Mock).mockReset();
         (decodeEventLog as jest.Mock).mockReset();
+        (encodeFunctionData as jest.Mock).mockReset();
+        (getDepositFromLogs as jest.Mock).mockReset();
 
         // Reset logger mocks
         mockLogger.debug.mockReset();
@@ -164,35 +214,13 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // Mock API response
-            const mockFeesResponse: SuggestedFeesResponse = {
-                totalRelayFee: {
-                    total: '100000', // 0.1 USDC
-                    pct: '0.001',
-                },
-                lpFee: {
-                    total: '50000', // 0.05 USDC
-                    pct: '0.0005',
-                },
-                relayerCapitalFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerGasFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                isAmountTooLow: false,
-                spokePoolAddress: '0xSpokePoolAddress',
-            };
-
             // Mock the findMatchingDestinationAsset method to return just the address
             jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
                 ...mockAssets['USDC'],
                 address: mockAssets['USDC'].address,
             });
 
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockFeesResponse });
 
             // Execute
@@ -200,7 +228,7 @@ describe('AcrossBridgeAdapter', () => {
             const result = await adapter.getReceivedAmount(amount, route);
 
             // Expected: 10 USDC - 0.1 USDC - 0.05 USDC = 9.85 USDC
-            expect(result).toBe('9850000');
+            expect(result).toBe(mockFeesResponse.outputAmount.toString());
             expect(axios.get).toHaveBeenCalledWith(`${mockUrl}/suggested-fees`, {
                 params: {
                     inputToken: route.asset,
@@ -220,12 +248,12 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockRejectedValueOnce(new Error('API error'));
 
             // Execute and expect error
             await expect(adapter.getReceivedAmount('10000000', route)).rejects.toThrow(
-                'Failed to get received amount from Across'
+                'Failed to get received amount from Across',
             );
         });
 
@@ -237,34 +265,12 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // Mock API response with isAmountTooLow=true
-            const mockFeesResponse: SuggestedFeesResponse = {
-                totalRelayFee: {
-                    total: '100000',
-                    pct: '0.001',
-                },
-                lpFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerCapitalFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerGasFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                isAmountTooLow: true,
-                spokePoolAddress: '0xSpokePoolAddress',
-            };
-
-            // @ts-ignore - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockFeesResponse });
+            // @ts-expect-error - ignoring axios type errors for the mock
+            (axios.get as jest.Mock).mockResolvedValueOnce({ data: { ...mockFeesResponse, isAmountTooLow: true } });
 
             // Execute and expect error
             await expect(adapter.getReceivedAmount('100', route)).rejects.toThrow(
-                'Amount is too low for suggested route via across'
+                'Amount is too low for suggested route via across',
             );
         });
     });
@@ -278,40 +284,39 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // Mock API response
-            const mockFeesResponse: SuggestedFeesResponse = {
-                totalRelayFee: {
-                    total: '100000',
-                    pct: '0.001',
-                },
-                lpFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerCapitalFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerGasFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                isAmountTooLow: false,
-                spokePoolAddress: '0xSpokePoolAddress',
-            };
-
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockFeesResponse });
+            (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xdata');
 
             // Execute
             const amount = '10000000'; // 10 USDC
-            const result = await adapter.send(amount, route);
+            const result = await adapter.send('0xsender', '0xrecipient', amount, route);
 
             // Assert
             expect(result).toEqual({
                 to: '0xSpokePoolAddress',
-                data: '0x',
+                data: '0xdata',
                 value: BigInt(0),
+            });
+
+            // Verify encodeFunctionData was called with correct args
+            expect(encodeFunctionData).toHaveBeenCalledWith({
+                abi: ACROSS_SPOKE_ABI,
+                functionName: 'deposit',
+                args: [
+                    padHex('0xsender', { size: 32 }),
+                    padHex('0xrecipient', { size: 32 }),
+                    padHex(mockAssets['USDC'].address as `0x${string}`, { size: 32 }),
+                    padHex(mockAssets['USDC'].address as `0x${string}`, { size: 32 }),
+                    BigInt(amount),
+                    mockFeesResponse.outputAmount,
+                    BigInt(route.destination),
+                    padHex(mockFeesResponse.exclusiveRelayer, { size: 32 }),
+                    mockFeesResponse.timestamp,
+                    mockFeesResponse.fillDeadline,
+                    mockFeesResponse.exclusivityDeadline,
+                    '',
+                ],
             });
         });
 
@@ -323,34 +328,12 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // Mock API response with isAmountTooLow=true
-            const mockFeesResponse: SuggestedFeesResponse = {
-                totalRelayFee: {
-                    total: '100000',
-                    pct: '0.001',
-                },
-                lpFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerCapitalFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerGasFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                isAmountTooLow: true,
-                spokePoolAddress: '0xSpokePoolAddress',
-            };
-
-            // @ts-ignore - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockFeesResponse });
+            // @ts-expect-error - ignoring axios type errors for the mock
+            (axios.get as jest.Mock).mockResolvedValueOnce({ data: { ...mockFeesResponse, isAmountTooLow: true } });
 
             // Execute and expect error
-            await expect(adapter.send('1000', route)).rejects.toThrow(
-                'Amount is too low for bridging via Across'
+            await expect(adapter.send('0xsender', '0xrecipient', '1000', route)).rejects.toThrow(
+                'Amount is too low for bridging via Across',
             );
         });
     });
@@ -397,17 +380,10 @@ describe('AcrossBridgeAdapter', () => {
                 transactionIndex: 1,
             };
 
-            // Mock deposit status response
-            const mockStatusResponse: DepositStatusResponse = {
-                fillStatus: 'filled',
-                fillTxHash: '0xfilltxhash',
-                destinationChainId: 10,
-            };
-
             // Mock the extractDepositId method
             jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
 
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
 
             // Mock the requiresCallback function
@@ -469,17 +445,10 @@ describe('AcrossBridgeAdapter', () => {
                 transactionIndex: 1,
             };
 
-            // Mock deposit status response
-            const mockStatusResponse: DepositStatusResponse = {
-                fillStatus: 'filled',
-                fillTxHash: '0xfilltxhash',
-                destinationChainId: 10,
-            };
-
             // Mock the extractDepositId method
             jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
 
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
 
             // Mock the requiresCallback function
@@ -537,17 +506,10 @@ describe('AcrossBridgeAdapter', () => {
                 transactionIndex: 1,
             };
 
-            // Mock deposit status response
-            const mockStatusResponse: DepositStatusResponse = {
-                fillStatus: 'filled',
-                fillTxHash: '0xfilltxhash',
-                destinationChainId: 10,
-            };
-
             // Mock the extractDepositId method
             jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
 
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
 
             // Execute
@@ -604,13 +566,7 @@ describe('AcrossBridgeAdapter', () => {
                 transactionIndex: 1,
             };
 
-            // Mock deposit status response
-            const mockStatusResponse: DepositStatusResponse = {
-                fillStatus: 'pending',
-                destinationChainId: 10,
-            };
-
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
 
             // Execute
@@ -630,35 +586,13 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // Mock API response
-            const mockFeesResponse: SuggestedFeesResponse = {
-                totalRelayFee: {
-                    total: '100000',
-                    pct: '0.001',
-                },
-                lpFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerCapitalFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                relayerGasFee: {
-                    total: '50000',
-                    pct: '0.0005',
-                },
-                isAmountTooLow: false,
-                spokePoolAddress: '0xSpokePoolAddress',
-            };
-
             // Mock the findMatchingDestinationAsset method
             jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
                 ...mockAssets['USDC'],
                 address: mockAssets['USDC'].address,
             });
 
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockFeesResponse });
 
             // Execute
@@ -689,12 +623,15 @@ describe('AcrossBridgeAdapter', () => {
 
             // Mock API response
             const mockStatusResponse: DepositStatusResponse = {
-                fillStatus: 'filled',
-                fillTxHash: '0xfilltxhash',
+                status: 'filled',
+                fillTx: '0xfilltxhash',
                 destinationChainId: 10,
+                originChainId: 1,
+                depositId: '291',
+                depositTxHash: '0xdeposittxhash',
             };
 
-            // @ts-ignore - ignoring axios type errors for the mock
+            // @ts-expect-error - ignoring axios type errors for the mock
             (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
 
             // Execute
@@ -718,9 +655,7 @@ describe('AcrossBridgeAdapter', () => {
             const metadata = { test: 'data' };
 
             // Execute and expect error
-            expect(() => adapter.handleError(error, context, metadata)).toThrow(
-                'Failed to test operation: Test error'
-            );
+            expect(() => adapter.handleError(error, context, metadata)).toThrow('Failed to test operation: Test error');
 
             // Assert logging
             expect(mockLogger.error).toHaveBeenCalledWith('Failed to test operation', {
@@ -732,16 +667,12 @@ describe('AcrossBridgeAdapter', () => {
 
     describe('validateAsset', () => {
         it('should throw error if asset is undefined', () => {
-            expect(() => adapter.validateAsset(undefined, 'WETH', 'test')).toThrow(
-                'Missing asset configs for test'
-            );
+            expect(() => adapter.validateAsset(undefined, 'WETH', 'test')).toThrow('Missing asset configs for test');
         });
 
         it('should throw error if asset symbol does not match', () => {
             const asset = mockAssets['USDC'];
-            expect(() => adapter.validateAsset(asset, 'WETH', 'test')).toThrow(
-                'Expected WETH, but found USDC'
-            );
+            expect(() => adapter.validateAsset(asset, 'WETH', 'test')).toThrow('Expected WETH, but found USDC');
         });
 
         it('should not throw error if asset symbol matches', () => {
@@ -752,41 +683,25 @@ describe('AcrossBridgeAdapter', () => {
 
     describe('findMatchingDestinationAsset', () => {
         it('should find matching asset in destination chain', () => {
-            const result = adapter.findMatchingDestinationAsset(
-                mockAssets['USDC'].address,
-                1,
-                10
-            );
+            const result = adapter.findMatchingDestinationAsset(mockAssets['USDC'].address, 1, 10);
 
             expect(result).toEqual(mockAssets['USDC']);
         });
 
         it('should return undefined if origin chain not found', () => {
-            const result = adapter.findMatchingDestinationAsset(
-                mockAssets['USDC'].address,
-                999,
-                10
-            );
+            const result = adapter.findMatchingDestinationAsset(mockAssets['USDC'].address, 999, 10);
 
             expect(result).toBeUndefined();
         });
 
         it('should return undefined if destination chain not found', () => {
-            const result = adapter.findMatchingDestinationAsset(
-                mockAssets['USDC'].address,
-                1,
-                999
-            );
+            const result = adapter.findMatchingDestinationAsset(mockAssets['USDC'].address, 1, 999);
 
             expect(result).toBeUndefined();
         });
 
         it('should return undefined if asset not found in origin chain', () => {
-            const result = adapter.findMatchingDestinationAsset(
-                '0xInvalidAddress',
-                1,
-                10
-            );
+            const result = adapter.findMatchingDestinationAsset('0xInvalidAddress', 1, 10);
 
             expect(result).toBeUndefined();
         });
@@ -800,10 +715,7 @@ describe('AcrossBridgeAdapter', () => {
                 logs: [
                     {
                         address: '0xSpokePoolAddress',
-                        topics: [
-                            undefined,
-                            '0x0000000000000000000000000000000000000000000000000000000000000123',
-                        ] as any,
+                        topics: [undefined, '0x0000000000000000000000000000000000000000000000000000000000000123'] as any,
                         data: '0x',
                         blockNumber: BigInt(1234),
                         transactionHash: '0xmocktxhash',
@@ -826,16 +738,34 @@ describe('AcrossBridgeAdapter', () => {
                 transactionIndex: 1,
             };
 
-            // Mock decodeEventLog
-            (decodeEventLog as jest.Mock).mockReturnValue({
-                args: {
-                    depositId: BigInt(291),
-                },
+            // Mock getDepositFromLogs to return a deposit with ID 291
+            (getDepositFromLogs as jest.Mock).mockReturnValue({
+                depositId: BigInt(291),
+                inputToken: '0xInputToken',
+                outputToken: '0xOutputToken',
+                inputAmount: BigInt(1000),
+                outputAmount: BigInt(1000),
+                destinationChainId: 10,
+                message: '0x',
+                depositor: '0xDepositor',
+                recipient: '0xRecipient',
+                exclusiveRelayer: '0xRelayer',
+                quoteTimestamp: 1234567890,
+                fillDeadline: 1234567890,
+                exclusivityDeadline: 1234567890,
+                status: 'pending',
+                depositTxHash: '0xmocktxhash',
+                depositTxBlock: BigInt(1234),
+                originChainId: 1,
             });
 
-            const result = adapter.extractDepositId(mockReceipt as TransactionReceipt);
+            const result = adapter.extractDepositId(1, mockReceipt as TransactionReceipt);
 
             expect(result).toBe(291);
+            expect(getDepositFromLogs).toHaveBeenCalledWith({
+                originChainId: 1,
+                receipt: mockReceipt,
+            });
         });
 
         it('should return undefined if no deposit event found', () => {
@@ -856,9 +786,18 @@ describe('AcrossBridgeAdapter', () => {
                 transactionIndex: 1,
             };
 
-            const result = adapter.extractDepositId(mockReceipt as TransactionReceipt);
+            // Mock getDepositFromLogs to throw error when no deposit found
+            (getDepositFromLogs as jest.Mock).mockImplementation(() => {
+                throw new Error('No deposit log found.');
+            });
+
+            const result = adapter.extractDepositId(1, mockReceipt as TransactionReceipt);
 
             expect(result).toBeUndefined();
+            expect(getDepositFromLogs).toHaveBeenCalledWith({
+                originChainId: 1,
+                receipt: mockReceipt,
+            });
         });
     });
 
@@ -872,9 +811,7 @@ describe('AcrossBridgeAdapter', () => {
 
             jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue(undefined);
 
-            await expect(adapter.requiresCallback(route, '0xfilltxhash')).rejects.toThrow(
-                'Could not find origin asset'
-            );
+            await expect(adapter.requiresCallback(route, '0xfilltxhash')).rejects.toThrow('Could not find origin asset');
         });
 
         it('should return needsCallback=false if destination native asset is not ETH', async () => {
@@ -884,7 +821,8 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            jest.spyOn(adapter, 'findMatchingDestinationAsset')
+            jest
+                .spyOn(adapter, 'findMatchingDestinationAsset')
                 .mockReturnValueOnce(mockAssets['WETH'])
                 .mockReturnValueOnce({ ...mockAssets['ETH'], symbol: 'MATIC' });
 
@@ -900,16 +838,21 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            jest.spyOn(adapter, 'findMatchingDestinationAsset')
+            jest
+                .spyOn(adapter, 'findMatchingDestinationAsset')
                 .mockReturnValueOnce(mockAssets['WETH'])
                 .mockReturnValueOnce(mockAssets['ETH']);
 
             // Mock chains without provider
             const mockChainsWithoutProvider = {
                 ...mockChains,
-                '10': { ...mockChains['10'], providers: [] }
+                '10': { ...mockChains['10'], providers: [] },
             };
-            adapter = new TestAcrossBridgeAdapter(mockUrl, mockChainsWithoutProvider as Record<string, ChainConfiguration>, mockLogger);
+            adapter = new TestAcrossBridgeAdapter(
+                mockUrl,
+                mockChainsWithoutProvider as Record<string, ChainConfiguration>,
+                mockLogger,
+            );
 
             const result = await adapter.requiresCallback(route, '0xfilltxhash');
 
@@ -923,8 +866,8 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            jest.spyOn(adapter, 'findMatchingDestinationAsset')
-                .mockReturnValueOnce(mockAssets['WETH'])
+            jest
+                .spyOn(adapter, 'findMatchingDestinationAsset')
                 .mockReturnValueOnce(mockAssets['ETH']);
 
             const mockReceipt = {
@@ -941,74 +884,29 @@ describe('AcrossBridgeAdapter', () => {
                 status: 'success',
                 type: 'eip1559',
                 transactionIndex: 1,
-                logsBloom: '0x'
+                logsBloom: '0x',
             } as TransactionReceipt;
 
-            const mockGetReceipt = jest.fn<(args: { hash: string }) => Promise<Transaction>>().mockResolvedValue(mockReceipt as any);
+            const mockGetReceipt = jest
+                .fn<(args: { hash: string }) => Promise<Transaction>>()
+                .mockResolvedValue(mockReceipt as any);
 
             (createPublicClient as jest.Mock).mockReturnValue({
-                getTransactionReceipt: mockGetReceipt
+                getTransactionReceipt: mockGetReceipt,
             });
+
+            // Mock parseFillLogs to return undefined (no fill event found)
+            (parseFillLogs as jest.Mock).mockReturnValue(undefined);
 
             await expect(adapter.requiresCallback(route, '0xfilltxhash')).rejects.toThrow(
-                'No fill event found for fill tx hash'
+                'Failed to find fill logs from receipt',
             );
-        });
 
-        it('should throw error if fill event cannot be parsed', async () => {
-            const route: RebalanceRoute = {
-                asset: mockAssets['WETH'].address,
-                origin: 1,
-                destination: 10,
-            };
-
-            jest.spyOn(adapter, 'findMatchingDestinationAsset')
-                .mockReturnValueOnce(mockAssets['WETH'])
-                .mockReturnValueOnce(mockAssets['ETH']);
-
-            const mockReceipt = {
-                logs: [{
-                    topics: [FILLED_V3_RELAY_TOPIC],
-                    data: '0x',
-                    address: '0xSpokePoolAddress',
-                    blockNumber: BigInt(1234),
-                    transactionHash: '0xfilltxhash',
-                    transactionIndex: 1,
-                    blockHash: '0xblockhash',
-                    logIndex: 0,
-                    removed: false
-                }],
-                transactionHash: '0xfilltxhash',
-                blockHash: '0xblockhash',
-                blockNumber: BigInt(1234),
-                contractAddress: null,
-                effectiveGasPrice: BigInt(0),
-                from: '0xsender',
-                to: '0xSpokePoolAddress',
-                gasUsed: BigInt(0),
-                cumulativeGasUsed: BigInt(0),
-                status: 'success',
-                type: 'eip1559',
-                transactionIndex: 1,
-                logsBloom: '0x'
-            } as TransactionReceipt;
-
-            const mockGetReceipt = jest.fn<(args: { hash: string }) => Promise<Transaction>>().mockResolvedValue(mockReceipt as any);
-            (createPublicClient as jest.Mock).mockReturnValue({
-                getTransactionReceipt: mockGetReceipt
+            // Verify parseFillLogs was called with correct args
+            expect(parseFillLogs).toHaveBeenCalledWith(mockReceipt.logs, {
+                inputToken: padHex(route.asset as `0x${string}`, { size: 32 }),
+                originChainId: BigInt(route.origin),
             });
-
-            // Mock decodeEventLog to return an object missing required fields
-            (decodeEventLog as jest.Mock).mockReturnValue({
-                args: {
-                    // Missing outputToken, recipient, and outputAmount
-                    someOtherField: 'value'
-                }
-            });
-
-            await expect(adapter.requiresCallback(route, '0xfilltxhash')).rejects.toThrow(
-                'Failed to parse logs for fill event'
-            );
         });
 
         it('should return needsCallback=true when output token is zero hash (native ETH)', async () => {
@@ -1018,22 +916,24 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            jest.spyOn(adapter, 'findMatchingDestinationAsset')
-                .mockReturnValueOnce(mockAssets['WETH'])
+            jest
+                .spyOn(adapter, 'findMatchingDestinationAsset')
                 .mockReturnValueOnce(mockAssets['ETH']);
 
             const mockReceipt = {
-                logs: [{
-                    topics: [FILLED_V3_RELAY_TOPIC],
-                    data: '0x',
-                    address: '0xSpokePoolAddress',
-                    blockNumber: BigInt(1234),
-                    transactionHash: '0xfilltxhash',
-                    transactionIndex: 1,
-                    blockHash: '0xblockhash',
-                    logIndex: 0,
-                    removed: false
-                }],
+                logs: [
+                    {
+                        topics: [FILLED_V3_RELAY_TOPIC],
+                        data: '0x',
+                        address: '0xSpokePoolAddress',
+                        blockNumber: BigInt(1234),
+                        transactionHash: '0xfilltxhash',
+                        transactionIndex: 1,
+                        blockHash: '0xblockhash',
+                        logIndex: 0,
+                        removed: false,
+                    },
+                ],
                 transactionHash: '0xfilltxhash',
                 blockHash: '0xblockhash',
                 blockNumber: BigInt(1234),
@@ -1046,21 +946,22 @@ describe('AcrossBridgeAdapter', () => {
                 status: 'success',
                 type: 'eip1559',
                 transactionIndex: 1,
-                logsBloom: '0x'
+                logsBloom: '0x',
             } as TransactionReceipt;
 
-            const mockGetReceipt = jest.fn<(args: { hash: string }) => Promise<Transaction>>().mockResolvedValue(mockReceipt as any);
+            const mockGetReceipt = jest
+                .fn<(args: { hash: string }) => Promise<Transaction>>()
+                .mockResolvedValue(mockReceipt as any);
 
             (createPublicClient as jest.Mock).mockReturnValue({
-                getTransactionReceipt: mockGetReceipt
+                getTransactionReceipt: mockGetReceipt,
             });
 
-            (decodeEventLog as jest.Mock).mockReturnValue({
-                args: {
-                    outputToken: '0x0000000000000000000000000000000000000000000000000000000000000000',
-                    recipient: '0xRecipient',
-                    outputAmount: '1000000000000000000'
-                }
+            // Mock parseFillLogs to return undefined (no fill event found)
+            (parseFillLogs as jest.Mock).mockReturnValue({
+                outputToken: zeroAddress,
+                recipient: '0xRecipient',
+                outputAmount: BigInt('1000000000000000000'),
             });
 
             const result = await adapter.requiresCallback(route, '0xfilltxhash');
@@ -1068,7 +969,7 @@ describe('AcrossBridgeAdapter', () => {
             expect(result).toEqual({
                 needsCallback: true,
                 amount: BigInt('1000000000000000000'),
-                recipient: '0xRecipient'
+                recipient: '0xRecipient',
             });
         });
 
@@ -1079,8 +980,8 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            jest.spyOn(adapter, 'findMatchingDestinationAsset')
-                .mockReturnValueOnce(mockAssets['WETH'])
+            jest
+                .spyOn(adapter, 'findMatchingDestinationAsset')
                 .mockReturnValueOnce(mockAssets['ETH'])
                 .mockReturnValueOnce(mockAssets['WETH']);
 
@@ -1095,7 +996,7 @@ describe('AcrossBridgeAdapter', () => {
                         transactionIndex: 1,
                         blockHash: '0xblockhash',
                         logIndex: 0,
-                        removed: false
+                        removed: false,
                     },
                     {
                         topics: [WETH_WITHDRAWAL_TOPIC],
@@ -1106,8 +1007,8 @@ describe('AcrossBridgeAdapter', () => {
                         transactionIndex: 1,
                         blockHash: '0xblockhash',
                         logIndex: 1,
-                        removed: false
-                    }
+                        removed: false,
+                    },
                 ],
                 transactionHash: '0xfilltxhash',
                 blockHash: '0xblockhash',
@@ -1121,21 +1022,22 @@ describe('AcrossBridgeAdapter', () => {
                 status: 'success',
                 type: 'eip1559',
                 transactionIndex: 1,
-                logsBloom: '0x'
+                logsBloom: '0x',
             } as TransactionReceipt;
 
-            const mockGetReceipt = jest.fn<(args: { hash: string }) => Promise<Transaction>>().mockResolvedValue(mockReceipt as any);
+            const mockGetReceipt = jest
+                .fn<(args: { hash: string }) => Promise<Transaction>>()
+                .mockResolvedValue(mockReceipt as any);
 
             (createPublicClient as jest.Mock).mockReturnValue({
-                getTransactionReceipt: mockGetReceipt
+                getTransactionReceipt: mockGetReceipt,
             });
 
-            (decodeEventLog as jest.Mock).mockReturnValue({
-                args: {
-                    outputToken: padHex(mockAssets['WETH'].address as `0x${string}`, { size: 32 }),
-                    recipient: '0xRecipient',
-                    outputAmount: '1000000000000000000'
-                }
+            // Mock parseFillLogs to return undefined (no fill event found)
+            (parseFillLogs as jest.Mock).mockReturnValue({
+                outputToken: mockAssets['WETH'].address,
+                recipient: '0xRecipient',
+                outputAmount: BigInt('1000000000000000000'),
             });
 
             const result = await adapter.requiresCallback(route, '0xfilltxhash');
@@ -1143,7 +1045,7 @@ describe('AcrossBridgeAdapter', () => {
             expect(result).toEqual({
                 needsCallback: true,
                 amount: BigInt('1000000000000000000'),
-                recipient: '0xRecipient'
+                recipient: '0xRecipient',
             });
         });
 
@@ -1154,23 +1056,25 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            jest.spyOn(adapter, 'findMatchingDestinationAsset')
-                .mockReturnValueOnce(mockAssets['WETH'])
+            jest
+                .spyOn(adapter, 'findMatchingDestinationAsset')
                 .mockReturnValueOnce(mockAssets['ETH'])
                 .mockReturnValueOnce(mockAssets['WETH']);
 
             const mockReceipt = {
-                logs: [{
-                    topics: [FILLED_V3_RELAY_TOPIC],
-                    data: '0x',
-                    address: '0xSpokePoolAddress',
-                    blockNumber: BigInt(1234),
-                    transactionHash: '0xfilltxhash',
-                    transactionIndex: 1,
-                    blockHash: '0xblockhash',
-                    logIndex: 0,
-                    removed: false
-                }],
+                logs: [
+                    {
+                        topics: [FILLED_V3_RELAY_TOPIC],
+                        data: '0x',
+                        address: '0xSpokePoolAddress',
+                        blockNumber: BigInt(1234),
+                        transactionHash: '0xfilltxhash',
+                        transactionIndex: 1,
+                        blockHash: '0xblockhash',
+                        logIndex: 0,
+                        removed: false,
+                    },
+                ],
                 transactionHash: '0xfilltxhash',
                 blockHash: '0xblockhash',
                 blockNumber: BigInt(1234),
@@ -1183,21 +1087,22 @@ describe('AcrossBridgeAdapter', () => {
                 status: 'success',
                 type: 'eip1559',
                 transactionIndex: 1,
-                logsBloom: '0x'
+                logsBloom: '0x',
             } as TransactionReceipt;
 
-            const mockGetReceipt = jest.fn<(args: { hash: string }) => Promise<Transaction>>().mockResolvedValue(mockReceipt as any);
+            const mockGetReceipt = jest
+                .fn<(args: { hash: string }) => Promise<Transaction>>()
+                .mockResolvedValue(mockReceipt as any);
 
             (createPublicClient as jest.Mock).mockReturnValue({
-                getTransactionReceipt: mockGetReceipt
+                getTransactionReceipt: mockGetReceipt,
             });
 
-            (decodeEventLog as jest.Mock).mockReturnValue({
-                args: {
-                    outputToken: padHex(mockAssets['WETH'].address as `0x${string}`, { size: 32 }),
-                    recipient: '0xRecipient',
-                    outputAmount: '1000000000000000000'
-                }
+            // Mock parseFillLogs to return undefined (no fill event found)
+            (parseFillLogs as jest.Mock).mockReturnValue({
+                outputToken: mockAssets['WETH'].address,
+                recipient: '0xRecipient',
+                outputAmount: BigInt('1000000000000000000'),
             });
 
             const result = await adapter.requiresCallback(route, '0xfilltxhash');
@@ -1205,7 +1110,7 @@ describe('AcrossBridgeAdapter', () => {
             expect(result).toEqual({
                 needsCallback: false,
                 amount: BigInt('1000000000000000000'),
-                recipient: '0xRecipient'
+                recipient: '0xRecipient',
             });
         });
 
@@ -1216,23 +1121,25 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            jest.spyOn(adapter, 'findMatchingDestinationAsset')
-                .mockReturnValueOnce(mockAssets['WETH'])
+            jest
+                .spyOn(adapter, 'findMatchingDestinationAsset')
                 .mockReturnValueOnce(mockAssets['ETH'])
                 .mockReturnValueOnce(mockAssets['USDC']);
 
             const mockReceipt = {
-                logs: [{
-                    topics: [FILLED_V3_RELAY_TOPIC],
-                    data: '0x',
-                    address: '0xSpokePoolAddress',
-                    blockNumber: BigInt(1234),
-                    transactionHash: '0xfilltxhash',
-                    transactionIndex: 1,
-                    blockHash: '0xblockhash',
-                    logIndex: 0,
-                    removed: false
-                }],
+                logs: [
+                    {
+                        topics: [FILLED_V3_RELAY_TOPIC],
+                        data: '0x',
+                        address: '0xSpokePoolAddress',
+                        blockNumber: BigInt(1234),
+                        transactionHash: '0xfilltxhash',
+                        transactionIndex: 1,
+                        blockHash: '0xblockhash',
+                        logIndex: 0,
+                        removed: false,
+                    },
+                ],
                 transactionHash: '0xfilltxhash',
                 blockHash: '0xblockhash',
                 blockNumber: BigInt(1234),
@@ -1245,21 +1152,22 @@ describe('AcrossBridgeAdapter', () => {
                 status: 'success',
                 type: 'eip1559',
                 transactionIndex: 1,
-                logsBloom: '0x'
+                logsBloom: '0x',
             } as TransactionReceipt;
 
-            const mockGetReceipt = jest.fn<(args: { hash: string }) => Promise<Transaction>>().mockResolvedValue(mockReceipt as any);
+            const mockGetReceipt = jest
+                .fn<(args: { hash: string }) => Promise<Transaction>>()
+                .mockResolvedValue(mockReceipt as any);
 
             (createPublicClient as jest.Mock).mockReturnValue({
-                getTransactionReceipt: mockGetReceipt
+                getTransactionReceipt: mockGetReceipt,
             });
 
-            (decodeEventLog as jest.Mock).mockReturnValue({
-                args: {
-                    outputToken: padHex(mockAssets['USDC'].address as `0x${string}`, { size: 32 }),
-                    recipient: '0xRecipient',
-                    outputAmount: '1000000000000000000'
-                }
+            // Mock parseFillLogs to return undefined (no fill event found)
+            (parseFillLogs as jest.Mock).mockReturnValue({
+                outputToken: mockAssets['USDC'].address,
+                recipient: '0xRecipient',
+                outputAmount: BigInt('1000000000000000000'),
             });
 
             const result = await adapter.requiresCallback(route, '0xfilltxhash');
@@ -1267,9 +1175,8 @@ describe('AcrossBridgeAdapter', () => {
             expect(result).toEqual({
                 needsCallback: false,
                 amount: BigInt('1000000000000000000'),
-                recipient: '0xRecipient'
+                recipient: '0xRecipient',
             });
         });
     });
-
-}); 
+});

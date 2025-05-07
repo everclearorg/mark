@@ -1,11 +1,6 @@
-// Fill event and topic
-export const FILLED_V3_RELAY_EVENT =
-  'FilledV3Relay(address,address,uint256,uint256,uint256,uint256,uint32,uint32,uint32,address,address,address,address,bytes,(address,bytes,uint256,uint8))';
-export const FILLED_V3_RELAY_TOPIC = '0x571749edf1d5c9599318cdbc4e28a6475d65e87fd3b2ddbe1e9a8d5e7a0f0ff7'; //keccak256(toHex(FILLED_V3_RELAY_EVENT));
-
 // WETH withdrawal event
 export const WETH_WITHDRAWAL_EVENT = 'Withdrawal(address,uint256)';
-export const WETH_WITHDRAWAL_TOPIC = '0x3115d1449a7b732c986cba18244e897a450f61e1bb8d589cd2e69e6c8924f9f7';
+export const WETH_WITHDRAWAL_TOPIC = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65';
 
 export const MAINNET_ACROSS_URL = 'https://app.across.to/api';
 export const TESTNET_ACROSS_URL = 'https://testnet.across.to/api';
@@ -37,7 +32,11 @@ export interface SuggestedFeesResponse {
 }
 
 export interface DepositStatusResponse {
-  fillStatus: 'filled' | 'pending' | 'unfilled';
-  fillTxHash?: string;
+  status: 'filled' | 'pending' | 'unfilled';
+  originChainId: number;
+  depositId: string;
+  depositTxHash: string;
+  fillTx?: string;
   destinationChainId: number;
+  depositRefundTxHash?: string;
 }

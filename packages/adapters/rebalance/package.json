@@ -9,7 +9,7 @@
         "clean": "rm -rf dist",
         "test": "jest --coverage",
         "lint": "eslint . --ext .ts",
-        "dev": "ts-node scripts/dev.ts"
+        "dev": "npx tsx scripts/dev.ts"
     },
     "dependencies": {
         "@mark/core": "workspace:*",
