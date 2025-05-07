@@ -9,6 +9,11 @@ module.exports = {
     moduleNameMapper: {
         '^@mark/(.*)$': '<rootDir>/../$1/src',
     },
+    globals: {
+        'ts-jest': {
+            tsconfig: '<rootDir>/tsconfig.json',
+        },
+    },
     rootDir: './',
     coverageProvider: 'v8',
     coverageThreshold: {
