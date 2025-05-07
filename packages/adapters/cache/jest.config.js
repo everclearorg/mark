@@ -13,6 +13,12 @@ module.exports = {
     moduleNameMapper: {
         '^@mark/(.*)$': '<rootDir>/../$1/src',
     },
+    // Make Jest resolve .ts before .js
+    moduleFileExtensions: [
+        'ts', 'tsx',   // ← first in the list
+        'js', 'jsx',
+        'json', 'node'
+    ],
     transform: {
         '^.+\\.tsx?$': [
             'ts-jest',
@@ -22,7 +28,7 @@ module.exports = {
         ],
     },
     rootDir: './',
-    coverageProvider: 'v8',
+    coverageProvider: 'babel',
     coverageThreshold: {
         global: {
             branches: 80,
