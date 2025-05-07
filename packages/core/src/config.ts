@@ -180,7 +180,7 @@ const parseSupportedAssets = (symbols: string): string[] => {
   return symbols.split(',').map((symbol) => symbol.trim());
 };
 
-const parseChainConfigurations = async (
+export const parseChainConfigurations = async (
   config: EverclearConfig | undefined,
   supportedAssets: string[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
