@@ -1511,11 +1511,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/chainservice@npm:0.0.1-alpha.6":
-  version: 0.0.1-alpha.6
-  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.6"
+"@chimera-monorepo/chainservice@npm:0.0.1-alpha.8":
+  version: 0.0.1-alpha.8
+  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.8"
   dependencies:
-    "@chimera-monorepo/utils": 0.0.1-alpha.6
+    "@chimera-monorepo/utils": 0.0.1-alpha.8
     "@safe-global/api-kit": ^2.5.6
     "@safe-global/protocol-kit": ^5.1.1
     "@safe-global/types-kit": ^1.0.1
@@ -1523,13 +1523,13 @@ __metadata:
     ethers: 5.7.2
     interval-promise: 1.4.0
     p-queue: 6.6.2
-  checksum: e26ce1d22474d07d9f36c39bada3d07ba7e8596b72ade6249d0a322bc808d0a7b51557b5692461ca969acbbe9d8d81aa5fe0927328046d05257887f00478614e
+  checksum: 5baf4e117bb1d033c680084030732eb14467ae196dc2c980f936d2e98aa6f3d13d4cb34d54a2e4f82e453bb09a42a1aa9ad6c03c5b13ce49f4e6b1eaf803acfc
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/contracts@npm:0.0.1-alpha.6":
-  version: 0.0.1-alpha.6
-  resolution: "@chimera-monorepo/contracts@npm:0.0.1-alpha.6"
+"@chimera-monorepo/contracts@npm:0.0.1-alpha.8":
+  version: 0.0.1-alpha.8
+  resolution: "@chimera-monorepo/contracts@npm:0.0.1-alpha.8"
   dependencies:
     "@hyperlane-xyz/core": 3.8.1
     "@inquirer/prompts": ^5.3.8
@@ -1539,16 +1539,16 @@ __metadata:
     solmate: ^6.8.0
     ts-node: ^10.9.2
     viem: ^2.19.8
-  checksum: 72321b851900063602da331c21d1303a1bbdf677324545438429d76ad3ca67a51f3fbeccea1dee0e54d119005732caf04dddbda9ff3a36f0a3dcf03051cf0431
+  checksum: 53deda8ceea0bbec28894ec3306d44fe27cdc873875f4fa719545d37b91e4e4abfced5a9ed00e94eb54819587ec80418f95ab47307cd6d497e89a015615ca435
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/utils@npm:0.0.1-alpha.6":
-  version: 0.0.1-alpha.6
-  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.6"
+"@chimera-monorepo/utils@npm:0.0.1-alpha.8":
+  version: 0.0.1-alpha.8
+  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.8"
   dependencies:
     "@aws-sdk/client-ssm": ^3.735.0
-    "@chimera-monorepo/contracts": 0.0.1-alpha.6
+    "@chimera-monorepo/contracts": 0.0.1-alpha.8
     "@hyperlane-xyz/sdk": 3.15.1
     "@sinclair/typebox": 0.25.21
     "@urql/core": 5.0.4
@@ -1561,7 +1561,7 @@ __metadata:
     hyperid: 3.2.0
     secp256k1: 4.0.3
     sinon-chai: 3.7.0
-  checksum: 2d00ac4a0ed6614d9cc547a5c974cbe6bb42ac22e2db382e3b1fec725907542e8f2e3371074bc751b86ebb822a209cc3cc524403caf69cdc76ff577cc328ec4b
+  checksum: 62c1ec535a2fc5c2a065a4bbf7f4119db03a68c10bb50c7e69c37e0038f6097dbc2e2f93336fed77b309638a3c054bdb8ed7f404e9169ba6eeb7c691db3de5f0
   languageName: node
   linkType: hard
 
@@ -3861,7 +3861,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/chainservice@workspace:packages/adapters/chainservice"
   dependencies:
-    "@chimera-monorepo/chainservice": 0.0.1-alpha.6
+    "@chimera-monorepo/chainservice": 0.0.1-alpha.8
     "@connext/nxtp-txservice": 2.5.0-alpha.6
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
