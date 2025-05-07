@@ -5,6 +5,7 @@ module.exports = {
     collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/**/index.ts'],
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov'],
+    modulePathIgnorePatterns: ['<rootDir>/dist/'],
     moduleNameMapper: {
         '^@mark/(.*)$': '<rootDir>/../$1/src',
     },
