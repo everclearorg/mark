@@ -2,13 +2,12 @@
 import { config } from 'dotenv';
 import { Logger } from '@mark/logger';
 import { getEverclearConfig, ChainConfiguration, parseChainConfigurations } from '@mark/core';
-import { AcrossBridgeAdapter } from '../src/adapters/across';
+import { AcrossBridgeAdapter, MAINNET_ACROSS_URL } from '../src/adapters/across';
 import { RebalanceRoute, BridgeAdapter, SupportedBridge } from '../src/types';
 import { Account, Hash, parseUnits, TransactionReceipt } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { Command } from 'commander';
 import { createWalletClient, http, createPublicClient, getContract, erc20Abi } from 'viem';
-import { MAINNET_ACROSS_URL } from '../dist/adapters/across';
 import * as chains from 'viem/chains'
 
 function getViemChain(id: number) {
