@@ -240,4 +240,66 @@ describe('PurchaseCache', () => {
             expect(mockRedis.hgetall).toHaveBeenCalledWith('purchases:data');
         });
     });
+
+    describe('setPause', () => {
+        const pauseKey = 'purchases:paused';
+
+        it('should call store.set with true mapped to \'1\'', async () => {
+            (mockRedis.set as jest.Mock).mockResolvedValueOnce('OK');
+            await cache.setPause(true);
+            expect(mockRedis.set).toHaveBeenCalledTimes(1);
+            expect(mockRedis.set).toHaveBeenCalledWith(pauseKey, '1');
+        });
+
+        it('should call store.set with false mapped to \'0\'', async () => {
+            (mockRedis.set as jest.Mock).mockResolvedValueOnce('OK');
+            await cache.setPause(false);
+            expect(mockRedis.set).toHaveBeenCalledTimes(1);
+            expect(mockRedis.set).toHaveBeenCalledWith(pauseKey, '0');
+        });
+
+        it('should propagate errors from store.set', async () => {
+            const setError = new Error('Failed to set key');
+            (mockRedis.set as jest.Mock).mockRejectedValueOnce(setError);
+            await expect(cache.setPause(true)).rejects.toThrow(setError);
+        });
+    });
+
+    describe('isPaused', () => {
+        const pauseKey = 'purchases:paused';
+
+        it('should return true if store.get returns \'1\'', async () => {
+            (mockRedis.get as jest.Mock).mockResolvedValueOnce('1');
+            const result = await cache.isPaused();
+            expect(result).toBe(true);
+            expect(mockRedis.get).toHaveBeenCalledWith(pauseKey);
+        });
+
+        it('should return false if store.get returns \'0\'', async () => {
+            (mockRedis.get as jest.Mock).mockResolvedValueOnce('0');
+            const result = await cache.isPaused();
+            expect(result).toBe(false);
+            expect(mockRedis.get).toHaveBeenCalledWith(pauseKey);
+        });
+
+        it('should return false if store.get returns null (key not found)', async () => {
+            (mockRedis.get as jest.Mock).mockResolvedValueOnce(null);
+            const result = await cache.isPaused();
+            expect(result).toBe(false);
+            expect(mockRedis.get).toHaveBeenCalledWith(pauseKey);
+        });
+
+        it('should return false if store.get returns an unexpected string', async () => {
+            (mockRedis.get as jest.Mock).mockResolvedValueOnce('unexpected_value');
+            const result = await cache.isPaused();
+            expect(result).toBe(false);
+            expect(mockRedis.get).toHaveBeenCalledWith(pauseKey);
+        });
+
+        it('should propagate errors from store.get', async () => {
+            const getError = new Error('Failed to get key');
+            (mockRedis.get as jest.Mock).mockRejectedValueOnce(getError);
+            await expect(cache.isPaused()).rejects.toThrow(getError);
+        });
+    });
 }); 
