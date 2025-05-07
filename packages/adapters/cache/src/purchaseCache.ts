@@ -70,11 +70,19 @@ export class PurchaseCache {
    * @throws Error if flush fails
    */
   public async clear(): Promise<void> {
-    const ret = await this.store.flushall();
-    if (ret !== 'OK') {
-      throw new Error(`Failed to clear store: ${JSON.stringify(ret)}`);
+    const keysToDelete: string[] = [];
+    if (await this.store.exists(this.dataKey)) {
+      keysToDelete.push(this.dataKey);
     }
-    return;
+    if (await this.store.exists(this.pauseKey)) {
+      keysToDelete.push(this.pauseKey);
+    }
+
+    if (keysToDelete.length > 0) {
+      await this.store.del(...keysToDelete);
+    }
+    // DEL returns the number of keys deleted. No need to check 'OK'.
+    // If DEL fails, it will propagate the error.
   }
 
   /**

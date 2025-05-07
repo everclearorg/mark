@@ -42,6 +42,9 @@ describe('PurchaseCache', () => {
     beforeEach(() => {
         cache = new PurchaseCache('host', 1010);
         mockRedis = (cache as any).store as jest.Mocked<Redis>;
+        mockRedis.exists = jest.fn();
+        mockRedis.del = jest.fn();
+        mockRedis.keys = jest.fn();
     });
 
     afterEach(() => {
@@ -162,29 +165,51 @@ describe('PurchaseCache', () => {
     });
 
     describe('clear', () => {
-        it('should clear the cache successfully', async () => {
-            mockRedis.flushall.mockResolvedValue('OK');
+        const dataKey = 'purchases:data';
+        const pauseKey = 'purchases:paused';
 
-            await expect(cache.clear()).resolves.toBeUndefined();
-            expect(mockRedis.flushall).toHaveBeenCalled();
+        it('should delete data and pause keys if they exist', async () => {
+            (mockRedis.exists as jest.Mock)
+                .mockResolvedValueOnce(1) // dataKey exists
+                .mockResolvedValueOnce(1); // pauseKey exists
+            (mockRedis.del as jest.Mock).mockResolvedValueOnce(2); // Simulating 2 keys deleted
+
+            await cache.clear();
+
+            expect(mockRedis.exists).toHaveBeenCalledWith(dataKey);
+            expect(mockRedis.exists).toHaveBeenCalledWith(pauseKey);
+            expect(mockRedis.del).toHaveBeenCalledWith(dataKey, pauseKey);
         });
 
-        it('should throw error when flushall returns a non-OK string', async () => {
-            const redisErrorMessage = 'FLUSHALL_ERROR';
-            mockRedis.flushall.mockResolvedValue(redisErrorMessage as any); // Resolves with a non-'OK' string
+        it('should not call del if data and pause keys do not exist', async () => {
+            (mockRedis.exists as jest.Mock)
+                .mockResolvedValueOnce(0) // dataKey does not exist
+                .mockResolvedValueOnce(0); // pauseKey does not exist
 
-            await expect(cache.clear()).rejects.toThrow(
-                `Failed to clear store: "${redisErrorMessage}"`
-            );
-            expect(mockRedis.flushall).toHaveBeenCalledTimes(1);
+            await cache.clear();
+
+            expect(mockRedis.exists).toHaveBeenCalledWith(dataKey);
+            expect(mockRedis.exists).toHaveBeenCalledWith(pauseKey);
+            expect(mockRedis.del).not.toHaveBeenCalled();
         });
 
-        it('should throw error when flushall itself rejects (e.g. connection issue)', async () => {
-            const connectionError = new Error('Connection refused');
-            mockRedis.flushall.mockRejectedValue(connectionError); // flushall() itself throws an error
+        it('should call del with only the key that exists', async () => {
+            (mockRedis.exists as jest.Mock)
+                .mockResolvedValueOnce(1) // dataKey exists
+                .mockResolvedValueOnce(0); // pauseKey does not exist
+            (mockRedis.del as jest.Mock).mockResolvedValueOnce(1);
 
-            await expect(cache.clear()).rejects.toThrow(connectionError);
-            expect(mockRedis.flushall).toHaveBeenCalledTimes(1);
+            await cache.clear();
+
+            expect(mockRedis.del).toHaveBeenCalledWith(dataKey);
+        });
+
+        it('should propagate errors from store.del()', async () => {
+            const delError = new Error('Failed to delete keys');
+            (mockRedis.exists as jest.Mock).mockResolvedValue(1); // Assume keys exist for this test
+            (mockRedis.del as jest.Mock).mockRejectedValueOnce(delError);
+
+            await expect(cache.clear()).rejects.toThrow(delError);
         });
     });
 

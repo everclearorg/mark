@@ -127,8 +127,27 @@ export class RebalanceCache {
 
   /** Nuke everything. */
   public async clear(): Promise<void> {
-    const ret = await this.store.flushall();
-    if (ret !== 'OK') throw new Error(`Failed to clear store: ${JSON.stringify(ret)}`);
+    const routeKeysPattern = `${this.prefix}:route:*`;
+    const dataKeyToDelete = this.dataKey;
+    const pauseKeyToDelete = this.pauseKey;
+
+    const routeKeys = await this.store.keys(routeKeysPattern);
+
+    const keysToDelete: string[] = [];
+    if (await this.store.exists(dataKeyToDelete)) {
+      keysToDelete.push(dataKeyToDelete);
+    }
+    if (await this.store.exists(pauseKeyToDelete)) {
+      keysToDelete.push(pauseKeyToDelete);
+    }
+
+    keysToDelete.push(...routeKeys);
+
+    if (keysToDelete.length > 0) {
+      await this.store.del(...keysToDelete);
+    }
+    // Unlike FLUSHALL, DEL returns the number of keys deleted.
+    // We don't need to check for an 'OK' status. If DEL fails, it will throw an error.
   }
 
   /** Fast existence check. */

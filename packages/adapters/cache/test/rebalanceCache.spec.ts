@@ -27,6 +27,9 @@ const mockRedisSdkInstance = {
     connectTimeout: 17_000,
     maxRetriesPerRequest: 4,
     retryStrategy: jest.fn((times) => Math.min(times * 30, 1_000)),
+    keys: jest.fn(),
+    exists: jest.fn(),
+    del: jest.fn(),
 };
 
 jest.mock('ioredis', () => {
@@ -379,32 +382,67 @@ describe('RebalanceCache', () => {
     });
 
     describe('clear', () => {
-        it('should call flushall and resolve if Redis returns OK', async () => {
-            (mockRedisSdkInstance.flushall as jest.Mock).mockResolvedValueOnce('OK');
+        const dataKey = 'rebalances:data';
+        const pauseKey = 'rebalances:paused';
+        const routePattern = 'rebalances:route:*';
+        const mockRouteKeys = ['rebalances:route:1-2-eth', 'rebalances:route:3-4-btc'];
 
-            await expect(rebalanceCache.clear()).resolves.toBeUndefined();
-            expect(mockRedisSdkInstance.flushall).toHaveBeenCalledTimes(1);
+        it('should delete data, pause, and all route keys', async () => {
+            (mockRedisSdkInstance.keys as jest.Mock).mockResolvedValueOnce(mockRouteKeys);
+            (mockRedisSdkInstance.exists as jest.Mock)
+                .mockResolvedValueOnce(1) // dataKey exists
+                .mockResolvedValueOnce(1); // pauseKey exists
+            (mockRedisSdkInstance.del as jest.Mock).mockResolvedValueOnce(mockRouteKeys.length + 2);
+
+            await rebalanceCache.clear();
+
+            expect(mockRedisSdkInstance.keys).toHaveBeenCalledWith(routePattern);
+            expect(mockRedisSdkInstance.exists).toHaveBeenCalledWith(dataKey);
+            expect(mockRedisSdkInstance.exists).toHaveBeenCalledWith(pauseKey);
+            const expectedKeysToDelete = [dataKey, pauseKey, ...mockRouteKeys];
+            expect(mockRedisSdkInstance.del).toHaveBeenCalledWith(...expectedKeysToDelete);
         });
 
-        it('should throw an error if flushall does not return OK', async () => {
-            const errMsg = 'BUSYGROUP Consumer group ID already exists';
-            (mockRedisSdkInstance.flushall as jest.Mock).mockResolvedValueOnce(errMsg as any); // Cast to any for testing non-'OK' string
+        it('should not call del if no relevant keys exist (excluding pattern keys that might be empty)', async () => {
+            (mockRedisSdkInstance.keys as jest.Mock).mockResolvedValueOnce([]); // No route keys
+            (mockRedisSdkInstance.exists as jest.Mock)
+                .mockResolvedValueOnce(0) // dataKey does not exist
+                .mockResolvedValueOnce(0); // pauseKey does not exist
 
-            await expect(rebalanceCache.clear()).rejects.toThrow(
-                `Failed to clear store: "${errMsg}"`
-            );
-            expect(mockRedisSdkInstance.flushall).toHaveBeenCalledTimes(1);
+            await rebalanceCache.clear();
+
+            expect(mockRedisSdkInstance.keys).toHaveBeenCalledWith(routePattern);
+            expect(mockRedisSdkInstance.exists).toHaveBeenCalledWith(dataKey);
+            expect(mockRedisSdkInstance.exists).toHaveBeenCalledWith(pauseKey);
+            expect(mockRedisSdkInstance.del).not.toHaveBeenCalled();
         });
 
-        it('should throw an error if flushall itself throws (e.g., connection issue)', async () => {
-            const redisError = new Error('Redis connection lost');
-            (mockRedisSdkInstance.flushall as jest.Mock).mockRejectedValueOnce(redisError);
+        it('should call del with only existing keys if some are missing', async () => {
+            (mockRedisSdkInstance.keys as jest.Mock).mockResolvedValueOnce(mockRouteKeys); // Has route keys
+            (mockRedisSdkInstance.exists as jest.Mock)
+                .mockResolvedValueOnce(1) // dataKey exists
+                .mockResolvedValueOnce(0); // pauseKey does not exist
+            (mockRedisSdkInstance.del as jest.Mock).mockResolvedValueOnce(mockRouteKeys.length + 1);
 
-            // The clear() method will propagate the error from flushall() directly
-            await expect(rebalanceCache.clear()).rejects.toThrow(redisError);
-            // Or, if we want to check the message specifically:
-            // await expect(rebalanceCache.clear()).rejects.toThrow('Redis connection lost');
-            expect(mockRedisSdkInstance.flushall).toHaveBeenCalledTimes(1);
+            await rebalanceCache.clear();
+            const expectedKeysToDelete = [dataKey, ...mockRouteKeys];
+            expect(mockRedisSdkInstance.del).toHaveBeenCalledWith(...expectedKeysToDelete);
+        });
+
+        it('should propagate errors from store.keys()', async () => {
+            const keysError = new Error('Failed to fetch keys');
+            (mockRedisSdkInstance.keys as jest.Mock).mockRejectedValueOnce(keysError);
+
+            await expect(rebalanceCache.clear()).rejects.toThrow(keysError);
+        });
+
+        it('should propagate errors from store.del()', async () => {
+            const delError = new Error('Failed to delete keys');
+            (mockRedisSdkInstance.keys as jest.Mock).mockResolvedValueOnce(mockRouteKeys);
+            (mockRedisSdkInstance.exists as jest.Mock).mockResolvedValue(1);
+            (mockRedisSdkInstance.del as jest.Mock).mockRejectedValueOnce(delError);
+
+            await expect(rebalanceCache.clear()).rejects.toThrow(delError);
         });
     });
 
