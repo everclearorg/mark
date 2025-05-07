@@ -9,6 +9,7 @@ module.exports = {
         '^@mark/(.*)$': '<rootDir>/../$1/src',
     },
     rootDir: './',
+    coverageProvider: 'v8',
     coverageThreshold: {
         global: {
             branches: 80,
