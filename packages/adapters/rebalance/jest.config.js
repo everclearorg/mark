@@ -9,11 +9,25 @@ module.exports = {
         '!src/**/types.ts',
         '!src/adapters/across/utils.ts' // taken from across sdk
     ],
-    coverageProvider: 'v8',
+    coverageProvider: 'babel',
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov', 'html'],
     moduleNameMapper: {
         '^@mark/(.*)$': '<rootDir>/../$1/src',
+    },
+    // Make Jest resolve .ts before .js
+    moduleFileExtensions: [
+        'ts', 'tsx',   // ← first in the list
+        'js', 'jsx',
+        'json', 'node'
+    ],
+    transform: {
+        '^.+\\.tsx?$': [
+            'ts-jest',
+            {
+                tsconfig: '<rootDir>/tsconfig.json',
+            },
+        ],
     },
     rootDir: './',
     coverageThreshold: {
