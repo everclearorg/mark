@@ -11,6 +11,7 @@ import {
   isXerc20Supported,
   calculateSplitIntents,
   getCustodiedBalances,
+  getSupportedDomainsForTicker,
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { PurchaseAction } from '@mark/cache';
@@ -523,7 +524,6 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
           IntentStatus.DISPATCHED_UNSUPPORTED,
           IntentStatus.UNSUPPORTED,
           IntentStatus.UNSUPPORTED_RETURNED,
-          IntentStatus.NONE, // TODO: remove
         ];
         if (!spentStatuses.includes(status)) {
           // Purchase intent could still be used to pay down target invoice
@@ -574,11 +574,80 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
 
   // Process each ticker group
   for (const [ticker, invoiceQueue] of invoiceQueues.entries()) {
+    const adjustedCustodied = new Map(remainingCustodied);
+    if (!adjustedCustodied.has(ticker)) {
+      adjustedCustodied.set(ticker, new Map<string, bigint>());
+    }
+
+    const supportedDomains = getSupportedDomainsForTicker(ticker, config);
+
+    logger.info('Fetching economy data for ticker', {
+      requestId,
+      ticker,
+      supportedDomains,
+    });
+    start = getTimeSeconds();
+
+    const economyResults = await Promise.all(
+      supportedDomains.map(async (domain) => {
+        try {
+          const data = await everclear.fetchEconomyData(domain, ticker);
+          return { domain, data, success: true };
+        } catch (error) {
+          // Don't need to fail here, economy data is not required for processing
+          logger.warn('Failed to fetch economy data for domain, continuing without it', {
+            requestId,
+            domain,
+            ticker,
+            error: jsonifyError(error),
+          });
+          return { domain, data: null, success: false };
+        }
+      }),
+    );
+
+    // Process the economy data to adjust custodied assets
+    for (const { domain, data, success } of economyResults) {
+      if (!success || !data || !data.incomingIntents) continue;
+
+      let pendingAmount = BigInt(0);
+
+      for (const chainIntents of Object.values(data.incomingIntents)) {
+        for (const intent of chainIntents) {
+          pendingAmount += BigInt(intent.amount);
+        }
+      }
+
+      if (pendingAmount > 0n) {
+        const currentCustodied = adjustedCustodied.get(ticker)?.get(domain) || BigInt(0);
+
+        // Add pending amount, as it should increase custodied when arrived on hub
+        const newCustodied = currentCustodied + pendingAmount;
+        adjustedCustodied.get(ticker)!.set(domain, newCustodied);
+
+        logger.info('Adjusted custodied assets for domain based on pending intents', {
+          requestId,
+          domain,
+          ticker,
+          pendingAmount: pendingAmount.toString(),
+          originalCustodied: currentCustodied.toString(),
+          adjustedCustodied: newCustodied.toString(),
+        });
+      }
+    }
+
+    logger.debug('Economy data processing completed', {
+      requestId,
+      ticker,
+      duration: getTimeSeconds() - start,
+    });
+
+    // Use adjusted custodied assets
     const group: TickerGroup = {
       ticker,
       invoices: invoiceQueue,
       remainingBalances,
-      remainingCustodied,
+      remainingCustodied: adjustedCustodied,
       chosenOrigin: null,
     };
 
