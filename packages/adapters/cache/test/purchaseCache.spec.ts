@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 import { PurchaseCache, PurchaseAction } from '../src/purchaseCache';
-import { NewIntentParams, Invoice } from '@mark/core';
+import { Invoice } from '@mark/core';
 
 // Mock Redis
 jest.mock('ioredis');
@@ -78,6 +78,31 @@ describe('PurchaseCache', () => {
             expect(result).toBe(2);
             expect(mockRedis.hset).toHaveBeenCalledTimes(2);
         });
+
+        it('should return 0 if actions array is empty', async () => {
+            const result = await cache.addPurchases([]);
+            expect(result).toBe(0);
+            expect(mockRedis.hset).not.toHaveBeenCalled();
+        });
+
+        it('should correctly sum results when hset returns 0 (field updated)', async () => {
+            // Simulate one new field and one updated field
+            mockRedis.hset
+                .mockResolvedValueOnce(1) // First call adds a new field
+                .mockResolvedValueOnce(0); // Second call updates an existing field
+
+            const actions = [
+                mockPurchaseAction,
+                {
+                    ...mockPurchaseAction,
+                    target: { ...mockInvoice, intent_id: 'test-intent-2' },
+                },
+            ];
+            const result = await cache.addPurchases(actions);
+
+            expect(result).toBe(1); // 1 (new) + 0 (updated) = 1
+            expect(mockRedis.hset).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('getPurchases', () => {
@@ -100,6 +125,20 @@ describe('PurchaseCache', () => {
 
             expect(result).toEqual([mockPurchaseAction]);
         });
+
+        it('should return an empty array if targetIds is empty', async () => {
+            // If targetIds is empty, hmget might be called with just the key,
+            // or the mock might need to handle ...targetIds spreading an empty array.
+            // Let's assume hmget returns an empty array in this case.
+            mockRedis.hmget.mockResolvedValue([]);
+
+            const result = await cache.getPurchases([]);
+
+            expect(result).toEqual([]);
+            // Verify hmget was called, possibly with only the key if targetIds is empty
+            // or that it handles the spread of an empty array gracefully.
+            expect(mockRedis.hmget).toHaveBeenCalledWith('purchases:data');
+        });
     });
 
     describe('removePurchases', () => {
@@ -114,6 +153,12 @@ describe('PurchaseCache', () => {
                 'test-intent-1'
             );
         });
+
+        it('should return 0 if targetIds array is empty', async () => {
+            const result = await cache.removePurchases([]);
+            expect(result).toBe(0);
+            expect(mockRedis.hdel).not.toHaveBeenCalled();
+        });
     });
 
     describe('clear', () => {
@@ -124,12 +169,22 @@ describe('PurchaseCache', () => {
             expect(mockRedis.flushall).toHaveBeenCalled();
         });
 
-        it('should throw error when flush fails', async () => {
-            mockRedis.flushall.mockImplementation(async () => {
-                throw new Error('Failed to clear store');
-            });
+        it('should throw error when flushall returns a non-OK string', async () => {
+            const redisErrorMessage = 'FLUSHALL_ERROR';
+            mockRedis.flushall.mockResolvedValue(redisErrorMessage as any); // Resolves with a non-'OK' string
 
-            await expect(cache.clear()).rejects.toThrow('Failed to clear store');
+            await expect(cache.clear()).rejects.toThrow(
+                `Failed to clear store: "${redisErrorMessage}"`
+            );
+            expect(mockRedis.flushall).toHaveBeenCalledTimes(1);
+        });
+
+        it('should throw error when flushall itself rejects (e.g. connection issue)', async () => {
+            const connectionError = new Error('Connection refused');
+            mockRedis.flushall.mockRejectedValue(connectionError); // flushall() itself throws an error
+
+            await expect(cache.clear()).rejects.toThrow(connectionError);
+            expect(mockRedis.flushall).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -152,6 +207,37 @@ describe('PurchaseCache', () => {
             const result = await cache.hasPurchase('non-existent');
 
             expect(result).toBe(false);
+        });
+    });
+
+    describe('getAllPurchases', () => {
+        it('should return all purchase actions from the cache', async () => {
+            const action2: PurchaseAction = {
+                ...mockPurchaseAction,
+                target: { ...mockInvoice, intent_id: 'test-intent-2' },
+                transactionHash: '0x456',
+            };
+            mockRedis.hgetall.mockResolvedValue({
+                [mockPurchaseAction.target.intent_id]: JSON.stringify(mockPurchaseAction),
+                [action2.target.intent_id]: JSON.stringify(action2),
+            });
+
+            const result = await cache.getAllPurchases();
+
+            expect(result).toHaveLength(2);
+            // Order might not be guaranteed from hgetall, so check for presence
+            expect(result).toContainEqual(mockPurchaseAction);
+            expect(result).toContainEqual(action2);
+            expect(mockRedis.hgetall).toHaveBeenCalledWith('purchases:data');
+        });
+
+        it('should return an empty array if the cache is empty', async () => {
+            mockRedis.hgetall.mockResolvedValue({}); // Empty object for no items
+
+            const result = await cache.getAllPurchases();
+
+            expect(result).toEqual([]);
+            expect(mockRedis.hgetall).toHaveBeenCalledWith('purchases:data');
         });
     });
 }); 
