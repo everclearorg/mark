@@ -1,4 +1,4 @@
-import { InvalidPurchaseReasons, Invoice, NewIntentParams } from '@mark/core';
+import { getTokenAddressFromConfig, InvalidPurchaseReasons, Invoice, NewIntentParams } from '@mark/core';
 import { jsonifyError, jsonifyMap } from '@mark/logger';
 import { IntentStatus } from '@mark/everclear';
 import { InvoiceLabels } from '@mark/prometheus';
@@ -18,6 +18,7 @@ import { PurchaseAction } from '@mark/cache';
 
 export const MAX_DESTINATIONS = 10; // enforced onchain at 10
 export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
+export const BPS_MULTIPLIER = BigInt(10 ** 4);
 
 const getTimeSeconds = () => Math.floor(Date.now() / 1000);
 
@@ -379,7 +380,37 @@ export async function processTickerGroup(
         isSplit: intents.length > 1 ? 'true' : 'false',
         splitCount: intents.length.toString(),
       });
-      prometheus.recordInvoicePurchaseDuration(Math.floor(Date.now()) - invoice.hub_invoice_enqueued_timestamp);
+
+      for (const intent of intents) {
+        prometheus.recordInvoicePurchaseDuration(
+          {
+            origin: invoice.origin,
+            ticker: invoice.ticker_hash,
+            destination: intent.origin,
+          },
+          getTimeSeconds() - invoice.hub_invoice_enqueued_timestamp,
+        );
+      }
+
+      let assetAddr = getTokenAddressFromConfig(invoice.ticker_hash, invoice.origin, config);
+      if (!assetAddr) {
+        logger.error('Failed to get token address from config', {
+          requestId,
+          intentId: invoice.intent_id,
+          ticker: invoice.ticker_hash,
+          origin: invoice.origin,
+        });
+        assetAddr = 'unknown';
+      }
+      prometheus.updateRewards(
+        {
+          chain: invoice.origin,
+          asset: assetAddr,
+          id: invoice.intent_id,
+          ticker: invoice.ticker_hash,
+        },
+        Number((BigInt(invoice.discountBps) * BigInt(invoice.amount)) / BPS_MULTIPLIER),
+      );
     }
 
     logger.info(`Created purchases for batched ticker group`, {
@@ -515,6 +546,23 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       targetsToRemove,
       duration: getTimeSeconds() - start,
     });
+
+    const completedPurchases = cachedPurchases.filter(({ target }: PurchaseAction) =>
+      targetsToRemove.includes(target.intent_id),
+    );
+
+    for (const purchase of completedPurchases) {
+      for (const destination of purchase.target.destinations) {
+        prometheus.recordPurchaseClearanceDuration(
+          {
+            origin: purchase.target.origin,
+            ticker: purchase.target.ticker_hash,
+            destination,
+          },
+          getTimeSeconds() - purchase.target.hub_invoice_enqueued_timestamp,
+        );
+      }
+    }
   } catch (e) {
     logger.warn('Failed to clear pending cache', { requestId, error: jsonifyError(e, { targetsToRemove }) });
   }

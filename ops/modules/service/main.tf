@@ -232,16 +232,11 @@ resource "aws_route53_record" "alb" {
   }
 }
 
-data "aws_service_discovery_dns_namespace" "namespace" {
-  name = "mark.internal"
-  type = "DNS_PRIVATE"
-}
-
 resource "aws_service_discovery_service" "service" {
   name = "${var.container_family}-${var.environment}-${var.stage}"
 
   dns_config {
-    namespace_id = data.aws_service_discovery_dns_namespace.namespace.id
+    namespace_id = var.private_dns_namespace_id
 
     dns_records {
       ttl  = 10
