@@ -5,13 +5,18 @@ module.exports = {
     collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/**/index.ts'],
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov'],
+    modulePathIgnorePatterns: ['<rootDir>/dist/'],
     moduleNameMapper: {
         '^@mark/(.*)$': '<rootDir>/../$1/src',
     },
-    globals: {
-        'ts-jest': {
-            tsconfig: '<rootDir>/tsconfig.json',
-        },
+    transform: {
+        '^.+\\.tsx?$': [
+            'ts-jest',
+            {
+                tsconfig: '<rootDir>/tsconfig.json',
+                mapCoverage: true,
+            },
+        ],
     },
     rootDir: './',
     coverageProvider: 'v8',
