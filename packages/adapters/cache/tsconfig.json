@@ -4,9 +4,10 @@
       "rootDir": "./src",
       "outDir": "./dist",
       "baseUrl": ".",
-      "composite": true
+      "composite": true,
+      "sourceMap": true
     },
-    "include": ["src/**/*"],
+    "include": ["src/**/*", "test/**/*"],
     "exclude": ["dist", "node_modules", "**/*.spec.ts"],
     "references": [{ "path": "../../core" }, { "path": "../logger" }]
 }
