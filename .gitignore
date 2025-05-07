@@ -136,3 +136,4 @@ tfvars.json
 
 # Misc
 .DS_Store
+.idea

@@ -32,3 +32,26 @@ resource "aws_iam_role_policy_attachment" "lambda_policy_attachment" {
 data "aws_iam_role" "vpc_flow_logs" {
   name = "vpc_flow_logs_role"
 }
+
+resource "aws_iam_role_policy" "lambda_ssm_policy" {
+  name = "mark-lambda-ssm-policy-${var.environment}-${var.stage}"
+  role = aws_iam_role.lambda_role.id
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeParameters",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+}

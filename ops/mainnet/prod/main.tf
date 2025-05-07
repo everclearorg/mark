@@ -48,6 +48,12 @@ module "network" {
   vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
 }
 
+resource "aws_service_discovery_private_dns_namespace" "mark_internal" {
+  name        = "mark.internal"
+  description = "Mark internal DNS namespace for service discovery"
+  vpc         = module.network.vpc_id 
+}
+
 module "ecs" {
   source                  = "../../modules/ecs"
   stage                   = var.stage
@@ -84,6 +90,7 @@ module "mark_web3signer" {
   domain              = var.domain
   region              = var.region
   dd_api_key          = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
   execution_role_arn  = data.aws_iam_role.ecr_admin_role.arn
   cluster_id          = module.ecs.ecs_cluster_id
   vpc_id              = module.network.vpc_id
@@ -98,6 +105,8 @@ module "mark_web3signer" {
   service_security_groups = [module.sgs.web3signer_sg_id]
   container_env_vars  = local.web3signer_env_vars
   zone_id             = var.zone_id
+  private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_prometheus" {
@@ -107,6 +116,7 @@ module "mark_prometheus" {
   domain                  = var.domain
   region                  = var.region
   dd_api_key              = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
   execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
   cluster_id              = module.ecs.ecs_cluster_id
   vpc_id                  = module.network.vpc_id
@@ -146,6 +156,8 @@ module "mark_prometheus" {
     healthy_threshold   = 2
     unhealthy_threshold = 3
   }
+  private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_pushgateway" {
@@ -155,6 +167,7 @@ module "mark_pushgateway" {
   domain                  = var.domain
   region                  = var.region
   dd_api_key              = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
   execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
   cluster_id              = module.ecs.ecs_cluster_id
   vpc_id                  = module.network.vpc_id
@@ -169,6 +182,8 @@ module "mark_pushgateway" {
   service_security_groups = [module.sgs.prometheus_sg_id]
   container_env_vars      = local.pushgateway_env_vars
   zone_id                 = var.zone_id
+  private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_poller" {
