@@ -9,7 +9,7 @@ module.exports = {
         '!src/**/types.ts',
         '!src/adapters/across/utils.ts' // taken from across sdk
     ],
-    coverageProvider: 'babel',
+    coverageProvider: 'v8',
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov', 'html'],
     moduleNameMapper: {
