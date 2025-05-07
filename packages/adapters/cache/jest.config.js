@@ -2,11 +2,7 @@ module.exports = {
     preset: 'ts-jest',
     testEnvironment: 'node',
     testMatch: ['**/test/**/*.spec.ts'],
-    collectCoverageFrom: [
-        'dist/**/*.js',
-        '!dist/**/*.d.js',
-        '!dist/**/index.js'
-    ],
+    collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/**/index.ts'],
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov'],
     modulePathIgnorePatterns: ['<rootDir>/dist/'],
