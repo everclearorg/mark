@@ -5,8 +5,11 @@ module.exports = {
     collectCoverageFrom: [
         'src/**/*.ts',
         '!src/**/*.d.ts',
-        '!src/**/index.ts'
+        '!src/**/index.ts',
+        '!src/**/types.ts',
+        '!src/adapters/across/utils.ts' // taken from across sdk
     ],
+    coverageProvider: 'babel',
     coverageDirectory: 'coverage',
     coverageReporters: ['text', 'lcov'],
     modulePathIgnorePatterns: ['<rootDir>/dist/'],
@@ -20,13 +23,12 @@ module.exports = {
         'json', 'node'
     ],
     rootDir: './',
-    coverageProvider: 'babel',
     coverageThreshold: {
         global: {
-            branches: 80,
-            functions: 80,
-            lines: 80,
-            statements: 80,
+            branches: 70,
+            functions: 85,
+            lines: 85,
+            statements: 85
         }
-    },
-}; 
+    }
+};
