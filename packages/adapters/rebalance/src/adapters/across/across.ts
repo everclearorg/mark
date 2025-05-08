@@ -76,10 +76,10 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
               { size: 32 },
             ),
             BigInt(amount), // input amount
-            feesData.outputAmount, // output amount,
+            feesData.outputAmount, // output amount
             BigInt(route.destination), // destination
             padHex(feesData.exclusiveRelayer, { size: 32 }), // exclusive relayer
-            feesData.timestamp, // quote timestamp,
+            feesData.timestamp, // quote timestamp
             feesData.fillDeadline, // fill deadline
             feesData.exclusivityDeadline, // exclusivity parameter
             '', // message
