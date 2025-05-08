@@ -3,7 +3,7 @@ import { MarkConfiguration, loadConfiguration } from '@mark/core';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
-import { Wallet } from 'ethers';
+import { Signer, Wallet } from 'ethers';
 import { pollAndProcessInvoices } from './invoice';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
@@ -40,7 +40,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
       retryDelay: 15000,
       logLevel: config.logLevel,
     },
-    web3Signer,
+    web3Signer as unknown as Signer,
     logger,
   );
 
