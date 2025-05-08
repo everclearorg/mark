@@ -354,7 +354,7 @@ export async function processTickerGroup(
     const intentResults = await sendIntents(
       allIntents[0].invoice.intent_id,
       allIntents.map((i) => i.params),
-      { everclear, logger, cache, prometheus, chainService, web3Signer },
+      { everclear, logger, cache, prometheus, chainService, web3Signer, rebalance: context.rebalance },
       config,
       requestId,
     );
