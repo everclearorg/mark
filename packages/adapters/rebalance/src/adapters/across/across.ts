@@ -8,9 +8,9 @@ import {
   zeroAddress,
 } from 'viem';
 import axios from 'axios';
-import { AssetConfiguration, ChainConfiguration } from '@mark/core';
+import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import { BridgeAdapter, SupportedBridge, RebalanceRoute } from '../../types';
+import { BridgeAdapter } from '../../types';
 import { SuggestedFeesResponse, DepositStatusResponse, WETH_WITHDRAWAL_TOPIC } from './types';
 import { parseFillLogs, getDepositFromLogs } from './utils';
 import { ACROSS_SPOKE_ABI } from './abi';
@@ -32,7 +32,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   }
 
   type(): SupportedBridge {
-    return 'across';
+    return SupportedBridge.Across;
   }
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
@@ -76,10 +76,10 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
               { size: 32 },
             ),
             BigInt(amount), // input amount
-            feesData.outputAmount, // output amount,
+            feesData.outputAmount, // output amount
             BigInt(route.destination), // destination
             padHex(feesData.exclusiveRelayer, { size: 32 }), // exclusive relayer
-            feesData.timestamp, // quote timestamp,
+            feesData.timestamp, // quote timestamp
             feesData.fillDeadline, // fill deadline
             feesData.exclusivityDeadline, // exclusivity parameter
             '', // message

@@ -14,6 +14,8 @@ module.exports = {
     coverageReporters: ['text', 'lcov'],
     modulePathIgnorePatterns: ['<rootDir>/dist/'],
     moduleNameMapper: {
+        '^@mark/core$': '<rootDir>/../../core/src',
+        '^@mark/core/(.*)$': '<rootDir>/../../core/src/$1',
         '^@mark/(.*)$': '<rootDir>/../$1/src',
     },
     // Make Jest resolve .ts before .js

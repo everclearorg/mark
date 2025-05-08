@@ -5,8 +5,8 @@ import { groupInvoicesByTicker, processInvoices, processTickerGroup, TickerGroup
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as assetHelpers from '../../src/helpers/asset';
 import { IntentStatus } from '@mark/everclear';
-import { PurchaseAction } from '@mark/cache';
-import { NewIntentParams, MarkConfiguration, Invoice, InvalidPurchaseReasons } from '@mark/core';
+import { RebalanceCache } from '@mark/cache';
+import { InvalidPurchaseReasons } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
@@ -15,8 +15,8 @@ import { Wallet, BigNumber } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as splitIntentHelpers from '../../src/helpers/splitIntent';
-import { MAX_DESTINATIONS } from '../../src/invoice/processInvoices';
 import { mockConfig, createMockInvoice } from '../mocks';
+import { RebalanceAdapter } from '@mark/adapters-rebalance';
 
 describe('Invoice Processing', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -32,7 +32,9 @@ describe('Invoice Processing', () => {
     logger: SinonStubbedInstance<Logger>;
     everclear: SinonStubbedInstance<EverclearAdapter>;
     chainService: SinonStubbedInstance<ChainService>;
-    cache: SinonStubbedInstance<PurchaseCache>;
+    purchaseCache: SinonStubbedInstance<PurchaseCache>;
+    rebalanceCache: SinonStubbedInstance<RebalanceCache>;
+    rebalance: SinonStubbedInstance<RebalanceAdapter>;
     web3Signer: SinonStubbedInstance<Wallet>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
   };
@@ -50,7 +52,9 @@ describe('Invoice Processing', () => {
       logger: createStubInstance(Logger),
       everclear: createStubInstance(EverclearAdapter),
       chainService: createStubInstance(ChainService),
-      cache: createStubInstance(PurchaseCache),
+      purchaseCache: createStubInstance(PurchaseCache),
+      rebalanceCache: createStubInstance(RebalanceCache),
+      rebalance: createStubInstance(RebalanceAdapter),
       web3Signer: createStubInstance(Wallet),
       prometheus: createStubInstance(PrometheusAdapter),
     };
@@ -61,7 +65,7 @@ describe('Invoice Processing', () => {
       requestId: 'test-request-id',
       startTime: Math.floor(Date.now() / 1000),
       ...mockDeps
-    };
+    } as unknown as ProcessingContext;
   });
 
   afterEach(() => {
@@ -75,9 +79,9 @@ describe('Invoice Processing', () => {
         createMockInvoice({ intent_id: '0x2', ticker_hash: '0xticker1' }),
         createMockInvoice({ intent_id: '0x3', ticker_hash: '0xticker1' })
       ];
-      
+
       const grouped = groupInvoicesByTicker(mockContext, invoices);
-      
+
       expect(grouped.size).to.equal(1);
       expect(grouped.get('0xticker1')?.length).to.equal(3);
     });
@@ -88,9 +92,9 @@ describe('Invoice Processing', () => {
         createMockInvoice({ intent_id: '0x2', ticker_hash: '0xticker2' }),
         createMockInvoice({ intent_id: '0x3', ticker_hash: '0xticker1' })
       ];
-      
+
       const grouped = groupInvoicesByTicker(mockContext, invoices);
-      
+
       expect(grouped.size).to.equal(2);
       expect(grouped.get('0xticker1')?.length).to.equal(2);
       expect(grouped.get('0xticker2')?.length).to.equal(1);
@@ -99,27 +103,27 @@ describe('Invoice Processing', () => {
     it('should sort invoices by age within groups', () => {
       const now = Math.floor(Date.now() / 1000);
       const invoices = [
-        createMockInvoice({ 
-          intent_id: '0x1', 
+        createMockInvoice({
+          intent_id: '0x1',
           ticker_hash: '0xticker1',
           hub_invoice_enqueued_timestamp: now - 1 // 1 second ago
         }),
-        createMockInvoice({ 
-          intent_id: '0x2', 
+        createMockInvoice({
+          intent_id: '0x2',
           ticker_hash: '0xticker1',
           hub_invoice_enqueued_timestamp: now - 3 // 3 seconds ago
         }),
-        createMockInvoice({ 
-          intent_id: '0x3', 
+        createMockInvoice({
+          intent_id: '0x3',
           ticker_hash: '0xticker1',
           hub_invoice_enqueued_timestamp: now - 2 // 2 seconds ago
         })
       ];
-      
+
       const grouped = groupInvoicesByTicker(mockContext, invoices);
       const groupedInvoices = grouped.get('0xticker1');
       expect(groupedInvoices).to.not.be.undefined;
-      
+
       // Should be sorted oldest to newest
       expect(groupedInvoices?.[0].intent_id).to.equal('0x2');
       expect(groupedInvoices?.[1].intent_id).to.equal('0x3');
@@ -128,7 +132,7 @@ describe('Invoice Processing', () => {
 
     it('should handle empty invoice list', () => {
       const grouped = groupInvoicesByTicker(mockContext, []);
-      
+
       expect(grouped.size).to.equal(0);
     });
 
@@ -136,9 +140,9 @@ describe('Invoice Processing', () => {
       const invoices = [
         createMockInvoice({ intent_id: '0x1', ticker_hash: '0xticker1' })
       ];
-      
+
       const grouped = groupInvoicesByTicker(mockContext, invoices);
-      
+
       expect(grouped.size).to.equal(1);
       const groupedInvoices = grouped.get('0xticker1');
       expect(groupedInvoices).to.not.be.undefined;
@@ -148,20 +152,20 @@ describe('Invoice Processing', () => {
 
     it('should record metrics for each invoice', () => {
       const invoices = [
-        createMockInvoice({ 
-          intent_id: '0x1', 
+        createMockInvoice({
+          intent_id: '0x1',
           ticker_hash: '0xticker1',
           origin: '1'
         }),
-        createMockInvoice({ 
-          intent_id: '0x2', 
+        createMockInvoice({
+          intent_id: '0x2',
           ticker_hash: '0xticker2',
           origin: '2'
         })
       ];
-      
+
       groupInvoicesByTicker(mockContext, invoices);
-      
+
       expect(mockDeps.prometheus.recordPossibleInvoice.calledTwice).to.be.true;
       expect(mockDeps.prometheus.recordPossibleInvoice.firstCall.args[0]).to.deep.equal({
         origin: '1',
@@ -189,9 +193,9 @@ describe('Invoice Processing', () => {
       const invoices = [createMockInvoice()];
 
       // Mock the returned purchase from cache
-      mockDeps.cache.getAllPurchases.resolves([{
+      mockDeps.purchaseCache.getAllPurchases.resolves([{
         target: invoices[0],
-        purchase: { 
+        purchase: {
           intentId: invoices[0].intent_id,
           params: {
             amount: '1000000000000000000',
@@ -207,8 +211,8 @@ describe('Invoice Processing', () => {
       }]);
 
       await processInvoices(mockContext, invoices);
-      
-      expect(mockDeps.cache.removePurchases.calledWith(['0x123'])).to.be.true;
+
+      expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).to.be.true;
 
       expect(mockDeps.prometheus.recordPurchaseClearanceDuration.calledOnce).to.be.true;
       expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[0]).to.deep.equal({
@@ -226,11 +230,11 @@ describe('Invoice Processing', () => {
       getMarkGasBalancesStub.resolves(new Map());
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
-      mockDeps.cache.getAllPurchases.resolves([]);
+      mockDeps.purchaseCache.getAllPurchases.resolves([]);
       mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
 
       const invoice = createMockInvoice({ discountBps: 7 });
-      
+
       mockDeps.everclear.getMinAmounts.resolves({
         minAmounts: { '8453': '1000000000000000000' },
         invoiceAmount: '1000000000000000000',
@@ -260,7 +264,7 @@ describe('Invoice Processing', () => {
       }]);
 
       await processInvoices(mockContext, [invoice]);
-      
+
       const expectedPurchase = {
         target: invoice,
         transactionHash: '0xabc',
@@ -279,8 +283,8 @@ describe('Invoice Processing', () => {
       };
 
       // Verify the correct purchase was stored in cache
-      expect(mockDeps.cache.addPurchases.calledOnce).to.be.true;
-      expect(mockDeps.cache.addPurchases.firstCall.args[0]).to.deep.equal([expectedPurchase]);
+      expect(mockDeps.purchaseCache.addPurchases.calledOnce).to.be.true;
+      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).to.deep.equal([expectedPurchase]);
 
       expect(mockDeps.prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
       expect(mockDeps.prometheus.recordSuccessfulPurchase.firstCall.args[0]).to.deep.equal({
@@ -314,16 +318,16 @@ describe('Invoice Processing', () => {
 
     it('should handle cache getAllPurchases failure gracefully', async () => {
       const invoice = createMockInvoice();
-      
+
       getMarkBalancesStub.resolves(new Map());
       getMarkGasBalancesStub.resolves(new Map());
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
       mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
-      
+
       // Simulate cache failure
       const cacheError = new Error('Cache error');
-      mockDeps.cache.getAllPurchases.rejects(cacheError);
+      mockDeps.purchaseCache.getAllPurchases.rejects(cacheError);
 
       let thrownError: Error | undefined;
       try {
@@ -336,21 +340,21 @@ describe('Invoice Processing', () => {
       expect(thrownError?.message).to.equal('Cache error');
 
       // And no purchases were attempted
-      expect(mockDeps.cache.addPurchases.called).to.be.false;
+      expect(mockDeps.purchaseCache.addPurchases.called).to.be.false;
       expect(calculateSplitIntentsStub.called).to.be.false;
       expect(sendIntentsStub.called).to.be.false;
     });
 
     it('should handle cache addPurchases failure gracefully', async () => {
       const invoice = createMockInvoice();
-      
+
       getMarkBalancesStub.resolves(new Map());
       getMarkGasBalancesStub.resolves(new Map());
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
       mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
-      mockDeps.cache.getAllPurchases.resolves([]);
-      
+      mockDeps.purchaseCache.getAllPurchases.resolves([]);
+
       // Setup successful path until addPurchases
       mockDeps.everclear.getMinAmounts.resolves({
         minAmounts: { '8453': '1000000000000000000' },
@@ -382,7 +386,7 @@ describe('Invoice Processing', () => {
 
       // Simulate cache failure
       const cacheError = new Error('Cache add error');
-      mockDeps.cache.addPurchases.rejects(cacheError);
+      mockDeps.purchaseCache.addPurchases.rejects(cacheError);
 
       let thrownError: Error | undefined;
       try {
@@ -399,7 +403,7 @@ describe('Invoice Processing', () => {
     it('should handle cache removePurchases failure gracefully', async () => {
       // Setup test data
       const invoice = createMockInvoice();
-      
+
       // Setup basic stubs
       getMarkBalancesStub.resolves(new Map());
       getMarkGasBalancesStub.resolves(new Map());
@@ -408,9 +412,9 @@ describe('Invoice Processing', () => {
       mockDeps.everclear.intentStatus.resolves(IntentStatus.SETTLED);
 
       // Setup cache data for removal
-      mockDeps.cache.getAllPurchases.resolves([{
+      mockDeps.purchaseCache.getAllPurchases.resolves([{
         target: invoice,
-        purchase: { 
+        purchase: {
           intentId: invoice.intent_id,
           params: {
             amount: '1000000000000000000',
@@ -426,7 +430,7 @@ describe('Invoice Processing', () => {
       }]);
 
       // Simulate cache failure
-      mockDeps.cache.removePurchases.rejects(new Error('Cache remove error'));
+      mockDeps.purchaseCache.removePurchases.rejects(new Error('Cache remove error'));
 
       await processInvoices(mockContext, [invoice]);
 
@@ -483,7 +487,7 @@ describe('Invoice Processing', () => {
       }]);
 
       const result = await processTickerGroup(mockContext, group, []);
-      
+
       const expectedPurchase = {
         target: invoice,
         transactionHash: '0xabc',
@@ -558,7 +562,7 @@ describe('Invoice Processing', () => {
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
-      
+
       const expectedPurchases = [
         {
           target: invoice1,
@@ -656,10 +660,10 @@ describe('Invoice Processing', () => {
           intentId: '0xdef',
           transactionHash: '0xdef',
           chainId: '8453'
-      }]);
+        }]);
 
       const result = await processTickerGroup(mockContext, group, []);
-      
+
       const expectedPurchases = [
         {
           target: invoice,
@@ -705,11 +709,11 @@ describe('Invoice Processing', () => {
     it('should filter out invalid invoices correctly', async () => {
       // Create invoices with different invalid reasons
       const validInvoice = createMockInvoice();
-      const zeroAmountInvoice = createMockInvoice({ 
+      const zeroAmountInvoice = createMockInvoice({
         intent_id: '0x456',
-        amount: '0' 
+        amount: '0'
       });
-      const invalidOwnerInvoice = createMockInvoice({ 
+      const invalidOwnerInvoice = createMockInvoice({
         intent_id: '0x789',
         owner: mockContext.config.ownAddress
       });
@@ -757,7 +761,7 @@ describe('Invoice Processing', () => {
       }]);
 
       const result = await processTickerGroup(mockContext, group, []);
-      
+
       // Verify only the valid invoice made it through
       expect(result.purchases.length).to.equal(1);
       expect(result.purchases[0].target.intent_id).to.equal(validInvoice.intent_id);
@@ -808,7 +812,7 @@ describe('Invoice Processing', () => {
       }];
 
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
-      
+
       // Should skip entire group, no purchases
       expect(result.purchases).to.deep.equal([]);
     });
@@ -816,7 +820,7 @@ describe('Invoice Processing', () => {
     it('should skip invoice if XERC20 is supported', async () => {
       // Invoice has xerc20 support
       isXerc20SupportedStub.onFirstCall().resolves(true);
-      
+
       mockDeps.everclear.getMinAmounts.resolves({
         minAmounts: { '8453': '1000000000000000000' },
         invoiceAmount: '1000000000000000000',
@@ -836,7 +840,7 @@ describe('Invoice Processing', () => {
       };
 
       const result = await processTickerGroup(mockContext, group, []);
-      
+
       // Should skip the only invoice, no purchases
       expect(result.purchases).to.deep.equal([]);
     });
@@ -905,7 +909,7 @@ describe('Invoice Processing', () => {
       }]);
 
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
-      
+
       // Verify the purchase uses origin 10
       expect(result.purchases.length).to.equal(1);
       expect(result.purchases[0].purchase.params.origin).to.equal('10');
@@ -951,7 +955,7 @@ describe('Invoice Processing', () => {
       ];
 
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
-      
+
       // Verify the invoice is skipped since no valid origins remain
       expect(result.purchases).to.deep.equal([]);
       expect(mockDeps.logger.info.calledWith('No valid origins remain after filtering existing purchases')).to.be.true;
@@ -994,7 +998,7 @@ describe('Invoice Processing', () => {
       });
 
       const result = await processTickerGroup(mockContext, group, []);
-      
+
       // Skip entire group since oldest invoice couldn't be processed, no purchases
       expect(result.purchases).to.deep.equal([]);
     });
@@ -1057,7 +1061,7 @@ describe('Invoice Processing', () => {
       }]);
 
       const result = await processTickerGroup(mockContext, group, []);
-      
+
       // Should process newer invoice
       expect(result.purchases.length).to.equal(1);
       expect(result.purchases[0].target.intent_id).to.equal(newerInvoice.intent_id);
@@ -1065,7 +1069,7 @@ describe('Invoice Processing', () => {
 
     it('should use the same origin for all invoices in a group once chosen', async () => {
       isXerc20SupportedStub.resolves(false);
-      
+
       const invoice1 = createMockInvoice({ intent_id: '0x123' });
       const invoice2 = createMockInvoice({ intent_id: '0x456' });
       const invoice3 = createMockInvoice({ intent_id: '0x789' });
@@ -1086,7 +1090,7 @@ describe('Invoice Processing', () => {
 
       // Both origins (8453 and 10) are valid options
       mockDeps.everclear.getMinAmounts.resolves({
-        minAmounts: { 
+        minAmounts: {
           '8453': '1000000000000000000',
           '10': '1000000000000000000'
         },
@@ -1130,7 +1134,7 @@ describe('Invoice Processing', () => {
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
-      
+
       // Verify all purchases use the same origin
       expect(result.purchases.length).to.equal(3);
       result.purchases.forEach(purchase => {
@@ -1225,7 +1229,7 @@ describe('Invoice Processing', () => {
       getMarkGasBalancesStub.resolves(new Map());
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
-      mockDeps.cache.getAllPurchases.resolves([]);
+      mockDeps.purchaseCache.getAllPurchases.resolves([]);
       mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
 
       const invoice1 = createMockInvoice({
@@ -1234,7 +1238,7 @@ describe('Invoice Processing', () => {
         destinations: ['8453'],
         amount: '1000000000000000000'
       });
-      
+
       const invoice2 = createMockInvoice({
         intent_id: '0x456',
         origin: '1',
@@ -1243,7 +1247,7 @@ describe('Invoice Processing', () => {
       });
 
       mockDeps.everclear.getMinAmounts.resolves({
-        minAmounts: { 
+        minAmounts: {
           '8453': '1000000000000000000'
         },
         invoiceAmount: '1000000000000000000',
@@ -1313,7 +1317,7 @@ describe('Invoice Processing', () => {
           chainId: '8453'
         }
       ]);
-      
+
       await processInvoices(mockContext, [invoice1, invoice2]);
 
       const expectedPurchases = [
@@ -1368,8 +1372,8 @@ describe('Invoice Processing', () => {
       ];
 
       // Verify the correct purchases were stored in cache with proper invoice mapping
-      expect(mockDeps.cache.addPurchases.calledOnce).to.be.true;
-      expect(mockDeps.cache.addPurchases.firstCall.args[0]).to.deep.equal(expectedPurchases);
+      expect(mockDeps.purchaseCache.addPurchases.calledOnce).to.be.true;
+      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).to.deep.equal(expectedPurchases);
     });
 
     it('should handle different intent statuses for pending purchases correctly', async () => {
@@ -1377,7 +1381,7 @@ describe('Invoice Processing', () => {
       getMarkGasBalancesStub.resolves(new Map());
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
-      
+
       const invoice = createMockInvoice();
 
       const pendingPurchases = [
@@ -1415,12 +1419,12 @@ describe('Invoice Processing', () => {
         }
       ];
 
-      mockDeps.cache.getAllPurchases.resolves(pendingPurchases);
+      mockDeps.purchaseCache.getAllPurchases.resolves(pendingPurchases);
 
       mockDeps.everclear.intentStatus
         .withArgs('0xexisting1')
         .resolves(IntentStatus.SETTLED);
-      
+
       mockDeps.everclear.intentStatus
         .withArgs('0xexisting2')
         .resolves(IntentStatus.ADDED);
@@ -1428,10 +1432,10 @@ describe('Invoice Processing', () => {
       await processInvoices(mockContext, [invoice]);
 
       // Verify that SETTLED intent was removed from consideration
-      expect(mockDeps.cache.removePurchases.calledWith(['0x123'])).to.be.true;
+      expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).to.be.true;
 
       // Verify that ADDED intent was kept
-      expect(mockDeps.cache.removePurchases.neverCalledWith(['0xexisting2'])).to.be.true;
+      expect(mockDeps.purchaseCache.removePurchases.neverCalledWith(['0xexisting2'])).to.be.true;
     });
 
     it('should correctly update remaining custodied balances for split intents', async () => {
@@ -1650,7 +1654,7 @@ describe('Invoice Processing', () => {
 
     it('should correctly update balances and custodied after processing multiple invoices', async () => {
       isXerc20SupportedStub.resolves(false);
-      
+
       // First invoice setup
       const invoice1 = createMockInvoice({
         intent_id: '0x123',
@@ -1771,7 +1775,7 @@ describe('Invoice Processing', () => {
           }
         ],
         originDomain: '8453',
-        totalAllocated: BigInt('0'), 
+        totalAllocated: BigInt('0'),
         remainder: BigInt('12000000000000000000')
       });
 

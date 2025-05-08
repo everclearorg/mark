@@ -1,13 +1,5 @@
 import { TransactionReceipt, TransactionRequestBase } from 'viem';
-
-export type SupportedBridge = 'across';
-
-export interface RebalanceRoute {
-  asset: string;
-  origin: number;
-  destination: number;
-}
-
+import { SupportedBridge, RebalanceRoute } from '@mark/core';
 export interface BridgeAdapter {
   type(): SupportedBridge;
   getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string>;

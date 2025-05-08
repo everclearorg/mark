@@ -1,2 +1,2 @@
-export * from './adapters';
+export { RebalanceAdapter } from './adapters';
 export * from './types';
