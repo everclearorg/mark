@@ -8,6 +8,7 @@ import {
   MarkConfiguration,
   Stage,
   HubConfig,
+  RebalanceConfig,
 } from './types/config';
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
@@ -83,6 +84,12 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
   }
 };
 
+export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
+  return {
+    routes: [],
+  };
+};
+
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
     const environment = ((await fromEnv('ENVIRONMENT')) ?? 'local') as Environment;
@@ -98,6 +105,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const supportedAssets =
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
+
+    const { routes } = await loadRebalanceRoutes();
 
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
@@ -121,6 +130,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
+      routes,
     };
 
     validateConfiguration(config);
