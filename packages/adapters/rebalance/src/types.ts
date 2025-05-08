@@ -1,6 +1,8 @@
 import { TransactionReceipt, TransactionRequestBase } from 'viem';
 
-export type SupportedBridge = 'across';
+export enum SupportedBridge {
+  Across = 'across',
+}
 
 export interface RebalanceRoute {
   asset: string;

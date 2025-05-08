@@ -32,7 +32,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   }
 
   type(): SupportedBridge {
-    return 'across';
+    return SupportedBridge.Across;
   }
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
