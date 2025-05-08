@@ -5,14 +5,15 @@ import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
 import { Wallet } from 'ethers';
 import { pollAndProcessInvoices } from './invoice';
-import { PurchaseCache } from '@mark/cache';
+import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/adapters-rebalance';
 
 export interface MarkAdapters {
-  cache: PurchaseCache;
+  purchaseCache: PurchaseCache;
+  rebalanceCache: RebalanceCache;
   chainService: ChainService;
   everclear: EverclearAdapter;
   web3Signer: Web3Signer | Wallet;
@@ -45,7 +46,8 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
 
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
-  const cache = new PurchaseCache(config.redis.host, config.redis.port);
+  const purchaseCache = new PurchaseCache(config.redis.host, config.redis.port);
+  const rebalanceCache = new RebalanceCache(config.redis.host, config.redis.port);
 
   const prometheus = new PrometheusAdapter(logger, 'mark-poller', config.pushGatewayUrl);
 
@@ -56,7 +58,8 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     chainService,
     web3Signer,
     everclear,
-    cache,
+    purchaseCache,
+    rebalanceCache,
     prometheus,
     rebalance,
   };

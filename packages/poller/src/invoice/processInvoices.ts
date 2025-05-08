@@ -91,7 +91,7 @@ export async function processTickerGroup(
   group: TickerGroup,
   pendingPurchases: PurchaseAction[],
 ): Promise<ProcessTickerGroupResult> {
-  const { config, everclear, cache, logger, prometheus, chainService, web3Signer, requestId, startTime } = context;
+  const { config, everclear, logger, prometheus, requestId, startTime } = context;
   let start = startTime;
 
   logger.debug('Processing ticker group', {
@@ -354,7 +354,7 @@ export async function processTickerGroup(
     const intentResults = await sendIntents(
       allIntents[0].invoice.intent_id,
       allIntents.map((i) => i.params),
-      { everclear, logger, cache, prometheus, chainService, web3Signer, rebalance: context.rebalance },
+      context,
       config,
       requestId,
     );
@@ -465,7 +465,7 @@ export async function processTickerGroup(
  * @param invoices - The invoices to process
  */
 export async function processInvoices(context: ProcessingContext, invoices: Invoice[]): Promise<void> {
-  const { config, everclear, cache, logger, prometheus, requestId, startTime } = context;
+  const { config, everclear, purchaseCache: cache, logger, prometheus, requestId, startTime } = context;
   let start = startTime;
 
   logger.info('Starting invoice processing', {
