@@ -1,6 +1,6 @@
-import { BridgeAdapter, SupportedBridge } from 'src/types';
+import { BridgeAdapter } from 'src/types';
 import { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';
-import { Environment, ChainConfiguration } from '@mark/core';
+import { Environment, ChainConfiguration, SupportedBridge } from '@mark/core';
 import { Logger } from '@mark/logger';
 
 export { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';

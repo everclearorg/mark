@@ -8,9 +8,9 @@ import {
   zeroAddress,
 } from 'viem';
 import axios from 'axios';
-import { AssetConfiguration, ChainConfiguration } from '@mark/core';
+import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import { BridgeAdapter, SupportedBridge, RebalanceRoute } from '../../types';
+import { BridgeAdapter } from '../../types';
 import { SuggestedFeesResponse, DepositStatusResponse, WETH_WITHDRAWAL_TOPIC } from './types';
 import { parseFillLogs, getDepositFromLogs } from './utils';
 import { ACROSS_SPOKE_ABI } from './abi';
