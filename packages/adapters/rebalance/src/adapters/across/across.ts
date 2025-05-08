@@ -263,7 +263,6 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     const destinationAsset = destinationChainConfig.assets.find(
       (a: AssetConfiguration) => a.symbol.toLowerCase() === originAsset.symbol.toLowerCase(),
     );
-    console.log('destinationAsset', destinationAsset);
 
     if (!destinationAsset) {
       this.logger.warn(`Matching asset not found in destination chain`, {
@@ -316,13 +315,11 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     this.validateAsset(originAsset, 'WETH', 'origin asset');
 
     const destinationNative = this.findMatchingDestinationAsset(zeroAddress, 1, route.destination);
-    console.log('destinationNative', destinationNative);
     if (!destinationNative || destinationNative.symbol !== 'ETH') {
       return { needsCallback: false };
     }
 
     const provider = this.chains[route.destination]?.providers?.[0];
-    console.log('provider', provider);
     if (!provider) {
       return { needsCallback: false };
     }
@@ -335,7 +332,6 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       inputToken: padHex(route.asset as `0x${string}`, { size: 32 }),
       originChainId: BigInt(route.origin),
     });
-    console.log('decodedEvent', decodedEvent);
 
     if (!decodedEvent) {
       throw new Error(`Failed to find fill logs from receipt`);
@@ -358,7 +354,6 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       this.logger.debug('Output token is not weth', { route, event: decodedEvent });
       return { needsCallback: false };
     }
-    console.log('has withdrawn', hasWithdrawn, !!hasWithdrawn);
 
     return {
       needsCallback: !!hasWithdrawn,

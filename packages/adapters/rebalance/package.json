@@ -12,7 +12,8 @@
         "lint:fix": "yarn lint --fix",
         "lint:package": "sort-package-json",
         "lint:ts": "eslint ./src",
-        "test": "jest --coverage"
+        "test": "yarn test:unit",
+        "test:unit": "jest --coverage"
     },
     "dependencies": {
         "@mark/core": "workspace:*",
