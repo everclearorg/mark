@@ -6,15 +6,11 @@ import { Logger } from '@mark/logger';
 export { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';
 
 export class RebalanceAdapter {
-  private env: Environment;
-  private chains: Record<string, ChainConfiguration>;
-  private logger: Logger;
-
-  constructor(env: Environment, chains: Record<string, ChainConfiguration>, logger: Logger) {
-    this.env = env;
-    this.chains = chains;
-    this.logger = logger;
-  }
+  constructor(
+    protected readonly env: Environment,
+    protected readonly chains: Record<string, ChainConfiguration>,
+    protected readonly logger: Logger,
+  ) {}
 
   public getAdapter(type: SupportedBridge): BridgeAdapter {
     switch (type) {
