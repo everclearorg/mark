@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { AssetConfiguration, ChainConfiguration } from '@mark/core';
+import { AssetConfiguration, ChainConfiguration, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import axios from 'axios';
 import { Transaction } from 'ethers';
@@ -11,7 +11,6 @@ import {
     SuggestedFeesResponse,
     WETH_WITHDRAWAL_TOPIC,
 } from '../../../src/adapters/across/types';
-import { RebalanceRoute } from '../../../src/types';
 import { ACROSS_SPOKE_ABI } from '../../../src/adapters/across/abi';
 import { getDepositFromLogs, parseFillLogs } from '../../../src/adapters/across/utils';
 
