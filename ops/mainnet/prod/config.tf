@@ -1,6 +1,4 @@
 locals {
-  poller_config_param_name = "poller-${var.environment}-${var.stage}-config"
-
   prometheus_config = <<-EOT
     global:
       scrape_interval: 15s
@@ -10,11 +8,6 @@ locals {
       - job_name: 'prometheus'
         static_configs:
           - targets: ['localhost:9090']
-
-      - job_name: 'pushgateway'
-        honor_labels: true
-        static_configs:
-          - targets: ['mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
 
       - job_name: 'mark-poller'
         honor_labels: true
