@@ -43,6 +43,12 @@ resource "aws_ecs_task_definition" "service" {
           provider   = "ecs"
         }
       }
+      mountPoints = var.volume_name != "" ? [
+        {
+          sourceVolume  = var.volume_name
+          containerPath = var.volume_container_path
+        }
+      ] : []
     },
     {
       name  = "datadog-agent-${var.environment}-${var.stage}-${var.container_family}"
@@ -88,6 +94,17 @@ resource "aws_ecs_task_definition" "service" {
       }
     }
   ])
+
+  dynamic "volume" {
+    for_each = var.volume_name != "" ? [1] : []
+    content {
+      name = var.volume_name
+      efs_volume_configuration {
+        root_directory = var.volume_efs_path
+        file_system_id = var.efs_id
+      }
+    }
+  }
 
   tags = {
     Environment = var.environment

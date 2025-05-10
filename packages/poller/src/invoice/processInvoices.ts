@@ -411,6 +411,8 @@ export async function processTickerGroup(
         },
         Number((BigInt(invoice.discountBps) * BigInt(invoice.amount)) / BPS_MULTIPLIER),
       );
+
+      logger.info('Successful purchase', { invoice });
     }
 
     logger.info(`Created purchases for batched ticker group`, {
@@ -562,6 +564,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
           getTimeSeconds() - purchase.target.hub_invoice_enqueued_timestamp,
         );
       }
+      logger.info(`Completed purchase`, { purchase });
     }
   } catch (e) {
     logger.warn('Failed to clear pending cache', { requestId, error: jsonifyError(e, { targetsToRemove }) });
