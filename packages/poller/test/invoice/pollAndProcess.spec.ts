@@ -6,7 +6,7 @@ import { MarkConfiguration, Invoice } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
-import { MarkAdapters, ProcessingContext } from '../../src/init';
+import { ProcessingContext } from '../../src/init';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';

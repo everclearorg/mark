@@ -11,7 +11,7 @@ import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { PurchaseCache } from '@mark/cache';
-import { Wallet, BigNumber } from 'ethers';
+import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as splitIntentHelpers from '../../src/helpers/splitIntent';
