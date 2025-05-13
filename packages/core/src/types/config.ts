@@ -1,15 +1,5 @@
 import { LogLevel } from './logging';
 
-export enum SupportedBridge {
-  Across = 'across',
-}
-
-export interface RebalanceRoute {
-  asset: string;
-  origin: number;
-  destination: number;
-}
-
 // Don't need this until we have to support swaps
 export interface PriceConfiguration {
   isStable?: boolean;
@@ -58,7 +48,16 @@ export type EverclearConfig = {
 export type Environment = 'mainnet' | 'testnet' | 'devnet';
 export type Stage = 'development' | 'staging' | 'production';
 
-interface RouteRebalancingConfig extends RebalanceRoute {
+export enum SupportedBridge {
+  Across = 'across',
+}
+
+export interface RebalanceRoute {
+  asset: string;
+  origin: number;
+  destination: number;
+}
+export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum
   slippage: number; // If quoted to receive less than this, skip. using DBPS
   preferences: SupportedBridge[]; // Priority ordered platforms
