@@ -93,7 +93,6 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   }
 
   async destinationCallback(
-    amount: string,
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
   ): Promise<TransactionRequestBase | void> {
@@ -123,7 +122,6 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       };
     } catch (error) {
       this.handleError(error, 'prepare destination callback', {
-        amount,
         route,
         transactionHash: originTransaction.transactionHash,
       });
