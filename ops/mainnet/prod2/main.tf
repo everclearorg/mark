@@ -71,6 +71,13 @@ module "sgs" {
   vpc_id         = module.network.vpc_id
 }
 
+module "efs" {
+  source = "../../modules/efs"
+  environment = var.environment
+  stage = var.stage
+  domain = var.domain
+}
+
 module "cache" {
   source                        = "../../modules/redis"
   stage                         = var.stage
@@ -96,6 +103,7 @@ module "mark_web3signer" {
   vpc_id              = module.network.vpc_id
   lb_subnets          = module.network.private_subnets
   task_subnets        = module.network.private_subnets
+  efs_id              = module.efs.mark_efs_id
   docker_image        = "ghcr.io/connext/web3signer:latest"
   container_family    = "mark2-web3signer"
   container_port      = 9000
@@ -122,8 +130,12 @@ module "mark_prometheus" {
   vpc_id                  = module.network.vpc_id
   lb_subnets              = module.network.public_subnets
   task_subnets            = module.network.private_subnets
+  efs_id                  = module.efs.mark_efs_id
   docker_image            = "prom/prometheus:latest"
   container_family        = "mark2-prometheus"
+  volume_name             = "mark2-prometheus-data"
+  volume_container_path   = "/prometheus"
+  volume_efs_path         = "/mark2/prometheus"
   container_port          = 9090
   cpu                     = 512
   memory                  = 1024
@@ -173,8 +185,17 @@ module "mark_pushgateway" {
   vpc_id                  = module.network.vpc_id
   lb_subnets              = module.network.private_subnets
   task_subnets            = module.network.private_subnets
+  efs_id                  = module.efs.mark_efs_id
   docker_image            = "prom/pushgateway:latest"
   container_family        = "mark2-pushgateway"
+  volume_name             = "mark2-pushgateway-data"
+  volume_container_path   = "/pushgateway"
+  volume_efs_path         = "/mark2/pushgateway"
+  entrypoint = [
+    "/bin/sh",
+    "-c",
+    "exec /bin/pushgateway --persistence.file=/pushgateway/metrics.txt --persistence.interval=1m0s"
+  ]
   container_port          = 9091
   cpu                     = 256
   memory                  = 512
