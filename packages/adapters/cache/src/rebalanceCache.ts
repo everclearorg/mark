@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 import { randomUUID } from 'crypto';
+import { SupportedBridge } from '@mark/core';
 
 export interface RouteRebalancingConfig {
   destination: number;
@@ -14,6 +15,7 @@ export interface RebalancingConfig {
 }
 
 export interface RebalanceAction {
+  bridge: SupportedBridge;
   amount: string;
   origin: number;
   destination: number;
@@ -72,7 +74,7 @@ export class RebalanceCache {
   }
 
   /** Fetch every cached action that matches any route in `config`. */
-  public async getRebalances(config: RebalancingConfig): Promise<RebalanceAction[]> {
+  public async getRebalances(config: RebalancingConfig): Promise<(RebalanceAction & { id: string })[]> {
     if (config.routes.length === 0) return [];
 
     // 1. collect all ids across the selected routes
@@ -86,7 +88,7 @@ export class RebalanceCache {
 
     // 2. pull the actual objects in one HMGET
     const rows = await this.store.hmget(this.dataKey, ...ids);
-    return rows.filter((v): v is string => v !== null).map((v) => JSON.parse(v) as RebalanceAction);
+    return rows.filter((v): v is string => v !== null).map((v) => JSON.parse(v) as RebalanceAction & { id: string });
   }
 
   /** Delete the given action‑IDs from cache and index. */
