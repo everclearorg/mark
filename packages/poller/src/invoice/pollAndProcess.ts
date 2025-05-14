@@ -2,7 +2,7 @@ import { processInvoices } from './processInvoices';
 import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 
-export async function pollAndProcess(context: ProcessingContext): Promise<void> {
+export async function pollAndProcessInvoices(context: ProcessingContext): Promise<void> {
   const { config, everclear, logger, requestId } = context;
 
   try {
@@ -14,6 +14,7 @@ export async function pollAndProcess(context: ProcessingContext): Promise<void> 
     }
 
     await processInvoices(context, invoices);
+    logger.info('Successfully processed invoices', { requestId });
   } catch (_error: unknown) {
     const error = _error as Error;
     logger.error('Failed to process invoices', { error: jsonifyError(error, { requestId }) });

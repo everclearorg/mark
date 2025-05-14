@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { AssetConfiguration, ChainConfiguration } from '@mark/core';
+import { AssetConfiguration, ChainConfiguration, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import axios from 'axios';
 import { Transaction } from 'ethers';
@@ -11,7 +11,6 @@ import {
     SuggestedFeesResponse,
     WETH_WITHDRAWAL_TOPIC,
 } from '../../../src/adapters/across/types';
-import { RebalanceRoute } from '../../../src/types';
 import { ACROSS_SPOKE_ABI } from '../../../src/adapters/across/abi';
 import { getDepositFromLogs, parseFillLogs } from '../../../src/adapters/across/utils';
 
@@ -177,7 +176,11 @@ describe('AcrossBridgeAdapter', () => {
 
         // Reset all mock implementations
         (axios.get as jest.Mock).mockReset();
-        (createPublicClient as jest.Mock).mockReset();
+        (createPublicClient as jest.Mock).mockImplementation(() => ({
+            getBalance: jest.fn<() => Promise<bigint>>(),
+            readContract: jest.fn<() => Promise<unknown>>(),
+            getTransactionReceipt: jest.fn(),
+        }));
         (decodeEventLog as jest.Mock).mockReset();
         (encodeFunctionData as jest.Mock).mockReset();
         (getDepositFromLogs as jest.Mock).mockReset();
@@ -394,7 +397,7 @@ describe('AcrossBridgeAdapter', () => {
             });
 
             // Execute
-            const result = await adapter.destinationCallback('1000000000000000000', route, mockReceipt as TransactionReceipt);
+            const result = await adapter.destinationCallback(route, mockReceipt as TransactionReceipt);
 
             // Assert
             expect(result).toEqual({
@@ -457,7 +460,7 @@ describe('AcrossBridgeAdapter', () => {
             });
 
             // Execute
-            const result = await adapter.destinationCallback('1000000', route, mockReceipt as TransactionReceipt);
+            const result = await adapter.destinationCallback(route, mockReceipt as TransactionReceipt);
 
             // Assert
             expect(result).toBeUndefined();
@@ -893,6 +896,8 @@ describe('AcrossBridgeAdapter', () => {
 
             (createPublicClient as jest.Mock).mockReturnValue({
                 getTransactionReceipt: mockGetReceipt,
+                getBalance: jest.fn<() => Promise<bigint>>().mockResolvedValue(BigInt('1000000000000000000')),
+                readContract: jest.fn<() => Promise<unknown>>().mockResolvedValue(BigInt('1000000000000000000')),
             });
 
             // Mock parseFillLogs to return undefined (no fill event found)
@@ -955,6 +960,8 @@ describe('AcrossBridgeAdapter', () => {
 
             (createPublicClient as jest.Mock).mockReturnValue({
                 getTransactionReceipt: mockGetReceipt,
+                getBalance: jest.fn<() => Promise<bigint>>().mockResolvedValue(BigInt('1000000000000000000')),
+                readContract: jest.fn<() => Promise<unknown>>().mockResolvedValue(BigInt('1000000000000000000')),
             });
 
             // Mock parseFillLogs to return undefined (no fill event found)
@@ -1031,6 +1038,8 @@ describe('AcrossBridgeAdapter', () => {
 
             (createPublicClient as jest.Mock).mockReturnValue({
                 getTransactionReceipt: mockGetReceipt,
+                getBalance: jest.fn<() => Promise<bigint>>().mockResolvedValue(BigInt('1000000000000000000')),
+                readContract: jest.fn<() => Promise<unknown>>().mockResolvedValue(BigInt('1000000000000000000')),
             });
 
             // Mock parseFillLogs to return undefined (no fill event found)
@@ -1096,6 +1105,8 @@ describe('AcrossBridgeAdapter', () => {
 
             (createPublicClient as jest.Mock).mockReturnValue({
                 getTransactionReceipt: mockGetReceipt,
+                getBalance: jest.fn<() => Promise<bigint>>().mockResolvedValue(BigInt('1000000000000000000')),
+                readContract: jest.fn<() => Promise<unknown>>().mockResolvedValue(BigInt('1000000000000000000')),
             });
 
             // Mock parseFillLogs to return undefined (no fill event found)
@@ -1161,6 +1172,8 @@ describe('AcrossBridgeAdapter', () => {
 
             (createPublicClient as jest.Mock).mockReturnValue({
                 getTransactionReceipt: mockGetReceipt,
+                getBalance: jest.fn<() => Promise<bigint>>().mockResolvedValue(BigInt('1000000000000000000')),
+                readContract: jest.fn<() => Promise<unknown>>().mockResolvedValue(BigInt('1000000000000000000')),
             });
 
             // Mock parseFillLogs to return undefined (no fill event found)

@@ -48,7 +48,25 @@ export type EverclearConfig = {
 export type Environment = 'mainnet' | 'testnet' | 'devnet';
 export type Stage = 'development' | 'staging' | 'production';
 
-export interface MarkConfiguration {
+export enum SupportedBridge {
+  Across = 'across',
+}
+
+export interface RebalanceRoute {
+  asset: string;
+  origin: number;
+  destination: number;
+}
+export interface RouteRebalancingConfig extends RebalanceRoute {
+  maximum: string; // Rebalance triggered when balance > maximum
+  slippage: number; // If quoted to receive less than this, skip. using DBPS
+  preferences: SupportedBridge[]; // Priority ordered platforms
+}
+export interface RebalanceConfig {
+  routes: RouteRebalancingConfig[];
+}
+
+export interface MarkConfiguration extends RebalanceConfig {
   pushGatewayUrl: string;
   web3SignerUrl: string;
   everclearApiUrl: string;

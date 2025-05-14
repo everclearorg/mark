@@ -8,6 +8,7 @@ import {
   MarkConfiguration,
   Stage,
   HubConfig,
+  RebalanceConfig,
 } from './types/config';
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
@@ -83,6 +84,29 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
   }
 };
 
+export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
+  return {
+    routes: [
+      // {
+      //   origin: 42161,
+      //   asset: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
+      //   destination: 1,
+      //   maximum: '1000000000000000000',
+      //   slippage: 50.0,
+      //   preferences: [SupportedBridge.Across],
+      // },
+      // {
+      //   origin: 8453,
+      //   asset: '0x4200000000000000000000000000000000000006',
+      //   destination: 1,
+      //   maximum: '1000000000000000000',
+      //   slippage: 15.0,
+      //   preferences: [SupportedBridge.Across],
+      // },
+    ],
+  };
+};
+
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
     const environment = ((await fromEnv('ENVIRONMENT')) ?? 'local') as Environment;
@@ -98,6 +122,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const supportedAssets =
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
+
+    const { routes } = await loadRebalanceRoutes();
 
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
@@ -121,6 +147,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
+      routes,
     };
 
     validateConfiguration(config);
@@ -263,7 +290,7 @@ export const parseChainConfigurations = async (
 
     chains[chainId] = {
       providers,
-      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
+      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
       invoiceAge: parseInt(invoiceAge),
       gasThreshold,
       deployments: {
