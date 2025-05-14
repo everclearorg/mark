@@ -86,7 +86,24 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
 
 export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
   return {
-    routes: [],
+    routes: [
+      // {
+      //   origin: 42161,
+      //   asset: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
+      //   destination: 1,
+      //   maximum: '1000000000000000000',
+      //   slippage: 50.0,
+      //   preferences: [SupportedBridge.Across],
+      // },
+      // {
+      //   origin: 8453,
+      //   asset: '0x4200000000000000000000000000000000000006',
+      //   destination: 1,
+      //   maximum: '1000000000000000000',
+      //   slippage: 15.0,
+      //   preferences: [SupportedBridge.Across],
+      // },
+    ],
   };
 };
 
@@ -273,7 +290,7 @@ export const parseChainConfigurations = async (
 
     chains[chainId] = {
       providers,
-      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
+      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
       invoiceAge: parseInt(invoiceAge),
       gasThreshold,
       deployments: {
