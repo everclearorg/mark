@@ -3,10 +3,11 @@ import { jsonifyError } from '@mark/logger';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, rebalanceCache, config, rebalance, chainService } = context;
-  logger.info('Starting to rebalance inventory', { requestId });
+  logger.info('Executing destination callbacks', { requestId });
 
   // Get all actions from the cache
   const existingActions = await rebalanceCache.getRebalances({ routes: config.routes });
+  logger.debug('Found existing rebalance actions', { routes: config.routes, actions: existingActions });
 
   // For each action
   for (const action of existingActions) {
@@ -33,8 +34,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     try {
       const required = await adapter.readyOnDestination(action.amount, route, receipt);
       if (!required) {
-        logger.info('No destination callback action required', { requestId, action, receipt, required });
-        await rebalanceCache.removeRebalances([action.id]);
+        logger.info('Action is not ready to execute callback', { requestId, action, receipt, required });
         continue;
       }
     } catch (e: unknown) {
@@ -53,7 +53,10 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       continue;
     }
     if (!callback) {
-      logger.info('No destination callback transaction returned', { requestId, action, receipt });
+      logger.info('No destination callback transaction returned', {
+        requestId,
+        action,
+      });
       await rebalanceCache.removeRebalances([action.id]);
       continue;
     }
