@@ -11,7 +11,7 @@ import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { mockConfig } from '../mocks';
-import { RebalanceAdapter } from '@mark/adapters-rebalance';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 describe('Split Intent Helper Functions', () => {
   let mockContext: ProcessingContext;

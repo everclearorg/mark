@@ -11,7 +11,7 @@ export const getTickers = (config: MarkConfiguration) => {
 };
 
 export const getTickerForAsset = (asset: string, chain: number, config: MarkConfiguration) => {
-  const assetConfig = config.chains[chain].assets.find(a => a.address.toLowerCase() === asset.toLowerCase());
+  const assetConfig = config.chains[chain].assets.find((a) => a.address.toLowerCase() === asset.toLowerCase());
   if (!assetConfig) {
     return undefined;
   }

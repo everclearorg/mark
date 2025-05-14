@@ -16,7 +16,7 @@ import { MarkAdapters } from '../../src/init';
 import { BigNumber, Wallet } from 'ethers';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { RebalanceAdapter } from '@mark/adapters-rebalance';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 // Common test constants for transaction logs
 const INTENT_ADDED_TOPIC = '0x5c5c7ce44a0165f76ea4e0a89f0f7ac5cce7b2c1d1b91d0f49c1f219656b7d8c';

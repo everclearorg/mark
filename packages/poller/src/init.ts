@@ -9,7 +9,7 @@ import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { rebalanceInventory } from './rebalance';
-import { RebalanceAdapter } from '@mark/adapters-rebalance';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
