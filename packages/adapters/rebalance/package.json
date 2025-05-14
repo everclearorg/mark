@@ -1,12 +1,12 @@
 {
-    "name": "@mark/adapters-rebalance",
-    "version": "0.1.0",
+    "name": "@mark/rebalance",
+    "version": "0.0.1",
     "description": "Rebalance adapter for Mark protocol",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "scripts": {
-        "build": "tsc",
-        "clean": "rm -rf dist",
+        "build": "tsc --build ./tsconfig.json",
+        "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
         "dev": "npx tsx scripts/dev.ts",
         "lint": "yarn lint:package && yarn lint:ts",
         "lint:fix": "yarn lint --fix",

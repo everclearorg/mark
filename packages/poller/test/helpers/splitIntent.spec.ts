@@ -7,10 +7,11 @@ import * as sinon from 'sinon';
 import { ProcessingContext } from '../../src/init';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
-import { PurchaseCache } from '@mark/cache';
+import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { mockConfig } from '../mocks';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 describe('Split Intent Helper Functions', () => {
   let mockContext: ProcessingContext;
@@ -19,7 +20,9 @@ describe('Split Intent Helper Functions', () => {
     logger: SinonStubbedInstance<Logger>;
     everclear: SinonStubbedInstance<EverclearAdapter>;
     chainService: SinonStubbedInstance<ChainService>;
-    cache: SinonStubbedInstance<PurchaseCache>;
+    purchaseCache: SinonStubbedInstance<PurchaseCache>;
+    rebalanceCache: SinonStubbedInstance<RebalanceCache>;
+    rebalance: SinonStubbedInstance<RebalanceAdapter>;
     web3Signer: SinonStubbedInstance<Wallet>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
   };
@@ -30,7 +33,9 @@ describe('Split Intent Helper Functions', () => {
       logger: createStubInstance(Logger),
       everclear: createStubInstance(EverclearAdapter),
       chainService: createStubInstance(ChainService),
-      cache: createStubInstance(PurchaseCache),
+      purchaseCache: createStubInstance(PurchaseCache),
+      rebalanceCache: createStubInstance(RebalanceCache),
+      rebalance: createStubInstance(RebalanceAdapter),
       web3Signer: createStubInstance(Wallet),
       prometheus: createStubInstance(PrometheusAdapter),
     };
@@ -1164,7 +1169,7 @@ describe('Split Intent Helper Functions', () => {
         ['8453', BigInt('40000000000000000000')],  // 40 WETH on Base - used for allocation
         ['42161', BigInt('0')],                    // 0 WETH on Arbitrum - not used for allocation
       ]);
-      
+
       const custodiedBalances = new Map<string, Map<string, bigint>>([
         ['WETH', custodiedWETHBalances]
       ]);
@@ -1184,7 +1189,7 @@ describe('Split Intent Helper Functions', () => {
 
       // Both intents should have the same destinations array
       const destinations = result.intents[0].destinations;
-      
+
       // The destinations array should include all domains (except origin)
       // Original allocation was only to domains 10 and 8453
       // Domain 42161 should be included in padded destinations
@@ -1192,7 +1197,7 @@ describe('Split Intent Helper Functions', () => {
       expect(destinations).to.include('8453');
       expect(destinations).to.include('42161');
       expect(destinations).to.not.include('1'); // Not origin
-      
+
       // All intents should have the same destinations array
       result.intents.forEach(intent => {
         expect(intent.destinations).to.deep.equal(destinations);
@@ -1311,7 +1316,7 @@ describe('Split Intent Helper Functions', () => {
       manyDomains.forEach(domain => {
         custodiedWETHBalances.set(domain.toString(), BigInt('0'));
       });
-      
+
       // Now set actual balances for a few domains
       custodiedWETHBalances.set('1', BigInt('0'));                          // First domain - zero balance
       custodiedWETHBalances.set('42161', BigInt('0'));                      // A top-N domain - zero balance  
@@ -1320,7 +1325,7 @@ describe('Split Intent Helper Functions', () => {
       custodiedWETHBalances.set('56', BigInt('40000000000000000000'));      // 40 WETH - outside top-N
       custodiedWETHBalances.set('100', BigInt('40000000000000000000'));     // 40 WETH - outside top-N
       custodiedWETHBalances.set('250', BigInt('40000000000000000000'));     // 40 WETH - outside top-N
-      
+
       const custodiedBalances = new Map<string, Map<string, bigint>>([
         ['WETH', custodiedWETHBalances]
       ]);
@@ -1340,10 +1345,10 @@ describe('Split Intent Helper Functions', () => {
 
       // All intents should have the same destinations array
       const destinations = result.intents[0].destinations;
-      
+
       // The destinations array should have MAX_DESTINATIONS (10) domains
       expect(destinations.length).to.equal(10, 'Destinations array should be padded to MAX_DESTINATIONS (10)');
-      
+
       // Check that destinations includes the domains we allocated to
       expect(destinations).to.include('137');
       expect(destinations).to.include('1101');
@@ -1351,7 +1356,7 @@ describe('Split Intent Helper Functions', () => {
       expect(destinations).to.include('100');
       expect(destinations).to.include('250');
       expect(destinations).to.not.include('10'); // Origin can't be a destination
-      
+
       // All intents should have the same destinations array
       result.intents.forEach(intent => {
         expect(intent.destinations).to.deep.equal(destinations);
@@ -1414,7 +1419,7 @@ describe('Split Intent Helper Functions', () => {
         'Skipping origin due to insufficient balance',
         sinon.match({ origin: '1', required: '120000000000000000000', available: '110000000000000000000' })
       )).to.be.true;
-      
+
       expect(mockDeps.logger.debug.calledWith(
         'Skipping origin due to insufficient balance',
         sinon.match({ origin: '8453', required: '100000000000000000000', available: '90000000000000000000' })
@@ -1537,7 +1542,7 @@ describe('Split Intent Helper Functions', () => {
         ['8453', BigInt('40000000000000000000')],  // 40 WETH on Base
         ['137', BigInt('90000000000000000000')],   // 90 WETH on Polygon (should be ignored)
       ]);
-      
+
       const custodiedBalances = new Map<string, Map<string, bigint>>([
         ['WETH', custodiedWETHBalances]
       ]);
@@ -1553,11 +1558,11 @@ describe('Split Intent Helper Functions', () => {
       // Should choose an origin and create intents for supported domains only
       expect(result.originDomain).to.be.equal('10');
       expect(result.totalAllocated).to.be.equal(BigInt(60000000000000000000));
-      
+
       // Verify none of the intents allocate to Polygon
       result.intents.forEach(intent => {
         // Domain 137 shouldn't be used for allocation
-        const hasAllocationToPolygon = intent.destinations.includes('137') && 
+        const hasAllocationToPolygon = intent.destinations.includes('137') &&
           custodiedWETHBalances.get('137')! > BigInt(0);
         expect(hasAllocationToPolygon).to.be.false;
       });
@@ -1594,7 +1599,7 @@ describe('Split Intent Helper Functions', () => {
         ['8453', BigInt('60000000000000000000')], // 60 WETH on Base
         ['42161', BigInt('40000000000000000000')],// 40 WETH on Arbitrum
       ]);
-      
+
       const custodiedBalances = new Map<string, Map<string, bigint>>([
         ['WETH', custodiedAssets]
       ]);
@@ -1606,7 +1611,7 @@ describe('Split Intent Helper Functions', () => {
         balances,
         custodiedBalances
       );
-      
+
       // The result should show full coverage with 2 intents
       expect(result.originDomain).to.equal('10');
       expect(result.totalAllocated).to.equal(BigInt('100000000000000000000')); // 100 WETH (full coverage)
@@ -1698,7 +1703,7 @@ describe('Split Intent Helper Functions', () => {
         ['48900', BigInt('0')],                   // 0 WETH on Zircuit (top-N)
         ['137', BigInt('60000000000000000000')],  // 60 WETH on Polygon (not top-N)
       ]);
-      
+
       const custodiedBalances = new Map<string, Map<string, bigint>>([
         ['WETH', custodiedAssets]
       ]);
@@ -1710,7 +1715,7 @@ describe('Split Intent Helper Functions', () => {
         balances,
         custodiedBalances
       );
-      
+
       // Should choose the top-N allocation
       expect(result.originDomain).to.equal('10');
       expect(result.totalAllocated).to.equal(BigInt('100000000000000000000'));

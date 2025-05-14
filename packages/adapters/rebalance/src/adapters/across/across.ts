@@ -6,11 +6,13 @@ import {
   http,
   padHex,
   zeroAddress,
+  erc20Abi,
+  PublicClient,
 } from 'viem';
 import axios from 'axios';
-import { AssetConfiguration, ChainConfiguration } from '@mark/core';
+import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import { BridgeAdapter, SupportedBridge, RebalanceRoute } from '../../types';
+import { BridgeAdapter } from '../../types';
 import { SuggestedFeesResponse, DepositStatusResponse, WETH_WITHDRAWAL_TOPIC } from './types';
 import { parseFillLogs, getDepositFromLogs } from './utils';
 import { ACROSS_SPOKE_ABI } from './abi';
@@ -32,7 +34,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   }
 
   type(): SupportedBridge {
-    return 'across';
+    return SupportedBridge.Across;
   }
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
@@ -76,10 +78,10 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
               { size: 32 },
             ),
             BigInt(amount), // input amount
-            feesData.outputAmount, // output amount,
+            feesData.outputAmount, // output amount
             BigInt(route.destination), // destination
             padHex(feesData.exclusiveRelayer, { size: 32 }), // exclusive relayer
-            feesData.timestamp, // quote timestamp,
+            feesData.timestamp, // quote timestamp
             feesData.fillDeadline, // fill deadline
             feesData.exclusivityDeadline, // exclusivity parameter
             '', // message
@@ -93,7 +95,6 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   }
 
   async destinationCallback(
-    amount: string,
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
   ): Promise<TransactionRequestBase | void> {
@@ -108,9 +109,10 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         return;
       }
 
-      const originAsset = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+      const originAsset = this.getAsset(route.asset, route.origin);
       this.validateAsset(originAsset, 'WETH', 'origin asset');
 
+      this.logger.debug('Found origin asset', { route, originAsset });
       const destinationWETH = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
       if (!destinationWETH) {
         throw new Error('Failed to find destination WETH');
@@ -123,7 +125,6 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       };
     } catch (error) {
       this.handleError(error, 'prepare destination callback', {
-        amount,
         route,
         transactionHash: originTransaction.transactionHash,
       });
@@ -339,9 +340,14 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
 
     const outputAmount = decodedEvent.outputAmount;
     const recipient = decodedEvent.recipient;
+    const balance = await this.getTokenBalance(
+      !!hasWithdrawn ? zeroAddress : decodedEvent.outputToken,
+      decodedEvent.recipient,
+      client,
+    );
 
     if (decodedEvent.outputToken === zeroAddress) {
-      return { needsCallback: true, amount: outputAmount, recipient };
+      return { needsCallback: balance >= outputAmount, amount: outputAmount, recipient };
     }
 
     const destinationWeth = this.findMatchingDestinationAsset(originAsset.address, route.origin, route.destination);
@@ -356,10 +362,31 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     }
 
     return {
-      needsCallback: !!hasWithdrawn,
+      needsCallback: !!hasWithdrawn && balance >= outputAmount,
       amount: outputAmount,
       recipient,
     };
+  }
+
+  protected async getTokenBalance(tokenAddress: string, owner: string, client: PublicClient): Promise<bigint> {
+    const ownerAddress = owner as `0x${string}`;
+
+    if (tokenAddress.toLowerCase() === zeroAddress.toLowerCase()) {
+      // Native balance
+      const balance = await client.getBalance({ address: ownerAddress });
+      this.logger.debug('Fetched native balance', { owner, balance: balance.toString() });
+      return balance;
+    }
+    // ERC20 token balance
+    const contractAddress = tokenAddress as `0x${string}`;
+    const balance = await client.readContract({
+      address: contractAddress,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [ownerAddress],
+    });
+    this.logger.debug('Fetched ERC20 token balance', { owner, tokenAddress, balance: balance.toString() });
+    return balance;
   }
 
   // Helper methods for API calls
