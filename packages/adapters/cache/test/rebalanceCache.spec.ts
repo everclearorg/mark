@@ -1,3 +1,4 @@
+import { SupportedBridge } from '@mark/core';
 import { RebalanceCache, RebalanceAction, RebalancingConfig } from '../src/rebalanceCache';
 import Redis from 'ioredis';
 
@@ -89,6 +90,7 @@ describe('RebalanceCache', () => {
             destination: 2,
             asset: 'ETH',
             transaction: '0xtxhash1',
+            bridge: SupportedBridge.Across
         };
 
         it('should add a single rebalance action and return 1', async () => {
@@ -154,13 +156,13 @@ describe('RebalanceCache', () => {
 
     describe('getRebalances', () => {
         const sampleAction1: RebalanceAction = {
-            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1',
+            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1', bridge: SupportedBridge.Across
         };
         const sampleAction2: RebalanceAction = {
-            amount: '200', origin: 1, destination: 2, asset: 'BTC', transaction: '0xtx2',
+            amount: '200', origin: 1, destination: 2, asset: 'BTC', transaction: '0xtx2', bridge: SupportedBridge.Across
         };
         const sampleAction3: RebalanceAction = {
-            amount: '300', origin: 3, destination: 4, asset: 'ETH', transaction: '0xtx3',
+            amount: '300', origin: 3, destination: 4, asset: 'ETH', transaction: '0xtx3', bridge: SupportedBridge.Across
         };
 
         const id1 = '2-1-eth-uuid1';
@@ -198,7 +200,10 @@ describe('RebalanceCache', () => {
             expect(mockRedisSdkInstance.hmget).toHaveBeenCalledTimes(1);
             expect(mockRedisSdkInstance.hmget).toHaveBeenCalledWith('rebalances:data', id1, id2);
 
-            expect(result).toEqual([sampleAction1, sampleAction2]);
+            expect(result).toEqual([
+                { ...sampleAction1, id: id1 },
+                { ...sampleAction2, id: id2 }
+            ]);
         });
 
         it('should return an empty array if no routes are configured', async () => {
@@ -256,7 +261,10 @@ describe('RebalanceCache', () => {
 
             expect(mockPipelineInstance.smembers).toHaveBeenCalledTimes(3);
             expect(mockRedisSdkInstance.hmget).toHaveBeenCalledWith('rebalances:data', id1, id3);
-            expect(result).toEqual([sampleAction1, sampleAction3]);
+            expect(result).toEqual([
+                { ...sampleAction1, id: id1 },
+                { ...sampleAction3, id: id3 }
+            ]);
         });
     });
 
@@ -286,12 +294,12 @@ describe('RebalanceCache', () => {
 
     describe('removeRebalances', () => {
         const sampleAction1: RebalanceAction = {
-            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1',
+            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1', bridge: SupportedBridge.Across
         };
         const id1 = '2-1-ETH-uuid1'; // Make sure asset casing matches ID generation
 
         const sampleAction2: RebalanceAction = {
-            amount: '200', origin: 3, destination: 4, asset: 'BTC', transaction: '0xtx2',
+            amount: '200', origin: 3, destination: 4, asset: 'BTC', transaction: '0xtx2', bridge: SupportedBridge.Across
         };
         const id2 = '4-3-BTC-uuid2';
 
