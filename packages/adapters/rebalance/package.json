@@ -5,7 +5,7 @@
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "scripts": {
-        "build": "tsc",
+        "build": "tsc --build ./tsconfig.json",
         "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
         "dev": "npx tsx scripts/dev.ts",
         "lint": "yarn lint:package && yarn lint:ts",
