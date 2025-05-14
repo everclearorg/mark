@@ -120,7 +120,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       });
 
       // Step 3: Get Bridge Transaction Request (before approval)
-      let bridgeTxRequest: TransactionRequest;
+      let bridgeTxRequest;
       try {
         bridgeTxRequest = await adapter.send(config.ownAddress, config.ownAddress, currentBalance.toString(), route);
         logger.info('Prepared bridge transaction request from adapter', {
@@ -262,7 +262,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       try {
         logger.info('Submitting the original bridge transaction', { requestId, route, bridgeType, bridgeTxRequest });
         const bridgeTxForSubmit: TransactionRequest = {
-          ...bridgeTxRequest,
+          ...(bridgeTxRequest as unknown as TransactionRequest),
           to: bridgeTxRequest.to!, // Already checked non-null
           from: config.ownAddress as `0x${string}`,
         };
