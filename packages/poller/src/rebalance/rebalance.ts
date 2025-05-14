@@ -1,4 +1,4 @@
-import { getMarkBalances, getERC20Contract } from '../helpers';
+import { getMarkBalances, getERC20Contract, safeStringToBigInt, getTickerForAsset } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
@@ -12,6 +12,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
 
   // Execute any callbacks from cached actions prior to proceeding
   await executeDestinationCallbacks(context);
+  logger.debug('Executed destination callbacks');
 
   // Get all of mark balances
   const balances = await getMarkBalances(config, context.prometheus);
@@ -29,17 +30,25 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
     logger.info('Processing route', { requestId, route });
 
     // --- Route Level Checks (Synchronous or handled internally) ---
-    const originChainBalances = balances.get(route.origin.toString());
-    if (!originChainBalances) {
-      logger.warn('No balances found for origin chain, skipping route', { requestId, route });
+    const ticker = getTickerForAsset(route.asset, route.origin, config);
+    if (!ticker) {
+      logger.error(`Ticker not found for asset, check config`, {
+        config: config.chains[route.origin],
+        route,
+      });
+      continue;
+    }
+    const tickerBalances = balances.get(ticker);
+    if (!tickerBalances) {
+      logger.warn('No balances found for ticker, skipping route', { requestId, route, ticker });
       continue; // Skip to next route
     }
-    const currentBalance = originChainBalances.get(route.asset.toLowerCase()) ?? 0n;
+    const currentBalance = tickerBalances.get(route.origin.toString()) ?? 0n;
     logger.debug('Current balance for route', { requestId, route, currentBalance: currentBalance.toString() });
 
     const maximumBalance = BigInt(route.maximum);
-    if (currentBalance >= maximumBalance) {
-      logger.info('Balance is at or above maximum, skipping route', {
+    if (currentBalance <= maximumBalance) {
+      logger.info('Balance is at or below maximum, skipping route', {
         requestId,
         route,
         currentBalance: currentBalance.toString(),
@@ -85,7 +94,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       const receivedAmount = BigInt(receivedAmountStr);
       const scaleFactor = BigInt(10_000);
       const dbpsDenominator = BigInt(100_000);
-      const slippageScaled = BigInt(route.slippage * Number(scaleFactor) * Number(dbpsDenominator));
+      const slippage = safeStringToBigInt(route.slippage.toString(), scaleFactor);
+      const slippageScaled = slippage * scaleFactor;
       const minimumAcceptableAmount =
         currentBalance - (currentBalance * slippageScaled) / (scaleFactor * dbpsDenominator);
 
@@ -204,6 +214,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
               to: route.asset as `0x${string}`,
               data: approveData,
               value: 0n,
+              from: config.ownAddress as `0x${string}`,
             };
             logger.info('Prepared ERC20 approval transaction request', {
               requestId,
@@ -253,6 +264,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         const bridgeTxForSubmit: TransactionRequest = {
           ...bridgeTxRequest,
           to: bridgeTxRequest.to!, // Already checked non-null
+          from: config.ownAddress as `0x${string}`,
         };
         const submittedTx = await chainService.submitAndMonitor(
           route.origin.toString(),
