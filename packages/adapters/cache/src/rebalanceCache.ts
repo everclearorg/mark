@@ -94,7 +94,8 @@ export class RebalanceCache {
     const actionsWithIds: (RebalanceAction & { id: string })[] = [];
     ids.forEach((id, index) => {
       const rawData = rows[index];
-      if (rawData !== null) { // Ensure there's data for this ID
+      if (rawData !== null) {
+        // Ensure there's data for this ID
         const action = JSON.parse(rawData) as RebalanceAction;
         actionsWithIds.push({ ...action, id }); // Combine the parsed action with its id
       }

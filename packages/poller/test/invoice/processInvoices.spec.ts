@@ -16,7 +16,7 @@ import { PrometheusAdapter } from '@mark/prometheus';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as splitIntentHelpers from '../../src/helpers/splitIntent';
 import { mockConfig, createMockInvoice } from '../mocks';
-import { RebalanceAdapter } from '@mark/adapters-rebalance';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 describe('Invoice Processing', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;

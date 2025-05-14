@@ -3818,27 +3818,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@mark/adapters-rebalance@workspace:*, @mark/adapters-rebalance@workspace:packages/adapters/rebalance":
-  version: 0.0.0-use.local
-  resolution: "@mark/adapters-rebalance@workspace:packages/adapters/rebalance"
-  dependencies:
-    "@mark/core": "workspace:*"
-    "@mark/logger": "workspace:*"
-    "@types/jest": 29.5.12
-    "@types/node": 20.17.12
-    axios: 1.9.0
-    commander: 12.0.0
-    eslint: 9.17.0
-    jest: 29.7.0
-    rimraf: 6.0.1
-    sort-package-json: 2.12.0
-    ts-jest: 29.1.2
-    ts-node: 10.9.2
-    typescript: 5.7.2
-    viem: 2.28.1
-  languageName: unknown
-  linkType: soft
-
 "@mark/cache@workspace:*, @mark/cache@workspace:packages/adapters/cache":
   version: 0.0.0-use.local
   resolution: "@mark/cache@workspace:packages/adapters/cache"
@@ -3927,13 +3906,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/poller@workspace:packages/poller"
   dependencies:
-    "@mark/adapters-rebalance": "workspace:*"
     "@mark/cache": "workspace:*"
     "@mark/chainservice": "workspace:*"
     "@mark/core": "workspace:*"
     "@mark/everclear": "workspace:*"
     "@mark/logger": "workspace:*"
     "@mark/prometheus": "workspace:*"
+    "@mark/rebalance": "workspace:*"
     "@mark/web3signer": "workspace:*"
     "@types/aws-lambda": 8.10.147
     "@types/chai": 5.0.1
@@ -3971,6 +3950,27 @@ __metadata:
     jest: 29.5.0
     prom-client: 15.1.0
     ts-jest: 29.1.0
+    typescript: 5.7.2
+    viem: 2.28.1
+  languageName: unknown
+  linkType: soft
+
+"@mark/rebalance@workspace:*, @mark/rebalance@workspace:packages/adapters/rebalance":
+  version: 0.0.0-use.local
+  resolution: "@mark/rebalance@workspace:packages/adapters/rebalance"
+  dependencies:
+    "@mark/core": "workspace:*"
+    "@mark/logger": "workspace:*"
+    "@types/jest": 29.5.12
+    "@types/node": 20.17.12
+    axios: 1.9.0
+    commander: 12.0.0
+    eslint: 9.17.0
+    jest: 29.7.0
+    rimraf: 6.0.1
+    sort-package-json: 2.12.0
+    ts-jest: 29.1.2
+    ts-node: 10.9.2
     typescript: 5.7.2
     viem: 2.28.1
   languageName: unknown

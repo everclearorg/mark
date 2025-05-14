@@ -10,7 +10,7 @@ import { ProcessingContext } from '../../src/init';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { RebalanceAdapter } from '@mark/adapters-rebalance';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 describe('pollAndProcessInvoices', () => {
     let mockContext: SinonStubbedInstance<ProcessingContext>;

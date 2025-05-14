@@ -6,7 +6,7 @@ import { Logger, jsonifyError } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
 import { RebalanceCache, RebalanceAction } from '@mark/cache';
-import { RebalanceAdapter } from '@mark/adapters-rebalance';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 // Define the interface for the specific adapter methods needed
 interface MockBridgeAdapter {

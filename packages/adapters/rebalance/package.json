@@ -1,6 +1,6 @@
 {
-    "name": "@mark/adapters-rebalance",
-    "version": "0.1.0",
+    "name": "@mark/rebalance",
+    "version": "0.0.1",
     "description": "Rebalance adapter for Mark protocol",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
