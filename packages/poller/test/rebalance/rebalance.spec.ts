@@ -45,6 +45,9 @@ describe('rebalanceInventory', () => {
     const MOCK_BRIDGE_A_SPENDER = '0x25d07db6a8b00bb1d8745de4b34e8bdee59e871c' as `0x${string}`;
     const MOCK_APPROVE_DATA = '0x095ea7b3' as Hex; // Example data for approve
 
+    const MOCK_ERC20_TICKER_HASH = '0xerc20tickerhashtest' as `0x${string}`; // Added
+    const MOCK_NATIVE_TICKER_HASH = '0xnativetickerhashtest' as `0x${string}`; // Added
+
     beforeEach(() => {
         mockLogger = createStubInstance(Logger);
         mockRebalanceCache = createStubInstance(RebalanceCache);
@@ -95,9 +98,25 @@ describe('rebalanceInventory', () => {
             maxRetries: 3,
             retryDelay: 1000,
             chains: {
-                '1': { providers: ['http://mainnetprovider'] },
-                '10': { providers: ['http://optimismprovider'] },
-                '42': { providers: ['http://kovanprovider'] },
+                '1': {
+                    providers: ['http://mainnetprovider'],
+                    assets: [
+                        { address: MOCK_ASSET_ERC20, tickerHash: MOCK_ERC20_TICKER_HASH, symbol: 'MOCKERC20', decimals: 18, isNative: false, balanceThreshold: '0' },
+                        { address: MOCK_ASSET_NATIVE, tickerHash: MOCK_NATIVE_TICKER_HASH, symbol: 'MOCKNATIVE', decimals: 18, isNative: true, balanceThreshold: '0' },
+                    ],
+                },
+                '10': {
+                    providers: ['http://optimismprovider'],
+                    assets: [
+                        { address: MOCK_ASSET_ERC20, tickerHash: MOCK_ERC20_TICKER_HASH, symbol: 'MOCKERC20', decimals: 18, isNative: false, balanceThreshold: '0' },
+                    ],
+                },
+                '42': {
+                    providers: ['http://kovanprovider'],
+                    assets: [
+                        { address: MOCK_ASSET_NATIVE, tickerHash: MOCK_NATIVE_TICKER_HASH, symbol: 'MOCKNATIVE', decimals: 18, isNative: true, balanceThreshold: '0' },
+                    ],
+                },
             },
             supportedSettlementDomains: [1, 10, 42],
         } as unknown as MarkConfiguration;
@@ -134,16 +153,16 @@ describe('rebalanceInventory', () => {
         expect(executeDestinationCallbacksStub.calledOnceWith(mockContext)).to.be.true;
     });
 
-    it('should skip route if balance is at or above maximum', async () => {
+    it('should skip route if balance is at or below maximum', async () => {
         const routeToCheck = mockContext.config.routes[0];
-        const highBalance = BigInt(routeToCheck.maximum) + 1n;
+        const atMaximumBalance = BigInt(routeToCheck.maximum);
         const balances = new Map<string, Map<string, bigint>>();
-        balances.set(routeToCheck.origin.toString(), new Map([[routeToCheck.asset.toLowerCase(), highBalance]]));
+        balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToCheck.origin.toString(), atMaximumBalance - 1n]]));
         getMarkBalancesStub.resolves(balances);
 
         await rebalanceInventory({ ...mockContext, config: { ...mockContext.config, routes: [routeToCheck] } });
 
-        expect(mockLogger.info.calledWith(match(/Balance is at or above maximum/), match({ route: routeToCheck }))).to.be.true;
+        expect(mockLogger.info.calledWith(match(/Balance is at or below maximum, skipping route/))).to.be.true;
         expect(mockRebalanceAdapter.getAdapter.called).to.be.false;
     });
 
@@ -154,16 +173,19 @@ describe('rebalanceInventory', () => {
 
         await rebalanceInventory(mockContext);
 
-        expect(mockLogger.warn.calledWith(match(/No balances found for origin chain/), match({ route: routeToCheck }))).to.be.true;
+        expect(mockLogger.warn.calledWith(match(/No balances found for ticker/), match({ route: routeToCheck }))).to.be.true;
         expect(mockRebalanceAdapter.getAdapter.called).to.be.false;
     });
 
     it('should successfully rebalance an ERC20 asset with approval needed', async () => {
         const routeToTest = mockContext.config.routes[0] as RouteRebalancingConfig;
-        const currentBalance = 1000n;
-        const quoteAmount = '995';
+        // Ensure currentBalance is greater than maximum to trigger rebalancing
+        const currentBalance = BigInt(routeToTest.maximum) + 1_000_000_000_000_000_000n; // maximum + 1e18 (1 token)
+        // Adjust quoteAmount to be realistic for the new currentBalance and pass slippage
+        // Simulating a 0.05% slippage: currentBalance - (currentBalance / 2000n)
+        const quoteAmount = (currentBalance - (currentBalance / 2000n)).toString();
         const balances = new Map<string, Map<string, bigint>>();
-        balances.set(routeToTest.origin.toString(), new Map([[routeToTest.asset.toLowerCase(), currentBalance]]));
+        balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
         getMarkBalancesStub.resolves(balances);
 
         const mockTxRequest: ViemTransactionRequest = {
@@ -236,7 +258,8 @@ describe('rebalanceInventory', () => {
     it('should try the next bridge preference if adapter is not found', async () => {
         const routeToTest = mockContext.config.routes[0];
         const balances = new Map<string, Map<string, bigint>>();
-        balances.set(routeToTest.origin.toString(), new Map([[routeToTest.asset.toLowerCase(), 100n]]));
+        const currentBalance = BigInt(routeToTest.maximum) + 100n; // Ensure balance is above maximum
+        balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
         getMarkBalancesStub.resolves(balances);
 
         // First preference (Across) returns no adapter
@@ -264,7 +287,9 @@ describe('rebalanceInventory', () => {
     it('should try the next bridge preference if getReceivedAmount fails', async () => {
         const routeToTest = mockContext.config.routes[0];
         const balances = new Map<string, Map<string, bigint>>();
-        balances.set(routeToTest.origin.toString(), new Map([[routeToTest.asset.toLowerCase(), 100n]]));
+        const balanceForRoute = BigInt(routeToTest.maximum) + 100n; // Ensure balance is above maximum
+        // Corrected key for the inner map to use routeToTest.origin.toString()
+        balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), balanceForRoute]]));
         getMarkBalancesStub.resolves(balances);
 
         const mockAdapterA = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().rejects(new Error('Quote failed')) };
@@ -287,10 +312,11 @@ describe('rebalanceInventory', () => {
 
     it('should try the next bridge preference if slippage check fails', async () => {
         const routeToTest = mockContext.config.routes[0]; // slippage 0.01 (1%)
-        const currentBalance = 10000n;
-        const lowQuote = '9899'; // Less than 9900 (1% slippage)
+        const lowQuote = '9'; // Less than 9900 (1% slippage)
+        const balanceForRoute = BigInt(routeToTest.maximum) + 100n; // Ensure balance is above maximum
         const balances = new Map<string, Map<string, bigint>>();
-        balances.set(routeToTest.origin.toString(), new Map([[routeToTest.asset.toLowerCase(), currentBalance]]));
+        // Corrected key for the inner map to use routeToTest.origin.toString()
+        balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), balanceForRoute]]));
         getMarkBalancesStub.resolves(balances);
 
         const mockAdapterA = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves(lowQuote), type: stub().returns(MOCK_BRIDGE_TYPE_A) };
@@ -313,16 +339,19 @@ describe('rebalanceInventory', () => {
 
     it('should try the next bridge preference if adapter send fails', async () => {
         const routeToTest = mockContext.config.routes[0];
-        const currentBalance = 100n;
         const balances = new Map<string, Map<string, bigint>>();
-        balances.set(routeToTest.origin.toString(), new Map([[routeToTest.asset.toLowerCase(), currentBalance]]));
+        const balanceForRoute = BigInt(routeToTest.maximum) + 100n; // Ensure balance is above maximum
+        balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), balanceForRoute]]));
         getMarkBalancesStub.resolves(balances);
 
-        const mockAdapterA = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves('99'), send: stub().rejects(new Error('Send failed')), type: stub().returns(MOCK_BRIDGE_TYPE_A) };
-        const mockAdapterB = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves('99'), send: stub().resolves({ to: '0xOtherSpender', data: '0xbridgeDataB', value: 0n }), type: stub().returns(MOCK_BRIDGE_TYPE_B) };
+        // Adjust getReceivedAmount to pass slippage check
+        const receivedAmountForSlippagePass = balanceForRoute.toString();
 
-        mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockAdapterA as any);
-        mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_B).returns(mockAdapterB as any);
+        const mockAdapterA_sendFails = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves(receivedAmountForSlippagePass), send: stub().rejects(new Error('Send failed')), type: stub().returns(MOCK_BRIDGE_TYPE_A) };
+        const mockAdapterB_sendFails = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves(receivedAmountForSlippagePass), send: stub().resolves({ to: '0xOtherSpender', data: '0xbridgeDataB', value: 0n }), type: stub().returns(MOCK_BRIDGE_TYPE_B) };
+
+        mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockAdapterA_sendFails as any);
+        mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_B).returns(mockAdapterB_sendFails as any);
 
         // Mock allowance and contract for the second bridge attempt (assuming ERC20)
         const mockContractInstance = { read: { allowance: stub().resolves(1000n) }, abi: erc20Abi, address: MOCK_ASSET_ERC20 };
@@ -331,17 +360,18 @@ describe('rebalanceInventory', () => {
         await rebalanceInventory({ ...mockContext, config: { ...mockContext.config, routes: [routeToTest] } });
 
         expect(mockLogger.error.calledWith(match(/Failed to get bridge transaction request from adapter/), match({ bridgeType: MOCK_BRIDGE_TYPE_A }))).to.be.true;
-        expect(mockAdapterA.send.calledOnce).to.be.true;
-        expect(mockAdapterB.send.calledOnce).to.be.true; // Ensure B send was tried
+        expect(mockAdapterA_sendFails.send.calledOnce).to.be.true;
+        expect(mockAdapterB_sendFails.send.calledOnce).to.be.true; // Ensure B send was tried
         // Add assertions to confirm bridge B logic executed
     });
 
     it('should successfully rebalance an ERC20 asset with sufficient allowance', async () => {
-        const routeToTest = mockContext.config.routes[0] as RouteRebalancingConfig;
         const currentBalance = 1000n;
-        const quoteAmount = '995'; // Sufficient for slippage
+        const routeToTest = { ...(mockContext.config.routes[0] as RouteRebalancingConfig), maximum: (currentBalance - 1n).toString() };
+        const quoteAmount = '999';
         const balances = new Map<string, Map<string, bigint>>();
-        balances.set(routeToTest.origin.toString(), new Map([[routeToTest.asset.toLowerCase(), currentBalance]]));
+        // Corrected key for the inner map to use routeToTest.origin.toString()
+        balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
         getMarkBalancesStub.resolves(balances);
 
         const mockTxRequest: ViemTransactionRequest = {
