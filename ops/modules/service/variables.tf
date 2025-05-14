@@ -189,3 +189,26 @@ variable "private_dns_namespace_id" {
   description = "The ID of the private DNS namespace for service discovery"
   type        = string
 }
+
+variable "efs_id" {
+  description = "The ID of the EFS file system"
+  type        = string
+}
+
+variable "volume_name" {
+  description = "The name of the EFS volume to mount"
+  type        = string
+  default     = ""
+}
+
+variable "volume_container_path" {
+  description = "The path within the container where the volume will be mounted"
+  type        = string
+  default     = ""
+}
+
+variable "volume_efs_path" {
+  description = "The path within EFS to mount as the root directory inside the host"
+  type        = string
+  default     = ""
+}
