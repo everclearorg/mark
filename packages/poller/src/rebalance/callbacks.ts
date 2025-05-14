@@ -1,5 +1,7 @@
+import { TransactionReceipt } from 'viem';
 import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
+import { providers } from 'ethers';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, rebalanceCache, config, rebalance, chainService } = context;
@@ -32,7 +34,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
     // check if it is ready on the destination
     try {
-      const required = await adapter.readyOnDestination(action.amount, route, receipt);
+      const required = await adapter.readyOnDestination(action.amount, route, receipt as unknown as TransactionReceipt);
       if (!required) {
         logger.info('Action is not ready to execute callback', { requestId, action, receipt, required });
         continue;
@@ -46,7 +48,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     // Destination callback is required
     let callback;
     try {
-      callback = await adapter.destinationCallback(route, receipt);
+      callback = await adapter.destinationCallback(route, receipt as unknown as TransactionReceipt);
     } catch (e: unknown) {
       logger.error('Failed to retrieve destination action required', { requestId, action, error: jsonifyError(e) });
       // Move on to the next action to avoid blocking
@@ -64,7 +66,10 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
     // Try to execute the destination callback
     try {
-      const tx = await chainService.submitAndMonitor(route.destination.toString(), callback);
+      const tx = await chainService.submitAndMonitor(
+        route.destination.toString(),
+        callback as unknown as providers.TransactionRequest,
+      );
       logger.info('Successfully submitted destination callback', {
         requestId,
         action,
