@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { config } from 'dotenv';
 import { Logger } from '@mark/logger';
-import { getEverclearConfig, ChainConfiguration, parseChainConfigurations } from '@mark/core';
+import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { AcrossBridgeAdapter, MAINNET_ACROSS_URL } from '../src/adapters/across';
-import { RebalanceRoute, BridgeAdapter, SupportedBridge } from '../src/types';
+import { BridgeAdapter } from '../src/types';
 import { Account, Hash, parseUnits, TransactionReceipt } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { Command } from 'commander';
@@ -99,7 +99,7 @@ async function handleDestinationChain(
     receipt: TransactionReceipt
 ): Promise<{ callbackTxHash?: Hash; callbackReceipt?: TransactionReceipt }> {
     // Check if callback is needed
-    const callbackTx = await adapter.destinationCallback(amountInWei, route, receipt);
+    const callbackTx = await adapter.destinationCallback(route, receipt);
     if (!callbackTx) {
         logger.info('No callback transaction required');
         return {};
