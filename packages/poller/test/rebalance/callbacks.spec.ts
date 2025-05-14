@@ -130,7 +130,7 @@ describe('executeDestinationCallbacks', () => {
     it('should do nothing if no actions are found in cache', async () => {
         mockRebalanceCache.getRebalances.resolves([]);
         await executeDestinationCallbacks(mockContext);
-        expect(mockLogger.info.calledWith('Starting to rebalance inventory', { requestId: MOCK_REQUEST_ID })).to.be.true;
+        expect(mockLogger.info.calledWith('Executing destination callbacks', { requestId: MOCK_REQUEST_ID })).to.be.true;
         expect(mockRebalanceCache.getRebalances.calledOnceWith({ routes: mockConfig.routes as any })).to.be.true; // Cast routes if type is complex
         expect(mockChainService.getTransactionReceipt.called).to.be.false;
     });
@@ -159,8 +159,8 @@ describe('executeDestinationCallbacks', () => {
         mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
         mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(false);
         await executeDestinationCallbacks(mockContext);
-        expect(mockLogger.info.calledWith('No destination callback action required', match({ action: mockAction1 as RebalanceAction, required: false }))).to.be.true;
-        expect(mockRebalanceCache.removeRebalances.calledOnceWith([mockAction1Id])).to.be.true;
+        expect(mockLogger.info.calledWith('Action is not ready to execute callback', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction1, id: mockAction1Id }, receipt: mockReceipt1, required: false }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction1Id])).to.be.false;
         expect(mockSpecificBridgeAdapter.destinationCallback.called).to.be.false;
     });
 
@@ -180,7 +180,7 @@ describe('executeDestinationCallbacks', () => {
         mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(true);
         mockSpecificBridgeAdapter.destinationCallback.withArgs(match(mockRoute1), mockReceipt1).resolves(null);
         await executeDestinationCallbacks(mockContext);
-        expect(mockLogger.info.calledWith('No destination callback transaction returned', match({ action: mockAction1 as RebalanceAction, receipt: mockReceipt1 }))).to.be.true;
+        expect(mockLogger.info.calledWith('No destination callback transaction returned', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction1, id: mockAction1Id } }))).to.be.true;
         expect(mockRebalanceCache.removeRebalances.calledOnceWith([mockAction1Id])).to.be.true;
         expect(mockChainService.submitAndMonitor.called).to.be.false;
     });
@@ -267,10 +267,10 @@ describe('executeDestinationCallbacks', () => {
         await executeDestinationCallbacks(mockContext);
 
         expect(mockRebalanceCache.removeRebalances.calledWith([mockAction1Id])).to.be.true;
-        expect(mockLogger.info.calledWith('No destination callback action required', match({ action: mockAction2 as RebalanceAction, required: false }))).to.be.true;
-        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction2Id])).to.be.true;
-        expect(mockLogger.error.calledWith('Failed to execute destination action', match({ action: mockAction3 as RebalanceAction, error: jsonifyError(submitError) }))).to.be.true;
+        expect(mockLogger.info.calledWith('Action is not ready to execute callback', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction2, id: mockAction2Id }, receipt: mockReceipt2, required: false }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction2Id])).to.be.false;
+        expect(mockLogger.error.calledWith('Failed to execute destination action', match({ action: { ...mockAction3, id: mockAction3Id }, error: jsonifyError(submitError) }))).to.be.true;
         expect(mockRebalanceCache.removeRebalances.calledWith([mockAction3Id])).to.be.false;
-        expect(mockRebalanceCache.removeRebalances.callCount).to.equal(2);
+        expect(mockRebalanceCache.removeRebalances.callCount).to.equal(1);
     });
 });
