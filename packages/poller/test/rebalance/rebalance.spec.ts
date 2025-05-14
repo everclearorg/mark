@@ -9,7 +9,7 @@ import { Logger } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
 import { RebalanceCache, RebalanceAction } from '@mark/cache';
-import { RebalanceAdapter } from '@mark/rebalance'; // Assuming interface export
+import { RebalanceAdapter } from '@mark/rebalance';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { providers } from 'ethers'; // For TransactionRequest type used by submitAndMonitor
 import { TransactionRequest as ViemTransactionRequest, zeroAddress, Hex, erc20Abi } from 'viem'; // For adapter.send return type
