@@ -88,7 +88,19 @@ export class RebalanceCache {
 
     // 2. pull the actual objects in one HMGET
     const rows = await this.store.hmget(this.dataKey, ...ids);
-    return rows.filter((v): v is string => v !== null).map((v) => JSON.parse(v) as RebalanceAction & { id: string });
+
+    // Map over the retrieved rows, parse them, and importantly, add the 'id' back to each object.
+    // The 'ids' array and 'rows' array are parallel, so ids[i] corresponds to rows[i].
+    const actionsWithIds: (RebalanceAction & { id: string })[] = [];
+    ids.forEach((id, index) => {
+      const rawData = rows[index];
+      if (rawData !== null) { // Ensure there's data for this ID
+        const action = JSON.parse(rawData) as RebalanceAction;
+        actionsWithIds.push({ ...action, id }); // Combine the parsed action with its id
+      }
+    });
+
+    return actionsWithIds;
   }
 
   /** Delete the given action‑IDs from cache and index. */
