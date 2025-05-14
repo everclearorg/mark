@@ -6,6 +6,8 @@ import {
   http,
   padHex,
   zeroAddress,
+  erc20Abi,
+  PublicClient,
 } from 'viem';
 import axios from 'axios';
 import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
@@ -107,9 +109,10 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         return;
       }
 
-      const originAsset = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+      const originAsset = this.getAsset(route.asset, route.origin);
       this.validateAsset(originAsset, 'WETH', 'origin asset');
 
+      this.logger.debug('Found origin asset', { route, originAsset });
       const destinationWETH = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
       if (!destinationWETH) {
         throw new Error('Failed to find destination WETH');
@@ -337,9 +340,14 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
 
     const outputAmount = decodedEvent.outputAmount;
     const recipient = decodedEvent.recipient;
+    const balance = await this.getTokenBalance(
+      !!hasWithdrawn ? zeroAddress : decodedEvent.outputToken,
+      decodedEvent.recipient,
+      client,
+    );
 
     if (decodedEvent.outputToken === zeroAddress) {
-      return { needsCallback: true, amount: outputAmount, recipient };
+      return { needsCallback: balance >= outputAmount, amount: outputAmount, recipient };
     }
 
     const destinationWeth = this.findMatchingDestinationAsset(originAsset.address, route.origin, route.destination);
@@ -354,10 +362,31 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     }
 
     return {
-      needsCallback: !!hasWithdrawn,
+      needsCallback: !!hasWithdrawn && balance >= outputAmount,
       amount: outputAmount,
       recipient,
     };
+  }
+
+  protected async getTokenBalance(tokenAddress: string, owner: string, client: PublicClient): Promise<bigint> {
+    const ownerAddress = owner as `0x${string}`;
+
+    if (tokenAddress.toLowerCase() === zeroAddress.toLowerCase()) {
+      // Native balance
+      const balance = await client.getBalance({ address: ownerAddress });
+      this.logger.debug('Fetched native balance', { owner, balance: balance.toString() });
+      return balance;
+    }
+    // ERC20 token balance
+    const contractAddress = tokenAddress as `0x${string}`;
+    const balance = await client.readContract({
+      address: contractAddress,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [ownerAddress],
+    });
+    this.logger.debug('Fetched ERC20 token balance', { owner, tokenAddress, balance: balance.toString() });
+    return balance;
   }
 
   // Helper methods for API calls
