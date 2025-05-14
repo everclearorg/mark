@@ -20,6 +20,7 @@
     "coverage": "nyc report --reporter=text-summary --reporter=html"
   },
   "dependencies": {
+    "@mark/adapters-rebalance": "workspace:*",
     "@mark/cache": "workspace:*",
     "@mark/chainservice": "workspace:*",
     "@mark/core": "workspace:*",

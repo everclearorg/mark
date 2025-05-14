@@ -3818,7 +3818,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@mark/adapters-rebalance@workspace:packages/adapters/rebalance":
+"@mark/adapters-rebalance@workspace:*, @mark/adapters-rebalance@workspace:packages/adapters/rebalance":
   version: 0.0.0-use.local
   resolution: "@mark/adapters-rebalance@workspace:packages/adapters/rebalance"
   dependencies:
@@ -3927,6 +3927,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/poller@workspace:packages/poller"
   dependencies:
+    "@mark/adapters-rebalance": "workspace:*"
     "@mark/cache": "workspace:*"
     "@mark/chainservice": "workspace:*"
     "@mark/core": "workspace:*"
