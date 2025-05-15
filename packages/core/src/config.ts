@@ -183,7 +183,7 @@ function validateConfiguration(config: MarkConfiguration): void {
   }
 }
 
-const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
+export const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
   const value = await fromEnv(name, checkSsm);
   if (!value) {
     throw new ConfigurationError(`Environment variable ${name} is required`);
@@ -191,7 +191,7 @@ const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
   return value;
 };
 
-const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
+export const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
   let value = undefined;
   if (checkSsm) {
     value = await getSsmParameter(name);
