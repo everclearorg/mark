@@ -4,9 +4,8 @@ import { verifyAdminToken } from './auth';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 
 export const handleApiRequest = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
-  const { requestId, logger } = context;
+  const { requestId, logger, event } = context;
   if (!verifyAdminToken(context)) {
-    console.log('admin token invalid');
     logger.warn('Unauthorized access attempt', { requestId, event });
     return {
       statusCode: 403,
@@ -15,11 +14,10 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
   }
   try {
     const request = extractRequest(context);
-    console.log('request', request);
     if (!request) {
       return {
         statusCode: 404,
-        body: `Unknown request: ${context.event.httpMethod} ${context.event.path}`,
+        body: JSON.stringify({ message: `Unknown request: ${context.event.httpMethod} ${context.event.path}` }),
       };
     }
     switch (request) {
@@ -43,6 +41,7 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
       body: JSON.stringify({ message: `Successfully processed request: ${request}` }),
     };
   } catch (e) {
+    console.log('error', e);
     return {
       statusCode: 500,
       body: JSON.stringify(jsonifyError(e)),
