@@ -66,6 +66,11 @@ export interface RebalanceConfig {
   routes: RouteRebalancingConfig[];
 }
 
+export interface RedisConfig {
+  host: string;
+  port: number;
+}
+
 export interface MarkConfiguration extends RebalanceConfig {
   pushGatewayUrl: string;
   web3SignerUrl: string;
@@ -74,10 +79,7 @@ export interface MarkConfiguration extends RebalanceConfig {
     url?: string;
     key?: string;
   };
-  redis: {
-    host: string;
-    port: number;
-  };
+  redis: RedisConfig;
   ownAddress: string;
   stage: Stage;
   environment: Environment;
