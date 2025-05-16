@@ -49,28 +49,28 @@ resource "aws_api_gateway_method" "pause_purchase_post" {
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
   resource_id   = aws_api_gateway_resource.pause_purchase.id
   http_method   = "POST"
-  authorization_type = "NONE" # Consider using AWS_IAM for authentication
+  authorization = "NONE" # Consider using AWS_IAM for authentication
 }
 
 resource "aws_api_gateway_method" "pause_rebalance_post" {
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
   resource_id   = aws_api_gateway_resource.pause_rebalance.id
   http_method   = "POST"
-  authorization_type = "NONE" # Consider using AWS_IAM for authentication
+  authorization = "NONE" # Consider using AWS_IAM for authentication
 }
 
 resource "aws_api_gateway_method" "unpause_purchase_post" {
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
   resource_id   = aws_api_gateway_resource.unpause_purchase.id
   http_method   = "POST"
-  authorization_type = "NONE" # Consider using AWS_IAM for authentication
+  authorization = "NONE" # Consider using AWS_IAM for authentication
 }
 
 resource "aws_api_gateway_method" "unpause_rebalance_post" {
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
   resource_id   = aws_api_gateway_resource.unpause_rebalance.id
   http_method   = "POST"
-  authorization_type = "NONE" # Consider using AWS_IAM for authentication
+  authorization = "NONE" # Consider using AWS_IAM for authentication
 }
 
 # Create Lambda function for admin API
