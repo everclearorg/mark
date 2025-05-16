@@ -30,6 +30,9 @@ export interface ChainConfiguration {
     permit2: string;
     multicall3: string;
   };
+  zodiacRoleModuleAddress?: string;
+  zodiacRoleKey?: string;
+  gnosisSafeAddress?: string;
 }
 
 export interface HubConfig {
