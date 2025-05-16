@@ -10,6 +10,14 @@ export const getTickers = (config: MarkConfiguration) => {
   return tickers;
 };
 
+export const getTickerForAsset = (asset: string, chain: number, config: MarkConfiguration) => {
+  const assetConfig = config.chains[chain].assets.find((a) => a.address.toLowerCase() === asset.toLowerCase());
+  if (!assetConfig) {
+    return undefined;
+  }
+  return assetConfig.tickerHash;
+};
+
 /**
  * @notice Invoices are always normalized to 18 decimal units. This will convert the given invoice amount
  * to the local units (ie USDC is 6 decimals on ethereum, but represents as an 18 decimal invoice)

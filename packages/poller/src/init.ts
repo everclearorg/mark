@@ -3,19 +3,23 @@ import { MarkConfiguration, loadConfiguration } from '@mark/core';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
-import { Wallet } from 'ethers';
-import { pollAndProcess } from './invoice';
-import { PurchaseCache } from '@mark/cache';
+import { Signer, Wallet } from 'ethers';
+import { pollAndProcessInvoices } from './invoice';
+import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { hexlify, randomBytes } from 'ethers/lib/utils';
+import { rebalanceInventory } from './rebalance';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 export interface MarkAdapters {
-  cache: PurchaseCache;
+  purchaseCache: PurchaseCache;
+  rebalanceCache: RebalanceCache;
   chainService: ChainService;
   everclear: EverclearAdapter;
   web3Signer: Web3Signer | Wallet;
   logger: Logger;
   prometheus: PrometheusAdapter;
+  rebalance: RebalanceAdapter;
 }
 export interface ProcessingContext extends MarkAdapters {
   config: MarkConfiguration;
@@ -36,23 +40,28 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
       retryDelay: 15000,
       logLevel: config.logLevel,
     },
-    web3Signer,
+    web3Signer as unknown as Signer,
     logger,
   );
 
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
-  const cache = new PurchaseCache(config.redis.host, config.redis.port);
+  const purchaseCache = new PurchaseCache(config.redis.host, config.redis.port);
+  const rebalanceCache = new RebalanceCache(config.redis.host, config.redis.port);
 
   const prometheus = new PrometheusAdapter(logger, 'mark-poller', config.pushGatewayUrl);
+
+  const rebalance = new RebalanceAdapter(config.environment, config.chains, logger);
 
   return {
     logger,
     chainService,
     web3Signer,
     everclear,
-    cache,
+    purchaseCache,
+    rebalanceCache,
     prometheus,
+    rebalance,
   };
 }
 
@@ -82,11 +91,18 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       startTime: Math.floor(Date.now() / 1000),
     };
 
-    const result = await pollAndProcess(context);
+    const invoiceResult = await pollAndProcessInvoices(context);
+    logger.info('Successfully processed invoices', { requestId: context.requestId, invoiceResult });
+
+    const rebalanceResult = await rebalanceInventory(context);
+    logger.info('Successfully rebalanced inventory', { requestId: context.requestId, rebalanceResult });
 
     return {
       statusCode: 200,
-      body: JSON.stringify(result),
+      body: JSON.stringify({
+        invoiceResult: invoiceResult ?? {},
+        rebalanceResult: rebalanceResult ?? {},
+      }),
     };
   } catch (_error: unknown) {
     const error = _error as Error;

@@ -1,4 +1,4 @@
-import { providers, Signer } from 'ethers';
+import { providers, Signer, constants } from 'ethers';
 import { ChainService as ChimeraChainService } from '@chimera-monorepo/chainservice';
 import { ILogger } from '@mark/logger';
 import { createLoggingContext, ChainConfiguration } from '@mark/core';
@@ -80,6 +80,18 @@ export class ChainService {
       });
       throw error;
     }
+  }
+
+  getTransactionReceipt(chain: number, transactionHash: string) {
+    return this.txService.getTransactionReceipt(chain, transactionHash);
+  }
+
+  getProvider(chain: number) {
+    return this.txService.getProvider(chain);
+  }
+
+  getBalance(chain: number, owner: string, asset: string) {
+    return this.txService.getBalance(chain, owner, asset === constants.AddressZero ? undefined : asset);
   }
 
   isAssetSupported(chainId: string, assetAddress: string): boolean {

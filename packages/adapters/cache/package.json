@@ -19,7 +19,7 @@
         "lint:package": "sort-package-json",
         "lint:ts": "eslint ./src",
         "purge": "yarn clean && rimraf ./coverage ./node_modules",
-        "test": "jest",
+        "test": "yarn test:unit",
         "test:unit": "jest --coverage"
     },
     "dependencies": {
