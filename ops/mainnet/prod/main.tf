@@ -229,3 +229,25 @@ module "iam" {
 module "ecr" {
   source = "../../modules/ecr"
 }
+
+module "mark_admin_api" {
+  source              = "../../modules/api-gateway"
+  stage               = var.stage
+  environment         = var.environment
+  execution_role_arn  = module.iam.lambda_role_arn
+  subnet_ids          = module.network.private_subnets
+  security_group_id   = module.sgs.lambda_sg_id
+  image_uri           = "${local.repository_url_prefix}mark-admin:latest"
+  container_env_vars  = {
+    DD_SERVICE                      = "mark-admin"
+    DD_LAMBDA_HANDLER               = "index.handler"
+    DD_LOGS_ENABLED                 = "true"
+    DD_TRACES_ENABLED               = "true"
+    DD_RUNTIME_METRICS_ENABLED      = "true"
+    DD_API_KEY                      = local.mark_config.dd_api_key
+    LOG_LEVEL                       = "debug"
+    REDIS_HOST                      = module.cache.redis_host
+    REDIS_PORT                      = module.cache.redis_port
+    ADMIN_TOKEN                     = local.mark_config_json.admin_token
+  }
+}

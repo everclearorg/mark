@@ -32,3 +32,13 @@ output "prometheus_debug_info" {
   description = "Debug information for Prometheus service"
   value       = module.mark_prometheus.debug_info
 }
+
+output "admin_api_endpoint" {
+  description = "API Gateway endpoint URL for the Admin API"
+  value       = module.mark_admin_api.api_endpoint
+}
+
+output "admin_lambda_name" {
+  description = "Name of the Admin API Lambda function"
+  value       = module.mark_admin_api.admin_lambda_name
+}
