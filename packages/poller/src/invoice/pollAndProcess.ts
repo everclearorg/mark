@@ -3,9 +3,14 @@ import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 
 export async function pollAndProcessInvoices(context: ProcessingContext): Promise<void> {
-  const { config, everclear, logger, requestId } = context;
+  const { config, everclear, logger, requestId, purchaseCache } = context;
 
   try {
+    const isPaused = await purchaseCache.isPaused();
+    if (isPaused) {
+      logger.warn('Purchase loop is paused');
+      return;
+    }
     const invoices = await everclear.fetchInvoices(config.chains);
 
     if (invoices.length === 0) {

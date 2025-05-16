@@ -8,6 +8,12 @@ import { providers } from 'ethers';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<void> {
   const { logger, requestId, rebalanceCache, config, chainService, rebalance } = context;
+  const isPaused = await rebalanceCache.isPaused();
+  if (isPaused) {
+    logger.warn('Rebalance loop is paused');
+    return;
+  }
+
   logger.info('Starting to rebalance inventory', { requestId });
 
   // Execute any callbacks from cached actions prior to proceeding

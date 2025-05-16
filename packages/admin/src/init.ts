@@ -1,0 +1,60 @@
+import { RebalanceCache, PurchaseCache } from '@mark/cache';
+import { ConfigurationError, fromEnv, LogLevel, requireEnv } from '@mark/core';
+import { jsonifyError, Logger } from '@mark/logger';
+import { AdminConfig, AdminAdapter, AdminContext } from './types';
+import { APIGatewayProxyEvent } from 'aws-lambda';
+import { handleApiRequest } from './api/routes';
+import { bytesToHex } from 'viem';
+import { getRandomValues } from 'crypto';
+
+function initializeAdapters(config: AdminConfig): AdminAdapter {
+  return {
+    rebalanceCache: new RebalanceCache(config.redis.host, config.redis.port),
+    purchaseCache: new PurchaseCache(config.redis.host, config.redis.port),
+  };
+}
+
+async function loadConfiguration(): Promise<AdminConfig> {
+  try {
+    const config = {
+      logLevel: ((await fromEnv('LOG_LEVEL')) ?? 'debug') as LogLevel,
+      adminToken: await requireEnv('ADMIN_TOKEN'),
+      redis: {
+        host: await requireEnv('REDIS_HOST'),
+        port: parseInt(await requireEnv('REDIS_PORT')),
+      },
+    };
+    return config;
+  } catch (e) {
+    const error = e as Error;
+    throw new ConfigurationError(`Failed to load admin api configuration: ${error.message}`, {
+      error: jsonifyError(error),
+    });
+  }
+}
+
+export const initAdminApi = async (event: APIGatewayProxyEvent): Promise<{ statusCode: number; body: string }> => {
+  // Get the config
+  const config = await loadConfiguration();
+
+  // Create the logger
+  const logger = new Logger({
+    service: 'mark-admin',
+    level: config.logLevel,
+  });
+
+  const adapters = initializeAdapters(config);
+
+  const context: AdminContext = {
+    ...adapters,
+    event,
+    // lambdaContext,
+    logger,
+    config,
+    requestId: bytesToHex(getRandomValues(new Uint8Array(32))),
+    startTime: Math.floor(Date.now() / 1000),
+  };
+  logger.info('Context initiatlized', { requestId: context.requestId, event, context });
+
+  return handleApiRequest(context);
+};
