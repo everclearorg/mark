@@ -1,6 +1,6 @@
 import { MarkConfiguration, NewIntentParams, NewIntentWithPermit2Params } from '@mark/core';
 import { getERC20Contract } from './contracts';
-import { encodeFunctionData, erc20Abi } from 'viem';
+import { encodeFunctionData, erc20Abi, decodeEventLog, isAddress as viemIsAddress, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
   generatePermit2Nonce,
@@ -11,7 +11,6 @@ import {
 } from './permit2';
 import { prepareMulticall } from './multicall';
 import { MarkAdapters } from '../init';
-import { decodeEventLog } from 'viem';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -106,6 +105,24 @@ const intentAddedAbi = [
   },
 ] as const;
 
+// ABI for the Zodiac RoleModule's execTransactionWithRole function
+const ZODIAC_ROLE_MODULE_ABI = [
+  {
+    inputs: [
+      { internalType: 'address', name: 'to', type: 'address' },
+      { internalType: 'uint256', name: 'value', type: 'uint256' },
+      { internalType: 'bytes', name: 'data', type: 'bytes' },
+      { internalType: 'uint8', name: 'operation', type: 'uint8' },
+      { internalType: 'bytes32', name: 'roleKey', type: 'bytes32' },
+      { internalType: 'bool', name: 'shouldRevert', type: 'bool' },
+    ],
+    name: 'execTransactionWithRole',
+    outputs: [],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+] as const;
+
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required.
  */
@@ -128,6 +145,10 @@ export const sendIntents = async (
   if (origins.size !== 1) {
     throw new Error('Cannot process multiple intents with different origin domains');
   }
+  const originChainId = intents[0].origin;
+  const chainConfig = config.chains[originChainId];
+  const useZodiac =
+    chainConfig?.zodiacRoleModuleAddress && chainConfig?.zodiacRoleKey && chainConfig?.gnosisSafeAddress;
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset));
@@ -135,87 +156,125 @@ export const sendIntents = async (
     throw new Error('Cannot process multiple intents with different input assets');
   }
 
+  // Validate Zodiac config
+  if (useZodiac) {
+    if (
+      !viemIsAddress(chainConfig.zodiacRoleModuleAddress!) ||
+      !chainConfig.zodiacRoleKey!.startsWith('0x') ||
+      !viemIsAddress(chainConfig.gnosisSafeAddress!)
+    ) {
+      logger.error('Invalid Zodiac configuration values', {
+        invoiceId,
+        requestId,
+        zodiacRoleModuleAddress: chainConfig.zodiacRoleModuleAddress,
+        zodiacRoleKey: chainConfig.zodiacRoleKey,
+        gnosisSafeAddress: chainConfig.gnosisSafeAddress,
+      });
+      throw new Error('Invalid Zodiac configuration.');
+    }
+
+    const gnosisSafeAddress = chainConfig.gnosisSafeAddress!.toLowerCase();
+
+    // Check for Zodiac rule violations
+    for (const intent of intents) {
+      if (intent.to.toLowerCase() !== gnosisSafeAddress) {
+        throw new Error(`intent.to (${intent.to}) must be Gnosis Safe address (${gnosisSafeAddress})`);
+      }
+      if (BigInt(intent.maxFee.toString()) !== BigInt(0)) {
+        throw new Error(`intent.maxFee (${intent.maxFee}) must be 0`);
+      }
+      if (intent.callData !== '0x') {
+        throw new Error(`intent.callData (${intent.callData}) must be 0x`);
+      }
+    }
+  }
+
   try {
     // Get transaction data for the first intent to use for approval check
     const firstIntent = intents[0];
-
     // API call to get txdata for the newOrder call
-    const txData = await everclear.createNewIntent(intents as (NewIntentParams | NewIntentWithPermit2Params)[]);
+    const feeAdapterTxData = await everclear.createNewIntent(
+      intents as (NewIntentParams | NewIntentWithPermit2Params)[],
+    );
 
     // Get total amount needed across all intents
     const totalAmount = intents.reduce((sum, intent) => {
       return BigInt(sum) + BigInt(intent.amount);
     }, BigInt(0));
 
+    const spenderForAllowance = feeAdapterTxData.to as `0x${string}`;
+    const ownerForAllowance = useZodiac ? chainConfig.gnosisSafeAddress! : config.ownAddress;
+
     logger.info('Total amount for approvals', {
       requestId,
       invoiceId,
       totalAmount: totalAmount.toString(),
       intentCount: intents.length,
+      chainId: originChainId,
+      owner: ownerForAllowance,
+      spender: spenderForAllowance,
+      useZodiac,
     });
 
     const tokenContract = await getERC20Contract(config, firstIntent.origin, firstIntent.inputAsset as `0x${string}`);
-    const allowance = await tokenContract.read.allowance([config.ownAddress, txData.to]);
-
-    // Check if we're sending USDT and have to reset the allowance first
-    const chainAssets = config.chains[firstIntent.origin]?.assets ?? [];
-    const isUSDT = chainAssets.some(
-      (asset) =>
-        asset.symbol.toUpperCase() === 'USDT' && asset.address.toLowerCase() === tokenContract.address.toLowerCase(),
-    );
-    if (isUSDT && BigInt(allowance as string) > BigInt(0)) {
-      logger.info('USDT allowance is greater than zero, setting allowance to zero first', {
-        requestId,
-        invoiceId,
-        currentAllowance: allowance,
-        chainId: txData.chainId,
-      });
-
-      const approveCalldata = encodeFunctionData({
-        abi: erc20Abi,
-        functionName: 'approve',
-        args: [txData.to as `0x${string}`, BigInt(0)],
-      });
-      const transaction = {
-        to: tokenContract.address,
-        data: approveCalldata,
-        from: config.ownAddress,
-      };
-
-      logger.debug('Sending zero allowance transaction for USDT', {
-        requestId,
-        invoiceId,
-        transaction,
-        chainId: txData.chainId,
-      });
-      const zeroAllowanceTx = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
-      prometheus.updateGasSpent(
-        firstIntent.origin,
-        TransactionReason.Approval,
-        BigInt(zeroAllowanceTx.cumulativeGasUsed.mul(zeroAllowanceTx.effectiveGasPrice).toString()),
-      );
-
-      logger.info('Zero allowance transaction for USDT sent successfully', {
-        requestId,
-        invoiceId,
-        chain: txData.chainId,
-        zeroAllowanceTxHash: zeroAllowanceTx.transactionHash,
-        asset: tokenContract.address,
-      });
-    }
+    const allowance = await tokenContract.read.allowance([ownerForAllowance as `0x${string}`, spenderForAllowance]);
 
     if (BigInt(allowance as string) < totalAmount) {
-      logger.info('Allowance insufficient for total amount, preparing approval transaction', {
-        requestId,
+      logger.warn('Insufficient allowance. Proceeding with approval.', {
         invoiceId,
-        requiredAmount: totalAmount.toString(),
-        currentAllowance: allowance,
+        requestId,
+        required: totalAmount.toString(),
+        allowance,
       });
 
+      const chainAssets = config.chains[firstIntent.origin]?.assets ?? [];
+      const isUSDT = chainAssets.some(
+        (asset) =>
+          asset.symbol.toUpperCase() === 'USDT' && asset.address.toLowerCase() === tokenContract.address.toLowerCase(),
+      );
+
+      if (isUSDT && BigInt(allowance as string) > BigInt(0)) {
+        logger.info('USDT allowance is greater than zero, setting allowance to zero first', {
+          requestId,
+          invoiceId,
+          allowance: allowance,
+          spender: spenderForAllowance,
+        });
+        const zeroApproveCalldata = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: 'approve',
+          args: [spenderForAllowance, BigInt(0)],
+        });
+        const zeroApprovalTransaction = {
+          to: tokenContract.address,
+          data: zeroApproveCalldata,
+          from: config.ownAddress,
+        };
+        const zeroAllowanceTx = await chainService.submitAndMonitor(originChainId, zeroApprovalTransaction);
+        prometheus.updateGasSpent(
+          firstIntent.origin,
+          TransactionReason.Approval,
+          BigInt(zeroAllowanceTx.cumulativeGasUsed.mul(zeroAllowanceTx.effectiveGasPrice).toString()),
+        );
+        logger.info('Zero allowance transaction for USDT sent successfully', {
+          requestId,
+          invoiceId,
+          chainId: originChainId,
+          zeroAllowanceTxHash: zeroAllowanceTx.transactionHash,
+          asset: tokenContract.address,
+        });
+      }
+
+      logger.info('Sending approval transaction.', {
+        invoiceId,
+        requestId,
+        spender: spenderForAllowance,
+        amount: totalAmount.toString(),
+      });
       const approveCalldata = encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
-        args: [txData.to as `0x${string}`, totalAmount],
+        args: [spenderForAllowance, totalAmount],
       });
       const transaction = {
         to: tokenContract.address,
@@ -227,19 +286,19 @@ export const sendIntents = async (
         requestId,
         invoiceId,
         transaction,
-        chainId: txData.chainId,
+        chainId: originChainId,
       });
-      const approvalTx = await chainService.submitAndMonitor(txData.chainId.toString(), transaction);
+
+      const approvalTx = await chainService.submitAndMonitor(originChainId, transaction);
       prometheus.updateGasSpent(
         firstIntent.origin,
         TransactionReason.Approval,
         BigInt(approvalTx.cumulativeGasUsed.mul(approvalTx.effectiveGasPrice).toString()),
       );
-
       logger.info('Approval transaction sent successfully', {
         requestId,
         invoiceId,
-        chain: txData.chainId,
+        chainId: originChainId,
         approvalTxHash: approvalTx.transactionHash,
         allowance,
         asset: tokenContract.address,
@@ -250,7 +309,7 @@ export const sendIntents = async (
         requestId,
         invoiceId,
         allowance,
-        chain: txData.chainId,
+        chainId: originChainId,
         asset: tokenContract.address,
         totalAmount: totalAmount.toString(),
       });
@@ -287,20 +346,55 @@ export const sendIntents = async (
       invoiceId,
       requestId,
       transaction: {
-        to: txData.to,
-        value: txData.value,
-        data: txData.data,
-        from: txData.from,
-        chain: txData.chainId,
+        to: feeAdapterTxData.to,
+        value: feeAdapterTxData.value,
+        data: feeAdapterTxData.data,
+        from: config.ownAddress,
+        chainId: originChainId,
       },
     });
 
-    // transaction will be either the newIntent or newOrder
-    const purchaseTx = await chainService.submitAndMonitor(txData.chainId.toString(), {
-      to: txData.to as string,
-      value: txData.value ?? '0',
-      data: txData.data,
-      from: txData.from ?? config.ownAddress,
+    // Transaction will be newIntent (if single intent) or newOrder
+    let purchaseTxTo = feeAdapterTxData.to as `0x${string}`;
+    let purchaseTxData = feeAdapterTxData.data as Hex;
+    let purchaseTxValue = (feeAdapterTxData.value ?? '0').toString();
+    const purchaseTxFrom: string = config.ownAddress;
+
+    if (useZodiac) {
+      const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
+      const zodiacRoleKey = chainConfig.zodiacRoleKey as Hex;
+
+      purchaseTxTo = zodiacModuleAddress;
+      purchaseTxData = encodeFunctionData({
+        abi: ZODIAC_ROLE_MODULE_ABI,
+        functionName: 'execTransactionWithRole',
+        args: [
+          feeAdapterTxData.to as `0x${string}`, // to
+          BigInt(feeAdapterTxData.value ?? '0'), // value
+          feeAdapterTxData.data as Hex, // data
+          0, // operation (CALL)
+          zodiacRoleKey, // roleKey
+          true, // shouldRevert
+        ],
+      });
+      purchaseTxValue = '0';
+
+      logger.info('Preparing Zodiac transaction', {
+        invoiceId,
+        requestId,
+        zodiacModuleAddress,
+        roleKey: zodiacRoleKey,
+        purchaseTxTo: feeAdapterTxData.to,
+        purchaseTxValue: feeAdapterTxData.value,
+        purchaseTxData: feeAdapterTxData.data,
+      });
+    }
+
+    const purchaseTx = await chainService.submitAndMonitor(originChainId, {
+      to: purchaseTxTo,
+      value: purchaseTxValue,
+      data: purchaseTxData,
+      from: purchaseTxFrom,
     });
 
     // Find the IntentAdded event logs
@@ -313,7 +407,6 @@ export const sendIntents = async (
         chainId: intents[0].origin,
         logs: purchaseTx.logs,
       });
-
       return [];
     }
     const purchaseIntentIds = intentAddedLogs.map((log) => {

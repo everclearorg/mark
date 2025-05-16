@@ -444,7 +444,7 @@ describe('Invoice Processing', () => {
       expect(mockDeps.prometheus.updateRewards.called).to.be.false;
     });
 
-    it.only('should adjust custodied balances based on pending intents from economy data', async () => {
+    it('should adjust custodied balances based on pending intents from economy data', async () => {
       const ticker = '0xticker1';
       const domain1 = '8453';  // Origin domain
       const domain2 = '1';     // Destination domain where Mark has balance
