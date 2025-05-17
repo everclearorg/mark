@@ -206,8 +206,10 @@ jobs:
       AWS_PROFILE: aws-deployer-connext
       AWS_REGION: ${{ needs.set-aws-region.outputs.AWS_REGION }}
       REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
-      REPOSITORY: mark-poller
-      IMAGE_TAG: mark-poller-${{ github.sha }}
+      POLLER_REPOSITORY: mark-poller
+      POLLER_IMAGE_TAG: mark-poller-${{ github.sha }}
+      ADMIN_REPOSITORY: mark-admin
+      ADMIN_IMAGE_TAG: mark-admin-${{ github.sha }}
 
     steps:
       - name: Setup Terraform
@@ -238,7 +240,10 @@ jobs:
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod
         run: |
-          terraform apply -var "image_uri=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" -auto-approve > /dev/null 2>&1
+          terraform apply \
+            -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
+            -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
+            -auto-approve > /dev/null 2>&1
 
       - name: Show Admin API Endpoint URL
         if: success() # Only run if apply was successful
