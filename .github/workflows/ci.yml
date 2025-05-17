@@ -134,7 +134,6 @@ jobs:
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
   build-and-push-poller-image:
-    if: github.ref == 'refs/heads/mainnet-prod'
     env:
       REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
       REPOSITORY: mark-poller
