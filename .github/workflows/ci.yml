@@ -213,9 +213,8 @@ jobs:
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
   terraform-deploy-mainnet-prod:
-    if: github.ref == 'refs/heads/mainnet-prod'
     runs-on: ubuntu-latest
-    needs: [build-and-push-poller-image, set-aws-region]
+    needs: [build-and-push-poller-image, build-and-push-admin-image, set-aws-region]
     env:
       AWS_PROFILE: aws-deployer-connext
       AWS_REGION: ${{ needs.set-aws-region.outputs.AWS_REGION }}
