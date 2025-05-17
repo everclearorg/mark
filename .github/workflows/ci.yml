@@ -100,6 +100,40 @@ jobs:
     outputs:
       AWS_REGION: ${{ steps.set-aws-region-2.outputs.AWS_REGION }}
 
+  build-and-push-admin-image:
+    if: github.ref == 'refs/heads/feat/rebalancer-service'
+    env:
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
+      REPOSITORY: mark-admin
+      IMAGE_TAG: mark-admin-${{ github.sha }}
+    runs-on: ubuntu-latest
+    needs: [set-aws-region]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ needs.set-aws-region.outputs.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Private ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        id: build-image
+        run: |
+          docker build -f docker/admin/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
   build-and-push-poller-image:
     if: github.ref == 'refs/heads/mainnet-prod'
     env:
