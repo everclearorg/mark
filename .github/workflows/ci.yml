@@ -112,7 +112,7 @@ jobs:
 
   build-and-push-admin-image:
     env:
-      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region-tmp.outputs.AWS_REGION }}.amazonaws.com
       REPOSITORY: mark-admin
       IMAGE_TAG: mark-admin-${{ github.sha }}
     runs-on: ubuntu-latest
