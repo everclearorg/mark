@@ -237,7 +237,7 @@ module "mark_admin_api" {
   execution_role_arn  = module.iam.lambda_role_arn
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
-  image_uri           = "${local.repository_url_prefix}mark-admin:latest"
+  image_uri           = var.admin_image_uri
   container_env_vars  = {
     DD_SERVICE                      = "mark-admin"
     DD_LAMBDA_HANDLER               = "index.handler"
