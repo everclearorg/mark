@@ -141,6 +141,7 @@ jobs:
         id: build-image
         run: |
           docker build -f docker/admin/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
   build-and-push-poller-image:
     if: github.ref == 'refs/heads/mainnet-prod'

@@ -1,53 +1,94 @@
 FROM public.ecr.aws/lambda/nodejs:18 AS node
 
+# ----------------------------------------
+# Build stage
+# ----------------------------------------
+
+FROM node AS build
+RUN yum update -y
+RUN yum install -y git
+
+RUN npm install --global yarn@1.22.19 node-gyp
+
+ENV HOME=/tmp/build \
+    PATH=/tmp/build/node_modules/.bin:./node_modules/.bin:${PATH} \
+    PYTHON=/usr/bin/python3 \
+    NODE_ENV=development \
+    NODE_OPTIONS="--max-old-space-size=4096" \
+    YARN_ENABLE_IMMUTABLE_INSTALLS=false \
+    YARN_ENABLE_SCRIPTS=true \
+    YARN_CACHE_FOLDER=/tmp/yarn-cache \
+    SKIP_OPTIONAL_DEPENDENCIES=true \
+    BUFFERUTIL_SKIP_INSTALL=true \
+    UTF_8_VALIDATE_SKIP_INSTALL=true
+
 WORKDIR /tmp/build
 
-# Copy package files
-COPY package.json yarn.lock .yarnrc.yml ./
-COPY .yarn ./.yarn
+# Copy yarn configuration files first
+COPY .yarn /tmp/build/.yarn/
+COPY .yarnrc.yml /tmp/build/
+COPY package.json /tmp/build/
 
-# Copy workspace package files
-COPY packages/admin/package.json ./packages/admin/
-COPY packages/adapters/cache/package.json ./packages/adapters/cache/
-COPY packages/adapters/logger/package.json ./packages/adapters/logger/
-COPY packages/core/package.json ./packages/core/
+# Copy all package.json files
+COPY packages/core/package.json /tmp/build/packages/core/
+COPY packages/admin/package.json /tmp/build/packages/admin/
+COPY packages/poller/package.json /tmp/build/packages/poller/
+COPY packages/adapters/rebalance/package.json /tmp/build/packages/adapters/rebalance/
+COPY packages/adapters/logger/package.json /tmp/build/packages/adapters/logger/
+COPY packages/adapters/chainservice/package.json /tmp/build/packages/adapters/chainservice/
+COPY packages/adapters/everclear/package.json /tmp/build/packages/adapters/everclear/
+COPY packages/adapters/web3signer/package.json /tmp/build/packages/adapters/web3signer/
+COPY packages/adapters/cache/package.json /tmp/build/packages/adapters/cache/
+COPY packages/adapters/prometheus/package.json /tmp/build/packages/adapters/prometheus/
+COPY yarn.lock /tmp/build/
 
-# Install dependencies
-RUN yarn install --immutable
+# Install dependencies including devDependencies
+RUN yarn install --mode=skip-build && \
+    yarn workspaces foreach -A run rebuild
 
-# Copy source code
-COPY packages/admin/ ./packages/admin/
-COPY packages/adapters/cache/ ./packages/adapters/cache/
-COPY packages/adapters/logger/ ./packages/adapters/logger/
-COPY packages/core/ ./packages/core/
+# Copy source files
+COPY packages/core /tmp/build/packages/core
+COPY packages/poller /tmp/build/packages/poller
+COPY packages/admin /tmp/build/packages/admin
+COPY packages/adapters/rebalance /tmp/build/packages/adapters/rebalance
+COPY packages/adapters/logger /tmp/build/packages/adapters/logger
+COPY packages/adapters/chainservice /tmp/build/packages/adapters/chainservice
+COPY packages/adapters/everclear /tmp/build/packages/adapters/everclear
+COPY packages/adapters/web3signer /tmp/build/packages/adapters/web3signer
+COPY packages/adapters/cache /tmp/build/packages/adapters/cache
+COPY packages/adapters/prometheus /tmp/build/packages/adapters/prometheus
+COPY tsconfig.json /tmp/build/
 
-# Build the packages
-RUN yarn workspace @mark/core build && \
-    yarn workspace @mark/logger build && \
-    yarn workspace @mark/cache build && \
-    yarn workspace @mark/admin build
+# Build packages
+RUN yarn build
 
-# Final stage
-FROM public.ecr.aws/lambda/nodejs:18
+# ----------------------------------------
+# Runtime stage
+# ----------------------------------------
 
-# Set up Lambda environment
+FROM node AS runtime
+
+ENV NODE_ENV=production \
+    PORT=8080
+
 WORKDIR ${LAMBDA_TASK_ROOT}
 
-# Copy built files from the build stage
+# Copy only the necessary files from build
 COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
 COPY --from=build /tmp/build/packages/admin/dist/* ${LAMBDA_TASK_ROOT}/
 COPY --from=build /tmp/build/packages/core/dist ${LAMBDA_TASK_ROOT}/packages/core/dist
 COPY --from=build /tmp/build/packages/adapters/logger/dist ${LAMBDA_TASK_ROOT}/packages/adapters/logger/dist
+COPY --from=build /tmp/build/packages/adapters/prometheus/dist ${LAMBDA_TASK_ROOT}/packages/adapters/prometheus/dist
 COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/packages/adapters/cache/dist
 
-# Create symlinks for local imports
+# Create symlinks for workspace dependencies
 RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
+    rm -rf core logger chainservice everclear prometheus web3signer cache rebalance admin && \
     ln -s ../../packages/core/dist core && \
     ln -s ../../packages/adapters/logger/dist logger && \
+    ln -s ../../packages/adapters/prometheus/dist prometheus && \
     ln -s ../../packages/adapters/cache/dist cache
 
-# Add Datadog Lambda layer (optional, but based on your poller setup it seems you're using Datadog)
 COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
 
-# Command to run
-CMD ["index.handler"] 
+CMD [ "index.handler" ]
