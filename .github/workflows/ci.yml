@@ -82,9 +82,7 @@ jobs:
       - name: Set AWS Region
         id: set-aws-region
         run: |
-          if [[ "${{ github.ref }}" == "refs/heads/mainnet-prod" ]]; then
-            echo "AWS_REGION=ap-northeast-1" >> $GITHUB_OUTPUT
-          fi
+          echo "AWS_REGION=ap-northeast-1" >> $GITHUB_OUTPUT
     outputs:
       AWS_REGION: ${{ steps.set-aws-region.outputs.AWS_REGION }}
 
