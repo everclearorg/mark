@@ -140,6 +140,9 @@ jobs:
       - name: Build, tag, and push Docker image to Amazon ECR
         id: build-image
         run: |
+          echo $REGISTRY
+          echo $REPOSITORY
+          echo $IMAGE_TAG
           docker build -f docker/admin/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
