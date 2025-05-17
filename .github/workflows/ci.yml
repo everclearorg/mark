@@ -101,7 +101,6 @@ jobs:
       AWS_REGION: ${{ steps.set-aws-region-2.outputs.AWS_REGION }}
 
   build-and-push-admin-image:
-    if: github.ref == 'refs/heads/feat/rebalancer-service'
     env:
       REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region.outputs.AWS_REGION }}.amazonaws.com
       REPOSITORY: mark-admin
