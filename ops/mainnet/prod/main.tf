@@ -246,8 +246,8 @@ module "mark_admin_api" {
     DD_RUNTIME_METRICS_ENABLED      = "true"
     DD_API_KEY                      = local.mark_config.dd_api_key
     LOG_LEVEL                       = "debug"
-    REDIS_HOST                      = module.cache.redis_host
-    REDIS_PORT                      = module.cache.redis_port
+    REDIS_HOST                      = module.cache.redis_instance_address
+    REDIS_PORT                      = module.cache.redis_instance_port
     ADMIN_TOKEN                     = local.mark_config_json.admin_token
   }
 }
