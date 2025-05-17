@@ -254,6 +254,13 @@ jobs:
         run: |
           terraform apply -var "image_uri=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" -auto-approve > /dev/null 2>&1
 
+      - name: Show Admin API Endpoint URL
+        if: success() # Only run if apply was successful
+        working-directory: ./ops/mainnet/prod
+        run: |
+          echo "Admin API Endpoint URL:"
+          terraform output -raw admin_api_endpoint
+
   terraform-deploy-mainnet-prod-2:
     if: github.ref == 'refs/heads/mainnet-prod-2'
     runs-on: ubuntu-latest
@@ -295,3 +302,10 @@ jobs:
         working-directory: ./ops/mainnet/prod2
         run: |
           terraform apply -var "image_uri=${REGISTRY}/${REPOSITORY}:${IMAGE_TAG}" -auto-approve > /dev/null 2>&1
+
+      - name: Show Admin API Endpoint URL
+        if: success() # Only run if apply was successful
+        working-directory: ./ops/mainnet/prod2
+        run: |
+          echo "Admin API Endpoint URL:"
+          terraform output -raw admin_api_endpoint
