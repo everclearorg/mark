@@ -1,0 +1,5 @@
+@adminUrl = https://ggyiykcp0f.execute-api.ap-northeast-1.amazonaws.com/prod
+@adminToken = foobar
+
+POST {{adminUrl}}/pause/rebalance
+x-admin-token: {{adminToken}}
