@@ -3,7 +3,7 @@ import { ConfigurationError, fromEnv, LogLevel, requireEnv } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { AdminConfig, AdminAdapter, AdminContext } from './types';
 import { APIGatewayProxyEvent } from 'aws-lambda';
-import { handleApiRequest } from './api/routes';
+import { handleApiRequest } from './api';
 import { bytesToHex } from 'viem';
 import { getRandomValues } from 'crypto';
 
