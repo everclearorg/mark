@@ -85,6 +85,7 @@ COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/pa
 RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
     rm -rf core logger chainservice everclear prometheus web3signer cache rebalance admin && \
     ln -s ../../packages/core/dist core && \
+    ln -s ../../packages/admin/dist admin && \
     ln -s ../../packages/adapters/logger/dist logger && \
     ln -s ../../packages/adapters/prometheus/dist prometheus && \
     ln -s ../../packages/adapters/cache/dist cache
