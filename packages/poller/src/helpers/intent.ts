@@ -233,6 +233,7 @@ export const sendIntents = async (
           asset.symbol.toUpperCase() === 'USDT' && asset.address.toLowerCase() === tokenContract.address.toLowerCase(),
       );
 
+      // USDT approval must be set to 0
       if (isUSDT && BigInt(allowance as string) > BigInt(0)) {
         logger.info('USDT allowance is greater than zero, setting allowance to zero first', {
           requestId,
@@ -245,11 +246,34 @@ export const sendIntents = async (
           functionName: 'approve',
           args: [spenderForAllowance, BigInt(0)],
         });
+
+        let moduleZeroApprovalTo = tokenContract.address;
+        let moduleZeroApprovalData = zeroApproveCalldata;
+
+        if (useZodiac) {
+          const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
+          const zodiacRoleKey = chainConfig.zodiacRoleKey as Hex;
+          moduleZeroApprovalData = encodeFunctionData({
+            abi: ZODIAC_ROLE_MODULE_ABI,
+            functionName: 'execTransactionWithRole',
+            args: [
+              tokenContract.address,
+              BigInt(0),
+              zeroApproveCalldata,
+              0,
+              zodiacRoleKey,
+              true,
+            ],
+          });
+          moduleZeroApprovalTo = zodiacModuleAddress;
+        }
+
         const zeroApprovalTransaction = {
-          to: tokenContract.address,
-          data: zeroApproveCalldata,
+          to: moduleZeroApprovalTo,
+          data: moduleZeroApprovalData,
           from: config.ownAddress,
         };
+
         const zeroAllowanceTx = await chainService.submitAndMonitor(originChainId, zeroApprovalTransaction);
         prometheus.updateGasSpent(
           firstIntent.origin,
@@ -265,20 +289,44 @@ export const sendIntents = async (
         });
       }
 
-      logger.info('Sending approval transaction.', {
+      logger.info('Sending USDT zero-out transaction.', {
         invoiceId,
         requestId,
         spender: spenderForAllowance,
         amount: totalAmount.toString(),
       });
+
+      // Approval transaction for the new intent call
       const approveCalldata = encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
         args: [spenderForAllowance, totalAmount],
       });
+
+      let moduleApprovalTo = tokenContract.address;
+      let moduleApprovalData = approveCalldata;
+
+      if (useZodiac) {
+        const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
+        const zodiacRoleKey = chainConfig.zodiacRoleKey as Hex;
+        moduleApprovalData = encodeFunctionData({
+          abi: ZODIAC_ROLE_MODULE_ABI,
+          functionName: 'execTransactionWithRole',
+          args: [
+            tokenContract.address,
+            BigInt(0),
+            approveCalldata,
+            0,
+            zodiacRoleKey,
+            true,
+          ],
+        });
+        moduleApprovalTo = zodiacModuleAddress;
+      }
+
       const transaction = {
-        to: tokenContract.address,
-        data: approveCalldata,
+        to: moduleApprovalTo,
+        data: moduleApprovalData,
         from: config.ownAddress,
       };
 
