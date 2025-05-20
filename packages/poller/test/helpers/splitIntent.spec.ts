@@ -203,19 +203,15 @@ describe('Split Intent Helper Functions', () => {
       expect(result.intents.length).to.equal(2);
 
       // Verify the intent that allocates to destination 1
-      const intentFor1 = result.intents[0]; // First intent with 50 WETH
+      const intentFor1 = result.intents.find(i => i.destinations[0] === '1'); // Find intent targeting domain 1
       expect(intentFor1?.origin).to.equal('8453');
-      expect(intentFor1?.destinations).to.include('1');
-      expect(intentFor1?.destinations).to.include('42161');
-      expect(intentFor1?.destinations).to.include('10');
+      expect(intentFor1?.destinations).to.deep.equal(['1']); // Should only contain domain 1
       expect(intentFor1?.amount).to.equal('50000000000000000000');
 
       // Verify the intent that allocates to destination 42161
-      const intentFor42161 = result.intents[1]; // Second intent with 50 WETH
+      const intentFor42161 = result.intents.find(i => i.destinations[0] === '42161'); // Find intent targeting domain 42161
       expect(intentFor42161?.origin).to.equal('8453');
-      expect(intentFor42161?.destinations).to.include('1');
-      expect(intentFor42161?.destinations).to.include('42161');
-      expect(intentFor42161?.destinations).to.include('10');
+      expect(intentFor42161?.destinations).to.deep.equal(['42161']); // Should only contain domain 42161
       expect(intentFor42161?.amount).to.equal('50000000000000000000');
     });
 
@@ -273,31 +269,36 @@ describe('Split Intent Helper Functions', () => {
       // Verify the intent that allocates to destination 1
       const intentFor1 = result.intents[0];
       expect(intentFor1?.origin).to.equal('10');
-      expect(intentFor1?.destinations).to.include('1');
-      expect(intentFor1?.destinations).to.include('8453');
-      expect(intentFor1?.destinations).to.include('42161');
+      expect(intentFor1?.destinations).to.deep.equal(['1']);
       expect(intentFor1?.amount).to.equal('40000000000000000000'); // 40
 
       // Verify the intent that allocates to destination 8453
       const intentFor8453 = result.intents[1];
       expect(intentFor8453?.origin).to.equal('10');
-      expect(intentFor8453?.destinations).to.include('8453');
-      expect(intentFor8453?.destinations).to.include('1');
-      expect(intentFor8453?.destinations).to.include('42161');
+      expect(intentFor8453?.destinations).to.deep.equal(['8453']);
       expect(intentFor8453?.amount).to.equal('30000000000000000000'); // 30
 
-      // Verify one of the remainder intents
-      const remainderIntent = result.intents[2];
-      expect(remainderIntent?.origin).to.equal('10');
-      expect(remainderIntent?.destinations.length).to.equal(topNDomainsExceptOrigin);
-      expect(remainderIntent?.destinations).to.not.include('10');
-      expect(remainderIntent?.amount).to.equal((BigInt('130000000000000000000') / BigInt(topNDomainsExceptOrigin)).toString());
+      // Verify the remainder intents - there should be one for each of the top-N domains except the origin
+      const remainderIntents = result.intents.slice(2);
+      expect(remainderIntents.length).to.equal(topNDomainsExceptOrigin);
 
-      // Verify the last intent with dust
-      const lastIntent = result.intents[result.intents.length - 1];
-      expect(lastIntent?.origin).to.equal('10');
-      expect(lastIntent?.destinations).to.not.include('10');
-      expect(lastIntent?.amount).to.equal((BigInt('130000000000000000000') / BigInt(topNDomainsExceptOrigin) + BigInt('130000000000000000000') % BigInt(topNDomainsExceptOrigin)).toString());
+      remainderIntents.forEach(intent => {
+        expect(intent.origin).to.equal('10');
+        expect(intent.destinations.length).to.equal(1);
+        expect(intent.destinations[0]).to.not.equal('10'); // Origin can't be a destination
+      });
+
+      const expectedAmount = BigInt('130000000000000000000') / BigInt(topNDomainsExceptOrigin);
+      const dust = BigInt('130000000000000000000') % BigInt(topNDomainsExceptOrigin);
+
+      // Check all but the last remainder intent have the expected split amount
+      for (let i = 0; i < remainderIntents.length - 1; i++) {
+        expect(remainderIntents[i].amount).to.equal(expectedAmount.toString());
+      }
+
+      // Verify the last intent has the dust amount added
+      const lastIntent = remainderIntents[remainderIntents.length - 1];
+      expect(lastIntent.amount).to.equal((expectedAmount + dust).toString());
     });
 
     it('should prefer origin with better allocation', async () => {
@@ -353,17 +354,13 @@ describe('Split Intent Helper Functions', () => {
       // Verify the intent that allocates to destination 1
       const intentFor1 = result.intents[0];
       expect(intentFor1?.origin).to.equal('10');
-      expect(intentFor1?.destinations).to.include('1');
-      expect(intentFor1?.destinations).to.include('8453');
-      expect(intentFor1?.destinations).to.include('42161');
+      expect(intentFor1?.destinations).to.deep.equal(['1']);
       expect(intentFor1?.amount).to.equal('90000000000000000000');
 
       // Verify the intent that allocates to destination 8453
       const intentFor8453 = result.intents[1];
       expect(intentFor8453?.origin).to.equal('10');
-      expect(intentFor8453?.destinations).to.include('1');
-      expect(intentFor8453?.destinations).to.include('8453');
-      expect(intentFor8453?.destinations).to.include('42161');
+      expect(intentFor8453?.destinations).to.deep.equal(['8453']);
       expect(intentFor8453?.amount).to.equal('10000000000000000000');
     });
 
@@ -1187,20 +1184,18 @@ describe('Split Intent Helper Functions', () => {
       expect(result.totalAllocated).to.equal(BigInt('100000000000000000000')); // 100 WETH allocated
       expect(result.intents.length).to.equal(2); // Two intents (one per domain with assets)
 
-      // Both intents should have the same destinations array
-      const destinations = result.intents[0].destinations;
+      // First intent should target domain 10
+      const intentFor10 = result.intents.find(i => i.destinations[0] === '10');
+      expect(intentFor10?.destinations).to.deep.equal(['10']);
+      expect(intentFor10?.amount).to.equal('60000000000000000000');
 
-      // The destinations array should include all domains (except origin)
-      // Original allocation was only to domains 10 and 8453
-      // Domain 42161 should be included in padded destinations
-      expect(destinations).to.include('10');
-      expect(destinations).to.include('8453');
-      expect(destinations).to.include('42161');
-      expect(destinations).to.not.include('1'); // Not origin
+      // Second intent should target domain 8453
+      const intentFor8453 = result.intents.find(i => i.destinations[0] === '8453');
+      expect(intentFor8453?.destinations).to.deep.equal(['8453']);
+      expect(intentFor8453?.amount).to.equal('40000000000000000000');
 
-      // All intents should have the same destinations array
       result.intents.forEach(intent => {
-        expect(intent.destinations).to.deep.equal(destinations);
+        expect(intent.destinations.length).to.equal(1);
       });
     });
 
@@ -1319,7 +1314,7 @@ describe('Split Intent Helper Functions', () => {
 
       // Now set actual balances for a few domains
       custodiedWETHBalances.set('1', BigInt('0'));                          // First domain - zero balance
-      custodiedWETHBalances.set('42161', BigInt('0'));                      // A top-N domain - zero balance  
+      custodiedWETHBalances.set('42161', BigInt('0'));                      // A top-N domain - zero balance
       custodiedWETHBalances.set('137', BigInt('40000000000000000000'));     // 40 WETH - outside top-N
       custodiedWETHBalances.set('1101', BigInt('40000000000000000000'));    // 40 WETH - outside top-N
       custodiedWETHBalances.set('56', BigInt('40000000000000000000'));      // 40 WETH - outside top-N
@@ -1343,23 +1338,20 @@ describe('Split Intent Helper Functions', () => {
       expect(result.totalAllocated).to.equal(BigInt('200000000000000000000')); // 200 WETH allocated
       expect(result.intents.length).to.equal(5); // Five intents (one per domain with assets)
 
-      // All intents should have the same destinations array
-      const destinations = result.intents[0].destinations;
+      const domainsThatShouldBeUsed = ['137', '1101', '56', '100', '250'];
 
-      // The destinations array should have MAX_DESTINATIONS (10) domains
-      expect(destinations.length).to.equal(10, 'Destinations array should be padded to MAX_DESTINATIONS (10)');
+      // Check that each of our expected domains has an intent targeting it
+      domainsThatShouldBeUsed.forEach(domain => {
+        const intentForDomain = result.intents.find(i => i.destinations[0] === domain);
+        expect(intentForDomain).to.exist;
+        expect(intentForDomain?.destinations).to.deep.equal([domain]);
+        expect(intentForDomain?.amount).to.equal('40000000000000000000'); // Each has 40 WETH
+      });
 
-      // Check that destinations includes the domains we allocated to
-      expect(destinations).to.include('137');
-      expect(destinations).to.include('1101');
-      expect(destinations).to.include('56');
-      expect(destinations).to.include('100');
-      expect(destinations).to.include('250');
-      expect(destinations).to.not.include('10'); // Origin can't be a destination
-
-      // All intents should have the same destinations array
       result.intents.forEach(intent => {
-        expect(intent.destinations).to.deep.equal(destinations);
+        expect(intent.destinations.length).to.equal(1, 'Each intent should have a single destination');
+        expect(intent.destinations[0]).to.be.oneOf(domainsThatShouldBeUsed);
+        expect(intent.destinations).to.not.include('10'); // Origin can't be a destination
       });
     });
 
@@ -1438,7 +1430,7 @@ describe('Split Intent Helper Functions', () => {
       } as Invoice;
 
       const minAmounts = {
-        '10': '80000000000000000000',   // 80 WETH needed from Optimism 
+        '10': '80000000000000000000',   // 80 WETH needed from Optimism
         '8453': '60000000000000000000', // 60 WETH needed from Base
         '42161': '100000000000000000000', // 100 WETH needed from Arbitrum
       };
