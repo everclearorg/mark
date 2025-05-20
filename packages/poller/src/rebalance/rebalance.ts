@@ -10,7 +10,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
   const { logger, requestId, rebalanceCache, config, chainService, rebalance } = context;
   const isPaused = await rebalanceCache.isPaused();
   if (isPaused) {
-    logger.warn('Rebalance loop is paused');
+    logger.warn('Rebalance loop is paused', { requestId });
     return;
   }
 
