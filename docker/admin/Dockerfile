@@ -89,6 +89,10 @@ RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
     ln -s ../../packages/adapters/prometheus/dist prometheus && \
     ln -s ../../packages/adapters/cache/dist cache
 
+# Ensure the api directory exists in the Lambda environment
+RUN mkdir -p ${LAMBDA_TASK_ROOT}/api && \
+    cp -r ${LAMBDA_TASK_ROOT}/api ${LAMBDA_TASK_ROOT}/api
+
 COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
 
 CMD [ "index.handler" ]
