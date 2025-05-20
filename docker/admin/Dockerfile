@@ -75,7 +75,7 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 
 # Copy only the necessary files from build
 COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
-COPY --from=build /tmp/build/packages/admin/dist/* ${LAMBDA_TASK_ROOT}/
+COPY --from=build /tmp/build/packages/admin/dist/. ${LAMBDA_TASK_ROOT}/
 COPY --from=build /tmp/build/packages/core/dist ${LAMBDA_TASK_ROOT}/packages/core/dist
 COPY --from=build /tmp/build/packages/adapters/logger/dist ${LAMBDA_TASK_ROOT}/packages/adapters/logger/dist
 COPY --from=build /tmp/build/packages/adapters/prometheus/dist ${LAMBDA_TASK_ROOT}/packages/adapters/prometheus/dist
