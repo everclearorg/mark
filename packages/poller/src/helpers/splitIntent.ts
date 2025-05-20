@@ -236,74 +236,61 @@ export async function calculateSplitIntents(
   // Generate the intent parameters for each allocation
   const intents: NewIntentParams[] = [];
 
-  // Create the destinations to use for the intent
-  const destinations = bestAllocation.destinations;
-  if (bestAllocation.isTopN) {
-    // If the allocation is top-N, we should pad to N destinations
-    const remainingTopNDomains = topNDomainsSortedByCustodied.filter(
-      (domain) => !destinations.includes(domain) && domain !== bestAllocation.origin,
-    );
-    destinations.push(...remainingTopNDomains);
-  } else {
-    // If the allocation is top-MAX, we should pad to MAX_DESTINATIONS
-    const remainingDomains = allDomainsSortedByCustodied.filter(
-      (domain) => !destinations.includes(domain) && domain !== bestAllocation.origin,
-    );
-    const domainsToAdd = remainingDomains.slice(0, MAX_DESTINATIONS - destinations.length);
-    destinations.push(...domainsToAdd);
-  }
-
   const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config);
   if (!inputAsset) {
     throw new Error('No input asset found');
   }
 
   // Create intents for the targeted allocations
-  for (const { amount } of bestAllocation.allocations) {
+  for (const { domain, amount } of bestAllocation.allocations) {
+    if (amount <= BigInt(0)) continue;
+
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
-      destinations: destinations,
+      destinations: [domain], // Use only the specific target domain for this allocation
       to: config.ownAddress,
       inputAsset,
       amount: convertHubAmountToLocalDecimals(amount, inputAsset, bestAllocation.origin, config).toString(),
       callData: '0x',
       maxFee: '0',
     };
-
     intents.push(params);
   }
 
   // If allocation doesn't fully cover the amount, split remainder into smaller intents
   const remainder = totalNeeded - bestAllocation.totalAllocated;
   if (remainder > BigInt(0)) {
-    // Dumb split: create top-N intents to split remainder evenly across top-N chains
+    // Split remainder: create separate intents for each valid top-N chain
     const validTopNDomains = topNDomainsFromConfig.filter((domain) => domain !== bestAllocation.origin);
-    const splitAmount = remainder / BigInt(validTopNDomains.length);
-    const params: NewIntentParams = {
-      origin: bestAllocation.origin,
-      destinations: validTopNDomains,
-      to: config.ownAddress,
-      inputAsset,
-      amount: convertHubAmountToLocalDecimals(splitAmount, inputAsset, bestAllocation.origin, config).toString(),
-      callData: '0x',
-      maxFee: '0',
-    };
-    intents.push(...Array(validTopNDomains.length - 1).fill(params));
+    if (validTopNDomains.length > 0) {
+      const splitAmount = remainder / BigInt(validTopNDomains.length);
+      const dust = remainder % BigInt(validTopNDomains.length);
 
-    // Last one topped up with remainder of remainder
-    const dust = remainder % BigInt(validTopNDomains.length);
-    const lastParams = {
-      ...params,
-      amount: convertHubAmountToLocalDecimals(splitAmount + dust, inputAsset, bestAllocation.origin, config).toString(),
-    };
-    intents.push(lastParams);
+      for (let i = 0; i < validTopNDomains.length; i++) {
+        const targetDomain = validTopNDomains[i];
+        const amountForThisSplit = i === validTopNDomains.length - 1 ? splitAmount + dust : splitAmount; // Add dust to the last one
 
-    logger.info('Added remainder intents to allocation', {
-      requestId,
-      invoiceId: invoice.intent_id,
-      remainder: remainder.toString(),
-      intentCount: validTopNDomains.length,
-    });
+        if (amountForThisSplit <= BigInt(0)) continue;
+
+        const params: NewIntentParams = {
+          origin: bestAllocation.origin,
+          destinations: [targetDomain], // Use only the target domain
+          to: config.ownAddress,
+          inputAsset,
+          amount: convertHubAmountToLocalDecimals(amountForThisSplit, inputAsset, bestAllocation.origin, config).toString(),
+          callData: '0x',
+          maxFee: '0',
+        };
+        intents.push(params);
+      }
+
+      logger.info('Added remainder intents to allocation', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        remainder: remainder.toString(),
+        intentCount: validTopNDomains.length,
+      });
+    }
   }
 
   return {
