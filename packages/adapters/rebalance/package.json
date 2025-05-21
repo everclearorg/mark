@@ -1,0 +1,36 @@
+{
+    "name": "@mark/rebalance",
+    "version": "0.0.1",
+    "description": "Rebalance adapter for Mark protocol",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc --build ./tsconfig.json",
+        "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+        "dev": "npx tsx scripts/dev.ts",
+        "lint": "yarn lint:package && yarn lint:ts",
+        "lint:fix": "yarn lint --fix",
+        "lint:package": "sort-package-json",
+        "lint:ts": "eslint ./src",
+        "test": "yarn test:unit",
+        "test:unit": "jest --coverage"
+    },
+    "dependencies": {
+        "@mark/core": "workspace:*",
+        "@mark/logger": "workspace:*",
+        "axios": "1.9.0",
+        "commander": "12.0.0",
+        "viem": "2.28.1"
+    },
+    "devDependencies": {
+        "@types/jest": "29.5.12",
+        "@types/node": "20.17.12",
+        "eslint": "9.17.0",
+        "jest": "29.7.0",
+        "rimraf": "6.0.1",
+        "sort-package-json": "2.12.0",
+        "ts-jest": "29.1.2",
+        "ts-node": "10.9.2",
+        "typescript": "5.7.2"
+    }
+}
