@@ -8,6 +8,8 @@ import {
   MarkConfiguration,
   Stage,
   HubConfig,
+  RebalanceConfig,
+  SupportedBridge,
 } from './types/config';
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
@@ -83,6 +85,215 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
   }
 };
 
+export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
+  return {
+    routes: [
+      // arbitrum    blast   WETH    7   160
+      { origin: 42161, destination: 81457, asset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // base  blast   WETH    7   160
+      { origin: 8453, destination: 81457, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // blast blast   WETH    7   160
+      { origin: 81457, destination: 81457, asset: "0x4300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // linea blast   WETH    7   160
+      { origin: 59144, destination: 81457, asset: "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // mode  blast   WETH    7   160
+      { origin: 34443, destination: 81457, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // optimism    blast   WETH    7   160
+      { origin: 10, destination: 81457, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // polygon blast   WETH    7   160
+      { origin: 137, destination: 81457, asset: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // scroll    blast   WETH    7   160
+      { origin: 534352, destination: 81457, asset: "0x5300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // unichain    blast   WETH    7   160
+      { origin: 130, destination: 81457, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // zksync    blast   WETH    7   160
+      { origin: 324, destination: 81457, asset: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // ink   blast   WETH    7   160
+      { origin: 57073, destination: 81457, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // arbitrum    linea   WETH    7   30
+      { origin: 42161, destination: 59144, asset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // arbitrum    linea   USDC    10000   140
+      { origin: 42161, destination: 59144, asset: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // arbitrum    linea   USDT    10000   50
+      { origin: 42161, destination: 59144, asset: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // base  linea   WETH    7   30
+      { origin: 8453, destination: 59144, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // base  linea   USDC    10000   140
+      { origin: 8453, destination: 59144, asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // base  linea   USDT    10000   50
+      { origin: 8453, destination: 59144, asset: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // blast linea   WETH    7   30
+      { origin: 81457, destination: 59144, asset: "0x4300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // linea linea   WETH    7   30
+      { origin: 59144, destination: 59144, asset: "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // linea linea   USDC    10000   140
+      { origin: 59144, destination: 59144, asset: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // linea linea   USDT    10000   50
+      { origin: 59144, destination: 59144, asset: "0xa219439258ca9da29e9cc4ce5596924745e12b93", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // mode  linea   WETH    7   30
+      { origin: 34443, destination: 59144, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // mode  linea   USDC    10000   140
+      { origin: 34443, destination: 59144, asset: "0xd988097fb8612cc24eeC14542bC03424c656005f", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // mode  linea   USDT    10000   50
+      { origin: 34443, destination: 59144, asset: "0xf0F161fDA2712DB8b566946122a5af183995e2eD", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // optimism    linea   WETH    7   30
+      { origin: 10, destination: 59144, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // optimism    linea   USDC    10000   140
+      { origin: 10, destination: 59144, asset: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // optimism    linea   USDT    10000   50
+      { origin: 10, destination: 59144, asset: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // polygon linea   WETH    7   30
+      { origin: 137, destination: 59144, asset: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // polygon linea   USDC    10000   140
+      { origin: 137, destination: 59144, asset: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // polygon linea   USDT    10000   50
+      { origin: 137, destination: 59144, asset: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // scroll    linea   WETH    7   30
+      { origin: 534352, destination: 59144, asset: "0x5300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // scroll    linea   USDC    10000   140
+      { origin: 534352, destination: 59144, asset: "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // scroll    linea   USDT    10000   50
+      { origin: 534352, destination: 59144, asset: "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // unichain    linea   WETH    7   30
+      { origin: 130, destination: 59144, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // unichain    linea   USDC    10000   140
+      { origin: 130, destination: 59144, asset: "0x078D782b760474a361dDA0AF3839290b0EF57AD6", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // unichain    linea   USDT    10000   50
+      { origin: 130, destination: 59144, asset: "0x588CE4F028D8e7B53B687865d6A67b3A54C75518", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // zksync    linea   WETH    7   30
+      { origin: 324, destination: 59144, asset: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // zksync    linea   USDC    10000   140
+      { origin: 324, destination: 59144, asset: "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // zksync    linea   USDT    10000   50
+      { origin: 324, destination: 59144, asset: "0x493257fD37EDB34451f62EDf8D2a0C418852bA4C", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // ink   linea   WETH    7   30
+      { origin: 57073, destination: 59144, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // ink   linea   USDC    10000   140
+      { origin: 57073, destination: 59144, asset: "0xF1815bd50389c46847f0Bda824eC8da914045D14", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // arbitrum    unichain    WETH    10  150
+      { origin: 42161, destination: 130, asset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // arbitrum    unichain    USDC    20000   30
+      { origin: 42161, destination: 130, asset: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // arbitrum    unichain    USDT    10000   70
+      { origin: 42161, destination: 130, asset: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // base  unichain    WETH    10  150
+      { origin: 8453, destination: 130, asset: "0x4200000000000000000000000000000000000006", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // base  unichain    USDC    20000   30
+      { origin: 8453, destination: 130, asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // base  unichain    USDT    10000   70
+      { origin: 8453, destination: 130, asset: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // blast unichain    WETH    10  150
+      { origin: 81457, destination: 130, asset: "0x4300000000000000000000000000000000000004", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // linea unichain    WETH    10  150
+      { origin: 59144, destination: 130, asset: "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // linea unichain    USDC    20000   30
+      { origin: 59144, destination: 130, asset: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // linea unichain    USDT    10000   70
+      { origin: 59144, destination: 130, asset: "0xa219439258ca9da29e9cc4ce5596924745e12b93", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // mode  unichain    WETH    10  150
+      { origin: 34443, destination: 130, asset: "0x4200000000000000000000000000000000000006", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // mode  unichain    USDC    20000   30
+      { origin: 34443, destination: 130, asset: "0xd988097fb8612cc24eeC14542bC03424c656005f", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // mode  unichain    USDT    10000   70
+      { origin: 34443, destination: 130, asset: "0xf0F161fDA2712DB8b566946122a5af183995e2eD", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // optimism    unichain    WETH    10  150
+      { origin: 10, destination: 130, asset: "0x4200000000000000000000000000000000000006", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // optimism    unichain    USDC    20000   30
+      { origin: 10, destination: 130, asset: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // optimism    unichain    USDT    10000   70
+      { origin: 10, destination: 130, asset: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // polygon unichain    WETH    10  150
+      { origin: 137, destination: 130, asset: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // polygon unichain    USDC    20000   30
+      { origin: 137, destination: 130, asset: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // polygon unichain    USDT    10000   70
+      { origin: 137, destination: 130, asset: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // scroll    unichain    WETH    10  150
+      { origin: 534352, destination: 130, asset: "0x5300000000000000000000000000000000000004", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // scroll    unichain    USDC    20000   30
+      { origin: 534352, destination: 130, asset: "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // scroll    unichain    USDT    10000   70
+      { origin: 534352, destination: 130, asset: "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // unichain    unichain    WETH    10  150
+      { origin: 130, destination: 130, asset: "0x4200000000000000000000000000000000000006", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // unichain    unichain    USDC    20000   30
+      { origin: 130, destination: 130, asset: "0x078D782b760474a361dDA0AF3839290b0EF57AD6", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // unichain    unichain    USDT    10000   70
+      { origin: 130, destination: 130, asset: "0x588CE4F028D8e7B53B687865d6A67b3A54C75518", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // zksync    unichain    WETH    10  150
+      { origin: 324, destination: 130, asset: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // zksync    unichain    USDC    20000   30
+      { origin: 324, destination: 130, asset: "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // zksync    unichain    USDT    10000   70
+      { origin: 324, destination: 130, asset: "0x493257fD37EDB34451f62EDf8D2a0C418852bA4C", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
+      // ink   unichain    WETH    10  150
+      { origin: 57073, destination: 130, asset: "0x4200000000000000000000000000000000000006", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // ink   unichain    USDC    20000   30
+      { origin: 57073, destination: 130, asset: "0xF1815bd50389c46847f0Bda824eC8da914045D14", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // arbitrum    zksync  WETH    7   20
+      { origin: 42161, destination: 324, asset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // arbitrum    zksync  USDC    10000   30
+      { origin: 42161, destination: 324, asset: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // arbitrum    zksync  USDT    10000   50
+      { origin: 42161, destination: 324, asset: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // base  zksync  WETH    7   20
+      { origin: 8453, destination: 324, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // base  zksync  USDC    10000   30
+      { origin: 8453, destination: 324, asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // base  zksync  USDT    10000   50
+      { origin: 8453, destination: 324, asset: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // blast zksync  WETH    7   20
+      { origin: 81457, destination: 324, asset: "0x4300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // linea zksync  WETH    7   20
+      { origin: 59144, destination: 324, asset: "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // linea zksync  USDC    10000   30
+      { origin: 59144, destination: 324, asset: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // linea zksync  USDT    10000   50
+      { origin: 59144, destination: 324, asset: "0xa219439258ca9da29e9cc4ce5596924745e12b93", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // mode  zksync  WETH    7   20
+      { origin: 34443, destination: 324, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // mode  zksync  USDC    10000   30
+      { origin: 34443, destination: 324, asset: "0xd988097fb8612cc24eeC14542bC03424c656005f", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // mode  zksync  USDT    10000   50
+      { origin: 34443, destination: 324, asset: "0xf0F161fDA2712DB8b566946122a5af183995e2eD", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // optimism    zksync  WETH    7   20
+      { origin: 10, destination: 324, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // optimism    zksync  USDC    10000   30
+      { origin: 10, destination: 324, asset: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // optimism    zksync  USDT    10000   50
+      { origin: 10, destination: 324, asset: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // polygon zksync  WETH    7   20
+      { origin: 137, destination: 324, asset: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // polygon zksync  USDC    10000   30
+      { origin: 137, destination: 324, asset: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // polygon zksync  USDT    10000   50
+      { origin: 137, destination: 324, asset: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // scroll    zksync  WETH    7   20
+      { origin: 534352, destination: 324, asset: "0x5300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // scroll    zksync  USDC    10000   30
+      { origin: 534352, destination: 324, asset: "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // scroll    zksync  USDT    10000   50
+      { origin: 534352, destination: 324, asset: "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // unichain    zksync  WETH    7   20
+      { origin: 130, destination: 324, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // unichain    zksync  USDC    10000   30
+      { origin: 130, destination: 324, asset: "0x078D782b760474a361dDA0AF3839290b0EF57AD6", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // unichain    zksync  USDT    10000   50
+      { origin: 130, destination: 324, asset: "0x588CE4F028D8e7B53B687865d6A67b3A54C75518", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // zksync    zksync  WETH    7   20
+      { origin: 324, destination: 324, asset: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // zksync    zksync  USDC    10000   30
+      { origin: 324, destination: 324, asset: "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // zksync    zksync  USDT    10000   50
+      { origin: 324, destination: 324, asset: "0x493257fD37EDB34451f62EDf8D2a0C418852bA4C", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
+      // ink   zksync  WETH    7   20
+      { origin: 57073, destination: 324, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // ink   zksync  USDC    10000   30
+      { origin: 57073, destination: 324, asset: "0xF1815bd50389c46847f0Bda824eC8da914045D14", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+    ],
+  };
+};
+
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
     const environment = ((await fromEnv('ENVIRONMENT')) ?? 'local') as Environment;
@@ -98,6 +309,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const supportedAssets =
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
+
+    const { routes } = await loadRebalanceRoutes();
 
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
@@ -121,6 +334,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
+      routes,
     };
 
     validateConfiguration(config);
@@ -156,7 +370,7 @@ function validateConfiguration(config: MarkConfiguration): void {
   }
 }
 
-const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
+export const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
   const value = await fromEnv(name, checkSsm);
   if (!value) {
     throw new ConfigurationError(`Environment variable ${name} is required`);
@@ -164,7 +378,7 @@ const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
   return value;
 };
 
-const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
+export const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
   let value = undefined;
   if (checkSsm) {
     value = await getSsmParameter(name);
@@ -180,7 +394,7 @@ const parseSupportedAssets = (symbols: string): string[] => {
   return symbols.split(',').map((symbol) => symbol.trim());
 };
 
-const parseChainConfigurations = async (
+export const parseChainConfigurations = async (
   config: EverclearConfig | undefined,
   supportedAssets: string[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -263,7 +477,7 @@ const parseChainConfigurations = async (
 
     chains[chainId] = {
       providers,
-      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
+      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
       invoiceAge: parseInt(invoiceAge),
       gasThreshold,
       deployments: {

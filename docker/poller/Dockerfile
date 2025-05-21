@@ -32,6 +32,8 @@ COPY package.json /tmp/build/
 # Copy all package.json files
 COPY packages/core/package.json /tmp/build/packages/core/
 COPY packages/poller/package.json /tmp/build/packages/poller/
+COPY packages/admin/package.json /tmp/build/packages/admin/
+COPY packages/adapters/rebalance/package.json /tmp/build/packages/adapters/rebalance/
 COPY packages/adapters/logger/package.json /tmp/build/packages/adapters/logger/
 COPY packages/adapters/chainservice/package.json /tmp/build/packages/adapters/chainservice/
 COPY packages/adapters/everclear/package.json /tmp/build/packages/adapters/everclear/
@@ -47,6 +49,8 @@ RUN yarn install --mode=skip-build && \
 # Copy source files
 COPY packages/core /tmp/build/packages/core
 COPY packages/poller /tmp/build/packages/poller
+COPY packages/admin /tmp/build/packages/admin
+COPY packages/adapters/rebalance /tmp/build/packages/adapters/rebalance
 COPY packages/adapters/logger /tmp/build/packages/adapters/logger
 COPY packages/adapters/chainservice /tmp/build/packages/adapters/chainservice
 COPY packages/adapters/everclear /tmp/build/packages/adapters/everclear
@@ -73,6 +77,7 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
 COPY --from=build /tmp/build/packages/poller/dist/* ${LAMBDA_TASK_ROOT}/
 COPY --from=build /tmp/build/packages/core/dist ${LAMBDA_TASK_ROOT}/packages/core/dist
+COPY --from=build /tmp/build/packages/adapters/rebalance/dist ${LAMBDA_TASK_ROOT}/packages/adapters/rebalance/dist
 COPY --from=build /tmp/build/packages/adapters/logger/dist ${LAMBDA_TASK_ROOT}/packages/adapters/logger/dist
 COPY --from=build /tmp/build/packages/adapters/chainservice/dist ${LAMBDA_TASK_ROOT}/packages/adapters/chainservice/dist
 COPY --from=build /tmp/build/packages/adapters/everclear/dist ${LAMBDA_TASK_ROOT}/packages/adapters/everclear/dist
@@ -82,9 +87,10 @@ COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/pa
 
 # Create symlinks for workspace dependencies
 RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
-    rm -rf core logger chainservice everclear prometheus web3signer cache && \
+    rm -rf core logger chainservice everclear prometheus web3signer cache rebalance && \
     ln -s ../../packages/core/dist core && \
     ln -s ../../packages/adapters/logger/dist logger && \
+    ln -s ../../packages/adapters/rebalance/dist rebalance && \
     ln -s ../../packages/adapters/chainservice/dist chainservice && \
     ln -s ../../packages/adapters/everclear/dist everclear && \
     ln -s ../../packages/adapters/prometheus/dist prometheus && \
