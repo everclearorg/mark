@@ -9,6 +9,8 @@ export interface PurchaseAction {
 
 export class PurchaseCache {
   private readonly prefix = 'purchases';
+  private readonly dataKey = `${this.prefix}:data`;
+  private readonly pauseKey = `${this.prefix}:paused`;
   private readonly store: Redis;
 
   constructor(host: string, port: number) {
@@ -27,12 +29,11 @@ export class PurchaseCache {
    * @returns Number of stored items
    */
   public async addPurchases(actions: PurchaseAction[]): Promise<number> {
-    const key = `${this.prefix}:data`;
     let stored = 0;
 
     for (const action of actions) {
       const targetId = action.target.intent_id;
-      const result = await this.store.hset(key, targetId, JSON.stringify(action));
+      const result = await this.store.hset(this.dataKey, targetId, JSON.stringify(action));
       stored += result;
     }
 
@@ -45,8 +46,7 @@ export class PurchaseCache {
    * @returns Array of PurchaseActions found for the given targets
    */
   public async getPurchases(targetIds: string[]): Promise<PurchaseAction[]> {
-    const key = `${this.prefix}:data`;
-    const results = await this.store.hmget(key, ...targetIds);
+    const results = await this.store.hmget(this.dataKey, ...targetIds);
 
     return results
       .filter((result): result is string => result !== null)
@@ -60,8 +60,7 @@ export class PurchaseCache {
    */
   public async removePurchases(targetIds: string[]): Promise<number> {
     if (targetIds.length === 0) return 0;
-    const key = `${this.prefix}:data`;
-    return await this.store.hdel(key, ...targetIds);
+    return await this.store.hdel(this.dataKey, ...targetIds);
   }
 
   /**
@@ -71,11 +70,19 @@ export class PurchaseCache {
    * @throws Error if flush fails
    */
   public async clear(): Promise<void> {
-    const ret = await this.store.flushall();
-    if (ret !== 'OK') {
-      throw new Error(`Failed to clear store: ${JSON.stringify(ret)}`);
+    const keysToDelete: string[] = [];
+    if (await this.store.exists(this.dataKey)) {
+      keysToDelete.push(this.dataKey);
     }
-    return;
+    if (await this.store.exists(this.pauseKey)) {
+      keysToDelete.push(this.pauseKey);
+    }
+
+    if (keysToDelete.length > 0) {
+      await this.store.del(...keysToDelete);
+    }
+    // DEL returns the number of keys deleted. No need to check 'OK'.
+    // If DEL fails, it will propagate the error.
   }
 
   /**
@@ -83,8 +90,7 @@ export class PurchaseCache {
    * @returns Array of all PurchaseActions in the cache
    */
   public async getAllPurchases(): Promise<PurchaseAction[]> {
-    const key = `${this.prefix}:data`;
-    const all = await this.store.hgetall(key);
+    const all = await this.store.hgetall(this.dataKey);
 
     return Object.values(all).map((result) => JSON.parse(result) as PurchaseAction);
   }
@@ -95,7 +101,16 @@ export class PurchaseCache {
    * @returns boolean indicating if purchase exists
    */
   public async hasPurchase(targetId: string): Promise<boolean> {
-    const key = `${this.prefix}:data`;
-    return (await this.store.hexists(key, targetId)) === 1;
+    return (await this.store.hexists(this.dataKey, targetId)) === 1;
+  }
+
+  /** Pause / unpause the entire purchasing flow. */
+  public async setPause(paused: boolean): Promise<void> {
+    await this.store.set(this.pauseKey, paused ? '1' : '0');
+  }
+
+  /** Helper for callers that need to know the status. */
+  public async isPaused(): Promise<boolean> {
+    return (await this.store.get(this.pauseKey)) === '1';
   }
 }
