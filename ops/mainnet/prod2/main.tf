@@ -239,7 +239,7 @@ module "mark_admin_api" {
   security_group_id   = module.sgs.lambda_sg_id
   image_uri           = var.admin_image_uri # Using the variable we added
   container_env_vars  = {
-    DD_SERVICE                      = "mark-admin" # Or "mark2-admin" if you want to differentiate in Datadog
+    DD_SERVICE                      = "mark2-admin" # Or "mark2-admin" if you want to differentiate in Datadog
     DD_LAMBDA_HANDLER               = "index.handler"
     DD_LOGS_ENABLED                 = "true"
     DD_TRACES_ENABLED               = "true"
