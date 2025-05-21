@@ -118,3 +118,19 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
   }
   return custodiedBalances;
 };
+
+export const safeStringToBigInt = (value: string, scaleFactor: bigint): bigint => {
+  if (!value || value === '0' || value === '0.0') {
+    return 0n;
+  }
+
+  if (value.includes('.')) {
+    const [intPart, decimalPart] = value.split('.');
+    const digits = scaleFactor.toString().length - 1;
+    const paddedDecimal = decimalPart.slice(0, digits).padEnd(digits, '0');
+    const integerValue = intPart || '0';
+    return BigInt(`${integerValue}${paddedDecimal}`);
+  }
+
+  return BigInt(value) * scaleFactor;
+};
