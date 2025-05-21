@@ -92,8 +92,6 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       { origin: 42161, destination: 81457, asset: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
       // base  blast   WETH    7   160
       { origin: 8453, destination: 81457, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
-      // blast blast   WETH    7   160
-      { origin: 81457, destination: 81457, asset: "0x4300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
       // linea blast   WETH    7   160
       { origin: 59144, destination: 81457, asset: "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
       // mode  blast   WETH    7   160
@@ -124,12 +122,6 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       { origin: 8453, destination: 59144, asset: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
       // blast linea   WETH    7   30
       { origin: 81457, destination: 59144, asset: "0x4300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
-      // linea linea   WETH    7   30
-      { origin: 59144, destination: 59144, asset: "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
-      // linea linea   USDC    10000   140
-      { origin: 59144, destination: 59144, asset: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff", maximum: "10000000000", slippage: 140, preferences: [SupportedBridge.Across] },
-      // linea linea   USDT    10000   50
-      { origin: 59144, destination: 59144, asset: "0xa219439258ca9da29e9cc4ce5596924745e12b93", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
       // mode  linea   WETH    7   30
       { origin: 34443, destination: 59144, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
       // mode  linea   USDC    10000   140
@@ -214,12 +206,6 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       { origin: 534352, destination: 130, asset: "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
       // scroll    unichain    USDT    10000   70
       { origin: 534352, destination: 130, asset: "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
-      // unichain    unichain    WETH    10  150
-      { origin: 130, destination: 130, asset: "0x4200000000000000000000000000000000000006", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
-      // unichain    unichain    USDC    20000   30
-      { origin: 130, destination: 130, asset: "0x078D782b760474a361dDA0AF3839290b0EF57AD6", maximum: "20000000000", slippage: 30, preferences: [SupportedBridge.Across] },
-      // unichain    unichain    USDT    10000   70
-      { origin: 130, destination: 130, asset: "0x588CE4F028D8e7B53B687865d6A67b3A54C75518", maximum: "10000000000", slippage: 70, preferences: [SupportedBridge.Across] },
       // zksync    unichain    WETH    10  150
       { origin: 324, destination: 130, asset: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
       // zksync    unichain    USDC    20000   30
@@ -280,12 +266,6 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       { origin: 130, destination: 324, asset: "0x078D782b760474a361dDA0AF3839290b0EF57AD6", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
       // unichain    zksync  USDT    10000   50
       { origin: 130, destination: 324, asset: "0x588CE4F028D8e7B53B687865d6A67b3A54C75518", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
-      // zksync    zksync  WETH    7   20
-      { origin: 324, destination: 324, asset: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
-      // zksync    zksync  USDC    10000   30
-      { origin: 324, destination: 324, asset: "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4", maximum: "10000000000", slippage: 30, preferences: [SupportedBridge.Across] },
-      // zksync    zksync  USDT    10000   50
-      { origin: 324, destination: 324, asset: "0x493257fD37EDB34451f62EDf8D2a0C418852bA4C", maximum: "10000000000", slippage: 50, preferences: [SupportedBridge.Across] },
       // ink   zksync  WETH    7   20
       { origin: 57073, destination: 324, asset: "0x4200000000000000000000000000000000000006", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
       // ink   zksync  USDC    10000   30
