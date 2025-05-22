@@ -40,7 +40,7 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
           body: JSON.stringify({ isPaused }),
         };
       case HttpPaths.GetRebalanceActions:
-        const actions = await (context.rebalanceCache as any).getAllDataActions();
+        const actions = await context.rebalanceCache.getAllDataActions();
         return {
           statusCode: 200,
           body: JSON.stringify({ actions }),
