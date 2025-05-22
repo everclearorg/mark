@@ -27,4 +27,6 @@ export enum HttpPaths {
   PauseRebalance = '/pause/rebalance',
   UnpausePurchase = '/unpause/purchase',
   UnpauseRebalance = '/unpause/rebalance',
+  GetRebalanceActions = '/rebalance/actions',
+  GetRebalanceStatus = '/rebalance/status',
 }

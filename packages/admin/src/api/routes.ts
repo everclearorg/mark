@@ -33,6 +33,18 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
       case HttpPaths.UnpauseRebalance:
         await unpauseIfNeeded(context.rebalanceCache, context);
         break;
+      case HttpPaths.GetRebalanceStatus:
+        const isPaused = await context.rebalanceCache.isPaused();
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ isPaused }),
+        };
+      case HttpPaths.GetRebalanceActions:
+        const actions = await (context.rebalanceCache as any).getAllDataActions();
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ actions }),
+        };
       default:
         throw new Error(`Unknown request: ${request}`);
     }
@@ -87,6 +99,14 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
 
   if (httpMethod === 'POST' && path.endsWith(HttpPaths.UnpauseRebalance)) {
     return HttpPaths.UnpauseRebalance;
+  }
+
+  if (httpMethod === 'GET' && path.endsWith(HttpPaths.GetRebalanceStatus)) {
+    return HttpPaths.GetRebalanceStatus;
+  }
+
+  if (httpMethod === 'GET' && path.endsWith(HttpPaths.GetRebalanceActions)) {
+    return HttpPaths.GetRebalanceActions;
   }
 
   logger.error('Unknown path', { requestId, path, pathParameters, httpMethod });
