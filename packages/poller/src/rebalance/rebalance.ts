@@ -231,7 +231,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         const ownerForAllowance = useZodiac ? chainConfig.gnosisSafeAddress! : config.ownAddress;
         try {
           currentAllowance = (await tokenContract.read.allowance([
-            ownerForAllowance as `0x${string}`,
+            ownerForAllowance,
             spenderAddress,
           ])) as bigint;
           logger.info('Current token allowance', {
