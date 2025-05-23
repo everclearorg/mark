@@ -277,7 +277,12 @@ export async function calculateSplitIntents(
           destinations: [targetDomain], // Use only the target domain
           to: config.ownAddress,
           inputAsset,
-          amount: convertHubAmountToLocalDecimals(amountForThisSplit, inputAsset, bestAllocation.origin, config).toString(),
+          amount: convertHubAmountToLocalDecimals(
+            amountForThisSplit,
+            inputAsset,
+            bestAllocation.origin,
+            config,
+          ).toString(),
           callData: '0x',
           maxFee: '0',
         };

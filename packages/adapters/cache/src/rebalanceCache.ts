@@ -104,6 +104,24 @@ export class RebalanceCache {
     return actionsWithIds;
   }
 
+  /** Fetch all actions from the rebalances:data hash. */
+  public async getAllDataActions(): Promise<(RebalanceAction & { id: string })[]> {
+    const allData = await this.store.hgetall(this.dataKey);
+    if (!allData) return [];
+
+    const actionsWithIds: (RebalanceAction & { id: string })[] = [];
+    for (const id in allData) {
+      if (Object.prototype.hasOwnProperty.call(allData, id)) {
+        const rawData = allData[id];
+        if (rawData !== null) {
+          const action = JSON.parse(rawData) as RebalanceAction;
+          actionsWithIds.push({ ...action, id });
+        }
+      }
+    }
+    return actionsWithIds;
+  }
+
   /** Delete the given action‑IDs from cache and index. */
   public async removeRebalances(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;
