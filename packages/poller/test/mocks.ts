@@ -34,7 +34,7 @@ export const mockConfig: MarkConfiguration = {
   },
   redis: {
     host: 'localhost',
-    port: 6379
+    port: 6379,
   },
   ownAddress: '0x1234567890123456789012345678901234567890',
   stage: 'development',
@@ -46,69 +46,78 @@ export const mockConfig: MarkConfiguration = {
   chains: {
     '1': {
       providers: ['http://localhost:8545'],
-      assets: [{
-        tickerHash: '0xticker1',
-        address: '0xtoken1',
-        decimals: 18,
-        symbol: 'TEST',
-        isNative: false,
-        balanceThreshold: '1000000000000000000',
-      }],
+      assets: [
+        {
+          tickerHash: '0xticker1',
+          address: '0xtoken1',
+          decimals: 18,
+          symbol: 'TEST',
+          isNative: false,
+          balanceThreshold: '1000000000000000000',
+        },
+      ],
       deployments: {
         everclear: '0x1234567890123456789012345678901234567890',
         permit2: '0x1234567890123456789012345678901234567890',
-        multicall3: '0x1234567890123456789012345678901234567890'
+        multicall3: '0x1234567890123456789012345678901234567890',
       },
       invoiceAge: 3600,
-      gasThreshold: '1000000000000000000'
+      gasThreshold: '1000000000000000000',
     },
     '8453': {
       providers: ['http://localhost:8545'],
-      assets: [{
-        tickerHash: '0xticker1',
-        address: '0xtoken1',
-        decimals: 18,
-        symbol: 'TEST',
-        isNative: false,
-        balanceThreshold: '1000000000000000000',
-      }],
+      assets: [
+        {
+          tickerHash: '0xticker1',
+          address: '0xtoken1',
+          decimals: 18,
+          symbol: 'TEST',
+          isNative: false,
+          balanceThreshold: '1000000000000000000',
+        },
+      ],
       deployments: {
         everclear: '0x1234567890123456789012345678901234567890',
         permit2: '0x1234567890123456789012345678901234567890',
-        multicall3: '0x1234567890123456789012345678901234567890'
+        multicall3: '0x1234567890123456789012345678901234567890',
       },
       invoiceAge: 3600,
-      gasThreshold: '1000000000000000000'
+      gasThreshold: '1000000000000000000',
     },
     '10': {
       providers: ['http://localhost:8545'],
-      assets: [{
-        tickerHash: '0xticker1',
-        address: '0xtoken1',
-        decimals: 18,
-        symbol: 'TEST',
-        isNative: false,
-        balanceThreshold: '1000000000000000000',
-      }],
+      assets: [
+        {
+          tickerHash: '0xticker1',
+          address: '0xtoken1',
+          decimals: 18,
+          symbol: 'TEST',
+          isNative: false,
+          balanceThreshold: '1000000000000000000',
+        },
+      ],
       deployments: {
         everclear: '0x1234567890123456789012345678901234567890',
         permit2: '0x1234567890123456789012345678901234567890',
-        multicall3: '0x1234567890123456789012345678901234567890'
+        multicall3: '0x1234567890123456789012345678901234567890',
       },
       invoiceAge: 3600,
-      gasThreshold: '1000000000000000000'
+      gasThreshold: '1000000000000000000',
     },
   },
   hub: {
     domain: '1',
     providers: ['http://localhost:8545'],
-    assets: [{
-      tickerHash: '0xticker1',
-      address: '0xtoken1',
-      decimals: 18,
-      symbol: 'TEST',
-      isNative: false,
-      balanceThreshold: '1000000000000000000'
-    }]
-  }
-}
+    assets: [
+      {
+        tickerHash: '0xticker1',
+        address: '0xtoken1',
+        decimals: 18,
+        symbol: 'TEST',
+        isNative: false,
+        balanceThreshold: '1000000000000000000',
+      },
+    ],
+  },
+  routes: [],
+};

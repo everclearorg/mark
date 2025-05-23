@@ -8,6 +8,8 @@ import {
   MarkConfiguration,
   Stage,
   HubConfig,
+  RebalanceConfig,
+  SupportedBridge,
 } from './types/config';
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
@@ -83,6 +85,27 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
   }
 };
 
+export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
+  return {
+    routes: [
+      // blast ethereum WETH    7000000000000000000 160
+      { origin: 81457, destination: 1, asset: "0x4300000000000000000000000000000000000004", maximum: "7000000000000000000", slippage: 160, preferences: [SupportedBridge.Across] },
+      // linea ethereum WETH    7000000000000000000 30
+      { origin: 59144, destination: 1, asset: "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f", maximum: "7000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // unichain    ethereum    WETH    10000000000000000000    150
+      { origin: 130, destination: 1, asset: "0x4200000000000000000000000000000000000006", maximum: "10000000000000000000", slippage: 150, preferences: [SupportedBridge.Across] },
+      // zksync    ethereum    WETH    7000000000000000000 20
+      { origin: 324, destination: 1, asset: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", maximum: "7000000000000000000", slippage: 20, preferences: [SupportedBridge.Across] },
+      // linea ethereum    USDC    10000000000000000000000 140
+      { origin: 59144, destination: 1, asset: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff", maximum: "10000000000000000000000", slippage: 140, preferences: [SupportedBridge.Across] },
+      // unichain    ethereum    USDC    20000000000000000000000 30
+      { origin: 130, destination: 1, asset: "0x078D782b760474a361dDA0AF3839290b0EF57AD6", maximum: "20000000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+      // zksync    ethereum    USDC    10000000000000000000000 30
+      { origin: 324, destination: 1, asset: "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4", maximum: "10000000000000000000000", slippage: 30, preferences: [SupportedBridge.Across] },
+    ],
+  };
+};
+
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
     const environment = ((await fromEnv('ENVIRONMENT')) ?? 'local') as Environment;
@@ -98,6 +121,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const supportedAssets =
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
+
+    const { routes } = await loadRebalanceRoutes();
 
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
@@ -121,6 +146,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
+      routes,
     };
 
     validateConfiguration(config);
@@ -156,7 +182,7 @@ function validateConfiguration(config: MarkConfiguration): void {
   }
 }
 
-const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
+export const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
   const value = await fromEnv(name, checkSsm);
   if (!value) {
     throw new ConfigurationError(`Environment variable ${name} is required`);
@@ -164,7 +190,7 @@ const requireEnv = async (name: string, checkSsm = false): Promise<string> => {
   return value;
 };
 
-const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
+export const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
   let value = undefined;
   if (checkSsm) {
     value = await getSsmParameter(name);
@@ -180,7 +206,7 @@ const parseSupportedAssets = (symbols: string): string[] => {
   return symbols.split(',').map((symbol) => symbol.trim());
 };
 
-const parseChainConfigurations = async (
+export const parseChainConfigurations = async (
   config: EverclearConfig | undefined,
   supportedAssets: string[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -263,7 +289,7 @@ const parseChainConfigurations = async (
 
     chains[chainId] = {
       providers,
-      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol)),
+      assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
       invoiceAge: parseInt(invoiceAge),
       gasThreshold,
       deployments: {

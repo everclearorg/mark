@@ -91,3 +91,8 @@ variable "cert_arn" {
   description = "ACM certificate"
   default = "arn:aws:acm:ap-northeast-1:679752396206:certificate/0c43e36e-702c-4623-94d1-4d2a1cdfa302"
 }
+
+variable "admin_image_uri" {
+  description = "The ECR image URI for the admin API Lambda function."
+  type        = string
+}
