@@ -348,7 +348,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         let moduleBridgeTo = bridgeTxRequest.to!;
         let moduleBridgeData = bridgeTxRequest.data!;
         let moduleBridgeValue = bridgeTxRequest.value || 0n;
-        let moduleBridgeFrom = bridgeTxRequest.from || config.ownAddress;
+        const moduleBridgeFrom = config.ownAddress;
 
         if (useZodiac) {
           const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
@@ -367,6 +367,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             ],
           });
           moduleBridgeTo = zodiacModuleAddress;
+          moduleBridgeValue = 0n;
         }
 
         const bridgeTransaction = {
@@ -386,6 +387,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           route,
           bridgeType,
           transactionHash: originTxReceipt.transactionHash,
+          useZodiac,
         });
       } catch (finalSendError) {
         logger.error('Failed to send or monitor final bridge transaction, trying next preference', {
