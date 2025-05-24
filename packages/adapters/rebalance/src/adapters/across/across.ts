@@ -4,7 +4,6 @@ import {
   createPublicClient,
   encodeFunctionData,
   http,
-  padHex,
   zeroAddress,
   erc20Abi,
   PublicClient,
@@ -64,27 +63,29 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         throw new Error('Amount is too low for bridging via Across');
       }
 
+      const outputToken = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+      if (!outputToken) {
+        throw new Error('Could not find matching destination asset');
+      }
+
       return {
         to: feesData.spokePoolAddress,
         data: encodeFunctionData({
           abi: ACROSS_SPOKE_ABI,
-          functionName: 'deposit',
+          functionName: 'depositV3',
           args: [
-            padHex(sender as `0x${string}`, { size: 32 }),
-            padHex(recipient as `0x${string}`, { size: 32 }),
-            padHex(route.asset as `0x${string}`, { size: 32 }),
-            padHex(
-              this.findMatchingDestinationAsset(route.asset, route.origin, route.destination)!.address as `0x${string}`,
-              { size: 32 },
-            ),
-            BigInt(amount), // input amount
-            feesData.outputAmount, // output amount
-            BigInt(route.destination), // destination
-            padHex(feesData.exclusiveRelayer, { size: 32 }), // exclusive relayer
-            feesData.timestamp, // quote timestamp
-            feesData.fillDeadline, // fill deadline
-            feesData.exclusivityDeadline, // exclusivity parameter
-            '', // message
+            sender, // depositor
+            recipient, // recipient
+            route.asset, // inputToken
+            outputToken.address, // outputToken
+            BigInt(amount), // inputAmount
+            feesData.outputAmount, // outputAmount
+            BigInt(route.destination), // destinationChainId
+            zeroAddress, // exclusiveRelayer - must be ZeroAddress per Zodiac permissions
+            feesData.timestamp, // quoteTimestamp
+            feesData.fillDeadline, // fillDeadline
+            BigInt(0), // exclusivityDeadline - must be 0 per Zodiac permissions
+            '0x', // message - must be "0x" per Zodiac permissions
           ],
         }),
         value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
@@ -330,7 +331,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     const hasWithdrawn = fillReceipt.logs.find((l: { topics: string[] }) => l.topics[0] === WETH_WITHDRAWAL_TOPIC);
 
     const decodedEvent = parseFillLogs(fillReceipt.logs, {
-      inputToken: padHex(route.asset as `0x${string}`, { size: 32 }),
+      inputToken: route.asset as `0x${string}`,
       originChainId: BigInt(route.origin),
     });
 
