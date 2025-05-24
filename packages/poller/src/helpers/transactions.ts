@@ -20,7 +20,7 @@ export interface TransactionSubmissionResult {
  * Submits a transaction with consistent logging and error handling
  */
 export async function submitTransactionWithLogging(
-  params: TransactionSubmissionParams
+  params: TransactionSubmissionParams,
 ): Promise<TransactionSubmissionResult> {
   const { chainService, logger, chainId, txRequest, zodiacConfig, context = {} } = params;
 
@@ -60,4 +60,4 @@ export async function submitTransactionWithLogging(
     });
     throw error;
   }
-} 
+}

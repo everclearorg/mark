@@ -130,11 +130,7 @@ export const sendIntents = async (
   }
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
-  const zodiacConfig = getValidatedZodiacConfig(
-    chainConfig, 
-    logger, 
-    { invoiceId, requestId }
-  );
+  const zodiacConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset));
@@ -227,14 +223,7 @@ export const sendIntents = async (
           moduleZeroApprovalData = encodeFunctionData({
             abi: ZODIAC_ROLE_MODULE_ABI,
             functionName: 'execTransactionWithRole',
-            args: [
-              tokenContract.address,
-              BigInt(0),
-              zeroApproveCalldata,
-              0,
-              zodiacRoleKey,
-              true,
-            ],
+            args: [tokenContract.address, BigInt(0), zeroApproveCalldata, 0, zodiacRoleKey, true],
           });
           moduleZeroApprovalTo = zodiacModuleAddress;
         }
@@ -283,14 +272,7 @@ export const sendIntents = async (
         moduleApprovalData = encodeFunctionData({
           abi: ZODIAC_ROLE_MODULE_ABI,
           functionName: 'execTransactionWithRole',
-          args: [
-            tokenContract.address,
-            BigInt(0),
-            approveCalldata,
-            0,
-            zodiacRoleKey,
-            true,
-          ],
+          args: [tokenContract.address, BigInt(0), approveCalldata, 0, zodiacRoleKey, true],
         });
         moduleApprovalTo = zodiacModuleAddress;
       }
