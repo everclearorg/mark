@@ -43,8 +43,8 @@ export function detectZodiacConfiguration(chainConfig?: ChainConfiguration): Zod
   }
 
   const isEnabled = !!(
-    chainConfig.zodiacRoleModuleAddress && 
-    chainConfig.zodiacRoleKey && 
+    chainConfig.zodiacRoleModuleAddress &&
+    chainConfig.zodiacRoleKey &&
     chainConfig.gnosisSafeAddress
   );
 
@@ -69,25 +69,25 @@ export function validateZodiacConfig(zodiacConfig: ZodiacConfig, logger?: Logger
   }
 
   if (!viemIsAddress(zodiacConfig.moduleAddress!)) {
-    logger?.error('Invalid Zodiac Role Module address', { 
-      ...context, 
-      zodiacRoleModuleAddress: zodiacConfig.moduleAddress 
+    logger?.error('Invalid Zodiac Role Module address', {
+      ...context,
+      zodiacRoleModuleAddress: zodiacConfig.moduleAddress,
     });
     throw new Error('Invalid Zodiac Role Module address');
   }
 
   if (!zodiacConfig.roleKey!.startsWith('0x')) {
-    logger?.error('Invalid Zodiac Role Key format', { 
-      ...context, 
-      zodiacRoleKey: zodiacConfig.roleKey 
+    logger?.error('Invalid Zodiac Role Key format', {
+      ...context,
+      zodiacRoleKey: zodiacConfig.roleKey,
     });
     throw new Error('Invalid Zodiac Role Key format');
   }
 
   if (!viemIsAddress(zodiacConfig.safeAddress!)) {
-    logger?.error('Invalid Gnosis Safe address', { 
-      ...context, 
-      gnosisSafeAddress: zodiacConfig.safeAddress 
+    logger?.error('Invalid Gnosis Safe address', {
+      ...context,
+      gnosisSafeAddress: zodiacConfig.safeAddress,
     });
     throw new Error('Invalid Gnosis Safe address');
   }
@@ -98,7 +98,7 @@ export function validateZodiacConfig(zodiacConfig: ZodiacConfig, logger?: Logger
  */
 export function wrapTransactionWithZodiac(
   txRequest: TransactionRequest,
-  zodiacConfig: ZodiacConfig
+  zodiacConfig: ZodiacConfig,
 ): TransactionRequest {
   if (!zodiacConfig.isEnabled) {
     return txRequest;
@@ -136,11 +136,11 @@ export function getActualOwner(zodiacConfig: ZodiacConfig, ownAddress: string): 
  * Full Zodiac detection, validation, and configuration helper
  */
 export function getValidatedZodiacConfig(
-  chainConfig?: ChainConfiguration, 
-  logger?: Logger, 
-  context?: any
+  chainConfig?: ChainConfiguration,
+  logger?: Logger,
+  context?: any,
 ): ZodiacConfig {
   const zodiacConfig = detectZodiacConfiguration(chainConfig);
   validateZodiacConfig(zodiacConfig, logger, context);
   return zodiacConfig;
-} 
+}

@@ -39,11 +39,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
 
     // Check for Zodiac configuration
     const chainConfig = config.chains[route.origin];
-    const zodiacConfig = getValidatedZodiacConfig(
-      chainConfig, 
-      logger, 
-      { requestId, route }
-    );
+    const zodiacConfig = getValidatedZodiacConfig(chainConfig, logger, { requestId, route });
 
     if (zodiacConfig.isEnabled) {
       logger.info('Using Zodiac configuration for rebalance route', {
@@ -149,12 +145,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       let bridgeTxRequest;
       try {
         const actualOwner = getActualOwner(zodiacConfig, config.ownAddress);
-        bridgeTxRequest = await adapter.send(
-          actualOwner,
-          actualOwner,
-          currentBalance.toString(),
-          route,
-        );
+        bridgeTxRequest = await adapter.send(actualOwner, actualOwner, currentBalance.toString(), route);
         logger.info('Prepared bridge transaction request from adapter', {
           requestId,
           route,

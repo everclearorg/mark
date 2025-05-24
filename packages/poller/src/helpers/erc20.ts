@@ -36,7 +36,7 @@ export async function checkTokenAllowance(
   chainId: string,
   tokenAddress: string,
   owner: string,
-  spender: string
+  spender: string,
 ): Promise<bigint> {
   const tokenContract = await getERC20Contract(config, chainId, tokenAddress as `0x${string}`);
   const allowance = await tokenContract.read.allowance([owner as `0x${string}`, spender as `0x${string}`]);
@@ -51,7 +51,7 @@ export function createApprovalTransaction(
   spenderAddress: string,
   amount: bigint,
   zodiacConfig: ZodiacConfig,
-  fromAddress: string
+  fromAddress: string,
 ): TransactionRequest {
   const approveCalldata = encodeFunctionData({
     abi: erc20Abi,
@@ -72,16 +72,10 @@ export function createApprovalTransaction(
 /**
  * Checks if a token is USDT based on chain assets configuration
  */
-export function isUSDTToken(
-  config: MarkConfiguration,
-  chainId: string,
-  tokenAddress: string
-): boolean {
+export function isUSDTToken(config: MarkConfiguration, chainId: string, tokenAddress: string): boolean {
   const chainAssets = config.chains[chainId]?.assets ?? [];
   return chainAssets.some(
-    (asset) =>
-      asset.symbol.toUpperCase() === 'USDT' && 
-      asset.address.toLowerCase() === tokenAddress.toLowerCase()
+    (asset) => asset.symbol.toUpperCase() === 'USDT' && asset.address.toLowerCase() === tokenAddress.toLowerCase(),
   );
 }
 
@@ -106,13 +100,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
   const result: ApprovalResult = { wasRequired: false };
 
   // Check current allowance
-  const currentAllowance = await checkTokenAllowance(
-    config,
-    chainId,
-    tokenAddress,
-    owner,
-    spenderAddress
-  );
+  const currentAllowance = await checkTokenAllowance(config, chainId, tokenAddress, owner, spenderAddress);
 
   logger.info('Current token allowance', {
     ...context,
@@ -138,7 +126,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
 
   // Check if this is USDT and handle the zero-approval requirement
   const isUSdt = isUSDTToken(config, chainId, tokenAddress);
-  
+
   if (isUSdt && currentAllowance > 0n) {
     logger.info('USDT allowance is greater than zero, setting allowance to zero first', {
       ...context,
@@ -146,16 +134,10 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       spender: spenderAddress,
     });
 
-    const zeroApprovalTx = createApprovalTransaction(
-      tokenAddress,
-      spenderAddress,
-      0n,
-      zodiacConfig,
-      config.ownAddress
-    );
+    const zeroApprovalTx = createApprovalTransaction(tokenAddress, spenderAddress, 0n, zodiacConfig, config.ownAddress);
 
     const zeroApprovalReceipt = await chainService.submitAndMonitor(chainId, zeroApprovalTx);
-    
+
     if (prometheus) {
       prometheus.updateGasSpent(
         chainId,
@@ -183,16 +165,10 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
     isUSdt,
   });
 
-  const approvalTx = createApprovalTransaction(
-    tokenAddress,
-    spenderAddress,
-    amount,
-    zodiacConfig,
-    config.ownAddress
-  );
+  const approvalTx = createApprovalTransaction(tokenAddress, spenderAddress, amount, zodiacConfig, config.ownAddress);
 
   const approvalReceipt = await chainService.submitAndMonitor(chainId, approvalTx);
-  
+
   if (prometheus) {
     prometheus.updateGasSpent(
       chainId,
@@ -212,4 +188,4 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
 
   result.transactionHash = approvalReceipt.transactionHash;
   return result;
-} 
+}

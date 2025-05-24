@@ -67,11 +67,10 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
     // Check for Zodiac configuration on destination chain
     const destinationChainConfig = config.chains[route.destination];
-    const zodiacConfig = getValidatedZodiacConfig(
-      destinationChainConfig, 
-      logger, 
-      { ...logContext, destination: route.destination }
-    );
+    const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, {
+      ...logContext,
+      destination: route.destination,
+    });
 
     // Try to execute the destination callback
     try {
