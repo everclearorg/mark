@@ -1,6 +1,6 @@
 import { MarkConfiguration, NewIntentParams, NewIntentWithPermit2Params } from '@mark/core';
 import { getERC20Contract } from './contracts';
-import { encodeFunctionData, erc20Abi, decodeEventLog, isAddress as viemIsAddress, Hex } from 'viem';
+import { decodeEventLog, encodeFunctionData, erc20Abi, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
   generatePermit2Nonce,
@@ -11,6 +11,7 @@ import {
 } from './permit2';
 import { prepareMulticall } from './multicall';
 import { MarkAdapters } from '../init';
+import { getValidatedZodiacConfig, getActualOwner, ZODIAC_ROLE_MODULE_ABI } from './zodiac';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -105,24 +106,6 @@ const intentAddedAbi = [
   },
 ] as const;
 
-// ABI for the Zodiac RoleModule's execTransactionWithRole function
-const ZODIAC_ROLE_MODULE_ABI = [
-  {
-    inputs: [
-      { internalType: 'address', name: 'to', type: 'address' },
-      { internalType: 'uint256', name: 'value', type: 'uint256' },
-      { internalType: 'bytes', name: 'data', type: 'bytes' },
-      { internalType: 'uint8', name: 'operation', type: 'uint8' },
-      { internalType: 'bytes32', name: 'roleKey', type: 'bytes32' },
-      { internalType: 'bool', name: 'shouldRevert', type: 'bool' },
-    ],
-    name: 'execTransactionWithRole',
-    outputs: [],
-    stateMutability: 'payable',
-    type: 'function',
-  },
-] as const;
-
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required.
  */
@@ -147,8 +130,11 @@ export const sendIntents = async (
   }
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
-  const useZodiac =
-    chainConfig?.zodiacRoleModuleAddress && chainConfig?.zodiacRoleKey && chainConfig?.gnosisSafeAddress;
+  const zodiacConfig = getValidatedZodiacConfig(
+    chainConfig, 
+    logger, 
+    { invoiceId, requestId }
+  );
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset));
@@ -156,24 +142,9 @@ export const sendIntents = async (
     throw new Error('Cannot process multiple intents with different input assets');
   }
 
-  // Validate Zodiac config
-  if (useZodiac) {
-    if (
-      !viemIsAddress(chainConfig.zodiacRoleModuleAddress!) ||
-      !chainConfig.zodiacRoleKey!.startsWith('0x') ||
-      !viemIsAddress(chainConfig.gnosisSafeAddress!)
-    ) {
-      logger.error('Invalid Zodiac configuration values', {
-        invoiceId,
-        requestId,
-        zodiacRoleModuleAddress: chainConfig.zodiacRoleModuleAddress,
-        zodiacRoleKey: chainConfig.zodiacRoleKey,
-        gnosisSafeAddress: chainConfig.gnosisSafeAddress,
-      });
-      throw new Error('Invalid Zodiac configuration.');
-    }
-
-    const gnosisSafeAddress = chainConfig.gnosisSafeAddress!.toLowerCase();
+  // Validate Zodiac-specific intent constraints
+  if (zodiacConfig.isEnabled) {
+    const gnosisSafeAddress = zodiacConfig.safeAddress!.toLowerCase();
 
     // Check for Zodiac rule violations
     for (const intent of intents) {
@@ -203,7 +174,7 @@ export const sendIntents = async (
     }, BigInt(0));
 
     const spenderForAllowance = feeAdapterTxData.to as `0x${string}`;
-    const ownerForAllowance = useZodiac ? chainConfig.gnosisSafeAddress! : config.ownAddress;
+    const ownerForAllowance = getActualOwner(zodiacConfig, config.ownAddress);
 
     logger.info('Total amount for approvals', {
       requestId,
@@ -213,7 +184,7 @@ export const sendIntents = async (
       chainId: originChainId,
       owner: ownerForAllowance,
       spender: spenderForAllowance,
-      useZodiac,
+      useZodiac: zodiacConfig.isEnabled,
     });
 
     const tokenContract = await getERC20Contract(config, firstIntent.origin, firstIntent.inputAsset as `0x${string}`);
@@ -250,9 +221,9 @@ export const sendIntents = async (
         let moduleZeroApprovalTo = tokenContract.address;
         let moduleZeroApprovalData = zeroApproveCalldata;
 
-        if (useZodiac) {
-          const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
-          const zodiacRoleKey = chainConfig.zodiacRoleKey as Hex;
+        if (zodiacConfig.isEnabled) {
+          const zodiacModuleAddress = zodiacConfig.moduleAddress as `0x${string}`;
+          const zodiacRoleKey = zodiacConfig.roleKey as Hex;
           moduleZeroApprovalData = encodeFunctionData({
             abi: ZODIAC_ROLE_MODULE_ABI,
             functionName: 'execTransactionWithRole',
@@ -306,9 +277,9 @@ export const sendIntents = async (
       let moduleApprovalTo = tokenContract.address;
       let moduleApprovalData = approveCalldata;
 
-      if (useZodiac) {
-        const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
-        const zodiacRoleKey = chainConfig.zodiacRoleKey as Hex;
+      if (zodiacConfig.isEnabled) {
+        const zodiacModuleAddress = zodiacConfig.moduleAddress as `0x${string}`;
+        const zodiacRoleKey = zodiacConfig.roleKey as Hex;
         moduleApprovalData = encodeFunctionData({
           abi: ZODIAC_ROLE_MODULE_ABI,
           functionName: 'execTransactionWithRole',
@@ -408,9 +379,9 @@ export const sendIntents = async (
     let purchaseTxValue = (feeAdapterTxData.value ?? '0').toString();
     const purchaseTxFrom: string = config.ownAddress;
 
-    if (useZodiac) {
-      const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
-      const zodiacRoleKey = chainConfig.zodiacRoleKey as Hex;
+    if (zodiacConfig.isEnabled) {
+      const zodiacModuleAddress = zodiacConfig.moduleAddress as `0x${string}`;
+      const zodiacRoleKey = zodiacConfig.roleKey as Hex;
 
       purchaseTxTo = zodiacModuleAddress;
       purchaseTxData = encodeFunctionData({

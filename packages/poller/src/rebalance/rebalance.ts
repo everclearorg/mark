@@ -1,30 +1,15 @@
-import { getMarkBalances, getERC20Contract, safeStringToBigInt, getTickerForAsset } from '../helpers';
+import { getMarkBalances, safeStringToBigInt, getTickerForAsset } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { zeroAddress, encodeFunctionData, isAddress as viemIsAddress, Hex } from 'viem';
+import { zeroAddress } from 'viem';
 import { RebalanceAction } from '@mark/cache';
-
-// ABI for the Zodiac RoleModule's execTransactionWithRole function
-const ZODIAC_ROLE_MODULE_ABI = [
-  {
-    inputs: [
-      { internalType: 'address', name: 'to', type: 'address' },
-      { internalType: 'uint256', name: 'value', type: 'uint256' },
-      { internalType: 'bytes', name: 'data', type: 'bytes' },
-      { internalType: 'uint8', name: 'operation', type: 'uint8' },
-      { internalType: 'bytes32', name: 'roleKey', type: 'bytes32' },
-      { internalType: 'bool', name: 'shouldRevert', type: 'bool' },
-    ],
-    name: 'execTransactionWithRole',
-    outputs: [],
-    stateMutability: 'payable',
-    type: 'function',
-  },
-] as const;
+import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
+import { checkAndApproveERC20 } from '../helpers/erc20';
+import { submitTransactionWithLogging } from '../helpers/transactions';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<void> {
-  const { logger, requestId, rebalanceCache, config, chainService, rebalance } = context;
+  const { logger, requestId, rebalanceCache, config, chainService, rebalance, prometheus } = context;
   const isPaused = await rebalanceCache.isPaused();
   if (isPaused) {
     logger.warn('Rebalance loop is paused', { requestId });
@@ -54,33 +39,19 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
 
     // Check for Zodiac configuration
     const chainConfig = config.chains[route.origin];
-    const useZodiac =
-      chainConfig?.zodiacRoleModuleAddress && chainConfig?.zodiacRoleKey && chainConfig?.gnosisSafeAddress;
+    const zodiacConfig = getValidatedZodiacConfig(
+      chainConfig, 
+      logger, 
+      { requestId, route }
+    );
 
-    // Validate Zodiac config if enabled
-    if (useZodiac) {
-      if (
-        !viemIsAddress(chainConfig.zodiacRoleModuleAddress!) ||
-        !chainConfig.zodiacRoleKey!.startsWith('0x') ||
-        !viemIsAddress(chainConfig.gnosisSafeAddress!)
-      ) {
-        logger.error('Invalid Zodiac configuration values', {
-          requestId,
-          route,
-          zodiacRoleModuleAddress: chainConfig.zodiacRoleModuleAddress,
-          zodiacRoleKey: chainConfig.zodiacRoleKey,
-          gnosisSafeAddress: chainConfig.gnosisSafeAddress,
-        });
-        continue; // Skip this route
-        // Or don't skip and assume mark will rebalance with his EOA
-      }
-
+    if (zodiacConfig.isEnabled) {
       logger.info('Using Zodiac configuration for rebalance route', {
         requestId,
         route,
-        zodiacRoleModuleAddress: chainConfig.zodiacRoleModuleAddress,
-        zodiacRoleKey: chainConfig.zodiacRoleKey,
-        gnosisSafeAddress: chainConfig.gnosisSafeAddress,
+        zodiacRoleModuleAddress: zodiacConfig.moduleAddress,
+        zodiacRoleKey: zodiacConfig.roleKey,
+        gnosisSafeAddress: zodiacConfig.safeAddress,
       });
     }
 
@@ -177,9 +148,10 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       // Step 3: Get Bridge Transaction Request (before approval)
       let bridgeTxRequest;
       try {
+        const actualOwner = getActualOwner(zodiacConfig, config.ownAddress);
         bridgeTxRequest = await adapter.send(
-          useZodiac ? chainConfig.gnosisSafeAddress! : config.ownAddress,
-          useZodiac ? chainConfig.gnosisSafeAddress! : config.ownAddress,
+          actualOwner,
+          actualOwner,
           currentBalance.toString(),
           route,
         );
@@ -188,6 +160,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           route,
           bridgeType,
           bridgeTxRequest,
+          actualOwner,
+          useZodiac: zodiacConfig.isEnabled,
         });
         if (!bridgeTxRequest.to) {
           throw new Error(`Failed to populate 'to' in bridge transaction request`);
@@ -206,189 +180,103 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       // Step 4: ERC20 Approval Logic (if needed)
       const isNativeAsset = route.asset.toLowerCase() === zeroAddress;
       if (!isNativeAsset) {
-        logger.info('Asset is not native, checking ERC20 approval', {
-          requestId,
-          route,
-          bridgeType,
-          spenderAddress,
-          asset: route.asset,
-        });
-        let tokenContract;
         try {
-          tokenContract = await getERC20Contract(config, route.origin.toString(), route.asset as `0x${string}`);
-        } catch (contractError) {
-          logger.error('Failed to get ERC20 contract instance, trying next preference', {
-            requestId,
-            route,
-            bridgeType,
-            asset: route.asset,
-            error: jsonifyError(contractError),
-          });
-          continue; // Skip to next bridge preference
-        }
-
-        let currentAllowance: bigint;
-        const ownerForAllowance = useZodiac ? chainConfig.gnosisSafeAddress! : config.ownAddress;
-        try {
-          currentAllowance = (await tokenContract.read.allowance([
-            ownerForAllowance,
+          const approvalResult = await checkAndApproveERC20({
+            config,
+            chainService,
+            logger,
+            prometheus,
+            chainId: route.origin.toString(),
+            tokenAddress: route.asset,
             spenderAddress,
-          ])) as bigint;
-          logger.info('Current token allowance', {
-            requestId,
-            route,
-            bridgeType,
-            spenderAddress,
-            owner: ownerForAllowance,
-            asset: route.asset,
-            allowance: currentAllowance.toString(),
-            requiredAmount: currentBalance.toString(),
+            amount: currentBalance,
+            owner: getActualOwner(zodiacConfig, config.ownAddress),
+            zodiacConfig,
+            context: { requestId, route, bridgeType },
           });
-        } catch (allowanceError) {
-          logger.error('Failed to get token allowance, trying next preference', {
-            requestId,
-            route,
-            bridgeType,
-            spenderAddress,
-            asset: route.asset,
-            error: jsonifyError(allowanceError),
-          });
-          continue; // Skip to next bridge preference
-        }
 
-        if (currentAllowance < currentBalance) {
-          logger.info('Allowance is less than required amount. Attempting to approve.', {
-            requestId,
-            route,
-            bridgeType,
-            spenderAddress,
-            requiredAmount: currentBalance.toString(),
-            currentAllowance: currentAllowance.toString(),
-          });
-          try {
-            const approveData = encodeFunctionData({
-              abi: tokenContract.abi,
-              functionName: 'approve',
-              args: [spenderAddress, currentBalance],
-            });
-
-            let moduleApprovalTo = tokenContract.address;
-            let moduleApprovalData = approveData;
-
-            if (useZodiac) {
-              const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
-              const zodiacRoleKey = chainConfig.zodiacRoleKey as Hex;
-              moduleApprovalData = encodeFunctionData({
-                abi: ZODIAC_ROLE_MODULE_ABI,
-                functionName: 'execTransactionWithRole',
-                args: [
-                  tokenContract.address,
-                  BigInt(0),
-                  approveData,
-                  0,
-                  zodiacRoleKey,
-                  true,
-                ],
-              });
-              moduleApprovalTo = zodiacModuleAddress;
-            }
-
-            const approvalTransaction = {
-              to: moduleApprovalTo,
-              data: moduleApprovalData,
-              from: config.ownAddress,
-            };
-            logger.info('Prepared ERC20 approval transaction request', {
+          if (approvalResult.wasRequired) {
+            logger.info('ERC20 approval completed', {
               requestId,
               route,
               bridgeType,
-              approvalTransaction,
-              useZodiac,
+              approvalTxHash: approvalResult.transactionHash,
+              hadZeroApproval: approvalResult.hadZeroApproval,
             });
-
-            const approvalReceipt = await chainService.submitAndMonitor(
-              route.origin.toString(),
-              approvalTransaction,
-            );
-            logger.info('Successfully submitted and confirmed ERC20 approval transaction', {
-              requestId,
-              route,
-              bridgeType,
-              spenderAddress,
-              approvalTxHash: approvalReceipt.transactionHash,
-            });
-          } catch (approvalError) {
-            logger.error('ERC20 token approval transaction failed, trying next preference', {
-              requestId,
-              route,
-              bridgeType,
-              spenderAddress,
-              asset: route.asset,
-              error: jsonifyError(approvalError),
-            });
-            continue; // Skip to next bridge preference
           }
-        } else {
-          logger.info('Sufficient allowance already exists for token', {
+        } catch (approvalError) {
+          logger.error('ERC20 token approval failed, trying next preference', {
             requestId,
             route,
             bridgeType,
             spenderAddress,
+            asset: route.asset,
+            error: jsonifyError(approvalError),
           });
+          continue; // Skip to next bridge preference
         }
       } else {
         logger.info('Asset is native, no ERC20 approval needed.', { requestId, route, bridgeType });
       }
 
       // Step 5: Submit the original bridge transaction
-      let originTxReceipt;
       try {
-        logger.info('Submitting the original bridge transaction', { requestId, route, bridgeType, bridgeTxRequest, useZodiac });
-        
-        let moduleBridgeTo = bridgeTxRequest.to!;
-        let moduleBridgeData = bridgeTxRequest.data!;
-        let moduleBridgeValue = bridgeTxRequest.value || 0n;
-        const moduleBridgeFrom = config.ownAddress;
+        const result = await submitTransactionWithLogging({
+          chainService,
+          logger,
+          chainId: route.origin.toString(),
+          txRequest: {
+            to: bridgeTxRequest.to!,
+            data: bridgeTxRequest.data!,
+            value: bridgeTxRequest.value || 0,
+            from: config.ownAddress,
+          },
+          zodiacConfig,
+          context: { requestId, route, bridgeType, transactionType: 'bridge' },
+        });
 
-        if (useZodiac) {
-          const zodiacModuleAddress = chainConfig.zodiacRoleModuleAddress as `0x${string}`;
-          const zodiacRoleKey = chainConfig.zodiacRoleKey as Hex;
-          
-          moduleBridgeData = encodeFunctionData({
-            abi: ZODIAC_ROLE_MODULE_ABI,
-            functionName: 'execTransactionWithRole',
-            args: [
-              bridgeTxRequest.to! as `0x${string}`,
-              BigInt(bridgeTxRequest.value || 0),
-              bridgeTxRequest.data! as Hex,
-              0,
-              zodiacRoleKey,
-              true,
-            ],
-          });
-          moduleBridgeTo = zodiacModuleAddress;
-          moduleBridgeValue = 0n;
-        }
-
-        const bridgeTransaction = {
-          to: moduleBridgeTo,
-          value: moduleBridgeValue,
-          data: moduleBridgeData,
-          from: moduleBridgeFrom,
-        };
-        
-        const submittedTx = await chainService.submitAndMonitor(
-          route.origin.toString(),
-          bridgeTransaction,
-        );
-        originTxReceipt = submittedTx;
         logger.info('Successfully submitted and confirmed origin bridge transaction', {
           requestId,
           route,
           bridgeType,
-          transactionHash: originTxReceipt.transactionHash,
-          useZodiac,
+          transactionHash: result.transactionHash,
+          useZodiac: zodiacConfig.isEnabled,
         });
+
+        // Step 6: Add rebalance action to cache
+        const rebalanceAction: RebalanceAction = {
+          bridge: adapter.type(),
+          amount: currentBalance.toString(),
+          origin: route.origin,
+          destination: route.destination,
+          asset: route.asset,
+          transaction: result.transactionHash,
+        };
+
+        try {
+          await rebalanceCache.addRebalances([rebalanceAction]);
+          logger.info('Successfully added rebalance action to cache', {
+            requestId,
+            route,
+            bridgeType,
+            action: rebalanceAction,
+          });
+          rebalanceSuccessful = true;
+          // If we got here, the rebalance for this route was successful with this bridge.
+          break; // Exit the bridge preference loop for this route
+        } catch (cacheError) {
+          logger.error('Failed to add rebalance action to cache. Transaction was sent, but caching failed.', {
+            requestId,
+            route,
+            bridgeType,
+            transactionHash: result.transactionHash,
+            error: jsonifyError(cacheError),
+            rebalanceAction,
+          });
+          // Consider this a success for the route as funds were moved. Exit bridge loop.
+          rebalanceSuccessful = true;
+          break; // Exit the bridge preference loop for this route
+        }
       } catch (finalSendError) {
         logger.error('Failed to send or monitor final bridge transaction, trying next preference', {
           requestId,
@@ -398,40 +286,6 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           error: jsonifyError(finalSendError),
         });
         continue; // Skip to next bridge preference
-      }
-
-      // Step 6: Add rebalance action to cache
-      const rebalanceAction: RebalanceAction = {
-        bridge: adapter.type(),
-        amount: currentBalance.toString(),
-        origin: route.origin,
-        destination: route.destination,
-        asset: route.asset,
-        transaction: originTxReceipt.transactionHash,
-      };
-      try {
-        await rebalanceCache.addRebalances([rebalanceAction]);
-        logger.info('Successfully added rebalance action to cache', {
-          requestId,
-          route,
-          bridgeType,
-          action: rebalanceAction,
-        });
-        rebalanceSuccessful = true;
-        // If we got here, the rebalance for this route was successful with this bridge.
-        break; // Exit the bridge preference loop for this route
-      } catch (cacheError) {
-        logger.error('Failed to add rebalance action to cache. Transaction was sent, but caching failed.', {
-          requestId,
-          route,
-          bridgeType,
-          transactionHash: originTxReceipt.transactionHash,
-          error: jsonifyError(cacheError),
-          rebalanceAction,
-        });
-        // Consider this a success for the route as funds were moved. Exit bridge loop.
-        rebalanceSuccessful = true;
-        break; // Exit the bridge preference loop for this route
       }
     } // End of bridge preference loop
 
