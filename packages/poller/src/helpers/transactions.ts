@@ -1,5 +1,7 @@
+import { providers } from 'ethers';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
+import { LoggingContext } from '@mark/core';
 import { ZodiacConfig, wrapTransactionWithZodiac, TransactionRequest } from './zodiac';
 
 export interface TransactionSubmissionParams {
@@ -8,12 +10,12 @@ export interface TransactionSubmissionParams {
   chainId: string;
   txRequest: TransactionRequest;
   zodiacConfig: ZodiacConfig;
-  context?: any; // For logging context
+  context?: LoggingContext; // For logging context
 }
 
 export interface TransactionSubmissionResult {
   transactionHash: string;
-  receipt: any; // The actual receipt type from chainService
+  receipt: providers.TransactionReceipt; // The actual receipt type from chainService
 }
 
 /**
