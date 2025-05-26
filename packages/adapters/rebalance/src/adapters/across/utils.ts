@@ -1,4 +1,4 @@
-import { Address, Hash, Hex, isAddress, isHex, Log, parseEventLogs, TransactionReceipt } from 'viem';
+import { Address, Hash, Hex, isAddress, isHex, Log, parseEventLogs, TransactionReceipt, pad } from 'viem';
 import { ACROSS_SPOKE_ABI } from './abi';
 
 // https://github.com/across-protocol/toolkit/blob/c5010eb07312a936b6f59123afb4a7293bf2436b/packages/sdk/src/actions/getDepositFromLogs.ts#L6
@@ -149,20 +149,30 @@ export function parseFillLogs(
     depositId: bigint | number;
   }>,
 ) {
+  if (!logs || logs.length === 0) {
+    return undefined;
+  }
+
   const blockData = {
     depositTxHash: logs[0]!.blockHash!,
     depositTxBlock: logs[0]!.blockNumber!,
   };
 
   // Parse V3_5 Logs
+  // Convert address filters to bytes32 format for FilledRelay event
+  const v3_5Filter = filter ? {
+    ...filter,
+    inputToken: filter.inputToken ? pad(filter.inputToken, { size: 32 }) : undefined,
+    outputToken: filter.outputToken ? pad(filter.outputToken, { size: 32 }) : undefined,
+    depositor: filter.depositor ? pad(filter.depositor, { size: 32 }) : undefined,
+    depositId: filter?.depositId ? BigInt(filter?.depositId) : undefined,
+  } : undefined;
+
   const parsedV3_5Logs = parseEventLogs({
     abi: ACROSS_SPOKE_ABI,
     eventName: 'FilledRelay',
     logs,
-    args: {
-      ...filter,
-      depositId: filter?.depositId ? BigInt(filter?.depositId) : undefined,
-    },
+    args: v3_5Filter,
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const v3_5Log = parsedV3_5Logs?.[0] as any;
@@ -225,6 +235,8 @@ export function parseFillLogs(
       },
     };
   }
+
+  return undefined;
 }
 
 const FillType: { [key: number]: string } = {
