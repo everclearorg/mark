@@ -1,6 +1,6 @@
 import { encodeFunctionData, erc20Abi } from 'viem';
 import { getERC20Contract } from './contracts';
-import { MarkConfiguration } from '@mark/core';
+import { MarkConfiguration, LoggingContext } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { TransactionReason } from '@mark/prometheus';
@@ -18,7 +18,7 @@ export interface ApprovalParams {
   amount: bigint;
   owner: string;
   zodiacConfig: ZodiacConfig;
-  context?: any; // For logging context (requestId, invoiceId, etc.)
+  context?: LoggingContext; // For logging context (requestId, invoiceId, etc.)
 }
 
 export interface ApprovalResult {

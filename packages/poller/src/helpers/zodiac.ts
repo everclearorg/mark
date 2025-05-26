@@ -1,5 +1,5 @@
 import { encodeFunctionData, isAddress as viemIsAddress, Hex } from 'viem';
-import { ChainConfiguration } from '@mark/core';
+import { ChainConfiguration, LoggingContext } from '@mark/core';
 import { Logger } from '@mark/logger';
 
 // ABI for the Zodiac RoleModule's execTransactionWithRole function
@@ -63,7 +63,7 @@ export function detectZodiacConfiguration(chainConfig?: ChainConfiguration): Zod
 /**
  * Validates Zodiac configuration values and throws if invalid
  */
-export function validateZodiacConfig(zodiacConfig: ZodiacConfig, logger?: Logger, context?: any): void {
+export function validateZodiacConfig(zodiacConfig: ZodiacConfig, logger?: Logger, context?: LoggingContext): void {
   if (!zodiacConfig.isEnabled) {
     return;
   }
@@ -138,7 +138,7 @@ export function getActualOwner(zodiacConfig: ZodiacConfig, ownAddress: string): 
 export function getValidatedZodiacConfig(
   chainConfig?: ChainConfiguration,
   logger?: Logger,
-  context?: any,
+  context?: LoggingContext,
 ): ZodiacConfig {
   const zodiacConfig = detectZodiacConfiguration(chainConfig);
   validateZodiacConfig(zodiacConfig, logger, context);
