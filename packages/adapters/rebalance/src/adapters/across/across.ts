@@ -350,7 +350,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     const hasWithdrawn = fillReceipt.logs.find((l: { topics: string[] }) => l.topics[0] === WETH_WITHDRAWAL_TOPIC);
 
     const decodedEvent = parseFillLogs(fillReceipt.logs, {
-      inputToken: padHex(route.asset as `0x${string}`, { size: 32 }),
+      inputToken: padHex(route.asset.toLowerCase() as `0x${string}`, { size: 32 }),
       originChainId: BigInt(route.origin),
     });
 
