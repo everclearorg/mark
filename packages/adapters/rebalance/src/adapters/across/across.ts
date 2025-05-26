@@ -7,6 +7,7 @@ import {
   zeroAddress,
   erc20Abi,
   PublicClient,
+  padHex,
 } from 'viem';
 import axios from 'axios';
 import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';

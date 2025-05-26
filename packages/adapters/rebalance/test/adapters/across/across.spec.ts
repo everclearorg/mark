@@ -4,7 +4,7 @@ import { AssetConfiguration, ChainConfiguration, RebalanceRoute } from '@mark/co
 import { jsonifyError, Logger } from '@mark/logger';
 import axios from 'axios';
 import { Transaction } from 'ethers';
-import { createPublicClient, decodeEventLog, TransactionReceipt, encodeFunctionData, zeroAddress } from 'viem';
+import { createPublicClient, decodeEventLog, TransactionReceipt, encodeFunctionData, zeroAddress, padHex } from 'viem';
 import { AcrossBridgeAdapter } from '../../../src/adapters/across/across';
 import {
     DepositStatusResponse,
