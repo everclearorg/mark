@@ -917,7 +917,7 @@ describe('AcrossBridgeAdapter', () => {
 
             // Verify parseFillLogs was called with correct args
             expect(parseFillLogs).toHaveBeenCalledWith(mockReceipt.logs, {
-                inputToken: route.asset as `0x${string}`,
+                inputToken: padHex(route.asset.toLowerCase() as `0x${string}`, { size: 32 }),
                 originChainId: BigInt(route.origin),
             });
         });
