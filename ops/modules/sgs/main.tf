@@ -89,3 +89,34 @@ resource "aws_security_group" "lambda" {
     Domain      = var.domain
   }
 }
+
+# Security group for EFS mount targets
+resource "aws_security_group" "efs" {
+  name        = "mark-efs-${var.environment}-${var.stage}"
+  description = "Security group for EFS mount targets - allows NFS traffic from VPC"
+  vpc_id      = var.vpc_id
+
+  # Allow inbound NFS traffic from VPC
+  ingress {
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr_block]
+    description = "Allow NFS traffic for EFS"
+  }
+
+  # Allow all outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "mark-efs-${var.environment}-${var.stage}"
+    Environment = var.environment
+    Stage       = var.stage
+    Domain      = var.domain
+  }
+}
