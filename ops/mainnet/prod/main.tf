@@ -76,6 +76,8 @@ module "efs" {
   environment = var.environment
   stage = var.stage
   domain = var.domain
+  subnet_ids = module.network.private_subnets
+  efs_security_group_id = module.sgs.efs_sg_id
 }
 
 module "cache" {
@@ -135,7 +137,7 @@ module "mark_prometheus" {
   container_family        = "mark-prometheus"
   volume_name             = "mark-prometheus-data"
   volume_container_path   = "/prometheus"
-  volume_efs_path         = "/mark/prometheus"
+  volume_efs_path         = "/"
   container_port          = 9090
   cpu                     = 512
   memory                  = 1024
@@ -190,7 +192,7 @@ module "mark_pushgateway" {
   container_family        = "mark-pushgateway"
   volume_name             = "mark-pushgateway-data"
   volume_container_path   = "/pushgateway"
-  volume_efs_path         = "/mark/pushgateway"
+  volume_efs_path         = "/"
   entrypoint = [
     "/bin/sh",
     "-c",

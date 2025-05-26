@@ -110,7 +110,8 @@ export class EverclearAdapter {
   }
 
   async fetchInvoices(destinations: Record<string, ChainConfiguration>): Promise<Invoice[]> {
-    const url = `${this.apiUrl}/invoices`;
+    const LIMIT = 100;
+    const url = `${this.apiUrl}/invoices?limit=${LIMIT}`;
 
     const destinationKeys = Object.keys(destinations);
     const params = destinationKeys.length > 0 ? { destinations: destinationKeys } : {};
