@@ -118,15 +118,35 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         throw new Error('Failed to find destination WETH');
       }
 
-      return {
+      const callbackTx: TransactionRequestBase = {
         to: destinationWETH.address as `0x${string}`,
-        data: '0xd0e30db0', // deposit() function selector
+        data: '0xd0e30db0' as `0x${string}`, // deposit() function selector
         value: callbackInfo.amount!,
       };
+
+      this.logger.debug('Destination callback transaction prepared', {
+        callbackTx,
+        fillTxHash: statusData.fillTx,
+        originTxHash: originTransaction.transactionHash,
+      });
+
+      return callbackTx;
     } catch (error) {
+      this.logger.error('destinationCallback failed', {
+        error: jsonifyError(error),
+        route,
+        originTxHash: originTransaction.transactionHash,
+        originChain: route.origin,
+        destinationChain: route.destination,
+        errorMessage: (error as Error)?.message,
+        errorStack: (error as Error)?.stack,
+      });
+
       this.handleError(error, 'prepare destination callback', {
         route,
         transactionHash: originTransaction.transactionHash,
+        originChain: route.origin,
+        destinationChain: route.destination,
       });
     }
   }
