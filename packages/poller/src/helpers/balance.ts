@@ -41,7 +41,7 @@ export const getMarkBalances = async (
 ): Promise<Map<string, Map<string, bigint>>> => {
   const { chains, ownAddress } = config;
   const tickers = getTickers(config);
-  
+
   const balancePromises: Array<{
     ticker: string;
     domain: string;
@@ -52,7 +52,7 @@ export const getMarkBalances = async (
     for (const domain of Object.keys(chains)) {
       const tokenAddr = getTokenAddressFromConfig(ticker, domain, config) as `0x${string}`;
       const decimals = getDecimalsFromConfig(ticker, domain, config);
-      
+
       if (!tokenAddr || !decimals) {
         continue;
       }
@@ -61,13 +61,13 @@ export const getMarkBalances = async (
         try {
           const tokenContract = await getERC20Contract(config, domain, tokenAddr);
           let balance = (await tokenContract.read.balanceOf([ownAddress])) as bigint;
-          
+
           // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
           if (decimals !== 18) {
             const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
             balance = BigInt(balance) * 10n ** DECIMALS_DIFFERENCE;
           }
-          
+
           // Update tracker (this is async but we don't need to wait)
           prometheus.updateChainBalance(domain, tokenAddr, balance);
           return balance;
@@ -79,22 +79,22 @@ export const getMarkBalances = async (
       balancePromises.push({
         ticker,
         domain,
-        promise: balancePromise
+        promise: balancePromise,
       });
     }
   }
 
-  const results = await Promise.allSettled(balancePromises.map(p => p.promise));
+  const results = await Promise.allSettled(balancePromises.map((p) => p.promise));
   const markBalances = new Map<string, Map<string, bigint>>();
-  
+
   for (let i = 0; i < balancePromises.length; i++) {
     const { ticker, domain } = balancePromises[i];
     const result = results[i];
-    
+
     if (!markBalances.has(ticker)) {
       markBalances.set(ticker, new Map());
     }
-    
+
     const balance = result.status === 'fulfilled' ? result.value : 0n;
     markBalances.get(ticker)!.set(domain, balance);
   }
@@ -144,22 +144,22 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
       custodiedPromises.push({
         ticker,
         domain,
-        promise: custodiedPromise
+        promise: custodiedPromise,
       });
     }
   }
 
-  const results = await Promise.allSettled(custodiedPromises.map(p => p.promise));
+  const results = await Promise.allSettled(custodiedPromises.map((p) => p.promise));
   const custodiedBalances = new Map<string, Map<string, bigint>>();
-  
+
   for (let i = 0; i < custodiedPromises.length; i++) {
     const { ticker, domain } = custodiedPromises[i];
     const result = results[i];
-    
+
     if (!custodiedBalances.has(ticker)) {
       custodiedBalances.set(ticker, new Map());
     }
-    
+
     const balance = result.status === 'fulfilled' ? result.value : 0n;
     custodiedBalances.get(ticker)!.set(domain, balance);
   }
