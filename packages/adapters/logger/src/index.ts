@@ -1,5 +1,6 @@
 import pino from 'pino';
 import ddTrace from 'dd-trace';
+import { ILogger } from '@mark/core';
 
 export interface LoggerConfig {
   service: string;
@@ -7,12 +8,8 @@ export interface LoggerConfig {
   level?: string;
 }
 
-export interface ILogger {
-  info(message: string, context?: object): void;
-  error(message: string, context?: object): void;
-  warn(message: string, context?: object): void;
-  debug(message: string, context?: object): void;
-}
+// Re-export ILogger for convenience
+export { ILogger };
 
 export function jsonifyMap(map: Map<string, unknown>): Record<string, unknown> {
   const jsonObject: Record<string, unknown> = {};

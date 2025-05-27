@@ -1,7 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import * as fs from 'fs';
-import { RequestContext } from './types';
-import { ILogger } from '@mark/logger';
+import { RequestContext, ILogger } from './types';
 
 export const createLoggingContext = (method: string, context?: RequestContext) => {
   return {
