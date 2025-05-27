@@ -1,5 +1,5 @@
 import { RebalanceCache, PurchaseCache } from '@mark/cache';
-import { ConfigurationError, fromEnv, LogLevel, requireEnv } from '@mark/core';
+import { ConfigurationError, fromEnv, LogLevel, requireEnv, cleanupHttpConnections } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { AdminConfig, AdminAdapter, AdminContext } from './types';
 import { APIGatewayProxyEvent } from 'aws-lambda';
@@ -20,6 +20,7 @@ async function cleanupAdapters(adapters: AdminAdapter): Promise<void> {
       adapters.purchaseCache.disconnect(),
       adapters.rebalanceCache.disconnect(),
     ]);
+    cleanupHttpConnections();
   } catch (error) {
     console.warn('Error during adapter cleanup:', error);
   }
