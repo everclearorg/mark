@@ -389,16 +389,38 @@ export const getProviderUrl = (chainId: string, config: MarkConfiguration): stri
   return chainId === config.hub.domain ? config.hub.providers[0] : config.chains[chainId]?.providers[0];
 };
 
+// Singleton map for viem clients
+const viemClients = new Map<string, ReturnType<typeof createPublicClient>>();
+
 export const createClient = (chainId: string, config: MarkConfiguration) => {
+  if (viemClients.has(chainId)) {
+    return viemClients.get(chainId)!;
+  }
+
   const providerURL = getProviderUrl(chainId, config);
   if (!providerURL) {
     throw new Error(`No RPC configured for given domain: ${chainId}`);
   }
 
-  return createPublicClient({
+  const client = createPublicClient({
     chain: chainId as unknown as Chain,
-    transport: http(providerURL),
+    transport: http(providerURL, {
+      batch: true,
+      fetchOptions: {
+        keepalive: true,
+      },
+    }),
   });
+
+  // Cache the client for reuse
+  viemClients.set(chainId, client);
+  return client;
+};
+
+// Cleanup function for viem clients
+export const cleanupViemClients = (): void => {
+  viemClients.clear();
+  console.log('Viem clients cleaned up successfully');
 };
 
 export const getHubStorageContract = (config: MarkConfiguration) => {

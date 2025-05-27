@@ -226,6 +226,25 @@ export async function processTickerGroup(
       ? { [batchedGroup.origin]: filteredMinAmounts[batchedGroup.origin] || '0' }
       : filteredMinAmounts;
 
+    // Skip if we already have a chosen origin and insufficient balance for this invoice
+    if (batchedGroup.origin) {
+      const requiredAmount = BigInt(filteredMinAmounts[batchedGroup.origin] || '0');
+      const remainingBalance = remainingBalances.get(invoice.ticker_hash)?.get(batchedGroup.origin) || BigInt('0');
+
+      if (remainingBalance < requiredAmount) {
+        logger.info('Chosen origin has insufficient balance for current invoice, skipping', {
+          requestId,
+          invoiceId,
+          ticker: invoice.ticker_hash,
+          origin: batchedGroup.origin,
+          requiredAmount: requiredAmount.toString(),
+          remainingBalance: remainingBalance.toString(),
+          duration: getTimeSeconds() - start,
+        });
+        continue;
+      }
+    }
+
     const { intents, originDomain, totalAllocated, remainder } = await calculateSplitIntents(
       context,
       invoice,

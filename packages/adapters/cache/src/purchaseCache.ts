@@ -113,4 +113,15 @@ export class PurchaseCache {
   public async isPaused(): Promise<boolean> {
     return (await this.store.get(this.pauseKey)) === '1';
   }
+
+  /** Disconnect from Redis to prevent file descriptor leaks */
+  public async disconnect(): Promise<void> {
+    try {
+      await this.store.disconnect();
+      console.log('PurchaseCache: Redis connection closed successfully');
+    } catch (error) {
+      console.warn('PurchaseCache: Error closing Redis connection:', error);
+      throw error;
+    }
+  }
 }
