@@ -14,6 +14,17 @@ function initializeAdapters(config: AdminConfig): AdminAdapter {
   };
 }
 
+async function cleanupAdapters(adapters: AdminAdapter): Promise<void> {
+  try {
+    await Promise.all([
+      adapters.purchaseCache.disconnect(),
+      adapters.rebalanceCache.disconnect(),
+    ]);
+  } catch (error) {
+    console.warn('Error during adapter cleanup:', error);
+  }
+}
+
 async function loadConfiguration(): Promise<AdminConfig> {
   try {
     const config = {
@@ -45,16 +56,20 @@ export const initAdminApi = async (event: APIGatewayProxyEvent): Promise<{ statu
 
   const adapters = initializeAdapters(config);
 
-  const context: AdminContext = {
-    ...adapters,
-    event,
-    // lambdaContext,
-    logger,
-    config,
-    requestId: bytesToHex(getRandomValues(new Uint8Array(32))),
-    startTime: Math.floor(Date.now() / 1000),
-  };
-  logger.info('Context initiatlized', { requestId: context.requestId, event, context });
+  try {
+    const context: AdminContext = {
+      ...adapters,
+      event,
+      // lambdaContext,
+      logger,
+      config,
+      requestId: bytesToHex(getRandomValues(new Uint8Array(32))),
+      startTime: Math.floor(Date.now() / 1000),
+    };
+    logger.info('Context initiatlized', { requestId: context.requestId, event, context });
 
-  return handleApiRequest(context);
+    return await handleApiRequest(context);
+  } finally {
+    await cleanupAdapters(adapters);
+  }
 };
