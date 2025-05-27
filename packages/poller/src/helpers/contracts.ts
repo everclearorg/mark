@@ -405,7 +405,7 @@ export const createClient = (chainId: string, config: MarkConfiguration) => {
   const client = createPublicClient({
     chain: chainId as unknown as Chain,
     transport: http(providerURL, {
-      batch: true,
+      batch: false,
       fetchOptions: {
         keepalive: true,
       },
