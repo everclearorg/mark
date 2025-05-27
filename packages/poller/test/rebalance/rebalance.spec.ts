@@ -263,7 +263,7 @@ describe('rebalanceInventory', () => {
         getMarkBalancesStub.resolves(balances);
 
         // First preference (Across) returns no adapter
-        mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(undefined);
+        mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(undefined as any);
         // Second preference (Stargate) returns the mock adapter
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_B).returns(mockSpecificBridgeAdapter as any);
         mockSpecificBridgeAdapter.type.returns(MOCK_BRIDGE_TYPE_B); // Ensure type reflects the successful adapter

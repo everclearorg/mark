@@ -10,6 +10,7 @@ import { PrometheusAdapter } from '@mark/prometheus';
 import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { cleanupHttpConnections } from '@mark/core';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
@@ -29,10 +30,8 @@ export interface ProcessingContext extends MarkAdapters {
 
 async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
   try {
-    await Promise.all([
-      adapters.purchaseCache.disconnect(),
-      adapters.rebalanceCache.disconnect(),
-    ]);
+    await Promise.all([adapters.purchaseCache.disconnect(), adapters.rebalanceCache.disconnect()]);
+    cleanupHttpConnections();
   } catch (error) {
     adapters.logger.warn('Error during adapter cleanup', { error });
   }
