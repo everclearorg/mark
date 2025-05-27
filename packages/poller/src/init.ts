@@ -1,5 +1,11 @@
 import { Logger } from '@mark/logger';
-import { MarkConfiguration, loadConfiguration } from '@mark/core';
+import {
+  MarkConfiguration,
+  loadConfiguration,
+  cleanupHttpConnections,
+  logFileDescriptorUsage,
+  shouldExitForFileDescriptors,
+} from '@mark/core';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
@@ -10,7 +16,7 @@ import { PrometheusAdapter } from '@mark/prometheus';
 import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
-import { cleanupHttpConnections } from '@mark/core';
+import { cleanupViemClients } from './helpers/contracts';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
@@ -32,6 +38,7 @@ async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
   try {
     await Promise.all([adapters.purchaseCache.disconnect(), adapters.rebalanceCache.disconnect()]);
     cleanupHttpConnections();
+    cleanupViemClients();
   } catch (error) {
     adapters.logger.warn('Error during adapter cleanup', { error });
   }
@@ -83,6 +90,18 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     level: config.logLevel,
   });
 
+  // Check file descriptor usage at startup
+  logFileDescriptorUsage(logger);
+
+  // Exit early if file descriptor usage is too high
+  if (shouldExitForFileDescriptors()) {
+    logger.error('Exiting due to high file descriptor usage to prevent EMFILE errors');
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'High file descriptor usage detected' }),
+    };
+  }
+
   // TODO: sanitize sensitive vars
   logger.debug('Created config', { config });
 
@@ -106,8 +125,12 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     const invoiceResult = await pollAndProcessInvoices(context);
     logger.info('Successfully processed invoices', { requestId: context.requestId, invoiceResult });
 
+    logFileDescriptorUsage(logger);
+
     const rebalanceResult = await rebalanceInventory(context);
     logger.info('Successfully rebalanced inventory', { requestId: context.requestId, rebalanceResult });
+
+    logFileDescriptorUsage(logger);
 
     return {
       statusCode: 200,
@@ -119,6 +142,8 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
   } catch (_error: unknown) {
     const error = _error as Error;
     logger.error('Failed to poll invoices', { name: error.name, message: error.message, stack: error.stack });
+
+    logFileDescriptorUsage(logger);
 
     return {
       statusCode: 500,
