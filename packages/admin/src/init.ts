@@ -16,10 +16,7 @@ function initializeAdapters(config: AdminConfig): AdminAdapter {
 
 async function cleanupAdapters(adapters: AdminAdapter): Promise<void> {
   try {
-    await Promise.all([
-      adapters.purchaseCache.disconnect(),
-      adapters.rebalanceCache.disconnect(),
-    ]);
+    await Promise.all([adapters.purchaseCache.disconnect(), adapters.rebalanceCache.disconnect()]);
     cleanupHttpConnections();
   } catch (error) {
     console.warn('Error during adapter cleanup:', error);
