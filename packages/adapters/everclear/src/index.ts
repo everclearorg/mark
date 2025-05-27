@@ -230,7 +230,6 @@ export class EverclearAdapter {
     const url = `${this.apiUrl}/economy/${chain}/${tickerHash}`;
     try {
       const { data } = await axiosGet<EconomyDataResponse>(url);
-      this.logger.debug('Fetched economy data', { chain, tickerHash });
       return data;
     } catch (error) {
       this.logger.error('Failed to fetch economy data from API', {
