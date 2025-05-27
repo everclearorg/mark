@@ -1,4 +1,5 @@
-import { NxtpError, axiosPost, axiosGet } from '@connext/nxtp-utils';
+import { NxtpError } from '@connext/nxtp-utils';
+import { axiosPost, axiosGet } from '@mark/core';
 import { Bytes } from 'ethers';
 
 // TODO: This class might benefit from some error handling / logging and response sanitization logic.
@@ -20,25 +21,25 @@ export class Web3SignerApi {
 
   public async sign(identifier: string, data: string | Bytes): Promise<string> {
     const endpoint = Web3SignerApi.ENDPOINTS.SIGN;
-    let response = await axiosPost(this.formatUrl(endpoint, identifier), {
+    let response = await axiosPost<string>(this.formatUrl(endpoint, identifier), {
       data,
     });
     response = this.sanitizeResponse(response, endpoint);
-    return response.data;
+    return response.data as string;
   }
 
   public async getServerStatus(): Promise<string> {
     const endpoint = Web3SignerApi.ENDPOINTS.SERVER_STATUS;
-    let response = await axiosGet(this.formatUrl(endpoint));
+    let response = await axiosGet<string[]>(this.formatUrl(endpoint));
     response = this.sanitizeResponse(response, endpoint);
-    return response.data[0];
+    return (response.data as string[])[0];
   }
 
   public async getPublicKey(): Promise<string> {
     const endpoint = Web3SignerApi.ENDPOINTS.PUBLIC_KEY;
-    let response = await axiosGet(this.formatUrl(endpoint));
+    let response = await axiosGet<string[]>(this.formatUrl(endpoint));
     response = this.sanitizeResponse(response, endpoint);
-    return response.data[0];
+    return (response.data as string[])[0];
   }
 
   public async signTypedData(
@@ -57,13 +58,13 @@ export class Web3SignerApi {
       id: 1,
     };
 
-    let response = await axiosPost(this.url, payload);
+    let response = await axiosPost<{ result: string }>(this.url, payload);
 
-    if (!response || !response.data || !response.data.result) {
+    if (!response || !response.data || !(response.data as { result: string }).result) {
       throw new NxtpError('Received bad response from web3signer instance for signTypedData.', { response });
     }
 
-    return response.data.result;
+    return (response.data as { result: string }).result;
   }
 
   private formatUrl(
