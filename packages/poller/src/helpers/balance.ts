@@ -71,7 +71,7 @@ export const getMarkBalances = async (
           // Update tracker (this is async but we don't need to wait)
           prometheus.updateChainBalance(domain, tokenAddr, balance);
           return balance;
-        } catch (error) {
+        } catch {
           return 0n; // Return 0 balance on error
         }
       })();
@@ -136,7 +136,7 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
           // get custodied balance
           const custodied = await contract.read.custodiedAssets([assetHash]);
           return custodied as bigint;
-        } catch (error) {
+        } catch {
           return 0n; // Return 0 balance on error
         }
       })();
