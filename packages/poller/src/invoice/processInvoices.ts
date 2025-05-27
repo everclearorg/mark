@@ -230,7 +230,7 @@ export async function processTickerGroup(
     if (batchedGroup.origin) {
       const requiredAmount = BigInt(filteredMinAmounts[batchedGroup.origin] || '0');
       const remainingBalance = remainingBalances.get(invoice.ticker_hash)?.get(batchedGroup.origin) || BigInt('0');
-      
+
       if (remainingBalance < requiredAmount) {
         logger.info('Chosen origin has insufficient balance for current invoice, skipping', {
           requestId,
