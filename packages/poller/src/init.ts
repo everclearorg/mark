@@ -27,6 +27,17 @@ export interface ProcessingContext extends MarkAdapters {
   startTime: number;
 }
 
+async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
+  try {
+    await Promise.all([
+      adapters.purchaseCache.disconnect(),
+      adapters.rebalanceCache.disconnect(),
+    ]);
+  } catch (error) {
+    adapters.logger.warn('Error during adapter cleanup', { error });
+  }
+}
+
 function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdapters {
   // Initialize adapters in the correct order
   const web3Signer = config.web3SignerUrl.startsWith('http')
@@ -76,8 +87,10 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
   // TODO: sanitize sensitive vars
   logger.debug('Created config', { config });
 
+  let adapters: MarkAdapters | undefined;
+
   try {
-    const adapters = initializeAdapters(config, logger);
+    adapters = initializeAdapters(config, logger);
 
     logger.info('Starting invoice polling', {
       stage: config.stage,
@@ -112,5 +125,9 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       statusCode: 500,
       body: JSON.stringify({ error: 'Failed to poll invoices: ' + error.message }),
     };
+  } finally {
+    if (adapters) {
+      await cleanupAdapters(adapters);
+    }
   }
 };
