@@ -71,6 +71,24 @@ describe('Asset Helper Functions', () => {
             const result = getTickers(mockConfigs.multipleChainsConfig as any);
             expect(result).to.deep.eq(['0xabcdef', '0x123456', '0xdeadbeef', '0xcafebabe']);
         });
+
+        it('should deduplicate ticker hashes ', () => {
+            const duplicateConfig = {
+                chains: {
+                    chain1: {
+                        assets: [{ tickerHash: '0xABCDEF' }, { tickerHash: '0x123456' }],
+                    },
+                    chain2: {
+                        assets: [{ tickerHash: '0xabcdef' }, { tickerHash: '0xDEADBEEF' }], // dupe
+                    },
+                    chain3: {
+                        assets: [{ tickerHash: '0x123456' }, { tickerHash: '0xNewHash' }],
+                    },
+                },
+            };
+            const result = getTickers(duplicateConfig as any);
+            expect(result).to.deep.eq(['0xabcdef', '0x123456', '0xdeadbeef', '0xnewhash']);
+        });
     });
 
     describe('getAssetHash', () => {
