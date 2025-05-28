@@ -114,53 +114,45 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
     return new Map(); // Return empty map immediately
   }
 
-  // get hub contract
-  const contract = getHubStorageContract(config);
-
-  const custodiedPromises: Array<{
-    ticker: string;
-    domain: string;
-    promise: Promise<bigint>;
-  }> = [];
-
+  // Build list of valid ticker-domain combos to avoid unnecessary fetches
+  const tickerDomainPairs: Array<{ ticker: string; domain: string }> = [];
   for (const ticker of tickers) {
     for (const domain of Object.keys(chains)) {
-      const custodiedPromise = (async (): Promise<bigint> => {
-        try {
-          // get asset hash
-          const assetHash = getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
-          if (!assetHash) {
-            // not registered on this domain
-            return 0n;
-          }
-          // get custodied balance
-          const custodied = await contract.read.custodiedAssets([assetHash]);
-          return custodied as bigint;
-        } catch {
-          return 0n; // Return 0 balance on error
-        }
-      })();
-
-      custodiedPromises.push({
-        ticker,
-        domain,
-        promise: custodiedPromise,
-      });
+      const tokenAddr = getTokenAddressFromConfig(ticker, domain, config);
+      if (tokenAddr) {
+        tickerDomainPairs.push({ ticker, domain });
+      }
     }
   }
 
-  const results = await Promise.allSettled(custodiedPromises.map((p) => p.promise));
+  // get hub contract
+  const contract = getHubStorageContract(config);
   const custodiedBalances = new Map<string, Map<string, bigint>>();
 
-  for (let i = 0; i < custodiedPromises.length; i++) {
-    const { ticker, domain } = custodiedPromises[i];
+  const promises = tickerDomainPairs.map(async ({ ticker, domain }) => {
+    try {
+      const assetHash = getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
+      if (!assetHash) {
+        return { ticker, domain, balance: 0n };
+      }
+      const custodied = await contract.read.custodiedAssets([assetHash]);
+      return { ticker, domain, balance: custodied as bigint };
+    } catch (error: any) {
+      return { ticker, domain, balance: 0n };
+    }
+  });
+
+  const results = await Promise.allSettled(promises);
+
+  for (let i = 0; i < results.length; i++) {
     const result = results[i];
+    const { ticker, domain } = tickerDomainPairs[i];
 
     if (!custodiedBalances.has(ticker)) {
       custodiedBalances.set(ticker, new Map());
     }
 
-    const balance = result.status === 'fulfilled' ? result.value : 0n;
+    const balance = result.status === 'fulfilled' ? result.value.balance : 0n;
     custodiedBalances.get(ticker)!.set(domain, balance);
   }
 
