@@ -7,7 +7,8 @@ export const getTickers = (config: MarkConfiguration) => {
     .map((c) => c.assets)
     .map((c) => c.map((a) => a.tickerHash.toLowerCase()))
     .flat();
-  return tickers;
+  
+  return [...new Set(tickers)];
 };
 
 export const getTickerForAsset = (asset: string, chain: number, config: MarkConfiguration) => {
