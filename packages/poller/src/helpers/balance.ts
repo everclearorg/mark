@@ -137,7 +137,7 @@ export const getCustodiedBalances = async (config: MarkConfiguration): Promise<M
       }
       const custodied = await contract.read.custodiedAssets([assetHash]);
       return { ticker, domain, balance: custodied as bigint };
-    } catch (error: any) {
+    } catch {
       return { ticker, domain, balance: 0n };
     }
   });
