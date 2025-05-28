@@ -405,11 +405,14 @@ export const createClient = (chainId: string, config: MarkConfiguration) => {
   const client = createPublicClient({
     chain: chainId as unknown as Chain,
     transport: http(providerURL, {
-      batch: true,
+      batch: {
+        wait: 200,
+      },
       fetchOptions: {
         keepalive: true,
       },
     }),
+    batch: { multicall: { wait: 200 } },
   });
 
   // Cache the client for reuse

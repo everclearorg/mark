@@ -7,11 +7,16 @@ export const getTickers = (config: MarkConfiguration) => {
     .map((c) => c.assets)
     .map((c) => c.map((a) => a.tickerHash.toLowerCase()))
     .flat();
-  return tickers;
+  
+  return [...new Set(tickers)];
 };
 
 export const getTickerForAsset = (asset: string, chain: number, config: MarkConfiguration) => {
-  const assetConfig = config.chains[chain].assets.find((a) => a.address.toLowerCase() === asset.toLowerCase());
+  const chainConfig = config.chains[chain.toString()];
+  if (!chainConfig || !chainConfig.assets) {
+    return undefined;
+  }
+  const assetConfig = chainConfig.assets.find((a) => a.address.toLowerCase() === asset.toLowerCase());
   if (!assetConfig) {
     return undefined;
   }
