@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { AssetConfiguration, ChainConfiguration, RebalanceRoute } from '@mark/core';
+import { beforeEach, describe, expect, it, jest, afterEach, afterAll } from '@jest/globals';
+import { AssetConfiguration, ChainConfiguration, RebalanceRoute, cleanupHttpConnections, axiosGet } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import axios from 'axios';
 import { Transaction } from 'ethers';
 import { createPublicClient, decodeEventLog, TransactionReceipt, encodeFunctionData, zeroAddress, padHex } from 'viem';
 import { AcrossBridgeAdapter } from '../../../src/adapters/across/across';
@@ -15,9 +14,16 @@ import { ACROSS_SPOKE_ABI } from '../../../src/adapters/across/abi';
 import { getDepositFromLogs, parseFillLogs } from '../../../src/adapters/across/utils';
 
 // Mock the external dependencies
-jest.mock('axios');
 jest.mock('viem');
 jest.mock('@mark/logger');
+jest.mock('@mark/core', () => {
+    const actual = jest.requireActual('@mark/core') as any;
+    return {
+        ...actual,
+        axiosGet: jest.fn(),
+        cleanupHttpConnections: jest.fn(),
+    };
+});
 jest.mock('../../../src/adapters/across/utils', () => ({
     getDepositFromLogs: jest.fn(),
     parseFillLogs: jest.fn(),
@@ -175,7 +181,7 @@ describe('AcrossBridgeAdapter', () => {
         jest.clearAllMocks();
 
         // Reset all mock implementations
-        (axios.get as jest.Mock).mockReset();
+        (axiosGet as jest.MockedFunction<typeof axiosGet>).mockReset();
         (createPublicClient as jest.Mock).mockImplementation(() => ({
             getBalance: jest.fn<() => Promise<bigint>>(),
             readContract: jest.fn<() => Promise<unknown>>(),
@@ -193,6 +199,14 @@ describe('AcrossBridgeAdapter', () => {
 
         // Create fresh adapter instance
         adapter = new TestAcrossBridgeAdapter(mockUrl, mockChains as Record<string, ChainConfiguration>, mockLogger);
+    });
+
+    afterEach(() => {
+        cleanupHttpConnections();
+    });
+
+    afterAll(() => {
+        cleanupHttpConnections();
     });
 
     describe('constructor', () => {
@@ -223,8 +237,14 @@ describe('AcrossBridgeAdapter', () => {
                 address: mockAssets['USDC'].address,
             });
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockFeesResponse });
+            // Mock axiosGet to return the fees response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockFeesResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Execute
             const amount = '10000000'; // 10 USDC
@@ -232,7 +252,7 @@ describe('AcrossBridgeAdapter', () => {
 
             // Expected: 10 USDC - 0.1 USDC - 0.05 USDC = 9.85 USDC
             expect(result).toBe(mockFeesResponse.outputAmount.toString());
-            expect(axios.get).toHaveBeenCalledWith(`${mockUrl}/suggested-fees`, {
+            expect(axiosGet).toHaveBeenCalledWith(`${mockUrl}/suggested-fees`, {
                 params: {
                     inputToken: route.asset,
                     outputToken: mockAssets['USDC'].address,
@@ -251,8 +271,8 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockRejectedValueOnce(new Error('API error'));
+            // Mock axiosGet to reject with an error
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockRejectedValueOnce(new Error('API error'));
 
             // Execute and expect error
             await expect(adapter.getReceivedAmount('10000000', route)).rejects.toThrow(
@@ -268,8 +288,14 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: { ...mockFeesResponse, isAmountTooLow: true } });
+            // Mock axiosGet to return fees response with isAmountTooLow: true
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: { ...mockFeesResponse, isAmountTooLow: true },
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Execute and expect error
             await expect(adapter.getReceivedAmount('100', route)).rejects.toThrow(
@@ -293,8 +319,14 @@ describe('AcrossBridgeAdapter', () => {
                 address: mockAssets['USDC'].address,
             });
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockFeesResponse });
+            // Mock axiosGet to return the fees response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockFeesResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
             (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xdata');
 
             // Execute
@@ -339,8 +371,14 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: { ...mockFeesResponse, isAmountTooLow: true } });
+            // Mock axiosGet to return fees response with isAmountTooLow: true
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: { ...mockFeesResponse, isAmountTooLow: true },
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Execute and expect error
             await expect(adapter.send('0xsender', '0xrecipient', '1000', route)).rejects.toThrow(
@@ -394,8 +432,14 @@ describe('AcrossBridgeAdapter', () => {
             // Mock the extractDepositId method
             jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
+            // Mock axiosGet to return the status response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockStatusResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Mock the requiresCallback function
             jest.spyOn(adapter, 'requiresCallback').mockResolvedValue({
@@ -459,8 +503,14 @@ describe('AcrossBridgeAdapter', () => {
             // Mock the extractDepositId method
             jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
+            // Mock axiosGet to return the status response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockStatusResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Mock the requiresCallback function
             jest.spyOn(adapter, 'requiresCallback').mockResolvedValue({
@@ -520,15 +570,21 @@ describe('AcrossBridgeAdapter', () => {
             // Mock the extractDepositId method
             jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
+            // Mock axiosGet to return the status response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockStatusResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Execute
             const result = await adapter.readyOnDestination('10000000', route, mockReceipt as TransactionReceipt);
 
             // Assert
             expect(result).toBe(true);
-            expect(axios.get).toHaveBeenCalledWith(`${mockUrl}/deposit/status`, {
+            expect(axiosGet).toHaveBeenCalledWith(`${mockUrl}/deposit/status`, {
                 params: {
                     originChainId: route.origin,
                     depositId: 291,
@@ -577,8 +633,14 @@ describe('AcrossBridgeAdapter', () => {
                 transactionIndex: 1,
             };
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
+            // Mock axiosGet to return the status response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockStatusResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Execute
             const result = await adapter.readyOnDestination('10000000', route, mockReceipt as TransactionReceipt);
@@ -603,15 +665,21 @@ describe('AcrossBridgeAdapter', () => {
                 address: mockAssets['USDC'].address,
             });
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockFeesResponse });
+            // Mock axiosGet to return the fees response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockFeesResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Execute
             const result = await adapter.getSuggestedFees(route, '10000000');
 
             // Assert
             expect(result).toEqual(mockFeesResponse);
-            expect(axios.get).toHaveBeenCalledWith(`${mockUrl}/suggested-fees`, {
+            expect(axiosGet).toHaveBeenCalledWith(`${mockUrl}/suggested-fees`, {
                 params: {
                     inputToken: route.asset,
                     outputToken: mockAssets['USDC'].address,
@@ -642,15 +710,21 @@ describe('AcrossBridgeAdapter', () => {
                 depositTxHash: '0xdeposittxhash',
             };
 
-            // @ts-expect-error - ignoring axios type errors for the mock
-            (axios.get as jest.Mock).mockResolvedValueOnce({ data: mockStatusResponse });
+            // Mock axiosGet to return the status response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockStatusResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
 
             // Execute
             const result = await adapter.getDepositStatusFromApi(route, 291);
 
             // Assert
             expect(result).toEqual(mockStatusResponse);
-            expect(axios.get).toHaveBeenCalledWith(`${mockUrl}/deposit/status`, {
+            expect(axiosGet).toHaveBeenCalledWith(`${mockUrl}/deposit/status`, {
                 params: {
                     originChainId: route.origin,
                     depositId: 291,

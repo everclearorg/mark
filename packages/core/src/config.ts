@@ -173,6 +173,25 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const { routes } = await loadRebalanceRoutes();
 
+    // Filter routes to include those with assets specified in the config
+    const filteredRoutes = routes.filter((route) => {
+      const originChainConfig = hostedConfig?.chains?.[route.origin.toString()];
+      if (!originChainConfig) {
+        return false;
+      }
+
+      const assetConfig = Object.values(originChainConfig.assets ?? {}).find(
+        (asset) => asset.address.toLowerCase() === route.asset.toLowerCase()
+      );
+      
+      if (!assetConfig) {
+        return false;
+      }
+
+      const isSupported = supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
+      return isSupported;
+    });
+
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
       web3SignerUrl: configJson.web3SignerUrl ?? (await requireEnv('SIGNER_URL')),
@@ -195,7 +214,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
-      routes,
+      routes: filteredRoutes,
     };
 
     validateConfiguration(config);

@@ -9,8 +9,7 @@ import {
   PublicClient,
   padHex,
 } from 'viem';
-import axios from 'axios';
-import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
+import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute, axiosGet } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter } from '../../types';
 import { SuggestedFeesResponse, DepositStatusResponse, WETH_WITHDRAWAL_TOPIC } from './types';
@@ -418,7 +417,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       throw new Error('Could not find matching destination asset');
     }
 
-    const response = await axios.get<SuggestedFeesResponse>(`${this.url}/suggested-fees`, {
+    const response = await axiosGet<SuggestedFeesResponse>(`${this.url}/suggested-fees`, {
       params: {
         inputToken: route.asset,
         outputToken: outputToken.address,
@@ -432,7 +431,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   }
 
   protected async getDepositStatusFromApi(route: RebalanceRoute, depositId: number): Promise<DepositStatusResponse> {
-    const response = await axios.get<DepositStatusResponse>(`${this.url}/deposit/status`, {
+    const response = await axiosGet<DepositStatusResponse>(`${this.url}/deposit/status`, {
       params: {
         originChainId: route.origin,
         depositId,

@@ -1,5 +1,5 @@
 import { RebalanceCache, PurchaseCache } from '@mark/cache';
-import { ConfigurationError, fromEnv, LogLevel, requireEnv } from '@mark/core';
+import { ConfigurationError, fromEnv, LogLevel, requireEnv, cleanupHttpConnections } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { AdminConfig, AdminAdapter, AdminContext } from './types';
 import { APIGatewayProxyEvent } from 'aws-lambda';
@@ -12,6 +12,15 @@ function initializeAdapters(config: AdminConfig): AdminAdapter {
     rebalanceCache: new RebalanceCache(config.redis.host, config.redis.port),
     purchaseCache: new PurchaseCache(config.redis.host, config.redis.port),
   };
+}
+
+async function cleanupAdapters(adapters: AdminAdapter): Promise<void> {
+  try {
+    await Promise.all([adapters.purchaseCache.disconnect(), adapters.rebalanceCache.disconnect()]);
+    cleanupHttpConnections();
+  } catch (error) {
+    console.warn('Error during adapter cleanup:', error);
+  }
 }
 
 async function loadConfiguration(): Promise<AdminConfig> {
@@ -45,16 +54,20 @@ export const initAdminApi = async (event: APIGatewayProxyEvent): Promise<{ statu
 
   const adapters = initializeAdapters(config);
 
-  const context: AdminContext = {
-    ...adapters,
-    event,
-    // lambdaContext,
-    logger,
-    config,
-    requestId: bytesToHex(getRandomValues(new Uint8Array(32))),
-    startTime: Math.floor(Date.now() / 1000),
-  };
-  logger.info('Context initiatlized', { requestId: context.requestId, event, context });
+  try {
+    const context: AdminContext = {
+      ...adapters,
+      event,
+      // lambdaContext,
+      logger,
+      config,
+      requestId: bytesToHex(getRandomValues(new Uint8Array(32))),
+      startTime: Math.floor(Date.now() / 1000),
+    };
+    logger.info('Context initiatlized', { requestId: context.requestId, event, context });
 
-  return handleApiRequest(context);
+    return await handleApiRequest(context);
+  } finally {
+    await cleanupAdapters(adapters);
+  }
 };

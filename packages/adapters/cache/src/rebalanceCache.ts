@@ -179,4 +179,15 @@ export class RebalanceCache {
   public async isPaused(): Promise<boolean> {
     return (await this.store.get(this.pauseKey)) === '1';
   }
+
+  /** Disconnect from Redis to prevent file descriptor leaks */
+  public async disconnect(): Promise<void> {
+    try {
+      await this.store.disconnect();
+      console.log('RebalanceCache: Redis connection closed successfully');
+    } catch (error) {
+      console.warn('RebalanceCache: Error closing Redis connection:', error);
+      throw error;
+    }
+  }
 }
