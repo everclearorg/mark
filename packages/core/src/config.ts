@@ -378,10 +378,9 @@ export const parseChainConfigurations = async (
         permit2,
         multicall3,
       },
-      // Include zodiac fields only if they are defined
-      ...(zodiacRoleModuleAddress && { zodiacRoleModuleAddress }),
-      ...(zodiacRoleKey && { zodiacRoleKey }),
-      ...(gnosisSafeAddress && { gnosisSafeAddress }),
+      zodiacRoleModuleAddress,
+      zodiacRoleKey,
+      gnosisSafeAddress,
     };
   }
 
