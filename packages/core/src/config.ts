@@ -181,9 +181,9 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       }
 
       const assetConfig = Object.values(originChainConfig.assets ?? {}).find(
-        (asset) => asset.address.toLowerCase() === route.asset.toLowerCase()
+        (asset) => asset.address.toLowerCase() === route.asset.toLowerCase(),
       );
-      
+
       if (!assetConfig) {
         return false;
       }

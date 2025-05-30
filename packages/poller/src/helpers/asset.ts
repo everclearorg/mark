@@ -7,7 +7,7 @@ export const getTickers = (config: MarkConfiguration) => {
     .map((c) => c.assets)
     .map((c) => c.map((a) => a.tickerHash.toLowerCase()))
     .flat();
-  
+
   return [...new Set(tickers)];
 };
 

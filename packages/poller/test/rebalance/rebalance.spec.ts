@@ -14,6 +14,7 @@ import { RebalanceCache, RebalanceAction } from '@mark/cache';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { TransactionRequest as ViemTransactionRequest, zeroAddress, Hex, erc20Abi } from 'viem'; // For adapter.send return type
+import { providers } from 'ethers';
 
 
 interface MockBridgeAdapterInterface {
@@ -76,7 +77,7 @@ describe('rebalanceInventory', () => {
         });
         submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
             transactionHash: '0xBridgeTxHash',
-            receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 },
+            receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
         });
 
         const mockERC20RouteValues: RouteRebalancingConfig = {
