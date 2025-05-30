@@ -1,4 +1,54 @@
-import axios, { AxiosResponse, AxiosRequestConfig } from 'axios';
+import axios, { AxiosResponse, AxiosRequestConfig, AxiosInstance } from 'axios';
+import { Agent } from 'https';
+import { Agent as HttpAgent } from 'http';
+
+// Singleton axios instance with connection pooling
+let axiosInstance: AxiosInstance | null = null;
+
+function getAxiosInstance(): AxiosInstance {
+  if (!axiosInstance) {
+    const httpsAgent = new Agent({
+      keepAlive: true,
+      maxSockets: 100,
+      maxFreeSockets: 20,
+      timeout: 60000,
+    });
+
+    const httpAgent = new HttpAgent({
+      keepAlive: true,
+      maxSockets: 100,
+      maxFreeSockets: 20,
+      timeout: 60000,
+    });
+
+    axiosInstance = axios.create({
+      timeout: 60000,
+      httpsAgent,
+      httpAgent,
+      maxRedirects: 5,
+    });
+  }
+  return axiosInstance;
+}
+
+// Cleanup function to destroy the axios instance and close connections
+export function cleanupHttpConnections(): void {
+  if (axiosInstance) {
+    try {
+      const instance = axiosInstance;
+      if (instance.defaults.httpsAgent && typeof instance.defaults.httpsAgent.destroy === 'function') {
+        instance.defaults.httpsAgent.destroy();
+      }
+      if (instance.defaults.httpAgent && typeof instance.defaults.httpAgent.destroy === 'function') {
+        instance.defaults.httpAgent.destroy();
+      }
+      axiosInstance = null;
+      console.log('HTTP connections cleaned up successfully');
+    } catch (error) {
+      console.warn('Error cleaning up HTTP connections:', error);
+    }
+  }
+}
 
 /**
  * Creates a promise that resolves after a specified period
@@ -15,13 +65,14 @@ export const axiosPost = async <
   url: string,
   data?: TRequestData,
   config?: AxiosRequestConfig<TRequestData>,
-  numAttempts = 30,
+  numAttempts = 10,
   retryDelay = 2000,
 ): Promise<TResponse> => {
+  const instance = getAxiosInstance();
   let lastError;
   for (let i = 0; i < numAttempts; i++) {
     try {
-      const response = await axios.post<TResponseData, TResponse, TRequestData>(url, data, config);
+      const response = await instance.post<TResponseData, TResponse, TRequestData>(url, data, config);
       return response;
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
@@ -45,10 +96,11 @@ export const axiosGet = async <
   numAttempts = 5,
   retryDelay = 2000,
 ): Promise<TResponse> => {
+  const instance = getAxiosInstance();
   let lastError;
   for (let i = 0; i < numAttempts; i++) {
     try {
-      const response = await axios.get<TResponseData, TResponse>(url, config);
+      const response = await instance.get<TResponseData, TResponse>(url, config);
       return response;
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {

@@ -160,13 +160,15 @@ export function parseFillLogs(
 
   // Parse V3_5 Logs
   // Convert address filters to bytes32 format for FilledRelay event
-  const v3_5Filter = filter ? {
-    ...filter,
-    inputToken: filter.inputToken ? pad(filter.inputToken, { size: 32 }) : undefined,
-    outputToken: filter.outputToken ? pad(filter.outputToken, { size: 32 }) : undefined,
-    depositor: filter.depositor ? pad(filter.depositor, { size: 32 }) : undefined,
-    depositId: filter?.depositId ? BigInt(filter?.depositId) : undefined,
-  } : undefined;
+  const v3_5Filter = filter
+    ? {
+        ...filter,
+        inputToken: filter.inputToken ? pad(filter.inputToken, { size: 32 }) : undefined,
+        outputToken: filter.outputToken ? pad(filter.outputToken, { size: 32 }) : undefined,
+        depositor: filter.depositor ? pad(filter.depositor, { size: 32 }) : undefined,
+        depositId: filter?.depositId ? BigInt(filter?.depositId) : undefined,
+      }
+    : undefined;
 
   const parsedV3_5Logs = parseEventLogs({
     abi: ACROSS_SPOKE_ABI,
