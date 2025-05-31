@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, jest, afterEach, afterAll } from '@je
 import { AssetConfiguration, ChainConfiguration, RebalanceRoute, cleanupHttpConnections, axiosGet } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { Transaction } from 'ethers';
-import { createPublicClient, decodeEventLog, padHex, TransactionReceipt, encodeFunctionData, zeroAddress } from 'viem';
+import { createPublicClient, decodeEventLog, TransactionReceipt, encodeFunctionData, zeroAddress, padHex } from 'viem';
 import { AcrossBridgeAdapter } from '../../../src/adapters/across/across';
 import {
     DepositStatusResponse,
@@ -313,6 +313,12 @@ describe('AcrossBridgeAdapter', () => {
                 destination: 10,
             };
 
+            // Mock the findMatchingDestinationAsset method to return the destination asset
+            jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
+                ...mockAssets['USDC'],
+                address: mockAssets['USDC'].address,
+            });
+
             // Mock axiosGet to return the fees response
             (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
                 data: mockFeesResponse,
@@ -325,7 +331,9 @@ describe('AcrossBridgeAdapter', () => {
 
             // Execute
             const amount = '10000000'; // 10 USDC
-            const result = await adapter.send('0xsender', '0xrecipient', amount, route);
+            const senderAddress = '0x' + 'sender'.padStart(40, '0');
+            const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
+            const result = await adapter.send(senderAddress, recipientAddress, amount, route);
 
             // Assert
             expect(result).toEqual({
@@ -337,20 +345,20 @@ describe('AcrossBridgeAdapter', () => {
             // Verify encodeFunctionData was called with correct args
             expect(encodeFunctionData).toHaveBeenCalledWith({
                 abi: ACROSS_SPOKE_ABI,
-                functionName: 'deposit',
+                functionName: 'depositV3',
                 args: [
-                    padHex('0xsender', { size: 32 }),
-                    padHex('0xrecipient', { size: 32 }),
-                    padHex(mockAssets['USDC'].address as `0x${string}`, { size: 32 }),
-                    padHex(mockAssets['USDC'].address as `0x${string}`, { size: 32 }),
-                    BigInt(amount),
-                    mockFeesResponse.outputAmount,
-                    BigInt(route.destination),
-                    padHex(mockFeesResponse.exclusiveRelayer, { size: 32 }),
-                    mockFeesResponse.timestamp,
-                    mockFeesResponse.fillDeadline,
-                    mockFeesResponse.exclusivityDeadline,
-                    '',
+                    senderAddress, // depositor
+                    recipientAddress, // recipient
+                    mockAssets['USDC'].address, // inputToken
+                    mockAssets['USDC'].address, // outputToken
+                    BigInt(amount), // inputAmount
+                    mockFeesResponse.outputAmount, // outputAmount
+                    BigInt(route.destination), // destinationChainId
+                    zeroAddress, // exclusiveRelayer - must be zeroAddress per Zodiac permissions
+                    mockFeesResponse.timestamp, // quoteTimestamp
+                    mockFeesResponse.fillDeadline, // fillDeadline
+                    BigInt(0), // exclusivityDeadline - must be 0 per Zodiac permissions  
+                    '0x', // message - must be "0x" per Zodiac permissions
                 ],
             });
         });

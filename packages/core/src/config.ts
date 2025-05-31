@@ -181,9 +181,9 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       }
 
       const assetConfig = Object.values(originChainConfig.assets ?? {}).find(
-        (asset) => asset.address.toLowerCase() === route.asset.toLowerCase()
+        (asset) => asset.address.toLowerCase() === route.asset.toLowerCase(),
       );
-      
+
       if (!assetConfig) {
         return false;
       }
@@ -355,6 +355,19 @@ export const parseChainConfigurations = async (
       UTILITY_CONTRACTS_OVERRIDE[chainId]?.multicall3 ||
       UTILITY_CONTRACTS_DEFAULT.multicall3;
 
+    // Parse Zodiac configuration for this chain
+    const zodiacRoleModuleAddress =
+      configJson?.chains?.[chainId]?.zodiacRoleModuleAddress ??
+      (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_MODULE_ADDRESS`));
+
+    const zodiacRoleKey =
+      configJson?.chains?.[chainId]?.zodiacRoleKey ??
+      (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_KEY`));
+
+    const gnosisSafeAddress =
+      configJson?.chains?.[chainId]?.gnosisSafeAddress ??
+      (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
+
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
@@ -365,6 +378,9 @@ export const parseChainConfigurations = async (
         permit2,
         multicall3,
       },
+      zodiacRoleModuleAddress,
+      zodiacRoleKey,
+      gnosisSafeAddress,
     };
   }
 

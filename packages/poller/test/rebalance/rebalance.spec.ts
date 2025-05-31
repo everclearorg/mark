@@ -4,6 +4,8 @@ import { rebalanceInventory } from '../../src/rebalance/rebalance';
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as contractHelpers from '../../src/helpers/contracts';
 import * as callbacks from '../../src/rebalance/callbacks'; // To mock executeDestinationCallbacks
+import * as erc20Helper from '../../src/helpers/erc20';
+import * as transactionHelper from '../../src/helpers/transactions';
 import { MarkConfiguration, SupportedBridge, RebalanceRoute, RouteRebalancingConfig } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
@@ -11,8 +13,8 @@ import { ProcessingContext } from '../../src/init';
 import { RebalanceCache, RebalanceAction } from '@mark/cache';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { providers } from 'ethers'; // For TransactionRequest type used by submitAndMonitor
 import { TransactionRequest as ViemTransactionRequest, zeroAddress, Hex, erc20Abi } from 'viem'; // For adapter.send return type
+import { providers } from 'ethers';
 
 
 interface MockBridgeAdapterInterface {
@@ -35,6 +37,8 @@ describe('rebalanceInventory', () => {
     let executeDestinationCallbacksStub: SinonStub;
     let getMarkBalancesStub: SinonStub;
     let getERC20ContractStub: SinonStub;
+    let checkAndApproveERC20Stub: SinonStub;
+    let submitTransactionWithLoggingStub: SinonStub;
 
     const MOCK_REQUEST_ID = 'rebalance-request-id';
     const MOCK_OWN_ADDRESS = '0xOwnerAddress' as `0x${string}`;
@@ -66,6 +70,15 @@ describe('rebalanceInventory', () => {
         executeDestinationCallbacksStub = stub(callbacks, 'executeDestinationCallbacks').resolves();
         getMarkBalancesStub = stub(balanceHelpers, 'getMarkBalances').resolves(new Map());
         getERC20ContractStub = stub(contractHelpers, 'getERC20Contract');
+        checkAndApproveERC20Stub = stub(erc20Helper, 'checkAndApproveERC20').resolves({
+            wasRequired: true,
+            transactionHash: '0xApprovalTxHash',
+            hadZeroApproval: false,
+        });
+        submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
+            transactionHash: '0xBridgeTxHash',
+            receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
+        });
 
         const mockERC20RouteValues: RouteRebalancingConfig = {
             origin: 1,
@@ -146,6 +159,8 @@ describe('rebalanceInventory', () => {
     afterEach(() => {
         // Restore all sinon replaced/stubbed methods globally
         restore();
+        checkAndApproveERC20Stub?.reset();
+        submitTransactionWithLoggingStub?.reset();
     });
 
     it('should execute callbacks first', async () => {
@@ -193,18 +208,6 @@ describe('rebalanceInventory', () => {
             data: '0xbridgeData' as Hex,
             value: 0n,
         };
-        const mockApprovalTxRequest: providers.TransactionRequest = {
-            to: MOCK_ASSET_ERC20,
-            data: MOCK_APPROVE_DATA,
-            value: '0',
-        };
-        const mockBridgeTxSubmit: providers.TransactionRequest = {
-            to: MOCK_BRIDGE_A_SPENDER,
-            data: '0xbridgeData',
-            value: '0',
-        };
-        const approvalReceipt = { transactionHash: '0xApprovalTxHash', blockNumber: 120, status: 1 };
-        const bridgeReceipt = { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 };
 
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockSpecificBridgeAdapter as any);
 
@@ -212,34 +215,25 @@ describe('rebalanceInventory', () => {
         mockSpecificBridgeAdapter.getReceivedAmount.resolves(quoteAmount);
         mockSpecificBridgeAdapter.send.withArgs(MOCK_OWN_ADDRESS, MOCK_OWN_ADDRESS, currentBalance.toString(), match({ ...routeToTest, preferences: [SupportedBridge.Across] })).resolves(mockTxRequest);
 
-        const mockContractInstance = {
-            read: {
-                allowance: stub().resolves(0n)
-            },
-            abi: erc20Abi,
-            address: MOCK_ASSET_ERC20
-        };
-        getERC20ContractStub.withArgs(match.any, routeToTest.origin.toString(), routeToTest.asset as `0x${string}`).resolves(mockContractInstance);
-
-        mockChainService.submitAndMonitor
-            .withArgs(routeToTest.origin.toString(), match(mockApprovalTxRequest))
-            .resolves(approvalReceipt as any)
-            .withArgs(routeToTest.origin.toString(), match(mockBridgeTxSubmit))
-            .resolves(bridgeReceipt as any);
-
         await rebalanceInventory({ ...mockContext, config: { ...mockContext.config, routes: [{ ...routeToTest, preferences: [SupportedBridge.Across] }] } });
 
         expect(getMarkBalancesStub.calledOnce).to.be.true;
         expect(mockRebalanceAdapter.getAdapter.calledWith(MOCK_BRIDGE_TYPE_A)).to.be.true;
         expect(mockSpecificBridgeAdapter.getReceivedAmount.calledOnce).to.be.true;
         expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-        expect(getERC20ContractStub.calledOnce).to.be.true;
-        expect(mockContractInstance.read.allowance.calledOnceWith([MOCK_OWN_ADDRESS, MOCK_BRIDGE_A_SPENDER])).to.be.true;
-        expect(mockChainService.submitAndMonitor.firstCall.args[1].to).to.be.eq(MOCK_ASSET_ERC20)
-        expect(mockChainService.submitAndMonitor.firstCall.args[1].data).to.include(MOCK_APPROVE_DATA);
-        expect(mockLogger.info.calledWith(match(/Successfully submitted and confirmed ERC20 approval/))).to.be.true;
-        expect(mockChainService.submitAndMonitor.secondCall.args[1]).to.deep.include({ to: MOCK_BRIDGE_A_SPENDER });
-        expect(mockLogger.info.calledWith(match(/Successfully submitted and confirmed origin bridge transaction/))).to.be.true;
+        
+        // Check that ERC20 approval helper was called
+        expect(checkAndApproveERC20Stub.calledOnce).to.be.true;
+        const approvalCall = checkAndApproveERC20Stub.firstCall.args[0];
+        expect(approvalCall.tokenAddress).to.equal(routeToTest.asset);
+        expect(approvalCall.spenderAddress).to.equal(MOCK_BRIDGE_A_SPENDER);
+        expect(approvalCall.amount).to.equal(currentBalance);
+        
+        // Check that transaction submission helper was called
+        expect(submitTransactionWithLoggingStub.calledOnce).to.be.true;
+        const txCall = submitTransactionWithLoggingStub.firstCall.args[0];
+        expect(txCall.txRequest.to).to.equal(MOCK_BRIDGE_A_SPENDER);
+        expect(txCall.txRequest.data).to.equal('0xbridgeData');
 
         const expectedAction: Partial<RebalanceAction> = {
             bridge: MOCK_BRIDGE_TYPE_A,
@@ -247,12 +241,11 @@ describe('rebalanceInventory', () => {
             origin: routeToTest.origin,
             destination: routeToTest.destination,
             asset: routeToTest.asset,
-            transaction: '0xMockTxHash',
+            transaction: '0xBridgeTxHash',
         };
         expect(mockRebalanceCache.addRebalances.firstCall.args[0]).to.be.deep.eq([expectedAction]);
         expect(mockLogger.info.calledWith(match(/Successfully added rebalance action to cache/))).to.be.true;
         expect(mockLogger.info.calledWith(match(/Rebalance successful for route/))).to.be.true;
-        expect(getERC20ContractStub.calledOnce).to.be.true;
     });
 
     it('should try the next bridge preference if adapter is not found', async () => {
@@ -379,25 +372,18 @@ describe('rebalanceInventory', () => {
             data: '0xbridgeData' as Hex,
             value: 0n,
         };
-        const bridgeReceipt = { transactionHash: '0xBridgeTxHashSufficient', blockNumber: 130, status: 1 };
 
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockSpecificBridgeAdapter as any);
         mockSpecificBridgeAdapter.type.returns(MOCK_BRIDGE_TYPE_A);
         mockSpecificBridgeAdapter.getReceivedAmount.resolves(quoteAmount);
         mockSpecificBridgeAdapter.send.withArgs(MOCK_OWN_ADDRESS, MOCK_OWN_ADDRESS, currentBalance.toString(), match.object).resolves(mockTxRequest);
 
-        const mockContractInstance = {
-            read: {
-                allowance: stub().resolves(currentBalance + 100n) // Allowance is greater than currentBalance
-            },
-            abi: erc20Abi,
-            address: MOCK_ASSET_ERC20
-        };
-        getERC20ContractStub.withArgs(match.any, routeToTest.origin.toString(), routeToTest.asset as `0x${string}`).resolves(mockContractInstance);
-
-        mockChainService.submitAndMonitor
-            .withArgs(routeToTest.origin.toString(), match({ to: MOCK_BRIDGE_A_SPENDER, data: '0xbridgeData' }))
-            .resolves(bridgeReceipt as any);
+        // Configure approval helper to return that no approval was needed
+        checkAndApproveERC20Stub.resolves({
+            wasRequired: false,
+            transactionHash: null,
+            hadZeroApproval: false,
+        });
 
         await rebalanceInventory({ ...mockContext, config: { ...mockContext.config, routes: [{ ...routeToTest, preferences: [MOCK_BRIDGE_TYPE_A] }] } });
 
@@ -405,13 +391,16 @@ describe('rebalanceInventory', () => {
         expect(mockRebalanceAdapter.getAdapter.calledWith(MOCK_BRIDGE_TYPE_A)).to.be.true;
         expect(mockSpecificBridgeAdapter.getReceivedAmount.calledOnce).to.be.true;
         expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-        expect(getERC20ContractStub.calledOnce).to.be.true;
-        expect(mockContractInstance.read.allowance.calledOnceWith([MOCK_OWN_ADDRESS, MOCK_BRIDGE_A_SPENDER])).to.be.true;
-        // Crucially, submitAndMonitor should only be called ONCE for the bridge tx, not for approval
-        expect(mockChainService.submitAndMonitor.calledOnce).to.be.true;
-        expect(mockChainService.submitAndMonitor.firstCall.args[1].to).to.deep.equal(MOCK_BRIDGE_A_SPENDER);
-        expect(mockLogger.info.calledWith(match(/Sufficient allowance already exists for token/))).to.be.true;
-        expect(mockLogger.info.calledWith(match(/Successfully submitted and confirmed origin bridge transaction/))).to.be.true;
+        
+        // Check that ERC20 approval helper was called (even though no approval was needed)
+        expect(checkAndApproveERC20Stub.calledOnce).to.be.true;
+        
+        // Check that transaction submission helper was called for the bridge transaction
+        expect(submitTransactionWithLoggingStub.calledOnce).to.be.true;
+        const txCall = submitTransactionWithLoggingStub.firstCall.args[0];
+        expect(txCall.txRequest.to).to.equal(MOCK_BRIDGE_A_SPENDER);
+        expect(txCall.txRequest.data).to.equal('0xbridgeData');
+        
         expect(mockRebalanceCache.addRebalances.calledOnce).to.be.true;
     });
 
