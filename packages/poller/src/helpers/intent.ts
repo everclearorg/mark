@@ -249,7 +249,7 @@ export const sendIntents = async (
         });
       }
 
-      logger.info('Sending USDT zero-out transaction.', {
+      logger.info('Sending approval transaction.', {
         invoiceId,
         requestId,
         spender: spenderForAllowance,
