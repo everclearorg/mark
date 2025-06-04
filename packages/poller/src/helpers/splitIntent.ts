@@ -3,6 +3,7 @@ import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 import { ProcessingContext } from '../init';
+import { getValidatedZodiacConfig } from './zodiac';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -245,10 +246,15 @@ export async function calculateSplitIntents(
   for (const { domain, amount } of bestAllocation.allocations) {
     if (amount <= BigInt(0)) continue;
 
+    // Get Zodiac configuration for the destination chain to determine correct 'to' address
+    const destinationChainConfig = config.chains[domain];
+    const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
+    const toAddress = destinationZodiacConfig.isEnabled ? destinationZodiacConfig.safeAddress! : config.ownAddress;
+
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
       destinations: [domain], // Use only the specific target domain for this allocation
-      to: config.ownAddress,
+      to: toAddress,
       inputAsset,
       amount: convertHubAmountToLocalDecimals(amount, inputAsset, bestAllocation.origin, config).toString(),
       callData: '0x',
@@ -272,10 +278,15 @@ export async function calculateSplitIntents(
 
         if (amountForThisSplit <= BigInt(0)) continue;
 
+        // Get Zodiac configuration for the destination chain to determine correct 'to' address
+        const destinationChainConfig = config.chains[targetDomain];
+        const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
+        const toAddress = destinationZodiacConfig.isEnabled ? destinationZodiacConfig.safeAddress! : config.ownAddress;
+
         const params: NewIntentParams = {
           origin: bestAllocation.origin,
           destinations: [targetDomain], // Use only the target domain
-          to: config.ownAddress,
+          to: toAddress,
           inputAsset,
           amount: convertHubAmountToLocalDecimals(
             amountForThisSplit,
