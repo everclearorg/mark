@@ -76,7 +76,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       });
       continue;
     }
-    const tickerBalances = balances.get(ticker);
+    const tickerBalances = balances.get(ticker.toLowerCase());
     if (!tickerBalances) {
       logger.warn('No balances found for ticker, skipping route', { requestId, route, ticker });
       continue; // Skip to next route
