@@ -1716,4 +1716,268 @@ describe('Split Intent Helper Functions', () => {
       expect(result.intents[1].amount).to.equal('50000000000000000000'); // allocated to Base
     });
   });
+
+  describe('Zodiac Address Validation', () => {
+    const mockZodiacConfig = {
+      zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+      zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+      gnosisSafeAddress: '0x9876543210987654321098765432109876543210'
+    };
+
+    const mockEOAConfig = {
+      zodiacRoleModuleAddress: undefined,
+      zodiacRoleKey: undefined,
+      gnosisSafeAddress: undefined
+    };
+
+    beforeEach(() => {
+      // Reset the config before each test
+      mockContext.config = {
+        ...mockConfig,
+        ownAddress: '0x1111111111111111111111111111111111111111',
+        supportedSettlementDomains: [1, 42161],
+        supportedAssets: ['WETH'],
+        chains: {
+          '1': {
+            ...mockConfig.chains['1'],
+            assets: [{
+              tickerHash: 'WETH',
+              address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+              decimals: 18,
+              symbol: 'WETH',
+              isNative: false,
+              balanceThreshold: '0',
+            }],
+            ...mockEOAConfig // Ethereum uses EOA
+          },
+          '42161': {
+            assets: [{
+              tickerHash: 'WETH',
+              address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+              decimals: 18,
+              symbol: 'WETH',
+              isNative: false,
+              balanceThreshold: '0',
+            }],
+            providers: ['provider1'],
+            invoiceAge: 0,
+            gasThreshold: '0',
+            deployments: {
+              everclear: '0x1234567890123456789012345678901234567890',
+              permit2: '0x1234567890123456789012345678901234567890',
+              multicall3: '0x1234567890123456789012345678901234567890'
+            },
+            ...mockZodiacConfig // Arbitrum uses Zodiac
+          }
+        }
+      };
+    });
+
+    it('should use destination chain Zodiac config for intent.to address when destination has Zodiac', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-destination-zodiac',
+        origin: '1', // Ethereum (has no Zodiac) - the origin from the original invoice
+        destinations: ['42161'], // Arbitrum destination (has Zodiac)
+        amount: '50000000000000000000', // 50 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '50000000000000000000', // 50 WETH needed from Ethereum as origin
+      };
+
+      // Origin (Ethereum) has balance
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('50000000000000000000')], // 50 WETH on Ethereum 
+          ['42161', BigInt('0')],
+        ])],
+      ]);
+
+      // Destination (Arbitrum) has custodied balance  
+      const custodiedBalances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('0')],
+          ['42161', BigInt('50000000000000000000')], // 50 WETH custodied on Arbitrum
+        ])],
+      ]);
+
+      const result = await calculateSplitIntents(
+        mockContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      expect(result.intents.length).to.equal(1);
+      const intent = result.intents[0];
+      
+      // Intent.to should use destination chain (42161) Zodiac config = Safe address
+      expect(intent.to).to.equal('0x9876543210987654321098765432109876543210'); // Safe address from destination chain config
+    });
+
+    it('should use destination chain EOA config for intent.to address when destination has no Zodiac', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-destination-eoa',
+        origin: '42161', // Arbitrum (has Zodiac) - original invoice origin
+        destinations: ['1'], // Ethereum destination (no Zodiac)
+        amount: '50000000000000000000', // 50 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '42161': '50000000000000000000', // 50 WETH needed from Arbitrum as origin
+      };
+
+      // Origin (Arbitrum) has balance
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('0')],
+          ['42161', BigInt('50000000000000000000')], // 50 WETH on Arbitrum
+        ])],
+      ]);
+
+      // Destination (Ethereum) has custodied balance
+      const custodiedBalances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('50000000000000000000')], // 50 WETH custodied on Ethereum
+          ['42161', BigInt('0')],
+        ])],
+      ]);
+
+      const result = await calculateSplitIntents(
+        mockContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      expect(result.intents.length).to.equal(1);
+      const intent = result.intents[0];
+      
+      // Intent.to should use destination chain (1) EOA config = own address
+      expect(intent.to).to.equal('0x1111111111111111111111111111111111111111'); // EOA address from config
+    });
+
+    it('should handle mixed configurations correctly', async () => {
+      // Add Optimism chain with different config for mixed test
+      mockContext.config.chains['10'] = {
+        ...mockConfig.chains['10'],
+        assets: [{
+          tickerHash: 'WETH',
+          address: '0x4200000000000000000000000000000000000006',
+          decimals: 18,
+          symbol: 'WETH',
+          isNative: false,
+          balanceThreshold: '0',
+        }],
+        ...mockEOAConfig // Optimism uses EOA
+      };
+      mockContext.config.supportedSettlementDomains = [1, 10, 42161];
+
+      const invoice = {
+        intent_id: '0xinvoice-mixed-config',
+        origin: '42161', // Arbitrum (has Zodiac) - original invoice origin
+        destinations: ['1', '10'], // Ethereum (EOA) and Optimism (EOA)
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '42161': '100000000000000000000', // 100 WETH needed from Arbitrum as origin
+      };
+
+      // Origin (Arbitrum) has balance
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('0')],
+          ['10', BigInt('0')],
+          ['42161', BigInt('100000000000000000000')], // 100 WETH on Arbitrum
+        ])],
+      ]);
+
+      // Both destinations have custodied balance
+      const custodiedBalances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('50000000000000000000')], // 50 WETH custodied on Ethereum
+          ['10', BigInt('50000000000000000000')], // 50 WETH custodied on Optimism
+          ['42161', BigInt('0')],
+        ])],
+      ]);
+
+      const result = await calculateSplitIntents(
+        mockContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      expect(result.intents.length).to.equal(2);
+      
+      // Both intents should use EOA address since both destinations don't have Zodiac
+      result.intents.forEach(intent => {
+        expect(intent.to).to.equal('0x1111111111111111111111111111111111111111'); // EOA address for both destinations
+      });
+    });
+
+    it('should handle remainder intents correctly with destination chain config', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-remainder-zodiac',
+        origin: '1', // Ethereum (no Zodiac) - original invoice origin
+        destinations: ['42161'], // Arbitrum destination (has Zodiac)
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '100000000000000000000', // 100 WETH needed from Ethereum as origin
+      };
+
+      // Origin (Ethereum) has sufficient balance
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')], // 100 WETH on Ethereum
+          ['42161', BigInt('0')],
+        ])],
+      ]);
+
+      // Destination has partial custodied balance (not enough to cover full amount)
+      const custodiedBalances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('0')],
+          ['42161', BigInt('30000000000000000000')], // Only 30 WETH custodied on Arbitrum
+        ])],
+      ]);
+
+      const result = await calculateSplitIntents(
+        mockContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      expect(result.intents.length).to.equal(2);
+      
+      // Both intents should use destination chain (42161) Zodiac config = Safe address
+      result.intents.forEach(intent => {
+        expect(intent.to).to.equal('0x9876543210987654321098765432109876543210'); // Safe address from destination chain config
+      });
+      
+      // Total amount should match the required amount  
+      const totalAmount = result.intents.reduce((sum, intent) => sum + BigInt(intent.amount), BigInt(0));
+      expect(totalAmount.toString()).to.equal('100000000000000000000'); // Full 100 WETH
+    });
+  });
 });
