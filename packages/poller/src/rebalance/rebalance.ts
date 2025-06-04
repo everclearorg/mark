@@ -37,17 +37,33 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
     // add the rebalance action to the cache with the origin transaction hash
     logger.info('Processing route', { requestId, route });
 
-    // Check for Zodiac configuration
-    const chainConfig = config.chains[route.origin];
-    const zodiacConfig = getValidatedZodiacConfig(chainConfig, logger, { requestId, route });
+    // Check for Zodiac configuration on origin chain (for sender)
+    const originChainConfig = config.chains[route.origin];
+    const originZodiacConfig = getValidatedZodiacConfig(originChainConfig, logger, { requestId, route });
 
-    if (zodiacConfig.isEnabled) {
-      logger.info('Using Zodiac configuration for rebalance route', {
+    // Check for Zodiac configuration on destination chain (for recipient)
+    const destinationChainConfig = config.chains[route.destination];
+    const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, { requestId });
+
+    if (originZodiacConfig.isEnabled) {
+      logger.info('Using Zodiac configuration for rebalance route origin chain', {
         requestId,
         route,
-        zodiacRoleModuleAddress: zodiacConfig.moduleAddress,
-        zodiacRoleKey: zodiacConfig.roleKey,
-        gnosisSafeAddress: zodiacConfig.safeAddress,
+        originChain: route.origin,
+        zodiacRoleModuleAddress: originZodiacConfig.moduleAddress,
+        zodiacRoleKey: originZodiacConfig.roleKey,
+        gnosisSafeAddress: originZodiacConfig.safeAddress,
+      });
+    }
+
+    if (destinationZodiacConfig.isEnabled) {
+      logger.info('Using Zodiac configuration for rebalance route destination chain', {
+        requestId,
+        route,
+        destinationChain: route.destination,
+        zodiacRoleModuleAddress: destinationZodiacConfig.moduleAddress,
+        zodiacRoleKey: destinationZodiacConfig.roleKey,
+        gnosisSafeAddress: destinationZodiacConfig.safeAddress,
       });
     }
 
@@ -60,7 +76,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       });
       continue;
     }
-    const tickerBalances = balances.get(ticker);
+    const tickerBalances = balances.get(ticker.toLowerCase());
     if (!tickerBalances) {
       logger.warn('No balances found for ticker, skipping route', { requestId, route, ticker });
       continue; // Skip to next route
@@ -144,16 +160,19 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       // Step 3: Get Bridge Transaction Request (before approval)
       let bridgeTxRequest;
       try {
-        const actualOwner = getActualOwner(zodiacConfig, config.ownAddress);
-        bridgeTxRequest = await adapter.send(actualOwner, actualOwner, currentBalance.toString(), route);
-        logger.info('Prepared bridge transaction request from adapter', {
-          requestId,
-          route,
-          bridgeType,
-          bridgeTxRequest,
-          actualOwner,
-          useZodiac: zodiacConfig.isEnabled,
-        });
+        const sender = getActualOwner(originZodiacConfig, config.ownAddress);
+        const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
+        bridgeTxRequest = await adapter.send(sender, recipient, currentBalance.toString(), route);
+                  logger.info('Prepared bridge transaction request from adapter', {
+            requestId,
+            route,
+            bridgeType,
+            bridgeTxRequest,
+            sender,
+            recipient,
+            useOriginZodiac: originZodiacConfig.isEnabled,
+            useDestinationZodiac: destinationZodiacConfig.isEnabled,
+          });
         if (!bridgeTxRequest.to) {
           throw new Error(`Failed to populate 'to' in bridge transaction request`);
         }
@@ -181,8 +200,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             tokenAddress: route.asset,
             spenderAddress,
             amount: currentBalance,
-            owner: getActualOwner(zodiacConfig, config.ownAddress),
-            zodiacConfig,
+            owner: getActualOwner(originZodiacConfig, config.ownAddress),
+            zodiacConfig: originZodiacConfig,
             context: { requestId, route, bridgeType },
           });
 
@@ -222,7 +241,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             value: bridgeTxRequest.value || 0,
             from: config.ownAddress,
           },
-          zodiacConfig,
+          zodiacConfig: originZodiacConfig,
           context: { requestId, route, bridgeType, transactionType: 'bridge' },
         });
 
@@ -231,7 +250,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           route,
           bridgeType,
           transactionHash: result.transactionHash,
-          useZodiac: zodiacConfig.isEnabled,
+          useZodiac: originZodiacConfig.isEnabled,
         });
 
         // Step 6: Add rebalance action to cache
