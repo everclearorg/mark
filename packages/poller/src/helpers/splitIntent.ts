@@ -3,6 +3,7 @@ import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 import { ProcessingContext } from '../init';
+import { getValidatedZodiacConfig } from './zodiac';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -241,6 +242,11 @@ export async function calculateSplitIntents(
     throw new Error('No input asset found');
   }
 
+  // Get Zodiac configuration for the origin chain to determine correct 'to' address
+  const originChainConfig = config.chains[bestAllocation.origin];
+  const zodiacConfig = getValidatedZodiacConfig(originChainConfig);
+  const toAddress = zodiacConfig.isEnabled ? zodiacConfig.safeAddress! : config.ownAddress;
+
   // Create intents for the targeted allocations
   for (const { domain, amount } of bestAllocation.allocations) {
     if (amount <= BigInt(0)) continue;
@@ -248,7 +254,7 @@ export async function calculateSplitIntents(
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
       destinations: [domain], // Use only the specific target domain for this allocation
-      to: config.ownAddress,
+      to: toAddress,
       inputAsset,
       amount: convertHubAmountToLocalDecimals(amount, inputAsset, bestAllocation.origin, config).toString(),
       callData: '0x',
@@ -275,7 +281,7 @@ export async function calculateSplitIntents(
         const params: NewIntentParams = {
           origin: bestAllocation.origin,
           destinations: [targetDomain], // Use only the target domain
-          to: config.ownAddress,
+          to: toAddress,
           inputAsset,
           amount: convertHubAmountToLocalDecimals(
             amountForThisSplit,
