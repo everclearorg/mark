@@ -242,14 +242,14 @@ export async function calculateSplitIntents(
     throw new Error('No input asset found');
   }
 
-  // Get Zodiac configuration for the origin chain to determine correct 'to' address
-  const originChainConfig = config.chains[bestAllocation.origin];
-  const zodiacConfig = getValidatedZodiacConfig(originChainConfig);
-  const toAddress = zodiacConfig.isEnabled ? zodiacConfig.safeAddress! : config.ownAddress;
-
   // Create intents for the targeted allocations
   for (const { domain, amount } of bestAllocation.allocations) {
     if (amount <= BigInt(0)) continue;
+
+    // Get Zodiac configuration for the destination chain to determine correct 'to' address
+    const destinationChainConfig = config.chains[domain];
+    const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
+    const toAddress = destinationZodiacConfig.isEnabled ? destinationZodiacConfig.safeAddress! : config.ownAddress;
 
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
@@ -277,6 +277,11 @@ export async function calculateSplitIntents(
         const amountForThisSplit = i === validTopNDomains.length - 1 ? splitAmount + dust : splitAmount; // Add dust to the last one
 
         if (amountForThisSplit <= BigInt(0)) continue;
+
+        // Get Zodiac configuration for the destination chain to determine correct 'to' address
+        const destinationChainConfig = config.chains[targetDomain];
+        const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
+        const toAddress = destinationZodiacConfig.isEnabled ? destinationZodiacConfig.safeAddress! : config.ownAddress;
 
         const params: NewIntentParams = {
           origin: bestAllocation.origin,
