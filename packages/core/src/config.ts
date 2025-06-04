@@ -156,7 +156,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         origin: 42161,
         destination: 1,
         asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-        maximum: '10000000000000000000',
+        maximum: '1000000000000000000',
         slippage: 50,
         preferences: [SupportedBridge.Across],
       },
