@@ -273,11 +273,38 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       {
         origin: 57073,
         destination: 1,
-        asset: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
-        maximum: '7000000000000000000',
-        slippage: 20,
+        asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
+        maximum: '20000000000000000000000',
+        slippage: 30,
         preferences: [SupportedBridge.Across],
       },
+      // zksync    ethereum    USDC    10000000000000000000000 30
+      {
+        origin: 324,
+        destination: 1,
+        asset: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4',
+        maximum: '10000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Across],
+      },
+      // // arbitrum ethereum WETH    10000000000000000000 50
+      // {
+      //   origin: 42161,
+      //   destination: 1,
+      //   asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+      //   maximum: '100000000000000000',
+      //   slippage: 50,
+      //   preferences: [SupportedBridge.Across],
+      // },
+      // // arbitrum ethereum USDC    20000000000000000000000 30
+      // {
+      //   origin: 42161,
+      //   destination: 1,
+      //   asset: '0xA0b86a33E6441d75dcb7b133b09d3Bb9b5b5Ec2F',
+      //   maximum: '20000000000000000000000',
+      //   slippage: 30,
+      //   preferences: [SupportedBridge.Across],
+      // },
     ],
   };
 };
