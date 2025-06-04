@@ -151,6 +151,24 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
+      // arbitrum ethereum WETH    10000000000000000000 50
+      {
+        origin: 42161,
+        destination: 1,
+        asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+        maximum: '100000000000000000',
+        slippage: 50,
+        preferences: [SupportedBridge.Across],
+      },
+      // arbitrum ethereum USDC    20000000000000000000000 30
+      {
+        origin: 42161,
+        destination: 1,
+        asset: '0xA0b86a33E6441d75dcb7b133b09d3Bb9b5b5Ec2F',
+        maximum: '20000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Across],
+      },
     ],
   };
 };
@@ -172,6 +190,25 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
 
     const { routes } = await loadRebalanceRoutes();
+
+    // Filter routes to include those with assets specified in the config
+    const filteredRoutes = routes.filter((route) => {
+      const originChainConfig = hostedConfig?.chains?.[route.origin.toString()];
+      if (!originChainConfig) {
+        return false;
+      }
+
+      const assetConfig = Object.values(originChainConfig.assets ?? {}).find(
+        (asset) => asset.address.toLowerCase() === route.asset.toLowerCase(),
+      );
+
+      if (!assetConfig) {
+        return false;
+      }
+
+      const isSupported = supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
+      return isSupported;
+    });
 
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
@@ -195,7 +232,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
-      routes,
+      routes: filteredRoutes,
     };
 
     validateConfiguration(config);
@@ -336,6 +373,19 @@ export const parseChainConfigurations = async (
       UTILITY_CONTRACTS_OVERRIDE[chainId]?.multicall3 ||
       UTILITY_CONTRACTS_DEFAULT.multicall3;
 
+    // Parse Zodiac configuration for this chain
+    const zodiacRoleModuleAddress =
+      configJson?.chains?.[chainId]?.zodiacRoleModuleAddress ??
+      (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_MODULE_ADDRESS`));
+
+    const zodiacRoleKey =
+      configJson?.chains?.[chainId]?.zodiacRoleKey ??
+      (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_KEY`));
+
+    const gnosisSafeAddress =
+      configJson?.chains?.[chainId]?.gnosisSafeAddress ??
+      (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
+
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
@@ -346,6 +396,9 @@ export const parseChainConfigurations = async (
         permit2,
         multicall3,
       },
+      zodiacRoleModuleAddress,
+      zodiacRoleKey,
+      gnosisSafeAddress,
     };
   }
 
