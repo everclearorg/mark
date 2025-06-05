@@ -151,6 +151,15 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
+      // scroll    ethereum    USDC    10000000000000000000000 30
+      {
+        origin: 534352,
+        destination: 1,
+        asset: '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4',
+        maximum: '10000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Across],
+      },
     ],
   };
 };
