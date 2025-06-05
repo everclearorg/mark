@@ -2,6 +2,7 @@ import { getDecimalsFromConfig, getTokenAddressFromConfig, MarkConfiguration } f
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 import { PrometheusAdapter } from '@mark/prometheus';
+import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 
 /**
  * Returns the gas balance of mark on all chains.
@@ -18,8 +19,13 @@ export const getMarkGasBalances = async (
   await Promise.all(
     Object.keys(chains).map(async (chain) => {
       try {
+        // Get Zodiac configuration for this chain
+        const chainConfig = chains[chain];
+        const zodiacConfig = getValidatedZodiacConfig(chainConfig);
+        const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+        
         const client = createClient(chain, config);
-        const native = await client.getBalance({ address: ownAddress as `0x${string}` });
+        const native = await client.getBalance({ address: actualOwner as `0x${string}` });
         markBalances.set(chain, native);
         prometheus.updateGasBalance(chain, native);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -59,8 +65,13 @@ export const getMarkBalances = async (
 
       const balancePromise = (async (): Promise<bigint> => {
         try {
+          // Get Zodiac configuration for this chain
+          const chainConfig = chains[domain];
+          const zodiacConfig = getValidatedZodiacConfig(chainConfig);
+          const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+
           const tokenContract = await getERC20Contract(config, domain, tokenAddr);
-          let balance = (await tokenContract.read.balanceOf([ownAddress])) as bigint;
+          let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
 
           // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
           if (decimals !== 18) {
