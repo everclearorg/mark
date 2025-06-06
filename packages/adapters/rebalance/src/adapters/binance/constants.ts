@@ -57,6 +57,8 @@ export const BINANCE_ENDPOINTS = {
   DEPOSIT_HISTORY: '/sapi/v1/capital/deposit/hisrec',
   WITHDRAW_APPLY: '/sapi/v1/capital/withdraw/apply',
   WITHDRAW_HISTORY: '/sapi/v1/capital/withdraw/history',
+  SYSTEM_STATUS: '/sapi/v1/system/status',
+  ASSET_CONFIG: '/sapi/v1/capital/config/getall',
 } as const;
 
 // Withdrawal status mappings
