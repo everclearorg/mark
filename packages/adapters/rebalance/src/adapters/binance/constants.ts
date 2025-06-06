@@ -45,10 +45,10 @@ export const BINANCE_ASSET_MAPPINGS: BinanceAssetMapping[] = [
 ];
 
 export const BINANCE_RATE_LIMITS = {
-  SAPI_IP_WEIGHT_PER_MINUTE: 12000,    // IP limited endpoints
-  SAPI_IP_WARNING_THRESHOLD: 10000,    // Warn at ~80% of limit
-  SAPI_UID_WEIGHT_PER_MINUTE: 180000,  // UID limited endpoints  
-  SAPI_UID_WARNING_THRESHOLD: 150000,  // Warn at ~80% of limit
+  SAPI_IP_WEIGHT_PER_MINUTE: 12000, // IP limited endpoints
+  SAPI_IP_WARNING_THRESHOLD: 10000, // Warn at ~80% of limit
+  SAPI_UID_WEIGHT_PER_MINUTE: 180000, // UID limited endpoints
+  SAPI_UID_WARNING_THRESHOLD: 150000, // Warn at ~80% of limit
 } as const;
 
 // API endpoint paths
@@ -76,4 +76,4 @@ export const WITHDRAWAL_STATUS = {
 export const DEPOSIT_STATUS = {
   PENDING: 0,
   SUCCESS: 1,
-} as const; 
+} as const;

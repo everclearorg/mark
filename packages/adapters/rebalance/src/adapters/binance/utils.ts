@@ -7,9 +7,7 @@ import { AssetConfiguration, ChainConfiguration, RebalanceRoute } from '@mark/co
  */
 export function getAssetMapping(route: RebalanceRoute): BinanceAssetMapping | undefined {
   return BINANCE_ASSET_MAPPINGS.find(
-    mapping =>
-      mapping.chainId === route.origin &&
-      mapping.onChainAddress.toLowerCase() === route.asset.toLowerCase()
+    (mapping) => mapping.chainId === route.origin && mapping.onChainAddress.toLowerCase() === route.asset.toLowerCase(),
   );
 }
 
@@ -25,9 +23,7 @@ export function getDestinationAssetMapping(route: RebalanceRoute): BinanceAssetM
 
   // Find destination mapping with same Binance symbol
   return BINANCE_ASSET_MAPPINGS.find(
-    mapping =>
-      mapping.chainId === route.destination &&
-      mapping.binanceSymbol === originMapping.binanceSymbol
+    (mapping) => mapping.chainId === route.destination && mapping.binanceSymbol === originMapping.binanceSymbol,
   );
 }
 
@@ -37,16 +33,14 @@ export function getDestinationAssetMapping(route: RebalanceRoute): BinanceAssetM
 export function getAsset(
   asset: string,
   chain: number,
-  chains: Record<string, ChainConfiguration>
+  chains: Record<string, ChainConfiguration>,
 ): AssetConfiguration | undefined {
   const chainConfig = chains[chain.toString()];
   if (!chainConfig) {
     return undefined;
   }
 
-  return chainConfig.assets.find(
-    a => a.address.toLowerCase() === asset.toLowerCase()
-  );
+  return chainConfig.assets.find((a) => a.address.toLowerCase() === asset.toLowerCase());
 }
 
 /**
@@ -56,7 +50,7 @@ export function findMatchingDestinationAsset(
   asset: string,
   origin: number,
   destination: number,
-  chains: Record<string, ChainConfiguration>
+  chains: Record<string, ChainConfiguration>,
 ): AssetConfiguration | undefined {
   const originAsset = getAsset(asset, origin, chains);
   if (!originAsset) {
@@ -69,7 +63,7 @@ export function findMatchingDestinationAsset(
   }
 
   // Find asset with same symbol on destination chain
-  return destinationChain.assets.find(a => a.symbol === originAsset.symbol);
+  return destinationChain.assets.find((a) => a.symbol === originAsset.symbol);
 }
 
 /**
@@ -78,11 +72,11 @@ export function findMatchingDestinationAsset(
 export function calculateNetAmount(amount: string, withdrawalFee: string): string {
   const amountBN = BigInt(amount);
   const feeBN = BigInt(withdrawalFee);
-  
+
   if (amountBN <= feeBN) {
     throw new Error('Amount is too small to cover withdrawal fees');
   }
-  
+
   return (amountBN - feeBN).toString();
 }
 
@@ -94,11 +88,11 @@ export function formatAmount(amount: string, decimals: number): string {
   const divisor = BigInt(10 ** decimals);
   const wholePart = amountBN / divisor;
   const fractionalPart = amountBN % divisor;
-  
+
   if (fractionalPart === 0n) {
     return wholePart.toString();
   }
-  
+
   const fractionalString = fractionalPart.toString().padStart(decimals, '0');
   return `${wholePart}.${fractionalString.replace(/0+$/, '')}`;
 }
@@ -108,7 +102,7 @@ export function formatAmount(amount: string, decimals: number): string {
  */
 export function validateAssetMapping(
   mapping: BinanceAssetMapping | undefined,
-  context: string
+  context: string,
 ): asserts mapping is BinanceAssetMapping {
   if (!mapping) {
     throw new Error(`No Binance asset mapping found for ${context}`);
@@ -130,19 +124,20 @@ export function meetsMinimumWithdrawal(amount: string, mapping: BinanceAssetMapp
   const amountBN = BigInt(amount);
   const minBN = BigInt(mapping.minWithdrawalAmount);
   const feeBN = BigInt(mapping.withdrawalFee);
-  
+
   // Amount must be greater than minimum + fee
-  return amountBN >= (minBN + feeBN);
+  return amountBN >= minBN + feeBN;
 }
 
 /**
  * Generate a unique withdrawal order ID for tracking
+ * Must be deterministic - same inputs always produce same output
  */
 export function generateWithdrawOrderId(route: RebalanceRoute, txHash: string): string {
   // Create a deterministic ID based on route and transaction
-  const routeString = `${route.origin}-${route.destination}-${route.asset}`;
+  const routeString = `${route.origin}-${route.destination}-${route.asset.slice(2, 8)}`;
   const shortHash = txHash.slice(2, 10); // Take first 8 chars after 0x
-  return `mark-${shortHash}-${Date.now().toString(36)}`;
+  return `mark-${shortHash}-${routeString}`;
 }
 
 /**
@@ -161,4 +156,4 @@ export function isWithdrawalStale(applyTime: string, maxHours = 24): boolean {
   const now = new Date();
   const diffHours = (now.getTime() - applyDate.getTime()) / (1000 * 60 * 60);
   return diffHours > maxHours;
-} 
+}

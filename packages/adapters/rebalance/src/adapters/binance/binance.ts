@@ -18,8 +18,6 @@ import { WITHDRAWAL_STATUS, DEPOSIT_STATUS } from './constants';
 import {
   getAssetMapping,
   getDestinationAssetMapping,
-  getAsset,
-  findMatchingDestinationAsset,
   calculateNetAmount,
   validateAssetMapping,
   meetsMinimumWithdrawal,

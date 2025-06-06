@@ -13,7 +13,9 @@
         "lint:package": "sort-package-json",
         "lint:ts": "eslint ./src",
         "test": "yarn test:unit",
-        "test:unit": "jest --coverage"
+        "test:all": "yarn test:unit && yarn test:integration",
+        "test:integration": "RUN_INTEGRATION_TESTS=true jest --coverage",
+        "test:unit": "jest --coverage --testPathIgnorePatterns='.*\\.integration\\.spec\\.ts$'"
     },
     "dependencies": {
         "@mark/core": "workspace:*",
