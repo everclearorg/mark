@@ -10,7 +10,7 @@ import {
   WithdrawRecord,
   BINANCE_BASE_URL,
 } from './types';
-import { BINANCE_ENDPOINTS } from './constants';
+import { BINANCE_ENDPOINTS, BINANCE_RATE_LIMITS } from './constants';
 
 export class BinanceClient {
   private readonly axios: AxiosInstance;
@@ -55,14 +55,17 @@ export class BinanceClient {
   }
 
   /**
-   * Make authenticated request to Binance API
+   * Make authenticated request to Binance API with rate limit handling
    */
   private async request<T>(
     method: 'GET' | 'POST' | 'DELETE',
     endpoint: string,
     params: Record<string, any> = {},
-    signed = false
+    signed = false,
+    retryCount = 0
   ): Promise<T> {
+    const maxRetries = 3;
+    
     try {
       const timestamp = Date.now();
       let requestParams = { ...params };
@@ -80,6 +83,7 @@ export class BinanceClient {
         endpoint,
         signed,
         paramCount: Object.keys(requestParams).length,
+        retryCount,
       });
 
       const response: AxiosResponse<T> = await this.axios.request({
@@ -88,29 +92,189 @@ export class BinanceClient {
         [method === 'GET' ? 'params' : 'data']: requestParams,
       });
 
+      // Log rate limit information
+      this.logRateLimitInfo(response.headers, endpoint);
+
       this.logger.debug('Binance API request successful', {
         endpoint,
         status: response.status,
+        retryCount,
       });
 
       return response.data;
     } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const retryAfter = error.response?.headers['retry-after'];
+        
+        // Handle rate limit errors (429) and IP bans (418)
+        if (status === 429 || status === 418) {
+          return this.handleRateLimitError(
+            error,
+            method,
+            endpoint,
+            params,
+            signed,
+            retryCount,
+            maxRetries,
+            retryAfter
+          );
+        }
+        
+        // Handle other server errors with exponential backoff
+        if (status && status >= 500 && retryCount < maxRetries) {
+          return this.handleServerError(
+            error,
+            method,
+            endpoint,
+            params,
+            signed,
+            retryCount
+          );
+        }
+      }
+
       this.logger.error('Binance API request failed', {
         error: jsonifyError(error),
         endpoint,
         method,
         signed,
+        retryCount,
       });
 
       // Enhance error with more context
       if (axios.isAxiosError(error)) {
         const errorMessage = error.response?.data?.msg || error.message;
         const errorCode = error.response?.data?.code;
-        throw new Error(`Binance API error ${errorCode ? `(${errorCode})` : ''}: ${errorMessage}`);
+        const status = error.response?.status;
+        throw new Error(`Binance API error ${status} ${errorCode ? `(${errorCode})` : ''}: ${errorMessage}`);
       }
 
       throw error;
     }
+  }
+
+  /**
+   * Handle rate limit errors (429) and IP bans (418) with proper backoff
+   */
+  private async handleRateLimitError<T>(
+    error: any,
+    method: 'GET' | 'POST' | 'DELETE',
+    endpoint: string,
+    params: Record<string, any>,
+    signed: boolean,
+    retryCount: number,
+    maxRetries: number,
+    retryAfter?: string
+  ): Promise<T> {
+    const status = error.response?.status;
+    const isIpBan = status === 418;
+    
+    if (retryCount >= maxRetries) {
+      this.logger.error('Max retries exceeded for rate limit error', {
+        endpoint,
+        status,
+        retryCount,
+        isIpBan,
+      });
+      throw error;
+    }
+
+    // Calculate delay: use Retry-After header if available, otherwise exponential backoff
+    let delayMs: number;
+    if (retryAfter) {
+      delayMs = parseInt(retryAfter) * 1000; // Convert seconds to milliseconds
+    } else {
+      delayMs = Math.min(1000 * Math.pow(2, retryCount), 30000); // Max 30 seconds
+    }
+
+    this.logger.warn('Rate limit hit, backing off', {
+      endpoint,
+      status,
+      retryCount: retryCount + 1,
+      delayMs,
+      isIpBan,
+      retryAfter,
+    });
+
+    // Wait before retrying
+    await this.delay(delayMs);
+    
+    return this.request<T>(method, endpoint, params, signed, retryCount + 1);
+  }
+
+  /**
+   * Handle server errors (5xx) with exponential backoff
+   */
+  private async handleServerError<T>(
+    error: any,
+    method: 'GET' | 'POST' | 'DELETE',
+    endpoint: string,
+    params: Record<string, any>,
+    signed: boolean,
+    retryCount: number
+  ): Promise<T> {
+    const delayMs = Math.min(1000 * Math.pow(2, retryCount), 10000); // Max 10 seconds
+    
+    this.logger.warn('Server error, retrying with backoff', {
+      endpoint,
+      status: error.response?.status,
+      retryCount: retryCount + 1,
+      delayMs,
+    });
+
+    await this.delay(delayMs);
+    return this.request<T>(method, endpoint, params, signed, retryCount + 1);
+  }
+
+  /**
+   * Log rate limit information from response headers
+   * We only use /sapi endpoints, so only check SAPI headers
+   */
+  private logRateLimitInfo(headers: any, endpoint: string): void {
+    // SAPI endpoints use X-SAPI-USED-*-WEIGHT-1M headers
+    const ipWeight = headers['x-sapi-used-ip-weight-1m'];
+    const uidWeight = headers['x-sapi-used-uid-weight-1m'];
+    
+    if (ipWeight) {
+      this.logger.debug('SAPI IP rate limit status', {
+        endpoint,
+        weightUsed: ipWeight,
+        limit: `${BINANCE_RATE_LIMITS.SAPI_IP_WEIGHT_PER_MINUTE}/min`,
+      });
+      
+      const currentWeight = parseInt(ipWeight);
+      if (currentWeight > BINANCE_RATE_LIMITS.SAPI_IP_WARNING_THRESHOLD) {
+        this.logger.warn('Approaching SAPI IP rate limit', {
+          endpoint,
+          weightUsed: currentWeight,
+          limit: `${BINANCE_RATE_LIMITS.SAPI_IP_WEIGHT_PER_MINUTE}/min`,
+          threshold: BINANCE_RATE_LIMITS.SAPI_IP_WARNING_THRESHOLD,
+        });
+      }
+    }
+    
+    if (uidWeight) {
+      this.logger.debug('SAPI UID rate limit status', {
+        endpoint,
+        weightUsed: uidWeight,
+        limit: `${BINANCE_RATE_LIMITS.SAPI_UID_WEIGHT_PER_MINUTE}/min`,
+      });
+      
+      const currentWeight = parseInt(uidWeight);
+      if (currentWeight > BINANCE_RATE_LIMITS.SAPI_UID_WARNING_THRESHOLD) {
+        this.logger.warn('Approaching SAPI UID rate limit', {
+          endpoint,
+          weightUsed: currentWeight,
+          limit: `${BINANCE_RATE_LIMITS.SAPI_UID_WEIGHT_PER_MINUTE}/min`,
+          threshold: BINANCE_RATE_LIMITS.SAPI_UID_WARNING_THRESHOLD,
+        });
+      }
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -120,7 +284,7 @@ export class BinanceClient {
     this.logger.debug('Getting deposit address', { coin, network });
 
     const result = await this.request<DepositAddress>(
-      'POST',
+      'GET',
       BINANCE_ENDPOINTS.DEPOSIT_ADDRESS,
       { coin, network },
       true

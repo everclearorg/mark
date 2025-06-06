@@ -44,11 +44,11 @@ export const BINANCE_ASSET_MAPPINGS: BinanceAssetMapping[] = [
   },
 ];
 
-// Rate limit constants
 export const BINANCE_RATE_LIMITS = {
-  REQUEST_WEIGHT_PER_MINUTE: 6000,
-  ORDERS_PER_10_SECONDS: 100,
-  RAW_REQUESTS_PER_5_MINUTES: 61000,
+  SAPI_IP_WEIGHT_PER_MINUTE: 12000,    // IP limited endpoints
+  SAPI_IP_WARNING_THRESHOLD: 10000,    // Warn at ~80% of limit
+  SAPI_UID_WEIGHT_PER_MINUTE: 180000,  // UID limited endpoints  
+  SAPI_UID_WARNING_THRESHOLD: 150000,  // Warn at ~80% of limit
 } as const;
 
 // API endpoint paths
