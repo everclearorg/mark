@@ -20,7 +20,7 @@ export class BinanceClient {
     private readonly apiKey: string,
     private readonly apiSecret: string,
     private readonly baseUrl: string = BINANCE_BASE_URL,
-    logger: Logger
+    logger: Logger,
   ) {
     this.logger = logger;
     this.axios = axios.create({
@@ -48,10 +48,7 @@ export class BinanceClient {
       .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
       .join('&');
 
-    return crypto
-      .createHmac('sha256', this.apiSecret)
-      .update(queryString)
-      .digest('hex');
+    return crypto.createHmac('sha256', this.apiSecret).update(queryString).digest('hex');
   }
 
   /**
@@ -62,10 +59,10 @@ export class BinanceClient {
     endpoint: string,
     params: Record<string, any> = {},
     signed = false,
-    retryCount = 0
+    retryCount = 0,
   ): Promise<T> {
     const maxRetries = 3;
-    
+
     try {
       const timestamp = Date.now();
       let requestParams = { ...params };
@@ -106,31 +103,15 @@ export class BinanceClient {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
         const retryAfter = error.response?.headers['retry-after'];
-        
+
         // Handle rate limit errors (429) and IP bans (418)
         if (status === 429 || status === 418) {
-          return this.handleRateLimitError(
-            error,
-            method,
-            endpoint,
-            params,
-            signed,
-            retryCount,
-            maxRetries,
-            retryAfter
-          );
+          return this.handleRateLimitError(error, method, endpoint, params, signed, retryCount, maxRetries, retryAfter);
         }
-        
+
         // Handle other server errors with exponential backoff
         if (status && status >= 500 && retryCount < maxRetries) {
-          return this.handleServerError(
-            error,
-            method,
-            endpoint,
-            params,
-            signed,
-            retryCount
-          );
+          return this.handleServerError(error, method, endpoint, params, signed, retryCount);
         }
       }
 
@@ -165,11 +146,11 @@ export class BinanceClient {
     signed: boolean,
     retryCount: number,
     maxRetries: number,
-    retryAfter?: string
+    retryAfter?: string,
   ): Promise<T> {
     const status = error.response?.status;
     const isIpBan = status === 418;
-    
+
     if (retryCount >= maxRetries) {
       this.logger.error('Max retries exceeded for rate limit error', {
         endpoint,
@@ -199,7 +180,7 @@ export class BinanceClient {
 
     // Wait before retrying
     await this.delay(delayMs);
-    
+
     return this.request<T>(method, endpoint, params, signed, retryCount + 1);
   }
 
@@ -212,10 +193,10 @@ export class BinanceClient {
     endpoint: string,
     params: Record<string, any>,
     signed: boolean,
-    retryCount: number
+    retryCount: number,
   ): Promise<T> {
     const delayMs = Math.min(1000 * Math.pow(2, retryCount), 10000); // Max 10 seconds
-    
+
     this.logger.warn('Server error, retrying with backoff', {
       endpoint,
       status: error.response?.status,
@@ -235,14 +216,14 @@ export class BinanceClient {
     // SAPI endpoints use X-SAPI-USED-*-WEIGHT-1M headers
     const ipWeight = headers['x-sapi-used-ip-weight-1m'];
     const uidWeight = headers['x-sapi-used-uid-weight-1m'];
-    
+
     if (ipWeight) {
       this.logger.debug('SAPI IP rate limit status', {
         endpoint,
         weightUsed: ipWeight,
         limit: `${BINANCE_RATE_LIMITS.SAPI_IP_WEIGHT_PER_MINUTE}/min`,
       });
-      
+
       const currentWeight = parseInt(ipWeight);
       if (currentWeight > BINANCE_RATE_LIMITS.SAPI_IP_WARNING_THRESHOLD) {
         this.logger.warn('Approaching SAPI IP rate limit', {
@@ -253,14 +234,14 @@ export class BinanceClient {
         });
       }
     }
-    
+
     if (uidWeight) {
       this.logger.debug('SAPI UID rate limit status', {
         endpoint,
         weightUsed: uidWeight,
         limit: `${BINANCE_RATE_LIMITS.SAPI_UID_WEIGHT_PER_MINUTE}/min`,
       });
-      
+
       const currentWeight = parseInt(uidWeight);
       if (currentWeight > BINANCE_RATE_LIMITS.SAPI_UID_WARNING_THRESHOLD) {
         this.logger.warn('Approaching SAPI UID rate limit', {
@@ -274,7 +255,7 @@ export class BinanceClient {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -287,7 +268,7 @@ export class BinanceClient {
       'GET',
       BINANCE_ENDPOINTS.DEPOSIT_ADDRESS,
       { coin, network },
-      true
+      true,
     );
 
     this.logger.debug('Deposit address retrieved', {
@@ -310,12 +291,7 @@ export class BinanceClient {
       amount: params.amount,
     });
 
-    const result = await this.request<WithdrawResponse>(
-      'POST',
-      BINANCE_ENDPOINTS.WITHDRAW_APPLY,
-      params,
-      true
-    );
+    const result = await this.request<WithdrawResponse>('POST', BINANCE_ENDPOINTS.WITHDRAW_APPLY, params, true);
 
     this.logger.debug('Withdrawal submitted', {
       withdrawalId: result.id,
@@ -334,7 +310,7 @@ export class BinanceClient {
     startTime?: number,
     endTime?: number,
     offset = 0,
-    limit = 1000
+    limit = 1000,
   ): Promise<DepositRecord[]> {
     const params: Record<string, any> = {
       offset,
@@ -355,12 +331,7 @@ export class BinanceClient {
       limit,
     });
 
-    const result = await this.request<DepositRecord[]>(
-      'GET',
-      BINANCE_ENDPOINTS.DEPOSIT_HISTORY,
-      params,
-      true
-    );
+    const result = await this.request<DepositRecord[]>('GET', BINANCE_ENDPOINTS.DEPOSIT_HISTORY, params, true);
 
     this.logger.debug('Deposit history retrieved', {
       coin,
@@ -380,7 +351,7 @@ export class BinanceClient {
     startTime?: number,
     endTime?: number,
     offset = 0,
-    limit = 1000
+    limit = 1000,
   ): Promise<WithdrawRecord[]> {
     const params: Record<string, any> = {
       offset,
@@ -403,12 +374,7 @@ export class BinanceClient {
       limit,
     });
 
-    const result = await this.request<WithdrawRecord[]>(
-      'GET',
-      BINANCE_ENDPOINTS.WITHDRAW_HISTORY,
-      params,
-      true
-    );
+    const result = await this.request<WithdrawRecord[]>('GET', BINANCE_ENDPOINTS.WITHDRAW_HISTORY, params, true);
 
     this.logger.debug('Withdrawal history retrieved', {
       coin,
@@ -428,7 +394,7 @@ export class BinanceClient {
       'GET',
       BINANCE_ENDPOINTS.SYSTEM_STATUS,
       {},
-      false // System status doesn't require authentication
+      false, // System status doesn't require authentication
     );
 
     this.logger.debug('System status retrieved', {
@@ -445,12 +411,7 @@ export class BinanceClient {
   async getAssetConfig(): Promise<any[]> {
     this.logger.debug('Getting asset configuration');
 
-    const result = await this.request<any[]>(
-      'GET',
-      BINANCE_ENDPOINTS.ASSET_CONFIG,
-      {},
-      true
-    );
+    const result = await this.request<any[]>('GET', BINANCE_ENDPOINTS.ASSET_CONFIG, {}, true);
 
     this.logger.debug('Asset configuration retrieved', {
       assetCount: result.length,
@@ -480,4 +441,4 @@ export class BinanceClient {
   isConfigured(): boolean {
     return !!(this.apiKey && this.apiSecret);
   }
-} 
+}

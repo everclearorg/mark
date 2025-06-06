@@ -159,11 +159,11 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
 
       // Step 3: Get Bridge Transaction Request (before approval)
       let bridgeTxRequest;
+      const sender = getActualOwner(originZodiacConfig, config.ownAddress);
+      const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
       try {
-        const sender = getActualOwner(originZodiacConfig, config.ownAddress);
-        const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
         bridgeTxRequest = await adapter.send(sender, recipient, currentBalance.toString(), route);
-                  logger.info('Prepared bridge transaction request from adapter', {
+          logger.info('Prepared bridge transaction request from adapter', {
             requestId,
             route,
             bridgeType,
@@ -261,6 +261,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           destination: route.destination,
           asset: route.asset,
           transaction: result.transactionHash,
+          recipient,
         };
 
         try {

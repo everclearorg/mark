@@ -242,6 +242,7 @@ describe('rebalanceInventory', () => {
             destination: routeToTest.destination,
             asset: routeToTest.asset,
             transaction: '0xBridgeTxHash',
+            recipient: MOCK_OWN_ADDRESS,
         };
         expect(mockRebalanceCache.addRebalances.firstCall.args[0]).to.be.deep.eq([expectedAction]);
         expect(mockLogger.info.calledWith(match(/Successfully added rebalance action to cache/))).to.be.true;

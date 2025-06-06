@@ -10,6 +10,7 @@ import {
 } from 'viem';
 import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
+import { RebalanceCache } from '@mark/cache';
 import { BridgeAdapter } from '../../types';
 import { BinanceClient } from './client';
 import { WithdrawalStatus, BinanceAssetMapping } from './types';
@@ -35,9 +36,10 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     private readonly baseUrl: string,
     protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
+    private readonly rebalanceCache: RebalanceCache,
   ) {
     this.client = new BinanceClient(apiKey, apiSecret, baseUrl, logger);
-    this.logger.debug('Initializing BinanceBridgeAdapter', { 
+    this.logger.debug('Initializing BinanceBridgeAdapter', {
       baseUrl,
       hasApiKey: !!apiKey,
       hasApiSecret: !!apiSecret,
@@ -50,6 +52,34 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
   type(): SupportedBridge {
     return SupportedBridge.Binance;
+  }
+
+  /**
+   * Look up recipient address from the rebalance cache by transaction hash
+   */
+  private async getRecipientFromCache(transactionHash: string): Promise<string | undefined> {
+    try {
+      const action = await this.rebalanceCache.getRebalanceByTransaction(transactionHash);
+
+      if (action?.recipient) {
+        this.logger.debug('Found recipient in cache', {
+          transactionHash,
+          recipient: action.recipient,
+        });
+        return action.recipient;
+      }
+
+      this.logger.debug('No recipient found in cache for transaction', {
+        transactionHash,
+      });
+      return undefined;
+    } catch (error) {
+      this.logger.error('Failed to lookup recipient from cache', {
+        error: jsonifyError(error),
+        transactionHash,
+      });
+      return undefined;
+    }
   }
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
@@ -99,33 +129,34 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       // Check minimum amount requirements
       if (!meetsMinimumWithdrawal(amount, assetMapping)) {
-        throw new Error(`Amount ${amount} does not meet minimum withdrawal requirement of ${assetMapping.minWithdrawalAmount}`);
+        throw new Error(
+          `Amount ${amount} does not meet minimum withdrawal requirement of ${assetMapping.minWithdrawalAmount}`,
+        );
       }
 
       // Get deposit address from Binance
-      const depositInfo = await this.client.getDepositAddress(
-        assetMapping.binanceSymbol,
-        assetMapping.network
-      );
+      const depositInfo = await this.client.getDepositAddress(assetMapping.binanceSymbol, assetMapping.network);
 
       this.logger.debug('Binance deposit address obtained', {
         coin: assetMapping.binanceSymbol,
         network: assetMapping.network,
         address: depositInfo.address,
         amount,
+        recipient,
       });
 
       // Return transaction to send funds to Binance deposit address
       return {
         to: depositInfo.address as `0x${string}`,
         value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
-        data: route.asset !== zeroAddress
-          ? encodeFunctionData({
-              abi: erc20Abi,
-              functionName: 'transfer',
-              args: [depositInfo.address as `0x${string}`, BigInt(amount)],
-            })
-          : '0x',
+        data:
+          route.asset !== zeroAddress
+            ? encodeFunctionData({
+                abi: erc20Abi,
+                functionName: 'transfer',
+                args: [depositInfo.address as `0x${string}`, BigInt(amount)],
+              })
+            : '0x',
       };
     } catch (error) {
       this.handleError(error, 'prepare Binance deposit transaction', { amount, route });
@@ -144,20 +175,30 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     });
 
     try {
-      // Check if withdrawal is complete
-      const withdrawalStatus = await this.getWithdrawalStatus(route, originTransaction, amount);
-      
+      // Look up recipient from cache
+      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
+      if (!recipient) {
+        this.logger.error('No recipient found in cache for transaction', {
+          transactionHash: originTransaction.transactionHash,
+          route,
+        });
+        return false;
+      }
+
+      // Check if withdrawal is complete (will initiate if needed)
+      const withdrawalStatus = await this.getOrInitWithdrawal(route, originTransaction, amount, recipient);
+
       if (!withdrawalStatus) {
         return false;
       }
-      
+
       // Return true if withdrawal is complete and confirmed on-chain
       const isReady = withdrawalStatus.status === 'completed' && withdrawalStatus.onChainConfirmed;
       this.logger.debug('Withdrawal ready status determined', {
         isReady,
         withdrawalStatus,
       });
-      
+
       return isReady;
     } catch (error) {
       this.logger.error('Failed to check if transaction is ready on destination', {
@@ -174,8 +215,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
   ): Promise<TransactionRequestBase | void> {
-    // Binance handles withdrawals automatically - no callback needed
-    this.logger.debug('destinationCallback called - no action needed for Binance', {
+    this.logger.debug('destinationCallback called - TODO: wrap to WETH', {
       route,
       transactionHash: originTransaction.transactionHash,
     });
@@ -183,12 +223,13 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
   }
 
   /**
-   * Helper method to check withdrawal status - similar to Across getDepositStatus
+   * Helper method to get withdrawal status or initiates withdrawal if needed
    */
-  protected async getWithdrawalStatus(
+  protected async getOrInitWithdrawal(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
     amount: string,
+    recipient: string,
   ): Promise<WithdrawalStatus | undefined> {
     try {
       const originMapping = getAssetMapping(route);
@@ -209,13 +250,13 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       // Check if withdrawal exists, if not initiate it
       let withdrawal = await this.findExistingWithdrawal(route, originTransaction, destinationMapping);
       if (!withdrawal) {
-        withdrawal = await this.initiateWithdrawal(route, originTransaction, amount, destinationMapping);
+        withdrawal = await this.initiateWithdrawal(route, originTransaction, amount, destinationMapping, recipient);
       }
 
       // Check withdrawal status
       const withdrawals = await this.client.getWithdrawHistory(destinationMapping.binanceSymbol);
-      const currentWithdrawal = withdrawals.find(w => w.id === withdrawal.id);
-      
+      const currentWithdrawal = withdrawals.find((w) => w.id === withdrawal.id);
+
       if (!currentWithdrawal) {
         return {
           status: 'pending',
@@ -272,26 +313,23 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
   protected async checkDepositConfirmed(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
-    assetMapping: BinanceAssetMapping
+    assetMapping: BinanceAssetMapping,
   ): Promise<{ confirmed: boolean }> {
     try {
       // Check Binance deposit history for this transaction
-      const deposits = await this.client.getDepositHistory(
-        assetMapping.binanceSymbol,
-        DEPOSIT_STATUS.SUCCESS
+      const deposits = await this.client.getDepositHistory(assetMapping.binanceSymbol, DEPOSIT_STATUS.SUCCESS);
+
+      const matchingDeposit = deposits.find(
+        (d) => d.txId.toLowerCase() === originTransaction.transactionHash.toLowerCase(),
       );
-      
-      const matchingDeposit = deposits.find(d => 
-        d.txId.toLowerCase() === originTransaction.transactionHash.toLowerCase()
-      );
-      
+
       const confirmed = !!matchingDeposit;
       this.logger.debug('Deposit confirmation check', {
         transactionHash: originTransaction.transactionHash,
         confirmed,
         matchingDepositId: matchingDeposit?.txId,
       });
-      
+
       return { confirmed };
     } catch (error) {
       this.logger.error('Failed to check deposit confirmation', {
@@ -308,28 +346,32 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
   protected async findExistingWithdrawal(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
-    assetMapping: BinanceAssetMapping
+    assetMapping: BinanceAssetMapping,
   ): Promise<{ id: string } | undefined> {
     try {
       // Generate the same withdrawal order ID we would use
       const expectedOrderId = generateWithdrawOrderId(route, originTransaction.transactionHash);
-      
-      // Check if withdrawal already exists with this order ID
-      const withdrawals = await this.client.getWithdrawHistory(
-        assetMapping.binanceSymbol,
-        expectedOrderId
-      );
-      
-      const existingWithdrawal = withdrawals.find(w => w.id === expectedOrderId);
-      
-      if (existingWithdrawal) {
+
+      // Check if withdrawal already exists with this custom order ID
+      // When we pass withdrawOrderId to getWithdrawHistory, it filters to only that specific withdrawal
+      const withdrawals = await this.client.getWithdrawHistory(assetMapping.binanceSymbol, expectedOrderId);
+
+      // If any withdrawals are returned, it means our custom order ID exists
+      if (withdrawals.length > 0) {
+        const existingWithdrawal = withdrawals[0];
         this.logger.debug('Found existing withdrawal', {
           withdrawalId: existingWithdrawal.id,
+          customOrderId: expectedOrderId,
           status: existingWithdrawal.status,
         });
         return { id: existingWithdrawal.id };
       }
-      
+
+      this.logger.debug('No existing withdrawal found', {
+        customOrderId: expectedOrderId,
+        coin: assetMapping.binanceSymbol,
+      });
+
       return undefined;
     } catch (error) {
       this.logger.error('Failed to find existing withdrawal', {
@@ -348,7 +390,8 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
     amount: string,
-    assetMapping: BinanceAssetMapping
+    assetMapping: BinanceAssetMapping,
+    recipient: string,
   ): Promise<{ id: string }> {
     try {
       // Check Binance system status before proceeding with withdrawal
@@ -357,38 +400,42 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         throw new Error('Binance system is not operational - cannot initiate withdrawal');
       }
 
-      const destinationAddress = this.getDestinationAddress(route);
+      this.logger.debug('Using recipient address', {
+        recipient,
+        route,
+      });
+
       const withdrawOrderId = generateWithdrawOrderId(route, originTransaction.transactionHash);
-      
+
       // Calculate the amount to withdraw (after fees)
       const withdrawAmount = calculateNetAmount(amount, assetMapping.withdrawalFee);
-      
-      this.logger.debug('Initiating Binance withdrawal', {
+
+      this.logger.debug(`Initiating Binance withdrawal with id ${withdrawOrderId}`, {
         coin: assetMapping.binanceSymbol,
         network: assetMapping.network,
-        address: destinationAddress,
+        address: recipient,
         amount: withdrawAmount,
         withdrawOrderId,
         originalAmount: amount,
         fee: assetMapping.withdrawalFee,
       });
-      
+
       const withdrawal = await this.client.withdraw({
         coin: assetMapping.binanceSymbol,
         network: assetMapping.network,
-        address: destinationAddress,
+        address: recipient,
         amount: withdrawAmount,
         withdrawOrderId,
       });
-      
+
       this.logger.info('Binance withdrawal initiated', {
         withdrawalId: withdrawal.id,
         withdrawOrderId,
         coin: assetMapping.binanceSymbol,
         amount: withdrawAmount,
-        destinationAddress,
+        recipient,
       });
-      
+
       return { id: withdrawal.id };
     } catch (error) {
       this.logger.error('Failed to initiate withdrawal', {
@@ -399,27 +446,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       });
       throw error;
     }
-  }
-
-  /**
-   * Get destination address for withdrawal
-   * For now, this assumes withdrawals go to a fixed address per chain
-   * In the future, this could be configurable per route
-   */
-  protected getDestinationAddress(route: RebalanceRoute): string {
-    // This would typically be Mark's address on the destination chain
-    // For now, we'll use a placeholder - this should be configurable
-    const destinationChain = this.chains[route.destination.toString()];
-    if (!destinationChain) {
-      throw new Error(`No configuration found for destination chain ${route.destination}`);
-    }
-    
-    // This should be configurable - perhaps in the chain configuration
-    // For now, throwing an error to indicate this needs to be implemented
-    throw new Error(
-      'Destination address configuration not implemented. ' +
-      'This should be configured per chain or per route.'
-    );
   }
 
   /**
@@ -456,4 +482,4 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     });
     throw new Error(`Failed to ${context}: ${(error as any)?.message ?? 'Unknown error'}`);
   }
-} 
+}

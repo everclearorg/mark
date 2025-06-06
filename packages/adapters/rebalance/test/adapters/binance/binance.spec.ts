@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, jest, afterEach } from '@jest/globals';
 import { SupportedBridge, RebalanceRoute, ChainConfiguration, AssetConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
+import { RebalanceCache } from '@mark/cache';
 import { TransactionReceipt } from 'viem';
 import { BinanceBridgeAdapter } from '../../../src/adapters/binance/binance';
 import { BinanceClient } from '../../../src/adapters/binance/client';
@@ -16,16 +17,13 @@ class TestBinanceBridgeAdapter extends BinanceBridgeAdapter {
     return super.handleError(error, context, metadata);
   }
 
-  public getWithdrawalAddress(route: RebalanceRoute): string {
-    return super.getWithdrawalAddress(route);
-  }
-
-  public getWithdrawalStatus(
+  public getOrInitWithdrawal(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
-    amount: string
+    amount: string,
+    recipient: string,
   ): Promise<any> {
-    return super.getWithdrawalStatus(route, originTransaction, amount);
+    return super.getOrInitWithdrawal(route, originTransaction, amount, recipient);
   }
 }
 
@@ -36,6 +34,17 @@ const mockLogger = {
   warn: jest.fn(),
   error: jest.fn(),
 } as unknown as jest.Mocked<Logger>;
+
+// Mock the cache
+const mockRebalanceCache = {
+  getRebalances: jest.fn(),
+  addRebalances: jest.fn(),
+  removeRebalances: jest.fn(),
+  hasRebalance: jest.fn(),
+  setPause: jest.fn(),
+  isPaused: jest.fn(),
+  getRebalanceByTransaction: jest.fn(),
+} as unknown as jest.Mocked<RebalanceCache>;
 
 // Mock data for testing
 const mockAssets: Record<string, AssetConfiguration> = {
@@ -154,7 +163,8 @@ describe('BinanceBridgeAdapter', () => {
       'test-api-secret',
       'https://api.binance.com',
       mockChains,
-      mockLogger
+      mockLogger,
+      mockRebalanceCache
     );
   });
 
@@ -185,7 +195,8 @@ describe('BinanceBridgeAdapter', () => {
           'test-api-secret',
           'https://api.binance.com',
           mockChains,
-          mockLogger
+          mockLogger,
+          mockRebalanceCache
         );
       }).toThrow('Binance adapter requires API key and secret');
     });
@@ -203,7 +214,8 @@ describe('BinanceBridgeAdapter', () => {
           '',
           'https://api.binance.com',
           mockChains,
-          mockLogger
+          mockLogger,
+          mockRebalanceCache
         );
       }).toThrow('Binance adapter requires API key and secret');
     });
@@ -298,21 +310,38 @@ describe('BinanceBridgeAdapter', () => {
       };
     });
 
-    it('should work without caching recipients', async () => {
+    it('should return false when no recipient found in cache', async () => {
       const amount = '1000000000000000000';
 
-      // Mock getWithdrawalStatus to return undefined (not ready)
-      jest.spyOn(adapter, 'getWithdrawalStatus').mockResolvedValueOnce(undefined);
+      // Mock cache to return no recipient (simulating cache miss)
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce(undefined);
 
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockTransaction);
       expect(result).toBe(false);
+      expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for transaction', {
+        transactionHash: mockTransaction.transactionHash,
+        route: sampleRoute,
+      });
     });
 
     it('should return false when withdrawal status is not ready', async () => {
       const amount = '1000000000000000000';
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
 
-      // Mock getWithdrawalStatus to return a status that's not completed
-      jest.spyOn(adapter, 'getWithdrawalStatus').mockResolvedValueOnce({
+      // Mock cache to return recipient
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount,
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
+
+      // Mock getOrInitWithdrawal to return a status that's not completed
+      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
         status: 'pending',
         onChainConfirmed: false,
       });
@@ -324,9 +353,22 @@ describe('BinanceBridgeAdapter', () => {
 
     it('should return true when withdrawal is completed and confirmed', async () => {
       const amount = '1000000000000000000';
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
 
-      // Mock getWithdrawalStatus to return completed status
-      jest.spyOn(adapter, 'getWithdrawalStatus').mockResolvedValueOnce({
+      // Mock cache to return recipient
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount,
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
+
+      // Mock getOrInitWithdrawal to return completed status
+      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
         status: 'completed',
         onChainConfirmed: true,
       });
@@ -338,7 +380,7 @@ describe('BinanceBridgeAdapter', () => {
   });
 
   describe('destinationCallback', () => {
-    it('should return undefined as Binance handles withdrawals automatically', async () => {
+    it('should return undefined as Binance handles withdrawals during readyOnDestination', async () => {
       const mockTransaction: TransactionReceipt = {
         transactionHash: '0x123' as `0x${string}`,
         blockNumber: BigInt(123),
@@ -377,40 +419,7 @@ describe('BinanceBridgeAdapter', () => {
       });
     });
 
-    describe('withdrawal address functionality', () => {
-      it('should get withdrawal address from chain configuration', () => {
-        const address = adapter.getWithdrawalAddress(sampleRoute);
-        expect(address).toBe('0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B');
-      });
 
-      it('should throw error if destination chain not configured', () => {
-        const invalidRoute = { ...sampleRoute, destination: 999999 };
-        expect(() => adapter.getWithdrawalAddress(invalidRoute))
-          .toThrow('No chain configuration found for destination chain 999999');
-      });
-
-      it('should throw error if no gnosis safe address configured', () => {
-        // Create adapter with chain that has no gnosis safe address
-        const chainsWithoutGnosis = {
-          ...mockChains,
-          '42161': {
-            ...mockChains['42161'],
-            gnosisSafeAddress: undefined,
-          },
-        };
-        
-        const adapterWithoutGnosis = new TestBinanceBridgeAdapter(
-          'test-api-key',
-          'test-api-secret',
-          'https://api.binance.com',
-          chainsWithoutGnosis,
-          mockLogger
-        );
-        
-        expect(() => adapterWithoutGnosis.getWithdrawalAddress(sampleRoute))
-          .toThrow('No gnosis safe address configured for destination chain 42161');
-      });
-    });
   });
 
   describe('integration tests', () => {
@@ -440,7 +449,19 @@ describe('BinanceBridgeAdapter', () => {
       expect(sendResult.to).toBe(mockDepositAddress.address);
 
       // 2. Check readyOnDestination (should not be ready initially)
-      jest.spyOn(adapter, 'getWithdrawalStatus').mockResolvedValueOnce({
+      // Mock cache to return recipient for both calls
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValue({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount,
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
+
+      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
         status: 'pending',
         onChainConfirmed: false,
       });
@@ -449,7 +470,7 @@ describe('BinanceBridgeAdapter', () => {
       expect(ready1).toBe(false);
 
       // 3. Check again when withdrawal is complete
-      jest.spyOn(adapter, 'getWithdrawalStatus').mockResolvedValueOnce({
+      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
         status: 'completed',
         onChainConfirmed: true,
       });
