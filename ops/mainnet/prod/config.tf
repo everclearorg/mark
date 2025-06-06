@@ -72,6 +72,7 @@ locals {
     DD_PROFILING_ENABLED          = false
     DD_MERGE_XRAY_TRACES          = true
     DD_TRACE_OTEL_ENABLED         = false
+    MARK_CONFIG_SSM_PARAMETER     = "MARK_CONFIG_MAINNET"
     
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"
