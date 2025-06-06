@@ -419,6 +419,62 @@ export class BinanceClient {
   }
 
   /**
+   * Get system status
+   */
+  async getSystemStatus(): Promise<{ status: number; msg: string }> {
+    this.logger.debug('Getting system status');
+
+    const result = await this.request<{ status: number; msg: string }>(
+      'GET',
+      BINANCE_ENDPOINTS.SYSTEM_STATUS,
+      {},
+      false // System status doesn't require authentication
+    );
+
+    this.logger.debug('System status retrieved', {
+      status: result.status,
+      msg: result.msg,
+    });
+
+    return result;
+  }
+
+  /**
+   * Get asset configuration
+   */
+  async getAssetConfig(): Promise<any[]> {
+    this.logger.debug('Getting asset configuration');
+
+    const result = await this.request<any[]>(
+      'GET',
+      BINANCE_ENDPOINTS.ASSET_CONFIG,
+      {},
+      true
+    );
+
+    this.logger.debug('Asset configuration retrieved', {
+      assetCount: result.length,
+    });
+
+    return result;
+  }
+
+  /**
+   * Check if Binance system is operational (status === 0)
+   */
+  async isSystemOperational(): Promise<boolean> {
+    try {
+      const status = await this.getSystemStatus();
+      return status.status === 0;
+    } catch (error) {
+      this.logger.warn('Failed to check system status, assuming non-operational', {
+        error: jsonifyError(error),
+      });
+      return false;
+    }
+  }
+
+  /**
    * Check if the client is properly configured
    */
   isConfigured(): boolean {

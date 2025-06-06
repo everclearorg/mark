@@ -119,6 +119,7 @@ const mockWithdrawResponse: WithdrawResponse = {
 // Mock BinanceClient implementation
 const mockBinanceClient = {
   isConfigured: jest.fn<() => boolean>().mockReturnValue(true),
+  isSystemOperational: jest.fn<() => Promise<boolean>>().mockResolvedValue(true),
   getDepositAddress: jest.fn<() => Promise<DepositAddress>>().mockResolvedValue(mockDepositAddress),
   withdraw: jest.fn<() => Promise<WithdrawResponse>>().mockResolvedValue(mockWithdrawResponse),
   getDepositHistory: jest.fn<() => Promise<any[]>>().mockResolvedValue([]),
