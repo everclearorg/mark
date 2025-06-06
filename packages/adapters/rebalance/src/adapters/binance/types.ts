@@ -66,4 +66,4 @@ export interface WithdrawalStatus {
   status: 'completed' | 'pending' | 'failed';
   onChainConfirmed: boolean;
   txId?: string;
-} 
+}
