@@ -88,6 +88,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     route: RebalanceRoute,
   ): Promise<TransactionRequestBase> {
     try {
+      // Check Binance system status before proceeding
+      const isOperational = await this.client.isSystemOperational();
+      if (!isOperational) {
+        throw new Error('Binance system is not operational');
+      }
+
       const assetMapping = getAssetMapping(route);
       validateAssetMapping(assetMapping, `route from chain ${route.origin}`);
 
@@ -345,6 +351,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     assetMapping: BinanceAssetMapping
   ): Promise<{ id: string }> {
     try {
+      // Check Binance system status before proceeding with withdrawal
+      const isOperational = await this.client.isSystemOperational();
+      if (!isOperational) {
+        throw new Error('Binance system is not operational - cannot initiate withdrawal');
+      }
+
       const destinationAddress = this.getDestinationAddress(route);
       const withdrawOrderId = generateWithdrawOrderId(route, originTransaction.transactionHash);
       
