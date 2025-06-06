@@ -172,7 +172,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const hostedConfig = await getEverclearConfig(url);
 
-    const configStr = await fromEnv('MARK_CONFIG_' + environment.toUpperCase(), true);
+    const ssmParameterName = (await fromEnv('MARK_CONFIG_SSM_PARAMETER')) ?? ('MARK_CONFIG_' + environment.toUpperCase());
+    const configStr = await fromEnv(ssmParameterName, true);
     const configJson = existsSync('config.json')
       ? JSON.parse(readFileSync('config.json', 'utf8'))
       : JSON.parse(configStr ?? '{}');
