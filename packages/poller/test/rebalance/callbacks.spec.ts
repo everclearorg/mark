@@ -43,6 +43,7 @@ describe('executeDestinationCallbacks', () => {
         bridge: 'Across' as SupportedBridge, // Cast to SupportedBridge
         transaction: '0xtxhash1',
         amount: '1000',
+        recipient: '0x1234567890123456789012345678901234567890',
     };
 
     const mockRoute1: Route = {
@@ -232,9 +233,9 @@ describe('executeDestinationCallbacks', () => {
     });
 
     it('should process multiple actions, continuing on individual errors', async () => {
-        const mockAction2: RebalanceAction = { ...mockAction1, transaction: '0xtxhash2', origin: 2, destination: 20, bridge: 'Stargate' as SupportedBridge };
+        const mockAction2: RebalanceAction = { ...mockAction1, transaction: '0xtxhash2', origin: 2, destination: 20, bridge: 'Stargate' as SupportedBridge, recipient: '0x2222222222222222222222222222222222222222' };
         const mockAction2Id = 'mock-action-2';
-        const mockAction3: RebalanceAction = { ...mockAction1, transaction: '0xtxhash3', origin: 3, destination: 30, bridge: 'Hop' as SupportedBridge };
+        const mockAction3: RebalanceAction = { ...mockAction1, transaction: '0xtxhash3', origin: 3, destination: 30, bridge: 'Hop' as SupportedBridge, recipient: '0x3333333333333333333333333333333333333333' };
         const mockAction3Id = 'mock-action-3';
 
         const mockRoute2: Route = { asset: mockAction2.asset, origin: mockAction2.origin, destination: mockAction2.destination };
