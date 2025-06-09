@@ -18,6 +18,7 @@
         "test:unit": "jest --coverage --testPathIgnorePatterns='.*\\.integration\\.spec\\.ts$'"
     },
     "dependencies": {
+        "@mark/cache": "workspace:*",
         "@mark/core": "workspace:*",
         "@mark/logger": "workspace:*",
         "axios": "1.9.0",
