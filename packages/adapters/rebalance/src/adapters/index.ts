@@ -28,6 +28,9 @@ export class RebalanceAdapter {
         if (!this.rebalanceCache) {
           throw new Error('RebalanceCache is required for Binance adapter');
         }
+        if (!process.env.BINANCE_API_KEY || !process.env.BINANCE_API_SECRET) {
+          throw new Error(`Binance adapter requires API key and secret`);
+        }
         return new BinanceBridgeAdapter(
           process.env.BINANCE_API_KEY!,
           process.env.BINANCE_API_SECRET!,
