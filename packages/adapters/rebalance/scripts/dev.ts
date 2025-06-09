@@ -4,11 +4,12 @@ import { Logger } from '@mark/logger';
 import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { AcrossBridgeAdapter, MAINNET_ACROSS_URL } from '../src/adapters/across';
 import { BridgeAdapter } from '../src/types';
-import { Account, Hash, parseUnits, TransactionReceipt } from 'viem';
+import { Account, Hash, parseUnits, TransactionReceipt, createWalletClient, http, createPublicClient, getContract, erc20Abi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { Command } from 'commander';
-import { createWalletClient, http, createPublicClient, getContract, erc20Abi } from 'viem';
 import * as chains from 'viem/chains'
+import { RebalanceAdapter } from '../src';
+import { RebalanceCache } from '@mark/cache';
 
 function getViemChain(id: number) {
     for (const chain of Object.values(chains)) {
@@ -28,6 +29,9 @@ const logger = new Logger({
     level: 'debug',
     service: 'mark-dev'
 });
+
+// Initialize cache
+const cache = new RebalanceCache('127.0.0.1', 6379);
 
 interface AdapterOptions {
     amount: string;
@@ -71,22 +75,11 @@ program
         const parsed = await parseChainConfigurations(configs, ['WETH', 'USDC', 'USDT', 'ETH'], {});
 
         // Create appropriate adapter
-        let adapter: BridgeAdapter;
-        switch (type) {
-            case 'across':
-                adapter = new AcrossBridgeAdapter(
-                    MAINNET_ACROSS_URL,
-                    parsed,
-                    logger
-                );
-                break;
-            default:
-                throw new Error(`Unsupported adapter type: ${type}`);
-        }
+        const rebalancer = new RebalanceAdapter('mainnet', parsed, logger, cache);
+        const adapter = rebalancer.getAdapter(type);
 
         // Test the adapter
         await testBridgeAdapter(adapter, account, parsed, options);
-
     });
 
 // Helper function to handle destination chain operations
@@ -95,7 +88,6 @@ async function handleDestinationChain(
     account: Account,
     configs: Record<string, ChainConfiguration>,
     route: RebalanceRoute,
-    amountInWei: string,
     receipt: TransactionReceipt
 ): Promise<{ callbackTxHash?: Hash; callbackReceipt?: TransactionReceipt }> {
     // Check if callback is needed
@@ -350,7 +342,7 @@ async function testBridgeAdapter(
     await pollForTransactionReady(adapter, amountInWei, route, receipt as TransactionReceipt);
 
     // Handle destination chain operations
-    const result = await handleDestinationChain(adapter, account, configs, route, amountInWei, receipt as TransactionReceipt);
+    const result = await handleDestinationChain(adapter, account, configs, route, receipt as TransactionReceipt);
 
     logger.info('Bridge transaction completed', {
         bridgeTxHash: txHash,
@@ -432,7 +424,7 @@ program
         await pollForTransactionReady(adapter, amountInWei, route, receipt as TransactionReceipt);
 
         // Handle destination chain operations
-        const result = await handleDestinationChain(adapter, account, parsed, route, amountInWei, receipt as TransactionReceipt);
+        const result = await handleDestinationChain(adapter, account, parsed, route, receipt as TransactionReceipt);
 
         logger.info('Resume operation completed', {
             bridgeTxHash: options.hash,
