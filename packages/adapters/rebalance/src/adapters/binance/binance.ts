@@ -29,9 +29,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
   private readonly client: BinanceClient;
 
   constructor(
-    private readonly apiKey: string,
-    private readonly apiSecret: string,
-    private readonly baseUrl: string,
+    apiKey: string,
+    apiSecret: string,
+    baseUrl: string,
     protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
     private readonly rebalanceCache: RebalanceCache,
@@ -478,6 +478,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       error: jsonifyError(error),
       ...metadata,
     });
-    throw new Error(`Failed to ${context}: ${(error as any)?.message ?? 'Unknown error'}`);
+    throw new Error(`Failed to ${context}: ${(error as unknown as Error)?.message ?? 'Unknown error'}`);
   }
 }
