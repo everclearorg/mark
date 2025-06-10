@@ -2,14 +2,13 @@ import { getMarkBalances, safeStringToBigInt, getTickerForAsset } from '../helpe
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { zeroAddress } from 'viem';
 import { RebalanceAction } from '@mark/cache';
 import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
-import { checkAndApproveERC20 } from '../helpers/erc20';
 import { submitTransactionWithLogging } from '../helpers/transactions';
+import { RebalanceTransactionMemo } from '@mark/rebalance';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<void> {
-  const { logger, requestId, rebalanceCache, config, chainService, rebalance, prometheus } = context;
+  const { logger, requestId, rebalanceCache, config, chainService, rebalance } = context;
   const isPaused = await rebalanceCache.isPaused();
   if (isPaused) {
     logger.warn('Rebalance loop is paused', { requestId });
@@ -157,24 +156,24 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
       });
 
-      // Step 3: Get Bridge Transaction Request (before approval)
-      let bridgeTxRequest;
+      // Step 3: Get Bridge Transaction Requests
+      let bridgeTxRequests = [];
       const sender = getActualOwner(originZodiacConfig, config.ownAddress);
       const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
       try {
-        bridgeTxRequest = await adapter.send(sender, recipient, currentBalance.toString(), route);
+        bridgeTxRequests = await adapter.send(sender, recipient, currentBalance.toString(), route);
         logger.info('Prepared bridge transaction request from adapter', {
           requestId,
           route,
           bridgeType,
-          bridgeTxRequest,
+          bridgeTxRequests,
           sender,
           recipient,
           useOriginZodiac: originZodiacConfig.isEnabled,
           useDestinationZodiac: destinationZodiacConfig.isEnabled,
         });
-        if (!bridgeTxRequest.to) {
-          throw new Error(`Failed to populate 'to' in bridge transaction request`);
+        if (!bridgeTxRequests.length) {
+          throw new Error(`Failed to retrieve any bridge transaction requests`);
         }
       } catch (sendError) {
         logger.error('Failed to get bridge transaction request from adapter, trying next preference', {
@@ -185,82 +184,58 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         });
         continue; // Skip to next bridge preference
       }
-      const spenderAddress = bridgeTxRequest.to! as `0x${string}`; // Safe due to check above
 
-      // Step 4: ERC20 Approval Logic (if needed)
-      const isNativeAsset = route.asset.toLowerCase() === zeroAddress;
-      if (!isNativeAsset) {
-        try {
-          const approvalResult = await checkAndApproveERC20({
-            config,
-            chainService,
-            logger,
-            prometheus,
-            chainId: route.origin.toString(),
-            tokenAddress: route.asset,
-            spenderAddress,
-            amount: currentBalance,
-            owner: getActualOwner(originZodiacConfig, config.ownAddress),
-            zodiacConfig: originZodiacConfig,
-            context: { requestId, route, bridgeType },
-          });
-
-          if (approvalResult.wasRequired) {
-            logger.info('ERC20 approval completed', {
-              requestId,
-              route,
-              bridgeType,
-              approvalTxHash: approvalResult.transactionHash,
-              hadZeroApproval: approvalResult.hadZeroApproval,
-            });
-          }
-        } catch (approvalError) {
-          logger.error('ERC20 token approval failed, trying next preference', {
+      // Step 4: Submit the bridge transactions in order
+      let idx = -1;
+      try {
+        let transactionHash: string = '';
+        for (const { transaction, memo } of bridgeTxRequests) {
+          idx++;
+          logger.info('Submitting rebalance transaction bundle', {
+            transaction,
+            memo,
             requestId,
             route,
             bridgeType,
-            spenderAddress,
-            asset: route.asset,
-            error: jsonifyError(approvalError),
+            useZodiac: originZodiacConfig.isEnabled,
           });
-          continue; // Skip to next bridge preference
+          const result = await submitTransactionWithLogging({
+            chainService,
+            logger,
+            chainId: route.origin.toString(),
+            txRequest: {
+              to: transaction.to!,
+              data: transaction.data!,
+              value: transaction.value || 0,
+              from: config.ownAddress,
+            },
+            zodiacConfig: originZodiacConfig,
+            context: { requestId, route, bridgeType, transactionType: memo },
+          });
+
+          logger.info('Successfully submitted and confirmed origin bridge transaction', {
+            requestId,
+            route,
+            bridgeType,
+            transactionHash: result.transactionHash,
+            memo,
+            useZodiac: originZodiacConfig.isEnabled,
+          });
+
+          if (memo !== RebalanceTransactionMemo.Rebalance) {
+            continue;
+          }
+          transactionHash = result.transactionHash;
         }
-      } else {
-        logger.info('Asset is native, no ERC20 approval needed.', { requestId, route, bridgeType });
-      }
 
-      // Step 5: Submit the original bridge transaction
-      try {
-        const result = await submitTransactionWithLogging({
-          chainService,
-          logger,
-          chainId: route.origin.toString(),
-          txRequest: {
-            to: bridgeTxRequest.to!,
-            data: bridgeTxRequest.data!,
-            value: bridgeTxRequest.value || 0,
-            from: config.ownAddress,
-          },
-          zodiacConfig: originZodiacConfig,
-          context: { requestId, route, bridgeType, transactionType: 'bridge' },
-        });
-
-        logger.info('Successfully submitted and confirmed origin bridge transaction', {
-          requestId,
-          route,
-          bridgeType,
-          transactionHash: result.transactionHash,
-          useZodiac: originZodiacConfig.isEnabled,
-        });
-
-        // Step 6: Add rebalance action to cache
+        // Step 5: Add rebalance action to cache
         const rebalanceAction: RebalanceAction = {
           bridge: adapter.type(),
           amount: currentBalance.toString(),
           origin: route.origin,
           destination: route.destination,
           asset: route.asset,
-          transaction: result.transactionHash,
+          transaction: transactionHash,
           recipient,
         };
 
@@ -280,21 +255,22 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             requestId,
             route,
             bridgeType,
-            transactionHash: result.transactionHash,
+            transactionHash,
             error: jsonifyError(cacheError),
             rebalanceAction,
+            transaction: bridgeTxRequests[idx],
           });
           // Consider this a success for the route as funds were moved. Exit bridge loop.
           rebalanceSuccessful = true;
           break; // Exit the bridge preference loop for this route
         }
-      } catch (finalSendError) {
-        logger.error('Failed to send or monitor final bridge transaction, trying next preference', {
+      } catch (sendError) {
+        logger.error('Failed to send or monitor bridge transaction, trying next preference', {
           requestId,
           route,
           bridgeType,
-          bridgeTxRequest,
-          error: jsonifyError(finalSendError),
+          transaction: bridgeTxRequests[idx],
+          error: jsonifyError(sendError),
         });
         continue; // Skip to next bridge preference
       }
