@@ -79,13 +79,13 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         logger,
         chainId: route.destination.toString(),
         txRequest: {
-          to: callback.to!,
-          data: callback.data!,
-          value: callback.value || 0,
+          to: callback.transaction.to!,
+          data: callback.transaction.data!,
+          value: callback.transaction.value || 0,
           from: config.ownAddress,
         },
         zodiacConfig,
-        context: { ...logContext, callbackType: 'destination' },
+        context: { ...logContext, callbackType: `destination: ${callback.memo}` },
       });
 
       logger.info('Successfully submitted destination callback', {
