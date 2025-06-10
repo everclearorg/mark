@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, jest, afterEach } from '@jest/globals';
-import { SupportedBridge, RebalanceRoute, ChainConfiguration, AssetConfiguration } from '@mark/core';
+import { SupportedBridge, RebalanceRoute, AssetConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 import { TransactionReceipt } from 'viem';
 import { BinanceBridgeAdapter } from '../../../src/adapters/binance/binance';
 import { BinanceClient } from '../../../src/adapters/binance/client';
 import { DepositAddress, WithdrawResponse } from '../../../src/adapters/binance/types';
+import { RebalanceTransactionMemo } from '../../../src/types';
 
 // Mock the external dependencies
 jest.mock('../../../src/adapters/binance/client');
@@ -48,69 +49,69 @@ const mockRebalanceCache = {
 
 // Mock data for testing
 const mockAssets: Record<string, AssetConfiguration> = {
-    ETH: {
-        address: '0x0000000000000000000000000000000000000000',
-        symbol: 'ETH',
-        decimals: 18,
-        tickerHash: '0xETHHash',
-        isNative: true,
-        balanceThreshold: '0',
-    },
-    WETH: {
-        address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-        symbol: 'WETH',
-        decimals: 18,
-        tickerHash: '0xWETHHash',
-        isNative: false,
-        balanceThreshold: '0',
-    },
-    USDC: {
-        address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-        symbol: 'USDC',
-        decimals: 18,
-        tickerHash: '0xUSDCHash',
-        isNative: false,
-        balanceThreshold: '0',
-    },
+  ETH: {
+    address: '0x0000000000000000000000000000000000000000',
+    symbol: 'ETH',
+    decimals: 18,
+    tickerHash: '0xETHHash',
+    isNative: true,
+    balanceThreshold: '0',
+  },
+  WETH: {
+    address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    symbol: 'WETH',
+    decimals: 18,
+    tickerHash: '0xWETHHash',
+    isNative: false,
+    balanceThreshold: '0',
+  },
+  USDC: {
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    symbol: 'USDC',
+    decimals: 18,
+    tickerHash: '0xUSDCHash',
+    isNative: false,
+    balanceThreshold: '0',
+  },
 };
 
 const mockChains: Record<string, any> = {
-    '1': {
-        assets: Object.values(mockAssets),
-        providers: ['https://base-mainnet.example.com'],
-        invoiceAge: 3600,
-        gasThreshold: '100000000000',
-        gnosisSafeAddress: '0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B',
-        deployments: {
-            everclear: '0xEverclearAddress',
-            permit2: '0xPermit2Address',
-            multicall3: '0xMulticall3Address',
-        },
+  '1': {
+    assets: Object.values(mockAssets),
+    providers: ['https://base-mainnet.example.com'],
+    invoiceAge: 3600,
+    gasThreshold: '100000000000',
+    gnosisSafeAddress: '0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B',
+    deployments: {
+      everclear: '0xEverclearAddress',
+      permit2: '0xPermit2Address',
+      multicall3: '0xMulticall3Address',
     },
-    '10': {
-        assets: Object.values(mockAssets),
-        providers: ['https://opt-mainnet.example.com'],
-        invoiceAge: 3600,
-        gasThreshold: '100000000000',
-        gnosisSafeAddress: '0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B',
-        deployments: {
-            everclear: '0xEverclearAddress',
-            permit2: '0xPermit2Address',
-            multicall3: '0xMulticall3Address',
-        },
+  },
+  '10': {
+    assets: Object.values(mockAssets),
+    providers: ['https://opt-mainnet.example.com'],
+    invoiceAge: 3600,
+    gasThreshold: '100000000000',
+    gnosisSafeAddress: '0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B',
+    deployments: {
+      everclear: '0xEverclearAddress',
+      permit2: '0xPermit2Address',
+      multicall3: '0xMulticall3Address',
     },
-    '42161': {
-        assets: Object.values(mockAssets),
-        providers: ['https://arb-mainnet.example.com'],
-        invoiceAge: 3600,
-        gasThreshold: '100000000000',
-        gnosisSafeAddress: '0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B',
-        deployments: {
-            everclear: '0xEverclearAddress',
-            permit2: '0xPermit2Address',
-            multicall3: '0xMulticall3Address',
-        },
+  },
+  '42161': {
+    assets: Object.values(mockAssets),
+    providers: ['https://arb-mainnet.example.com'],
+    invoiceAge: 3600,
+    gasThreshold: '100000000000',
+    gnosisSafeAddress: '0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B',
+    deployments: {
+      everclear: '0xEverclearAddress',
+      permit2: '0xPermit2Address',
+      multicall3: '0xMulticall3Address',
     },
+  },
 };
 
 // Mock API responses
@@ -230,16 +231,16 @@ describe('BinanceBridgeAdapter', () => {
   describe('getReceivedAmount', () => {
     it('should calculate received amount correctly for WETH after subtracting withdrawal fees', async () => {
       const amount = '1000000000000000000'; // 1 ETH in wei
-      
+
       const result = await adapter.getReceivedAmount(amount, sampleRoute);
-      
+
       // Expected: 1 ETH - 0.001 ETH (Arbitrum withdrawal fee) = 0.999 ETH
       expect(result).toBe('999000000000000000');
     });
 
     it('should reject amounts that are too low', async () => {
       const amount = '1000'; // Very small amount below minimum
-      
+
       await expect(adapter.getReceivedAmount(amount, sampleRoute))
         .rejects.toThrow('Amount is too low for Binance withdrawal');
     });
@@ -249,7 +250,7 @@ describe('BinanceBridgeAdapter', () => {
         ...sampleRoute,
         asset: '0xUnsupportedAsset',
       };
-      
+
       await expect(adapter.getReceivedAmount('1000000000000000000', unsupportedRoute))
         .rejects.toThrow('Failed to calculate received amount');
     });
@@ -263,11 +264,11 @@ describe('BinanceBridgeAdapter', () => {
 
       const result = await adapter.send(sender, recipient, amount, sampleRoute);
 
-      expect(result).toEqual({
-        to: mockDepositAddress.address,
-        value: BigInt(0), // ERC20 transfer, not native ETH
-        data: expect.any(String), // ERC20 transfer encoded data
-      });
+      expect(result.length).toBe(1);
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[0].transaction.to).toBe(mockDepositAddress.address);
+      expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer, not native ETH
+      expect(result[0].transaction.data).toEqual(expect.any(String)); // ERC20 transfer encoded data
 
       // Verify deposit address was requested
       expect(mockBinanceClient.getDepositAddress).toHaveBeenCalledWith('ETH', 'ETH');
@@ -275,14 +276,14 @@ describe('BinanceBridgeAdapter', () => {
 
     it('should throw error if amount is too low', async () => {
       const amount = '1000'; // Very small amount
-      
+
       await expect(adapter.send('0xsender', '0xrecipient', amount, sampleRoute))
         .rejects.toThrow('does not meet minimum withdrawal requirement');
     });
 
     it('should throw error if getDepositAddress fails', async () => {
       mockBinanceClient.getDepositAddress.mockRejectedValueOnce(new Error('API error'));
-      
+
       await expect(adapter.send('0xsender', '0xrecipient', '1000000000000000000', sampleRoute))
         .rejects.toThrow('Failed to prepare Binance deposit transaction');
     });
@@ -446,7 +447,9 @@ describe('BinanceBridgeAdapter', () => {
 
       // 1. Send transaction
       const sendResult = await adapter.send(sender, recipient, amount, sampleRoute);
-      expect(sendResult.to).toBe(mockDepositAddress.address);
+      expect(sendResult.length).toBe(1);
+      expect(sendResult[0].transaction.to).toBe(mockDepositAddress.address);
+      expect(sendResult[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
 
       // 2. Check readyOnDestination (should not be ready initially)
       // Mock cache to return recipient for both calls
@@ -482,9 +485,9 @@ describe('BinanceBridgeAdapter', () => {
     it('should be properly exported from main adapter', () => {
       const { RebalanceAdapter } = require('../../../src/adapters');
       const mockLogger = { debug: jest.fn() } as unknown as Logger;
-      
+
       const rebalanceAdapter = new RebalanceAdapter('mainnet', {}, mockLogger);
-      
+
       // This should not throw an error for Binance
       expect(() => {
         // We expect this to throw due to missing env vars, but not due to unknown adapter type
