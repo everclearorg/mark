@@ -186,6 +186,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       }
 
       // Step 4: Submit the bridge transactions in order
+      // TODO: Use multisend for zodiac-enabled origin transactions
       let idx = -1;
       try {
         let transactionHash: string = '';
