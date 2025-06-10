@@ -11,7 +11,7 @@ import { Logger } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
 import { RebalanceCache, RebalanceAction } from '@mark/cache';
-import { RebalanceAdapter } from '@mark/rebalance';
+import { RebalanceAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { TransactionRequest as ViemTransactionRequest, zeroAddress, Hex, erc20Abi } from 'viem'; // For adapter.send return type
 import { providers } from 'ethers';
@@ -19,7 +19,7 @@ import { providers } from 'ethers';
 
 interface MockBridgeAdapterInterface {
     getReceivedAmount: SinonStub<[string, RebalanceRoute], Promise<string>>;
-    send: SinonStub<[string, string, string, RebalanceRoute], Promise<ViemTransactionRequest>>;
+    send: SinonStub<[string, string, string, RebalanceRoute], Promise<MemoizedTransactionRequest[]>>;
     type: SinonStub<[], SupportedBridge>;
     // Add other methods if they are called by the SUT
 }
@@ -62,7 +62,7 @@ describe('rebalanceInventory', () => {
         // Create a fully stubbed object for the interface
         mockSpecificBridgeAdapter = {
             getReceivedAmount: stub<[string, RebalanceRoute], Promise<string>>(),
-            send: stub<[string, string, string, RebalanceRoute], Promise<ViemTransactionRequest>>(),
+            send: stub<[string, string, string, RebalanceRoute], Promise<MemoizedTransactionRequest[]>>(),
             type: stub<[], SupportedBridge>(),
         };
 
@@ -203,17 +203,30 @@ describe('rebalanceInventory', () => {
         balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
         getMarkBalancesStub.resolves(balances);
 
-        const mockTxRequest: ViemTransactionRequest = {
-            to: MOCK_BRIDGE_A_SPENDER,
-            data: '0xbridgeData' as Hex,
-            value: 0n,
+        // Mock approval transaction and bridge transaction returned serially
+        const mockApprovalTxRequest: MemoizedTransactionRequest = {
+            transaction: {
+                to: routeToTest.asset as `0x${string}`,
+                data: MOCK_APPROVE_DATA,
+                value: 0n,
+            },
+            memo: 'Approval' as any
+        };
+
+        const mockBridgeTxRequest: MemoizedTransactionRequest = {
+            transaction: {
+                to: MOCK_BRIDGE_A_SPENDER,
+                data: '0xbridgeData' as Hex,
+                value: 0n,
+            },
+            memo: RebalanceTransactionMemo.Rebalance
         };
 
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockSpecificBridgeAdapter as any);
 
         // Simplify the stub for debugging
         mockSpecificBridgeAdapter.getReceivedAmount.resolves(quoteAmount);
-        mockSpecificBridgeAdapter.send.withArgs(MOCK_OWN_ADDRESS, MOCK_OWN_ADDRESS, currentBalance.toString(), match({ ...routeToTest, preferences: [SupportedBridge.Across] })).resolves(mockTxRequest);
+        mockSpecificBridgeAdapter.send.withArgs(MOCK_OWN_ADDRESS, MOCK_OWN_ADDRESS, currentBalance.toString(), match({ ...routeToTest, preferences: [SupportedBridge.Across] })).resolves([mockApprovalTxRequest, mockBridgeTxRequest]);
 
         await rebalanceInventory({ ...mockContext, config: { ...mockContext.config, routes: [{ ...routeToTest, preferences: [SupportedBridge.Across] }] } });
 
@@ -221,19 +234,19 @@ describe('rebalanceInventory', () => {
         expect(mockRebalanceAdapter.getAdapter.calledWith(MOCK_BRIDGE_TYPE_A)).to.be.true;
         expect(mockSpecificBridgeAdapter.getReceivedAmount.calledOnce).to.be.true;
         expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-        
-        // Check that ERC20 approval helper was called
-        expect(checkAndApproveERC20Stub.calledOnce).to.be.true;
-        const approvalCall = checkAndApproveERC20Stub.firstCall.args[0];
-        expect(approvalCall.tokenAddress).to.equal(routeToTest.asset);
-        expect(approvalCall.spenderAddress).to.equal(MOCK_BRIDGE_A_SPENDER);
-        expect(approvalCall.amount).to.equal(currentBalance);
-        
-        // Check that transaction submission helper was called
-        expect(submitTransactionWithLoggingStub.calledOnce).to.be.true;
-        const txCall = submitTransactionWithLoggingStub.firstCall.args[0];
-        expect(txCall.txRequest.to).to.equal(MOCK_BRIDGE_A_SPENDER);
-        expect(txCall.txRequest.data).to.equal('0xbridgeData');
+
+        // Check that transaction submission helper was called twice (approval + bridge)
+        expect(submitTransactionWithLoggingStub.calledTwice).to.be.true;
+
+        // Check the approval transaction
+        const approvalTxCall = submitTransactionWithLoggingStub.firstCall.args[0];
+        expect(approvalTxCall.txRequest.to).to.equal(routeToTest.asset);
+        expect(approvalTxCall.txRequest.data).to.equal(MOCK_APPROVE_DATA);
+
+        // Check the bridge transaction
+        const bridgeTxCall = submitTransactionWithLoggingStub.secondCall.args[0];
+        expect(bridgeTxCall.txRequest.to).to.equal(MOCK_BRIDGE_A_SPENDER);
+        expect(bridgeTxCall.txRequest.data).to.equal('0xbridgeData');
 
         const expectedAction: Partial<RebalanceAction> = {
             bridge: MOCK_BRIDGE_TYPE_A,
@@ -262,7 +275,10 @@ describe('rebalanceInventory', () => {
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_B).returns(mockSpecificBridgeAdapter as any);
         mockSpecificBridgeAdapter.type.returns(MOCK_BRIDGE_TYPE_B); // Ensure type reflects the successful adapter
         mockSpecificBridgeAdapter.getReceivedAmount.resolves('99'); // Assume success for the second bridge
-        mockSpecificBridgeAdapter.send.resolves({ to: '0xOtherSpender', data: '0xbridgeData', value: 0n }); // Assume success for the second bridge
+        mockSpecificBridgeAdapter.send.resolves([{
+            transaction: { to: '0xOtherSpender', data: '0xbridgeData', value: 0n },
+            memo: RebalanceTransactionMemo.Rebalance
+        }]); // Assume success for the second bridge
 
         // Mock allowance and contract for the second bridge attempt (assuming ERC20)
         const mockContractInstance = { read: { allowance: stub().resolves(1000n) }, abi: erc20Abi, address: MOCK_ASSET_ERC20 };
@@ -287,7 +303,12 @@ describe('rebalanceInventory', () => {
         getMarkBalancesStub.resolves(balances);
 
         const mockAdapterA = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().rejects(new Error('Quote failed')) };
-        const mockAdapterB = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves('99'), send: stub().resolves({ to: '0xOtherSpender', data: '0xbridgeDataB', value: 0n }), type: stub().returns(MOCK_BRIDGE_TYPE_B) };
+        const mockAdapterB = {
+            ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves('99'), send: stub().resolves([{
+                transaction: { to: '0xOtherSpender', data: '0xbridgeDataB', value: 0n },
+                memo: RebalanceTransactionMemo.Rebalance
+            }]), type: stub().returns(MOCK_BRIDGE_TYPE_B)
+        };
 
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockAdapterA as any);
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_B).returns(mockAdapterB as any);
@@ -314,7 +335,12 @@ describe('rebalanceInventory', () => {
         getMarkBalancesStub.resolves(balances);
 
         const mockAdapterA = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves(lowQuote), type: stub().returns(MOCK_BRIDGE_TYPE_A) };
-        const mockAdapterB = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves('9950'), send: stub().resolves({ to: '0xOtherSpender', data: '0xbridgeDataB', value: 0n }), type: stub().returns(MOCK_BRIDGE_TYPE_B) };
+        const mockAdapterB = {
+            ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves('9950'), send: stub().resolves([{
+                transaction: { to: '0xOtherSpender', data: '0xbridgeDataB', value: 0n },
+                memo: RebalanceTransactionMemo.Rebalance
+            }]), type: stub().returns(MOCK_BRIDGE_TYPE_B)
+        };
 
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockAdapterA as any);
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_B).returns(mockAdapterB as any);
@@ -342,7 +368,12 @@ describe('rebalanceInventory', () => {
         const receivedAmountForSlippagePass = balanceForRoute.toString();
 
         const mockAdapterA_sendFails = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves(receivedAmountForSlippagePass), send: stub().rejects(new Error('Send failed')), type: stub().returns(MOCK_BRIDGE_TYPE_A) };
-        const mockAdapterB_sendFails = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves(receivedAmountForSlippagePass), send: stub().resolves({ to: '0xOtherSpender', data: '0xbridgeDataB', value: 0n }), type: stub().returns(MOCK_BRIDGE_TYPE_B) };
+        const mockAdapterB_sendFails = {
+            ...mockSpecificBridgeAdapter, getReceivedAmount: stub().resolves(receivedAmountForSlippagePass), send: stub().resolves([{
+                transaction: { to: '0xOtherSpender', data: '0xbridgeDataB', value: 0n },
+                memo: RebalanceTransactionMemo.Rebalance
+            }]), type: stub().returns(MOCK_BRIDGE_TYPE_B)
+        };
 
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockAdapterA_sendFails as any);
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_B).returns(mockAdapterB_sendFails as any);
@@ -368,23 +399,19 @@ describe('rebalanceInventory', () => {
         balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
         getMarkBalancesStub.resolves(balances);
 
-        const mockTxRequest: ViemTransactionRequest = {
-            to: MOCK_BRIDGE_A_SPENDER, // Spender for the bridge
-            data: '0xbridgeData' as Hex,
-            value: 0n,
+        const mockTxRequest: MemoizedTransactionRequest = {
+            transaction: {
+                to: MOCK_BRIDGE_A_SPENDER, // Spender for the bridge
+                data: '0xbridgeData' as Hex,
+                value: 0n,
+            },
+            memo: RebalanceTransactionMemo.Rebalance
         };
 
         mockRebalanceAdapter.getAdapter.withArgs(MOCK_BRIDGE_TYPE_A).returns(mockSpecificBridgeAdapter as any);
         mockSpecificBridgeAdapter.type.returns(MOCK_BRIDGE_TYPE_A);
         mockSpecificBridgeAdapter.getReceivedAmount.resolves(quoteAmount);
-        mockSpecificBridgeAdapter.send.withArgs(MOCK_OWN_ADDRESS, MOCK_OWN_ADDRESS, currentBalance.toString(), match.object).resolves(mockTxRequest);
-
-        // Configure approval helper to return that no approval was needed
-        checkAndApproveERC20Stub.resolves({
-            wasRequired: false,
-            transactionHash: null,
-            hadZeroApproval: false,
-        });
+        mockSpecificBridgeAdapter.send.withArgs(MOCK_OWN_ADDRESS, MOCK_OWN_ADDRESS, currentBalance.toString(), match.object).resolves([mockTxRequest]);
 
         await rebalanceInventory({ ...mockContext, config: { ...mockContext.config, routes: [{ ...routeToTest, preferences: [MOCK_BRIDGE_TYPE_A] }] } });
 
@@ -392,16 +419,13 @@ describe('rebalanceInventory', () => {
         expect(mockRebalanceAdapter.getAdapter.calledWith(MOCK_BRIDGE_TYPE_A)).to.be.true;
         expect(mockSpecificBridgeAdapter.getReceivedAmount.calledOnce).to.be.true;
         expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-        
-        // Check that ERC20 approval helper was called (even though no approval was needed)
-        expect(checkAndApproveERC20Stub.calledOnce).to.be.true;
-        
+
         // Check that transaction submission helper was called for the bridge transaction
         expect(submitTransactionWithLoggingStub.calledOnce).to.be.true;
         const txCall = submitTransactionWithLoggingStub.firstCall.args[0];
         expect(txCall.txRequest.to).to.equal(MOCK_BRIDGE_A_SPENDER);
         expect(txCall.txRequest.data).to.equal('0xbridgeData');
-        
+
         expect(mockRebalanceCache.addRebalances.calledOnce).to.be.true;
     });
 
@@ -453,7 +477,7 @@ describe('Zodiac Address Validation', () => {
 
         mockSpecificBridgeAdapter = {
             getReceivedAmount: stub<[string, RebalanceRoute], Promise<string>>(),
-            send: stub<[string, string, string, RebalanceRoute], Promise<ViemTransactionRequest>>(),
+            send: stub<[string, string, string, RebalanceRoute], Promise<MemoizedTransactionRequest[]>>(),
             type: stub<[], SupportedBridge>(),
         };
 
@@ -544,17 +568,16 @@ describe('Zodiac Address Validation', () => {
         mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
         mockSpecificBridgeAdapter.type.returns(MOCK_BRIDGE_TYPE);
         mockSpecificBridgeAdapter.getReceivedAmount.resolves('19980000000000000001'); // Good quote for 20 tokens (just above minimum slippage)
-        mockSpecificBridgeAdapter.send.resolves({
-            to: '0xBridgeSpender',
-            data: '0xbridgeData' as Hex,
-            value: 0n,
-        });
+        mockSpecificBridgeAdapter.send.resolves([{
+            transaction: { to: '0xBridgeSpender', data: '0xbridgeData' as Hex, value: 0n },
+            memo: RebalanceTransactionMemo.Rebalance
+        }]);
 
         // Mock successful transaction
-        mockChainService.submitAndMonitor.resolves({ 
-            transactionHash: '0xMockTxHash', 
-            blockNumber: 123, 
-            status: 1 
+        mockChainService.submitAndMonitor.resolves({
+            transactionHash: '0xMockTxHash',
+            blockNumber: 123,
+            status: 1
         } as any);
     });
 

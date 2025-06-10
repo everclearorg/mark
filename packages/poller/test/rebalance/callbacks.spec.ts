@@ -67,9 +67,12 @@ describe('executeDestinationCallbacks', () => {
     };
 
     const mockCallbackTx = {
-        to: '0xDestinationContract',
-        data: '0xcallbackdata',
-        value: '0',
+        transaction: {
+            to: '0xDestinationContract',
+            data: '0xcallbackdata',
+            value: '0',
+        },
+        memo: 'Callback'
     };
 
     // submitAndMonitor should resolve with a receipt-like object
@@ -193,7 +196,7 @@ describe('executeDestinationCallbacks', () => {
         await executeDestinationCallbacks(mockContext);
         expect(mockLogger.info.calledWith('No destination callback transaction returned', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction1, id: mockAction1Id } }))).to.be.true;
         expect(mockRebalanceCache.removeRebalances.calledOnceWith([mockAction1Id])).to.be.true;
-        expect(mockChainService.submitAndMonitor.called).to.be.false;
+        expect(submitTransactionStub.called).to.be.false;
     });
 
     it('should log error and continue if destinationCallback fails', async () => {
@@ -260,7 +263,6 @@ describe('executeDestinationCallbacks', () => {
         mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
         mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(true);
         mockSpecificBridgeAdapter.destinationCallback.withArgs(match(mockRoute1), mockReceipt1).resolves(mockCallbackTx);
-        mockChainService.submitAndMonitor.withArgs(mockAction1.destination.toString(), mockCallbackTx).resolves(mockSubmitSuccessReceipt);
 
         // Action 2 (mockAction2): Fails at readyOnDestination (returns false)
         mockRebalanceAdapter.getAdapter.withArgs(mockAction2.bridge).returns(mockSpecificBridgeAdapterB as any);
@@ -273,7 +275,7 @@ describe('executeDestinationCallbacks', () => {
         mockChainService.getTransactionReceipt.withArgs(mockAction3.origin, mockAction3.transaction).resolves(mockReceipt3);
         mockSpecificBridgeAdapterC.readyOnDestination.withArgs(mockAction3.amount, match(mockRoute3), mockReceipt3).resolves(true);
         mockSpecificBridgeAdapterC.destinationCallback.withArgs(match(mockRoute3), mockReceipt3).resolves(mockCallbackTx);
-        
+
         submitTransactionStub.reset();
         submitTransactionStub.onFirstCall().resolves({
             transactionHash: mockSubmitSuccessReceipt.transactionHash,
