@@ -1,6 +1,5 @@
 import {
   TransactionReceipt,
-  TransactionRequestBase,
   createPublicClient,
   encodeFunctionData,
   http,
@@ -11,7 +10,7 @@ import {
 import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
-import { BridgeAdapter } from '../../types';
+import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { BinanceClient } from './client';
 import { WithdrawalStatus, BinanceAssetMapping } from './types';
 import { WITHDRAWAL_STATUS, DEPOSIT_STATUS } from './constants';
@@ -114,7 +113,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     recipient: string,
     amount: string,
     route: RebalanceRoute,
-  ): Promise<TransactionRequestBase> {
+  ): Promise<MemoizedTransactionRequest[]> {
     try {
       // Check Binance system status before proceeding
       const isOperational = await this.client.isSystemOperational();
@@ -144,18 +143,23 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       });
 
       // Return transaction to send funds to Binance deposit address
-      return {
-        to: depositInfo.address as `0x${string}`,
-        value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
-        data:
-          route.asset !== zeroAddress
-            ? encodeFunctionData({
-                abi: erc20Abi,
-                functionName: 'transfer',
-                args: [depositInfo.address as `0x${string}`, BigInt(amount)],
-              })
-            : '0x',
-      };
+      return [
+        {
+          memo: RebalanceTransactionMemo.Rebalance,
+          transaction: {
+            to: depositInfo.address as `0x${string}`,
+            value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
+            data:
+              route.asset !== zeroAddress
+                ? encodeFunctionData({
+                    abi: erc20Abi,
+                    functionName: 'transfer',
+                    args: [depositInfo.address as `0x${string}`, BigInt(amount)],
+                  })
+                : '0x',
+          },
+        },
+      ];
     } catch (error) {
       this.handleError(error, 'prepare Binance deposit transaction', { amount, route });
     }
@@ -212,7 +216,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
   async destinationCallback(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
-  ): Promise<TransactionRequestBase | void> {
+  ): Promise<MemoizedTransactionRequest | void> {
     this.logger.debug('destinationCallback called - TODO: wrap to WETH', {
       route,
       transactionHash: originTransaction.transactionHash,
