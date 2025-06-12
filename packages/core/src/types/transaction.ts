@@ -21,3 +21,8 @@ export interface TransactionRequest {
   } | null;
   ccipReadEnabled?: boolean | null;
 }
+
+export enum TransactionSubmissionType {
+  Onchain = 'Onchain',
+  MultisigProposal = 'MultisigProposal',
+}
