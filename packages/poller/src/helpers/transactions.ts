@@ -1,8 +1,8 @@
 import { providers } from 'ethers';
 import { ChainService } from '@mark/chainservice';
-import { Logger } from '@mark/logger';
-import { LoggingContext } from '@mark/core';
-import { WalletConfig, wrapTransactionWithZodiac, TransactionRequest } from './zodiac';
+import { jsonifyError, Logger } from '@mark/logger';
+import { LoggingContext, TransactionSubmissionType, WalletType, TransactionRequest, WalletConfig } from '@mark/core';
+import { wrapTransactionWithZodiac } from './zodiac';
 
 export interface TransactionSubmissionParams {
   chainService: ChainService;
@@ -14,8 +14,9 @@ export interface TransactionSubmissionParams {
 }
 
 export interface TransactionSubmissionResult {
-  transactionHash: string;
-  receipt: providers.TransactionReceipt; // The actual receipt type from chainService
+  submissionType: TransactionSubmissionType;
+  hash: string; // unique identifier for the transaction, could be safe hash or transaction hash
+  receipt?: providers.TransactionReceipt; // The actual receipt type from chainService
 }
 
 /**
@@ -27,7 +28,41 @@ export async function submitTransactionWithLogging(
   const { chainService, logger, chainId, txRequest, zodiacConfig, context = {} } = params;
 
   // Prepare the transaction (wrap with Zodiac if needed)
-  const preparedTx = await wrapTransactionWithZodiac(txRequest, zodiacConfig);
+  const preparedTx = await wrapTransactionWithZodiac({ ...txRequest, chainId: +params.chainId }, zodiacConfig);
+
+  if (zodiacConfig.walletType === WalletType.Multisig) {
+    logger.info('Proposing transaction to multisig', {
+      ...context,
+      chainId,
+      to: preparedTx.to,
+      value: preparedTx.value?.toString() || '0',
+      walletType: zodiacConfig.walletType,
+      safeAddress: zodiacConfig.safeAddress,
+    });
+
+    try {
+      const safeTxHash = await chainService.proposeMultisigTransaction(chainId, preparedTx, zodiacConfig);
+      logger.info('Transaction proposed to multisig successfully', {
+        ...context,
+        chainId,
+        safeTxHash,
+        walletType: zodiacConfig.walletType,
+      });
+      return {
+        submissionType: TransactionSubmissionType.MultisigProposal,
+        hash: safeTxHash,
+      };
+    } catch (error) {
+      logger.error('Multisig transaction proposal failed', {
+        ...context,
+        chainId,
+        error: jsonifyError(error),
+        txRequest: txRequest,
+        walletType: zodiacConfig.walletType,
+      });
+      throw error;
+    }
+  }
 
   logger.info('Submitting transaction', {
     ...context,
@@ -49,7 +84,8 @@ export async function submitTransactionWithLogging(
     });
 
     return {
-      transactionHash: receipt.transactionHash,
+      submissionType: TransactionSubmissionType.Onchain,
+      hash: receipt.transactionHash,
       receipt,
     };
   } catch (error) {

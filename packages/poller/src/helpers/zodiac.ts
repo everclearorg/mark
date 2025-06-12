@@ -1,5 +1,5 @@
 import { encodeFunctionData, isAddress as viemIsAddress, Hex } from 'viem';
-import { ChainConfiguration, LoggingContext } from '@mark/core';
+import { ChainConfiguration, LoggingContext, TransactionRequest, WalletConfig, WalletType } from '@mark/core';
 import { Logger } from '@mark/logger';
 
 // ABI for the Zodiac RoleModule's execTransactionWithRole function
@@ -19,25 +19,6 @@ export const ZODIAC_ROLE_MODULE_ABI = [
     type: 'function',
   },
 ] as const;
-
-export enum WalletType {
-  Zodiac = 'Zodiac',
-  Multisig = 'Multisig',
-  EOA = 'EOA',
-}
-export interface WalletConfig {
-  walletType: WalletType;
-  moduleAddress?: `0x${string}`;
-  roleKey?: `0x${string}`;
-  safeAddress?: `0x${string}`;
-}
-
-export interface TransactionRequest {
-  to: string;
-  data: string;
-  value?: bigint | string | number;
-  from?: string;
-}
 
 /**
  * Detects if Zodiac is enabled for a chain and returns the configuration
@@ -113,12 +94,8 @@ export async function wrapTransactionWithZodiac(
   txRequest: TransactionRequest,
   zodiacConfig: WalletConfig,
 ): Promise<TransactionRequest> {
-  if (zodiacConfig.walletType === WalletType.EOA) {
+  if (zodiacConfig.walletType !== WalletType.Zodiac) {
     return txRequest;
-  }
-
-  if (zodiacConfig.walletType === WalletType.Multisig) {
-    throw new Error(`Fix me -- need to add in SAFE API config!`);
   }
 
   const wrappedData = encodeFunctionData({
@@ -137,8 +114,9 @@ export async function wrapTransactionWithZodiac(
   return {
     to: zodiacConfig.moduleAddress!,
     data: wrappedData,
-    value: 0, // Mark doesn't send native value to Zodiac module
+    value: '0', // Mark doesn't send native value to Zodiac module
     from: txRequest.from,
+    chainId: txRequest.chainId,
   };
 }
 
