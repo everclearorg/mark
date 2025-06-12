@@ -121,7 +121,7 @@ describe('isValidInvoice', () => {
     });
 
     it('should return error string if owner matches Safe address when zodiac is enabled on origin', () => {
-      const safeAddress = '0x9876543210987654321098765432109876543210';
+      const safeAddress = '0x9876543210987654321098765432109876543210' as `0x${string}`;
 
       // Create config with zodiac enabled on origin chain
       const configWithZodiac: MarkConfiguration = {
@@ -139,9 +139,9 @@ describe('isValidInvoice', () => {
 
       // Mock zodiac functions
       const mockZodiacConfig = {
-        isEnabled: true,
-        moduleAddress: '0x1234567890123456789012345678901234567890',
-        roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+        walletType: zodiacHelpers.WalletType.Zodiac,
+        moduleAddress: '0x1234567890123456789012345678901234567890' as `0x${string}`,
+        roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234' as `0x${string}`,
         safeAddress
       };
 
@@ -160,7 +160,7 @@ describe('isValidInvoice', () => {
     });
 
     it('should return undefined if owner does not match Safe address when zodiac is enabled on origin', () => {
-      const safeAddress = '0x9876543210987654321098765432109876543210';
+      const safeAddress = '0x9876543210987654321098765432109876543210' as `0x${string}`;
 
       // Create config with zodiac enabled on origin chain
       const configWithZodiac: MarkConfiguration = {
@@ -178,9 +178,9 @@ describe('isValidInvoice', () => {
 
       // Mock zodiac functions
       const mockZodiacConfig = {
-        isEnabled: true,
-        moduleAddress: '0x1234567890123456789012345678901234567890',
-        roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+        walletType: zodiacHelpers.WalletType.Zodiac,
+        moduleAddress: '0x1234567890123456789012345678901234567890' as `0x${string}`,
+        roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234' as `0x${string}`,
         safeAddress
       };
 
