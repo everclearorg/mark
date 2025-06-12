@@ -79,9 +79,10 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         logger,
         chainId: route.destination.toString(),
         txRequest: {
+          chainId: +route.destination,
           to: callback.to!,
           data: callback.data!,
-          value: callback.value || 0,
+          value: (callback.value || 0).toString(),
           from: config.ownAddress,
         },
         zodiacConfig,
@@ -92,7 +93,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         ...logContext,
         callback,
         receipt,
-        destinationTx: tx.transactionHash,
+        destinationTx: tx.hash,
         walletType: zodiacConfig.walletType,
       });
 

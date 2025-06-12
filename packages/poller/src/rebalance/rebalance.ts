@@ -1,10 +1,11 @@
 import { getMarkBalances, safeStringToBigInt, getTickerForAsset } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
+import { WalletType } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
 import { zeroAddress } from 'viem';
 import { RebalanceAction } from '@mark/cache';
-import { getValidatedZodiacConfig, getActualOwner, WalletType } from '../helpers/zodiac';
+import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
 import { checkAndApproveERC20 } from '../helpers/erc20';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 
@@ -238,7 +239,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           txRequest: {
             to: bridgeTxRequest.to!,
             data: bridgeTxRequest.data!,
-            value: bridgeTxRequest.value || 0,
+            value: (bridgeTxRequest.value || 0).toString(),
+            chainId: route.origin,
             from: config.ownAddress,
           },
           zodiacConfig: originZodiacConfig,
@@ -249,7 +251,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           requestId,
           route,
           bridgeType,
-          transactionHash: result.transactionHash,
+          transactionHash: result.hash,
           useZodiac: originZodiacConfig.walletType,
         });
 
@@ -260,7 +262,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           origin: route.origin,
           destination: route.destination,
           asset: route.asset,
-          transaction: result.transactionHash,
+          transaction: result.hash,
         };
 
         try {
@@ -279,7 +281,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             requestId,
             route,
             bridgeType,
-            transactionHash: result.transactionHash,
+            transactionHash: result.hash,
             error: jsonifyError(cacheError),
             rebalanceAction,
           });
