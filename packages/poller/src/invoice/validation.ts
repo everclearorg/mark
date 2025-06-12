@@ -6,6 +6,7 @@ import {
   DEFAULT_INVOICE_AGE,
 } from '@mark/core';
 import { getTickers } from '../helpers';
+import { getActualOwner, getValidatedZodiacConfig } from '#/helpers/zodiac';
 
 export function isValidInvoice(
   invoice: Invoice,
@@ -28,11 +29,13 @@ export function isValidInvoice(
     return InvalidPurchaseReasons.InvalidFormat;
   }
 
-  // Check it is not our invoice
-  if (
-    invoice.owner.toLowerCase() === config.ownAddress.toLowerCase() ||
-    invoice.owner.toLowerCase() === '0x6dea30929a575b8b29f459aae1b3b85e52a723f4' // Temp: reject feeAdapter invoices
-  ) {
+  // Check it is not our invoice. Owner is EOA or the ownAddress depending on
+  // the configuration on the origin chain
+  // Get the actual owner
+  const chainConfig = config.chains[invoice.origin];
+  const zodiacConfig = getValidatedZodiacConfig(chainConfig);
+  const actualOwner = getActualOwner(zodiacConfig, config.ownAddress);
+  if (invoice.owner.toLowerCase() === actualOwner.toLowerCase()) {
     return InvalidPurchaseReasons.InvalidOwner;
   }
 

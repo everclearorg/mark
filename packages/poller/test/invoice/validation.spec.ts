@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { isValidInvoice } from '../../src/invoice';
 import { MarkConfiguration, Invoice, InvalidPurchaseReasons } from '@mark/core';
 import * as assetHelpers from '../../src/helpers/asset';
+import * as zodiacHelpers from '../../src/helpers/zodiac';
 import sinon from 'sinon';
 
 describe('isValidInvoice', () => {
@@ -117,6 +118,82 @@ describe('isValidInvoice', () => {
       expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
         InvalidPurchaseReasons.InvalidOwner
       );
+    });
+
+    it('should return error string if owner matches Safe address when zodiac is enabled on origin', () => {
+      const safeAddress = '0x9876543210987654321098765432109876543210';
+
+      // Create config with zodiac enabled on origin chain
+      const configWithZodiac: MarkConfiguration = {
+        ...validConfig,
+        chains: {
+          ...validConfig.chains,
+          '1': { // origin chain
+            ...validConfig.chains['8453'],
+            zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+            zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+            gnosisSafeAddress: safeAddress
+          }
+        }
+      };
+
+      // Mock zodiac functions
+      const mockZodiacConfig = {
+        isEnabled: true,
+        moduleAddress: '0x1234567890123456789012345678901234567890',
+        roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+        safeAddress
+      };
+
+      sinon.stub(zodiacHelpers, 'getValidatedZodiacConfig').returns(mockZodiacConfig);
+      sinon.stub(zodiacHelpers, 'getActualOwner').returns(safeAddress);
+      sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
+
+      const invalidInvoice = {
+        ...validInvoice,
+        owner: safeAddress // owner matches the Safe address
+      };
+
+      expect(isValidInvoice(invalidInvoice, configWithZodiac, Math.floor(Date.now() / 1000))).to.equal(
+        InvalidPurchaseReasons.InvalidOwner
+      );
+    });
+
+    it('should return undefined if owner does not match Safe address when zodiac is enabled on origin', () => {
+      const safeAddress = '0x9876543210987654321098765432109876543210';
+
+      // Create config with zodiac enabled on origin chain
+      const configWithZodiac: MarkConfiguration = {
+        ...validConfig,
+        chains: {
+          ...validConfig.chains,
+          '1': { // origin chain
+            ...validConfig.chains['8453'],
+            zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+            zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+            gnosisSafeAddress: safeAddress
+          }
+        }
+      };
+
+      // Mock zodiac functions
+      const mockZodiacConfig = {
+        isEnabled: true,
+        moduleAddress: '0x1234567890123456789012345678901234567890',
+        roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+        safeAddress
+      };
+
+      sinon.stub(zodiacHelpers, 'getValidatedZodiacConfig').returns(mockZodiacConfig);
+      sinon.stub(zodiacHelpers, 'getActualOwner').returns(safeAddress);
+      sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
+
+      const validInvoiceWithDifferentOwner = {
+        ...validInvoice,
+        owner: '0x1111111111111111111111111111111111111111' // different from Safe address
+      };
+
+      expect(isValidInvoice(validInvoiceWithDifferentOwner, configWithZodiac, Math.floor(Date.now() / 1000))).to.be.undefined;
     });
   });
 
