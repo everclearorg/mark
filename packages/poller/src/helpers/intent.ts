@@ -11,7 +11,7 @@ import {
 } from './permit2';
 import { prepareMulticall } from './multicall';
 import { MarkAdapters } from '../init';
-import { getValidatedZodiacConfig, getActualOwner, ZODIAC_ROLE_MODULE_ABI } from './zodiac';
+import { getValidatedZodiacConfig, getActualOwner, ZODIAC_ROLE_MODULE_ABI, WalletType } from './zodiac';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -139,7 +139,7 @@ export const sendIntents = async (
   }
 
   // Validate Zodiac-specific intent constraints
-  if (zodiacConfig.isEnabled) {
+  if (zodiacConfig.walletType !== WalletType.EOA) {
     const gnosisSafeAddress = zodiacConfig.safeAddress!.toLowerCase();
 
     // Check for Zodiac rule violations
@@ -180,7 +180,7 @@ export const sendIntents = async (
       chainId: originChainId,
       owner: ownerForAllowance,
       spender: spenderForAllowance,
-      useZodiac: zodiacConfig.isEnabled,
+      walletType: zodiacConfig.walletType,
     });
 
     const tokenContract = await getERC20Contract(config, firstIntent.origin, firstIntent.inputAsset as `0x${string}`);
@@ -217,7 +217,7 @@ export const sendIntents = async (
         let moduleZeroApprovalTo = tokenContract.address;
         let moduleZeroApprovalData = zeroApproveCalldata;
 
-        if (zodiacConfig.isEnabled) {
+        if (zodiacConfig.walletType !== WalletType.EOA) {
           const zodiacModuleAddress = zodiacConfig.moduleAddress as `0x${string}`;
           const zodiacRoleKey = zodiacConfig.roleKey as Hex;
           moduleZeroApprovalData = encodeFunctionData({
@@ -266,7 +266,7 @@ export const sendIntents = async (
       let moduleApprovalTo = tokenContract.address;
       let moduleApprovalData = approveCalldata;
 
-      if (zodiacConfig.isEnabled) {
+      if (zodiacConfig.walletType !== WalletType.EOA) {
         const zodiacModuleAddress = zodiacConfig.moduleAddress as `0x${string}`;
         const zodiacRoleKey = zodiacConfig.roleKey as Hex;
         moduleApprovalData = encodeFunctionData({
@@ -361,7 +361,7 @@ export const sendIntents = async (
     let purchaseTxValue = (feeAdapterTxData.value ?? '0').toString();
     const purchaseTxFrom: string = config.ownAddress;
 
-    if (zodiacConfig.isEnabled) {
+    if (zodiacConfig.walletType !== WalletType.EOA) {
       const zodiacModuleAddress = zodiacConfig.moduleAddress as `0x${string}`;
       const zodiacRoleKey = zodiacConfig.roleKey as Hex;
 

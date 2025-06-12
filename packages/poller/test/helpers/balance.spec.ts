@@ -111,8 +111,8 @@ describe('Wallet Balance Utilities', () => {
 
     it('should use Gnosis Safe address when Zodiac is enabled', async () => {
       // Mock zodiac functions
-      const mockZodiacConfigEnabled = { isEnabled: true, safeAddress: '0xGnosisSafe' };
-      const mockZodiacConfigDisabled = { isEnabled: false };
+      const mockZodiacConfigEnabled = { walletType: zodiacModule.WalletType.Zodiac, safeAddress: '0xGnosisSafe' as `0x${string}` };
+      const mockZodiacConfigDisabled = { walletType: zodiacModule.WalletType.EOA };
 
       stub(zodiacModule, 'getValidatedZodiacConfig')
         .withArgs(mockConfigWithZodiac.chains['1']).returns(mockZodiacConfigEnabled)

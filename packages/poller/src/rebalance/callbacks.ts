@@ -93,7 +93,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         callback,
         receipt,
         destinationTx: tx.transactionHash,
-        useZodiac: zodiacConfig.isEnabled,
+        walletType: zodiacConfig.walletType,
       });
 
       await rebalanceCache.removeRebalances([action.id]);

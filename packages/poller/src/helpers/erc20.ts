@@ -5,7 +5,7 @@ import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { TransactionReason } from '@mark/prometheus';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { ZodiacConfig } from './zodiac';
+import { WalletConfig } from './zodiac';
 import { submitTransactionWithLogging } from './transactions';
 
 export interface ApprovalParams {
@@ -18,7 +18,7 @@ export interface ApprovalParams {
   spenderAddress: string;
   amount: bigint;
   owner: string;
-  zodiacConfig: ZodiacConfig;
+  zodiacConfig: WalletConfig;
   context?: LoggingContext; // For logging context (requestId, invoiceId, etc.)
 }
 
