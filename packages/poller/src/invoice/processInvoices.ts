@@ -138,6 +138,7 @@ export async function processTickerGroup(
     const labels: InvoiceLabels = { origin: invoice.origin, id: invoice.intent_id, ticker: invoice.ticker_hash };
 
     // Skip entire ticker group if we already have a purchase for this invoice
+    // TODO: relax this condition to improve purchase times for multiple sequential invoices on the same ticker
     if (pendingPurchases.find(({ target }) => target.intent_id === invoiceId)) {
       logger.debug('Found existing purchase, stopping ticker processing', {
         requestId,
