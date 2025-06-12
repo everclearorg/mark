@@ -1,11 +1,10 @@
 import { encodeFunctionData, erc20Abi } from 'viem';
 import { getERC20Contract } from './contracts';
-import { MarkConfiguration, LoggingContext } from '@mark/core';
+import { MarkConfiguration, LoggingContext, WalletConfig } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { TransactionReason } from '@mark/prometheus';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { WalletConfig } from './zodiac';
 import { submitTransactionWithLogging } from './transactions';
 
 export interface ApprovalParams {
@@ -115,19 +114,20 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       chainId,
       txRequest: {
         to: tokenAddress,
+        chainId: +chainId,
         data: encodeFunctionData({
           abi: erc20Abi,
           functionName: 'approve',
           args: [spenderAddress as `0x${string}`, 0n],
         }),
-        value: 0,
+        value: '0',
         from: config.ownAddress,
       },
       zodiacConfig,
       context: { ...context, transactionType: 'zero-approval', asset: tokenAddress },
     });
 
-    if (prometheus) {
+    if (prometheus && zeroApprovalResult.receipt) {
       prometheus.updateGasSpent(
         chainId,
         TransactionReason.Approval,
@@ -140,12 +140,12 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
     logger.info('Zero allowance transaction for USDT sent successfully', {
       ...context,
       chainId,
-      zeroAllowanceTxHash: zeroApprovalResult.transactionHash,
+      zeroAllowanceTxHash: zeroApprovalResult.hash,
       asset: tokenAddress,
     });
 
     result.hadZeroApproval = true;
-    result.zeroApprovalTxHash = zeroApprovalResult.transactionHash;
+    result.zeroApprovalTxHash = zeroApprovalResult.hash;
   }
 
   // Now set the actual approval
@@ -161,20 +161,21 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
     logger,
     chainId,
     txRequest: {
+      chainId: +chainId,
       to: tokenAddress,
       data: encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
         args: [spenderAddress as `0x${string}`, amount],
       }),
-      value: 0,
+      value: '0',
       from: config.ownAddress,
     },
     zodiacConfig,
     context: { ...context, transactionType: 'approval', asset: tokenAddress },
   });
 
-  if (prometheus) {
+  if (prometheus && approvalResult.receipt) {
     prometheus.updateGasSpent(
       chainId,
       TransactionReason.Approval,
@@ -185,12 +186,12 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
   logger.info('Approval transaction sent successfully', {
     ...context,
     chainId,
-    approvalTxHash: approvalResult.transactionHash,
+    approvalTxHash: approvalResult.hash,
     allowance: currentAllowance.toString(),
     asset: tokenAddress,
     amount: amount.toString(),
   });
 
-  result.transactionHash = approvalResult.transactionHash;
+  result.transactionHash = approvalResult.hash;
   return result;
 }

@@ -1,4 +1,10 @@
-import { MarkConfiguration, NewIntentParams, NewIntentWithPermit2Params } from '@mark/core';
+import {
+  MarkConfiguration,
+  NewIntentParams,
+  NewIntentWithPermit2Params,
+  TransactionSubmissionType,
+  WalletType,
+} from '@mark/core';
 import { getERC20Contract } from './contracts';
 import { decodeEventLog, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
@@ -11,9 +17,11 @@ import {
 } from './permit2';
 import { prepareMulticall } from './multicall';
 import { MarkAdapters } from '../init';
-import { getValidatedZodiacConfig, getActualOwner, WalletType } from './zodiac';
+import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import { checkAndApproveERC20 } from './erc20';
 import { submitTransactionWithLogging } from './transactions';
+import { Logger } from '@mark/logger';
+import { providers } from 'ethers';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -108,6 +116,35 @@ const intentAddedAbi = [
   },
 ] as const;
 
+export const getAddedIntentIdsFromReceipt = async (
+  receipt: providers.TransactionReceipt,
+  chainId: string,
+  logger: Logger,
+  context?: { requestId: string; invoiceId: string },
+) => {
+  // Find the IntentAdded event logs
+  const intentAddedLogs = receipt.logs.filter((l) => (l.topics[0] ?? '').toLowerCase() === INTENT_ADDED_TOPIC0);
+  if (!intentAddedLogs.length) {
+    logger.error('No intents created from purchase transaction', {
+      invoiceId: context?.invoiceId,
+      requestId: context?.requestId,
+      transactionHash: receipt.transactionHash,
+      chainId,
+      logs: receipt.logs,
+    });
+    return [];
+  }
+  const purchaseIntentIds = intentAddedLogs.map((log) => {
+    const { args } = decodeEventLog({
+      abi: intentAddedAbi,
+      data: log.data as `0x${string}`,
+      topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
+    });
+    return args._intentId;
+  });
+  return purchaseIntentIds;
+};
+
 /**
  * Uses the api to get the tx data and chainservice to send intents and approve assets if required.
  */
@@ -117,7 +154,7 @@ export const sendIntents = async (
   adapters: MarkAdapters,
   config: MarkConfiguration,
   requestId?: string,
-): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
+): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId?: string }[]> => {
   const { everclear, chainService, prometheus, logger } = adapters;
 
   if (!intents.length) {
@@ -281,58 +318,65 @@ export const sendIntents = async (
       logger,
       chainId: originChainId,
       txRequest: {
+        chainId: +originChainId,
         to: feeAdapterTxData.to as `0x${string}`,
         data: feeAdapterTxData.data as Hex,
-        value: parseInt(feeAdapterTxData.value ?? '0'),
+        value: feeAdapterTxData.value ?? '0',
         from: config.ownAddress,
       },
       zodiacConfig: originWalletConfig,
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
     });
 
-    const purchaseTx = purchaseResult.receipt;
+    if (purchaseResult.submissionType === TransactionSubmissionType.Onchain) {
+      const purchaseTx = purchaseResult.receipt!;
 
-    // Find the IntentAdded event logs
-    const intentAddedLogs = purchaseTx.logs.filter((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0);
-    if (!intentAddedLogs.length) {
-      logger.error('No intents created from purchase transaction', {
+      const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intents[0].origin, logger, {
+        invoiceId,
+        requestId: requestId || '',
+      });
+
+      logger.info('Batch create intent transaction sent successfully', {
         invoiceId,
         requestId,
-        transactionHash: purchaseTx.transactionHash,
+        batchTxHash: purchaseTx.transactionHash,
         chainId: intents[0].origin,
-        logs: purchaseTx.logs,
+        intentIds: purchaseIntentIds,
       });
-      return [];
+
+      prometheus.updateGasSpent(
+        intents[0].origin,
+        TransactionReason.CreateIntent,
+        BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
+      );
+
+      // Return results for each intent in the batch
+      return purchaseIntentIds.map((intentId) => ({
+        transactionHash: purchaseTx.transactionHash,
+        type: purchaseResult.submissionType,
+        chainId: intents[0].origin,
+        intentId,
+      }));
+    } else {
+      // If there's no receipt, it was a Safe proposal. We can't get the intent IDs here.
+      logger.info(
+        'Batch create intent transaction proposed to Gnosis Safe. Intent IDs will be available after execution.',
+        {
+          invoiceId,
+          requestId,
+          safeTxHash: purchaseResult.hash,
+          chainId: originChainId,
+        },
+      );
+      // This allows the cache to track these invoices and prevent double-purchasing
+      return [
+        {
+          type: purchaseResult.submissionType,
+          transactionHash: purchaseResult.hash,
+          chainId: originChainId,
+        },
+      ];
     }
-    const purchaseIntentIds = intentAddedLogs.map((log) => {
-      const { args } = decodeEventLog({
-        abi: intentAddedAbi,
-        data: log.data as `0x${string}`,
-        topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
-      });
-      return args._intentId;
-    });
-
-    logger.info('Batch create intent transaction sent successfully', {
-      invoiceId,
-      requestId,
-      batchTxHash: purchaseTx.transactionHash,
-      chainId: intents[0].origin,
-      intentIds: purchaseIntentIds,
-    });
-
-    prometheus.updateGasSpent(
-      intents[0].origin,
-      TransactionReason.CreateIntent,
-      BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
-    );
-
-    // Return results for each intent in the batch
-    return purchaseIntentIds.map((intentId) => ({
-      transactionHash: purchaseTx.transactionHash,
-      chainId: intents[0].origin,
-      intentId,
-    }));
   } catch (error) {
     logger.error('Error processing batch intents', {
       invoiceId,
@@ -504,6 +548,7 @@ export const sendIntentsMulticall = async (
       to: multicallTx.to,
       data: multicallTx.data,
       value: '0',
+      chainId: +chainId,
     });
 
     // Extract individual intent IDs from transaction logs

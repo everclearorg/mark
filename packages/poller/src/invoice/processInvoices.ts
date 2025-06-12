@@ -1,4 +1,10 @@
-import { getTokenAddressFromConfig, InvalidPurchaseReasons, Invoice, NewIntentParams } from '@mark/core';
+import {
+  getTokenAddressFromConfig,
+  InvalidPurchaseReasons,
+  Invoice,
+  NewIntentParams,
+  TransactionSubmissionType,
+} from '@mark/core';
 import { jsonifyError, jsonifyMap } from '@mark/logger';
 import { IntentStatus } from '@mark/everclear';
 import { InvoiceLabels } from '@mark/prometheus';
@@ -12,9 +18,11 @@ import {
   calculateSplitIntents,
   getCustodiedBalances,
   getSupportedDomainsForTicker,
+  getAddedIntentIdsFromReceipt,
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { PurchaseAction } from '@mark/cache';
+import { providers } from 'ethers';
 
 export const MAX_DESTINATIONS = 10; // enforced onchain at 10
 export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
@@ -388,6 +396,7 @@ export async function processTickerGroup(
         params: allIntents[index].params,
       },
       transactionHash: result.transactionHash,
+      transactionType: result.type,
     }));
 
     // Record metrics per invoice, properly handling split intents
@@ -488,7 +497,7 @@ export async function processTickerGroup(
  * @param invoices - The invoices to process
  */
 export async function processInvoices(context: ProcessingContext, invoices: Invoice[]): Promise<void> {
-  const { config, everclear, purchaseCache: cache, logger, prometheus, requestId, startTime } = context;
+  const { config, everclear, purchaseCache: cache, logger, prometheus, requestId, startTime, chainService } = context;
   let start = startTime;
 
   logger.info('Starting invoice processing', {
@@ -527,16 +536,55 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Get existing purchase actions
   logger.debug('Getting cached purchases', { requestId });
   start = getTimeSeconds();
-  const cachedPurchases = await cache.getAllPurchases();
+  const allCachedPurchases = await cache.getAllPurchases();
   logger.debug('Retrieved cached purchases', { requestId, duration: getTimeSeconds() - start });
   start = getTimeSeconds();
+
+  // For all cached purchases, if the safe proposal has been submitted ensure the intents are filtered.
+  const safePurchases = allCachedPurchases.filter(
+    ({ transactionType }) => transactionType === TransactionSubmissionType.MultisigProposal,
+  );
+  const formattedSafePurchases: PurchaseAction[] = [];
+  await Promise.all(
+    safePurchases.map(async (purchase) => {
+      const receipt = await chainService.getSafeTransactionReceipt(
+        purchase.purchase.params.origin,
+        purchase.transactionHash,
+      );
+      if (!receipt) {
+        // Safe transaction has not been submitted yet, still out for purchase.
+        return;
+      }
+
+      // Otherwise, safe transaction has been executed. Find the intent ids from the
+      // event logs
+      const intentIds = await getAddedIntentIdsFromReceipt(
+        receipt as providers.TransactionReceipt,
+        purchase.target.origin,
+        logger,
+        {
+          requestId,
+          invoiceId: purchase.target.intent_id,
+        },
+      );
+      const formatted = intentIds.map((i) => ({
+        ...purchase,
+        purchase: { ...purchase.purchase, intentId: i },
+      }));
+      formattedSafePurchases.push(...formatted);
+    }),
+  );
+  const expandedCachePurchases = [...allCachedPurchases, ...formattedSafePurchases];
 
   // Remove cached purchases that no longer apply to an invoice.
   const targetsToRemove = (
     await Promise.all(
-      cachedPurchases.map(async (purchase: PurchaseAction) => {
+      expandedCachePurchases.map(async (purchase: PurchaseAction) => {
+        if (!purchase.purchase.intentId) {
+          return undefined;
+        }
         // Remove purchases that are invoiced or settled
-        const status = await everclear.intentStatus(purchase.purchase.intentId);
+        const status = await everclear.intentStatus(purchase.purchase.intentId!);
         const spentStatuses = [
           IntentStatus.INVOICED,
           IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
@@ -556,12 +604,12 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
     )
   ).filter((x: string | undefined) => !!x);
 
-  const pendingPurchases = cachedPurchases.filter(
+  const pendingPurchases = allCachedPurchases.filter(
     ({ target }: PurchaseAction) => !targetsToRemove.includes(target.intent_id),
   );
 
   try {
-    await cache.removePurchases(targetsToRemove as string[]);
+    await cache.removePurchases([...new Set(targetsToRemove)] as string[]);
     logger.info(`Removed stale purchase(s)`, {
       requestId,
       removed: targetsToRemove.length,
@@ -569,7 +617,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       duration: getTimeSeconds() - start,
     });
 
-    const completedPurchases = cachedPurchases.filter(({ target }: PurchaseAction) =>
+    const completedPurchases = expandedCachePurchases.filter(({ target }: PurchaseAction) =>
       targetsToRemove.includes(target.intent_id),
     );
 

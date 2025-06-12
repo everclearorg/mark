@@ -1,9 +1,9 @@
-import { getTokenAddressFromConfig, Invoice, NewIntentParams } from '@mark/core';
+import { getTokenAddressFromConfig, Invoice, NewIntentParams, WalletType } from '@mark/core';
 import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 import { ProcessingContext } from '../init';
-import { getValidatedZodiacConfig, WalletType } from './zodiac';
+import { getValidatedZodiacConfig } from './zodiac';
 
 interface SplitIntentAllocation {
   origin: string;
