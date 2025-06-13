@@ -27,6 +27,9 @@
     "@connext/nxtp-txservice": "2.5.0-alpha.6",
     "@mark/core": "workspace:*",
     "@mark/logger": "workspace:*",
+    "@safe-global/api-kit": "3.0.2",
+    "@safe-global/protocol-kit": "6.0.5",
+    "@safe-global/types-kit": "2.0.1",
     "ethers": "5.7.2"
   },
   "devDependencies": {
