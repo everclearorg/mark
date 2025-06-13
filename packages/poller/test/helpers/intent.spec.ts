@@ -4,7 +4,7 @@ import {
     sendIntents,
     sendIntentsMulticall
 } from '../../src/helpers/intent';
-import { MarkConfiguration, NewIntentParams } from '@mark/core';
+import { MarkConfiguration, NewIntentParams, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import * as contractHelpers from '../../src/helpers/contracts';
 import * as permit2Helpers from '../../src/helpers/permit2';
@@ -249,7 +249,7 @@ describe('sendIntents', () => {
         );
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1); // Called for intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
+        expect(result).to.deep.equal([{ type: TransactionSubmissionType.Onchain, transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should handle cases where there is not sufficient allowance', async () => {
@@ -286,7 +286,7 @@ describe('sendIntents', () => {
         const result = await sendIntents(invoiceId, intentsArray, mockDeps, mockConfig);
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(2); // Called for both approval and intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
+        expect(result).to.deep.equal([{ type: TransactionSubmissionType.Onchain, transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should handle cases where there is sufficient allowance', async () => {
@@ -328,7 +328,7 @@ describe('sendIntents', () => {
         );
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1); // Called only for intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
+        expect(result).to.deep.equal([{ type: TransactionSubmissionType.Onchain, transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should set USDT allowance to zero before setting new allowance', async () => {

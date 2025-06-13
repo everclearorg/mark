@@ -1,10 +1,10 @@
 import { expect } from 'chai';
-import { SinonStubbedInstance, stub, createStubInstance, restore } from 'sinon';
+import { SinonStubbedInstance, stub, createStubInstance } from 'sinon';
 import * as contractModule from '../../src/helpers/contracts';
 import { getMarkBalances, getMarkGasBalances, getCustodiedBalances } from '../../src/helpers/balance';
 import * as assetModule from '../../src/helpers/asset';
 import * as zodiacModule from '../../src/helpers/zodiac';
-import { AssetConfiguration, MarkConfiguration } from '@mark/core';
+import { AssetConfiguration, MarkConfiguration, WalletType } from '@mark/core';
 import { PrometheusAdapter } from '@mark/prometheus';
 
 describe('Wallet Balance Utilities', () => {
@@ -111,8 +111,8 @@ describe('Wallet Balance Utilities', () => {
 
     it('should use Gnosis Safe address when Zodiac is enabled', async () => {
       // Mock zodiac functions
-      const mockZodiacConfigEnabled = { walletType: zodiacModule.WalletType.Zodiac, safeAddress: '0xGnosisSafe' as `0x${string}` };
-      const mockZodiacConfigDisabled = { walletType: zodiacModule.WalletType.EOA };
+      const mockZodiacConfigEnabled = { walletType: WalletType.Zodiac, safeAddress: '0xGnosisSafe' as `0x${string}` };
+      const mockZodiacConfigDisabled = { walletType: WalletType.EOA };
 
       stub(zodiacModule, 'getValidatedZodiacConfig')
         .withArgs(mockConfigWithZodiac.chains['1']).returns(mockZodiacConfigEnabled)
