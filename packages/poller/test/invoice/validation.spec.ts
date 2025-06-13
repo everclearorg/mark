@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { isValidInvoice } from '../../src/invoice';
-import { MarkConfiguration, Invoice, InvalidPurchaseReasons } from '@mark/core';
+import { MarkConfiguration, Invoice, InvalidPurchaseReasons, WalletType } from '@mark/core';
 import * as assetHelpers from '../../src/helpers/asset';
 import * as zodiacHelpers from '../../src/helpers/zodiac';
 import sinon from 'sinon';
@@ -139,7 +139,7 @@ describe('isValidInvoice', () => {
 
       // Mock zodiac functions
       const mockZodiacConfig = {
-        walletType: zodiacHelpers.WalletType.Zodiac,
+        walletType: WalletType.Zodiac,
         moduleAddress: '0x1234567890123456789012345678901234567890' as `0x${string}`,
         roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234' as `0x${string}`,
         safeAddress
@@ -178,7 +178,7 @@ describe('isValidInvoice', () => {
 
       // Mock zodiac functions
       const mockZodiacConfig = {
-        walletType: zodiacHelpers.WalletType.Zodiac,
+        walletType: WalletType.Zodiac,
         moduleAddress: '0x1234567890123456789012345678901234567890' as `0x${string}`,
         roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234' as `0x${string}`,
         safeAddress
