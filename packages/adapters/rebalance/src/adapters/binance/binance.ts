@@ -24,6 +24,24 @@ import {
   isWithdrawalStale,
 } from './utils';
 
+const wethAbi = [
+  ...erc20Abi,
+  {
+    type: 'function',
+    name: 'withdraw',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'wad', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'deposit',
+    stateMutability: 'payable',
+    inputs: [],
+    outputs: [],
+  },
+] as const;
+
 export class BinanceBridgeAdapter implements BridgeAdapter {
   private readonly client: BinanceClient;
 
@@ -109,7 +127,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
   }
 
   async send(
-    sender: string,
+    _sender: string,
     recipient: string,
     amount: string,
     route: RebalanceRoute,
@@ -142,9 +160,38 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         recipient,
       });
 
-      // Return transaction to send funds to Binance deposit address
-      return [
-        {
+      const transactions: MemoizedTransactionRequest[] = [];
+
+      // Always unwrap WETH to ETH before deposit
+      if (assetMapping.binanceSymbol === 'ETH' && route.asset !== zeroAddress) {
+        this.logger.debug('Preparing WETH unwrap transaction before Binance deposit', {
+          wethAddress: route.asset,
+          amount,
+        });
+        const unwrapTx = {
+          memo: RebalanceTransactionMemo.Unwrap,
+          transaction: {
+            to: route.asset as `0x${string}`,
+            data: encodeFunctionData({
+              abi: wethAbi as any,
+              functionName: 'withdraw' as any,
+              args: [BigInt(amount)] as any[],
+            }) as `0x${string}`,
+            value: BigInt(0),
+          },
+        };
+        const sendToBinanceTx = {
+          memo: RebalanceTransactionMemo.Rebalance,
+          transaction: {
+            to: depositInfo.address as `0x${string}`,
+            value: BigInt(amount),
+            data: '0x' as `0x${string}`,
+          },
+        };
+        return [unwrapTx, sendToBinanceTx];
+      // For non-ETH assets send directly
+      } else {
+        transactions.push({
           memo: RebalanceTransactionMemo.Rebalance,
           transaction: {
             to: depositInfo.address as `0x${string}`,
@@ -158,8 +205,10 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
                   })
                 : '0x',
           },
-        },
-      ];
+        });
+      }
+
+      return transactions;
     } catch (error) {
       this.handleError(error, 'prepare Binance deposit transaction', { amount, route });
     }
@@ -217,11 +266,98 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
   ): Promise<MemoizedTransactionRequest | void> {
-    this.logger.debug('destinationCallback called - TODO: wrap to WETH', {
+    this.logger.debug('destinationCallback called', {
       route,
       transactionHash: originTransaction.transactionHash,
     });
-    return;
+
+    try {
+      // Get asset mappings to check if it's ETH/WETH
+      const originMapping = getAssetMapping(route);
+      validateAssetMapping(originMapping, `route from chain ${route.origin}`);
+
+      // Only wrap ETH back to WETH
+      if (originMapping.binanceSymbol !== 'ETH') {
+        this.logger.debug('Asset is not ETH/WETH, no wrapping needed', {
+          binanceSymbol: originMapping.binanceSymbol,
+        });
+        return;
+      }
+
+      // Look up recipient from cache
+      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
+      if (!recipient) {
+        this.logger.error('No recipient found in cache for callback', {
+          transactionHash: originTransaction.transactionHash,
+        });
+        return;
+      }
+
+      const withdrawalStatus = await this.getOrInitWithdrawal(route, originTransaction, '0', recipient);
+      if (!withdrawalStatus || withdrawalStatus.status !== 'completed' || !withdrawalStatus.txId) {
+        this.logger.debug('Withdrawal not completed yet, skipping callback', {
+          withdrawalStatus,
+        });
+        return;
+      }
+
+      // Get the withdrawal transaction details to find the amount
+      const provider = this.getProvider(route.destination);
+      if (!provider) {
+        this.logger.error('No provider for destination chain', { chainId: route.destination });
+        return;
+      }
+
+      const withdrawalTx = await provider.getTransaction({
+        hash: withdrawalStatus.txId as `0x${string}`,
+      });
+
+      if (!withdrawalTx) {
+        this.logger.error('Could not fetch withdrawal transaction', { txId: withdrawalStatus.txId });
+        return;
+      }
+
+      const ethAmount = withdrawalTx.value;
+      if (ethAmount === BigInt(0)) {
+        this.logger.debug('No ETH value in withdrawal transaction, skipping wrap', {
+          txId: withdrawalStatus.txId,
+        });
+        return;
+      }
+
+      // Get the destination chain's WETH address
+      const destinationMapping = getDestinationAssetMapping(route);
+      validateAssetMapping(destinationMapping, `route to chain ${route.destination}`);
+
+      this.logger.info('Preparing WETH wrap callback', {
+        recipient,
+        ethAmount: ethAmount.toString(),
+        wethAddress: destinationMapping.onChainAddress,
+        destinationChain: route.destination,
+      });
+
+      // Always wrap ETH to WETH on the destination chain after withdrawal
+      const wrapTx = {
+        memo: RebalanceTransactionMemo.Wrap,
+        transaction: {
+          to: destinationMapping.onChainAddress as `0x${string}`,
+          data: encodeFunctionData({
+            abi: wethAbi as any,
+            functionName: 'deposit' as any,
+            args: [],
+          }) as `0x${string}`,
+          value: ethAmount,
+        },
+      };
+      return wrapTx;
+    } catch (error) {
+      this.logger.error('Failed to prepare destination callback', {
+        error: jsonifyError(error),
+        route,
+        transactionHash: originTransaction.transactionHash,
+      });
+      return;
+    }
   }
 
   /**
@@ -313,7 +449,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
    * Check if deposit is confirmed on Binance
    */
   protected async checkDepositConfirmed(
-    route: RebalanceRoute,
+    _route: RebalanceRoute,
     originTransaction: TransactionReceipt,
     assetMapping: BinanceAssetMapping,
   ): Promise<{ confirmed: boolean }> {

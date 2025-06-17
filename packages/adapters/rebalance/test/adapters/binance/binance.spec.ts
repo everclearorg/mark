@@ -257,21 +257,57 @@ describe('BinanceBridgeAdapter', () => {
   });
 
   describe('send', () => {
-    it('should prepare deposit transaction correctly for WETH', async () => {
+    it('should prepare unwrap + deposit transactions for WETH', async () => {
       const sender = '0x' + 'sender'.padEnd(40, '0');
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
       const amount = '1000000000000000000'; // 1 ETH
 
       const result = await adapter.send(sender, recipient, amount, sampleRoute);
 
-      expect(result.length).toBe(1);
-      expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
-      expect(result[0].transaction.to).toBe(mockDepositAddress.address);
-      expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer, not native ETH
-      expect(result[0].transaction.data).toEqual(expect.any(String)); // ERC20 transfer encoded data
+      expect(result.length).toBe(2);
+      
+      // First transaction: Unwrap WETH
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Unwrap);
+      expect(result[0].transaction.to).toBe(sampleRoute.asset);
+      expect(result[0].transaction.value).toBe(BigInt(0));
+      expect(result[0].transaction.data).toEqual(expect.any(String)); // withdraw() encoded
+
+      // Second transaction: Send ETH to Binance
+      expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[1].transaction.to).toBe(mockDepositAddress.address);
+      expect(result[1].transaction.value).toBe(BigInt(amount)); // Native ETH
+      expect(result[1].transaction.data).toBe('0x');
 
       // Verify deposit address was requested
       expect(mockBinanceClient.getDepositAddress).toHaveBeenCalledWith('ETH', 'ETH');
+    });
+
+    it('should prepare single deposit transaction for USDC', async () => {
+      const sender = '0x' + 'sender'.padEnd(40, '0');
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const amount = '1000000000'; // 1000 USDC (6 decimals)
+      
+      const usdcRoute: RebalanceRoute = {
+        origin: 1,
+        destination: 42161,
+        asset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+      };
+
+      mockBinanceClient.getDepositAddress.mockResolvedValueOnce({
+        ...mockDepositAddress,
+        coin: 'USDC',
+      });
+
+      const result = await adapter.send(sender, recipient, amount, usdcRoute);
+
+      expect(result.length).toBe(1);
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[0].transaction.to).toBe(mockDepositAddress.address);
+      expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer
+      expect(result[0].transaction.data).toEqual(expect.any(String)); // transfer() encoded
+
+      // Verify deposit address was requested for USDC
+      expect(mockBinanceClient.getDepositAddress).toHaveBeenCalledWith('USDC', 'ETH');
     });
 
     it('should throw error if amount is too low', async () => {
@@ -381,8 +417,10 @@ describe('BinanceBridgeAdapter', () => {
   });
 
   describe('destinationCallback', () => {
-    it('should return undefined as Binance handles withdrawals during readyOnDestination', async () => {
-      const mockTransaction: TransactionReceipt = {
+    let mockTransaction: TransactionReceipt;
+
+    beforeEach(() => {
+      mockTransaction = {
         transactionHash: '0x123' as `0x${string}`,
         blockNumber: BigInt(123),
         blockHash: '0xabc' as `0x${string}`,
@@ -398,9 +436,106 @@ describe('BinanceBridgeAdapter', () => {
         to: '0xto' as `0x${string}`,
         type: 'legacy' as const,
       };
+    });
+
+    it('should return undefined when no recipient found in cache', async () => {
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce(undefined);
+      
+      const result = await adapter.destinationCallback(sampleRoute, mockTransaction);
+      expect(result).toBeUndefined();
+      expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for callback', {
+        transactionHash: mockTransaction.transactionHash,
+      });
+    });
+
+    it('should return undefined for non-ETH assets', async () => {
+      const usdcRoute: RebalanceRoute = {
+        origin: 1,
+        destination: 42161,
+        asset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+      };
+
+      const result = await adapter.destinationCallback(usdcRoute, mockTransaction);
+      expect(result).toBeUndefined();
+      expect(mockLogger.debug).toHaveBeenCalledWith('Asset is not ETH/WETH, no wrapping needed', {
+        binanceSymbol: 'USDC',
+      });
+    });
+
+    it('should return wrap transaction when ETH needs to be wrapped to WETH', async () => {
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const ethAmount = BigInt('1000000000000000000'); // 1 ETH
+
+      // Mock cache to return recipient
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount: ethAmount.toString(),
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
+
+      // Mock withdrawal status as completed
+      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
+        status: 'completed',
+        onChainConfirmed: true,
+        txId: '0xwithdrawaltx',
+      });
+
+      // Mock provider and withdrawal receipt
+      const mockProvider = {
+        getTransactionReceipt: jest.fn<() => Promise<any>>().mockResolvedValueOnce({
+          transactionHash: '0xwithdrawaltx',
+          status: 'success',
+        }),
+        getTransaction: jest.fn<() => Promise<any>>().mockResolvedValueOnce({
+          hash: '0xwithdrawaltx',
+          value: ethAmount,
+        }),
+      };
+      jest.spyOn(adapter as any, 'getProvider').mockReturnValueOnce(mockProvider as any);
+
+      const result = await adapter.destinationCallback(sampleRoute, mockTransaction);
+
+      expect(result).toBeDefined();
+      expect(result?.memo).toBe(RebalanceTransactionMemo.Wrap);
+      expect(result?.transaction.to).toBe('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'); // Arbitrum WETH
+      expect(result?.transaction.value).toBe(ethAmount);
+      expect(result?.transaction.data).toEqual(expect.any(String)); // Encoded deposit() call
+    });
+
+    it('should return undefined when withdrawal is not completed', async () => {
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+
+      // Mock cache to return recipient
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount: '1000000000000000000',
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
+
+      // Mock withdrawal status as pending
+      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
+        status: 'pending',
+        onChainConfirmed: false,
+      });
 
       const result = await adapter.destinationCallback(sampleRoute, mockTransaction);
       expect(result).toBeUndefined();
+      expect(mockLogger.debug).toHaveBeenCalledWith('Withdrawal not completed yet, skipping callback', {
+        withdrawalStatus: {
+          status: 'pending',
+          onChainConfirmed: false,
+        },
+      });
     });
   });
 
@@ -420,7 +555,122 @@ describe('BinanceBridgeAdapter', () => {
       });
     });
 
+    describe('getOrInitWithdrawal', () => {
+      let mockTransaction: TransactionReceipt;
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const amount = '1000000000000000000';
 
+      beforeEach(() => {
+        mockTransaction = {
+          transactionHash: '0x123' as `0x${string}`,
+          blockNumber: BigInt(123),
+          blockHash: '0xabc' as `0x${string}`,
+          transactionIndex: 0,
+          contractAddress: null,
+          cumulativeGasUsed: BigInt(21000),
+          effectiveGasPrice: BigInt(20000000000),
+          from: '0xfrom' as `0x${string}`,
+          gasUsed: BigInt(21000),
+          logs: [],
+          logsBloom: '0x' as `0x${string}`,
+          status: 'success' as const,
+          to: '0xto' as `0x${string}`,
+          type: 'legacy' as const,
+        };
+      });
+
+      it('should return undefined when deposit is not confirmed', async () => {
+        // Mock deposit history to show no matching deposit
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([]);
+
+        const result = await adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, amount, recipient);
+        expect(result).toBeUndefined();
+        expect(mockLogger.debug).toHaveBeenCalledWith('Deposit not yet confirmed', {
+          transactionHash: mockTransaction.transactionHash,
+        });
+      });
+
+      it('should initiate withdrawal when deposit is confirmed and no existing withdrawal', async () => {
+        // Mock deposit confirmed
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([{
+          txId: mockTransaction.transactionHash,
+          status: 1,
+        }]);
+
+        // Mock no existing withdrawal
+        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
+
+        // Mock withdraw call
+        mockBinanceClient.withdraw.mockResolvedValueOnce({ id: 'new-withdrawal-123' });
+
+        // Mock withdrawal status check
+        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([{
+          id: 'new-withdrawal-123',
+          status: 4, // Processing
+          applyTime: new Date().toISOString(),
+        }]);
+
+        const result = await adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, amount, recipient);
+        
+        expect(result).toEqual({
+          status: 'pending',
+          onChainConfirmed: false,
+        });
+        
+        expect(mockBinanceClient.withdraw).toHaveBeenCalledWith({
+          coin: 'ETH',
+          network: 'ARBITRUM',
+          address: recipient,
+          amount: '999000000000000000', // Amount after fee
+          withdrawOrderId: expect.stringMatching(/^mark-/),
+        });
+      });
+
+      it('should return existing withdrawal status when withdrawal already exists', async () => {
+        // Mock deposit confirmed
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([{
+          txId: mockTransaction.transactionHash,
+          status: 1,
+        }]);
+
+        // Mock existing withdrawal with custom order ID
+        const withdrawOrderId = `mark-${mockTransaction.transactionHash.slice(2, 10)}-1-42161-C02aaA`;
+        mockBinanceClient.getWithdrawHistory
+          .mockResolvedValueOnce([{
+            id: 'existing-withdrawal-123',
+            withdrawOrderId,
+            status: 6, // Completed
+            applyTime: new Date().toISOString(),
+            txId: '0xwithdrawaltx',
+          }])
+          .mockResolvedValueOnce([{
+            id: 'existing-withdrawal-123',
+            withdrawOrderId,
+            status: 6, // Completed
+            applyTime: new Date().toISOString(),
+            txId: '0xwithdrawaltx',
+          }]);
+
+        // Mock provider for on-chain verification
+        const mockProvider = {
+          getTransactionReceipt: jest.fn<() => Promise<any>>().mockResolvedValueOnce({
+            status: 'success',
+          }),
+        };
+        jest.spyOn(adapter as any, 'getProvider').mockReturnValueOnce(mockProvider as any);
+
+        const result = await adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, amount, recipient);
+        
+        expect(result).toEqual({
+          status: 'completed',
+          onChainConfirmed: true,
+          txId: '0xwithdrawaltx',
+        });
+        
+        // Should not initiate new withdrawal
+        expect(mockBinanceClient.withdraw).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('integration tests', () => {
@@ -447,9 +697,10 @@ describe('BinanceBridgeAdapter', () => {
 
       // 1. Send transaction
       const sendResult = await adapter.send(sender, recipient, amount, sampleRoute);
-      expect(sendResult.length).toBe(1);
-      expect(sendResult[0].transaction.to).toBe(mockDepositAddress.address);
-      expect(sendResult[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(sendResult.length).toBe(2); // Unwrap + Send
+      expect(sendResult[0].memo).toBe(RebalanceTransactionMemo.Unwrap);
+      expect(sendResult[1].transaction.to).toBe(mockDepositAddress.address);
+      expect(sendResult[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
 
       // 2. Check readyOnDestination (should not be ready initially)
       // Mock cache to return recipient for both calls
