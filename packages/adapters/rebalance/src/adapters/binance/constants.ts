@@ -15,7 +15,7 @@ export const BINANCE_ASSET_MAPPINGS: BinanceAssetMapping[] = [
   // USDC on Ethereum (6 decimals)
   {
     chainId: 1,
-    onChainAddress: '0xA0b86a33E6417c3c3aC89E6e3c82A2E8a9a7C3E8',
+    onChainAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     binanceSymbol: 'USDC',
     network: 'ETH',
     minWithdrawalAmount: '10000000', // 10 USDC in smallest unit
@@ -35,7 +35,7 @@ export const BINANCE_ASSET_MAPPINGS: BinanceAssetMapping[] = [
   // USDC on Arbitrum (6 decimals)
   {
     chainId: 42161,
-    onChainAddress: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+    onChainAddress: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
     binanceSymbol: 'USDC',
     network: 'ARBITRUM',
     minWithdrawalAmount: '10000000', // 10 USDC in smallest unit
