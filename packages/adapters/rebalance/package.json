@@ -8,6 +8,7 @@
         "build": "tsc --build ./tsconfig.json",
         "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
         "dev": "npx tsx scripts/dev.ts",
+        "cache:load": "npx tsx scripts/load-tx-cache.ts",
         "lint": "yarn lint:package && yarn lint:ts",
         "lint:fix": "yarn lint --fix",
         "lint:package": "sort-package-json",
