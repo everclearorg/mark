@@ -8,6 +8,8 @@ import {
   WithdrawParams,
   WithdrawResponse,
   WithdrawRecord,
+  WithdrawQuotaResponse,
+  TickerPrice,
   BINANCE_BASE_URL,
 } from './types';
 import { BINANCE_ENDPOINTS, BINANCE_RATE_LIMITS } from './constants';
@@ -46,7 +48,7 @@ export class BinanceClient {
     const queryString = Object.entries(params)
       .filter(([, value]) => value !== undefined && value !== null)
       .sort(([a], [b]) => a.localeCompare(b))  // Sort alphabetically, required by Binance
-      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+      .map(([key, value]) => `${key}=${value}`)
       .join('&');
 
     return crypto.createHmac('sha256', this.apiSecret).update(queryString).digest('hex');
@@ -476,5 +478,54 @@ export class BinanceClient {
    */
   isConfigured(): boolean {
     return !!(this.apiKey && this.apiSecret);
+  }
+
+  /**
+   * Get withdrawal quota for the account
+   * Returns quota values in USD (global across all coins)
+   */
+  async getWithdrawQuota(): Promise<WithdrawQuotaResponse> {
+    this.logger.debug('Getting withdrawal quota');
+
+    const result = await this.request<WithdrawQuotaResponse>(
+      'GET',
+      BINANCE_ENDPOINTS.WITHDRAW_QUOTA,
+      {},
+      true,
+    );
+
+    const totalQuota = parseFloat(result.wdQuota);
+    const usedQuota = parseFloat(result.usedWdQuota);
+    const remainingQuota = totalQuota - usedQuota;
+
+    this.logger.debug('Withdrawal quota retrieved', {
+      totalQuotaUSD: totalQuota,
+      usedQuotaUSD: usedQuota,
+      remainingQuotaUSD: remainingQuota,
+    });
+
+    return result;
+  }
+
+  /**
+   * Get current price for a symbol pair (e.g., "ETHUSDT")
+   * Public endpoint - no authentication required
+   */
+  async getPrice(symbol: string): Promise<TickerPrice> {
+    this.logger.debug('Getting ticker price', { symbol });
+
+    const result = await this.request<TickerPrice>(
+      'GET',
+      BINANCE_ENDPOINTS.TICKER_PRICE,
+      { symbol },
+      false, // Not a signed request
+    );
+
+    this.logger.debug('Ticker price retrieved', {
+      symbol: result.symbol,
+      price: result.price,
+    });
+
+    return result;
   }
 }
