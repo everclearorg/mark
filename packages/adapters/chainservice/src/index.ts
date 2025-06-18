@@ -2,6 +2,7 @@ import { providers, Signer, constants } from 'ethers';
 import { ChainService as ChimeraChainService } from '@chimera-monorepo/chainservice';
 import { ILogger } from '@mark/logger';
 import { createLoggingContext, ChainConfiguration } from '@mark/core';
+import { Address, getAddressEncoder, getProgramDerivedAddress } from '@solana/addresses';
 
 export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
@@ -106,5 +107,13 @@ export class ChainService {
     if (!chainConfig) return undefined;
 
     return chainConfig.assets.find((asset) => asset.address.toLowerCase() === assetAddress.toLowerCase());
+  }
+
+  deriveProgramAddress(programId: string, seeds: string[]) {
+    const addressEncoder = getAddressEncoder();
+    return getProgramDerivedAddress({
+        programAddress: programId as Address,
+        seeds: seeds.map((seed) => addressEncoder.encode(seed as Address)),
+    });
   }
 }

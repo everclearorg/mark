@@ -3868,6 +3868,7 @@ __metadata:
     "@connext/nxtp-txservice": 2.5.0-alpha.6
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
+    "@solana/addresses": ^2.1.1
     "@types/node": 20.17.12
     eslint: 9.17.0
     ethers: 5.7.2
@@ -5187,6 +5188,32 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@solana/addresses@npm:^2.1.1":
+  version: 2.1.1
+  resolution: "@solana/addresses@npm:2.1.1"
+  dependencies:
+    "@solana/assertions": 2.1.1
+    "@solana/codecs-core": 2.1.1
+    "@solana/codecs-strings": 2.1.1
+    "@solana/errors": 2.1.1
+    "@solana/nominal-types": 2.1.1
+  peerDependencies:
+    typescript: ">=5.3.3"
+  checksum: 48b639ef8c29332a9bc3a49906e210c78dc5f22105667dc284176dacc970f5569293af9aaca2071392cb4943f9292b916f3c8e66fe99de495de286aa05b7b183
+  languageName: node
+  linkType: hard
+
+"@solana/assertions@npm:2.1.1":
+  version: 2.1.1
+  resolution: "@solana/assertions@npm:2.1.1"
+  dependencies:
+    "@solana/errors": 2.1.1
+  peerDependencies:
+    typescript: ">=5.3.3"
+  checksum: 3409e492fcb42a0e990307fdde8d88a8284bbf67d0539531306b90dd0ccbd7f2fb0995ba5509961e67719cf5531c25fdc4f87ae8bc351c8d6446a17454b97f53
+  languageName: node
+  linkType: hard
+
 "@solana/buffer-layout-utils@npm:^0.2.0":
   version: 0.2.0
   resolution: "@solana/buffer-layout-utils@npm:0.2.0"
@@ -5255,7 +5282,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@solana/codecs-numbers@npm:^2.1.0":
+"@solana/codecs-numbers@npm:2.1.1, @solana/codecs-numbers@npm:^2.1.0":
   version: 2.1.1
   resolution: "@solana/codecs-numbers@npm:2.1.1"
   dependencies:
@@ -5278,6 +5305,20 @@ __metadata:
     fastestsmallesttextencoderdecoder: ^1.0.22
     typescript: ">=5"
   checksum: 0706605311508b02f7dc4bfde6f93237337ecde051c83f172a121b52676e2a21af90f916624f57c0e80bbe420412ed98c1e7ae90a583761b028cc6a883fa4a0e
+  languageName: node
+  linkType: hard
+
+"@solana/codecs-strings@npm:2.1.1":
+  version: 2.1.1
+  resolution: "@solana/codecs-strings@npm:2.1.1"
+  dependencies:
+    "@solana/codecs-core": 2.1.1
+    "@solana/codecs-numbers": 2.1.1
+    "@solana/errors": 2.1.1
+  peerDependencies:
+    fastestsmallesttextencoderdecoder: ^1.0.22
+    typescript: ">=5.3.3"
+  checksum: 6e3006eee318ef3ca7b65a0ec0d099678cf9384b8e6c5b5e85ef810a5046a7f0a75d410b4158a052c39d79a633e817c62d0ae0993277c474c7d4f265afaec486
   languageName: node
   linkType: hard
 
@@ -5321,6 +5362,15 @@ __metadata:
   bin:
     errors: bin/cli.mjs
   checksum: 902f36a53be991d03c2733f24ba928610e834c7b43a5a54e0795872bb6b9286580a4a1af818a0fbb5fd3bc9692e583223399ea5f30476f020920acffdd4bf908
+  languageName: node
+  linkType: hard
+
+"@solana/nominal-types@npm:2.1.1":
+  version: 2.1.1
+  resolution: "@solana/nominal-types@npm:2.1.1"
+  peerDependencies:
+    typescript: ">=5.3.3"
+  checksum: e114329abca077ae896bad26c82fd248fdd63034912021ccc17327bacfe7639e063c743c0becdba326e95fd4fd73e99f3e8b91e1a411e37b478ca72c5efae93b
   languageName: node
   linkType: hard
 

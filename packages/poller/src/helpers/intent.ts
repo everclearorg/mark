@@ -1,4 +1,4 @@
-import { MarkConfiguration, NewIntentParams, NewIntentWithPermit2Params } from '@mark/core';
+import { MarkConfiguration, NewIntentParams, NewIntentWithPermit2Params, TransactionRequest } from '@mark/core';
 import { getERC20Contract } from './contracts';
 import { decodeEventLog, encodeFunctionData, erc20Abi, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
@@ -12,6 +12,7 @@ import {
 import { prepareMulticall } from './multicall';
 import { MarkAdapters } from '../init';
 import { getValidatedZodiacConfig, getActualOwner, ZODIAC_ROLE_MODULE_ABI } from './zodiac';
+import { isSvmChain, SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, TOKEN_PROGRAM_ID } from './solana';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -129,7 +130,25 @@ export const sendIntents = async (
     throw new Error('Cannot process multiple intents with different origin domains');
   }
   const originChainId = intents[0].origin;
+  if (isSvmChain(originChainId)) {
+    return sendSvmIntents(invoiceId, intents, adapters, config, requestId);
+  }
+  // we handle default fallback case as evm intents
+  return sendEvmIntents(invoiceId, intents, adapters, config, requestId);
+}
+
+
+export const sendEvmIntents = async (
+  invoiceId: string,
+  intents: NewIntentParams[],
+  adapters: MarkAdapters,
+  config: MarkConfiguration,
+  requestId?: string,
+): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
+  const { everclear, chainService, prometheus, logger } = adapters;
+  const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
+
   const zodiacConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
 
   // Verify all intents have the same input asset
@@ -432,6 +451,181 @@ export const sendIntents = async (
       TransactionReason.CreateIntent,
       BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
     );
+
+    // Return results for each intent in the batch
+    return purchaseIntentIds.map((intentId) => ({
+      transactionHash: purchaseTx.transactionHash,
+      chainId: intents[0].origin,
+      intentId,
+    }));
+  } catch (error) {
+    logger.error('Error processing batch intents', {
+      invoiceId,
+      requestId,
+      error,
+      intentCount: intents.length,
+    });
+    throw error;
+  }
+};
+
+export const sendSvmIntents = async (
+  invoiceId: string,
+  intents: NewIntentParams[],
+  adapters: MarkAdapters,
+  config: MarkConfiguration,
+  requestId?: string,
+): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
+  const { everclear, chainService, prometheus, logger } = adapters;
+  const originChainId = intents[0].origin;
+  const chainConfig = config.chains[originChainId];
+
+  const sourceAddress = chainConfig.squadsAddress ?? await chainService.getProvider(Number(originChainId)).getAddress();
+
+  // Verify all intents have the same input asset
+  const tokens = new Set(intents.map((intent) => intent.inputAsset));
+  if (tokens.size !== 1) {
+    throw new Error('Cannot process multiple intents with different input assets');
+  }
+
+  try {
+    // Get transaction data for the first intent to use for approval check
+    const firstIntent = intents[0];
+    
+    let feeAdapterTxData: TransactionRequest;
+    try {
+      // API call to get txdata for the newOrder call
+      feeAdapterTxData = await everclear.solanaCreateNewIntent(
+        intents as (NewIntentParams | NewIntentWithPermit2Params)[],
+      );
+    } catch (err) {
+      if (err instanceof Error) {
+        if (err.message.includes('create_lookup_table')) {
+          // fallback to createLookupTable and retry
+          const [userTokenAccountPublicKey, _userTokenBump] = await chainService.deriveProgramAddress(SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, [sourceAddress, TOKEN_PROGRAM_ID, firstIntent.inputAsset]);
+          // TODO: this should be provided by the API
+          const [programVaultAccountPublicKey, _programVaultBump] = await chainService.deriveProgramAddress(SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, [chainConfig.deployments?.everclear, TOKEN_PROGRAM_ID, firstIntent.inputAsset]);
+          
+          feeAdapterTxData = await everclear.solanaCreateLookupTable(
+            {
+              inputAsset: firstIntent.inputAsset,
+              user: sourceAddress,
+              userTokenAccountPublicKey,
+              programVaultAccountPublicKey: programVaultAccountPublicKey,
+            },
+          );
+
+          const lookupTableTx = await chainService.submitAndMonitor(originChainId, {
+            to: feeAdapterTxData.to!,
+            value: feeAdapterTxData.value,
+            data: feeAdapterTxData.data,
+            from: sourceAddress,
+          });
+
+          logger.info('solana lookup table transaction sent successfully', {
+            invoiceId,
+            requestId,
+            txHash: lookupTableTx.transactionHash,
+            chainId: intents[0].origin,
+          });
+        }
+        throw err;
+      }
+    }
+
+    // Get total amount needed across all intents
+    const totalAmount = intents.reduce((sum, intent) => {
+      return BigInt(sum) + BigInt(intent.amount);
+    }, BigInt(0));
+
+    logger.info(`Processing ${intents.length} total intent(s)`, {
+      requestId,
+      invoiceId,
+      count: intents.length,
+      origin: intents[0].origin,
+      token: intents[0].inputAsset,
+    });
+
+    // Verify min amounts for all intents before sending the batch
+    for (const intent of intents) {
+      // Sanity check -- minAmounts < intent.amount
+      const { minAmounts } = await everclear.getMinAmounts(invoiceId);
+      if (BigInt(minAmounts[intent.origin] ?? '0') < BigInt(intent.amount)) {
+        logger.warn('Latest min amount for origin is smaller than intent size', {
+          minAmount: minAmounts[intent.origin] ?? '0',
+          intent,
+          invoiceId,
+          requestId,
+        });
+        continue;
+        // NOTE: continue instead of exit in case other intents are still below the min amount,
+        // then you would still be contributing to invoice to settlement. The invoice will be handled
+        // again on the next polling cycle.
+      }
+    }
+
+    // Submit the batch transaction
+    logger.info('Submitting batch create intent transaction', {
+      invoiceId,
+      requestId,
+      transaction: {
+        to: feeAdapterTxData!.to,
+        value: feeAdapterTxData!.value,
+        data: feeAdapterTxData!.data,
+        from: config.ownAddress,
+        chainId: originChainId,
+      },
+    });
+
+    // Transaction will be newIntent (if single intent) or newOrder
+    let purchaseTxTo = feeAdapterTxData!.to!;
+    let purchaseTxData = feeAdapterTxData!.data as Hex;
+    let purchaseTxValue = (feeAdapterTxData!.value ?? '0').toString();
+    const purchaseTxFrom: string = sourceAddress;
+
+    // TODO: squads operations if it exists
+    const purchaseTx = await chainService.submitAndMonitor(originChainId, {
+      to: purchaseTxTo,
+      value: purchaseTxValue,
+      data: purchaseTxData,
+      from: purchaseTxFrom,
+    });
+
+    // Find the IntentAdded event logs
+    // TODO: CPI Logs integration
+    const intentAddedLogs = purchaseTx.logs.filter((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0);
+    if (!intentAddedLogs.length) {
+      logger.error('No intents created from purchase transaction', {
+        invoiceId,
+        requestId,
+        transactionHash: purchaseTx.transactionHash,
+        chainId: intents[0].origin,
+        logs: purchaseTx.logs,
+      });
+      return [];
+    }
+    const purchaseIntentIds = intentAddedLogs.map((log) => {
+      const { args } = decodeEventLog({
+        abi: intentAddedAbi,
+        data: log.data as `0x${string}`,
+        topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
+      });
+      return args._intentId;
+    });
+
+    // logger.info('Batch create intent transaction sent successfully', {
+    //   invoiceId,
+    //   requestId,
+    //   batchTxHash: purchaseTx.transactionHash,
+    //   chainId: intents[0].origin,
+    //   intentIds: purchaseIntentIds,
+    // });
+
+    // prometheus.updateGasSpent(
+    //   intents[0].origin,
+    //   TransactionReason.CreateIntent,
+    //   BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
+    // );
 
     // Return results for each intent in the batch
     return purchaseIntentIds.map((intentId) => ({

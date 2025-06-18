@@ -6,6 +6,7 @@ import {
   TransactionRequest,
   Invoice,
   NewIntentWithPermit2Params,
+  CreateLookupTableParams,
 } from '@mark/core';
 
 export interface MinAmountsResponse {
@@ -191,6 +192,30 @@ export class EverclearAdapter {
       return data;
     } catch (err) {
       throw new Error(`Failed to fetch create intent from API ${err}`);
+    }
+  }
+
+  async solanaCreateNewIntent(
+    params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[],
+  ): Promise<TransactionRequest> {
+    try {
+      const url = `${this.apiUrl}/solana/intents`;
+      const { data } = await axiosPost<TransactionRequest>(url, params);
+      return data;
+    } catch (err) {
+      throw new Error(`Failed to fetch create solana intent from API ${err}`);
+    }
+  }
+
+  async solanaCreateLookupTable(
+    params: CreateLookupTableParams,
+  ): Promise<TransactionRequest> {
+    try {
+      const url = `${this.apiUrl}/solana/create-lookup-table`;
+      const { data } = await axiosPost<TransactionRequest>(url, params);
+      return data;
+    } catch (err) {
+      throw new Error(`Failed to fetch create solana intent from API ${err}`);
     }
   }
 
