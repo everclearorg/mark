@@ -431,6 +431,10 @@ export const parseChainConfigurations = async (
     const gnosisSafeAddress =
       configJson?.chains?.[chainId]?.gnosisSafeAddress ?? (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
 
+    const squadsAddress = 
+      configJson?.chains?.[chainId]?.squadsAddress ??
+      (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
+
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
@@ -444,6 +448,7 @@ export const parseChainConfigurations = async (
       zodiacRoleModuleAddress,
       zodiacRoleKey,
       gnosisSafeAddress,
+      squadsAddress
     };
   }
 
