@@ -45,6 +45,7 @@ export class BinanceClient {
   private sign(params: Record<string, any>): string {
     const queryString = Object.entries(params)
       .filter(([, value]) => value !== undefined && value !== null)
+      .sort(([a], [b]) => a.localeCompare(b))  // Sort alphabetically, required by Binance
       .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
       .join('&');
 
@@ -83,6 +84,41 @@ export class BinanceClient {
         retryCount,
       });
 
+      // For signed GET requests, we need to ensure parameter order is preserved
+      // Binance requires the URL parameters to be in the same order as the signature
+      let finalUrl = endpoint;
+      
+      if (method === 'GET' && signed) {
+        // Build query string manually to preserve order
+        const sortedParams = Object.entries(requestParams)
+          .filter(([, value]) => value !== undefined && value !== null)
+          .sort(([a], [b]) => a.localeCompare(b));
+        
+        const queryString = sortedParams
+          .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+          .join('&');
+        
+        finalUrl = `${endpoint}?${queryString}`;
+        
+        // Make request without params (already in URL)
+        const response: AxiosResponse<T> = await this.axios.request({
+          method,
+          url: finalUrl,
+        });
+        
+        // Log rate limit information
+        this.logRateLimitInfo(response.headers, endpoint);
+        
+        this.logger.debug('Binance API request successful', {
+          endpoint,
+          status: response.status,
+          retryCount,
+        });
+        
+        return response.data;
+      }
+      
+      // For non-signed requests or POST requests, use normal axios params
       const response: AxiosResponse<T> = await this.axios.request({
         method,
         url: endpoint,
