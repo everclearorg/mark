@@ -3,7 +3,7 @@ import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 import { ProcessingContext } from '../init';
-import { getValidatedZodiacConfig } from './zodiac';
+import { getActualOwner, getValidatedZodiacConfig } from './zodiac';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -131,6 +131,7 @@ export async function calculateSplitIntents(
         origin,
         required: totalNeeded.toString(),
         available: markOriginBalance.toString(),
+        custodian: getActualOwner(getValidatedZodiacConfig(config.chains[origin]), config.ownAddress),
       });
       continue;
     }
