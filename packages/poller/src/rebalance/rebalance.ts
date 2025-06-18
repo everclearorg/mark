@@ -163,16 +163,16 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         const sender = getActualOwner(originZodiacConfig, config.ownAddress);
         const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
         bridgeTxRequest = await adapter.send(sender, recipient, currentBalance.toString(), route);
-                  logger.info('Prepared bridge transaction request from adapter', {
-            requestId,
-            route,
-            bridgeType,
-            bridgeTxRequest,
-            sender,
-            recipient,
-            useOriginZodiac: originZodiacConfig.isEnabled,
-            useDestinationZodiac: destinationZodiacConfig.isEnabled,
-          });
+        logger.info('Prepared bridge transaction request from adapter', {
+          requestId,
+          route,
+          bridgeType,
+          bridgeTxRequest,
+          sender,
+          recipient,
+          useOriginZodiac: originZodiacConfig.isEnabled,
+          useDestinationZodiac: destinationZodiacConfig.isEnabled,
+        });
         if (!bridgeTxRequest.to) {
           throw new Error(`Failed to populate 'to' in bridge transaction request`);
         }

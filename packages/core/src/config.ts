@@ -172,7 +172,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const hostedConfig = await getEverclearConfig(url);
 
-    const ssmParameterName = (await fromEnv('MARK_CONFIG_SSM_PARAMETER')) ?? ('MARK_CONFIG_' + environment.toUpperCase());
+    const ssmParameterName = (await fromEnv('MARK_CONFIG_SSM_PARAMETER')) ?? 'MARK_CONFIG_' + environment.toUpperCase();
     const configStr = await fromEnv(ssmParameterName, true);
     const configJson = existsSync('config.json')
       ? JSON.parse(readFileSync('config.json', 'utf8'))
@@ -215,6 +215,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
       ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
+      ownSolAddress: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
       supportedSettlementDomains:
         configJson.supportedSettlementDomains ??
         parseSettlementDomains(await requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
@@ -371,16 +372,13 @@ export const parseChainConfigurations = async (
       (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_MODULE_ADDRESS`));
 
     const zodiacRoleKey =
-      configJson?.chains?.[chainId]?.zodiacRoleKey ??
-      (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_KEY`));
+      configJson?.chains?.[chainId]?.zodiacRoleKey ?? (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_KEY`));
 
     const gnosisSafeAddress =
-      configJson?.chains?.[chainId]?.gnosisSafeAddress ??
-      (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
+      configJson?.chains?.[chainId]?.gnosisSafeAddress ?? (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
 
-    const squadsAddress = 
-      configJson?.chains?.[chainId]?.squadsAddress ??
-      (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
+    const squadsAddress =
+      configJson?.chains?.[chainId]?.squadsAddress ?? (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
 
     chains[chainId] = {
       providers,
@@ -395,7 +393,7 @@ export const parseChainConfigurations = async (
       zodiacRoleModuleAddress,
       zodiacRoleKey,
       gnosisSafeAddress,
-      squadsAddress
+      squadsAddress,
     };
   }
 

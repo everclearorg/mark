@@ -112,8 +112,8 @@ export class ChainService {
   deriveProgramAddress(programId: string, seeds: string[]) {
     const addressEncoder = getAddressEncoder();
     return getProgramDerivedAddress({
-        programAddress: programId as Address,
-        seeds: seeds.map((seed) => addressEncoder.encode(seed as Address)),
+      programAddress: programId as Address,
+      seeds: seeds.map((seed) => addressEncoder.encode(seed as Address)),
     });
   }
 }

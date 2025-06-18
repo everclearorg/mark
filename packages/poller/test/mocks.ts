@@ -37,6 +37,7 @@ export const mockConfig: MarkConfiguration = {
     port: 6379,
   },
   ownAddress: '0x1234567890123456789012345678901234567890',
+  ownSolAddress: '9WUUr2WNUiKMzwxJgbb4oxS81oYAyhrBFkv3NSg2mjbj',
   stage: 'development',
   environment: 'devnet',
   logLevel: 'debug',

@@ -207,9 +207,7 @@ export class EverclearAdapter {
     }
   }
 
-  async solanaCreateLookupTable(
-    params: CreateLookupTableParams,
-  ): Promise<TransactionRequest> {
+  async solanaCreateLookupTable(params: CreateLookupTableParams): Promise<TransactionRequest> {
     try {
       const url = `${this.apiUrl}/solana/create-lookup-table`;
       const { data } = await axiosPost<TransactionRequest>(url, params);
