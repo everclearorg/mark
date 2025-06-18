@@ -1,14 +1,22 @@
 import { providers, Signer, constants } from 'ethers';
+import * as ethers from 'ethers';
 import {
   ChainService as ChimeraChainService,
   ITransactionReceipt,
   WriteTransaction,
 } from '@chimera-monorepo/chainservice';
-import { ILogger } from '@mark/logger';
-import { createLoggingContext, ChainConfiguration, TransactionRequest, WalletConfig } from '@mark/core';
+import { ILogger, jsonifyError } from '@mark/logger';
+import {
+  createLoggingContext,
+  ChainConfiguration,
+  TransactionRequest,
+  WalletConfig,
+  axiosPost,
+  axiosGet,
+} from '@mark/core';
 import SafeApiKit from '@safe-global/api-kit';
-import Safe from '@safe-global/protocol-kit';
-import { MetaTransactionData, OperationType } from '@safe-global/types-kit';
+import Safe, { EthersAdapter } from '@safe-global/protocol-kit';
+import { MetaTransactionData, OperationType, SafeMultisigTransactionResponse } from '@safe-global/types-kit';
 
 export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
@@ -62,11 +70,20 @@ export class ChainService {
     if (!walletConfig.safeAddress) {
       throw new Error(`No safe address found in wallet configuration.`);
     }
+    // Create eth adapter
+    const provider = new providers.FallbackProvider(
+      this.config.chains[chainId].providers.map((p) => new providers.JsonRpcProvider(p)),
+      1,
+    );
+    const ethAdapter = new EthersAdapter({ signerOrProvider: this.signer.connect(provider), ethers });
+
     // Initialize the Protocol Kit with Owner A
-    const protocolKitOwnerA = await Safe.init({
-      provider: this.config.chains[chainId].providers[0],
+    const protocolKitOwnerA = await Safe.create({
+      ethAdapter,
       safeAddress: walletConfig.safeAddress,
     });
+
+    const { apiKit, txServiceUrl } = this.getSafeApiKit(chainId);
 
     // Create a Safe transaction
     const safeTransactionData: MetaTransactionData = {
@@ -76,45 +93,123 @@ export class ChainService {
       operation: OperationType.Call,
     };
 
+    // Get all pending transactions
+    const nonce = await this.getNextMultisigTransactionNonce(chainId, protocolKitOwnerA);
+
     const safeTransaction = await protocolKitOwnerA.createTransaction({
-      transactions: [safeTransactionData],
+      safeTransactionData: [safeTransactionData],
+      options: nonce ? { nonce } : undefined,
     });
 
+    const senderAddress = await this.signer.getAddress();
     const safeTxHash = await protocolKitOwnerA.getTransactionHash(safeTransaction);
-    const signature = await this.signer.signMessage(safeTxHash);
-
-    // Initialize the API Kit
-    const apiKit = new SafeApiKit({
-      chainId: BigInt(chainId),
-      txServiceUrl: this.config.chains[chainId].safeTxService,
-    });
+    const sdkSignature = await protocolKitOwnerA.signTransactionHash(safeTxHash);
 
     // Send the transaction to the Transaction Service with the signature from Owner A
-    await apiKit.proposeTransaction({
-      safeAddress: walletConfig.safeAddress,
-      safeTransactionData: safeTransaction.data,
-      safeTxHash,
-      senderAddress: await this.signer.getAddress(),
-      senderSignature: signature,
-    });
+    try {
+      await apiKit.proposeTransaction({
+        safeAddress: walletConfig.safeAddress,
+        safeTransactionData: safeTransaction.data,
+        safeTxHash,
+        senderAddress,
+        senderSignature: sdkSignature.data,
+      });
+    } catch (e) {
+      const body = {
+        safe: walletConfig.safeAddress,
+        to: safeTransaction.data.to,
+        value: safeTransaction.data.value,
+        data: safeTransaction.data.data,
+        operation: safeTransaction.data.operation,
+        gasToken: safeTransaction.data.gasToken,
+        safeTxGas: safeTransaction.data.safeTxGas,
+        baseGas: safeTransaction.data.baseGas,
+        gasPrice: safeTransaction.data.gasPrice,
+        refundReceiver: safeTransaction.data.refundReceiver,
+        nonce: safeTransaction.data.nonce,
+        contractTransactionHash: safeTxHash,
+        signature: sdkSignature.data,
+        sender: senderAddress,
+      };
+      this.logger.warn('Failed to send transaction with Safe API Kit, trying axios with v2 url', {
+        error: jsonifyError(e),
+        txServiceUrl,
+        body,
+      });
+
+      const v2url = `${txServiceUrl}/api/v2/safes/${walletConfig.safeAddress}/multisig-transactions/`;
+
+      try {
+        await axiosPost(v2url, body, undefined, 1, 100);
+        console.log();
+        return safeTxHash;
+      } catch (err) {
+        this.logger.error('Failed to send using v2', {
+          error: jsonifyError(err),
+          url: v2url,
+          body,
+        });
+      }
+      throw e;
+    }
 
     return safeTxHash;
   }
 
   async getSafeTransactionReceipt(chainId: string, safeHash: string): Promise<undefined | ITransactionReceipt> {
     // Initialize the API Kit
-    const apiKit = new SafeApiKit({
-      chainId: BigInt(chainId),
-      txServiceUrl: this.config.chains[chainId].safeTxService,
+    const { apiKit, txServiceUrl } = this.getSafeApiKit(chainId);
+
+    let safeTransaction: SafeMultisigTransactionResponse | undefined = undefined;
+    try {
+      safeTransaction = (await apiKit.getTransaction(safeHash)) as SafeMultisigTransactionResponse;
+    } catch (e) {
+      this.logger.warn('Failed to get transaction receipt with Safe API Kit, trying axios', {
+        error: jsonifyError(e),
+        txServiceUrl,
+      });
+
+      const url = `${txServiceUrl}/api/v2/multisig-transactions/${safeHash}`;
+      try {
+        const { data } = await axiosGet<SafeMultisigTransactionResponse>(url, undefined, 1, 100);
+        safeTransaction = data;
+      } catch (err) {
+        this.logger.error('Failed to get transaction with axios', {
+          error: jsonifyError(err),
+          url,
+        });
+        throw e;
+      }
+    }
+
+    if (!safeTransaction) {
+      return undefined;
+    }
+
+    // Initialize the safe sdk
+    const provider = new providers.FallbackProvider(
+      this.config.chains[chainId].providers.map((p) => new providers.JsonRpcProvider(p)),
+      1,
+    );
+    const safe = await Safe.create({
+      safeAddress: safeTransaction.safe,
+      ethAdapter: new EthersAdapter({ ethers, signerOrProvider: provider }),
     });
 
-    const safeTransaction = await apiKit.getTransaction(safeHash);
-    if (!safeTransaction || !safeTransaction.isExecuted) {
+    // Get the current nonce of the safe. If the nonce is past the safe transaction, and the
+    // safe transaction is not executed, it will not be able to be executed
+    const currentNonce = await safe.getNonce();
+    if (currentNonce > safeTransaction.nonce && !safeTransaction.isExecuted) {
+      throw new Error(`Safe transaction (${safeHash}) cannot be executed, likely cancelled.`);
+    }
+
+    // Otherwise, can still be validly executed
+    if (!safeTransaction.isExecuted) {
       return undefined;
     }
 
     if (!safeTransaction.transactionHash) {
-      throw new Error(`Safe transaction is executed without transaction hash!`);
+      throw new Error(`Safe transaction (${safeHash}) is executed without transaction hash!`);
     }
 
     const receipt = await this.txService.getTransactionReceipt(+chainId, safeTransaction.transactionHash!);
@@ -179,5 +274,44 @@ export class ChainService {
     if (!chainConfig) return undefined;
 
     return chainConfig.assets.find((asset) => asset.address.toLowerCase() === assetAddress.toLowerCase());
+  }
+
+  private getSafeApiKit(chainId: string): { apiKit: SafeApiKit; txServiceUrl: string } {
+    // Initialize the API Kit
+    const txServiceUrl = this.config.chains[chainId].safeTxService;
+    if (!txServiceUrl) {
+      throw new Error(`Need a txservice url to propose multisig transaction`);
+    }
+
+    const apiKit = new SafeApiKit({
+      chainId: BigInt(chainId),
+      txServiceUrl,
+    });
+    return { apiKit, txServiceUrl };
+  }
+
+  private async getNextMultisigTransactionNonce(chainId: string, sdk: Safe): Promise<number> {
+    const current = await sdk.getNonce();
+    const safeAddress = await sdk.getAddress();
+    const { apiKit, txServiceUrl } = this.getSafeApiKit(chainId.toString());
+
+    let pending: { nonce: number }[];
+    try {
+      const results = await apiKit.getPendingTransactions(safeAddress, { currentNonce: current });
+      pending = results.results;
+    } catch (e) {
+      this.logger.warn('Failed to get pending transactions, attempting with axios', {
+        error: jsonifyError(e),
+        txServiceUrl,
+      });
+
+      const url = `${txServiceUrl}/api/v1/safes/${safeAddress}/multisig-transactions?executed=false&nonce__gte=${current}`;
+      const { data } = await axiosGet(url, undefined, 1, 100);
+      pending = (data as unknown as { results: { nonce: number }[] }).results;
+    }
+    this.logger.debug('Got pending safe transactions', { pending, current });
+    const [latest] = pending.sort((a, b) => b.nonce - a.nonce);
+    const nonce = latest?.nonce;
+    return nonce ? nonce + 1 : current;
   }
 }
