@@ -78,8 +78,10 @@ export const BINANCE_ENDPOINTS = {
   DEPOSIT_HISTORY: '/sapi/v1/capital/deposit/hisrec',
   WITHDRAW_APPLY: '/sapi/v1/capital/withdraw/apply',
   WITHDRAW_HISTORY: '/sapi/v1/capital/withdraw/history',
+  WITHDRAW_QUOTA: '/sapi/v1/capital/withdraw/quota',
   SYSTEM_STATUS: '/sapi/v1/system/status',
   ASSET_CONFIG: '/sapi/v1/capital/config/getall',
+  TICKER_PRICE: '/api/v3/ticker/price', // Public endpoint for price data
 } as const;
 
 // Withdrawal status mappings

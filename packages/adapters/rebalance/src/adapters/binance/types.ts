@@ -68,3 +68,13 @@ export interface WithdrawalStatus {
   onChainConfirmed: boolean;
   txId?: string;
 }
+
+export interface WithdrawQuotaResponse {
+  wdQuota: string; // Total withdrawal quota in USD (24hr)
+  usedWdQuota: string; // Used withdrawal quota in USD (24hr)
+}
+
+export interface TickerPrice {
+  symbol: string;
+  price: string;
+}

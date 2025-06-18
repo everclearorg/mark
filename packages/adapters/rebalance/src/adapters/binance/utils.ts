@@ -1,6 +1,8 @@
 import { BinanceAssetMapping } from './types';
 import { BINANCE_ASSET_MAPPINGS } from './constants';
 import { AssetConfiguration, ChainConfiguration, RebalanceRoute } from '@mark/core';
+import { BinanceClient } from './client';
+import { formatUnits } from 'viem';
 
 /**
  * Find asset mapping for a given route
@@ -138,6 +140,55 @@ export function generateWithdrawOrderId(route: RebalanceRoute, txHash: string): 
   const routeString = `${route.origin}-${route.destination}-${route.asset.slice(2, 8)}`;
   const shortHash = txHash.slice(2, 10); // Take first 8 chars after 0x
   return `mark-${shortHash}-${routeString}`;
+}
+
+/**
+ * Convert asset amount to USD value
+ */
+export async function convertAmountToUSD(
+  amount: string,
+  binanceSymbol: string,
+  decimals: number,
+  client: BinanceClient,
+): Promise<number> {
+  const amountInAsset = parseFloat(formatUnits(BigInt(amount), decimals));
+  
+  // For stablecoins, assume 1:1 for simplicity
+  if (binanceSymbol === 'USDT' || binanceSymbol === 'USDC') {
+    return amountInAsset;
+  }
+
+  // Get price for the asset in USDT
+  const ticker = await client.getPrice(`${binanceSymbol}USDT`);
+  const price = parseFloat(ticker.price);
+  
+  // Calculate USD value
+  return amountInAsset * price;
+}
+
+/**
+ * Check if withdrawal amount exceeds remaining quota
+ */
+export async function checkWithdrawQuota(
+  amount: string,
+  binanceSymbol: string,
+  decimals: number,
+  client: BinanceClient,
+): Promise<{ allowed: boolean; remainingQuotaUSD: number; amountUSD: number }> {
+  // Get current quota (global, not per coin)
+  const quota = await client.getWithdrawQuota();
+  const totalQuota = parseFloat(quota.wdQuota);
+  const usedQuota = parseFloat(quota.usedWdQuota);
+  const remainingQuotaUSD = totalQuota - usedQuota;
+  
+  // Convert amount to USD
+  const amountUSD = await convertAmountToUSD(amount, binanceSymbol, decimals, client);
+  
+  return {
+    allowed: amountUSD <= remainingQuotaUSD,
+    remainingQuotaUSD,
+    amountUSD,
+  };
 }
 
 /**
