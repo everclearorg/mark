@@ -6,6 +6,7 @@ import {
   zeroAddress,
   erc20Abi,
   PublicClient,
+  formatUnits,
 } from 'viem';
 import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
@@ -22,6 +23,7 @@ import {
   meetsMinimumWithdrawal,
   generateWithdrawOrderId,
   isWithdrawalStale,
+  checkWithdrawQuota,
 } from './utils';
 
 const wethAbi = [
@@ -149,6 +151,32 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
+      // Check withdrawal quota for destination chain
+      const destinationMapping = getDestinationAssetMapping(route);
+      validateAssetMapping(destinationMapping, `route to chain ${route.destination}`);
+      
+      // Get decimals for the asset (ETH/WETH = 18, USDC/USDT = 6)
+      const decimals = assetMapping.binanceSymbol === 'ETH' ? 18 : 6;
+      
+      const quota = await checkWithdrawQuota(
+        amount,
+        assetMapping.binanceSymbol,
+        decimals,
+        this.client,
+      );
+
+      this.logger.debug('Withdrawal quota', {
+        amountUSD: quota.amountUSD,
+        remainingQuotaUSD: quota.remainingQuotaUSD,
+        coin: assetMapping.binanceSymbol,
+      });
+      
+      if (!quota.allowed) {
+        throw new Error(
+          `Withdrawal amount $${quota.amountUSD.toFixed(2)} USD exceeds remaining daily quota of $${quota.remainingQuotaUSD.toFixed(2)} USD`,
+        );
+      }
+      
       // Get deposit address from Binance
       const depositInfo = await this.client.getDepositAddress(assetMapping.binanceSymbol, assetMapping.network);
 
@@ -547,12 +575,31 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       // Calculate the amount to withdraw (after fees)
       const withdrawAmount = calculateNetAmount(amount, assetMapping.withdrawalFee);
+      
+      // Check withdrawal quota before initiating
+      const decimals = assetMapping.binanceSymbol === 'ETH' ? 18 : 6;
+      const quota = await checkWithdrawQuota(
+        withdrawAmount,
+        assetMapping.binanceSymbol,
+        decimals,
+        this.client,
+      );
+      
+      if (!quota.allowed) {
+        throw new Error(
+          `Withdrawal amount $${quota.amountUSD.toFixed(2)} USD exceeds remaining daily quota of $${quota.remainingQuotaUSD.toFixed(2)} USD`,
+        );
+      }
+
+      // Convert amount from wei to standard unit for Binance API
+      const withdrawAmountFormatted = formatUnits(BigInt(withdrawAmount), decimals);
 
       this.logger.debug(`Initiating Binance withdrawal with id ${withdrawOrderId}`, {
         coin: assetMapping.binanceSymbol,
         network: assetMapping.network,
         address: recipient,
         amount: withdrawAmount,
+        amountFormatted: withdrawAmountFormatted,
         withdrawOrderId,
         originalAmount: amount,
         fee: assetMapping.withdrawalFee,
@@ -562,7 +609,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         coin: assetMapping.binanceSymbol,
         network: assetMapping.network,
         address: recipient,
-        amount: withdrawAmount,
+        amount: withdrawAmountFormatted,
         withdrawOrderId,
       });
 
