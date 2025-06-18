@@ -23,7 +23,7 @@ export const getMarkGasBalances = async (
         const chainConfig = chains[chain];
         const zodiacConfig = getValidatedZodiacConfig(chainConfig);
         const actualOwner = getActualOwner(zodiacConfig, ownAddress);
-        
+
         const client = createClient(chain, config);
         const native = await client.getBalance({ address: actualOwner as `0x${string}` });
         markBalances.set(chain, native);
