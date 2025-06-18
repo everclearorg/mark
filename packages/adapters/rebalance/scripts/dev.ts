@@ -1,7 +1,6 @@
 import { config } from 'dotenv';
 import { Logger } from '@mark/logger';
 import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute } from '@mark/core';
-import { AcrossBridgeAdapter, MAINNET_ACROSS_URL } from '../src/adapters/across';
 import { BridgeAdapter, RebalanceTransactionMemo } from '../src/types';
 import { Account, Hash, parseUnits, TransactionReceipt, createWalletClient, http, createPublicClient } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -318,14 +317,14 @@ async function testBridgeAdapter(
 
 // Add resume command
 program
-    .command('resume')
+    .command('resume <type>')
     .description('Resume a bridge transaction from a given transaction hash')
     .requiredOption('-o, --origin <chainId>', 'Origin chain ID')
     .requiredOption('-h, --hash <txHash>', 'Transaction hash to resume from')
     .option('-d, --destination <chainId>', 'Destination chain ID', '10')
     .option('-a, --amount <amount>', 'Original amount (in human units)', '0.01')
     .option('-t, --token <address>', 'Token address used in the transaction')
-    .action(async (options: { origin: string; hash: string; destination: string; amount: string; token?: string }) => {
+    .action(async (type: string, options: { origin: string; hash: string; destination: string; amount: string; token?: string }) => {
         // Get private key from env
         const privateKey = process.env.PRIVATE_KEY;
         if (!privateKey) {
@@ -371,11 +370,8 @@ program
         });
 
         // Create adapter
-        const adapter = new AcrossBridgeAdapter(
-            MAINNET_ACROSS_URL,
-            parsed,
-            logger
-        );
+        const rebalancer = new RebalanceAdapter('mainnet', parsed, logger, cache);
+        const adapter = rebalancer.getAdapter(type as SupportedBridge);
 
         // Find the asset to get decimals
         const asset = Object.values(originChain.assets).find(a => a.address.toLowerCase() === route.asset.toLowerCase());
