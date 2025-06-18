@@ -545,12 +545,24 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
     ({ transactionType }) => transactionType === TransactionSubmissionType.MultisigProposal,
   );
   const formattedSafePurchases: PurchaseAction[] = [];
+  const cancelledSafeActions: string[] = [];
   await Promise.all(
     safePurchases.map(async (purchase) => {
-      const receipt = await chainService.getSafeTransactionReceipt(
-        purchase.purchase.params.origin,
-        purchase.transactionHash,
-      );
+      let receipt;
+      try {
+        receipt = await chainService.getSafeTransactionReceipt(
+          purchase.purchase.params.origin,
+          purchase.transactionHash,
+        );
+      } catch (e) {
+        const err = e as Error;
+        if (err.message.includes(`cannot be executed, likely cancelled`)) {
+          // Remove the purchase as it can no longer be executed
+          cancelledSafeActions.push(purchase.target.intent_id);
+          return;
+        }
+        throw e;
+      }
       if (!receipt) {
         // Safe transaction has not been submitted yet, still out for purchase.
         return;
@@ -602,7 +614,9 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
         return purchase.target.intent_id;
       }),
     )
-  ).filter((x: string | undefined) => !!x);
+  )
+    .filter((x: string | undefined) => !!x)
+    .concat(cancelledSafeActions);
 
   const pendingPurchases = allCachedPurchases.filter(
     ({ target }: PurchaseAction) => !targetsToRemove.includes(target.intent_id),
