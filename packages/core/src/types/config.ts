@@ -91,6 +91,7 @@ export interface MarkConfiguration extends RebalanceConfig {
   };
   redis: RedisConfig;
   ownAddress: string;
+  ownSolAddress: string;
   stage: Stage;
   environment: Environment;
   logLevel: LogLevel;

@@ -270,6 +270,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
       ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
+      ownSolAddress: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
       supportedSettlementDomains:
         configJson.supportedSettlementDomains ??
         parseSettlementDomains(await requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
@@ -431,9 +432,8 @@ export const parseChainConfigurations = async (
     const gnosisSafeAddress =
       configJson?.chains?.[chainId]?.gnosisSafeAddress ?? (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
 
-    const squadsAddress = 
-      configJson?.chains?.[chainId]?.squadsAddress ??
-      (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
+    const squadsAddress =
+      configJson?.chains?.[chainId]?.squadsAddress ?? (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
 
     chains[chainId] = {
       providers,
@@ -448,7 +448,7 @@ export const parseChainConfigurations = async (
       zodiacRoleModuleAddress,
       zodiacRoleKey,
       gnosisSafeAddress,
-      squadsAddress
+      squadsAddress,
     };
   }
 
