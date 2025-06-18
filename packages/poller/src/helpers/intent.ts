@@ -157,7 +157,7 @@ export const sendIntents = async (
   config: MarkConfiguration,
   requestId?: string,
 ): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
-  const { everclear, chainService, prometheus, logger } = adapters;
+  const { logger } = adapters;
 
   if (!intents.length) {
     logger.info('No intents to process', { invoiceId });
@@ -175,8 +175,7 @@ export const sendIntents = async (
   }
   // we handle default fallback case as evm intents
   return sendEvmIntents(invoiceId, intents, adapters, config, requestId);
-}
-
+};
 
 export const sendEvmIntents = async (
   invoiceId: string,
@@ -392,11 +391,12 @@ export const sendSvmIntents = async (
   config: MarkConfiguration,
   requestId?: string,
 ): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
-  const { everclear, chainService, prometheus, logger } = adapters;
+  const { everclear, chainService, logger } = adapters;
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
 
-  const sourceAddress = chainConfig.squadsAddress ?? await chainService.getProvider(Number(originChainId)).getAddress();
+  const sourceAddress =
+    chainConfig.squadsAddress ?? (await chainService.getProvider(Number(originChainId)).getAddress());
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset));
@@ -407,7 +407,7 @@ export const sendSvmIntents = async (
   try {
     // Get transaction data for the first intent to use for approval check
     const firstIntent = intents[0];
-    
+
     let feeAdapterTxData: TransactionRequest;
     try {
       // API call to get txdata for the newOrder call
@@ -418,18 +418,22 @@ export const sendSvmIntents = async (
       if (err instanceof Error) {
         if (err.message.includes('create_lookup_table')) {
           // fallback to createLookupTable and retry
-          const [userTokenAccountPublicKey, _userTokenBump] = await chainService.deriveProgramAddress(SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, [sourceAddress, TOKEN_PROGRAM_ID, firstIntent.inputAsset]);
-          // TODO: this should be provided by the API
-          const [programVaultAccountPublicKey, _programVaultBump] = await chainService.deriveProgramAddress(SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, [chainConfig.deployments?.everclear, TOKEN_PROGRAM_ID, firstIntent.inputAsset]);
-          
-          feeAdapterTxData = await everclear.solanaCreateLookupTable(
-            {
-              inputAsset: firstIntent.inputAsset,
-              user: sourceAddress,
-              userTokenAccountPublicKey,
-              programVaultAccountPublicKey: programVaultAccountPublicKey,
-            },
+          const [userTokenAccountPublicKey] = await chainService.deriveProgramAddress(
+            SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
+            [sourceAddress, TOKEN_PROGRAM_ID, firstIntent.inputAsset],
           );
+          // TODO: this should be provided by the API
+          const [programVaultAccountPublicKey] = await chainService.deriveProgramAddress(
+            SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
+            [chainConfig.deployments?.everclear, TOKEN_PROGRAM_ID, firstIntent.inputAsset],
+          );
+
+          feeAdapterTxData = await everclear.solanaCreateLookupTable({
+            inputAsset: firstIntent.inputAsset,
+            user: sourceAddress,
+            userTokenAccountPublicKey,
+            programVaultAccountPublicKey: programVaultAccountPublicKey,
+          });
 
           const lookupTableTx = await chainService.submitAndMonitor(originChainId, {
             to: feeAdapterTxData.to!,
@@ -460,6 +464,7 @@ export const sendSvmIntents = async (
       count: intents.length,
       origin: intents[0].origin,
       token: intents[0].inputAsset,
+      totalAmount: totalAmount.toString(),
     });
 
     // Verify min amounts for all intents before sending the batch
