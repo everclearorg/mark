@@ -48,6 +48,7 @@ export interface WithdrawRecord {
   confirmNo: number;
   info: string;
   txKey: string;
+  withdrawOrderId?: string; // Custom order ID we provided when creating withdrawal
 }
 
 // Configuration interfaces

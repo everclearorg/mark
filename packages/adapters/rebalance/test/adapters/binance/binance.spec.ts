@@ -234,8 +234,8 @@ describe('BinanceBridgeAdapter', () => {
 
       const result = await adapter.getReceivedAmount(amount, sampleRoute);
 
-      // Expected: 1 ETH - 0.001 ETH (Arbitrum withdrawal fee) = 0.999 ETH
-      expect(result).toBe('999000000000000000');
+      // Expected: 1 ETH - 0.00004 ETH (Arbitrum withdrawal fee) = 0.99996 ETH
+      expect(result).toBe('999960000000000000');
     });
 
     it('should reject amounts that are too low', async () => {
@@ -355,7 +355,7 @@ describe('BinanceBridgeAdapter', () => {
 
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockTransaction);
       expect(result).toBe(false);
-      expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for transaction', {
+      expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for withdrawal', {
         transactionHash: mockTransaction.transactionHash,
         route: sampleRoute,
       });
@@ -562,7 +562,7 @@ describe('BinanceBridgeAdapter', () => {
 
       beforeEach(() => {
         mockTransaction = {
-          transactionHash: '0x123' as `0x${string}`,
+          transactionHash: '0x1234567890abcdef' as `0x${string}`,
           blockNumber: BigInt(123),
           blockHash: '0xabc' as `0x${string}`,
           transactionIndex: 0,
@@ -621,8 +621,8 @@ describe('BinanceBridgeAdapter', () => {
           coin: 'ETH',
           network: 'ARBITRUM',
           address: recipient,
-          amount: '999000000000000000', // Amount after fee
-          withdrawOrderId: expect.stringMatching(/^mark-/),
+          amount: '999960000000000000', // Amount after fee (1 ETH - 0.00004 ETH = 0.99996 ETH)
+          withdrawOrderId: expect.stringMatching(/^mark-[0-9a-f]{8}-1-42161-[0-9a-zA-Z]{6}$/),
         });
       });
 

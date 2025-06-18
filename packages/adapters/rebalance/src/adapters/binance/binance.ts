@@ -173,9 +173,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
           transaction: {
             to: route.asset as `0x${string}`,
             data: encodeFunctionData({
-              abi: wethAbi as any,
-              functionName: 'withdraw' as any,
-              args: [BigInt(amount)] as any[],
+              abi: wethAbi,
+              functionName: 'withdraw',
+              args: [BigInt(amount)],
             }) as `0x${string}`,
             value: BigInt(0),
           },
@@ -189,7 +189,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
           },
         };
         return [unwrapTx, sendToBinanceTx];
-      // For non-ETH assets send directly
+        // For non-ETH assets send directly
       } else {
         transactions.push({
           memo: RebalanceTransactionMemo.Rebalance,
@@ -229,7 +229,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       // Look up recipient from cache
       const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
       if (!recipient) {
-        this.logger.error('No recipient found in cache for transaction', {
+        this.logger.error('No recipient found in cache for withdrawal', {
           transactionHash: originTransaction.transactionHash,
           route,
         });
@@ -342,8 +342,8 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         transaction: {
           to: destinationMapping.onChainAddress as `0x${string}`,
           data: encodeFunctionData({
-            abi: wethAbi as any,
-            functionName: 'deposit' as any,
+            abi: wethAbi,
+            functionName: 'deposit',
             args: [],
           }) as `0x${string}`,
           value: ethAmount,
