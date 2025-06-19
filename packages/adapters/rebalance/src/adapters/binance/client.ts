@@ -55,6 +55,19 @@ export class BinanceClient {
   }
 
   /**
+   * Build query string with sorted parameters for consistent signatures
+   */
+  private buildQueryString(params: Record<string, any>): string {
+    const sortedParams = Object.entries(params)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .sort(([a], [b]) => a.localeCompare(b));
+    
+    return sortedParams
+      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+      .join('&');
+  }
+
+  /**
    * Make authenticated request to Binance API with rate limit handling
    */
   private async request<T>(
@@ -86,26 +99,23 @@ export class BinanceClient {
         retryCount,
       });
 
-      // For signed GET requests, we need to ensure parameter order is preserved
-      // Binance requires the URL parameters to be in the same order as the signature
-      let finalUrl = endpoint;
-      
-      if (method === 'GET' && signed) {
+      // Determine if we need to send parameters in URL
+      // - All signed GET requests
+      // - POST requests to withdrawal endpoint
+      const sendParamsInUrl = 
+        (method === 'GET' && signed) || 
+        (method === 'POST' && endpoint.includes('/withdraw/apply') && signed);
+
+      if (sendParamsInUrl) {
         // Build query string manually to preserve order
-        const sortedParams = Object.entries(requestParams)
-          .filter(([, value]) => value !== undefined && value !== null)
-          .sort(([a], [b]) => a.localeCompare(b));
+        const queryString = this.buildQueryString(requestParams);
+        const finalUrl = `${endpoint}?${queryString}`;
         
-        const queryString = sortedParams
-          .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-          .join('&');
-        
-        finalUrl = `${endpoint}?${queryString}`;
-        
-        // Make request without params (already in URL)
+        // Make request without params in body (already in URL)
         const response: AxiosResponse<T> = await this.axios.request({
           method,
           url: finalUrl,
+          ...(method === 'POST' ? { data: {} } : {}), // Empty body for POST
         });
         
         // Log rate limit information
@@ -120,7 +130,7 @@ export class BinanceClient {
         return response.data;
       }
       
-      // For non-signed requests or POST requests, use normal axios params
+      // For other requests, use normal axios params
       const response: AxiosResponse<T> = await this.axios.request({
         method,
         url: endpoint,
