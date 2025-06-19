@@ -6,7 +6,7 @@ import * as contractHelpers from '../../src/helpers/contracts';
 import * as callbacks from '../../src/rebalance/callbacks'; // To mock executeDestinationCallbacks
 import * as erc20Helper from '../../src/helpers/erc20';
 import * as transactionHelper from '../../src/helpers/transactions';
-import { MarkConfiguration, SupportedBridge, RebalanceRoute, RouteRebalancingConfig } from '@mark/core';
+import { MarkConfiguration, SupportedBridge, RebalanceRoute, RouteRebalancingConfig, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
@@ -76,7 +76,8 @@ describe('rebalanceInventory', () => {
             hadZeroApproval: false,
         });
         submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
-            transactionHash: '0xBridgeTxHash',
+            submissionType: TransactionSubmissionType.Onchain,
+            hash: '0xBridgeTxHash',
             receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
         });
 
@@ -221,14 +222,14 @@ describe('rebalanceInventory', () => {
         expect(mockRebalanceAdapter.getAdapter.calledWith(MOCK_BRIDGE_TYPE_A)).to.be.true;
         expect(mockSpecificBridgeAdapter.getReceivedAmount.calledOnce).to.be.true;
         expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-        
+
         // Check that ERC20 approval helper was called
         expect(checkAndApproveERC20Stub.calledOnce).to.be.true;
         const approvalCall = checkAndApproveERC20Stub.firstCall.args[0];
         expect(approvalCall.tokenAddress).to.equal(routeToTest.asset);
         expect(approvalCall.spenderAddress).to.equal(MOCK_BRIDGE_A_SPENDER);
         expect(approvalCall.amount).to.equal(currentBalance);
-        
+
         // Check that transaction submission helper was called
         expect(submitTransactionWithLoggingStub.calledOnce).to.be.true;
         const txCall = submitTransactionWithLoggingStub.firstCall.args[0];
@@ -391,16 +392,16 @@ describe('rebalanceInventory', () => {
         expect(mockRebalanceAdapter.getAdapter.calledWith(MOCK_BRIDGE_TYPE_A)).to.be.true;
         expect(mockSpecificBridgeAdapter.getReceivedAmount.calledOnce).to.be.true;
         expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-        
+
         // Check that ERC20 approval helper was called (even though no approval was needed)
         expect(checkAndApproveERC20Stub.calledOnce).to.be.true;
-        
+
         // Check that transaction submission helper was called for the bridge transaction
         expect(submitTransactionWithLoggingStub.calledOnce).to.be.true;
         const txCall = submitTransactionWithLoggingStub.firstCall.args[0];
         expect(txCall.txRequest.to).to.equal(MOCK_BRIDGE_A_SPENDER);
         expect(txCall.txRequest.data).to.equal('0xbridgeData');
-        
+
         expect(mockRebalanceCache.addRebalances.calledOnce).to.be.true;
     });
 
@@ -466,7 +467,8 @@ describe('Zodiac Address Validation', () => {
             hadZeroApproval: false,
         });
         submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
-            transactionHash: '0xBridgeTxHash',
+            hash: '0xBridgeTxHash',
+            submissionType: TransactionSubmissionType.Onchain,
             receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
         });
 
@@ -550,10 +552,10 @@ describe('Zodiac Address Validation', () => {
         });
 
         // Mock successful transaction
-        mockChainService.submitAndMonitor.resolves({ 
-            transactionHash: '0xMockTxHash', 
-            blockNumber: 123, 
-            status: 1 
+        mockChainService.submitAndMonitor.resolves({
+            transactionHash: '0xMockTxHash',
+            blockNumber: 123,
+            status: 1
         } as any);
     });
 
