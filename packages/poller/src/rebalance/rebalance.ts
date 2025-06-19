@@ -1,7 +1,9 @@
 import { getMarkBalances, safeStringToBigInt, getTickerForAsset } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
+import { getDecimalsFromConfig, WalletType } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
+import { formatUnits, zeroAddress } from 'viem';
 import { RebalanceAction } from '@mark/cache';
 import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
@@ -44,7 +46,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
     const destinationChainConfig = config.chains[route.destination];
     const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, { requestId });
 
-    if (originZodiacConfig.isEnabled) {
+    if (originZodiacConfig.walletType !== WalletType.EOA) {
       logger.info('Using Zodiac configuration for rebalance route origin chain', {
         requestId,
         route,
@@ -55,7 +57,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       });
     }
 
-    if (destinationZodiacConfig.isEnabled) {
+    if (destinationZodiacConfig.walletType !== WalletType.EOA) {
       logger.info('Using Zodiac configuration for rebalance route destination chain', {
         requestId,
         route,
@@ -80,7 +82,11 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       logger.warn('No balances found for ticker, skipping route', { requestId, route, ticker });
       continue; // Skip to next route
     }
-    const currentBalance = tickerBalances.get(route.origin.toString()) ?? 0n;
+    const normalizedBalance = tickerBalances.get(route.origin.toString()) ?? 0n;
+    // Ticker balances always in 18 units, convert to proper decimals
+    const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);
+    const currentBalance = BigInt(formatUnits(normalizedBalance, 18 - (decimals ?? 18)));
+
     logger.debug('Current balance for route', { requestId, route, currentBalance: currentBalance.toString() });
 
     const maximumBalance = BigInt(route.maximum);
@@ -169,8 +175,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           bridgeTxRequests,
           sender,
           recipient,
-          useOriginZodiac: originZodiacConfig.isEnabled,
-          useDestinationZodiac: destinationZodiacConfig.isEnabled,
+          useOriginZodiac: originZodiacConfig.walletType,
+          useDestinationZodiac: destinationZodiacConfig.walletType,
         });
         if (!bridgeTxRequests.length) {
           throw new Error(`Failed to retrieve any bridge transaction requests`);
@@ -198,7 +204,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             requestId,
             route,
             bridgeType,
-            useZodiac: originZodiacConfig.isEnabled,
+            useZodiac: originZodiacConfig.walletType,
           });
           const result = await submitTransactionWithLogging({
             chainService,
@@ -207,7 +213,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             txRequest: {
               to: transaction.to!,
               data: transaction.data!,
-              value: transaction.value || 0,
+              value: (transaction.value || 0).toString(),
+              chainId: route.origin,
               from: config.ownAddress,
             },
             zodiacConfig: originZodiacConfig,
@@ -218,15 +225,15 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             requestId,
             route,
             bridgeType,
-            transactionHash: result.transactionHash,
+            transactionHash: result.hash,
             memo,
-            useZodiac: originZodiacConfig.isEnabled,
+            useZodiac: originZodiacConfig.walletType,
           });
 
           if (memo !== RebalanceTransactionMemo.Rebalance) {
             continue;
           }
-          transactionHash = result.transactionHash;
+          transactionHash = result.hash;
         }
 
         // Step 5: Add rebalance action to cache

@@ -106,21 +106,21 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
-      // unichain    ethereum    WETH    10000000000000000000    150
+      // unichain    ethereum    WETH    30000000000000000000    150
       {
         origin: 130,
         destination: 1,
         asset: '0x4200000000000000000000000000000000000006',
-        maximum: '10000000000000000000',
+        maximum: '30000000000000000000',
         slippage: 150,
         preferences: [SupportedBridge.Across],
       },
-      // zksync    ethereum    WETH    7000000000000000000 20
+      // zksync    ethereum    WETH    10000000000000000000 20
       {
         origin: 324,
         destination: 1,
         asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
-        maximum: '7000000000000000000',
+        maximum: '10000000000000000000',
         slippage: 20,
         preferences: [SupportedBridge.Across],
       },
@@ -151,6 +151,15 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
+      // ink    ethereum    USDC    7000000000000000000 20
+      {
+        origin: 57073,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '7000000000000000000',
+        slippage: 20,
+        preferences: [SupportedBridge.Across],
+      },
     ],
   };
 };
@@ -163,7 +172,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const hostedConfig = await getEverclearConfig(url);
 
-    const configStr = await fromEnv('MARK_CONFIG_' + environment.toUpperCase(), true);
+    const ssmParameterName = (await fromEnv('MARK_CONFIG_SSM_PARAMETER')) ?? 'MARK_CONFIG_' + environment.toUpperCase();
+    const configStr = await fromEnv(ssmParameterName, true);
     const configJson = existsSync('config.json')
       ? JSON.parse(readFileSync('config.json', 'utf8'))
       : JSON.parse(configStr ?? '{}');

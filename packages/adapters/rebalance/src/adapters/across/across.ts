@@ -455,15 +455,9 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       throw new Error('Could not find matching destination asset');
     }
 
-    const response = await axiosGet<SuggestedFeesResponse>(`${this.url}/suggested-fees`, {
-      params: {
-        inputToken: route.asset,
-        outputToken: outputToken.address,
-        originChainId: route.origin,
-        destinationChainId: route.destination,
-        amount,
-      },
-    });
+    const response = await axiosGet<SuggestedFeesResponse>(
+      `${this.url}/suggested-fees?inputToken=${route.asset}&outputToken=${outputToken.address}&originChainId=${route.origin}&destinationChainId=${route.destination}&amount=${amount}`,
+    );
 
     return response.data;
   }
