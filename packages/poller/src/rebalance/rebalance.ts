@@ -1,9 +1,9 @@
 import { getMarkBalances, safeStringToBigInt, getTickerForAsset } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
-import { WalletType } from '@mark/core';
+import { getDecimalsFromConfig, WalletType } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { zeroAddress } from 'viem';
+import { formatUnits, zeroAddress } from 'viem';
 import { RebalanceAction } from '@mark/cache';
 import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
 import { checkAndApproveERC20 } from '../helpers/erc20';
@@ -82,7 +82,11 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       logger.warn('No balances found for ticker, skipping route', { requestId, route, ticker });
       continue; // Skip to next route
     }
-    const currentBalance = tickerBalances.get(route.origin.toString()) ?? 0n;
+    const normalizedBalance = tickerBalances.get(route.origin.toString()) ?? 0n;
+    // Ticker balances always in 18 units, convert to proper decimals
+    const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);
+    const currentBalance = BigInt(formatUnits(normalizedBalance, 18 - (decimals ?? 18)));
+
     logger.debug('Current balance for route', { requestId, route, currentBalance: currentBalance.toString() });
 
     const maximumBalance = BigInt(route.maximum);
