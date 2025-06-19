@@ -106,21 +106,21 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
-      // unichain    ethereum    WETH    10000000000000000000    150
+      // unichain    ethereum    WETH    30000000000000000000    150
       {
         origin: 130,
         destination: 1,
         asset: '0x4200000000000000000000000000000000000006',
-        maximum: '10000000000000000000',
+        maximum: '30000000000000000000',
         slippage: 150,
         preferences: [SupportedBridge.Across],
       },
-      // zksync    ethereum    WETH    7000000000000000000 20
+      // zksync    ethereum    WETH    10000000000000000000 20
       {
         origin: 324,
         destination: 1,
         asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
-        maximum: '7000000000000000000',
+        maximum: '10000000000000000000',
         slippage: 20,
         preferences: [SupportedBridge.Across],
       },
@@ -151,13 +151,13 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
-      // scroll    ethereum    USDC    10000000000000000000000 30
+      // ink    ethereum    USDC    7000000000000000000 20
       {
-        origin: 534352,
+        origin: 57073,
         destination: 1,
-        asset: '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4',
-        maximum: '10000000000000000000000',
-        slippage: 30,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '7000000000000000000',
+        slippage: 20,
         preferences: [SupportedBridge.Across],
       },
     ],
