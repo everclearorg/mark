@@ -24,5 +24,4 @@ export interface TransactionRequest {
 
 export enum TransactionSubmissionType {
   Onchain = 'Onchain',
-  MultisigProposal = 'MultisigProposal',
 }

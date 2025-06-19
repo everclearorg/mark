@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 
 export interface PurchaseAction {
   target: Invoice;
-  purchase: { params: NewIntentParams; intentId?: string }; // IntentId doesnt exist if it was a SAFE proposal
+  purchase: { params: NewIntentParams; intentId: string };
   transactionHash: string;
   transactionType: TransactionSubmissionType;
 }

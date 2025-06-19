@@ -154,7 +154,7 @@ export const sendIntents = async (
   adapters: MarkAdapters,
   config: MarkConfiguration,
   requestId?: string,
-): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId?: string }[]> => {
+): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, prometheus, logger } = adapters;
 
   if (!intents.length) {
@@ -205,7 +205,6 @@ export const sendIntents = async (
             );
           }
           break;
-        case WalletType.Multisig:
         case WalletType.Zodiac:
           if (intent.to.toLowerCase() !== walletConfig.safeAddress!.toLowerCase()) {
             throw new Error(
@@ -328,55 +327,35 @@ export const sendIntents = async (
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
     });
 
-    if (purchaseResult.submissionType === TransactionSubmissionType.Onchain) {
-      const purchaseTx = purchaseResult.receipt!;
+    const purchaseTx = purchaseResult.receipt!;
 
-      const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intents[0].origin, logger, {
-        invoiceId,
-        requestId: requestId || '',
-      });
+    const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intents[0].origin, logger, {
+      invoiceId,
+      requestId: requestId || '',
+    });
 
-      logger.info('Batch create intent transaction sent successfully', {
-        invoiceId,
-        requestId,
-        batchTxHash: purchaseTx.transactionHash,
-        chainId: intents[0].origin,
-        intentIds: purchaseIntentIds,
-      });
+    logger.info('Batch create intent transaction sent successfully', {
+      invoiceId,
+      requestId,
+      batchTxHash: purchaseTx.transactionHash,
+      chainId: intents[0].origin,
+      intentIds: purchaseIntentIds,
+    });
 
-      prometheus.updateGasSpent(
-        intents[0].origin,
-        TransactionReason.CreateIntent,
-        BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
-      );
+    prometheus.updateGasSpent(
+      intents[0].origin,
+      TransactionReason.CreateIntent,
+      BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
+    );
 
-      // Return results for each intent in the batch
-      return purchaseIntentIds.map((intentId) => ({
-        transactionHash: purchaseTx.transactionHash,
-        type: purchaseResult.submissionType,
-        chainId: intents[0].origin,
-        intentId,
-      }));
-    } else {
-      // If there's no receipt, it was a Safe proposal. We can't get the intent IDs here.
-      logger.info(
-        'Batch create intent transaction proposed to Gnosis Safe. Intent IDs will be available after execution.',
-        {
-          invoiceId,
-          requestId,
-          safeTxHash: purchaseResult.hash,
-          chainId: originChainId,
-        },
-      );
-      // This allows the cache to track these invoices and prevent double-purchasing
-      return [
-        {
-          type: purchaseResult.submissionType,
-          transactionHash: purchaseResult.hash,
-          chainId: originChainId,
-        },
-      ];
-    }
+    // Return results for each intent in the batch
+    return purchaseIntentIds.map((intentId) => ({
+      transactionHash: purchaseTx.transactionHash,
+      type: purchaseResult.submissionType,
+      chainId: intents[0].origin,
+      intentId,
+    }));
+
   } catch (error) {
     logger.error('Error processing batch intents', {
       invoiceId,

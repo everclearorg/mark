@@ -1,6 +1,5 @@
 export enum WalletType {
   Zodiac = 'Zodiac',
-  Multisig = 'Multisig',
   EOA = 'EOA',
 }
 

@@ -34,9 +34,7 @@ export function detectZodiacConfiguration(chainConfig?: ChainConfiguration): Wal
     chainConfig.gnosisSafeAddress
   )
     ? WalletType.Zodiac
-    : !!chainConfig.gnosisSafeAddress
-      ? WalletType.Multisig
-      : WalletType.EOA;
+    : WalletType.EOA;
 
   if (walletType === WalletType.EOA) {
     return { walletType: WalletType.EOA };
