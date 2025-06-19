@@ -1,10 +1,11 @@
-import { NewIntentParams, Invoice } from '@mark/core';
+import { NewIntentParams, Invoice, TransactionSubmissionType } from '@mark/core';
 import Redis from 'ioredis';
 
 export interface PurchaseAction {
   target: Invoice;
   purchase: { params: NewIntentParams; intentId: string };
   transactionHash: string;
+  transactionType: TransactionSubmissionType;
 }
 
 export class PurchaseCache {
@@ -50,7 +51,13 @@ export class PurchaseCache {
 
     return results
       .filter((result): result is string => result !== null)
-      .map((result) => JSON.parse(result) as PurchaseAction);
+      .map((result) => {
+        const parsed = JSON.parse(result) as PurchaseAction;
+        return {
+          ...parsed,
+          transactionType: parsed.transactionType || TransactionSubmissionType.Onchain, // backwards compatability
+        };
+      });
   }
 
   /**
@@ -92,7 +99,13 @@ export class PurchaseCache {
   public async getAllPurchases(): Promise<PurchaseAction[]> {
     const all = await this.store.hgetall(this.dataKey);
 
-    return Object.values(all).map((result) => JSON.parse(result) as PurchaseAction);
+    return Object.values(all).map((result) => {
+      const parsed = JSON.parse(result) as PurchaseAction;
+      return {
+        ...parsed,
+        transactionType: parsed.transactionType || TransactionSubmissionType.Onchain, // backwards compatability
+      };
+    });
   }
 
   /**

@@ -138,6 +138,7 @@ export async function processTickerGroup(
     const labels: InvoiceLabels = { origin: invoice.origin, id: invoice.intent_id, ticker: invoice.ticker_hash };
 
     // Skip entire ticker group if we already have a purchase for this invoice
+    // TODO: relax this condition to improve purchase times for multiple sequential invoices on the same ticker
     if (pendingPurchases.find(({ target }) => target.intent_id === invoiceId)) {
       logger.debug('Found existing purchase, stopping ticker processing', {
         requestId,
@@ -387,6 +388,7 @@ export async function processTickerGroup(
         params: allIntents[index].params,
       },
       transactionHash: result.transactionHash,
+      transactionType: result.type,
     }));
 
     // Record metrics per invoice, properly handling split intents
@@ -526,16 +528,19 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Get existing purchase actions
   logger.debug('Getting cached purchases', { requestId });
   start = getTimeSeconds();
-  const cachedPurchases = await cache.getAllPurchases();
+  const allCachedPurchases = await cache.getAllPurchases();
   logger.debug('Retrieved cached purchases', { requestId, duration: getTimeSeconds() - start });
   start = getTimeSeconds();
 
   // Remove cached purchases that no longer apply to an invoice.
   const targetsToRemove = (
     await Promise.all(
-      cachedPurchases.map(async (purchase: PurchaseAction) => {
+      allCachedPurchases.map(async (purchase: PurchaseAction) => {
+        if (!purchase.purchase.intentId) {
+          return undefined;
+        }
         // Remove purchases that are invoiced or settled
-        const status = await everclear.intentStatus(purchase.purchase.intentId);
+        const status = await everclear.intentStatus(purchase.purchase.intentId!);
         const spentStatuses = [
           IntentStatus.INVOICED,
           IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
@@ -555,12 +560,12 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
     )
   ).filter((x: string | undefined) => !!x);
 
-  const pendingPurchases = cachedPurchases.filter(
+  const pendingPurchases = allCachedPurchases.filter(
     ({ target }: PurchaseAction) => !targetsToRemove.includes(target.intent_id),
   );
 
   try {
-    await cache.removePurchases(targetsToRemove as string[]);
+    await cache.removePurchases([...new Set(targetsToRemove)] as string[]);
     logger.info(`Removed stale purchase(s)`, {
       requestId,
       removed: targetsToRemove.length,
@@ -568,7 +573,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       duration: getTimeSeconds() - start,
     });
 
-    const completedPurchases = cachedPurchases.filter(({ target }: PurchaseAction) =>
+    const completedPurchases = allCachedPurchases.filter(({ target }: PurchaseAction) =>
       targetsToRemove.includes(target.intent_id),
     );
 

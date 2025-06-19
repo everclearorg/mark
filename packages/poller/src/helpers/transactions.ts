@@ -1,21 +1,22 @@
 import { providers } from 'ethers';
 import { ChainService } from '@mark/chainservice';
+import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig } from '@mark/core';
+import { wrapTransactionWithZodiac } from './zodiac';
 import { Logger } from '@mark/logger';
-import { LoggingContext } from '@mark/core';
-import { ZodiacConfig, wrapTransactionWithZodiac, TransactionRequest } from './zodiac';
 
 export interface TransactionSubmissionParams {
   chainService: ChainService;
   logger: Logger;
   chainId: string;
   txRequest: TransactionRequest;
-  zodiacConfig: ZodiacConfig;
+  zodiacConfig: WalletConfig;
   context?: LoggingContext; // For logging context
 }
 
 export interface TransactionSubmissionResult {
-  transactionHash: string;
-  receipt: providers.TransactionReceipt; // The actual receipt type from chainService
+  submissionType: TransactionSubmissionType;
+  hash: string; // unique identifier for the transaction, could be safe hash or transaction hash
+  receipt?: providers.TransactionReceipt; // The actual receipt type from chainService
 }
 
 /**
@@ -27,13 +28,13 @@ export async function submitTransactionWithLogging(
   const { chainService, logger, chainId, txRequest, zodiacConfig, context = {} } = params;
 
   // Prepare the transaction (wrap with Zodiac if needed)
-  const preparedTx = wrapTransactionWithZodiac(txRequest, zodiacConfig);
+  const preparedTx = await wrapTransactionWithZodiac({ ...txRequest, chainId: +params.chainId }, zodiacConfig);
 
   logger.info('Submitting transaction', {
     ...context,
     chainId,
     to: preparedTx.to,
-    useZodiac: zodiacConfig.isEnabled,
+    walletType: zodiacConfig.walletType,
     originalTo: txRequest.to,
     value: preparedTx.value?.toString() || '0',
   });
@@ -45,11 +46,12 @@ export async function submitTransactionWithLogging(
       ...context,
       chainId,
       transactionHash: receipt.transactionHash,
-      useZodiac: zodiacConfig.isEnabled,
+      walletType: zodiacConfig.walletType,
     });
 
     return {
-      transactionHash: receipt.transactionHash,
+      submissionType: TransactionSubmissionType.Onchain,
+      hash: receipt.transactionHash,
       receipt,
     };
   } catch (error) {
@@ -58,7 +60,7 @@ export async function submitTransactionWithLogging(
       chainId,
       error,
       txRequest: preparedTx,
-      useZodiac: zodiacConfig.isEnabled,
+      walletType: zodiacConfig.walletType,
     });
     throw error;
   }

@@ -6,7 +6,7 @@ import * as balanceHelpers from '../../src/helpers/balance';
 import * as assetHelpers from '../../src/helpers/asset';
 import { IntentStatus } from '@mark/everclear';
 import { RebalanceCache } from '@mark/cache';
-import { InvalidPurchaseReasons } from '@mark/core';
+import { InvalidPurchaseReasons, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
@@ -212,7 +212,8 @@ describe('Invoice Processing', () => {
             maxFee: 0
           }
         },
-        transactionHash: '0xabc'
+        transactionHash: '0xabc',
+        transactionType: TransactionSubmissionType.Onchain,
       }]);
 
       await processInvoices(mockContext, invoices);
@@ -265,7 +266,8 @@ describe('Invoice Processing', () => {
       sendIntentsStub.resolves([{
         intentId: '0xabc',
         transactionHash: '0xabc',
-        chainId: '8453'
+        chainId: '8453',
+        type: TransactionSubmissionType.Onchain,
       }]);
 
       await processInvoices(mockContext, [invoice]);
@@ -273,6 +275,7 @@ describe('Invoice Processing', () => {
       const expectedPurchase = {
         target: invoice,
         transactionHash: '0xabc',
+        transactionType: TransactionSubmissionType.Onchain,
         purchase: {
           intentId: '0xabc',
           params: {
@@ -386,7 +389,8 @@ describe('Invoice Processing', () => {
       sendIntentsStub.resolves([{
         intentId: '0xabc',
         transactionHash: '0xabc',
-        chainId: '8453'
+        chainId: '8453',
+        type: TransactionSubmissionType.Onchain,
       }]);
 
       // Simulate cache failure
@@ -431,7 +435,8 @@ describe('Invoice Processing', () => {
             maxFee: 0
           }
         },
-        transactionHash: '0xabc'
+        transactionHash: '0xabc',
+        transactionType: TransactionSubmissionType.Onchain,
       }]);
 
       // Simulate cache failure
@@ -528,7 +533,8 @@ describe('Invoice Processing', () => {
       sendIntentsStub.resolves([{
         intentId: '0xabc',
         transactionHash: '0xabc',
-        chainId: domain2
+        chainId: domain2,
+        type: TransactionSubmissionType.Onchain,
       }]);
 
       await processInvoices(mockContext, [invoice]);
@@ -751,7 +757,8 @@ describe('Invoice Processing', () => {
       sendIntentsStub.resolves([{
         intentId: '0xabc',
         transactionHash: '0xabc',
-        chainId: '8453'
+        chainId: '8453',
+        type: TransactionSubmissionType.Onchain,
       }]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -759,6 +766,7 @@ describe('Invoice Processing', () => {
       const expectedPurchase = {
         target: invoice,
         transactionHash: '0xabc',
+        transactionType: TransactionSubmissionType.Onchain,
         purchase: {
           intentId: '0xabc',
           params: {
@@ -820,12 +828,14 @@ describe('Invoice Processing', () => {
         {
           intentId: '0xabc',
           transactionHash: '0xabc',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xdef',
           transactionHash: '0xdef',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         }
       ]);
 
@@ -835,6 +845,7 @@ describe('Invoice Processing', () => {
         {
           target: invoice1,
           transactionHash: '0xabc',
+          transactionType: TransactionSubmissionType.Onchain,
           purchase: {
             intentId: '0xabc',
             params: {
@@ -851,6 +862,7 @@ describe('Invoice Processing', () => {
         {
           target: invoice2,
           transactionHash: '0xdef',
+          transactionType: TransactionSubmissionType.Onchain,
           purchase: {
             intentId: '0xdef',
             params: {
@@ -922,12 +934,14 @@ describe('Invoice Processing', () => {
         {
           intentId: '0xabc',
           transactionHash: '0xabc',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xdef',
           transactionHash: '0xdef',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         }]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -936,6 +950,7 @@ describe('Invoice Processing', () => {
         {
           target: invoice,
           transactionHash: '0xabc',
+          transactionType: TransactionSubmissionType.Onchain,
           purchase: {
             intentId: '0xabc',
             params: {
@@ -952,6 +967,7 @@ describe('Invoice Processing', () => {
         {
           target: invoice,
           transactionHash: '0xdef',
+          transactionType: TransactionSubmissionType.Onchain,
           purchase: {
             intentId: '0xdef',
             params: {
@@ -1025,7 +1041,8 @@ describe('Invoice Processing', () => {
       sendIntentsStub.resolves([{
         intentId: '0xabc',
         transactionHash: '0xabc',
-        chainId: '8453'
+        chainId: '8453',
+        type: TransactionSubmissionType.Onchain,
       }]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -1076,7 +1093,8 @@ describe('Invoice Processing', () => {
             maxFee: '0'
           }
         },
-        transactionHash: '0xexisting'
+        transactionHash: '0xexisting',
+        transactionType: TransactionSubmissionType.Onchain,
       }];
 
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
@@ -1153,7 +1171,8 @@ describe('Invoice Processing', () => {
             maxFee: '0'
           }
         },
-        transactionHash: '0xexisting'
+        transactionHash: '0xexisting',
+        transactionType: TransactionSubmissionType.Onchain,
       }];
 
       calculateSplitIntentsStub.resolves({
@@ -1173,7 +1192,8 @@ describe('Invoice Processing', () => {
       sendIntentsStub.resolves([{
         intentId: '0xabc',
         transactionHash: '0xabc',
-        chainId: '10'
+        chainId: '10',
+        type: TransactionSubmissionType.Onchain,
       }]);
 
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
@@ -1218,7 +1238,8 @@ describe('Invoice Processing', () => {
               maxFee: '0'
             }
           },
-          transactionHash: '0xabc'
+          transactionHash: '0xabc',
+          transactionType: TransactionSubmissionType.Onchain,
         }
       ];
 
@@ -1325,7 +1346,8 @@ describe('Invoice Processing', () => {
       sendIntentsStub.resolves([{
         intentId: '0xabc',
         transactionHash: '0xabc',
-        chainId: '8453'
+        chainId: '8453',
+        type: TransactionSubmissionType.Onchain,
       }]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -1387,17 +1409,20 @@ describe('Invoice Processing', () => {
         {
           intentId: '0xabc1',
           transactionHash: '0xabc1',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xabc2',
           transactionHash: '0xabc2',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xabc3',
           transactionHash: '0xabc3',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         }
       ]);
 
@@ -1486,12 +1511,14 @@ describe('Invoice Processing', () => {
         {
           intentId: '0xabc',
           transactionHash: '0xabc',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xdef',
           transactionHash: '0xdef',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         }
       ]);
 
@@ -1667,17 +1694,20 @@ describe('Invoice Processing', () => {
         {
           intentId: '0xabc1',
           transactionHash: '0xabc1',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xabc2',
           transactionHash: '0xabc2',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xdef',
           transactionHash: '0xdef',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         }
       ]);
 
@@ -1687,6 +1717,7 @@ describe('Invoice Processing', () => {
         {
           target: invoice1,  // First two purchases target invoice1
           transactionHash: '0xabc1',
+          transactionType: TransactionSubmissionType.Onchain,
           purchase: {
             intentId: '0xabc1',
             params: {
@@ -1703,6 +1734,7 @@ describe('Invoice Processing', () => {
         {
           target: invoice1,  // First two purchases target invoice1
           transactionHash: '0xabc2',
+          transactionType: TransactionSubmissionType.Onchain,
           purchase: {
             intentId: '0xabc2',
             params: {
@@ -1719,6 +1751,7 @@ describe('Invoice Processing', () => {
         {
           target: invoice2,  // Third purchase targets invoice2
           transactionHash: '0xdef',
+          transactionType: TransactionSubmissionType.Onchain,
           purchase: {
             intentId: '0xdef',
             params: {
@@ -1762,7 +1795,8 @@ describe('Invoice Processing', () => {
               maxFee: '0'
             }
           },
-          transactionHash: '0xexisting1'
+          transactionHash: '0xexisting1',
+          transactionType: TransactionSubmissionType.Onchain,
         },
         {
           target: invoice,
@@ -1778,7 +1812,8 @@ describe('Invoice Processing', () => {
               maxFee: '0'
             }
           },
-          transactionHash: '0xexisting2'
+          transactionHash: '0xexisting2',
+          transactionType: TransactionSubmissionType.Onchain,
         }
       ];
 
@@ -1894,17 +1929,20 @@ describe('Invoice Processing', () => {
         {
           intentId: '0xabc1',
           transactionHash: '0xabc1',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xabc2',
           transactionHash: '0xabc2',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xdef',
           transactionHash: '0xdef',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         }
       ]);
 
@@ -1987,12 +2025,14 @@ describe('Invoice Processing', () => {
         {
           intentId: '0xabc1',
           transactionHash: '0xabc1',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xabc2',
           transactionHash: '0xabc2',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         }
       ]);
 
@@ -2098,12 +2138,14 @@ describe('Invoice Processing', () => {
         {
           intentId: '0xabc1',
           transactionHash: '0xabc1',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         },
         {
           intentId: '0xdef1',
           transactionHash: '0xdef1',
-          chainId: '8453'
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
         }
       ]);
 
