@@ -172,7 +172,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const hostedConfig = await getEverclearConfig(url);
 
-    const ssmParameterName = (await fromEnv('MARK_CONFIG_SSM_PARAMETER')) ?? ('MARK_CONFIG_' + environment.toUpperCase());
+    const ssmParameterName = (await fromEnv('MARK_CONFIG_SSM_PARAMETER')) ?? 'MARK_CONFIG_' + environment.toUpperCase();
     const configStr = await fromEnv(ssmParameterName, true);
     const configJson = existsSync('config.json')
       ? JSON.parse(readFileSync('config.json', 'utf8'))
@@ -371,12 +371,10 @@ export const parseChainConfigurations = async (
       (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_MODULE_ADDRESS`));
 
     const zodiacRoleKey =
-      configJson?.chains?.[chainId]?.zodiacRoleKey ??
-      (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_KEY`));
+      configJson?.chains?.[chainId]?.zodiacRoleKey ?? (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_KEY`));
 
     const gnosisSafeAddress =
-      configJson?.chains?.[chainId]?.gnosisSafeAddress ??
-      (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
+      configJson?.chains?.[chainId]?.gnosisSafeAddress ?? (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
 
     chains[chainId] = {
       providers,

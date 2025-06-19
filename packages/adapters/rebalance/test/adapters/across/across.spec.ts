@@ -252,15 +252,9 @@ describe('AcrossBridgeAdapter', () => {
 
             // Expected: 10 USDC - 0.1 USDC - 0.05 USDC = 9.85 USDC
             expect(result).toBe(mockFeesResponse.outputAmount.toString());
-            expect(axiosGet).toHaveBeenCalledWith(`${mockUrl}/suggested-fees`, {
-                params: {
-                    inputToken: route.asset,
-                    outputToken: mockAssets['USDC'].address,
-                    originChainId: route.origin,
-                    destinationChainId: route.destination,
-                    amount: '10000000',
-                },
-            });
+            expect(axiosGet).toHaveBeenCalledWith(
+                `${mockUrl}/suggested-fees?inputToken=${route.asset}&outputToken=${mockAssets['USDC'].address}&originChainId=${route.origin}&destinationChainId=${route.destination}&amount=10000000`
+            );
         });
 
         it('should throw an error if the API request fails', async () => {
@@ -679,15 +673,9 @@ describe('AcrossBridgeAdapter', () => {
 
             // Assert
             expect(result).toEqual(mockFeesResponse);
-            expect(axiosGet).toHaveBeenCalledWith(`${mockUrl}/suggested-fees`, {
-                params: {
-                    inputToken: route.asset,
-                    outputToken: mockAssets['USDC'].address,
-                    originChainId: route.origin,
-                    destinationChainId: route.destination,
-                    amount: '10000000',
-                },
-            });
+            expect(axiosGet).toHaveBeenCalledWith(
+                `${mockUrl}/suggested-fees?inputToken=${route.asset}&outputToken=${mockAssets['USDC'].address}&originChainId=${route.origin}&destinationChainId=${route.destination}&amount=10000000`
+            );
         });
     });
 

@@ -1,9 +1,9 @@
-import { getTokenAddressFromConfig, Invoice, NewIntentParams } from '@mark/core';
+import { getTokenAddressFromConfig, Invoice, NewIntentParams, WalletType } from '@mark/core';
 import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 import { ProcessingContext } from '../init';
-import { getValidatedZodiacConfig } from './zodiac';
+import { getActualOwner, getValidatedZodiacConfig } from './zodiac';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -131,6 +131,7 @@ export async function calculateSplitIntents(
         origin,
         required: totalNeeded.toString(),
         available: markOriginBalance.toString(),
+        custodian: getActualOwner(getValidatedZodiacConfig(config.chains[origin]), config.ownAddress),
       });
       continue;
     }
@@ -249,7 +250,8 @@ export async function calculateSplitIntents(
     // Get Zodiac configuration for the destination chain to determine correct 'to' address
     const destinationChainConfig = config.chains[domain];
     const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
-    const toAddress = destinationZodiacConfig.isEnabled ? destinationZodiacConfig.safeAddress! : config.ownAddress;
+    const toAddress =
+      destinationZodiacConfig.walletType !== WalletType.EOA ? destinationZodiacConfig.safeAddress! : config.ownAddress;
 
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
@@ -281,7 +283,10 @@ export async function calculateSplitIntents(
         // Get Zodiac configuration for the destination chain to determine correct 'to' address
         const destinationChainConfig = config.chains[targetDomain];
         const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
-        const toAddress = destinationZodiacConfig.isEnabled ? destinationZodiacConfig.safeAddress! : config.ownAddress;
+        const toAddress =
+          destinationZodiacConfig.walletType !== WalletType.EOA
+            ? destinationZodiacConfig.safeAddress!
+            : config.ownAddress;
 
         const params: NewIntentParams = {
           origin: bestAllocation.origin,
