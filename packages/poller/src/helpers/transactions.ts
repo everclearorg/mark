@@ -1,8 +1,8 @@
 import { providers } from 'ethers';
 import { ChainService } from '@mark/chainservice';
-import { jsonifyError, Logger } from '@mark/logger';
-import { LoggingContext, TransactionSubmissionType, WalletType, TransactionRequest, WalletConfig } from '@mark/core';
+import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig } from '@mark/core';
 import { wrapTransactionWithZodiac } from './zodiac';
+import { Logger } from '@mark/logger';
 
 export interface TransactionSubmissionParams {
   chainService: ChainService;
