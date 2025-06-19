@@ -44,10 +44,10 @@ export class BinanceClient {
   /**
    * Generate HMAC SHA256 signature for Binance API authentication
    */
-  private sign(params: Record<string, any>): string {
+  private sign(params: Record<string, unknown>): string {
     const queryString = Object.entries(params)
       .filter(([, value]) => value !== undefined && value !== null)
-      .sort(([a], [b]) => a.localeCompare(b))  // Sort alphabetically, required by Binance
+      .sort(([a], [b]) => a.localeCompare(b)) // Sort alphabetically, required by Binance
       .map(([key, value]) => `${key}=${value}`)
       .join('&');
 
@@ -57,14 +57,12 @@ export class BinanceClient {
   /**
    * Build query string with sorted parameters for consistent signatures
    */
-  private buildQueryString(params: Record<string, any>): string {
+  private buildQueryString(params: Record<string, unknown>): string {
     const sortedParams = Object.entries(params)
       .filter(([, value]) => value !== undefined && value !== null)
       .sort(([a], [b]) => a.localeCompare(b));
-    
-    return sortedParams
-      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-      .join('&');
+
+    return sortedParams.map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`).join('&');
   }
 
   /**
@@ -73,7 +71,7 @@ export class BinanceClient {
   private async request<T>(
     method: 'GET' | 'POST' | 'DELETE',
     endpoint: string,
-    params: Record<string, any> = {},
+    params: Record<string, unknown> = {},
     signed = false,
     retryCount = 0,
   ): Promise<T> {
@@ -102,34 +100,33 @@ export class BinanceClient {
       // Determine if we need to send parameters in URL
       // - All signed GET requests
       // - POST requests to withdrawal endpoint
-      const sendParamsInUrl = 
-        (method === 'GET' && signed) || 
-        (method === 'POST' && endpoint.includes('/withdraw/apply') && signed);
+      const sendParamsInUrl =
+        (method === 'GET' && signed) || (method === 'POST' && endpoint.includes('/withdraw/apply') && signed);
 
       if (sendParamsInUrl) {
         // Build query string manually to preserve order
         const queryString = this.buildQueryString(requestParams);
         const finalUrl = `${endpoint}?${queryString}`;
-        
+
         // Make request without params in body (already in URL)
         const response: AxiosResponse<T> = await this.axios.request({
           method,
           url: finalUrl,
           ...(method === 'POST' ? { data: {} } : {}), // Empty body for POST
         });
-        
+
         // Log rate limit information
-        this.logRateLimitInfo(response.headers, endpoint);
-        
+        this.logRateLimitInfo(response.headers as Record<string, string | string[] | undefined>, endpoint);
+
         this.logger.debug('Binance API request successful', {
           endpoint,
           status: response.status,
           retryCount,
         });
-        
+
         return response.data;
       }
-      
+
       // For other requests, use normal axios params
       const response: AxiosResponse<T> = await this.axios.request({
         method,
@@ -138,7 +135,7 @@ export class BinanceClient {
       });
 
       // Log rate limit information
-      this.logRateLimitInfo(response.headers, endpoint);
+      this.logRateLimitInfo(response.headers as Record<string, string | string[] | undefined>, endpoint);
 
       this.logger.debug('Binance API request successful', {
         endpoint,
@@ -187,15 +184,18 @@ export class BinanceClient {
    * Handle rate limit errors (429) and IP bans (418) with proper backoff
    */
   private async handleRateLimitError<T>(
-    error: any,
+    error: unknown,
     method: 'GET' | 'POST' | 'DELETE',
     endpoint: string,
-    params: Record<string, any>,
+    params: Record<string, unknown>,
     signed: boolean,
     retryCount: number,
     maxRetries: number,
     retryAfter?: string,
   ): Promise<T> {
+    if (!axios.isAxiosError(error)) {
+      throw error;
+    }
     const status = error.response?.status;
     const isIpBan = status === 418;
 
@@ -206,7 +206,11 @@ export class BinanceClient {
         retryCount,
         isIpBan,
       });
-      throw error;
+
+      // Format the error message before throwing
+      const errorMessage = error.response?.data?.msg || error.message;
+      const errorCode = error.response?.data?.code;
+      throw new Error(`Binance API error ${status} ${errorCode ? `(${errorCode})` : ''}: ${errorMessage}`);
     }
 
     // Calculate delay: use Retry-After header if available, otherwise exponential backoff
@@ -236,18 +240,19 @@ export class BinanceClient {
    * Handle server errors (5xx) with exponential backoff
    */
   private async handleServerError<T>(
-    error: any,
+    error: unknown,
     method: 'GET' | 'POST' | 'DELETE',
     endpoint: string,
-    params: Record<string, any>,
+    params: Record<string, unknown>,
     signed: boolean,
     retryCount: number,
   ): Promise<T> {
     const delayMs = Math.min(1000 * Math.pow(2, retryCount), 10000); // Max 10 seconds
 
+    const errorStatus = axios.isAxiosError(error) ? error.response?.status : undefined;
     this.logger.warn('Server error, retrying with backoff', {
       endpoint,
-      status: error.response?.status,
+      status: errorStatus,
       retryCount: retryCount + 1,
       delayMs,
     });
@@ -260,12 +265,12 @@ export class BinanceClient {
    * Log rate limit information from response headers
    * We only use /sapi endpoints, so only check SAPI headers
    */
-  private logRateLimitInfo(headers: any, endpoint: string): void {
+  private logRateLimitInfo(headers: Record<string, string | string[] | undefined>, endpoint: string): void {
     // SAPI endpoints use X-SAPI-USED-*-WEIGHT-1M headers
     const ipWeight = headers['x-sapi-used-ip-weight-1m'];
     const uidWeight = headers['x-sapi-used-uid-weight-1m'];
 
-    if (ipWeight) {
+    if (ipWeight && typeof ipWeight === 'string') {
       this.logger.debug('SAPI IP rate limit status', {
         endpoint,
         weightUsed: ipWeight,
@@ -283,7 +288,7 @@ export class BinanceClient {
       }
     }
 
-    if (uidWeight) {
+    if (uidWeight && typeof uidWeight === 'string') {
       this.logger.debug('SAPI UID rate limit status', {
         endpoint,
         weightUsed: uidWeight,
@@ -339,7 +344,12 @@ export class BinanceClient {
       amount: params.amount,
     });
 
-    const result = await this.request<WithdrawResponse>('POST', BINANCE_ENDPOINTS.WITHDRAW_APPLY, params, true);
+    const result = await this.request<WithdrawResponse>(
+      'POST',
+      BINANCE_ENDPOINTS.WITHDRAW_APPLY,
+      params as unknown as Record<string, unknown>,
+      true,
+    );
 
     this.logger.debug('Withdrawal submitted', {
       withdrawalId: result.id,
@@ -360,7 +370,7 @@ export class BinanceClient {
     offset = 0,
     limit = 1000,
   ): Promise<DepositRecord[]> {
-    const params: Record<string, any> = {
+    const params: Record<string, unknown> = {
       offset,
       limit,
     };
@@ -401,7 +411,7 @@ export class BinanceClient {
     offset = 0,
     limit = 1000,
   ): Promise<WithdrawRecord[]> {
-    const params: Record<string, any> = {
+    const params: Record<string, unknown> = {
       offset,
       limit,
     };
@@ -456,10 +466,10 @@ export class BinanceClient {
   /**
    * Get asset configuration
    */
-  async getAssetConfig(): Promise<any[]> {
+  async getAssetConfig(): Promise<unknown[]> {
     this.logger.debug('Getting asset configuration');
 
-    const result = await this.request<any[]>('GET', BINANCE_ENDPOINTS.ASSET_CONFIG, {}, true);
+    const result = await this.request<unknown[]>('GET', BINANCE_ENDPOINTS.ASSET_CONFIG, {}, true);
 
     this.logger.debug('Asset configuration retrieved', {
       assetCount: result.length,
@@ -497,12 +507,7 @@ export class BinanceClient {
   async getWithdrawQuota(): Promise<WithdrawQuotaResponse> {
     this.logger.debug('Getting withdrawal quota');
 
-    const result = await this.request<WithdrawQuotaResponse>(
-      'GET',
-      BINANCE_ENDPOINTS.WITHDRAW_QUOTA,
-      {},
-      true,
-    );
+    const result = await this.request<WithdrawQuotaResponse>('GET', BINANCE_ENDPOINTS.WITHDRAW_QUOTA, {}, true);
 
     const totalQuota = parseFloat(result.wdQuota);
     const usedQuota = parseFloat(result.usedWdQuota);

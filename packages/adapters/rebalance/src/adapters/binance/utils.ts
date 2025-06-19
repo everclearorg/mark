@@ -152,7 +152,7 @@ export async function convertAmountToUSD(
   client: BinanceClient,
 ): Promise<number> {
   const amountInAsset = parseFloat(formatUnits(BigInt(amount), decimals));
-  
+
   // For stablecoins, assume 1:1 for simplicity
   if (binanceSymbol === 'USDT' || binanceSymbol === 'USDC') {
     return amountInAsset;
@@ -161,7 +161,7 @@ export async function convertAmountToUSD(
   // Get price for the asset in USDT
   const ticker = await client.getPrice(`${binanceSymbol}USDT`);
   const price = parseFloat(ticker.price);
-  
+
   // Calculate USD value
   return amountInAsset * price;
 }
@@ -180,10 +180,10 @@ export async function checkWithdrawQuota(
   const totalQuota = parseFloat(quota.wdQuota);
   const usedQuota = parseFloat(quota.usedWdQuota);
   const remainingQuotaUSD = totalQuota - usedQuota;
-  
+
   // Convert amount to USD
   const amountUSD = await convertAmountToUSD(amount, binanceSymbol, decimals, client);
-  
+
   return {
     allowed: amountUSD <= remainingQuotaUSD,
     remainingQuotaUSD,
