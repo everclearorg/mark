@@ -1,10 +1,4 @@
-import {
-  getTokenAddressFromConfig,
-  InvalidPurchaseReasons,
-  Invoice,
-  NewIntentParams,
-  TransactionSubmissionType,
-} from '@mark/core';
+import { getTokenAddressFromConfig, InvalidPurchaseReasons, Invoice, NewIntentParams } from '@mark/core';
 import { jsonifyError, jsonifyMap } from '@mark/logger';
 import { IntentStatus } from '@mark/everclear';
 import { InvoiceLabels } from '@mark/prometheus';
@@ -18,11 +12,9 @@ import {
   calculateSplitIntents,
   getCustodiedBalances,
   getSupportedDomainsForTicker,
-  getAddedIntentIdsFromReceipt,
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { PurchaseAction } from '@mark/cache';
-import { providers } from 'ethers';
 
 export const MAX_DESTINATIONS = 10; // enforced onchain at 10
 export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
@@ -497,7 +489,7 @@ export async function processTickerGroup(
  * @param invoices - The invoices to process
  */
 export async function processInvoices(context: ProcessingContext, invoices: Invoice[]): Promise<void> {
-  const { config, everclear, purchaseCache: cache, logger, prometheus, requestId, startTime, chainService } = context;
+  const { config, everclear, purchaseCache: cache, logger, prometheus, requestId, startTime } = context;
   let start = startTime;
 
   logger.info('Starting invoice processing', {
@@ -540,58 +532,10 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   logger.debug('Retrieved cached purchases', { requestId, duration: getTimeSeconds() - start });
   start = getTimeSeconds();
 
-  // For all cached purchases, if the safe proposal has been submitted ensure the intents are filtered.
-  const safePurchases = allCachedPurchases.filter(
-    ({ transactionType }) => transactionType === TransactionSubmissionType.MultisigProposal,
-  );
-  const formattedSafePurchases: PurchaseAction[] = [];
-  const cancelledSafeActions: string[] = [];
-  await Promise.all(
-    safePurchases.map(async (purchase) => {
-      let receipt;
-      try {
-        receipt = await chainService.getSafeTransactionReceipt(
-          purchase.purchase.params.origin,
-          purchase.transactionHash,
-        );
-      } catch (e) {
-        const err = e as Error;
-        if (err.message.includes(`cannot be executed, likely cancelled`)) {
-          // Remove the purchase as it can no longer be executed
-          cancelledSafeActions.push(purchase.target.intent_id);
-          return;
-        }
-        throw e;
-      }
-      if (!receipt) {
-        // Safe transaction has not been submitted yet, still out for purchase.
-        return;
-      }
-
-      // Otherwise, safe transaction has been executed. Find the intent ids from the
-      // event logs
-      const intentIds = await getAddedIntentIdsFromReceipt(
-        receipt as providers.TransactionReceipt,
-        purchase.target.origin,
-        logger,
-        {
-          requestId,
-          invoiceId: purchase.target.intent_id,
-        },
-      );
-      const formatted = intentIds.map((i) => ({
-        ...purchase,
-        purchase: { ...purchase.purchase, intentId: i },
-      }));
-      formattedSafePurchases.push(...formatted);
-    }),
-  );
-  const expandedCachePurchases = [...allCachedPurchases, ...formattedSafePurchases];
-
   // Remove cached purchases that no longer apply to an invoice.
   const targetsToRemove = (
     await Promise.all(
-      expandedCachePurchases.map(async (purchase: PurchaseAction) => {
+      allCachedPurchases.map(async (purchase: PurchaseAction) => {
         if (!purchase.purchase.intentId) {
           return undefined;
         }
@@ -614,9 +558,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
         return purchase.target.intent_id;
       }),
     )
-  )
-    .filter((x: string | undefined) => !!x)
-    .concat(cancelledSafeActions);
+  ).filter((x: string | undefined) => !!x);
 
   const pendingPurchases = allCachedPurchases.filter(
     ({ target }: PurchaseAction) => !targetsToRemove.includes(target.intent_id),
@@ -631,7 +573,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       duration: getTimeSeconds() - start,
     });
 
-    const completedPurchases = expandedCachePurchases.filter(({ target }: PurchaseAction) =>
+    const completedPurchases = allCachedPurchases.filter(({ target }: PurchaseAction) =>
       targetsToRemove.includes(target.intent_id),
     );
 

@@ -30,40 +30,6 @@ export async function submitTransactionWithLogging(
   // Prepare the transaction (wrap with Zodiac if needed)
   const preparedTx = await wrapTransactionWithZodiac({ ...txRequest, chainId: +params.chainId }, zodiacConfig);
 
-  if (zodiacConfig.walletType === WalletType.Multisig) {
-    logger.info('Proposing transaction to multisig', {
-      ...context,
-      chainId,
-      to: preparedTx.to,
-      value: preparedTx.value?.toString() || '0',
-      walletType: zodiacConfig.walletType,
-      safeAddress: zodiacConfig.safeAddress,
-    });
-
-    try {
-      const safeTxHash = await chainService.proposeMultisigTransaction(chainId, preparedTx, zodiacConfig);
-      logger.info('Transaction proposed to multisig successfully', {
-        ...context,
-        chainId,
-        safeTxHash,
-        walletType: zodiacConfig.walletType,
-      });
-      return {
-        submissionType: TransactionSubmissionType.MultisigProposal,
-        hash: safeTxHash,
-      };
-    } catch (error) {
-      logger.error('Multisig transaction proposal failed', {
-        ...context,
-        chainId,
-        error: jsonifyError(error),
-        txRequest: txRequest,
-        walletType: zodiacConfig.walletType,
-      });
-      throw error;
-    }
-  }
-
   logger.info('Submitting transaction', {
     ...context,
     chainId,
