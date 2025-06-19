@@ -134,6 +134,14 @@ const mockBinanceClient = {
   withdraw: jest.fn<() => Promise<WithdrawResponse>>().mockResolvedValue(mockWithdrawResponse),
   getDepositHistory: jest.fn<() => Promise<any[]>>().mockResolvedValue([]),
   getWithdrawHistory: jest.fn<() => Promise<any[]>>().mockResolvedValue([]),
+  getWithdrawQuota: jest.fn<() => Promise<{ wdQuota: string; usedWdQuota: string }>>().mockResolvedValue({
+    wdQuota: '8000000',
+    usedWdQuota: '1000000',
+  }),
+  getPrice: jest.fn<() => Promise<{ symbol: string; price: string }>>().mockResolvedValue({
+    symbol: 'ETHUSDT',
+    price: '2000',
+  }),
 };
 
 describe('BinanceBridgeAdapter', () => {
@@ -323,6 +331,56 @@ describe('BinanceBridgeAdapter', () => {
       await expect(adapter.send('0xsender', '0xrecipient', '1000000000000000000', sampleRoute))
         .rejects.toThrow('Failed to prepare Binance deposit transaction');
     });
+
+    it('should check withdrawal quota before sending', async () => {
+      const sender = '0x' + 'sender'.padEnd(40, '0');
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const amount = '1000000000000000000'; // 1 ETH
+      
+      await adapter.send(sender, recipient, amount, sampleRoute);
+      
+      // Verify quota was checked
+      expect(mockBinanceClient.getWithdrawQuota).toHaveBeenCalled();
+      expect(mockBinanceClient.getPrice).toHaveBeenCalledWith('ETHUSDT');
+    });
+
+    it('should throw error if withdrawal amount exceeds quota', async () => {
+      const sender = '0x' + 'sender'.padEnd(40, '0');
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const amount = '5000000000000000000'; // 5 ETH = $10,000 at $2000/ETH
+      
+      // Mock quota response with low remaining quota
+      mockBinanceClient.getWithdrawQuota.mockResolvedValueOnce({
+        wdQuota: '8000000',
+        usedWdQuota: '7995000', // Only $5,000 remaining
+      });
+      
+      await expect(adapter.send(sender, recipient, amount, sampleRoute))
+        .rejects.toThrow('Withdrawal amount $10000.00 USD exceeds remaining daily quota of $5000.00 USD');
+    });
+
+    it('should handle USDT assets without price conversion', async () => {
+      const sender = '0x' + 'sender'.padEnd(40, '0');
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const amount = '1000000000'; // 1000 USDT (6 decimals)
+      
+      const usdtRoute: RebalanceRoute = {
+        origin: 1,
+        destination: 42161,
+        asset: '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
+      };
+      
+      mockBinanceClient.getDepositAddress.mockResolvedValueOnce({
+        ...mockDepositAddress,
+        coin: 'USDT',
+      });
+      
+      await adapter.send(sender, recipient, amount, usdtRoute);
+      
+      // Should check quota but not price (stablecoin 1:1 with USD)
+      expect(mockBinanceClient.getWithdrawQuota).toHaveBeenCalled();
+      expect(mockBinanceClient.getPrice).not.toHaveBeenCalled();
+    });
   });
 
   describe('readyOnDestination', () => {
@@ -355,6 +413,8 @@ describe('BinanceBridgeAdapter', () => {
 
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockTransaction);
       expect(result).toBe(false);
+      
+      // Should log error about missing recipient
       expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for withdrawal', {
         transactionHash: mockTransaction.transactionHash,
         route: sampleRoute,
@@ -443,6 +503,8 @@ describe('BinanceBridgeAdapter', () => {
       
       const result = await adapter.destinationCallback(sampleRoute, mockTransaction);
       expect(result).toBeUndefined();
+      
+      // Should log error about missing recipient
       expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for callback', {
         transactionHash: mockTransaction.transactionHash,
       });
@@ -621,9 +683,59 @@ describe('BinanceBridgeAdapter', () => {
           coin: 'ETH',
           network: 'ARBITRUM',
           address: recipient,
-          amount: '999960000000000000', // Amount after fee (1 ETH - 0.00004 ETH = 0.99996 ETH)
+          amount: '0.99996', // Amount after fee formatted (1 ETH - 0.00004 ETH = 0.99996 ETH)
           withdrawOrderId: expect.stringMatching(/^mark-[0-9a-f]{8}-1-42161-[0-9a-zA-Z]{6}$/),
         });
+      });
+
+      it('should check withdrawal quota when initiating withdrawal', async () => {
+        // Mock deposit confirmed
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([{
+          txId: mockTransaction.transactionHash,
+          status: 1,
+        }]);
+
+        // Mock no existing withdrawal
+        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
+
+        // Mock withdraw call
+        mockBinanceClient.withdraw.mockResolvedValueOnce({ id: 'new-withdrawal-123' });
+
+        // Mock withdrawal status check
+        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([{
+          id: 'new-withdrawal-123',
+          status: 4, // Processing
+          applyTime: new Date().toISOString(),
+        }]);
+
+        await adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, amount, recipient);
+        
+        // Verify quota was checked before withdrawal
+        expect(mockBinanceClient.getWithdrawQuota).toHaveBeenCalled();
+        expect(mockBinanceClient.getPrice).toHaveBeenCalledWith('ETHUSDT');
+      });
+
+      it('should throw error if withdrawal exceeds quota during initiation', async () => {
+        // Mock deposit confirmed
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([{
+          txId: mockTransaction.transactionHash,
+          status: 1,
+        }]);
+
+        // Mock no existing withdrawal
+        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
+
+        // Mock quota response with low remaining quota
+        mockBinanceClient.getWithdrawQuota.mockResolvedValueOnce({
+          wdQuota: '8000000',
+          usedWdQuota: '7999000', // Only $1,000 remaining
+        });
+        
+        const largeAmount = '5000000000000000000'; // 5 ETH = $10,000 at $2000/ETH
+
+        // Should throw error due to quota exceeded
+        await expect(adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, largeAmount, recipient))
+          .rejects.toThrow('Withdrawal amount $9999.92 USD exceeds remaining daily quota of $1000.00 USD');
       });
 
       it('should return existing withdrawal status when withdrawal already exists', async () => {
@@ -670,6 +782,54 @@ describe('BinanceBridgeAdapter', () => {
         // Should not initiate new withdrawal
         expect(mockBinanceClient.withdraw).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('signature handling', () => {
+    it('should handle multiple parameters correctly in deposit history', async () => {
+      const mockDepositRecords = [{
+        txId: '0x123',
+        status: 1,
+        amount: '1.0',
+        coin: 'ETH',
+        network: 'ETH',
+        address: '0xdepositaddress',
+        addressTag: '',
+        insertTime: Date.now(),
+      }];
+
+      mockBinanceClient.getDepositHistory.mockResolvedValueOnce(mockDepositRecords);
+
+      // This should work without signature errors
+      const depositConfirmed = await (adapter as any).checkDepositConfirmed(
+        sampleRoute,
+        {
+          transactionHash: '0x123',
+          blockNumber: BigInt(123),
+          blockHash: '0xabc' as `0x${string}`,
+          transactionIndex: 0,
+          contractAddress: null,
+          cumulativeGasUsed: BigInt(21000),
+          effectiveGasPrice: BigInt(20000000000),
+          from: '0xfrom' as `0x${string}`,
+          gasUsed: BigInt(21000),
+          logs: [],
+          logsBloom: '0x' as `0x${string}`,
+          status: 'success' as const,
+          to: '0xto' as `0x${string}`,
+          type: 'legacy' as const,
+        },
+        {
+          binanceSymbol: 'ETH',
+          network: 'ETH',
+          onChainAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          minWithdrawalAmount: '0.01',
+          withdrawalFee: '0.00004',
+        }
+      );
+
+      expect(depositConfirmed.confirmed).toBe(true);
+      expect(mockBinanceClient.getDepositHistory).toHaveBeenCalledWith('ETH', 1);
     });
   });
 
