@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 import { PurchaseCache, PurchaseAction } from '../src/purchaseCache';
-import { Invoice } from '@mark/core';
+import { Invoice, TransactionSubmissionType } from '@mark/core';
 
 // Mock Redis
 jest.mock('ioredis');
@@ -24,6 +24,7 @@ describe('PurchaseCache', () => {
 
     const mockPurchaseAction: PurchaseAction = {
         target: mockInvoice,
+        transactionType: TransactionSubmissionType.Onchain,
         purchase: {
             intentId: '0xpurchaseid',
             params: {

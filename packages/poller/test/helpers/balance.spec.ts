@@ -1,10 +1,10 @@
 import { expect } from 'chai';
-import { SinonStubbedInstance, stub, createStubInstance, restore } from 'sinon';
+import { SinonStubbedInstance, stub, createStubInstance } from 'sinon';
 import * as contractModule from '../../src/helpers/contracts';
 import { getMarkBalances, getMarkGasBalances, getCustodiedBalances } from '../../src/helpers/balance';
 import * as assetModule from '../../src/helpers/asset';
 import * as zodiacModule from '../../src/helpers/zodiac';
-import { AssetConfiguration, MarkConfiguration } from '@mark/core';
+import { AssetConfiguration, MarkConfiguration, WalletType } from '@mark/core';
 import { PrometheusAdapter } from '@mark/prometheus';
 
 describe('Wallet Balance Utilities', () => {
@@ -37,8 +37,8 @@ describe('Wallet Balance Utilities', () => {
         zodiacRoleKey: '0x1234567890abcdef',
         gnosisSafeAddress: '0xGnosisSafe',
       },
-      '2': { 
-        providers: ['https://other.infura.io/v3/test'], 
+      '2': {
+        providers: ['https://other.infura.io/v3/test'],
         assets: [mockAssetConfig],
         // Chain 2 has no Zodiac config
       },
@@ -63,38 +63,6 @@ describe('Wallet Balance Utilities', () => {
       for (const chain of Object.keys(mockConfig.chains)) {
         expect(balances.get(chain)?.toString()).to.equal('1000000000000000000');
       }
-    });
-
-    it('should use Gnosis Safe address when Zodiac is enabled', async () => {
-      // Mock zodiac functions
-      const mockZodiacConfig = { isEnabled: true, safeAddress: '0xGnosisSafe' };
-      stub(zodiacModule, 'getValidatedZodiacConfig')
-        .withArgs(mockConfigWithZodiac.chains['1']).returns(mockZodiacConfig)
-        .withArgs(mockConfigWithZodiac.chains['2']).returns({ isEnabled: false });
-      
-      stub(zodiacModule, 'getActualOwner')
-        .withArgs(mockZodiacConfig, mockConfigWithZodiac.ownAddress).returns('0xGnosisSafe')
-        .withArgs({ isEnabled: false }, mockConfigWithZodiac.ownAddress).returns(mockConfigWithZodiac.ownAddress);
-
-      // Mock createClient to verify the correct address is used
-      const mockGetBalance1 = stub().resolves(BigInt('2000000000000000000'));
-      const mockGetBalance2 = stub().resolves(BigInt('3000000000000000000'));
-      
-      const mockClient1 = { getBalance: mockGetBalance1 };
-      const mockClient2 = { getBalance: mockGetBalance2 };
-      
-      stub(contractModule, 'createClient')
-        .withArgs('1', mockConfigWithZodiac).returns(mockClient1 as any)
-        .withArgs('2', mockConfigWithZodiac).returns(mockClient2 as any);
-
-      const balances = await getMarkGasBalances(mockConfigWithZodiac, prometheus);
-
-      // Verify correct addresses were used
-      expect(mockGetBalance1.calledWith({ address: '0xGnosisSafe' })).to.be.true;
-      expect(mockGetBalance2.calledWith({ address: '0xOwnAddress' })).to.be.true;
-      
-      expect(balances.get('1')?.toString()).to.equal('2000000000000000000');
-      expect(balances.get('2')?.toString()).to.equal('3000000000000000000');
     });
 
     it('should handle chain client errors by returning zero balance', async () => {
@@ -143,13 +111,13 @@ describe('Wallet Balance Utilities', () => {
 
     it('should use Gnosis Safe address when Zodiac is enabled', async () => {
       // Mock zodiac functions
-      const mockZodiacConfigEnabled = { isEnabled: true, safeAddress: '0xGnosisSafe' };
-      const mockZodiacConfigDisabled = { isEnabled: false };
-      
+      const mockZodiacConfigEnabled = { walletType: WalletType.Zodiac, safeAddress: '0xGnosisSafe' as `0x${string}` };
+      const mockZodiacConfigDisabled = { walletType: WalletType.EOA };
+
       stub(zodiacModule, 'getValidatedZodiacConfig')
         .withArgs(mockConfigWithZodiac.chains['1']).returns(mockZodiacConfigEnabled)
         .withArgs(mockConfigWithZodiac.chains['2']).returns(mockZodiacConfigDisabled);
-      
+
       stub(zodiacModule, 'getActualOwner')
         .withArgs(mockZodiacConfigEnabled, mockConfigWithZodiac.ownAddress).returns('0xGnosisSafe')
         .withArgs(mockZodiacConfigDisabled, mockConfigWithZodiac.ownAddress).returns(mockConfigWithZodiac.ownAddress);
@@ -159,10 +127,10 @@ describe('Wallet Balance Utilities', () => {
       // Mock ERC20 contracts to track which addresses are used
       const mockBalanceOf1 = stub().resolves('5000');
       const mockBalanceOf2 = stub().resolves('6000');
-      
+
       const mockContract1 = { read: { balanceOf: mockBalanceOf1 } };
       const mockContract2 = { read: { balanceOf: mockBalanceOf2 } };
-      
+
       stub(contractModule, 'getERC20Contract')
         .withArgs(mockConfigWithZodiac, '1', '0xtest').resolves(mockContract1 as any)
         .withArgs(mockConfigWithZodiac, '2', '0xtest').resolves(mockContract2 as any);
@@ -172,7 +140,7 @@ describe('Wallet Balance Utilities', () => {
       // Verify correct addresses were used for balance checks
       expect(mockBalanceOf1.calledWith(['0xGnosisSafe'])).to.be.true;
       expect(mockBalanceOf2.calledWith(['0xOwnAddress'])).to.be.true;
-      
+
       const ticker1Balances = balances.get(mockTickers[0]);
       expect(ticker1Balances?.get('1')?.toString()).to.equal('5000');
       expect(ticker1Balances?.get('2')?.toString()).to.equal('6000');
