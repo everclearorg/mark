@@ -6,7 +6,7 @@ import * as contractHelpers from '../../src/helpers/contracts';
 import * as callbacks from '../../src/rebalance/callbacks'; // To mock executeDestinationCallbacks
 import * as erc20Helper from '../../src/helpers/erc20';
 import * as transactionHelper from '../../src/helpers/transactions';
-import { MarkConfiguration, SupportedBridge, RebalanceRoute, RouteRebalancingConfig } from '@mark/core';
+import { MarkConfiguration, SupportedBridge, RebalanceRoute, RouteRebalancingConfig, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
@@ -76,7 +76,8 @@ describe('rebalanceInventory', () => {
             hadZeroApproval: false,
         });
         submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
-            transactionHash: '0xBridgeTxHash',
+            submissionType: TransactionSubmissionType.Onchain,
+            hash: '0xBridgeTxHash',
             receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
         });
 
@@ -491,7 +492,8 @@ describe('Zodiac Address Validation', () => {
             hadZeroApproval: false,
         });
         submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
-            transactionHash: '0xBridgeTxHash',
+            hash: '0xBridgeTxHash',
+            submissionType: TransactionSubmissionType.Onchain,
             receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
         });
 

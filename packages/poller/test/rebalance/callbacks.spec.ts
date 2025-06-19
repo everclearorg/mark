@@ -1,7 +1,7 @@
 import { expect } from '../globalTestHook';
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub, match } from 'sinon';
 import { executeDestinationCallbacks } from '../../src/rebalance/callbacks';
-import { MarkConfiguration, SupportedBridge } from '@mark/core';
+import { MarkConfiguration, SupportedBridge, TransactionSubmissionType } from '@mark/core';
 import { Logger, jsonifyError } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
@@ -132,8 +132,9 @@ describe('executeDestinationCallbacks', () => {
         mockSpecificBridgeAdapter.destinationCallback.resolves(null);
         mockChainService.submitAndMonitor.resolves(mockSubmitSuccessReceipt);
         submitTransactionStub = stub(submitTransactionModule, 'submitTransactionWithLogging').resolves({
-            transactionHash: mockSubmitSuccessReceipt.transactionHash,
+            hash: mockSubmitSuccessReceipt.transactionHash,
             receipt: mockSubmitSuccessReceipt,
+            submissionType: TransactionSubmissionType.Onchain,
         });
     });
 

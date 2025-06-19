@@ -1,0 +1,43 @@
+@apiUrl = https://api.everclear.org
+
+@intentId = 0x4f65a93aefb2625a2da2ec4b4298e4e784f458ad3c22eea3fd65eb6961054ac5
+
+@safeTxService = https://safe-transaction-ronin.safe.onchainden.com
+
+@safe = 0x1d09f3b11A8FF71F4177da1969A53658A801dC0e
+
+# New Intent
+@safeTxHash = 0x7f50022fcfe560cbbb76d4981f290f81b961c49235cd60c134c0430d4a7cbca3
+
+### Get intent
+GET {{apiUrl}}/intents/{{intentId}}
+
+### Get invoice
+GET {{apiUrl}}/invoices?limit=100
+
+### Get safe transaction
+GET {{safeTxService}}/api/v2/multisig-transactions/{{safeTxHash}}
+
+### Get pending safe transactions
+GET {{safeTxService}}/api/v1/safes/{{safe}}/multisig-transactions?executed=false&nonce__gt=14
+
+### Safe transaction
+POST {{safeTxService}}/api/v2/safes/{{safe}}/multisig-transactions/
+Content-Type: application/json
+
+{
+    "safe": "0x1d09f3b11A8FF71F4177da1969A53658A801dC0e",
+    "to": "0x0B7007c13325C48911F73A2daD5FA5dCBf808aDc",
+    "value": "0",
+    "data": "0x095ea7b300000000000000000000000015a7ca97d1ed168fb34a4055cefa2e2f9bdb6c750000000000000000000000000000000000000000000000000000000059682b49",
+    "operation": 0,
+    "gasToken": "0x0000000000000000000000000000000000000000",
+    "safeTxGas": "0",
+    "baseGas": "0",
+    "gasPrice": "0",
+    "refundReceiver": "0x0000000000000000000000000000000000000000",
+    "nonce": 15,
+    "contractTransactionHash": "0x9d6626bd80cb5435799d09ffe7f1c42e0bef2989c1d7df94625a59605b022018",
+    "signature": "0x9fb6006de79e583823490d267e1516c19010ffdefba36d90fef5ecb8053ee3837d709a241b561a910e3ffc6c757353be82a4dd46d403d94a6d0a8a84148ef25d20",
+    "sender": "0xbB318a1ab8E46DFd93b3B0Bca3d0EBF7d00187B9"
+}
