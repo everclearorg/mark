@@ -1,5 +1,5 @@
 import { encodeFunctionData, isAddress as viemIsAddress, Hex } from 'viem';
-import { ChainConfiguration, LoggingContext } from '@mark/core';
+import { ChainConfiguration, LoggingContext, TransactionRequest, WalletConfig, WalletType } from '@mark/core';
 import { Logger } from '@mark/logger';
 
 // ABI for the Zodiac RoleModule's execTransactionWithRole function
@@ -20,74 +20,66 @@ export const ZODIAC_ROLE_MODULE_ABI = [
   },
 ] as const;
 
-export interface ZodiacConfig {
-  isEnabled: boolean;
-  moduleAddress?: string;
-  roleKey?: string;
-  safeAddress?: string;
-}
-
-export interface TransactionRequest {
-  to: string;
-  data: string;
-  value?: bigint | string | number;
-  from?: string;
-}
-
 /**
  * Detects if Zodiac is enabled for a chain and returns the configuration
  */
-export function detectZodiacConfiguration(chainConfig?: ChainConfiguration): ZodiacConfig {
+export function detectZodiacConfiguration(chainConfig?: ChainConfiguration): WalletConfig {
   if (!chainConfig) {
-    return { isEnabled: false };
+    return { walletType: WalletType.EOA };
   }
 
-  const isEnabled = !!(
+  const walletType = !!(
     chainConfig.zodiacRoleModuleAddress &&
     chainConfig.zodiacRoleKey &&
     chainConfig.gnosisSafeAddress
-  );
+  )
+    ? WalletType.Zodiac
+    : WalletType.EOA;
 
-  if (!isEnabled) {
-    return { isEnabled: false };
+  if (walletType === WalletType.EOA) {
+    return { walletType: WalletType.EOA };
   }
 
   return {
-    isEnabled: true,
-    moduleAddress: chainConfig.zodiacRoleModuleAddress,
-    roleKey: chainConfig.zodiacRoleKey,
-    safeAddress: chainConfig.gnosisSafeAddress,
+    walletType,
+    moduleAddress: chainConfig.zodiacRoleModuleAddress as `0x${string}`,
+    roleKey: chainConfig.zodiacRoleKey as `0x${string}`,
+    safeAddress: chainConfig.gnosisSafeAddress as `0x${string}`,
   };
 }
 
 /**
  * Validates Zodiac configuration values and throws if invalid
  */
-export function validateZodiacConfig(zodiacConfig: ZodiacConfig, logger?: Logger, context?: LoggingContext): void {
-  if (!zodiacConfig.isEnabled) {
+export function validateZodiacConfig(walletConfig: WalletConfig, logger?: Logger, context?: LoggingContext): void {
+  if (walletConfig.walletType !== WalletType.Zodiac) {
     return;
   }
 
-  if (!viemIsAddress(zodiacConfig.moduleAddress!)) {
+  if (!viemIsAddress(walletConfig.moduleAddress!)) {
     logger?.error('Invalid Zodiac Role Module address', {
       ...context,
-      zodiacRoleModuleAddress: zodiacConfig.moduleAddress,
+      zodiacRoleModuleAddress: walletConfig.moduleAddress,
     });
     throw new Error('Invalid Zodiac Role Module address');
   }
 
-  if (!zodiacConfig.roleKey!.startsWith('0x')) {
+  if (!walletConfig.roleKey!.startsWith('0x')) {
     logger?.error('Invalid Zodiac Role Key format', {
       ...context,
-      zodiacRoleKey: zodiacConfig.roleKey,
+      zodiacRoleKey: walletConfig.roleKey,
     });
     throw new Error('Invalid Zodiac Role Key format');
   }
 
-  if (!viemIsAddress(zodiacConfig.safeAddress!)) {
+  validateSafeConfig(walletConfig, logger, context);
+}
+
+export function validateSafeConfig(walletConfig: WalletConfig, logger?: Logger, context?: LoggingContext) {
+  if (!viemIsAddress(walletConfig.safeAddress ?? '')) {
     logger?.error('Invalid Gnosis Safe address', {
       ...context,
-      gnosisSafeAddress: zodiacConfig.safeAddress,
+      gnosisSafeAddress: walletConfig.safeAddress,
     });
     throw new Error('Invalid Gnosis Safe address');
   }
@@ -96,11 +88,11 @@ export function validateZodiacConfig(zodiacConfig: ZodiacConfig, logger?: Logger
 /**
  * Wraps a transaction request to be executed through the Zodiac role module
  */
-export function wrapTransactionWithZodiac(
+export async function wrapTransactionWithZodiac(
   txRequest: TransactionRequest,
-  zodiacConfig: ZodiacConfig,
-): TransactionRequest {
-  if (!zodiacConfig.isEnabled) {
+  zodiacConfig: WalletConfig,
+): Promise<TransactionRequest> {
+  if (zodiacConfig.walletType !== WalletType.Zodiac) {
     return txRequest;
   }
 
@@ -120,16 +112,17 @@ export function wrapTransactionWithZodiac(
   return {
     to: zodiacConfig.moduleAddress!,
     data: wrappedData,
-    value: 0, // Mark doesn't send native value to Zodiac module
+    value: '0', // Mark doesn't send native value to Zodiac module
     from: txRequest.from,
+    chainId: txRequest.chainId,
   };
 }
 
 /**
  * Returns the actual owner address (Safe or EOA) based on Zodiac configuration
  */
-export function getActualOwner(zodiacConfig: ZodiacConfig, ownAddress: string): string {
-  return zodiacConfig.isEnabled ? zodiacConfig.safeAddress! : ownAddress;
+export function getActualOwner(zodiacConfig: WalletConfig, ownAddress: string): string {
+  return zodiacConfig.walletType === WalletType.EOA ? ownAddress : zodiacConfig.safeAddress!;
 }
 
 /**
@@ -139,7 +132,7 @@ export function getValidatedZodiacConfig(
   chainConfig?: ChainConfiguration,
   logger?: Logger,
   context?: LoggingContext,
-): ZodiacConfig {
+): WalletConfig {
   const zodiacConfig = detectZodiacConfiguration(chainConfig);
   validateZodiacConfig(zodiacConfig, logger, context);
   return zodiacConfig;

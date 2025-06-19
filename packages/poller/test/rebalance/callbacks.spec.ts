@@ -1,7 +1,7 @@
 import { expect } from '../globalTestHook';
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub, match } from 'sinon';
 import { executeDestinationCallbacks } from '../../src/rebalance/callbacks';
-import { MarkConfiguration, SupportedBridge } from '@mark/core';
+import { MarkConfiguration, SupportedBridge, TransactionSubmissionType } from '@mark/core';
 import { Logger, jsonifyError } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
@@ -128,8 +128,9 @@ describe('executeDestinationCallbacks', () => {
         mockSpecificBridgeAdapter.destinationCallback.resolves(null);
         mockChainService.submitAndMonitor.resolves(mockSubmitSuccessReceipt);
         submitTransactionStub = stub(submitTransactionModule, 'submitTransactionWithLogging').resolves({
-            transactionHash: mockSubmitSuccessReceipt.transactionHash,
+            hash: mockSubmitSuccessReceipt.transactionHash,
             receipt: mockSubmitSuccessReceipt,
+            submissionType: TransactionSubmissionType.Onchain,
         });
     });
 
@@ -272,7 +273,7 @@ describe('executeDestinationCallbacks', () => {
         mockChainService.getTransactionReceipt.withArgs(mockAction3.origin, mockAction3.transaction).resolves(mockReceipt3);
         mockSpecificBridgeAdapterC.readyOnDestination.withArgs(mockAction3.amount, match(mockRoute3), mockReceipt3).resolves(true);
         mockSpecificBridgeAdapterC.destinationCallback.withArgs(match(mockRoute3), mockReceipt3).resolves(mockCallbackTx);
-        
+
         submitTransactionStub.reset();
         submitTransactionStub.onFirstCall().resolves({
             transactionHash: mockSubmitSuccessReceipt.transactionHash,

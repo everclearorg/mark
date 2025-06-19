@@ -4,7 +4,7 @@ import {
     sendIntents,
     sendIntentsMulticall
 } from '../../src/helpers/intent';
-import { MarkConfiguration, NewIntentParams } from '@mark/core';
+import { MarkConfiguration, NewIntentParams, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import * as contractHelpers from '../../src/helpers/contracts';
 import * as permit2Helpers from '../../src/helpers/permit2';
@@ -56,7 +56,7 @@ describe('sendIntents', () => {
     const mockIntent: NewIntentParams = {
         origin: '1',
         destinations: ['8453'],
-        to: '0xto',
+        to: '0xdeadbeef1234567890deadbeef1234567890dead', // Use ownAddress for EOA
         inputAsset: '0xtoken1',
         amount: '1000',
         callData: '0x',
@@ -249,7 +249,7 @@ describe('sendIntents', () => {
         );
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1); // Called for intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
+        expect(result).to.deep.equal([{ type: TransactionSubmissionType.Onchain, transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should handle cases where there is not sufficient allowance', async () => {
@@ -286,7 +286,7 @@ describe('sendIntents', () => {
         const result = await sendIntents(invoiceId, intentsArray, mockDeps, mockConfig);
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(2); // Called for both approval and intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
+        expect(result).to.deep.equal([{ type: TransactionSubmissionType.Onchain, transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should handle cases where there is sufficient allowance', async () => {
@@ -328,7 +328,7 @@ describe('sendIntents', () => {
         );
 
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1); // Called only for intent
-        expect(result).to.deep.equal([{ transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
+        expect(result).to.deep.equal([{ type: TransactionSubmissionType.Onchain, transactionHash: '0xintentTx', chainId: '1', intentId: '0x0000000000000000000000000000000000000000000000000000000000000000' }]);
     });
 
     it('should set USDT allowance to zero before setting new allowance', async () => {
@@ -418,7 +418,7 @@ describe('sendIntents', () => {
             {
                 origin: '1',
                 destinations: ['8453'],
-                to: '0xto1',
+                to: mockConfig.ownAddress,
                 inputAsset: '0xtoken1',
                 amount: '1000',
                 callData: '0x',
@@ -427,7 +427,7 @@ describe('sendIntents', () => {
             {
                 origin: '1',  // Same origin
                 destinations: ['42161'],
-                to: '0xto2',
+                to: mockConfig.ownAddress,
                 inputAsset: '0xtoken2', // Different input asset
                 amount: '2000',
                 callData: '0x',
@@ -444,7 +444,7 @@ describe('sendIntents', () => {
             {
                 origin: '1',
                 destinations: ['8453'],
-                to: '0xto1',
+                to: mockConfig.ownAddress,
                 inputAsset: '0xtoken1',
                 amount: '1000',
                 callData: '0x',
@@ -453,7 +453,7 @@ describe('sendIntents', () => {
             {
                 origin: '1',  // Same origin
                 destinations: ['42161'],
-                to: '0xto2',
+                to: mockConfig.ownAddress,
                 inputAsset: '0xtoken1', // Same input asset
                 amount: '2000',
                 callData: '0x',
@@ -494,6 +494,287 @@ describe('sendIntents', () => {
 
         // Should be called once for the batch
         expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(1);
+    });
+
+    // Test cases for new sanity check validation logic
+    describe('Intent Validation (Sanity Checks)', () => {
+        beforeEach(() => {
+            // Set up common successful mocks for validation tests
+            (mockDeps.everclear.createNewIntent as SinonStub).resolves({
+                to: zeroAddress,
+                data: '0xdata',
+                chainId: 1,
+            });
+
+            const mockTokenContract = {
+                address: '0xtoken1',
+                read: {
+                    allowance: stub().resolves(BigInt(2000)), // Sufficient allowance
+                },
+            } as unknown as GetContractReturnType;
+
+            getERC20ContractStub.resolves(mockTokenContract as any);
+            (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
+                createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order')
+            );
+
+            (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+                minAmounts: { '1': '1000' }
+            });
+        });
+
+        it('should throw an error when intents have different origins', async () => {
+            const differentOriginIntents = [
+                {
+                    origin: '1',
+                    destinations: ['8453'],
+                    to: mockConfig.ownAddress,
+                    inputAsset: '0xtoken1',
+                    amount: '1000',
+                    callData: '0x',
+                    maxFee: '0',
+                },
+                {
+                    origin: '42161', // Different origin
+                    destinations: ['8453'],
+                    to: mockConfig.ownAddress,
+                    inputAsset: '0xtoken1',
+                    amount: '1000',
+                    callData: '0x',
+                    maxFee: '0',
+                }
+            ];
+
+            await expect(sendIntents(invoiceId, differentOriginIntents, mockDeps, mockConfig))
+                .to.be.rejectedWith('Cannot process multiple intents with different origin domains');
+        });
+
+        it('should throw an error when intent has non-zero maxFee', async () => {
+            const nonZeroMaxFeeIntent = {
+                origin: '1',
+                destinations: ['8453'],
+                to: mockConfig.ownAddress,
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '100', // Non-zero maxFee
+            };
+
+            await expect(sendIntents(invoiceId, [nonZeroMaxFeeIntent], mockDeps, mockConfig))
+                .to.be.rejectedWith('intent.maxFee (100) must be 0');
+        });
+
+        it('should throw an error when intent has non-empty callData', async () => {
+            const nonEmptyCallDataIntent = {
+                origin: '1',
+                destinations: ['8453'],
+                to: mockConfig.ownAddress,
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x1234', // Non-empty callData
+                maxFee: '0',
+            };
+
+            await expect(sendIntents(invoiceId, [nonEmptyCallDataIntent], mockDeps, mockConfig))
+                .to.be.rejectedWith('intent.callData (0x1234) must be 0x');
+        });
+
+        it('should throw an error when intent.to does not match ownAddress for EOA destination', async () => {
+            const configWithEOADestination = {
+                ...mockConfig,
+                chains: {
+                    '1': { providers: ['provider1'] },
+                    '8453': { providers: ['provider2'] }, // EOA destination (no Zodiac config)
+                },
+            } as unknown as MarkConfiguration;
+
+            const wrongToAddressIntent = {
+                origin: '1',
+                destinations: ['8453'],
+                to: '0xwrongaddress', // Should be ownAddress for EOA
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            };
+
+            await expect(sendIntents(invoiceId, [wrongToAddressIntent], mockDeps, configWithEOADestination))
+                .to.be.rejectedWith(`intent.to (0xwrongaddress) must be ownAddress (${mockConfig.ownAddress}) for destination 8453`);
+        });
+
+        it('should throw an error when intent.to does not match safeAddress for Zodiac destination', async () => {
+            const safeAddress = '0x9876543210987654321098765432109876543210';
+            const configWithZodiacDestination = {
+                ...mockConfig,
+                chains: {
+                    '1': { providers: ['provider1'] },
+                    '8453': {
+                        providers: ['provider2'],
+                        zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+                        zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+                        gnosisSafeAddress: safeAddress,
+                    },
+                },
+            } as unknown as MarkConfiguration;
+
+            const wrongToAddressIntent = {
+                origin: '1',
+                destinations: ['8453'],
+                to: '0xwrongaddress', // Should be safeAddress for Zodiac
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            };
+
+            await expect(sendIntents(invoiceId, [wrongToAddressIntent], mockDeps, configWithZodiacDestination))
+                .to.be.rejectedWith(`intent.to (0xwrongaddress) must be safeAddress (${safeAddress}) for destination 8453`);
+        });
+
+        it('should throw an error when intent.to does not match safeAddress for Multisig destination', async () => {
+            const safeAddress = '0x9876543210987654321098765432109876543210';
+            const configWithMultisigDestination = {
+                ...mockConfig,
+                chains: {
+                    '1': { providers: ['provider1'] },
+                    '8453': {
+                        providers: ['provider2'],
+                        gnosisSafeAddress: safeAddress,
+                        // No zodiacRoleModuleAddress, so it's Multisig
+                    },
+                },
+            } as unknown as MarkConfiguration;
+
+            const wrongToAddressIntent = {
+                origin: '1',
+                destinations: ['8453'],
+                to: '0xwrongaddress', // Should be safeAddress for Multisig
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            };
+
+            await expect(sendIntents(invoiceId, [wrongToAddressIntent], mockDeps, configWithMultisigDestination))
+                .to.be.rejectedWith(`intent.to (0xwrongaddress) must be safeAddress (${safeAddress}) for destination 8453`);
+        });
+
+        it('should pass validation when intent.to matches ownAddress for EOA destination', async () => {
+            const configWithEOADestination = {
+                ...mockConfig,
+                chains: {
+                    '1': { providers: ['provider1'] },
+                    '8453': { providers: ['provider2'] }, // EOA destination
+                },
+            } as unknown as MarkConfiguration;
+
+            const validEOAIntent = {
+                origin: '1',
+                destinations: ['8453'],
+                to: mockConfig.ownAddress, // Correct for EOA
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            };
+
+            const result = await sendIntents(invoiceId, [validEOAIntent], mockDeps, configWithEOADestination);
+            expect(result).to.have.length(1);
+        });
+
+        it('should pass validation when intent.to matches safeAddress for Zodiac destination', async () => {
+            const safeAddress = '0x9876543210987654321098765432109876543210';
+            const configWithZodiacDestination = {
+                ...mockConfig,
+                chains: {
+                    '1': { providers: ['provider1'] },
+                    '8453': {
+                        providers: ['provider2'],
+                        zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+                        zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+                        gnosisSafeAddress: safeAddress,
+                    },
+                },
+            } as unknown as MarkConfiguration;
+
+            const validZodiacIntent = {
+                origin: '1',
+                destinations: ['8453'],
+                to: safeAddress, // Correct for Zodiac
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            };
+
+            const result = await sendIntents(invoiceId, [validZodiacIntent], mockDeps, configWithZodiacDestination);
+            expect(result).to.have.length(1);
+        });
+
+        it('should handle case-insensitive token address comparison', async () => {
+            const sameTokenDifferentCaseIntents = [
+                {
+                    origin: '1',
+                    destinations: ['8453'],
+                    to: mockConfig.ownAddress,
+                    inputAsset: '0xToken1', // Mixed case
+                    amount: '1000',
+                    callData: '0x',
+                    maxFee: '0',
+                },
+                {
+                    origin: '1',
+                    destinations: ['42161'],
+                    to: mockConfig.ownAddress,
+                    inputAsset: '0xTOKEN1', // Different case but same token
+                    amount: '2000',
+                    callData: '0x',
+                    maxFee: '0',
+                }
+            ];
+
+            // Should not throw error for same token with different cases
+            const result = await sendIntents(invoiceId, sameTokenDifferentCaseIntents, mockDeps, mockConfig);
+            expect(result).to.have.length(1);
+        });
+
+        it('should validate multiple destinations for the same intent', async () => {
+            const safeAddress1 = '0x1111111111111111111111111111111111111111';
+            const safeAddress2 = '0x2222222222222222222222222222222222222222';
+
+            const configWithMultipleDestinations = {
+                ...mockConfig,
+                chains: {
+                    '1': { providers: ['provider1'] },
+                    '8453': {
+                        providers: ['provider2'],
+                        zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+                        zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+                        gnosisSafeAddress: safeAddress1,
+                    },
+                    '42161': {
+                        providers: ['provider3'],
+                        zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+                        zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+                        gnosisSafeAddress: safeAddress2,
+                    },
+                },
+            } as unknown as MarkConfiguration;
+
+            // This should fail because intent.to can only match one safeAddress
+            const multiDestinationIntent = {
+                origin: '1',
+                destinations: ['8453', '42161'], // Multiple destinations with different safe addresses
+                to: safeAddress1, // Can only match one
+                inputAsset: '0xtoken1',
+                amount: '1000',
+                callData: '0x',
+                maxFee: '0',
+            };
+
+            await expect(sendIntents(invoiceId, [multiDestinationIntent], mockDeps, configWithMultipleDestinations))
+                .to.be.rejectedWith(`intent.to (${safeAddress1}) must be safeAddress (${safeAddress2}) for destination 42161`);
+        });
     });
 });
 

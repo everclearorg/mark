@@ -14,27 +14,24 @@ export const getMarkGasBalances = async (
   prometheus: PrometheusAdapter,
 ): Promise<Map<string, bigint>> => {
   const { chains, ownAddress } = config;
-  const markBalances = new Map<string, bigint>();
+  const gasBalances = new Map<string, bigint>();
 
   await Promise.all(
     Object.keys(chains).map(async (chain) => {
       try {
         // Get Zodiac configuration for this chain
-        const chainConfig = chains[chain];
-        const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-        const actualOwner = getActualOwner(zodiacConfig, ownAddress);
-        
         const client = createClient(chain, config);
-        const native = await client.getBalance({ address: actualOwner as `0x${string}` });
-        markBalances.set(chain, native);
+        // NOTE: gas balances are always relevant for the sending EOA only
+        const native = await client.getBalance({ address: ownAddress as `0x${string}` });
+        gasBalances.set(chain, native);
         prometheus.updateGasBalance(chain, native);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (e) {
-        markBalances.set(chain, 0n);
+        gasBalances.set(chain, 0n);
       }
     }),
   );
-  return markBalances;
+  return gasBalances;
 };
 
 /**
