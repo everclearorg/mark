@@ -3,7 +3,7 @@ import { jsonifyMap, jsonifyError } from '@mark/logger';
 import { getDecimalsFromConfig, WalletType } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { formatUnits, zeroAddress } from 'viem';
+import { formatUnits } from 'viem';
 import { RebalanceAction } from '@mark/cache';
 import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';

@@ -6,11 +6,10 @@ import {
     checkAndApproveERC20,
     ApprovalParams,
 } from '../../src/helpers/erc20';
-import { MarkConfiguration } from '@mark/core';
+import { MarkConfiguration, WalletConfig, WalletType } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { PrometheusAdapter, TransactionReason } from '@mark/prometheus';
-import { ZodiacConfig } from '../../src/helpers/zodiac';
 import * as contractsModule from '../../src/helpers/contracts';
 import * as transactionsModule from '../../src/helpers/transactions';
 import { providers } from 'ethers';
@@ -29,8 +28,8 @@ describe('ERC20 Helper Functions', () => {
     const OWNER_ADDRESS = '0x1111111111111111111111111111111111111111';
     const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 
-    const mockZodiacConfig: ZodiacConfig = {
-        isEnabled: false,
+    const mockZodiacConfig: WalletConfig = {
+        walletType: WalletType.EOA,
     };
 
     const mockReceipt = {
@@ -89,7 +88,7 @@ describe('ERC20 Helper Functions', () => {
 
         // Default transaction submission behavior
         submitTransactionStub.resolves({
-            transactionHash: mockReceipt.transactionHash,
+            hash: mockReceipt.transactionHash,
             receipt: mockReceipt,
         });
     });
