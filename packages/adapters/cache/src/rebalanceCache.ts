@@ -21,6 +21,7 @@ export interface RebalanceAction {
   destination: number;
   asset: string;
   transaction: string;
+  recipient: string;
 }
 
 export class RebalanceCache {
@@ -178,6 +179,32 @@ export class RebalanceCache {
   /** Helper for callers that need to know the status. */
   public async isPaused(): Promise<boolean> {
     return (await this.store.get(this.pauseKey)) === '1';
+  }
+
+  /** Find a rebalance action by transaction hash. */
+  /** Note: should add another index on tx hash later */
+  public async getRebalanceByTransaction(
+    transactionHash: string,
+  ): Promise<(RebalanceAction & { id: string }) | undefined> {
+    // Get all keys in the data hash
+    const allIds = await this.store.hkeys(this.dataKey);
+    if (allIds.length === 0) return undefined;
+
+    // Get all actions
+    const rows = await this.store.hmget(this.dataKey, ...allIds);
+
+    // Find the action with matching transaction hash
+    for (let i = 0; i < allIds.length; i++) {
+      const rawData = rows[i];
+      if (rawData !== null) {
+        const action = JSON.parse(rawData) as RebalanceAction;
+        if (action.transaction === transactionHash) {
+          return { ...action, id: allIds[i] };
+        }
+      }
+    }
+
+    return undefined;
   }
 
   /** Disconnect from Redis to prevent file descriptor leaks */

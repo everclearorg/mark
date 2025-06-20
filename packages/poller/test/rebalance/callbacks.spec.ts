@@ -43,6 +43,7 @@ describe('executeDestinationCallbacks', () => {
         bridge: 'Across' as SupportedBridge, // Cast to SupportedBridge
         transaction: '0xtxhash1',
         amount: '1000',
+        recipient: '0x1234567890123456789012345678901234567890',
     };
 
     const mockRoute1: Route = {
@@ -66,9 +67,12 @@ describe('executeDestinationCallbacks', () => {
     };
 
     const mockCallbackTx = {
-        to: '0xDestinationContract',
-        data: '0xcallbackdata',
-        value: '0',
+        transaction: {
+            to: '0xDestinationContract',
+            data: '0xcallbackdata',
+            value: '0',
+        },
+        memo: 'Callback'
     };
 
     // submitAndMonitor should resolve with a receipt-like object
@@ -193,7 +197,7 @@ describe('executeDestinationCallbacks', () => {
         await executeDestinationCallbacks(mockContext);
         expect(mockLogger.info.calledWith('No destination callback transaction returned', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction1, id: mockAction1Id } }))).to.be.true;
         expect(mockRebalanceCache.removeRebalances.calledOnceWith([mockAction1Id])).to.be.true;
-        expect(mockChainService.submitAndMonitor.called).to.be.false;
+        expect(submitTransactionStub.called).to.be.false;
     });
 
     it('should log error and continue if destinationCallback fails', async () => {
@@ -233,9 +237,9 @@ describe('executeDestinationCallbacks', () => {
     });
 
     it('should process multiple actions, continuing on individual errors', async () => {
-        const mockAction2: RebalanceAction = { ...mockAction1, transaction: '0xtxhash2', origin: 2, destination: 20, bridge: 'Stargate' as SupportedBridge };
+        const mockAction2: RebalanceAction = { ...mockAction1, transaction: '0xtxhash2', origin: 2, destination: 20, bridge: 'Stargate' as SupportedBridge, recipient: '0x2222222222222222222222222222222222222222' };
         const mockAction2Id = 'mock-action-2';
-        const mockAction3: RebalanceAction = { ...mockAction1, transaction: '0xtxhash3', origin: 3, destination: 30, bridge: 'Hop' as SupportedBridge };
+        const mockAction3: RebalanceAction = { ...mockAction1, transaction: '0xtxhash3', origin: 3, destination: 30, bridge: 'Hop' as SupportedBridge, recipient: '0x3333333333333333333333333333333333333333' };
         const mockAction3Id = 'mock-action-3';
 
         const mockRoute2: Route = { asset: mockAction2.asset, origin: mockAction2.origin, destination: mockAction2.destination };
@@ -260,7 +264,6 @@ describe('executeDestinationCallbacks', () => {
         mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
         mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(true);
         mockSpecificBridgeAdapter.destinationCallback.withArgs(match(mockRoute1), mockReceipt1).resolves(mockCallbackTx);
-        mockChainService.submitAndMonitor.withArgs(mockAction1.destination.toString(), mockCallbackTx).resolves(mockSubmitSuccessReceipt);
 
         // Action 2 (mockAction2): Fails at readyOnDestination (returns false)
         mockRebalanceAdapter.getAdapter.withArgs(mockAction2.bridge).returns(mockSpecificBridgeAdapterB as any);

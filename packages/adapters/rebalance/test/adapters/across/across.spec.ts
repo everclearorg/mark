@@ -12,6 +12,7 @@ import {
 } from '../../../src/adapters/across/types';
 import { ACROSS_SPOKE_ABI } from '../../../src/adapters/across/abi';
 import { getDepositFromLogs, parseFillLogs } from '../../../src/adapters/across/utils';
+import { RebalanceTransactionMemo } from '../../../src/types';
 
 // Mock the external dependencies
 jest.mock('viem');
@@ -322,19 +323,26 @@ describe('AcrossBridgeAdapter', () => {
                 config: {} as any,
             });
             (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xdata');
+            const amount = '10000000'; // 10 USDC
+
+            // Mock the public client to return sufficient allowance
+            const mockReadContract = jest.fn();
+            (mockReadContract as any).mockResolvedValue(BigInt(amount)); // Sufficient allowance
+            (createPublicClient as jest.Mock).mockReturnValue({
+                readContract: mockReadContract,
+            });
 
             // Execute
-            const amount = '10000000'; // 10 USDC
             const senderAddress = '0x' + 'sender'.padStart(40, '0');
             const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
             const result = await adapter.send(senderAddress, recipientAddress, amount, route);
 
             // Assert
-            expect(result).toEqual({
-                to: '0xSpokePoolAddress',
-                data: '0xdata',
-                value: BigInt(0),
-            });
+            expect(result.length).toBe(1);
+            expect(result[0].memo).toEqual(RebalanceTransactionMemo.Rebalance);
+            expect(result[0].transaction.to).toBe('0xSpokePoolAddress');
+            expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer, not native ETH
+            expect(result[0].transaction.data).toEqual('0xdata');
 
             // Verify encodeFunctionData was called with correct args
             expect(encodeFunctionData).toHaveBeenCalledWith({
@@ -351,9 +359,127 @@ describe('AcrossBridgeAdapter', () => {
                     zeroAddress, // exclusiveRelayer - must be zeroAddress per Zodiac permissions
                     mockFeesResponse.timestamp, // quoteTimestamp
                     mockFeesResponse.fillDeadline, // fillDeadline
-                    BigInt(0), // exclusivityDeadline - must be 0 per Zodiac permissions  
+                    BigInt(0), // exclusivityDeadline - must be 0 per Zodiac permissions
                     '0x', // message - must be "0x" per Zodiac permissions
                 ],
+            });
+        });
+
+        it('should include an approval transaction if allowance is insufficient', async () => {
+            // Mock route
+            const route: RebalanceRoute = {
+                asset: mockAssets['USDC'].address,
+                origin: 1,
+                destination: 10,
+            };
+            const amount = '10000000'; // 10 USDC
+            const senderAddress = '0x' + 'sender'.padStart(40, '0');
+            const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
+
+            // Mock the findMatchingDestinationAsset method to return the destination asset
+            jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
+                ...mockAssets['USDC'],
+                address: mockAssets['USDC'].address,
+            });
+
+            // Mock axiosGet to return the fees response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockFeesResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
+
+            // Mock encodeFunctionData for both approval and deposit
+            (encodeFunctionData as jest.Mock)
+                .mockReturnValueOnce('0xapproval_data') // For approve
+                .mockReturnValueOnce('0xdeposit_data'); // For depositV3
+
+            // Mock the public client to return insufficient allowance
+            const mockReadContract = jest.fn();
+            (mockReadContract as any).mockResolvedValue(BigInt(0)); // Insufficient allowance
+            (createPublicClient as jest.Mock).mockReturnValue({
+                readContract: mockReadContract,
+            });
+
+            // Execute
+            const result = await adapter.send(senderAddress, recipientAddress, amount, route);
+
+            // Assert
+            expect(result.length).toBe(2);
+            // Approval transaction
+            expect(result[0].memo).toBe(RebalanceTransactionMemo.Approval);
+            expect(result[0].transaction.to).toBe(route.asset);
+            expect(result[0].transaction.data).toBe('0xapproval_data');
+            expect(result[0].transaction.value).toBe(BigInt(0));
+
+            // Rebalance transaction
+            expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
+            expect(result[1].transaction.to).toBe(mockFeesResponse.spokePoolAddress);
+            expect(result[1].transaction.data).toBe('0xdeposit_data');
+            expect(result[1].transaction.value).toBe(BigInt(0));
+
+            // Verify readContract was called for allowance check
+            expect(mockReadContract).toHaveBeenCalledWith({
+                address: route.asset as `0x${string}`,
+                abi: expect.any(Array),
+                functionName: 'allowance',
+                args: [senderAddress, mockFeesResponse.spokePoolAddress],
+            });
+        });
+
+        it('should not include an approval transaction if allowance is sufficient', async () => {
+            const route: RebalanceRoute = {
+                asset: mockAssets['USDC'].address,
+                origin: 1,
+                destination: 10,
+            };
+            const amount = '10000000'; // 10 USDC
+            const senderAddress = '0x' + 'sender'.padStart(40, '0');
+            const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
+
+            // Mock the findMatchingDestinationAsset method
+            jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
+                ...mockAssets['USDC'],
+                address: mockAssets['USDC'].address,
+            });
+
+            // Mock axiosGet to return the fees response
+            (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+                data: mockFeesResponse,
+                status: 200,
+                statusText: 'OK',
+                headers: {},
+                config: {} as any,
+            });
+
+            // Mock encodeFunctionData for the deposit
+            (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xdeposit_data');
+
+            // Mock the public client to return sufficient allowance
+            const mockReadContract = jest.fn();
+            (mockReadContract as any).mockResolvedValue(BigInt(amount)); // Sufficient allowance
+            (createPublicClient as jest.Mock).mockReturnValue({
+                readContract: mockReadContract,
+            });
+
+            // Execute
+            const result = await adapter.send(senderAddress, recipientAddress, amount, route);
+
+            // Assert
+            expect(result.length).toBe(1);
+            expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+            expect(result[0].transaction.to).toBe(mockFeesResponse.spokePoolAddress);
+            expect(result[0].transaction.data).toBe('0xdeposit_data');
+            expect(result[0].transaction.value).toBe(BigInt(0));
+
+            // Verify readContract was called for allowance check
+            expect(mockReadContract).toHaveBeenCalledWith({
+                address: route.asset as `0x${string}`,
+                abi: expect.any(Array),
+                functionName: 'allowance',
+                args: [senderAddress, mockFeesResponse.spokePoolAddress],
             });
         });
 
@@ -447,9 +573,12 @@ describe('AcrossBridgeAdapter', () => {
 
             // Assert
             expect(result).toEqual({
-                to: mockAssets['WETH'].address,
-                data: '0xd0e30db0',
-                value: BigInt('1000000000000000000'),
+                transaction: {
+                    to: mockAssets['WETH'].address,
+                    data: '0xd0e30db0',
+                    value: BigInt('1000000000000000000'),
+                },
+                memo: RebalanceTransactionMemo.Wrap,
             });
         });
 
