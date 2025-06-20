@@ -355,7 +355,6 @@ export const sendIntents = async (
       chainId: intents[0].origin,
       intentId,
     }));
-
   } catch (error) {
     logger.error('Error processing batch intents', {
       invoiceId,
