@@ -915,7 +915,7 @@ describe('BinanceBridgeAdapter', () => {
       // With rebalanceCache provided, should fail due to missing API credentials, not missing cache
       expect(() => {
         rebalanceAdapter.getAdapter(SupportedBridge.Binance);
-      }).toThrow('Binance API key and secret are required');
+      }).toThrow('Binance adapter requires API key and secret');
     });
   });
 }); 
