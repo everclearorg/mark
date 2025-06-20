@@ -893,22 +893,29 @@ describe('BinanceBridgeAdapter', () => {
       expect(ready2).toBe(true);
     });
 
-    it('should be properly exported from main adapter', () => {
+    it('should throw when getting Binance adapter without rebalanceCache', () => {
       const { RebalanceAdapter } = require('../../../src/adapters');
       const mockLogger = { debug: jest.fn() } as unknown as Logger;
 
       const rebalanceAdapter = new RebalanceAdapter('mainnet', {}, mockLogger);
 
-      // This should not throw an error for Binance
+      // Should throw specific error about missing rebalanceCache
       expect(() => {
-        // We expect this to throw due to missing env vars, but not due to unknown adapter type
-        try {
-          rebalanceAdapter.getAdapter(SupportedBridge.Binance);
-        } catch (error) {
-          // Should fail due to missing API credentials, not unknown adapter
-          expect((error as Error).message).not.toContain('Unsupported adapter type');
-        }
-      }).not.toThrow();
+        rebalanceAdapter.getAdapter(SupportedBridge.Binance);
+      }).toThrow('RebalanceCache is required for Binance adapter');
+    });
+
+    it('should be properly exported from main adapter with rebalanceCache', () => {
+      const { RebalanceAdapter } = require('../../../src/adapters');
+      const mockLogger = { debug: jest.fn() } as unknown as Logger;
+      const mockRebalanceCache = {} as RebalanceCache;
+
+      const rebalanceAdapter = new RebalanceAdapter('mainnet', {}, mockLogger, mockRebalanceCache);
+
+      // With rebalanceCache provided, should fail due to missing API credentials, not missing cache
+      expect(() => {
+        rebalanceAdapter.getAdapter(SupportedBridge.Binance);
+      }).toThrow('Binance API key and secret are required');
     });
   });
 }); 
