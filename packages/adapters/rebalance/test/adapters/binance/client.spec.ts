@@ -669,4 +669,86 @@ describe('BinanceClient', () => {
       expect(url).toContain('timestamp=');
     });
   });
+
+  describe('Error handling', () => {
+    it('should handle server errors (5xx) with retry', async () => {
+      // Mock server error followed by success
+      const serverError = {
+        isAxiosError: true,
+        response: { 
+          status: 500, 
+          data: { msg: 'Internal Server Error' },
+          headers: {}
+        },
+      };
+
+      (axios.isAxiosError as jest.MockedFunction<typeof axios.isAxiosError>).mockReturnValue(true);
+      mockAxiosInstance.request
+        .mockRejectedValueOnce(serverError)
+        .mockResolvedValueOnce({
+          data: { success: true },
+          status: 200,
+          headers: {},
+        });
+
+      jest.spyOn(client as any, 'delay').mockResolvedValue(undefined);
+
+      const result = await (client as any).request('GET', '/test', {}, false);
+
+      expect(result).toEqual({ success: true });
+      expect(mockAxiosInstance.request).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle rate limit with retry-after header', async () => {
+      // Mock rate limit error with retry-after header
+      const rateLimitError = {
+        isAxiosError: true,
+        response: { 
+          status: 429, 
+          data: { msg: 'Rate limit exceeded' },
+          headers: { 'retry-after': '5' }
+        },
+      };
+
+      (axios.isAxiosError as jest.MockedFunction<typeof axios.isAxiosError>).mockReturnValue(true);
+      mockAxiosInstance.request
+        .mockRejectedValueOnce(rateLimitError)
+        .mockResolvedValueOnce({ data: { success: true }, status: 200, headers: {} });
+
+      jest.spyOn(client as any, 'delay').mockResolvedValue(undefined);
+
+      const result = await (client as any).request('GET', '/test', {}, false);
+
+      expect(result).toEqual({ success: true });
+      expect((client as any).delay).toHaveBeenCalledWith(5000);
+    });
+
+    it('should log rate limit warnings when approaching SAPI limits', async () => {
+      mockAxiosInstance.request.mockResolvedValueOnce({
+        data: { success: true },
+        status: 200,
+        headers: {
+          'x-sapi-used-ip-weight-1m': '11000',
+        },
+      });
+
+      await (client as any).request('GET', '/sapi/v1/test', {}, false);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Approaching SAPI IP rate limit',
+        expect.objectContaining({
+          weightUsed: 11000,
+        })
+      );
+    });
+
+    it('should handle non-axios errors by rethrowing', async () => {
+      const regularError = new Error('Non-axios error');
+      mockAxiosInstance.request.mockRejectedValueOnce(regularError);
+
+      await expect(
+        (client as any).request('GET', '/test', {}, false)
+      ).rejects.toThrow('Non-axios error');
+    });
+  });
 });
