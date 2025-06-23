@@ -43,8 +43,15 @@ export class ChainService {
       true,
     );
 
+    const addresses = Object.keys(config.chains).map(
+      (chainId) => {
+        return this.txService.getAddress(+chainId as number);
+      }
+    );
+
     this.logger.info('Chain service initialized', {
       supportedChains: Object.keys(config.chains),
+      addresses,
     });
   }
 
@@ -62,6 +69,8 @@ export class ChainService {
       value: transaction.value ? transaction.value.toString() : '0',
       domain: parseInt(chainId),
       from: transaction.from ?? undefined,
+      // TODO: fill this for tron support
+      funcSig: ''
     };
     try {
       // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
