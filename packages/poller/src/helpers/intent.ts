@@ -3,7 +3,7 @@ import {
   NewIntentParams,
   NewIntentWithPermit2Params,
   TransactionSubmissionType,
-  TransactionRequest
+  TransactionRequest,
   WalletType,
 } from '@mark/core';
 import { getERC20Contract } from './contracts';
@@ -183,7 +183,7 @@ export const sendEvmIntents = async (
   adapters: MarkAdapters,
   config: MarkConfiguration,
   requestId?: string,
-): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
+): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, prometheus, logger } = adapters;
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
@@ -390,7 +390,7 @@ export const sendSvmIntents = async (
   adapters: MarkAdapters,
   config: MarkConfiguration,
   requestId?: string,
-): Promise<{ transactionHash: string; chainId: string; intentId: string }[]> => {
+): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, logger } = adapters;
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
@@ -439,7 +439,7 @@ export const sendSvmIntents = async (
             to: feeAdapterTxData.to!,
             value: feeAdapterTxData.value,
             data: feeAdapterTxData.data,
-            from: sourceAddress,
+            chainId: +originChainId
           });
 
           logger.info('solana lookup table transaction sent successfully', {
@@ -509,7 +509,7 @@ export const sendSvmIntents = async (
       to: purchaseTxTo,
       value: purchaseTxValue,
       data: purchaseTxData,
-      from: purchaseTxFrom,
+      chainId: +originChainId,
     });
 
     // Find the IntentAdded event logs
@@ -551,6 +551,7 @@ export const sendSvmIntents = async (
     // Return results for each intent in the batch
     return purchaseIntentIds.map((intentId) => ({
       transactionHash: purchaseTx.transactionHash,
+      type: TransactionSubmissionType.Onchain,
       chainId: intents[0].origin,
       intentId,
     }));
