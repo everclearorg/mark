@@ -542,10 +542,10 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       const withdrawOrderId = generateWithdrawOrderId(route, originTransaction.transactionHash);
 
-      // Calculate the amount to withdraw (after fees)
-      const withdrawAmount = calculateNetAmount(amount, assetMapping.withdrawalFee);
+      // Use the full amount for withdrawal - Binance will deduct fees automatically
+      const withdrawAmount = amount;
 
-      // Check withdrawal quota before initiating
+      // Check withdrawal quota before initiating (use full amount for quota check)
       const decimals = assetMapping.binanceSymbol === 'ETH' ? 18 : 6;
       const quota = await checkWithdrawQuota(withdrawAmount, assetMapping.binanceSymbol, decimals, this.client);
 

@@ -822,7 +822,7 @@ describe('BinanceBridgeAdapter', () => {
           coin: 'ETH',
           network: 'ARBITRUM',
           address: recipient,
-          amount: '0.96', // Amount after fee formatted (1 ETH - 0.04 ETH = 0.96 ETH)
+          amount: '1', // Full deposit amount - Binance will deduct fees automatically
           withdrawOrderId: expect.stringMatching(/^mark-[0-9a-f]{8}-1-42161-[0-9a-zA-Z]{6}$/),
         });
       });
@@ -880,7 +880,7 @@ describe('BinanceBridgeAdapter', () => {
 
         // Should throw error due to quota exceeded
         await expect(adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, largeAmount, recipient)).rejects.toThrow(
-          'Withdrawal amount $9920.00 USD exceeds remaining daily quota of $1000.00 USD',
+          'Withdrawal amount $10000.00 USD exceeds remaining daily quota of $1000.00 USD',
         );
       });
 
