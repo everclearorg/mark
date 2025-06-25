@@ -42,3 +42,8 @@ output "admin_lambda_name" {
   description = "Name of the Admin API Lambda function"
   value       = module.mark_admin_api.admin_lambda_name
 }
+
+output "lambda_static_ips" {
+  description = "Static IP addresses for Lambda outbound traffic (for API whitelisting)"
+  value       = module.network.nat_gateway_ips
+}

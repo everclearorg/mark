@@ -6,11 +6,14 @@ import { RebalanceCache } from '@mark/cache';
 import { TransactionReceipt } from 'viem';
 import { BinanceBridgeAdapter } from '../../../src/adapters/binance/binance';
 import { BinanceClient } from '../../../src/adapters/binance/client';
-import { DepositAddress, WithdrawResponse } from '../../../src/adapters/binance/types';
+import { DynamicAssetConfig } from '../../../src/adapters/binance/dynamic-config';
+import { DepositAddress, WithdrawResponse, BinanceAssetMapping } from '../../../src/adapters/binance/types';
 import { RebalanceTransactionMemo } from '../../../src/types';
+import { RebalanceAdapter } from '../../../src/adapters';
 
 // Mock the external dependencies
 jest.mock('../../../src/adapters/binance/client');
+jest.mock('../../../src/adapters/binance/dynamic-config');
 
 // Test adapter that exposes private methods
 class TestBinanceBridgeAdapter extends BinanceBridgeAdapter {
@@ -126,6 +129,37 @@ const mockWithdrawResponse: WithdrawResponse = {
   id: 'withdraw-123456',
 };
 
+// Mock asset mappings for testing
+const mockETHMapping: BinanceAssetMapping = {
+  chainId: 1,
+  binanceSymbol: 'ETH',
+  network: 'ETH',
+  onChainAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+  minWithdrawalAmount: '10000000000000000', // 0.01 ETH in wei
+  withdrawalFee: '40000000000000000', // 0.04 ETH in wei
+  depositConfirmations: 12,
+};
+
+const mockETHArbitrumMapping: BinanceAssetMapping = {
+  chainId: 42161,
+  binanceSymbol: 'ETH',
+  network: 'ARBITRUM',
+  onChainAddress: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+  minWithdrawalAmount: '10000000000000000', // 0.01 ETH in wei
+  withdrawalFee: '40000000000000000', // 0.00004 ETH in wei
+  depositConfirmations: 12,
+};
+
+const mockUSDCMapping: BinanceAssetMapping = {
+  chainId: 1,
+  binanceSymbol: 'USDC',
+  network: 'ETH',
+  onChainAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  minWithdrawalAmount: '1000000', // 1 USDC in smallest units (6 decimals)
+  withdrawalFee: '1000000', // 1 USDC fee
+  depositConfirmations: 12,
+};
+
 // Mock BinanceClient implementation
 const mockBinanceClient = {
   isConfigured: jest.fn<() => boolean>().mockReturnValue(true),
@@ -142,6 +176,12 @@ const mockBinanceClient = {
     symbol: 'ETHUSDT',
     price: '2000',
   }),
+  getAssetConfig: jest.fn<() => Promise<any[]>>().mockResolvedValue([]),
+};
+
+// Mock DynamicAssetConfig implementation
+const mockDynamicAssetConfig = {
+  getAssetMapping: jest.fn<(chainId: number, onChainAddress: string) => Promise<BinanceAssetMapping>>(),
 };
 
 describe('BinanceBridgeAdapter', () => {
@@ -160,6 +200,44 @@ describe('BinanceBridgeAdapter', () => {
     // Reset BinanceClient mock implementation
     (BinanceClient as jest.MockedClass<typeof BinanceClient>).mockImplementation(() => mockBinanceClient as any);
 
+    // Reset DynamicAssetConfig mock implementation
+    (DynamicAssetConfig as jest.MockedClass<typeof DynamicAssetConfig>).mockImplementation(
+      () => mockDynamicAssetConfig as any,
+    );
+
+    // Set up default asset mapping responses
+    mockDynamicAssetConfig.getAssetMapping.mockImplementation(async (chainId: number, onChainAddress: string) => {
+      // Return appropriate mapping based on chainId and address
+      const lowerAddress = onChainAddress.toLowerCase();
+
+      // ETH/WETH mappings
+      if (lowerAddress === '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') {
+        if (chainId === 1) {
+          return mockETHMapping;
+        }
+        if (chainId === 42161) {
+          return { ...mockETHArbitrumMapping, onChainAddress }; // Use the requested address
+        }
+      }
+
+      // Arbitrum WETH
+      if (chainId === 42161 && lowerAddress === '0x82af49447d8a07e3bd95bd0d56f35241523fbab1') {
+        return mockETHArbitrumMapping;
+      }
+
+      // USDC mappings
+      if (lowerAddress === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') {
+        if (chainId === 1) {
+          return mockUSDCMapping;
+        }
+        if (chainId === 42161) {
+          return { ...mockUSDCMapping, chainId: 42161, network: 'ARBITRUM', onChainAddress };
+        }
+      }
+
+      throw new Error(`No mapping found for chain ${chainId}, address ${onChainAddress}`);
+    });
+
     // Reset logger mocks
     mockLogger.debug.mockReset();
     mockLogger.info.mockReset();
@@ -173,7 +251,7 @@ describe('BinanceBridgeAdapter', () => {
       'https://api.binance.com',
       mockChains,
       mockLogger,
-      mockRebalanceCache
+      mockRebalanceCache,
     );
   });
 
@@ -193,10 +271,18 @@ describe('BinanceBridgeAdapter', () => {
 
     it('should throw error if API key is missing', () => {
       // Mock client.isConfigured to return false for empty credentials
-      (BinanceClient as jest.MockedClass<typeof BinanceClient>).mockImplementationOnce(() => ({
-        ...mockBinanceClient,
-        isConfigured: jest.fn().mockReturnValue(false),
-      }) as any);
+      (BinanceClient as jest.MockedClass<typeof BinanceClient>).mockImplementationOnce(
+        () =>
+          ({
+            ...mockBinanceClient,
+            isConfigured: jest.fn().mockReturnValue(false),
+          }) as any,
+      );
+
+      // Mock DynamicAssetConfig for this test
+      (DynamicAssetConfig as jest.MockedClass<typeof DynamicAssetConfig>).mockImplementationOnce(
+        () => mockDynamicAssetConfig as any,
+      );
 
       expect(() => {
         new TestBinanceBridgeAdapter(
@@ -205,17 +291,25 @@ describe('BinanceBridgeAdapter', () => {
           'https://api.binance.com',
           mockChains,
           mockLogger,
-          mockRebalanceCache
+          mockRebalanceCache,
         );
       }).toThrow('Binance adapter requires API key and secret');
     });
 
     it('should throw error if API secret is missing', () => {
       // Mock client.isConfigured to return false for empty credentials
-      (BinanceClient as jest.MockedClass<typeof BinanceClient>).mockImplementationOnce(() => ({
-        ...mockBinanceClient,
-        isConfigured: jest.fn().mockReturnValue(false),
-      }) as any);
+      (BinanceClient as jest.MockedClass<typeof BinanceClient>).mockImplementationOnce(
+        () =>
+          ({
+            ...mockBinanceClient,
+            isConfigured: jest.fn().mockReturnValue(false),
+          }) as any,
+      );
+
+      // Mock DynamicAssetConfig for this test
+      (DynamicAssetConfig as jest.MockedClass<typeof DynamicAssetConfig>).mockImplementationOnce(
+        () => mockDynamicAssetConfig as any,
+      );
 
       expect(() => {
         new TestBinanceBridgeAdapter(
@@ -224,7 +318,7 @@ describe('BinanceBridgeAdapter', () => {
           'https://api.binance.com',
           mockChains,
           mockLogger,
-          mockRebalanceCache
+          mockRebalanceCache,
         );
       }).toThrow('Binance adapter requires API key and secret');
     });
@@ -242,15 +336,16 @@ describe('BinanceBridgeAdapter', () => {
 
       const result = await adapter.getReceivedAmount(amount, sampleRoute);
 
-      // Expected: 1 ETH - 0.00004 ETH (Arbitrum withdrawal fee) = 0.99996 ETH
-      expect(result).toBe('999960000000000000');
+      // Expected: 1 ETH - 0.04 ETH (Arbitrum withdrawal fee) = 0.96 ETH
+      expect(result).toBe('960000000000000000');
     });
 
     it('should reject amounts that are too low', async () => {
       const amount = '1000'; // Very small amount below minimum
 
-      await expect(adapter.getReceivedAmount(amount, sampleRoute))
-        .rejects.toThrow('Amount is too low for Binance withdrawal');
+      await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(
+        'Amount is too low for Binance withdrawal',
+      );
     });
 
     it('should throw error for unsupported asset', async () => {
@@ -259,8 +354,12 @@ describe('BinanceBridgeAdapter', () => {
         asset: '0xUnsupportedAsset',
       };
 
-      await expect(adapter.getReceivedAmount('1000000000000000000', unsupportedRoute))
-        .rejects.toThrow('Failed to calculate received amount');
+      // Mock dynamic config to throw error for unsupported asset
+      mockDynamicAssetConfig.getAssetMapping.mockRejectedValueOnce(new Error('No mapping found'));
+
+      await expect(adapter.getReceivedAmount('1000000000000000000', unsupportedRoute)).rejects.toThrow(
+        'Failed to calculate received amount',
+      );
     });
   });
 
@@ -273,7 +372,7 @@ describe('BinanceBridgeAdapter', () => {
       const result = await adapter.send(sender, recipient, amount, sampleRoute);
 
       expect(result.length).toBe(2);
-      
+
       // First transaction: Unwrap WETH
       expect(result[0].memo).toBe(RebalanceTransactionMemo.Unwrap);
       expect(result[0].transaction.to).toBe(sampleRoute.asset);
@@ -288,13 +387,15 @@ describe('BinanceBridgeAdapter', () => {
 
       // Verify deposit address was requested
       expect(mockBinanceClient.getDepositAddress).toHaveBeenCalledWith('ETH', 'ETH');
+      // Verify dynamic asset mapping was called
+      expect(mockDynamicAssetConfig.getAssetMapping).toHaveBeenCalledWith(1, sampleRoute.asset);
     });
 
     it('should prepare single deposit transaction for USDC', async () => {
       const sender = '0x' + 'sender'.padEnd(40, '0');
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
       const amount = '1000000000'; // 1000 USDC (6 decimals)
-      
+
       const usdcRoute: RebalanceRoute = {
         origin: 1,
         destination: 42161,
@@ -321,24 +422,26 @@ describe('BinanceBridgeAdapter', () => {
     it('should throw error if amount is too low', async () => {
       const amount = '1000'; // Very small amount
 
-      await expect(adapter.send('0xsender', '0xrecipient', amount, sampleRoute))
-        .rejects.toThrow('does not meet minimum withdrawal requirement');
+      await expect(adapter.send('0xsender', '0xrecipient', amount, sampleRoute)).rejects.toThrow(
+        'does not meet minimum withdrawal requirement',
+      );
     });
 
     it('should throw error if getDepositAddress fails', async () => {
       mockBinanceClient.getDepositAddress.mockRejectedValueOnce(new Error('API error'));
 
-      await expect(adapter.send('0xsender', '0xrecipient', '1000000000000000000', sampleRoute))
-        .rejects.toThrow('Failed to prepare Binance deposit transaction');
+      await expect(adapter.send('0xsender', '0xrecipient', '1000000000000000000', sampleRoute)).rejects.toThrow(
+        'Failed to prepare Binance deposit transaction',
+      );
     });
 
     it('should check withdrawal quota before sending', async () => {
       const sender = '0x' + 'sender'.padEnd(40, '0');
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
       const amount = '1000000000000000000'; // 1 ETH
-      
+
       await adapter.send(sender, recipient, amount, sampleRoute);
-      
+
       // Verify quota was checked
       expect(mockBinanceClient.getWithdrawQuota).toHaveBeenCalled();
       expect(mockBinanceClient.getPrice).toHaveBeenCalledWith('ETHUSDT');
@@ -348,35 +451,67 @@ describe('BinanceBridgeAdapter', () => {
       const sender = '0x' + 'sender'.padEnd(40, '0');
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
       const amount = '5000000000000000000'; // 5 ETH = $10,000 at $2000/ETH
-      
+
       // Mock quota response with low remaining quota
       mockBinanceClient.getWithdrawQuota.mockResolvedValueOnce({
         wdQuota: '8000000',
         usedWdQuota: '7995000', // Only $5,000 remaining
       });
-      
-      await expect(adapter.send(sender, recipient, amount, sampleRoute))
-        .rejects.toThrow('Withdrawal amount $10000.00 USD exceeds remaining daily quota of $5000.00 USD');
+
+      await expect(adapter.send(sender, recipient, amount, sampleRoute)).rejects.toThrow(
+        'Withdrawal amount $10000.00 USD exceeds remaining daily quota of $5000.00 USD',
+      );
     });
 
     it('should handle USDT assets without price conversion', async () => {
       const sender = '0x' + 'sender'.padEnd(40, '0');
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
       const amount = '1000000000'; // 1000 USDT (6 decimals)
-      
+
       const usdtRoute: RebalanceRoute = {
         origin: 1,
         destination: 42161,
         asset: '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
       };
-      
+
+      // Mock USDT mapping
+      const mockUSDTMapping: BinanceAssetMapping = {
+        chainId: 1,
+        binanceSymbol: 'USDT',
+        network: 'ETH',
+        onChainAddress: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+        minWithdrawalAmount: '1000000',
+        withdrawalFee: '1000000',
+        depositConfirmations: 12,
+      };
+
+      const mockUSDTArbitrumMapping: BinanceAssetMapping = {
+        chainId: 42161,
+        binanceSymbol: 'USDT',
+        network: 'ARBITRUM',
+        onChainAddress: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+        minWithdrawalAmount: '1000000',
+        withdrawalFee: '1000000',
+        depositConfirmations: 12,
+      };
+
+      mockDynamicAssetConfig.getAssetMapping.mockImplementation(async (chainId: number, address: string) => {
+        if (chainId === 1 && address.toLowerCase() === usdtRoute.asset.toLowerCase()) {
+          return mockUSDTMapping;
+        }
+        if (chainId === 42161) {
+          return mockUSDTArbitrumMapping; // For destination mapping
+        }
+        return mockETHMapping; // Fallback
+      });
+
       mockBinanceClient.getDepositAddress.mockResolvedValueOnce({
         ...mockDepositAddress,
         coin: 'USDT',
       });
-      
+
       await adapter.send(sender, recipient, amount, usdtRoute);
-      
+
       // Should check quota but not price (stablecoin 1:1 with USD)
       expect(mockBinanceClient.getWithdrawQuota).toHaveBeenCalled();
       expect(mockBinanceClient.getPrice).not.toHaveBeenCalled();
@@ -413,7 +548,7 @@ describe('BinanceBridgeAdapter', () => {
 
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockTransaction);
       expect(result).toBe(false);
-      
+
       // Should log error about missing recipient
       expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for withdrawal', {
         transactionHash: mockTransaction.transactionHash,
@@ -500,10 +635,10 @@ describe('BinanceBridgeAdapter', () => {
 
     it('should return undefined when no recipient found in cache', async () => {
       mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce(undefined);
-      
+
       const result = await adapter.destinationCallback(sampleRoute, mockTransaction);
       expect(result).toBeUndefined();
-      
+
       // Should log error about missing recipient
       expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for callback', {
         transactionHash: mockTransaction.transactionHash,
@@ -564,7 +699,7 @@ describe('BinanceBridgeAdapter', () => {
 
       expect(result).toBeDefined();
       expect(result?.memo).toBe(RebalanceTransactionMemo.Wrap);
-      expect(result?.transaction.to).toBe('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'); // Arbitrum WETH
+      expect(result?.transaction.to).toBe('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'); // Should wrap to the requested address
       expect(result?.transaction.value).toBe(ethAmount);
       expect(result?.transaction.data).toEqual(expect.any(String)); // Encoded deposit() call
     });
@@ -654,10 +789,12 @@ describe('BinanceBridgeAdapter', () => {
 
       it('should initiate withdrawal when deposit is confirmed and no existing withdrawal', async () => {
         // Mock deposit confirmed
-        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([{
-          txId: mockTransaction.transactionHash,
-          status: 1,
-        }]);
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([
+          {
+            txId: mockTransaction.transactionHash,
+            status: 1,
+          },
+        ]);
 
         // Mock no existing withdrawal
         mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
@@ -666,34 +803,38 @@ describe('BinanceBridgeAdapter', () => {
         mockBinanceClient.withdraw.mockResolvedValueOnce({ id: 'new-withdrawal-123' });
 
         // Mock withdrawal status check
-        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([{
-          id: 'new-withdrawal-123',
-          status: 4, // Processing
-          applyTime: new Date().toISOString(),
-        }]);
+        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([
+          {
+            id: 'new-withdrawal-123',
+            status: 4, // Processing
+            applyTime: new Date().toISOString(),
+          },
+        ]);
 
         const result = await adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, amount, recipient);
-        
+
         expect(result).toEqual({
           status: 'pending',
           onChainConfirmed: false,
         });
-        
+
         expect(mockBinanceClient.withdraw).toHaveBeenCalledWith({
           coin: 'ETH',
           network: 'ARBITRUM',
           address: recipient,
-          amount: '0.99996', // Amount after fee formatted (1 ETH - 0.00004 ETH = 0.99996 ETH)
+          amount: '0.96', // Amount after fee formatted (1 ETH - 0.04 ETH = 0.96 ETH)
           withdrawOrderId: expect.stringMatching(/^mark-[0-9a-f]{8}-1-42161-[0-9a-zA-Z]{6}$/),
         });
       });
 
       it('should check withdrawal quota when initiating withdrawal', async () => {
         // Mock deposit confirmed
-        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([{
-          txId: mockTransaction.transactionHash,
-          status: 1,
-        }]);
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([
+          {
+            txId: mockTransaction.transactionHash,
+            status: 1,
+          },
+        ]);
 
         // Mock no existing withdrawal
         mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
@@ -702,14 +843,16 @@ describe('BinanceBridgeAdapter', () => {
         mockBinanceClient.withdraw.mockResolvedValueOnce({ id: 'new-withdrawal-123' });
 
         // Mock withdrawal status check
-        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([{
-          id: 'new-withdrawal-123',
-          status: 4, // Processing
-          applyTime: new Date().toISOString(),
-        }]);
+        mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([
+          {
+            id: 'new-withdrawal-123',
+            status: 4, // Processing
+            applyTime: new Date().toISOString(),
+          },
+        ]);
 
         await adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, amount, recipient);
-        
+
         // Verify quota was checked before withdrawal
         expect(mockBinanceClient.getWithdrawQuota).toHaveBeenCalled();
         expect(mockBinanceClient.getPrice).toHaveBeenCalledWith('ETHUSDT');
@@ -717,10 +860,12 @@ describe('BinanceBridgeAdapter', () => {
 
       it('should throw error if withdrawal exceeds quota during initiation', async () => {
         // Mock deposit confirmed
-        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([{
-          txId: mockTransaction.transactionHash,
-          status: 1,
-        }]);
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([
+          {
+            txId: mockTransaction.transactionHash,
+            status: 1,
+          },
+        ]);
 
         // Mock no existing withdrawal
         mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
@@ -730,38 +875,45 @@ describe('BinanceBridgeAdapter', () => {
           wdQuota: '8000000',
           usedWdQuota: '7999000', // Only $1,000 remaining
         });
-        
+
         const largeAmount = '5000000000000000000'; // 5 ETH = $10,000 at $2000/ETH
 
         // Should throw error due to quota exceeded
-        await expect(adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, largeAmount, recipient))
-          .rejects.toThrow('Withdrawal amount $9999.92 USD exceeds remaining daily quota of $1000.00 USD');
+        await expect(adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, largeAmount, recipient)).rejects.toThrow(
+          'Withdrawal amount $9920.00 USD exceeds remaining daily quota of $1000.00 USD',
+        );
       });
 
       it('should return existing withdrawal status when withdrawal already exists', async () => {
         // Mock deposit confirmed
-        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([{
-          txId: mockTransaction.transactionHash,
-          status: 1,
-        }]);
+        mockBinanceClient.getDepositHistory.mockResolvedValueOnce([
+          {
+            txId: mockTransaction.transactionHash,
+            status: 1,
+          },
+        ]);
 
         // Mock existing withdrawal with custom order ID
         const withdrawOrderId = `mark-${mockTransaction.transactionHash.slice(2, 10)}-1-42161-C02aaA`;
         mockBinanceClient.getWithdrawHistory
-          .mockResolvedValueOnce([{
-            id: 'existing-withdrawal-123',
-            withdrawOrderId,
-            status: 6, // Completed
-            applyTime: new Date().toISOString(),
-            txId: '0xwithdrawaltx',
-          }])
-          .mockResolvedValueOnce([{
-            id: 'existing-withdrawal-123',
-            withdrawOrderId,
-            status: 6, // Completed
-            applyTime: new Date().toISOString(),
-            txId: '0xwithdrawaltx',
-          }]);
+          .mockResolvedValueOnce([
+            {
+              id: 'existing-withdrawal-123',
+              withdrawOrderId,
+              status: 6, // Completed
+              applyTime: new Date().toISOString(),
+              txId: '0xwithdrawaltx',
+            },
+          ])
+          .mockResolvedValueOnce([
+            {
+              id: 'existing-withdrawal-123',
+              withdrawOrderId,
+              status: 6, // Completed
+              applyTime: new Date().toISOString(),
+              txId: '0xwithdrawaltx',
+            },
+          ]);
 
         // Mock provider for on-chain verification
         const mockProvider = {
@@ -772,13 +924,13 @@ describe('BinanceBridgeAdapter', () => {
         jest.spyOn(adapter as any, 'getProvider').mockReturnValueOnce(mockProvider as any);
 
         const result = await adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, amount, recipient);
-        
+
         expect(result).toEqual({
           status: 'completed',
           onChainConfirmed: true,
           txId: '0xwithdrawaltx',
         });
-        
+
         // Should not initiate new withdrawal
         expect(mockBinanceClient.withdraw).not.toHaveBeenCalled();
       });
@@ -787,16 +939,18 @@ describe('BinanceBridgeAdapter', () => {
 
   describe('signature handling', () => {
     it('should handle multiple parameters correctly in deposit history', async () => {
-      const mockDepositRecords = [{
-        txId: '0x123',
-        status: 1,
-        amount: '1.0',
-        coin: 'ETH',
-        network: 'ETH',
-        address: '0xdepositaddress',
-        addressTag: '',
-        insertTime: Date.now(),
-      }];
+      const mockDepositRecords = [
+        {
+          txId: '0x123',
+          status: 1,
+          amount: '1.0',
+          coin: 'ETH',
+          network: 'ETH',
+          address: '0xdepositaddress',
+          addressTag: '',
+          insertTime: Date.now(),
+        },
+      ];
 
       mockBinanceClient.getDepositHistory.mockResolvedValueOnce(mockDepositRecords);
 
@@ -825,7 +979,7 @@ describe('BinanceBridgeAdapter', () => {
           onChainAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
           minWithdrawalAmount: '0.01',
           withdrawalFee: '0.00004',
-        }
+        },
       );
 
       expect(depositConfirmed.confirmed).toBe(true);
@@ -894,7 +1048,6 @@ describe('BinanceBridgeAdapter', () => {
     });
 
     it('should throw when getting Binance adapter without rebalanceCache', () => {
-      const { RebalanceAdapter } = require('../../../src/adapters');
       const mockLogger = { debug: jest.fn() } as unknown as Logger;
 
       const rebalanceAdapter = new RebalanceAdapter('mainnet', {}, mockLogger);
@@ -906,7 +1059,6 @@ describe('BinanceBridgeAdapter', () => {
     });
 
     it('should be properly exported from main adapter with rebalanceCache', () => {
-      const { RebalanceAdapter } = require('../../../src/adapters');
       const mockLogger = { debug: jest.fn() } as unknown as Logger;
       const mockRebalanceCache = {} as RebalanceCache;
 
@@ -918,4 +1070,4 @@ describe('BinanceBridgeAdapter', () => {
       }).toThrow('Binance adapter requires API key and secret');
     });
   });
-}); 
+});

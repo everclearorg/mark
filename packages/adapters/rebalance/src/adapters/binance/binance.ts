@@ -13,16 +13,15 @@ import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { BinanceClient } from './client';
+import { DynamicAssetConfig } from './dynamic-config';
 import { WithdrawalStatus, BinanceAssetMapping } from './types';
 import { WITHDRAWAL_STATUS, DEPOSIT_STATUS } from './constants';
 import {
-  getAssetMapping,
   getDestinationAssetMapping,
   calculateNetAmount,
   validateAssetMapping,
   meetsMinimumWithdrawal,
   generateWithdrawOrderId,
-  isWithdrawalStale,
   checkWithdrawQuota,
 } from './utils';
 
@@ -46,6 +45,7 @@ const wethAbi = [
 
 export class BinanceBridgeAdapter implements BridgeAdapter {
   private readonly client: BinanceClient;
+  private readonly dynamicConfig: DynamicAssetConfig;
 
   constructor(
     apiKey: string,
@@ -56,6 +56,8 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     private readonly rebalanceCache: RebalanceCache,
   ) {
     this.client = new BinanceClient(apiKey, apiSecret, baseUrl, logger);
+    this.dynamicConfig = new DynamicAssetConfig(this.client);
+
     this.logger.debug('Initializing BinanceBridgeAdapter', {
       baseUrl,
       hasApiKey: !!apiKey,
@@ -101,18 +103,15 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
-      const originMapping = getAssetMapping(route);
-      validateAssetMapping(originMapping, `route from chain ${route.origin}`);
-
-      const destinationMapping = getDestinationAssetMapping(route);
-      validateAssetMapping(destinationMapping, `route to chain ${route.destination}`);
+      const originMapping = await validateAssetMapping(this.client, route, `route from chain ${route.origin}`);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route);
 
       // Check if amount meets minimum requirements
       if (!meetsMinimumWithdrawal(amount, originMapping)) {
         throw new Error('Amount is too low for Binance withdrawal');
       }
 
-      // Calculate net amount after withdrawal fee (using destination mapping for destination fees)
+      // Calculate net amount after withdrawal fee
       const netAmount = calculateNetAmount(amount, destinationMapping.withdrawalFee);
 
       this.logger.debug('Calculated received amount', {
@@ -141,8 +140,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         throw new Error('Binance system is not operational');
       }
 
-      const assetMapping = getAssetMapping(route);
-      validateAssetMapping(assetMapping, `route from chain ${route.origin}`);
+      const assetMapping = await validateAssetMapping(this.client, route, `route from chain ${route.origin}`);
 
       // Check minimum amount requirements
       if (!meetsMinimumWithdrawal(amount, assetMapping)) {
@@ -151,11 +149,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
-      // Check withdrawal quota for destination chain
-      const destinationMapping = getDestinationAssetMapping(route);
-      validateAssetMapping(destinationMapping, `route to chain ${route.destination}`);
-
-      // Get decimals for the asset (ETH/WETH = 18, USDC/USDT = 6)
       const decimals = assetMapping.binanceSymbol === 'ETH' ? 18 : 6;
 
       const quota = await checkWithdrawQuota(amount, assetMapping.binanceSymbol, decimals, this.client);
@@ -172,7 +165,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
-      // Get deposit address from Binance
       const depositInfo = await this.client.getDepositAddress(assetMapping.binanceSymbol, assetMapping.network);
 
       this.logger.debug('Binance deposit address obtained', {
@@ -185,7 +177,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       const transactions: MemoizedTransactionRequest[] = [];
 
-      // Always unwrap WETH to ETH before deposit
+      // Unwrap WETH to ETH before deposit
       if (assetMapping.binanceSymbol === 'ETH' && route.asset !== zeroAddress) {
         this.logger.debug('Preparing WETH unwrap transaction before Binance deposit', {
           wethAddress: route.asset,
@@ -249,7 +241,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     });
 
     try {
-      // Look up recipient from cache
       const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
       if (!recipient) {
         this.logger.error('No recipient found in cache for withdrawal', {
@@ -259,14 +250,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         return false;
       }
 
-      // Check if withdrawal is complete (will initiate if needed)
       const withdrawalStatus = await this.getOrInitWithdrawal(route, originTransaction, amount, recipient);
 
       if (!withdrawalStatus) {
         return false;
       }
 
-      // Return true if withdrawal is complete and confirmed on-chain
       const isReady = withdrawalStatus.status === 'completed' && withdrawalStatus.onChainConfirmed;
       this.logger.debug('Withdrawal ready status determined', {
         isReady,
@@ -296,8 +285,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
     try {
       // Get asset mappings to check if it's ETH/WETH
-      const originMapping = getAssetMapping(route);
-      validateAssetMapping(originMapping, `route from chain ${route.origin}`);
+      const originMapping = await validateAssetMapping(this.client, route, `route from chain ${route.origin}`);
 
       // Only wrap ETH back to WETH
       if (originMapping.binanceSymbol !== 'ETH') {
@@ -348,9 +336,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         return;
       }
 
-      // Get the destination chain's WETH address
-      const destinationMapping = getDestinationAssetMapping(route);
-      validateAssetMapping(destinationMapping, `route to chain ${route.destination}`);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route);
 
       this.logger.info('Preparing WETH wrap callback', {
         recipient,
@@ -393,11 +379,8 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     recipient: string,
   ): Promise<WithdrawalStatus | undefined> {
     try {
-      const originMapping = getAssetMapping(route);
-      validateAssetMapping(originMapping, `route from chain ${route.origin}`);
-
-      const destinationMapping = getDestinationAssetMapping(route);
-      validateAssetMapping(destinationMapping, `route to chain ${route.destination}`);
+      const originMapping = await validateAssetMapping(this.client, route, `route from chain ${route.origin}`);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route);
 
       // Check if deposit is confirmed first
       const depositStatus = await this.checkDepositConfirmed(route, originTransaction, originMapping);
@@ -423,15 +406,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
           status: 'pending',
           onChainConfirmed: false,
         };
-      }
-
-      // Check for stale withdrawals
-      if (isWithdrawalStale(currentWithdrawal.applyTime)) {
-        this.logger.warn('Withdrawal is taking longer than expected', {
-          withdrawalId: withdrawal.id,
-          applyTime: currentWithdrawal.applyTime,
-          status: currentWithdrawal.status,
-        });
       }
 
       // Verify on-chain if completed

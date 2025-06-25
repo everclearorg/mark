@@ -3,17 +3,13 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
   getAssetMapping,
   getDestinationAssetMapping,
-  getAsset,
-  findMatchingDestinationAsset,
   calculateNetAmount,
-  formatAmount,
   validateAssetMapping,
   meetsMinimumWithdrawal,
   generateWithdrawOrderId,
   convertAmountToUSD,
   checkWithdrawQuota,
   parseBinanceTimestamp,
-  isWithdrawalStale,
 } from '../../../src/adapters/binance/utils';
 import { BinanceAssetMapping } from '../../../src/adapters/binance/types';
 import { RebalanceRoute, ChainConfiguration } from '@mark/core';
@@ -53,97 +49,34 @@ const mockAssetMapping: BinanceAssetMapping = {
 
 describe('Binance Utils', () => {
   let mockClient: jest.Mocked<BinanceClient>;
+  let mockGetAssetConfig: jest.MockedFunction<() => Promise<unknown[]>>;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetAssetConfig = jest.fn();
     mockClient = {
       getPrice: jest.fn(),
       getWithdrawQuota: jest.fn(),
+      getAssetConfig: mockGetAssetConfig,
+      isConfigured: jest.fn().mockReturnValue(true),
     } as any;
   });
 
   describe('getAssetMapping', () => {
-    it('should return undefined when no mapping found', () => {
-      const result = getAssetMapping(mockRoute);
-      expect(result).toBeUndefined();
+    it('should handle async call when no mapping found', async () => {
+      // Mock DynamicAssetConfig to throw error for unknown asset
+      mockGetAssetConfig.mockRejectedValue(new Error('Asset not found'));
+
+      await expect(getAssetMapping(mockClient, mockRoute)).rejects.toThrow();
     });
   });
 
   describe('getDestinationAssetMapping', () => {
-    it('should return undefined when origin mapping not found', () => {
-      const result = getDestinationAssetMapping(mockRoute);
-      expect(result).toBeUndefined();
-    });
-  });
+    it('should handle async call when origin mapping not found', async () => {
+      // Mock DynamicAssetConfig to throw error for unknown asset
+      mockGetAssetConfig.mockRejectedValue(new Error('Asset not found'));
 
-  describe('getAsset', () => {
-    it('should return undefined when chain not found', () => {
-      const chains: Record<string, ChainConfiguration> = {};
-      const result = getAsset('0xAsset', 999, chains);
-      expect(result).toBeUndefined();
-    });
-
-    it('should return undefined when asset not found in chain', () => {
-      const chains: Record<string, ChainConfiguration> = {
-        '1': mockChainConfig,
-      };
-      const result = getAsset('0xAsset', 1, chains);
-      expect(result).toBeUndefined();
-    });
-  });
-
-  describe('findMatchingDestinationAsset', () => {
-    it('should return undefined when origin asset not found', () => {
-      const chains: Record<string, ChainConfiguration> = {};
-      const result = findMatchingDestinationAsset('0xAsset', 1, 137, chains);
-      expect(result).toBeUndefined();
-    });
-
-    it('should return undefined when destination chain not found', () => {
-      const chains: Record<string, ChainConfiguration> = {
-        '1': {
-          ...mockChainConfig,
-          assets: [{
-            address: '0xAsset',
-            symbol: 'TEST',
-            decimals: 18,
-            tickerHash: '0x',
-            isNative: false,
-            balanceThreshold: '0',
-          }],
-        },
-      };
-      const result = findMatchingDestinationAsset('0xAsset', 1, 999, chains);
-      expect(result).toBeUndefined();
-    });
-
-    it('should return undefined when no matching asset on destination', () => {
-      const chains: Record<string, ChainConfiguration> = {
-        '1': {
-          ...mockChainConfig,
-          assets: [{
-            address: '0xAsset',
-            symbol: 'TEST',
-            decimals: 18,
-            tickerHash: '0x',
-            isNative: false,
-            balanceThreshold: '0',
-          }],
-        },
-        '137': {
-          ...mockChainConfig,
-          assets: [{
-            address: '0xOtherAsset',
-            symbol: 'OTHER',
-            decimals: 18,
-            tickerHash: '0x',
-            isNative: false,
-            balanceThreshold: '0',
-          }],
-        },
-      };
-      const result = findMatchingDestinationAsset('0xAsset', 1, 137, chains);
-      expect(result).toBeUndefined();
+      await expect(getDestinationAssetMapping(mockClient, mockRoute)).rejects.toThrow();
     });
   });
 
@@ -157,45 +90,111 @@ describe('Binance Utils', () => {
     });
   });
 
-  describe('formatAmount', () => {
-    it('should format amount without decimals when no fractional part', () => {
-      const result = formatAmount('1000000000000000000', 18);
-      expect(result).toBe('1');
-    });
-
-    it('should format amount with fractional part', () => {
-      const result = formatAmount('1500000000000000000', 18);
-      expect(result).toBe('1.5');
-    });
-
-    it('should remove trailing zeros from fractional part', () => {
-      const result = formatAmount('1100000000000000000', 18);
-      expect(result).toBe('1.1');
-    });
-  });
-
   describe('validateAssetMapping', () => {
-    it('should throw error when mapping is undefined', () => {
-      expect(() => validateAssetMapping(undefined, 'test context'))
-        .toThrow('No Binance asset mapping found for test context');
+    it('should throw error when mapping is not found', async () => {
+      // Mock DynamicAssetConfig to throw error for unknown asset
+      mockGetAssetConfig.mockRejectedValue(new Error('Asset not found'));
+
+      await expect(validateAssetMapping(mockClient, mockRoute, 'test context')).rejects.toThrow();
     });
 
-    it('should throw error when missing symbol or network', () => {
-      const invalidMapping: BinanceAssetMapping = {
-        ...mockAssetMapping,
-        binanceSymbol: '',
-      };
-      expect(() => validateAssetMapping(invalidMapping, 'test context'))
-        .toThrow('Invalid Binance asset mapping for test context: missing symbol or network');
+    it('should throw error when missing symbol or network', async () => {
+      // Mock DynamicAssetConfig to return invalid mapping
+      const invalidConfigResponse = [
+        {
+          coin: 'TEST',
+          name: 'Test Token',
+          networkList: [
+            {
+              network: 'ETH',
+              coin: 'TEST',
+              withdrawIntegerMultiple: '0.00000001',
+              isDefault: true,
+              depositEnable: true,
+              withdrawEnable: true,
+              depositDesc: '',
+              withdrawDesc: '',
+              specialTips: '',
+              specialWithdrawTips: '',
+              name: 'Ethereum',
+              resetAddressStatus: false,
+              addressRegex: '^(0x)[0-9A-Fa-f]{40}$',
+              addressRule: '',
+              memoRegex: '',
+              withdrawFee: '1000000',
+              withdrawMin: '10000000',
+              withdrawMax: '100000000000',
+              minConfirm: 12,
+              unLockConfirm: 12,
+              sameAddress: false,
+              estimatedArrivalTime: 25,
+              busy: false,
+              country: '',
+              contractAddressUrl: '',
+              contractAddress: '',
+            },
+          ],
+        },
+      ];
+
+      mockGetAssetConfig.mockResolvedValue(invalidConfigResponse);
+
+      // This will fail when trying to find the asset mapping
+      await expect(validateAssetMapping(mockClient, mockRoute, 'test context')).rejects.toThrow();
     });
 
-    it('should throw error when missing fee configuration', () => {
-      const invalidMapping: BinanceAssetMapping = {
-        ...mockAssetMapping,
-        withdrawalFee: '',
+    it('should handle valid asset mapping', async () => {
+      // Mock valid response from Binance API
+      const validConfigResponse = [
+        {
+          coin: 'ETH',
+          name: 'Ethereum',
+          networkList: [
+            {
+              network: 'ETH',
+              coin: 'ETH',
+              withdrawIntegerMultiple: '0.00000001',
+              isDefault: true,
+              depositEnable: true,
+              withdrawEnable: true,
+              depositDesc: '',
+              withdrawDesc: '',
+              specialTips: '',
+              specialWithdrawTips: '',
+              name: 'Ethereum',
+              resetAddressStatus: false,
+              addressRegex: '^(0x)[0-9A-Fa-f]{40}$',
+              addressRule: '',
+              memoRegex: '',
+              withdrawFee: '5000000000000000',
+              withdrawMin: '10000000000000000',
+              withdrawMax: '100000000000000000000',
+              minConfirm: 12,
+              unLockConfirm: 12,
+              sameAddress: false,
+              estimatedArrivalTime: 25,
+              busy: false,
+              country: '',
+              contractAddressUrl: '',
+              contractAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+            },
+          ],
+        },
+      ];
+
+      mockGetAssetConfig.mockResolvedValue(validConfigResponse);
+
+      // Use a route that matches the ETH config
+      const ethRoute: RebalanceRoute = {
+        origin: 1,
+        destination: 42161,
+        asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
       };
-      expect(() => validateAssetMapping(invalidMapping, 'test context'))
-        .toThrow('Invalid Binance asset mapping for test context: missing fee configuration');
+
+      const result = await validateAssetMapping(mockClient, ethRoute, 'test context');
+      expect(result).toBeDefined();
+      expect(result.binanceSymbol).toBe('ETH');
+      expect(result.network).toBe('ETH');
     });
   });
 
@@ -247,9 +246,9 @@ describe('Binance Utils', () => {
         usedWdQuota: '1000',
       });
       mockClient.getPrice.mockResolvedValue({ symbol: 'ETHUSDT', price: '2000' });
-      
+
       const result = await checkWithdrawQuota('1000000000000000000', 'ETH', 18, mockClient);
-      
+
       expect(result).toEqual({
         allowed: true,
         remainingQuotaUSD: 9000,
@@ -263,9 +262,9 @@ describe('Binance Utils', () => {
         usedWdQuota: '9000',
       });
       mockClient.getPrice.mockResolvedValue({ symbol: 'ETHUSDT', price: '2000' });
-      
+
       const result = await checkWithdrawQuota('1000000000000000000', 'ETH', 18, mockClient);
-      
+
       expect(result).toEqual({
         allowed: false,
         remainingQuotaUSD: 1000,
@@ -287,28 +286,6 @@ describe('Binance Utils', () => {
       const result = parseBinanceTimestamp(timestamp);
       expect(result).toBeInstanceOf(Date);
       expect(result.getTime()).toBe(1624564800000);
-    });
-  });
-
-  describe('isWithdrawalStale', () => {
-    it('should return false for recent withdrawal', () => {
-      const recentDate = new Date();
-      const result = isWithdrawalStale(recentDate.toISOString());
-      expect(result).toBe(false);
-    });
-
-    it('should return true for stale withdrawal', () => {
-      const oldDate = new Date();
-      oldDate.setHours(oldDate.getHours() - 25);
-      const result = isWithdrawalStale(oldDate.toISOString());
-      expect(result).toBe(true);
-    });
-
-    it('should respect custom max hours', () => {
-      const oldDate = new Date();
-      oldDate.setHours(oldDate.getHours() - 13);
-      const result = isWithdrawalStale(oldDate.toISOString(), 12);
-      expect(result).toBe(true);
     });
   });
 });

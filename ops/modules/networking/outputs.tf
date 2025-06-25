@@ -17,3 +17,8 @@ output "public_subnets" {
   description = "List of IDs of public subnets"
   value       = aws_subnet.public[*].id
 }
+
+output "nat_gateway_ips" {
+  description = "Static outbound IP addresses for Lambda functions"
+  value       = aws_eip.nat[*].public_ip
+}

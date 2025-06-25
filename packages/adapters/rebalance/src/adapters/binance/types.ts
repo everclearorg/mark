@@ -78,3 +78,44 @@ export interface TickerPrice {
   symbol: string;
   price: string;
 }
+
+export interface NetworkConfig {
+  network: string;
+  name: string;
+  isDefault: boolean;
+  depositEnable: boolean;
+  withdrawEnable: boolean;
+  withdrawFee: string;
+  withdrawMin: string;
+  withdrawMax: string;
+  minConfirm: number;
+  unLockConfirm?: number;
+  addressRegex?: string;
+  memoRegex?: string;
+  specialTips?: string;
+  specialWithdrawTips?: string;
+  depositDust?: string;
+  withdrawIntegerMultiple?: string;
+  sameAddress?: boolean;
+  estimatedArrivalTime?: number;
+  busy?: boolean;
+  contractAddressUrl?: string;
+  contractAddress?: string;
+}
+
+export interface CoinConfig {
+  coin: string;
+  name: string;
+  networkList: NetworkConfig[];
+  free: string;
+  locked: string;
+  freeze: string;
+  withdrawing: string;
+  ipoing: string;
+  ipoable: string;
+  storage: string;
+  isLegalMoney: boolean;
+  trading: boolean;
+  depositAllEnable: boolean;
+  withdrawAllEnable: boolean;
+}
