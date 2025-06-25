@@ -26,10 +26,10 @@
     "lint:package": "sort-package-json",
     "monitoring:up": "docker compose -f docker/docker-compose.yml up",
     "purge": "yarn workspaces foreach -A --parallel run clean && rimraf node_modules packages/*/node_modules packages/adapters/*/node_modules .yarn/cache .yarn/install-state.gz",
+    "rebalance:dev": "npx tsx packages/adapters/rebalance/scripts/dev.ts",
     "redis:up": "yarn workspace @mark/cache docker:redis:up",
     "test": "yarn workspaces foreach -A --parallel run test",
-    "test:unit": "yarn workspaces foreach -v -A --parallel run test:unit",
-    "rebalance:dev": "npx tsx packages/adapters/rebalance/scripts/dev.ts"
+    "test:unit": "yarn workspaces foreach -v -A --parallel run test:unit"
   },
   "dependencies": {
     "@types/node": "20.17.12"
