@@ -32,6 +32,10 @@ export const mockConfig: MarkConfiguration = {
   relayer: {
     url: 'http://localhost:8080',
   },
+  binance: {
+    apiKey: 'test-api-key',
+    apiSecret: 'test-api-secret',
+  },
   redis: {
     host: 'localhost',
     port: 6379,

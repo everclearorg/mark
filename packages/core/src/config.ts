@@ -261,6 +261,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         url: configJson?.relayer?.url ?? (await fromEnv('RELAYER_URL')) ?? undefined,
         key: configJson?.relayer?.key ?? (await fromEnv('RELAYER_API_KEY')) ?? undefined,
       },
+      binance: {
+        apiKey: configJson.binance_api_key ?? (await fromEnv('BINANCE_API_KEY', true)) ?? undefined,
+        apiSecret: configJson.binance_api_secret ?? (await fromEnv('BINANCE_API_SECRET', true)) ?? undefined,
+      },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),
