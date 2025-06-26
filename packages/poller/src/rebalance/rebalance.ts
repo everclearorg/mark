@@ -90,6 +90,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
     logger.debug('Current balance for route', { requestId, route, currentBalance: currentBalance.toString() });
 
     const maximumBalance = BigInt(route.maximum);
+    const reserveAmount = BigInt(route.reserve ?? '0');
     if (currentBalance <= maximumBalance) {
       logger.info('Balance is at or below maximum, skipping route', {
         requestId,
@@ -98,6 +99,19 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         maximum: route.maximum,
       });
       continue; // Skip to next route
+    }
+
+    // Calculate amount to bridge (total balance minus reserve)
+    const amountToBridge = currentBalance - reserveAmount;
+    if (amountToBridge <= 0n) {
+      logger.info('Amount to bridge after reserve is zero or negative, skipping route', {
+        requestId,
+        route,
+        currentBalance: currentBalance.toString(),
+        reserveAmount: reserveAmount.toString(),
+        amountToBridge: amountToBridge.toString(),
+      });
+      continue;
     }
 
     // --- Bridge Preference Loop ---
@@ -121,7 +135,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       // Step 1: Get Quote
       let receivedAmountStr: string;
       try {
-        receivedAmountStr = await adapter.getReceivedAmount(currentBalance.toString(), route);
+        receivedAmountStr = await adapter.getReceivedAmount(amountToBridge.toString(), route);
         logger.info('Received quote from adapter', { requestId, route, bridgeType, receivedAmountStr });
       } catch (quoteError) {
         logger.error('Failed to get quote from adapter, trying next preference', {
@@ -140,7 +154,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       const slippage = safeStringToBigInt(route.slippage.toString(), scaleFactor);
       const slippageScaled = slippage * scaleFactor;
       const minimumAcceptableAmount =
-        currentBalance - (currentBalance * slippageScaled) / (scaleFactor * dbpsDenominator);
+        amountToBridge - (amountToBridge * slippageScaled) / (scaleFactor * dbpsDenominator);
 
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Quote does not meet slippage requirements, trying next preference', {
@@ -149,7 +163,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           bridgeType,
           receivedAmount: receivedAmount.toString(),
           minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-          amountToBridge: currentBalance.toString(),
+          amountToBridge: amountToBridge.toString(),
           slippageBPS: route.slippage.toString(),
         });
         continue; // Skip to next bridge preference
@@ -167,7 +181,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       const sender = getActualOwner(originZodiacConfig, config.ownAddress);
       const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
       try {
-        bridgeTxRequests = await adapter.send(sender, recipient, currentBalance.toString(), route);
+        bridgeTxRequests = await adapter.send(sender, recipient, amountToBridge.toString(), route);
         logger.info('Prepared bridge transaction request from adapter', {
           requestId,
           route,
@@ -239,7 +253,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         // Step 5: Add rebalance action to cache
         const rebalanceAction: RebalanceAction = {
           bridge: adapter.type(),
-          amount: currentBalance.toString(),
+          amount: amountToBridge.toString(),
           origin: route.origin,
           destination: route.destination,
           asset: route.asset,

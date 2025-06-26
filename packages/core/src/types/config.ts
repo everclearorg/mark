@@ -65,6 +65,7 @@ export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum
   slippage: number; // If quoted to receive less than this, skip. using DBPS
   preferences: SupportedBridge[]; // Priority ordered platforms
+  reserve?: string; // Amount to keep on origin chain during rebalancing
 }
 export interface RebalanceConfig {
   routes: RouteRebalancingConfig[];
