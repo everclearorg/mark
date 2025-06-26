@@ -631,32 +631,33 @@ describe('sendIntents', () => {
                 .to.be.rejectedWith(`intent.to (0xwrongaddress) must be safeAddress (${safeAddress}) for destination 8453`);
         });
 
-        it('should throw an error when intent.to does not match safeAddress for Multisig destination', async () => {
+        it('should treat chain with only gnosisSafeAddress as EOA (not Zodiac)', async () => {
             const safeAddress = '0x9876543210987654321098765432109876543210';
-            const configWithMultisigDestination = {
+            const configWithOnlySafeAddress = {
                 ...mockConfig,
                 chains: {
                     '1': { providers: ['provider1'] },
                     '8453': {
                         providers: ['provider2'],
                         gnosisSafeAddress: safeAddress,
-                        // No zodiacRoleModuleAddress, so it's Multisig
+                        // No zodiacRoleModuleAddress or zodiacRoleKey - should be treated as EOA
                     },
                 },
             } as unknown as MarkConfiguration;
 
-            const wrongToAddressIntent = {
+            const intentToOwnAddress = {
                 origin: '1',
                 destinations: ['8453'],
-                to: '0xwrongaddress', // Should be safeAddress for Multisig
+                to: mockConfig.ownAddress, // Should validate against ownAddress, not safeAddress
                 inputAsset: '0xtoken1',
                 amount: '1000',
                 callData: '0x',
                 maxFee: '0',
             };
 
-            await expect(sendIntents(invoiceId, [wrongToAddressIntent], mockDeps, configWithMultisigDestination))
-                .to.be.rejectedWith(`intent.to (0xwrongaddress) must be safeAddress (${safeAddress}) for destination 8453`);
+            // This should pass because the chain is treated as EOA
+            const result = await sendIntents(invoiceId, [intentToOwnAddress], mockDeps, configWithOnlySafeAddress);
+            expect(result).to.have.length(1);
         });
 
         it('should pass validation when intent.to matches ownAddress for EOA destination', async () => {

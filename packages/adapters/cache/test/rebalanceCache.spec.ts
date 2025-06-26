@@ -18,6 +18,7 @@ const mockRedisSdkInstance = {
     hset: jest.fn(),
     sadd: jest.fn(),
     hmget: jest.fn(),
+    hget: jest.fn(),
     srem: jest.fn(),
     hdel: jest.fn(),
     smembers: jest.fn(),
@@ -25,6 +26,7 @@ const mockRedisSdkInstance = {
     hexists: jest.fn().mockResolvedValue(0),
     set: jest.fn().mockResolvedValue('OK'),
     get: jest.fn().mockResolvedValue(null),
+    hkeys: jest.fn(),
     connectTimeout: 17_000,
     maxRetriesPerRequest: 4,
     retryStrategy: jest.fn((times) => Math.min(times * 30, 1_000)),
@@ -90,7 +92,8 @@ describe('RebalanceCache', () => {
             destination: 2,
             asset: 'ETH',
             transaction: '0xtxhash1',
-            bridge: SupportedBridge.Across
+            bridge: SupportedBridge.Across,
+            recipient: '0x1234567890123456789012345678901234567890'
         };
 
         it('should add a single rebalance action and return 1', async () => {
@@ -156,13 +159,13 @@ describe('RebalanceCache', () => {
 
     describe('getRebalances', () => {
         const sampleAction1: RebalanceAction = {
-            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1', bridge: SupportedBridge.Across
+            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1', bridge: SupportedBridge.Across, recipient: '0x1111111111111111111111111111111111111111'
         };
         const sampleAction2: RebalanceAction = {
-            amount: '200', origin: 1, destination: 2, asset: 'BTC', transaction: '0xtx2', bridge: SupportedBridge.Across
+            amount: '200', origin: 1, destination: 2, asset: 'BTC', transaction: '0xtx2', bridge: SupportedBridge.Across, recipient: '0x2222222222222222222222222222222222222222'
         };
         const sampleAction3: RebalanceAction = {
-            amount: '300', origin: 3, destination: 4, asset: 'ETH', transaction: '0xtx3', bridge: SupportedBridge.Across
+            amount: '300', origin: 3, destination: 4, asset: 'ETH', transaction: '0xtx3', bridge: SupportedBridge.Across, recipient: '0x3333333333333333333333333333333333333333'
         };
 
         const id1 = '2-1-eth-uuid1';
@@ -292,14 +295,93 @@ describe('RebalanceCache', () => {
         });
     });
 
+    describe('getRebalanceByTransaction', () => {
+        const sampleAction: RebalanceAction = {
+            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1', bridge: SupportedBridge.Across, recipient: '0x1111111111111111111111111111111111111111'
+        };
+
+        it('should return action when transaction hash matches', async () => {
+            const id = '2-1-eth-uuid1';
+            
+            // Mock hkeys to return the ID
+            (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([id]);
+            
+            // Mock hmget to return the action data
+            (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([
+                JSON.stringify(sampleAction),
+            ]);
+
+            const result = await rebalanceCache.getRebalanceByTransaction('0xtx1');
+
+            expect(mockRedisSdkInstance.hkeys).toHaveBeenCalledWith('rebalances:data');
+            expect(mockRedisSdkInstance.hmget).toHaveBeenCalledWith('rebalances:data', id);
+            expect(result).toEqual({ ...sampleAction, id });
+        });
+
+        it('should return undefined when no actions exist', async () => {
+            (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([]);
+            
+            const result = await rebalanceCache.getRebalanceByTransaction('0xtx1');
+            
+            expect(result).toBeUndefined();
+            expect(mockRedisSdkInstance.hmget).not.toHaveBeenCalled();
+        });
+
+        it('should return undefined when transaction hash does not match', async () => {
+            const id = '2-1-eth-uuid1';
+            const differentAction = { ...sampleAction, transaction: '0xtx2' };
+            
+            (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([id]);
+            (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([
+                JSON.stringify(differentAction),
+            ]);
+
+            const result = await rebalanceCache.getRebalanceByTransaction('0xtx1');
+
+            expect(result).toBeUndefined();
+        });
+
+        it('should handle multiple actions and return the matching one', async () => {
+            const id1 = '2-1-eth-uuid1';
+            const id2 = '3-4-btc-uuid2';
+            const action1 = { ...sampleAction, transaction: '0xtx1' };
+            const action2 = { ...sampleAction, transaction: '0xtx2', origin: 3, destination: 4, asset: 'BTC' };
+            
+            (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([id1, id2]);
+            (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([
+                JSON.stringify(action1),
+                JSON.stringify(action2),
+            ]);
+
+            const result = await rebalanceCache.getRebalanceByTransaction('0xtx2');
+
+            expect(result).toEqual({ ...action2, id: id2 });
+        });
+
+        it('should handle null values in Redis response', async () => {
+            const id1 = '2-1-eth-uuid1';
+            const id2 = '3-4-btc-uuid2';
+            
+            (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([id1, id2]);
+            (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([
+                null, // This ID has been deleted
+                JSON.stringify(sampleAction),
+            ]);
+
+            const result = await rebalanceCache.getRebalanceByTransaction('0xtx1');
+
+            expect(result).toEqual({ ...sampleAction, id: id2 });
+        });
+    });
+
     describe('removeRebalances', () => {
         const sampleAction1: RebalanceAction = {
-            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1', bridge: SupportedBridge.Across
+            amount: '100', origin: 1, destination: 2, asset: 'ETH', transaction: '0xtx1', bridge: SupportedBridge.Across, recipient: '0x1111111111111111111111111111111111111111'
         };
         const id1 = '2-1-ETH-uuid1'; // Make sure asset casing matches ID generation
 
         const sampleAction2: RebalanceAction = {
-            amount: '200', origin: 3, destination: 4, asset: 'BTC', transaction: '0xtx2', bridge: SupportedBridge.Across
+            amount: '200', origin: 3, destination: 4, asset: 'BTC', transaction: '0xtx2', bridge: SupportedBridge.Across, recipient: '0x2222222222222222222222222222222222222222'
         };
         const id2 = '4-3-BTC-uuid2';
 
