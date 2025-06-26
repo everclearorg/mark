@@ -211,6 +211,15 @@ describe('BinanceBridgeAdapter', () => {
 
       // Handle by address
       if (lowerIdentifier.startsWith('0x')) {
+        // Native ETH (zero address)
+        if (lowerIdentifier === '0x0000000000000000000000000000000000000000') {
+          if (chainId === 1) {
+            return { ...mockETHMapping, onChainAddress: assetIdentifier };
+          }
+          if (chainId === 42161) {
+            return { ...mockETHArbitrumMapping, onChainAddress: assetIdentifier };
+          }
+        }
         // ETH/WETH mappings
         if (lowerIdentifier === '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') {
           if (chainId === 1) {
@@ -430,12 +439,35 @@ describe('BinanceBridgeAdapter', () => {
 
       expect(result.length).toBe(1);
       expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
-      expect(result[0].transaction.to).toBe(mockDepositAddress.address);
+      expect(result[0].transaction.to).toBe(usdcRoute.asset); // Should call USDC contract
       expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer
       expect(result[0].transaction.data).toEqual(expect.any(String)); // transfer() encoded
 
       // Verify deposit address was requested for USDC
       expect(mockBinanceClient.getDepositAddress).toHaveBeenCalledWith('USDC', 'ETH');
+    });
+
+    it('should prepare native ETH transaction correctly', async () => {
+      const sender = '0x' + 'sender'.padEnd(40, '0');
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const amount = '1000000000000000000'; // 1 ETH
+
+      const nativeETHRoute: RebalanceRoute = {
+        origin: 1,
+        destination: 42161,
+        asset: '0x0000000000000000000000000000000000000000', // Native ETH
+      };
+
+      const result = await adapter.send(sender, recipient, amount, nativeETHRoute);
+
+      expect(result.length).toBe(1);
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[0].transaction.to).toBe(mockDepositAddress.address); // Should send to deposit address
+      expect(result[0].transaction.value).toBe(BigInt(amount)); // Native ETH value
+      expect(result[0].transaction.data).toBe('0x'); // No data for native transfer
+
+      // Verify deposit address was requested for ETH
+      expect(mockBinanceClient.getDepositAddress).toHaveBeenCalledWith('ETH', 'ETH');
     });
 
     it('should throw error if amount is too low', async () => {

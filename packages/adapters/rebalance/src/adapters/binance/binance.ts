@@ -219,7 +219,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         transactions.push({
           memo: RebalanceTransactionMemo.Rebalance,
           transaction: {
-            to: depositInfo.address as `0x${string}`,
+            to: route.asset === zeroAddress ? (depositInfo.address as `0x${string}`) : (route.asset as `0x${string}`),
             value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
             data:
               route.asset !== zeroAddress
