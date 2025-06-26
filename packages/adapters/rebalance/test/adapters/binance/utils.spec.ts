@@ -67,7 +67,7 @@ describe('Binance Utils', () => {
       // Mock DynamicAssetConfig to throw error for unknown asset
       mockGetAssetConfig.mockRejectedValue(new Error('Asset not found'));
 
-      await expect(getAssetMapping(mockClient, mockRoute)).rejects.toThrow();
+      await expect(getAssetMapping(mockClient, mockRoute, {})).rejects.toThrow();
     });
   });
 
@@ -76,7 +76,7 @@ describe('Binance Utils', () => {
       // Mock DynamicAssetConfig to throw error for unknown asset
       mockGetAssetConfig.mockRejectedValue(new Error('Asset not found'));
 
-      await expect(getDestinationAssetMapping(mockClient, mockRoute)).rejects.toThrow();
+      await expect(getDestinationAssetMapping(mockClient, mockRoute, {})).rejects.toThrow();
     });
   });
 
@@ -95,7 +95,7 @@ describe('Binance Utils', () => {
       // Mock DynamicAssetConfig to throw error for unknown asset
       mockGetAssetConfig.mockRejectedValue(new Error('Asset not found'));
 
-      await expect(validateAssetMapping(mockClient, mockRoute, 'test context')).rejects.toThrow();
+      await expect(validateAssetMapping(mockClient, mockRoute, 'test context', {})).rejects.toThrow();
     });
 
     it('should throw error when missing symbol or network', async () => {
@@ -140,7 +140,7 @@ describe('Binance Utils', () => {
       mockGetAssetConfig.mockResolvedValue(invalidConfigResponse);
 
       // This will fail when trying to find the asset mapping
-      await expect(validateAssetMapping(mockClient, mockRoute, 'test context')).rejects.toThrow();
+      await expect(validateAssetMapping(mockClient, mockRoute, 'test context', {})).rejects.toThrow();
     });
 
     it('should handle valid asset mapping', async () => {
@@ -191,7 +191,7 @@ describe('Binance Utils', () => {
         asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
       };
 
-      const result = await validateAssetMapping(mockClient, ethRoute, 'test context');
+      const result = await validateAssetMapping(mockClient, ethRoute, 'test context', {});
       expect(result).toBeDefined();
       expect(result.binanceSymbol).toBe('ETH');
       expect(result.network).toBe('ETH');
