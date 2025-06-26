@@ -88,6 +88,36 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
 export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
   return {
     routes: [
+      // optimism    ethereum    WETH    10000000000000000000 30
+      {
+        origin: 10,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '15000000000000000000',
+        reserve: '10000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
+      // arbitrum    ethereum    WETH    50000000000000000000 30
+      {
+        origin: 42161,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '55000000000000000000',
+        reserve: '50000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
+      // base    ethereum    WETH    20000000000000000000 30
+      {
+        origin: 8453,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '25000000000000000000',
+        reserve: '20000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
       // blast ethereum WETH    7000000000000000000 160
       {
         origin: 81457,
@@ -106,14 +136,15 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
-      // unichain    ethereum    WETH    30000000000000000000    150
+      // unichain    ethereum    WETH    10000000000000000000    150
       {
         origin: 130,
         destination: 1,
         asset: '0x4200000000000000000000000000000000000006',
-        maximum: '30000000000000000000',
+        maximum: '15000000000000000000',
+        reserve: '10000000000000000000',
         slippage: 150,
-        preferences: [SupportedBridge.Across],
+        preferences: [SupportedBridge.Binance, SupportedBridge.Across],
       },
       // zksync    ethereum    WETH    10000000000000000000 20
       {
@@ -123,6 +154,26 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         maximum: '10000000000000000000',
         slippage: 20,
         preferences: [SupportedBridge.Across],
+      },
+      // base ethereum    USDC    10000000000000000000000 140
+      {
+        origin: 8453,
+        destination: 1,
+        asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        maximum: '15000000000000000000000',
+        reserve: '10000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
+      // arbitrum ethereum    USDC    10000000000000000000000 140
+      {
+        origin: 42161,
+        destination: 1,
+        asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        maximum: '15000000000000000000000',
+        reserve: '10000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // linea ethereum    USDC    10000000000000000000000 140
       {
