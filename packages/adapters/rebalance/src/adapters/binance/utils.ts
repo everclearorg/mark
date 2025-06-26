@@ -1,20 +1,33 @@
 import { BinanceAssetMapping } from './types';
-import { RebalanceRoute } from '@mark/core';
+import { RebalanceRoute, ChainConfiguration } from '@mark/core';
 import { BinanceClient } from './client';
 import { DynamicAssetConfig } from './dynamic-config';
 import { formatUnits } from 'viem';
 
-export async function getAssetMapping(client: BinanceClient, route: RebalanceRoute): Promise<BinanceAssetMapping> {
-  const dynamicConfig = new DynamicAssetConfig(client);
+export async function getAssetMapping(
+  client: BinanceClient,
+  route: RebalanceRoute,
+  chains: Record<string, ChainConfiguration>,
+): Promise<BinanceAssetMapping> {
+  const dynamicConfig = new DynamicAssetConfig(client, chains);
   return dynamicConfig.getAssetMapping(route.origin, route.asset);
 }
 
 export async function getDestinationAssetMapping(
   client: BinanceClient,
   route: RebalanceRoute,
+  chains: Record<string, ChainConfiguration>,
 ): Promise<BinanceAssetMapping> {
-  const dynamicConfig = new DynamicAssetConfig(client);
-  return dynamicConfig.getAssetMapping(route.destination, route.asset);
+  const dynamicConfig = new DynamicAssetConfig(client, chains);
+
+  // First get the origin asset mapping to determine the external symbol
+  const originMapping = await dynamicConfig.getAssetMapping(route.origin, route.asset);
+
+  // Map the external symbol - for WETH we use 'WETH' externally
+  const externalSymbol = originMapping.binanceSymbol === 'ETH' ? 'WETH' : originMapping.binanceSymbol;
+
+  // Then get the destination mapping using the external symbol
+  return dynamicConfig.getAssetMapping(route.destination, externalSymbol);
 }
 
 /**
@@ -35,9 +48,10 @@ export async function validateAssetMapping(
   client: BinanceClient,
   route: RebalanceRoute,
   context: string,
+  chains: Record<string, ChainConfiguration>,
 ): Promise<BinanceAssetMapping> {
   try {
-    const mapping = await getAssetMapping(client, route);
+    const mapping = await getAssetMapping(client, route, chains);
 
     if (!mapping.binanceSymbol || !mapping.network) {
       throw new Error(`Invalid Binance asset mapping for ${context}: missing symbol or network`);
