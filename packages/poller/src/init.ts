@@ -68,7 +68,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
 
   const prometheus = new PrometheusAdapter(logger, 'mark-poller', config.pushGatewayUrl);
 
-  const rebalance = new RebalanceAdapter(config.environment, config.chains, logger);
+  const rebalance = new RebalanceAdapter(config.environment, config.chains, logger, rebalanceCache);
 
   return {
     logger,

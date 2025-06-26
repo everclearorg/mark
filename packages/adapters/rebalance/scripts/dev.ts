@@ -1,14 +1,13 @@
-#!/usr/bin/env node
 import { config } from 'dotenv';
 import { Logger } from '@mark/logger';
 import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute } from '@mark/core';
-import { AcrossBridgeAdapter, MAINNET_ACROSS_URL } from '../src/adapters/across';
-import { BridgeAdapter } from '../src/types';
-import { Account, Hash, parseUnits, TransactionReceipt } from 'viem';
+import { BridgeAdapter, RebalanceTransactionMemo } from '../src/types';
+import { Account, Hash, parseUnits, TransactionReceipt, createWalletClient, http, createPublicClient } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { Command } from 'commander';
-import { createWalletClient, http, createPublicClient, getContract, erc20Abi } from 'viem';
 import * as chains from 'viem/chains'
+import { RebalanceAdapter } from '../src';
+import { RebalanceCache } from '@mark/cache';
 
 function getViemChain(id: number) {
     for (const chain of Object.values(chains)) {
@@ -28,6 +27,9 @@ const logger = new Logger({
     level: 'debug',
     service: 'mark-dev'
 });
+
+// Initialize cache
+const cache = new RebalanceCache('127.0.0.1', 6379);
 
 interface AdapterOptions {
     amount: string;
@@ -71,22 +73,11 @@ program
         const parsed = await parseChainConfigurations(configs, ['WETH', 'USDC', 'USDT', 'ETH'], {});
 
         // Create appropriate adapter
-        let adapter: BridgeAdapter;
-        switch (type) {
-            case 'across':
-                adapter = new AcrossBridgeAdapter(
-                    MAINNET_ACROSS_URL,
-                    parsed,
-                    logger
-                );
-                break;
-            default:
-                throw new Error(`Unsupported adapter type: ${type}`);
-        }
+        const rebalancer = new RebalanceAdapter('mainnet', parsed, logger, cache);
+        const adapter = rebalancer.getAdapter(type);
 
         // Test the adapter
         await testBridgeAdapter(adapter, account, parsed, options);
-
     });
 
 // Helper function to handle destination chain operations
@@ -95,17 +86,17 @@ async function handleDestinationChain(
     account: Account,
     configs: Record<string, ChainConfiguration>,
     route: RebalanceRoute,
-    amountInWei: string,
     receipt: TransactionReceipt
 ): Promise<{ callbackTxHash?: Hash; callbackReceipt?: TransactionReceipt }> {
     // Check if callback is needed
-    const callbackTx = await adapter.destinationCallback(route, receipt);
+    const { transaction: callbackTx, memo } = await adapter.destinationCallback(route, receipt) ?? {};
     if (!callbackTx) {
         logger.info('No callback transaction required');
         return {};
     }
 
     logger.info('Callback transaction required', {
+        memo,
         to: callbackTx.to,
         value: callbackTx.value?.toString() || '0',
         dataLength: callbackTx.data?.length || 0
@@ -262,14 +253,11 @@ async function testBridgeAdapter(
 
     // Get the transaction request
     const walletAddr = walletClient.account.address;
-    const txRequest = await adapter.send(walletAddr, walletAddr, amountInWei, route);
-    if (!txRequest.to || !txRequest.data) {
-        throw new Error('Invalid transaction request: missing to or data');
-    }
+    const txRequests = await adapter.send(walletAddr, walletAddr, amountInWei, route);
 
-    logger.info('Got transaction request', {
+    logger.info('Got transaction requests', {
         chain: route.origin,
-        tx: txRequest,
+        tx: txRequests,
     });
 
     // Create public client for contract interactions
@@ -278,96 +266,65 @@ async function testBridgeAdapter(
         transport: http(originChain.providers[0])
     });
 
-    // If not native token, check and set allowance
-    if (!asset.isNative) {
-        const tokenContract = getContract({
-            address: asset.address as `0x${string}`,
-            abi: erc20Abi,
-            client: publicClient
-        });
-
-        // Check current allowance
-        const currentAllowance = await tokenContract.read.allowance([
-            account.address,
-            txRequest.to
-        ]);
-
-        logger.info('Current token allowance', {
-            allowance: currentAllowance.toString(),
-            required: amountInWei
-        });
-
-        // If allowance is insufficient, approve
-        if (currentAllowance < BigInt(amountInWei)) {
-            logger.info('Approving token spend...');
-            const approveTx = await walletClient.writeContract({
-                address: asset.address as `0x${string}`,
-                abi: erc20Abi,
-                functionName: 'approve',
-                args: [txRequest.to, BigInt(amountInWei)]
-            });
-
-            logger.info('Approval transaction sent', {
-                hash: approveTx
-            });
-
-            // Wait for approval transaction
-            const approveReceipt = await publicClient.waitForTransactionReceipt({
-                hash: approveTx
-            });
-
-            logger.info('Approval transaction confirmed', {
-                blockNumber: approveReceipt.blockNumber,
-                gasUsed: approveReceipt.gasUsed.toString()
-            });
+    let toTrack: TransactionReceipt | undefined = undefined;
+    for (const { transaction: txRequest, memo } of txRequests) {
+        if (!txRequest.to || !txRequest.data) {
+            throw new Error('Invalid transaction request: missing to or data');
         }
+
+        // Send the bridge transaction
+        logger.info(`Sending transaction request [${memo}]...`);
+        const txHash = await walletClient.sendTransaction({
+            to: txRequest.to,
+            value: txRequest.value || 0n,
+            data: txRequest.data
+        });
+
+        logger.info(`Bridge transaction sent [${memo}]`, {
+            hash: txHash
+        });
+
+        // Wait for transaction confirmation
+        const receipt = await publicClient.waitForTransactionReceipt({
+            hash: txHash
+        });
+        if (memo === RebalanceTransactionMemo.Rebalance) {
+            toTrack = receipt as TransactionReceipt;
+        }
+
+        logger.info(`Bridge transaction confirmed [${memo}]`, {
+            blockNumber: receipt.blockNumber,
+            gasUsed: receipt.gasUsed.toString(),
+            status: receipt.status
+        });
     }
 
-    // Send the bridge transaction
-    logger.info('Sending bridge transaction...');
-    const txHash = await walletClient.sendTransaction({
-        to: txRequest.to,
-        value: txRequest.value || 0n,
-        data: txRequest.data
-    });
-
-    logger.info('Bridge transaction sent', {
-        hash: txHash
-    });
-
-    // Wait for transaction confirmation
-    const receipt = await publicClient.waitForTransactionReceipt({
-        hash: txHash
-    });
-
-    logger.info('Bridge transaction confirmed', {
-        blockNumber: receipt.blockNumber,
-        gasUsed: receipt.gasUsed.toString(),
-        status: receipt.status
-    });
+    if (!toTrack) {
+        throw new Error(`No ${RebalanceTransactionMemo.Rebalance} receipt found in receipts.`)
+    }
 
     // Poll for transaction readiness
-    await pollForTransactionReady(adapter, amountInWei, route, receipt as TransactionReceipt);
+    await pollForTransactionReady(adapter, amountInWei, route, toTrack);
 
     // Handle destination chain operations
-    const result = await handleDestinationChain(adapter, account, configs, route, amountInWei, receipt as TransactionReceipt);
+    const result = await handleDestinationChain(adapter, account, configs, route, toTrack);
 
     logger.info('Bridge transaction completed', {
-        bridgeTxHash: txHash,
+        bridgeTxHash: toTrack.transactionHash,
         ...result
     });
 }
 
 // Add resume command
 program
-    .command('resume')
+    .command('resume <type>')
     .description('Resume a bridge transaction from a given transaction hash')
     .requiredOption('-o, --origin <chainId>', 'Origin chain ID')
     .requiredOption('-h, --hash <txHash>', 'Transaction hash to resume from')
     .option('-d, --destination <chainId>', 'Destination chain ID', '10')
     .option('-a, --amount <amount>', 'Original amount (in human units)', '0.01')
     .option('-t, --token <address>', 'Token address used in the transaction')
-    .action(async (options: { origin: string; hash: string; destination: string; amount: string; token?: string }) => {
+    .action(async (type: string, options: { origin: string; hash: string; destination: string; amount: string; token?: string }) => {
         // Get private key from env
         const privateKey = process.env.PRIVATE_KEY;
         if (!privateKey) {
@@ -413,11 +370,8 @@ program
         });
 
         // Create adapter
-        const adapter = new AcrossBridgeAdapter(
-            MAINNET_ACROSS_URL,
-            parsed,
-            logger
-        );
+        const rebalancer = new RebalanceAdapter('mainnet', parsed, logger, cache);
+        const adapter = rebalancer.getAdapter(type as SupportedBridge);
 
         // Find the asset to get decimals
         const asset = Object.values(originChain.assets).find(a => a.address.toLowerCase() === route.asset.toLowerCase());
@@ -432,7 +386,7 @@ program
         await pollForTransactionReady(adapter, amountInWei, route, receipt as TransactionReceipt);
 
         // Handle destination chain operations
-        const result = await handleDestinationChain(adapter, account, parsed, route, amountInWei, receipt as TransactionReceipt);
+        const result = await handleDestinationChain(adapter, account, parsed, route, receipt as TransactionReceipt);
 
         logger.info('Resume operation completed', {
             bridgeTxHash: options.hash,
