@@ -191,7 +191,31 @@ describe('Binance Utils', () => {
         asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
       };
 
-      const result = await validateAssetMapping(mockClient, ethRoute, 'test context', {});
+      // Create chains configuration with WETH asset
+      const chainsConfig = {
+        '1': {
+          providers: [],
+          assets: [
+            {
+              symbol: 'WETH',
+              address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+              decimals: 18,
+              tickerHash: 'WETH',
+              isNative: false,
+              balanceThreshold: '0',
+            },
+          ],
+          invoiceAge: 0,
+          gasThreshold: '0',
+          deployments: {
+            everclear: '0x',
+            permit2: '0x',
+            multicall3: '0x',
+          },
+        },
+      };
+
+      const result = await validateAssetMapping(mockClient, ethRoute, 'test context', chainsConfig);
       expect(result).toBeDefined();
       expect(result.binanceSymbol).toBe('ETH');
       expect(result.network).toBe('ETH');
