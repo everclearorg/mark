@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeEach, describe, expect, it, jest, afterEach } from '@jest/globals';
-import { SupportedBridge, RebalanceRoute, AssetConfiguration } from '@mark/core';
+import { SupportedBridge, RebalanceRoute, AssetConfiguration, MarkConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 import { TransactionReceipt } from 'viem';
@@ -115,6 +115,37 @@ const mockChains: Record<string, any> = {
       multicall3: '0xMulticall3Address',
     },
   },
+};
+
+// Mock configuration object
+const mockConfig: MarkConfiguration = {
+  pushGatewayUrl: 'http://localhost:9091',
+  web3SignerUrl: 'http://localhost:8545',
+  everclearApiUrl: 'http://localhost:3000',
+  relayer: {
+    url: 'http://localhost:8080',
+  },
+  binance: {
+    apiKey: 'test-api-key',
+    apiSecret: 'test-api-secret',
+  },
+  redis: {
+    host: 'localhost',
+    port: 6379,
+  },
+  ownAddress: '0x1234567890123456789012345678901234567890',
+  stage: 'development',
+  environment: 'mainnet',
+  logLevel: 'debug',
+  supportedSettlementDomains: [1, 42161],
+  forceOldestInvoice: false,
+  supportedAssets: ['ETH', 'WETH', 'USDC'],
+  chains: mockChains,
+  hub: {
+    domain: '25327',
+    providers: ['http://localhost:8545'],
+  },
+  routes: [],
 };
 
 // Mock API responses
@@ -242,7 +273,7 @@ describe('BinanceBridgeAdapter', () => {
             return { ...mockUSDCMapping, chainId: 42161, network: 'ARBITRUM', onChainAddress: assetIdentifier };
           }
         }
-      } 
+      }
       // Handle by symbol
       else {
         if (assetIdentifier === 'WETH') {
@@ -258,7 +289,12 @@ describe('BinanceBridgeAdapter', () => {
             return mockUSDCMapping;
           }
           if (chainId === 42161) {
-            return { ...mockUSDCMapping, chainId: 42161, network: 'ARBITRUM', onChainAddress: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8' };
+            return {
+              ...mockUSDCMapping,
+              chainId: 42161,
+              network: 'ARBITRUM',
+              onChainAddress: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8',
+            };
           }
         }
       }
@@ -1101,7 +1137,8 @@ describe('BinanceBridgeAdapter', () => {
     it('should throw when getting Binance adapter without rebalanceCache', () => {
       const mockLogger = { debug: jest.fn() } as unknown as Logger;
 
-      const rebalanceAdapter = new RebalanceAdapter('mainnet', {}, mockLogger);
+      const configWithoutBinance = { ...mockConfig, binance: { apiKey: undefined, apiSecret: undefined } };
+      const rebalanceAdapter = new RebalanceAdapter(configWithoutBinance, mockLogger);
 
       // Should throw specific error about missing rebalanceCache
       expect(() => {
@@ -1113,7 +1150,8 @@ describe('BinanceBridgeAdapter', () => {
       const mockLogger = { debug: jest.fn() } as unknown as Logger;
       const mockRebalanceCache = {} as RebalanceCache;
 
-      const rebalanceAdapter = new RebalanceAdapter('mainnet', {}, mockLogger, mockRebalanceCache);
+      const configWithoutBinance = { ...mockConfig, binance: { apiKey: undefined, apiSecret: undefined } };
+      const rebalanceAdapter = new RebalanceAdapter(configWithoutBinance, mockLogger, mockRebalanceCache);
 
       // With rebalanceCache provided, should fail due to missing API credentials, not missing cache
       expect(() => {
