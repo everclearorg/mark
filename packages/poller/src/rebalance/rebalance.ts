@@ -3,14 +3,14 @@ import { jsonifyMap, jsonifyError } from '@mark/logger';
 import { getDecimalsFromConfig, WalletType } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { formatUnits, zeroAddress } from 'viem';
+import { formatUnits } from 'viem';
 import { RebalanceAction } from '@mark/cache';
 import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
-import { checkAndApproveERC20 } from '../helpers/erc20';
 import { submitTransactionWithLogging } from '../helpers/transactions';
+import { RebalanceTransactionMemo } from '@mark/rebalance';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<void> {
-  const { logger, requestId, rebalanceCache, config, chainService, rebalance, prometheus } = context;
+  const { logger, requestId, rebalanceCache, config, chainService, rebalance } = context;
   const isPaused = await rebalanceCache.isPaused();
   if (isPaused) {
     logger.warn('Rebalance loop is paused', { requestId });
@@ -89,7 +89,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
 
     logger.debug('Current balance for route', { requestId, route, currentBalance: currentBalance.toString() });
 
-    const maximumBalance = BigInt(route.maximum);
+    // Convert route maximum and reserve from standardized 18 decimals to asset's native decimals
+    const maximumBalance = BigInt(formatUnits(BigInt(route.maximum), 18 - (decimals ?? 18)));
+    const reserveAmount = BigInt(formatUnits(BigInt(route.reserve ?? '0'), 18 - (decimals ?? 18)));
     if (currentBalance <= maximumBalance) {
       logger.info('Balance is at or below maximum, skipping route', {
         requestId,
@@ -98,6 +100,19 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         maximum: route.maximum,
       });
       continue; // Skip to next route
+    }
+
+    // Calculate amount to bridge (total balance minus reserve)
+    const amountToBridge = currentBalance - reserveAmount;
+    if (amountToBridge <= 0n) {
+      logger.info('Amount to bridge after reserve is zero or negative, skipping route', {
+        requestId,
+        route,
+        currentBalance: currentBalance.toString(),
+        reserveAmount: reserveAmount.toString(),
+        amountToBridge: amountToBridge.toString(),
+      });
+      continue;
     }
 
     // --- Bridge Preference Loop ---
@@ -121,7 +136,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       // Step 1: Get Quote
       let receivedAmountStr: string;
       try {
-        receivedAmountStr = await adapter.getReceivedAmount(currentBalance.toString(), route);
+        receivedAmountStr = await adapter.getReceivedAmount(amountToBridge.toString(), route);
         logger.info('Received quote from adapter', { requestId, route, bridgeType, receivedAmountStr });
       } catch (quoteError) {
         logger.error('Failed to get quote from adapter, trying next preference', {
@@ -140,7 +155,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       const slippage = safeStringToBigInt(route.slippage.toString(), scaleFactor);
       const slippageScaled = slippage * scaleFactor;
       const minimumAcceptableAmount =
-        currentBalance - (currentBalance * slippageScaled) / (scaleFactor * dbpsDenominator);
+        amountToBridge - (amountToBridge * slippageScaled) / (scaleFactor * dbpsDenominator);
 
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Quote does not meet slippage requirements, trying next preference', {
@@ -149,7 +164,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           bridgeType,
           receivedAmount: receivedAmount.toString(),
           minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-          amountToBridge: currentBalance.toString(),
+          amountToBridge: amountToBridge.toString(),
           slippageBPS: route.slippage.toString(),
         });
         continue; // Skip to next bridge preference
@@ -162,24 +177,24 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
       });
 
-      // Step 3: Get Bridge Transaction Request (before approval)
-      let bridgeTxRequest;
+      // Step 3: Get Bridge Transaction Requests
+      let bridgeTxRequests = [];
+      const sender = getActualOwner(originZodiacConfig, config.ownAddress);
+      const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
       try {
-        const sender = getActualOwner(originZodiacConfig, config.ownAddress);
-        const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
-        bridgeTxRequest = await adapter.send(sender, recipient, currentBalance.toString(), route);
+        bridgeTxRequests = await adapter.send(sender, recipient, amountToBridge.toString(), route);
         logger.info('Prepared bridge transaction request from adapter', {
           requestId,
           route,
           bridgeType,
-          bridgeTxRequest,
+          bridgeTxRequests,
           sender,
           recipient,
           useOriginZodiac: originZodiacConfig.walletType,
           useDestinationZodiac: destinationZodiacConfig.walletType,
         });
-        if (!bridgeTxRequest.to) {
-          throw new Error(`Failed to populate 'to' in bridge transaction request`);
+        if (!bridgeTxRequests.length) {
+          throw new Error(`Failed to retrieve any bridge transaction requests`);
         }
       } catch (sendError) {
         logger.error('Failed to get bridge transaction request from adapter, trying next preference', {
@@ -190,83 +205,61 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         });
         continue; // Skip to next bridge preference
       }
-      const spenderAddress = bridgeTxRequest.to! as `0x${string}`; // Safe due to check above
 
-      // Step 4: ERC20 Approval Logic (if needed)
-      const isNativeAsset = route.asset.toLowerCase() === zeroAddress;
-      if (!isNativeAsset) {
-        try {
-          const approvalResult = await checkAndApproveERC20({
-            config,
-            chainService,
-            logger,
-            prometheus,
-            chainId: route.origin.toString(),
-            tokenAddress: route.asset,
-            spenderAddress,
-            amount: currentBalance,
-            owner: getActualOwner(originZodiacConfig, config.ownAddress),
-            zodiacConfig: originZodiacConfig,
-            context: { requestId, route, bridgeType },
-          });
-
-          if (approvalResult.wasRequired) {
-            logger.info('ERC20 approval completed', {
-              requestId,
-              route,
-              bridgeType,
-              approvalTxHash: approvalResult.transactionHash,
-              hadZeroApproval: approvalResult.hadZeroApproval,
-            });
-          }
-        } catch (approvalError) {
-          logger.error('ERC20 token approval failed, trying next preference', {
+      // Step 4: Submit the bridge transactions in order
+      // TODO: Use multisend for zodiac-enabled origin transactions
+      let idx = -1;
+      try {
+        let transactionHash: string = '';
+        for (const { transaction, memo } of bridgeTxRequests) {
+          idx++;
+          logger.info('Submitting rebalance transaction bundle', {
+            transaction,
+            memo,
             requestId,
             route,
             bridgeType,
-            spenderAddress,
-            asset: route.asset,
-            error: jsonifyError(approvalError),
+            useZodiac: originZodiacConfig.walletType,
           });
-          continue; // Skip to next bridge preference
+          const result = await submitTransactionWithLogging({
+            chainService,
+            logger,
+            chainId: route.origin.toString(),
+            txRequest: {
+              to: transaction.to!,
+              data: transaction.data!,
+              value: (transaction.value || 0).toString(),
+              chainId: route.origin,
+              from: config.ownAddress,
+            },
+            zodiacConfig: originZodiacConfig,
+            context: { requestId, route, bridgeType, transactionType: memo },
+          });
+
+          logger.info('Successfully submitted and confirmed origin bridge transaction', {
+            requestId,
+            route,
+            bridgeType,
+            transactionHash: result.hash,
+            memo,
+            useZodiac: originZodiacConfig.walletType,
+          });
+
+          if (memo !== RebalanceTransactionMemo.Rebalance) {
+            continue;
+          }
+          transactionHash = result.hash;
         }
-      } else {
-        logger.info('Asset is native, no ERC20 approval needed.', { requestId, route, bridgeType });
-      }
 
-      // Step 5: Submit the original bridge transaction
-      try {
-        const result = await submitTransactionWithLogging({
-          chainService,
-          logger,
-          chainId: route.origin.toString(),
-          txRequest: {
-            to: bridgeTxRequest.to!,
-            data: bridgeTxRequest.data!,
-            value: (bridgeTxRequest.value || 0).toString(),
-            chainId: route.origin,
-            from: config.ownAddress,
-          },
-          zodiacConfig: originZodiacConfig,
-          context: { requestId, route, bridgeType, transactionType: 'bridge' },
-        });
-
-        logger.info('Successfully submitted and confirmed origin bridge transaction', {
-          requestId,
-          route,
-          bridgeType,
-          transactionHash: result.hash,
-          useZodiac: originZodiacConfig.walletType,
-        });
-
-        // Step 6: Add rebalance action to cache
+        // Step 5: Add rebalance action to cache
         const rebalanceAction: RebalanceAction = {
           bridge: adapter.type(),
-          amount: currentBalance.toString(),
+          amount: amountToBridge.toString(),
           origin: route.origin,
           destination: route.destination,
           asset: route.asset,
-          transaction: result.hash,
+          transaction: transactionHash,
+          recipient,
         };
 
         try {
@@ -285,21 +278,22 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             requestId,
             route,
             bridgeType,
-            transactionHash: result.hash,
+            transactionHash,
             error: jsonifyError(cacheError),
             rebalanceAction,
+            transaction: bridgeTxRequests[idx],
           });
           // Consider this a success for the route as funds were moved. Exit bridge loop.
           rebalanceSuccessful = true;
           break; // Exit the bridge preference loop for this route
         }
-      } catch (finalSendError) {
-        logger.error('Failed to send or monitor final bridge transaction, trying next preference', {
+      } catch (sendError) {
+        logger.error('Failed to send or monitor bridge transaction, trying next preference', {
           requestId,
           route,
           bridgeType,
-          bridgeTxRequest,
-          error: jsonifyError(finalSendError),
+          transaction: bridgeTxRequests[idx],
+          error: jsonifyError(sendError),
         });
         continue; // Skip to next bridge preference
       }
