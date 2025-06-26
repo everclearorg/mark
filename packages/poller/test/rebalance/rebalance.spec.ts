@@ -1176,3 +1176,153 @@ describe('Reserve Amount Functionality', () => {
     expect(mockSpecificBridgeAdapter.send.firstCall.args[2]).to.equal(amountToBridge.toString());
   });
 });
+
+describe('Decimal Handling', () => {
+  it('should handle USDC (6 decimals) correctly when comparing balances and calling adapters', async () => {
+    // Setup for 6-decimal USDC testing
+    const MOCK_USDC_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as `0x${string}`;
+    const MOCK_USDC_TICKER_HASH = '0xusdctickerhashtest' as `0x${string}`;
+    
+    const mockSpecificBridgeAdapter = {
+      getReceivedAmount: stub<[string, RebalanceRoute], Promise<string>>(),
+      send: stub<[string, string, string, RebalanceRoute], Promise<MemoizedTransactionRequest[]>>(),
+      type: stub<[], SupportedBridge>().returns(SupportedBridge.Binance),
+    };
+
+    const executeDestinationCallbacksStub = stub(callbacks, 'executeDestinationCallbacks').resolves();
+    const getMarkBalancesStub = stub(balanceHelpers, 'getMarkBalances');
+    const submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
+      hash: '0xBridgeTxHash',
+      submissionType: TransactionSubmissionType.Onchain,
+      receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
+    });
+
+    const mockLogger = createStubInstance(Logger);
+    const mockRebalanceCache = createStubInstance(RebalanceCache);
+    const mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
+
+    mockRebalanceCache.isPaused.resolves(false);
+    mockRebalanceCache.addRebalances.resolves();
+    mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
+
+    const route: RouteRebalancingConfig = {
+      origin: 42161,
+      destination: 10,
+      asset: MOCK_USDC_ADDRESS,
+      maximum: '1000000000000000000', // 1 USDC in 18 decimal format
+      reserve: '47000000000000000000', // 47 USDC in 18 decimal format
+      slippage: 50,
+      preferences: [SupportedBridge.Binance],
+    };
+
+    const mockContext = {
+      logger: mockLogger,
+      requestId: 'decimal-test',
+      rebalanceCache: mockRebalanceCache,
+      config: {
+        routes: [route],
+        ownAddress: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+        chains: {
+          '42161': {
+            providers: ['http://localhost:8545'],
+            assets: [{ symbol: 'USDC', address: MOCK_USDC_ADDRESS, decimals: 6, tickerHash: MOCK_USDC_TICKER_HASH, isNative: false, balanceThreshold: '0' }],
+            invoiceAge: 1, gasThreshold: '5000000000000000',
+            deployments: { everclear: '0xEverclearAddress', permit2: '0xPermit2Address', multicall3: '0xMulticall3Address' },
+          },
+          '10': {
+            providers: ['http://localhost:8546'],
+            assets: [{ symbol: 'USDC', address: MOCK_USDC_ADDRESS, decimals: 6, tickerHash: MOCK_USDC_TICKER_HASH, isNative: false, balanceThreshold: '0' }],
+            invoiceAge: 1, gasThreshold: '5000000000000000',
+            deployments: { everclear: '0xEverclearAddress', permit2: '0xPermit2Address', multicall3: '0xMulticall3Address' },
+          },
+        },
+      },
+      rebalance: mockRebalanceAdapter,
+    } as any;
+
+    // Balance: 48.796999 USDC (in 18 decimals from balance system)
+    const balances = new Map<string, Map<string, bigint>>();
+    balances.set(MOCK_USDC_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('48796999000000000000')]]));
+    getMarkBalancesStub.resolves(balances);
+
+    // Expected: 48796999 - 47000000 = 1796999 (in 6-decimal USDC format)
+    const expectedAmountToBridge = '1796999';
+    
+    mockSpecificBridgeAdapter.getReceivedAmount.resolves('1790000');
+    mockSpecificBridgeAdapter.send.resolves([{
+      transaction: { to: '0xBridgeAddress' as `0x${string}`, data: '0xbridgeData' as Hex, value: 0n },
+      memo: RebalanceTransactionMemo.Rebalance,
+    }]);
+
+    await rebalanceInventory(mockContext);
+
+    // Verify adapters receive amounts in USDC native decimals (6)
+    expect(mockSpecificBridgeAdapter.getReceivedAmount.firstCall.args[0]).to.equal(expectedAmountToBridge);
+    expect(mockSpecificBridgeAdapter.send.firstCall.args[2]).to.equal(expectedAmountToBridge);
+
+    // Verify cache stores native decimal amount
+    const rebalanceAction = mockRebalanceCache.addRebalances.firstCall.args[0][0] as RebalanceAction;
+    expect(rebalanceAction.amount).to.equal(expectedAmountToBridge);
+
+    // Cleanup
+    restore();
+  });
+
+  it('should skip USDC route when balance is at maximum', async () => {
+    const MOCK_USDC_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as `0x${string}`;
+    const MOCK_USDC_TICKER_HASH = '0xusdctickerhashtest' as `0x${string}`;
+    
+    const mockSpecificBridgeAdapter = {
+      getReceivedAmount: stub<[string, RebalanceRoute], Promise<string>>(),
+      send: stub<[string, string, string, RebalanceRoute], Promise<MemoizedTransactionRequest[]>>(),
+      type: stub<[], SupportedBridge>().returns(SupportedBridge.Binance),
+    };
+
+    const executeDestinationCallbacksStub = stub(callbacks, 'executeDestinationCallbacks').resolves();
+    const getMarkBalancesStub = stub(balanceHelpers, 'getMarkBalances');
+    
+    const mockLogger = createStubInstance(Logger);
+    const mockRebalanceCache = createStubInstance(RebalanceCache);
+    const mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
+
+    mockRebalanceCache.isPaused.resolves(false);
+    mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
+
+    const mockContext = {
+      logger: mockLogger,
+      requestId: 'decimal-skip-test',
+      rebalanceCache: mockRebalanceCache,
+      config: {
+        routes: [{
+          origin: 42161, destination: 10, asset: MOCK_USDC_ADDRESS,
+          maximum: '1000000000000000000', // 1 USDC in 18 decimal format
+          slippage: 50, preferences: [SupportedBridge.Binance],
+        }],
+        ownAddress: '0x1111111111111111111111111111111111111111' as `0x${string}`,
+        chains: {
+          '42161': {
+            providers: ['http://localhost:8545'],
+            assets: [{ symbol: 'USDC', address: MOCK_USDC_ADDRESS, decimals: 6, tickerHash: MOCK_USDC_TICKER_HASH, isNative: false, balanceThreshold: '0' }],
+            invoiceAge: 1, gasThreshold: '5000000000000000',
+            deployments: { everclear: '0xEverclearAddress', permit2: '0xPermit2Address', multicall3: '0xMulticall3Address' },
+          },
+        },
+      },
+      rebalance: mockRebalanceAdapter,
+    } as any;
+
+    // Balance exactly at maximum (1 USDC in 18 decimals)
+    const balances = new Map<string, Map<string, bigint>>();
+    balances.set(MOCK_USDC_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('1000000000000000000')]]));
+    getMarkBalancesStub.resolves(balances);
+
+    await rebalanceInventory(mockContext);
+
+    // Should skip due to balance being at maximum
+    expect(mockLogger.info.calledWith(match(/Balance is at or below maximum, skipping route/))).to.be.true;
+    expect(mockSpecificBridgeAdapter.getReceivedAmount.called).to.be.false;
+
+    // Cleanup
+    restore();
+  });
+});

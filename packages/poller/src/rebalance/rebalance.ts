@@ -89,8 +89,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
 
     logger.debug('Current balance for route', { requestId, route, currentBalance: currentBalance.toString() });
 
-    const maximumBalance = BigInt(route.maximum);
-    const reserveAmount = BigInt(route.reserve ?? '0');
+    // Convert route maximum and reserve from standardized 18 decimals to asset's native decimals
+    const maximumBalance = BigInt(formatUnits(BigInt(route.maximum), 18 - (decimals ?? 18)));
+    const reserveAmount = BigInt(formatUnits(BigInt(route.reserve ?? '0'), 18 - (decimals ?? 18)));
     if (currentBalance <= maximumBalance) {
       logger.info('Balance is at or below maximum, skipping route', {
         requestId,
