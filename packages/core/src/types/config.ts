@@ -84,6 +84,10 @@ export interface MarkConfiguration extends RebalanceConfig {
     url?: string;
     key?: string;
   };
+  binance: {
+    apiKey?: string;
+    apiSecret?: string;
+  };
   redis: RedisConfig;
   ownAddress: string;
   stage: Stage;
