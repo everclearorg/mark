@@ -181,7 +181,7 @@ const mockBinanceClient = {
 
 // Mock DynamicAssetConfig implementation
 const mockDynamicAssetConfig = {
-  getAssetMapping: jest.fn<(chainId: number, onChainAddress: string) => Promise<BinanceAssetMapping>>(),
+  getAssetMapping: jest.fn<(chainId: number, assetIdentifier: string) => Promise<BinanceAssetMapping>>(),
 };
 
 describe('BinanceBridgeAdapter', () => {
@@ -206,36 +206,55 @@ describe('BinanceBridgeAdapter', () => {
     );
 
     // Set up default asset mapping responses
-    mockDynamicAssetConfig.getAssetMapping.mockImplementation(async (chainId: number, onChainAddress: string) => {
-      // Return appropriate mapping based on chainId and address
-      const lowerAddress = onChainAddress.toLowerCase();
+    mockDynamicAssetConfig.getAssetMapping.mockImplementation(async (chainId: number, assetIdentifier: string) => {
+      const lowerIdentifier = assetIdentifier.toLowerCase();
 
-      // ETH/WETH mappings
-      if (lowerAddress === '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') {
-        if (chainId === 1) {
-          return mockETHMapping;
+      // Handle by address
+      if (lowerIdentifier.startsWith('0x')) {
+        // ETH/WETH mappings
+        if (lowerIdentifier === '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') {
+          if (chainId === 1) {
+            return mockETHMapping;
+          }
+          if (chainId === 42161) {
+            return { ...mockETHArbitrumMapping, onChainAddress: assetIdentifier };
+          }
         }
-        if (chainId === 42161) {
-          return { ...mockETHArbitrumMapping, onChainAddress }; // Use the requested address
+        // Arbitrum WETH
+        if (chainId === 42161 && lowerIdentifier === '0x82af49447d8a07e3bd95bd0d56f35241523fbab1') {
+          return mockETHArbitrumMapping;
+        }
+        // USDC mappings
+        if (lowerIdentifier === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') {
+          if (chainId === 1) {
+            return mockUSDCMapping;
+          }
+          if (chainId === 42161) {
+            return { ...mockUSDCMapping, chainId: 42161, network: 'ARBITRUM', onChainAddress: assetIdentifier };
+          }
+        }
+      } 
+      // Handle by symbol
+      else {
+        if (assetIdentifier === 'WETH') {
+          if (chainId === 1) {
+            return mockETHMapping;
+          }
+          if (chainId === 42161) {
+            return mockETHArbitrumMapping;
+          }
+        }
+        if (assetIdentifier === 'USDC') {
+          if (chainId === 1) {
+            return mockUSDCMapping;
+          }
+          if (chainId === 42161) {
+            return { ...mockUSDCMapping, chainId: 42161, network: 'ARBITRUM', onChainAddress: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8' };
+          }
         }
       }
 
-      // Arbitrum WETH
-      if (chainId === 42161 && lowerAddress === '0x82af49447d8a07e3bd95bd0d56f35241523fbab1') {
-        return mockETHArbitrumMapping;
-      }
-
-      // USDC mappings
-      if (lowerAddress === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') {
-        if (chainId === 1) {
-          return mockUSDCMapping;
-        }
-        if (chainId === 42161) {
-          return { ...mockUSDCMapping, chainId: 42161, network: 'ARBITRUM', onChainAddress };
-        }
-      }
-
-      throw new Error(`No mapping found for chain ${chainId}, address ${onChainAddress}`);
+      throw new Error(`No mapping found for chain ${chainId}, identifier ${assetIdentifier}`);
     });
 
     // Reset logger mocks
@@ -699,7 +718,7 @@ describe('BinanceBridgeAdapter', () => {
 
       expect(result).toBeDefined();
       expect(result?.memo).toBe(RebalanceTransactionMemo.Wrap);
-      expect(result?.transaction.to).toBe('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'); // Should wrap to the requested address
+      expect(result?.transaction.to).toBe('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'); // Should wrap to destination chain WETH address
       expect(result?.transaction.value).toBe(ethAmount);
       expect(result?.transaction.data).toEqual(expect.any(String)); // Encoded deposit() call
     });
