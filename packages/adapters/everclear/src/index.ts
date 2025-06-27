@@ -141,6 +141,11 @@ export class EverclearAdapter {
       const { data } = await axiosPost<TransactionRequest>(url, params);
       return data;
     } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctx = (err as any).context;
+      if (ctx?.error?.status === 404) {
+        throw new LookupTableNotFoundError();
+      }
       throw new Error(`Failed to fetch create solana intent from API ${err}`);
     }
   }
@@ -201,5 +206,15 @@ export class EverclearAdapter {
       });
       throw new Error(`Failed to fetch economy data for ${chain}/${tickerHash}: ${error}`);
     }
+  }
+}
+
+export class LookupTableNotFoundError extends Error {
+  constructor(
+    message: string = 'lookup table not found',
+    public readonly context?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = this.constructor.name;
   }
 }

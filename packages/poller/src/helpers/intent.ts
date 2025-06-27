@@ -7,7 +7,7 @@ import {
   WalletType,
 } from '@mark/core';
 import { getERC20Contract } from './contracts';
-import { decodeEventLog, Hex } from 'viem';
+import { decodeEventLog, Hex, TransactionReceipt } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
   generatePermit2Nonce,
@@ -23,7 +23,8 @@ import { submitTransactionWithLogging } from './transactions';
 import { Logger } from '@mark/logger';
 import { providers } from 'ethers';
 import { getValidatedZodiacConfig, getActualOwner, ZODIAC_ROLE_MODULE_ABI } from './zodiac';
-import { isSvmChain, SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, TOKEN_PROGRAM_ID } from './solana';
+import { isSvmChain, SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, TOKEN_PROGRAM_ID, hexToBase58 } from '@mark/core';
+import { LookupTableNotFoundError } from '@mark/everclear';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -395,8 +396,7 @@ export const sendSvmIntents = async (
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
 
-  const sourceAddress =
-    chainConfig.squadsAddress ?? (await chainService.getProvider(Number(originChainId)).getAddress());
+  const sourceAddress = config.ownSolAddress;
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset));
@@ -404,42 +404,67 @@ export const sendSvmIntents = async (
     throw new Error('Cannot process multiple intents with different input assets');
   }
 
-  try {
-    // Get transaction data for the first intent to use for approval check
-    const firstIntent = intents[0];
+  // assert there is no calldata
+  for (const intent of intents) {
+    // HACK: solana API do not support callData passed in as '0x' and will return an invalid calldata otherwise
+    intent.callData = '';
+  }
 
-    let feeAdapterTxData: TransactionRequest;
-    try {
-      // API call to get txdata for the newOrder call
-      feeAdapterTxData = await everclear.solanaCreateNewIntent(
-        intents as (NewIntentParams | NewIntentWithPermit2Params)[],
-      );
-    } catch (err) {
-      if (err instanceof Error) {
-        if (err.message.includes('create_lookup_table')) {
+  // Get total amount needed across all intents
+  const totalAmount = intents.reduce((sum, intent) => {
+    return BigInt(sum) + BigInt(intent.amount);
+  }, BigInt(0));
+
+  logger.info(`Processing ${intents.length} total intent(s)`, {
+    requestId,
+    invoiceId,
+    count: intents.length,
+    origin: intents[0].origin,
+    token: intents[0].inputAsset,
+    totalAmount: totalAmount.toString(),
+  });
+
+  try {
+    const feeAdapterTxDatas: TransactionRequest[] = [];
+
+    for (const intent of intents) {
+      let feeAdapterTxData: TransactionRequest;
+      try {
+        // API call to get txdata for the newOrder call
+        feeAdapterTxData = await everclear.solanaCreateNewIntent({
+          ...intent,
+          user: sourceAddress,
+        });
+        feeAdapterTxDatas.push(feeAdapterTxData);
+      } catch (err) {
+        if (err instanceof LookupTableNotFoundError) {
           // fallback to createLookupTable and retry
           const [userTokenAccountPublicKey] = await chainService.deriveProgramAddress(
             SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
-            [sourceAddress, TOKEN_PROGRAM_ID, firstIntent.inputAsset],
+            [sourceAddress, TOKEN_PROGRAM_ID, intent.inputAsset],
           );
           // TODO: this should be provided by the API
+          const [programVaultPublicKey] = await chainService.deriveProgramAddress(
+            hexToBase58(chainConfig.deployments?.everclear),
+            ['vault'],
+          );
           const [programVaultAccountPublicKey] = await chainService.deriveProgramAddress(
             SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
-            [chainConfig.deployments?.everclear, TOKEN_PROGRAM_ID, firstIntent.inputAsset],
+            [programVaultPublicKey, TOKEN_PROGRAM_ID, intent.inputAsset],
           );
 
-          feeAdapterTxData = await everclear.solanaCreateLookupTable({
-            inputAsset: firstIntent.inputAsset,
+          const lookupTableTxData = await everclear.solanaCreateLookupTable({
+            inputAsset: intent.inputAsset,
             user: sourceAddress,
             userTokenAccountPublicKey,
             programVaultAccountPublicKey: programVaultAccountPublicKey,
           });
 
           const lookupTableTx = await chainService.submitAndMonitor(originChainId, {
-            to: feeAdapterTxData.to!,
-            value: feeAdapterTxData.value,
-            data: feeAdapterTxData.data,
-            chainId: +originChainId
+            to: lookupTableTxData.to!,
+            value: lookupTableTxData.value,
+            data: lookupTableTxData.data,
+            chainId: +originChainId,
           });
 
           logger.info('solana lookup table transaction sent successfully', {
@@ -448,24 +473,11 @@ export const sendSvmIntents = async (
             txHash: lookupTableTx.transactionHash,
             chainId: intents[0].origin,
           });
+        } else {
+          throw err;
         }
-        throw err;
       }
     }
-
-    // Get total amount needed across all intents
-    const totalAmount = intents.reduce((sum, intent) => {
-      return BigInt(sum) + BigInt(intent.amount);
-    }, BigInt(0));
-
-    logger.info(`Processing ${intents.length} total intent(s)`, {
-      requestId,
-      invoiceId,
-      count: intents.length,
-      origin: intents[0].origin,
-      token: intents[0].inputAsset,
-      totalAmount: totalAmount.toString(),
-    });
 
     // Verify min amounts for all intents before sending the batch
     for (const intent of intents) {
@@ -486,54 +498,39 @@ export const sendSvmIntents = async (
     }
 
     // Submit the batch transaction
-    logger.info('Submitting batch create intent transaction', {
+    logger.info('Submitting create intent transaction', {
       invoiceId,
       requestId,
-      transaction: {
-        to: feeAdapterTxData!.to,
-        value: feeAdapterTxData!.value,
-        data: feeAdapterTxData!.data,
-        from: config.ownAddress,
-        chainId: originChainId,
-      },
+      address: config.ownSolAddress,
+      chainId: originChainId,
+      transactions: feeAdapterTxDatas,
     });
 
-    // Transaction will be newIntent (if single intent) or newOrder
-    let purchaseTxTo = feeAdapterTxData!.to!;
-    let purchaseTxData = feeAdapterTxData!.data as Hex;
-    let purchaseTxValue = (feeAdapterTxData!.value ?? '0').toString();
-    const purchaseTxFrom: string = sourceAddress;
+    const purchaseData: {
+      tx: unknown;
+      intentId: string;
+    }[] = [];
+    for (const feeAdapterTxData of feeAdapterTxDatas) {
+      // Transaction will be newIntent (if single intent) or newOrder
+      let purchaseTxTo = feeAdapterTxData!.to!;
+      let purchaseTxData = feeAdapterTxData!.data as Hex;
+      let purchaseTxValue = (feeAdapterTxData!.value ?? '0').toString();
 
-    // TODO: squads operations if it exists
-    const purchaseTx = await chainService.submitAndMonitor(originChainId, {
-      to: purchaseTxTo,
-      value: purchaseTxValue,
-      data: purchaseTxData,
-      chainId: +originChainId,
-    });
-
-    // Find the IntentAdded event logs
-    // TODO: CPI Logs integration
-    const intentAddedLogs = purchaseTx.logs.filter((l) => l.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0);
-    if (!intentAddedLogs.length) {
-      logger.error('No intents created from purchase transaction', {
-        invoiceId,
-        requestId,
-        transactionHash: purchaseTx.transactionHash,
-        chainId: intents[0].origin,
-        logs: purchaseTx.logs,
+      const purchaseTx = await chainService.submitAndMonitor(originChainId, {
+        to: purchaseTxTo,
+        value: purchaseTxValue,
+        data: purchaseTxData,
+        chainId: +originChainId,
       });
-      return [];
+      console.warn('debug tx', purchaseTx);
+
+      // Find the IntentAdded event logs
+      // TODO: CPI Logs integration
+      purchaseData.push({
+        tx: purchaseTx,
+        intentId: '',
+      });
     }
-    const purchaseIntentIds = intentAddedLogs.map((log) => {
-      const { args } = decodeEventLog({
-        abi: intentAddedAbi,
-        data: log.data as `0x${string}`,
-        topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
-      });
-      return args._intentId;
-    });
-
     // logger.info('Batch create intent transaction sent successfully', {
     //   invoiceId,
     //   requestId,
@@ -549,11 +546,12 @@ export const sendSvmIntents = async (
     // );
 
     // Return results for each intent in the batch
-    return purchaseIntentIds.map((intentId) => ({
-      transactionHash: purchaseTx.transactionHash,
+    return purchaseData.map((d) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      transactionHash: (d.tx as any).transactionHash,
       type: TransactionSubmissionType.Onchain,
       chainId: intents[0].origin,
-      intentId,
+      intentId: d.intentId,
     }));
   } catch (error) {
     logger.error('Error processing batch intents', {

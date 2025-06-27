@@ -14,6 +14,7 @@ import {
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
 import { existsSync, readFileSync } from 'fs';
+import { hexToBase58, isSvmChain } from './solana';
 
 config();
 
@@ -496,16 +497,25 @@ function parseAssets(assets: string): AssetConfiguration[] {
   });
 }
 
+export enum AddressFormat {
+  Hex,
+  Base58,
+}
+
 export const getTokenAddressFromConfig = (
   tickerHash: string,
   domain: string,
   config: MarkConfiguration,
+  format: AddressFormat = AddressFormat.Hex,
 ): string | undefined => {
   const asset = (config.chains[domain]?.assets ?? []).find(
     (a) => a.tickerHash.toLowerCase() === tickerHash.toLowerCase(),
   );
   if (!asset) {
     return undefined;
+  }
+  if (format === AddressFormat.Base58) {
+    return hexToBase58(asset.address);
   }
   return asset.address;
 };

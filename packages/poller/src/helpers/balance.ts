@@ -1,8 +1,16 @@
-import { getDecimalsFromConfig, getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
+import {
+  getDecimalsFromConfig,
+  getTokenAddressFromConfig,
+  MarkConfiguration,
+  isSvmChain,
+  SOLANA_NATIVE_ASSET_ID,
+  AddressFormat,
+} from '@mark/core';
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
+import { ChainService } from '@mark/chainservice';
 
 /**
  * Returns the gas balance of mark on all chains.
@@ -11,24 +19,32 @@ import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
  */
 export const getMarkGasBalances = async (
   config: MarkConfiguration,
+  chainService: ChainService,
   prometheus: PrometheusAdapter,
 ): Promise<Map<string, bigint>> => {
-  const { chains, ownAddress } = config;
+  const { chains, ownAddress, ownSolAddress } = config;
   const gasBalances = new Map<string, bigint>();
 
   await Promise.all(
     Object.keys(chains).map(async (chain) => {
       try {
-        // Get Zodiac configuration for this chain
-        const chainConfig = chains[chain];
-        const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-        const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+        let balance: bigint;
+        if (isSvmChain(chain)) {
+          const balanceStr = await chainService.getBalance(+chain, ownSolAddress, SOLANA_NATIVE_ASSET_ID);
+          balance = BigInt(balanceStr);
+        } else {
+          // EVM chain with zodiac logic
+          // Get Zodiac configuration for this chain
+          const chainConfig = chains[chain];
+          const zodiacConfig = getValidatedZodiacConfig(chainConfig);
+          const actualOwner = getActualOwner(zodiacConfig, ownAddress);
 
-        const client = createClient(chain, config);
-        // NOTE: gas balances are always relevant for the sending EOA only
-        const native = await client.getBalance({ address: actualOwner as `0x${string}` });
-        gasBalances.set(chain, native);
-        prometheus.updateGasBalance(chain, native);
+          const client = createClient(chain, config);
+          // NOTE: gas balances are always relevant for the sending EOA only
+          balance = await client.getBalance({ address: actualOwner as `0x${string}` });
+        }
+        gasBalances.set(chain, balance);
+        prometheus.updateGasBalance(chain, balance);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (e) {
         gasBalances.set(chain, 0n);
@@ -44,9 +60,10 @@ export const getMarkGasBalances = async (
  */
 export const getMarkBalances = async (
   config: MarkConfiguration,
+  chainService: ChainService,
   prometheus: PrometheusAdapter,
 ): Promise<Map<string, Map<string, bigint>>> => {
-  const { chains, ownAddress } = config;
+  const { chains } = config;
   const tickers = getTickers(config);
 
   const balancePromises: Array<{
@@ -57,36 +74,17 @@ export const getMarkBalances = async (
 
   for (const ticker of tickers) {
     for (const domain of Object.keys(chains)) {
-      const tokenAddr = getTokenAddressFromConfig(ticker, domain, config) as `0x${string}`;
+      const isSvm = isSvmChain(domain);
+      const format = isSvm ? AddressFormat.Base58 : AddressFormat.Hex;
+      const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
       const decimals = getDecimalsFromConfig(ticker, domain, config);
 
       if (!tokenAddr || !decimals) {
         continue;
       }
-
-      const balancePromise = (async (): Promise<bigint> => {
-        try {
-          // Get Zodiac configuration for this chain
-          const chainConfig = chains[domain];
-          const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-          const actualOwner = getActualOwner(zodiacConfig, ownAddress);
-
-          const tokenContract = await getERC20Contract(config, domain, tokenAddr);
-          let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
-
-          // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
-          if (decimals !== 18) {
-            const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
-            balance = BigInt(balance) * 10n ** DECIMALS_DIFFERENCE;
-          }
-
-          // Update tracker (this is async but we don't need to wait)
-          prometheus.updateChainBalance(domain, tokenAddr, balance);
-          return balance;
-        } catch {
-          return 0n; // Return 0 balance on error
-        }
-      })();
+      const balancePromise = isSvm
+        ? getSvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
+        : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
 
       balancePromises.push({
         ticker,
@@ -112,6 +110,65 @@ export const getMarkBalances = async (
   }
 
   return markBalances;
+};
+
+const getSvmBalance = async (
+  config: MarkConfiguration,
+  chainService: ChainService,
+  domain: string,
+  tokenAddr: string,
+  decimals: number,
+  prometheus: PrometheusAdapter,
+): Promise<bigint> => {
+  const { ownSolAddress } = config;
+  try {
+    const balanceStr = await chainService.getBalance(+domain, ownSolAddress, tokenAddr);
+    let balance = BigInt(balanceStr);
+
+    // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
+    if (decimals !== 18) {
+      const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
+      balance = balance * 10n ** DECIMALS_DIFFERENCE;
+    }
+
+    // Update tracker (this is async but we don't need to wait)
+    prometheus.updateChainBalance(domain, tokenAddr, balance);
+    return balance;
+  } catch {
+    return 0n; // Return 0 balance on error
+  }
+};
+
+// TODO: make getEvmBalance get from chainService instead of viem call
+const getEvmBalance = async (
+  config: MarkConfiguration,
+  domain: string,
+  tokenAddr: string,
+  decimals: number,
+  prometheus: PrometheusAdapter,
+): Promise<bigint> => {
+  const { chains, ownAddress } = config;
+  const chainConfig = chains[domain];
+  try {
+    // Get Zodiac configuration for this chain
+    const zodiacConfig = getValidatedZodiacConfig(chainConfig);
+    const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+
+    const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
+    let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
+
+    // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
+    if (decimals !== 18) {
+      const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
+      balance = BigInt(balance) * 10n ** DECIMALS_DIFFERENCE;
+    }
+
+    // Update tracker (this is async but we don't need to wait)
+    prometheus.updateChainBalance(domain, tokenAddr, balance);
+    return balance;
+  } catch {
+    return 0n; // Return 0 balance on error
+  }
 };
 
 /**
