@@ -576,7 +576,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       }
 
       // Convert amount from wei to standard unit for Binance API
-      const withdrawAmountFormatted = formatUnits(BigInt(withdrawAmount), decimals);
+      const withdrawAmountFormatted = parseFloat(formatUnits(BigInt(withdrawAmount), decimals)).toFixed(8);
 
       this.logger.debug(`Initiating Binance withdrawal with id ${withdrawOrderId}`, {
         coin: assetMapping.binanceSymbol,
