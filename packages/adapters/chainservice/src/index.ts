@@ -2,7 +2,7 @@ import { providers, Signer, constants } from 'ethers';
 import { ChainService as ChimeraChainService, WriteTransaction } from '@chimera-monorepo/chainservice';
 import { ILogger } from '@mark/logger';
 import { createLoggingContext, ChainConfiguration, TransactionRequest } from '@mark/core';
-import { Address, getAddressEncoder, getProgramDerivedAddress } from '@solana/addresses';
+import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
 export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
@@ -43,16 +43,17 @@ export class ChainService {
       true,
     );
 
-    const addresses = Object.keys(config.chains).map(
-      (chainId) => {
-        return this.txService.getAddress(+chainId as number);
-      }
-    );
-
     this.logger.info('Chain service initialized', {
       supportedChains: Object.keys(config.chains),
-      addresses,
     });
+  }
+
+  async getAddress() {
+    const addresses: { [chain: string]: string } = {};
+    for (const chain in this.config.chains) {
+      addresses[chain] = await this.txService.getAddress(+chain);
+    }
+    return addresses;
   }
 
   async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<providers.TransactionReceipt> {
@@ -70,7 +71,7 @@ export class ChainService {
       domain: parseInt(chainId),
       from: transaction.from ?? undefined,
       // TODO: fill this for tron support
-      funcSig: ''
+      funcSig: '',
     };
     try {
       // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
@@ -121,7 +122,12 @@ export class ChainService {
     const addressEncoder = getAddressEncoder();
     return getProgramDerivedAddress({
       programAddress: programId as Address,
-      seeds: seeds.map((seed) => addressEncoder.encode(seed as Address)),
+      seeds: seeds.map((seed) => {
+        if (isAddress(seed)) {
+          return addressEncoder.encode(seed as Address);
+        }
+        return new Uint8Array(Buffer.from(seed));
+      }),
     });
   }
 }
