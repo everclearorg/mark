@@ -909,7 +909,7 @@ describe('BinanceBridgeAdapter', () => {
           coin: 'ETH',
           network: 'ARBITRUM',
           address: recipient,
-          amount: '1', // Full deposit amount - Binance will deduct fees automatically
+          amount: '1.00000000',
           withdrawOrderId: expect.stringMatching(/^mark-[0-9a-f]{8}-1-42161-[0-9a-zA-Z]{6}$/),
         });
       });
