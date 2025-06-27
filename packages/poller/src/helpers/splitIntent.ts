@@ -1,10 +1,9 @@
-import { getTokenAddressFromConfig, Invoice, NewIntentParams, WalletType } from '@mark/core';
+import { getTokenAddressFromConfig, Invoice, NewIntentParams, WalletType, isSvmChain, AddressFormat } from '@mark/core';
 import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 import { ProcessingContext } from '../init';
 import { getActualOwner, getValidatedZodiacConfig } from './zodiac';
-import { isSvmChain } from './solana';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -239,7 +238,8 @@ export async function calculateSplitIntents(
   // Generate the intent parameters for each allocation
   const intents: NewIntentParams[] = [];
 
-  const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config);
+  const format = isSvmChain(bestAllocation.origin) ? AddressFormat.Base58 : AddressFormat.Hex;
+  const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config, format);
   if (!inputAsset) {
     throw new Error('No input asset found');
   }
@@ -254,12 +254,14 @@ export async function calculateSplitIntents(
     const isSvm = isSvmChain(domain);
     const destinationChainConfig = config.chains[domain];
     if (isSvm) {
-      toAddress = destinationChainConfig.squadsAddress ? destinationChainConfig.squadsAddress : config.ownSolAddress;
+      toAddress = config.ownSolAddress;
     } else {
       // Get Zodiac configuration for the destination chain to determine correct 'to' address
       const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
       toAddress =
-        destinationZodiacConfig.walletType !== WalletType.EOA ? destinationZodiacConfig.safeAddress! : config.ownAddress;
+        destinationZodiacConfig.walletType !== WalletType.EOA
+          ? destinationZodiacConfig.safeAddress!
+          : config.ownAddress;
     }
 
     const params: NewIntentParams = {
@@ -296,10 +298,7 @@ export async function calculateSplitIntents(
         // Check if the target domain is SVM
         const isSVM = isSvmChain(targetDomain);
         if (isSVM) {
-          // Get Squads address for the destination chain to determine correct 'to' address
-          toAddress = destinationChainConfig.squadsAddress
-            ? destinationChainConfig.squadsAddress
-            : config.ownSolAddress;
+          toAddress = config.ownSolAddress;
         } else {
           // Get Zodiac configuration for the destination chain to determine correct 'to' address
           const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
