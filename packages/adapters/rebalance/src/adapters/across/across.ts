@@ -8,10 +8,11 @@ import {
   erc20Abi,
   PublicClient,
   padHex,
+  fallback,
 } from 'viem';
 import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute, axiosGet } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import { BridgeAdapter } from '../../types';
+import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { SuggestedFeesResponse, DepositStatusResponse, WETH_WITHDRAWAL_TOPIC } from './types';
 import { parseFillLogs, getDepositFromLogs } from './utils';
 import { ACROSS_SPOKE_ABI } from './abi';
@@ -55,7 +56,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     recipient: string,
     amount: string,
     route: RebalanceRoute,
-  ): Promise<TransactionRequestBase> {
+  ): Promise<MemoizedTransactionRequest[]> {
     try {
       const feesData = await this.getSuggestedFees(route, amount);
 
@@ -68,28 +69,65 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         throw new Error('Could not find matching destination asset');
       }
 
-      return {
-        to: feesData.spokePoolAddress,
-        data: encodeFunctionData({
-          abi: ACROSS_SPOKE_ABI,
-          functionName: 'depositV3',
-          args: [
-            sender, // depositor
-            recipient, // recipient
-            route.asset, // inputToken
-            outputToken.address, // outputToken
-            BigInt(amount), // inputAmount
-            feesData.outputAmount, // outputAmount
-            BigInt(route.destination), // destinationChainId
-            zeroAddress, // exclusiveRelayer - must be ZeroAddress per Zodiac permissions
-            feesData.timestamp, // quoteTimestamp
-            feesData.fillDeadline, // fillDeadline
-            BigInt(0), // exclusivityDeadline - must be 0 per Zodiac permissions
-            '0x', // message - must be "0x" per Zodiac permissions
-          ],
-        }),
-        value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
+      let approvalTx: MemoizedTransactionRequest | undefined;
+
+      // Get the approval transaction if required
+      if (route.asset.toLowerCase() !== zeroAddress.toLowerCase()) {
+        const providers = this.chains[route.origin.toString()]?.providers ?? [];
+        if (!providers.length) {
+          throw new Error(`No providers found for origin chain ${route.origin}`);
+        }
+        const client = createPublicClient({ transport: fallback(providers.map((p: string) => http(p))) });
+        const allowance = await client.readContract({
+          address: route.asset as `0x${string}`,
+          abi: erc20Abi,
+          functionName: 'allowance',
+          args: [sender as `0x${string}`, feesData.spokePoolAddress as `0x${string}`],
+        });
+
+        if (allowance < BigInt(amount)) {
+          approvalTx = {
+            memo: RebalanceTransactionMemo.Approval,
+            transaction: {
+              to: route.asset as `0x${string}`,
+              data: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: 'approve',
+                args: [feesData.spokePoolAddress as `0x${string}`, BigInt(amount)],
+              }),
+              value: BigInt(0),
+            },
+          };
+        }
+      }
+
+      const bridgeTx: MemoizedTransactionRequest = {
+        memo: RebalanceTransactionMemo.Rebalance,
+        transaction: {
+          to: feesData.spokePoolAddress,
+          data: encodeFunctionData({
+            abi: ACROSS_SPOKE_ABI,
+            functionName: 'depositV3',
+            args: [
+              sender, // depositor
+              recipient, // recipient
+              route.asset, // inputToken
+              outputToken.address, // outputToken
+              BigInt(amount), // inputAmount
+              feesData.outputAmount, // outputAmount
+              BigInt(route.destination), // destinationChainId
+              zeroAddress, // exclusiveRelayer - must be ZeroAddress per Zodiac permissions
+              feesData.timestamp, // quoteTimestamp
+              feesData.fillDeadline, // fillDeadline
+              BigInt(0), // exclusivityDeadline - must be 0 per Zodiac permissions
+              '0x', // message - must be "0x" per Zodiac permissions
+            ],
+          }),
+          value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
+        },
       };
+
+      return [approvalTx, bridgeTx].filter((x) => !!x);
     } catch (error) {
       this.handleError(error, 'prepare Across bridge transaction', { amount, route });
     }
@@ -98,7 +136,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
   async destinationCallback(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
-  ): Promise<TransactionRequestBase | void> {
+  ): Promise<MemoizedTransactionRequest | void> {
     try {
       const statusData = await this.getDepositStatus(route, originTransaction);
       if (!statusData || statusData.status !== 'filled' || !statusData.fillTx) {
@@ -131,7 +169,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         originTxHash: originTransaction.transactionHash,
       });
 
-      return callbackTx;
+      return { transaction: callbackTx, memo: RebalanceTransactionMemo.Wrap };
     } catch (error) {
       this.logger.error('destinationCallback failed', {
         error: jsonifyError(error),

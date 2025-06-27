@@ -19,7 +19,6 @@ export const getMarkGasBalances = async (
   await Promise.all(
     Object.keys(chains).map(async (chain) => {
       try {
-        // Get Zodiac configuration for this chain
         const client = createClient(chain, config);
         // NOTE: gas balances are always relevant for the sending EOA only
         const native = await client.getBalance({ address: ownAddress as `0x${string}` });
