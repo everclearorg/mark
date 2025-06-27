@@ -14,7 +14,7 @@ import {
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
 import { existsSync, readFileSync } from 'fs';
-import { hexToBase58, isSvmChain } from './solana';
+import { hexToBase58 } from './solana';
 
 config();
 
