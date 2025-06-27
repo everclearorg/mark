@@ -1,4 +1,4 @@
-FROM public.ecr.aws/lambda/nodejs:18 AS node
+FROM public.ecr.aws/lambda/nodejs:20 AS node
 
 # ----------------------------------------
 # Build stage

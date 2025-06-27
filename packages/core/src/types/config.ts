@@ -33,6 +33,7 @@ export interface ChainConfiguration {
   zodiacRoleModuleAddress?: string;
   zodiacRoleKey?: string;
   gnosisSafeAddress?: string;
+  squadsAddress?: string;
 }
 
 export interface HubConfig {
@@ -90,6 +91,7 @@ export interface MarkConfiguration extends RebalanceConfig {
   };
   redis: RedisConfig;
   ownAddress: string;
+  ownSolAddress: string;
   stage: Stage;
   environment: Environment;
   logLevel: LogLevel;

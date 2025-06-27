@@ -14,6 +14,7 @@ import {
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
 import { existsSync, readFileSync } from 'fs';
+import { hexToBase58 } from './solana';
 
 config();
 
@@ -316,6 +317,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
       ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
+      ownSolAddress: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
       supportedSettlementDomains:
         configJson.supportedSettlementDomains ??
         parseSettlementDomains(await requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
@@ -477,6 +479,9 @@ export const parseChainConfigurations = async (
     const gnosisSafeAddress =
       configJson?.chains?.[chainId]?.gnosisSafeAddress ?? (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
 
+    const squadsAddress =
+      configJson?.chains?.[chainId]?.squadsAddress ?? (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
+
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
@@ -490,6 +495,7 @@ export const parseChainConfigurations = async (
       zodiacRoleModuleAddress,
       zodiacRoleKey,
       gnosisSafeAddress,
+      squadsAddress,
     };
   }
 
@@ -537,16 +543,25 @@ function parseAssets(assets: string): AssetConfiguration[] {
   });
 }
 
+export enum AddressFormat {
+  Hex,
+  Base58,
+}
+
 export const getTokenAddressFromConfig = (
   tickerHash: string,
   domain: string,
   config: MarkConfiguration,
+  format: AddressFormat = AddressFormat.Hex,
 ): string | undefined => {
   const asset = (config.chains[domain]?.assets ?? []).find(
     (a) => a.tickerHash.toLowerCase() === tickerHash.toLowerCase(),
   );
   if (!asset) {
     return undefined;
+  }
+  if (format === AddressFormat.Base58) {
+    return hexToBase58(asset.address);
   }
   return asset.address;
 };
