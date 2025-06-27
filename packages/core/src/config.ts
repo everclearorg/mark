@@ -144,7 +144,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         maximum: '15000000000000000000',
         reserve: '10000000000000000000',
         slippage: 150,
-        preferences: [SupportedBridge.Binance, SupportedBridge.Across],
+        preferences: [SupportedBridge.Across],
       },
       // zksync    ethereum    WETH    10000000000000000000 20
       {
