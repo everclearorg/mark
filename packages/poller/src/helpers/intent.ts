@@ -7,7 +7,7 @@ import {
   WalletType,
 } from '@mark/core';
 import { getERC20Contract } from './contracts';
-import { decodeEventLog, Hex, TransactionReceipt } from 'viem';
+import { decodeEventLog, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
   generatePermit2Nonce,
@@ -22,7 +22,7 @@ import { checkAndApproveERC20 } from './erc20';
 import { submitTransactionWithLogging } from './transactions';
 import { Logger } from '@mark/logger';
 import { providers } from 'ethers';
-import { getValidatedZodiacConfig, getActualOwner, ZODIAC_ROLE_MODULE_ABI } from './zodiac';
+import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import { isSvmChain, SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, TOKEN_PROGRAM_ID, hexToBase58 } from '@mark/core';
 import { LookupTableNotFoundError } from '@mark/everclear';
 
