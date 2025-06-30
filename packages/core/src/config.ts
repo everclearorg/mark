@@ -88,6 +88,15 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
 export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
   return {
     routes: [
+      // bnb    ethereum    WETH    5000000000000000000 30
+      {
+        origin: 56,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '5000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
       // optimism    ethereum    WETH    10000000000000000000 30
       {
         origin: 10,
@@ -141,8 +150,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         origin: 130,
         destination: 1,
         asset: '0x4200000000000000000000000000000000000006',
-        maximum: '15000000000000000000',
-        reserve: '10000000000000000000',
+        maximum: '35000000000000000000',
+        reserve: '30000000000000000000',
         slippage: 150,
         preferences: [SupportedBridge.Across],
       },
@@ -154,6 +163,43 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         maximum: '10000000000000000000',
         slippage: 20,
         preferences: [SupportedBridge.Across],
+      },
+      // optimism ethereum    USDC    20000000000000000000000 140
+      {
+        origin: 10,
+        destination: 1,
+        asset: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+        maximum: '20000000000000000000000',
+        reserve: '10000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
+      // optimism ethereum    USDT    5000000000000000000000 140
+      {
+        origin: 10,
+        destination: 1,
+        asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+        maximum: '5000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
+      // bnb ethereum    USDC    5000000000000000000000 140
+      {
+        origin: 56,
+        destination: 1,
+        asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+        maximum: '5000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
+      // bnb ethereum    USDT    10000000000000000000000 140
+      {
+        origin: 10,
+        destination: 1,
+        asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+        maximum: '5000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // base ethereum    USDC    10000000000000000000000 140
       {
