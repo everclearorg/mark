@@ -134,6 +134,7 @@ const mockConfig: MarkConfiguration = {
     port: 6379,
   },
   ownAddress: '0x1234567890123456789012345678901234567890',
+  ownSolAddress: '11111111111111111111111111111111',
   stage: 'development',
   environment: 'mainnet',
   logLevel: 'debug',
