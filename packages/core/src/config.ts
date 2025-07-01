@@ -111,7 +111,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       {
         origin: 42161,
         destination: 1,
-        asset: '0x4200000000000000000000000000000000000006',
+        asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
         maximum: '55000000000000000000',
         reserve: '50000000000000000000',
         slippage: 30,
