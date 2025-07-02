@@ -5,8 +5,8 @@ FROM public.ecr.aws/lambda/nodejs:20 AS node
 # ----------------------------------------
 
 FROM node AS build
-RUN yum update -y
-RUN yum install -y git
+RUN dnf update -y
+RUN dnf install -y git
 
 RUN npm install --global yarn@1.22.19 node-gyp
 
