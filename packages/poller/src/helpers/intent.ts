@@ -218,6 +218,18 @@ export const sendEvmIntents = async (
       const walletConfig = getValidatedZodiacConfig(config.chains[destination], logger, { invoiceId, requestId });
       switch (walletConfig.walletType) {
         case WalletType.EOA:
+          // Sanity checks for intents towards SVM
+          if (isSvmChain(destination)) {
+            if (intent.to !== config.ownSolAddress) {
+              throw new Error(
+                `intent.to (${intent.to}) must be ownSolAddress (${config.ownSolAddress}) for destination ${destination}`,
+              );
+            }
+            if (intent.destinations.length !== 1) {
+              throw new Error(`intent.destination must be length 1 for intents towards SVM`);
+            }
+            break;
+          }
           if (intent.to.toLowerCase() !== config.ownAddress.toLowerCase()) {
             throw new Error(
               `intent.to (${intent.to}) must be ownAddress (${config.ownAddress}) for destination ${destination}`,
