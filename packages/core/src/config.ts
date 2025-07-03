@@ -97,23 +97,23 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
-      // optimism    ethereum    WETH    10000000000000000000 30
+      // optimism    ethereum    WETH
       {
         origin: 10,
         destination: 1,
         asset: '0x4200000000000000000000000000000000000006',
-        maximum: '15000000000000000000',
-        reserve: '10000000000000000000',
+        maximum: '55000000000000000000',
+        reserve: '50000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
-      // arbitrum    ethereum    WETH    50000000000000000000 30
+      // arbitrum    ethereum    WETH
       {
         origin: 42161,
         destination: 1,
-        asset: '0x4200000000000000000000000000000000000006',
-        maximum: '55000000000000000000',
-        reserve: '50000000000000000000',
+        asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+        maximum: '105000000000000000000',
+        reserve: '100000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
@@ -211,13 +211,23 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
-      // arbitrum ethereum    USDC    10000000000000000000000 140
+      // arbitrum ethereum    USDC
       {
         origin: 42161,
         destination: 1,
-        asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-        maximum: '15000000000000000000000',
-        reserve: '10000000000000000000000',
+        asset: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+        maximum: '55000000000000000000000',
+        reserve: '50000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
+      },
+      // arbitrum ethereum    USDT
+      {
+        origin: 42161,
+        destination: 1,
+        asset: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+        maximum: '55000000000000000000000',
+        reserve: '50000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
