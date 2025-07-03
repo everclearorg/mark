@@ -61,7 +61,14 @@ export function groupInvoicesByTicker(context: ProcessingContext, invoices: Invo
   const invoiceQueues = new Map<string, Invoice[]>();
 
   invoices
-    .sort((a, b) => a.hub_invoice_enqueued_timestamp - b.hub_invoice_enqueued_timestamp)
+    .sort((a, b) => {
+      // Primary sort by entry_epoch
+      if (a.entry_epoch !== b.entry_epoch) {
+        return a.entry_epoch - b.entry_epoch;
+      }
+      // Secondary sort for deterministic ordering
+      return a.hub_invoice_enqueued_timestamp - b.hub_invoice_enqueued_timestamp;
+    })
     .forEach((invoice) => {
       if (!invoiceQueues.has(invoice.ticker_hash)) {
         invoiceQueues.set(invoice.ticker_hash, []);
@@ -132,6 +139,9 @@ export async function processTickerGroup(
   let remainingBalances = new Map(group.remainingBalances);
   let remainingCustodied = new Map(group.remainingCustodied);
 
+  // Incremental minAmounts for all invoices in this ticker group
+  const incrementalAmounts = new Map<string, bigint>();
+
   for (const invoice of toEvaluate) {
     start = getTimeSeconds();
     const invoiceId = invoice.intent_id;
@@ -178,16 +188,22 @@ export async function processTickerGroup(
         });
         return _minAmounts;
       } catch (e) {
-        logger.error('Failed to get min amounts for invoice', {
+        logger.error('Failed to get min amounts for invoice, skipping', {
           requestId,
           invoiceId,
           invoice,
           error: jsonifyError(e),
           duration: getTimeSeconds() - start,
         });
-        return Object.fromEntries(invoice.destinations.map((d) => [d, '0']));
+        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, labels);
+        return null;
       }
     })();
+
+    // Skip this invoice if we couldn't get min amounts
+    if (!minAmounts) {
+      continue;
+    }
 
     // Set for ticker-destination pair lookup
     const existingDestinations = new Set(
@@ -227,23 +243,56 @@ export async function processTickerGroup(
       ? { [batchedGroup.origin]: filteredMinAmounts[batchedGroup.origin] || '0' }
       : filteredMinAmounts;
 
-    // Skip if we already have a chosen origin and insufficient balance for this invoice
+    let incrementalAmount = BigInt('0');
     if (batchedGroup.origin) {
-      const requiredAmount = BigInt(filteredMinAmounts[batchedGroup.origin] || '0');
-      const remainingBalance = remainingBalances.get(invoice.ticker_hash)?.get(batchedGroup.origin) || BigInt('0');
+      const currentCumulative = BigInt(filteredMinAmounts[batchedGroup.origin] || '0');
 
-      if (remainingBalance < requiredAmount) {
-        logger.info('Chosen origin has insufficient balance for current invoice, skipping', {
+      // Amount from previously batched invoices
+      const previousCumulative = batchedGroup.invoicesWithIntents.reduce(
+        (sum, item) => sum + incrementalAmounts.get(item.invoice.intent_id)!,
+        BigInt('0'),
+      );
+
+      incrementalAmount = currentCumulative - previousCumulative;
+
+      // Validate that cumulative amounts are monotonic (increasing)
+      if (incrementalAmount < BigInt('0')) {
+        logger.warn('API returned non-monotonic cumulative amount, skipping invoice', {
           requestId,
           invoiceId,
           ticker: invoice.ticker_hash,
           origin: batchedGroup.origin,
-          requiredAmount: requiredAmount.toString(),
-          remainingBalance: remainingBalance.toString(),
+          currentCumulative: currentCumulative.toString(),
+          previousCumulative: previousCumulative.toString(),
+          calculatedIncremental: incrementalAmount.toString(),
           duration: getTimeSeconds() - start,
         });
         continue;
       }
+
+      incrementalAmounts.set(invoiceId, incrementalAmount);
+
+      // Check if adding this invoice would exceed available balance
+      const availableBalance = remainingBalances.get(invoice.ticker_hash)?.get(batchedGroup.origin) || BigInt('0');
+      const currentBatchTotal = previousCumulative;
+
+      if (currentBatchTotal + incrementalAmount > availableBalance) {
+        logger.info('Adding invoice to batch would exceed balance', {
+          requestId,
+          invoiceId,
+          ticker: invoice.ticker_hash,
+          origin: batchedGroup.origin,
+          incrementalAmount: incrementalAmount.toString(),
+          currentBatchTotal: currentBatchTotal.toString(),
+          availableBalance: availableBalance.toString(),
+          duration: getTimeSeconds() - start,
+        });
+        continue;
+      }
+    } else {
+      // First invoice in batch, incremental is the full minAmount
+      incrementalAmount = BigInt(Object.values(filteredMinAmounts)[0] || '0');
+      incrementalAmounts.set(invoiceId, incrementalAmount);
     }
 
     const { intents, originDomain, totalAllocated, remainder } = await calculateSplitIntents(
@@ -293,11 +342,6 @@ export async function processTickerGroup(
         totalAllocated,
       });
       batchedGroup.totalIntents += intents.length;
-
-      // Update remaining balance for the chosen origin
-      const currentBalance = remainingBalances.get(invoice.ticker_hash)?.get(originDomain) || BigInt('0');
-      const requiredAmount = BigInt(minAmounts[originDomain]);
-      remainingBalances.get(invoice.ticker_hash)?.set(originDomain, currentBalance - requiredAmount);
 
       // Update remaining custodied - handle allocated intents (up to totalAllocated)
       let runningSum = BigInt('0');
@@ -357,6 +401,7 @@ export async function processTickerGroup(
   }
 
   if (batchedGroup.totalIntents === 0) {
+    incrementalAmounts.clear();
     return {
       purchases: [],
       remainingBalances: group.remainingBalances,
@@ -473,9 +518,11 @@ export async function processTickerGroup(
       duration: getTimeSeconds() - start,
     });
 
+    incrementalAmounts.clear();
     throw error;
   }
 
+  incrementalAmounts.clear();
   return {
     purchases,
     remainingBalances,
