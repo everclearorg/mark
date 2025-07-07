@@ -115,7 +115,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         maximum: '105000000000000000000',
         reserve: '100000000000000000000',
         slippage: 30,
-        preferences: [SupportedBridge.Binance],
+        preferences: [SupportedBridge.Across],
       },
       // base    ethereum    WETH    20000000000000000000 30
       {
@@ -220,7 +220,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         maximum: '55000000000000000000000',
         reserve: '50000000000000000000000',
         slippage: 30,
-        preferences: [SupportedBridge.Binance],
+        preferences: [SupportedBridge.Across],
       },
       // arbitrum ethereum    USDT
       {
@@ -230,7 +230,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         maximum: '55000000000000000000000',
         reserve: '50000000000000000000000',
         slippage: 30,
-        preferences: [SupportedBridge.Binance],
+        preferences: [SupportedBridge.Across],
       },
       // linea ethereum    USDC    10000000000000000000000 140
       {
