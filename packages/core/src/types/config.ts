@@ -54,6 +54,7 @@ export type Stage = 'development' | 'staging' | 'production';
 export enum SupportedBridge {
   Across = 'across',
   Binance = 'binance',
+  Near = 'near',
 }
 
 export interface RebalanceRoute {
