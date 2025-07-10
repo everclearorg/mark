@@ -1,11 +1,13 @@
 import { BridgeAdapter } from '../types';
 import { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';
 import { BinanceBridgeAdapter, BINANCE_BASE_URL } from './binance';
+import { NearBridgeAdapter } from './near';
 import { SupportedBridge, MarkConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 
 export { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';
+export { NearBridgeAdapter } from './near';
 export { BinanceBridgeAdapter, BINANCE_BASE_URL } from './binance';
 
 export class RebalanceAdapter {
@@ -37,6 +39,11 @@ export class RebalanceAdapter {
           this.config.chains,
           this.logger,
           this.rebalanceCache,
+        );
+      case SupportedBridge.Near:
+        return new NearBridgeAdapter(
+          this.config.chains,
+          this.logger,
         );
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
