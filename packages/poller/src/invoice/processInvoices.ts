@@ -52,37 +52,33 @@ interface BatchedTickerGroup {
 /**
  * Groups invoices by ticker hash
  * @param context - The processing context
- * @param invoices - The invoices to group
- * @returns A map of ticker hash to invoices, sorted by oldest first
+ * @param invoices - The invoices to group (already ordered by API in FIFO order)
+ * @returns A map of ticker hash to invoices, preserving API order
  */
 export function groupInvoicesByTicker(context: ProcessingContext, invoices: Invoice[]): Map<string, Invoice[]> {
   const { prometheus } = context;
 
   const invoiceQueues = new Map<string, Invoice[]>();
 
-  invoices
-    .sort((a, b) => {
-      // Primary sort by entry_epoch
-      if (a.entry_epoch !== b.entry_epoch) {
-        return a.entry_epoch - b.entry_epoch;
-      }
-      // Secondary sort for deterministic ordering
-      return a.hub_invoice_enqueued_timestamp - b.hub_invoice_enqueued_timestamp;
-    })
-    .forEach((invoice) => {
-      if (!invoiceQueues.has(invoice.ticker_hash)) {
-        invoiceQueues.set(invoice.ticker_hash, []);
-      }
-      invoiceQueues.get(invoice.ticker_hash)!.push(invoice);
+  invoices.forEach((invoice) => {
+    if (!invoiceQueues.has(invoice.ticker_hash)) {
+      invoiceQueues.set(invoice.ticker_hash, []);
+    }
+    invoiceQueues.get(invoice.ticker_hash)!.push(invoice);
 
-      // Record invoice as seen
-      const labels: InvoiceLabels = {
-        origin: invoice.origin,
-        id: invoice.intent_id,
-        ticker: invoice.ticker_hash,
-      };
-      prometheus.recordPossibleInvoice(labels);
-    });
+    // Record invoice as seen
+    const labels: InvoiceLabels = {
+      origin: invoice.origin,
+      id: invoice.intent_id,
+      ticker: invoice.ticker_hash,
+    };
+    prometheus.recordPossibleInvoice(labels);
+  });
+
+  // Sort invoices within each group by age (oldest to newest)
+  invoiceQueues.forEach((invoiceGroup) => {
+    invoiceGroup.sort((a, b) => a.hub_invoice_enqueued_timestamp - b.hub_invoice_enqueued_timestamp);
+  });
 
   return invoiceQueues;
 }
@@ -290,9 +286,8 @@ export async function processTickerGroup(
         continue;
       }
     } else {
-      // First invoice in batch, incremental is the full minAmount
-      incrementalAmount = BigInt(Object.values(filteredMinAmounts)[0] || '0');
-      incrementalAmounts.set(invoiceId, incrementalAmount);
+      // First invoice in batch, incremental will be set after calculateSplitIntents determines the actual origin
+      incrementalAmount = BigInt('0');
     }
 
     const { intents, originDomain, totalAllocated, remainder } = await calculateSplitIntents(
@@ -327,6 +322,9 @@ export async function processTickerGroup(
       // First purchased invoice in the group sets the origin for all subsequent invoices
       if (!batchedGroup.origin) {
         batchedGroup.origin = originDomain;
+        // Origin determined for batch; set the incremental amount for the first invoice
+        incrementalAmount = BigInt(filteredMinAmounts[originDomain] || '0');
+        incrementalAmounts.set(invoiceId, incrementalAmount);
         logger.info('Selected origin for ticker group', {
           requestId,
           ticker: group.ticker,
