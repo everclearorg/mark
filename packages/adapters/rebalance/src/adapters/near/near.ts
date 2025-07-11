@@ -45,21 +45,21 @@ export class NearBridgeAdapter implements BridgeAdapter {
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
-      const { quote } = await this.getSuggestedFees(route, amount);
+      const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, amount);
       return quote.amountOutFormatted;
     } catch (error) {
-      this.handleError(error, 'get received amount from Across', { amount, route });
+      this.handleError(error, 'get received amount from Near', { amount, route });
     }
   }
 
   async send(
-    sender: string,
+    refundTo: string,
     recipient: string,
     amount: string,
     route: RebalanceRoute,
   ): Promise<MemoizedTransactionRequest[]> {
     try {
-      const quote = await this.getSuggestedFees(route, amount);
+      const quote = await this.getSuggestedFees(route, refundTo, recipient, amount);
 
       const depositTx = this.buildDepositTx(route.asset, quote.quote);
       return [depositTx].filter((x) => !!x);
@@ -404,7 +404,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
 
     if (decodedEvent.tokenAddress.toLowerCase() !== destinationWeth.address.toLowerCase()) {
       this.logger.debug('Output token is not weth', { route, event: decodedEvent });
-      return { needsCallback: false };
+      return { needsCallback: false, amount: outputAmount, recipient };
     }
 
     return {
@@ -436,7 +436,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
     return balance;
   }
 
-  protected async getSuggestedFees(route: RebalanceRoute, amount: string): Promise<QuoteResponse> {
+  protected async getSuggestedFees(route: RebalanceRoute, refundTo: string, receiver: string, amount: string): Promise<QuoteResponse> {
     const { inputAssetIdentifier, outputAssetIdentifier } = this.getIdentifiers(route);
 
     const quote = await OneClickService.getQuote({
@@ -447,9 +447,9 @@ export class NearBridgeAdapter implements BridgeAdapter {
       originAsset: inputAssetIdentifier,
       destinationAsset: outputAssetIdentifier,
       amount,
-      refundTo: EOA_ADDRESS,
+      refundTo: refundTo,
       refundType: QuoteRequest.refundType.ORIGIN_CHAIN,
-      recipient: EOA_ADDRESS,
+      recipient: receiver,
       recipientType: QuoteRequest.recipientType.DESTINATION_CHAIN,
       deadline: new Date(Date.now() + 5 * 60000).toISOString(), // 5 minutes
     });
@@ -503,8 +503,15 @@ export class NearBridgeAdapter implements BridgeAdapter {
   }
 
   private getIdentifiers(route: RebalanceRoute): { inputAssetIdentifier: string; outputAssetIdentifier: string } {
+    // First, get the asset configuration to find the symbol
+    const originAsset = this.getAsset(route.asset, route.origin);
+    if (!originAsset) {
+      throw new Error('Could not find matching input asset');
+    }
+
+    // Use the symbol to look up the Near identifier
     const inputAssetIdentifier =
-      NEAR_IDENTIFIER_MAP[route.asset as keyof typeof NEAR_IDENTIFIER_MAP][
+      NEAR_IDENTIFIER_MAP[originAsset.symbol as keyof typeof NEAR_IDENTIFIER_MAP]?.[
         route.origin as keyof (typeof NEAR_IDENTIFIER_MAP)[keyof typeof NEAR_IDENTIFIER_MAP]
       ];
     if (!inputAssetIdentifier) {
@@ -513,15 +520,15 @@ export class NearBridgeAdapter implements BridgeAdapter {
 
     const outputAsset = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
     if (!outputAsset) {
-      throw new Error('Could not find matching output asset');
+      throw new Error(`Could not find matching output asset: ${route.asset} for ${route.destination}`);
     }
-
+    
     const outputAssetIdentifier =
-      NEAR_IDENTIFIER_MAP[outputAsset.symbol as keyof typeof NEAR_IDENTIFIER_MAP][
+      NEAR_IDENTIFIER_MAP[outputAsset.symbol as keyof typeof NEAR_IDENTIFIER_MAP]?.[
         route.destination as keyof (typeof NEAR_IDENTIFIER_MAP)[keyof typeof NEAR_IDENTIFIER_MAP]
       ];
     if (!outputAssetIdentifier) {
-      throw new Error('Could not find matching output identifier');
+      throw new Error(`Could not find matching output identifier: ${outputAsset.symbol} for ${route.destination}`);
     }
 
     return { inputAssetIdentifier, outputAssetIdentifier };
