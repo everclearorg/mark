@@ -147,10 +147,13 @@ export function parseDepositLogs(
   }>,
 ): DepositLog | undefined {
     const logs = fillReceipt.logs;
+    
+    // Handle case where logs might be empty or not have expected structure
     const blockData = {
-    depositTxHash: logs[0]!.blockHash!,
-    depositTxBlock: logs[0]!.blockNumber!,
-  };
+      depositTxHash: logs.length > 0 && logs[0]?.blockHash ? logs[0].blockHash : fillReceipt.blockHash,
+      depositTxBlock: logs.length > 0 && logs[0]?.blockNumber ? logs[0].blockNumber : fillReceipt.blockNumber,
+    };
+    
   // Parse Transfer Logs
   const parsedTransferLog = parseEventLogs({
     abi: erc20Abi,
@@ -169,7 +172,7 @@ export function parseDepositLogs(
   if (transferLog) {
     return {
       ...blockData,
-      tokenAddress: logs[0].address,
+      tokenAddress: logs[0]?.address || zeroAddress,
       receiverAddress: transferLog.args.to,
       amount: transferLog.args.value,
     };
