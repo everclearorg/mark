@@ -290,9 +290,8 @@ export async function processTickerGroup(
         continue;
       }
     } else {
-      // First invoice in batch, incremental is the full minAmount
-      incrementalAmount = BigInt(Object.values(filteredMinAmounts)[0] || '0');
-      incrementalAmounts.set(invoiceId, incrementalAmount);
+      // First invoice in batch, incremental will be set after calculateSplitIntents determines the actual origin
+      incrementalAmount = BigInt('0');
     }
 
     const { intents, originDomain, totalAllocated, remainder } = await calculateSplitIntents(
@@ -327,6 +326,9 @@ export async function processTickerGroup(
       // First purchased invoice in the group sets the origin for all subsequent invoices
       if (!batchedGroup.origin) {
         batchedGroup.origin = originDomain;
+        // Origin determined for batch; set the incremental amount for the first invoice
+        incrementalAmount = BigInt(filteredMinAmounts[originDomain] || '0');
+        incrementalAmounts.set(invoiceId, incrementalAmount);
         logger.info('Selected origin for ticker group', {
           requestId,
           ticker: group.ticker,
