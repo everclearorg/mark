@@ -75,6 +75,11 @@ export function groupInvoicesByTicker(context: ProcessingContext, invoices: Invo
     prometheus.recordPossibleInvoice(labels);
   });
 
+  // Sort invoices within each group by age (oldest to newest)
+  invoiceQueues.forEach((invoiceGroup) => {
+    invoiceGroup.sort((a, b) => a.hub_invoice_enqueued_timestamp - b.hub_invoice_enqueued_timestamp);
+  });
+
   return invoiceQueues;
 }
 
