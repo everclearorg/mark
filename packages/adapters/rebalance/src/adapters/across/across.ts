@@ -149,9 +149,17 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       }
 
       const originAsset = this.getAsset(route.asset, route.origin);
-      this.validateAsset(originAsset, 'WETH', 'origin asset');
+      if (!originAsset) {
+        throw new Error('Could not find origin asset');
+      }
 
-      this.logger.debug('Found origin asset', { route, originAsset });
+      // Only WETH transfers need wrapping callbacks
+      if (originAsset.symbol.toLowerCase() !== 'weth') {
+        this.logger.debug('Asset is not WETH, no callback needed', { route, originAsset });
+        return;
+      }
+
+      this.logger.debug('Found WETH origin asset', { route, originAsset });
       const destinationWETH = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
       if (!destinationWETH) {
         throw new Error('Failed to find destination WETH');
@@ -372,7 +380,12 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     if (!originAsset) {
       throw new Error('Could not find origin asset');
     }
-    this.validateAsset(originAsset, 'WETH', 'origin asset');
+
+    // Only WETH transfers need callbacks for wrapping
+    if (originAsset.symbol.toLowerCase() !== 'weth') {
+      this.logger.debug('Asset is not WETH, no callback needed', { route, originAsset });
+      return { needsCallback: false };
+    }
 
     const destinationNative = this.findMatchingDestinationAsset(zeroAddress, 1, route.destination);
     if (!destinationNative || destinationNative.symbol !== 'ETH') {
@@ -480,15 +493,5 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     throw new Error(`Failed to ${context}: ${(error as any)?.message ?? ''}`);
-  }
-
-  // Helper for asset validation
-  protected validateAsset(asset: AssetConfiguration | undefined, expectedSymbol: string, context: string): void {
-    if (!asset) {
-      throw new Error(`Missing asset configs for ${context}`);
-    }
-    if (asset.symbol.toLowerCase() !== expectedSymbol.toLowerCase()) {
-      throw new Error(`Expected ${expectedSymbol}, but found ${asset.symbol}`);
-    }
   }
 }
