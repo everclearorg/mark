@@ -44,9 +44,6 @@ class TestAcrossBridgeAdapter extends AcrossBridgeAdapter {
         return super.handleError(error, context, metadata);
     }
 
-    public validateAsset(asset: AssetConfiguration | undefined, expectedSymbol: string, context: string): void {
-        return super.validateAsset(asset, expectedSymbol, context);
-    }
 
     public findMatchingDestinationAsset(
         asset: string,
@@ -867,21 +864,6 @@ describe('AcrossBridgeAdapter', () => {
         });
     });
 
-    describe('validateAsset', () => {
-        it('should throw error if asset is undefined', () => {
-            expect(() => adapter.validateAsset(undefined, 'WETH', 'test')).toThrow('Missing asset configs for test');
-        });
-
-        it('should throw error if asset symbol does not match', () => {
-            const asset = mockAssets['USDC'];
-            expect(() => adapter.validateAsset(asset, 'WETH', 'test')).toThrow('Expected WETH, but found USDC');
-        });
-
-        it('should not throw error if asset symbol matches', () => {
-            const asset = mockAssets['WETH'];
-            expect(() => adapter.validateAsset(asset, 'WETH', 'test')).not.toThrow();
-        });
-    });
 
     describe('findMatchingDestinationAsset', () => {
         it('should find matching asset in destination chain', () => {
