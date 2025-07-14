@@ -166,6 +166,12 @@ export const NEAR_IDENTIFIER_MAP = {
   wBTC: {
     1313161554: 'nep141:2260fac5e5542a773aa44fbcfedf7c193bc2c599.factory.bridge.near',
   },
+  WETH: {
+    1: 'nep141:eth.omft.near',
+    8453: 'nep141:base.omft.near',
+    42161: 'nep141:arb.omft.near',
+    1313161554: 'nep141:eth.bridge.near',
+  },
   wNEAR: {
     1313161554: 'nep141:wrap.near',
   },

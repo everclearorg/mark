@@ -426,6 +426,41 @@ describe('NearBridgeAdapter', () => {
             expect(result[0].transaction.value).toBe(BigInt(mockQuoteResponse.quote.amountIn)); // Use quote amount, not original amount
             expect(result[0].transaction.data).toEqual('0x');
         });
+
+        it('should return unwrapTx and depositTx (ETH) when WETH is the deposit asset', async () => {
+            // Mock route with WETH as the deposit asset
+            const route: RebalanceRoute = {
+                asset: mockAssets['WETH'].address,
+                origin: 1,
+                destination: 42161,
+            };
+
+            (OneClickService.getQuote as jest.Mock).mockResolvedValueOnce(mockQuoteResponse as never);
+            (encodeFunctionData as jest.Mock)
+                .mockReturnValueOnce('0xwithdraw') // WETH withdraw call
+                .mockReturnValueOnce('0x'); // ETH deposit (no data)
+
+            const amount = '1000000000000000000'; // 1 WETH
+
+            const senderAddress = '0x' + 'sender'.padStart(40, '0');
+            const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
+            const result = await adapter.send(senderAddress, recipientAddress, amount, route);
+
+            // Should return 2 transactions: unwrap + deposit
+            expect(result.length).toBe(2);
+
+            // First: Unwrap WETH
+            expect(result[0].memo).toBe(RebalanceTransactionMemo.Unwrap);
+            expect(result[0].transaction.to).toBe(mockAssets['WETH'].address);
+            expect(result[0].transaction.value).toBe(BigInt(0));
+            expect(result[0].transaction.data).toBe('0xwithdraw');
+
+            // Second: Deposit ETH (native)
+            expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
+            expect(result[1].transaction.to).toBe(mockQuoteResponse.quote.depositAddress);
+            expect(result[1].transaction.value).toBe(BigInt(mockQuoteResponse.quote.amountIn));
+            expect(result[1].transaction.data).toBe('0x');
+        });
     });
 
     // describe('readyOnDestination', () => {
