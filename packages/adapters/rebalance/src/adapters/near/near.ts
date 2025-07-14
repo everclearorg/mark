@@ -23,6 +23,24 @@ import { DepositStatusResponse } from './types';
 import { EOA_ADDRESS, NEAR_IDENTIFIER_MAP } from './constants';
 import { getDepositFromLogs, parseDepositLogs } from './utils';
 
+const wethAbi = [
+    ...erc20Abi,
+    {
+      type: 'function',
+      name: 'withdraw',
+      stateMutability: 'nonpayable',
+      inputs: [{ name: 'wad', type: 'uint256' }],
+      outputs: [],
+    },
+    {
+      type: 'function',
+      name: 'deposit',
+      stateMutability: 'payable',
+      inputs: [],
+      outputs: [],
+    },
+  ] as const;
+
 // Structure to hold callback info
 interface CallbackInfo {
   needsCallback: boolean;
@@ -60,9 +78,39 @@ export class NearBridgeAdapter implements BridgeAdapter {
   ): Promise<MemoizedTransactionRequest[]> {
     try {
       const quote = await this.getSuggestedFees(route, refundTo, recipient, amount);
-
-      const depositTx = this.buildDepositTx(route.asset, quote.quote);
-      return [depositTx].filter((x) => !!x);
+      
+      // Check if we need to unwrap WETH to ETH before bridging
+      const originAsset = this.getAsset(route.asset, route.origin);
+      
+      // If origin is WETH then we need to unwrap
+      const needsUnwrap = originAsset?.symbol === 'WETH';
+      
+      if (needsUnwrap) {
+        this.logger.debug('Preparing WETH unwrap transaction before Near bridge deposit', {
+          wethAddress: route.asset,
+          amount,
+        });
+        
+        const unwrapTx = {
+          memo: RebalanceTransactionMemo.Unwrap,
+          transaction: {
+            to: route.asset as `0x${string}`,
+            data: encodeFunctionData({
+              abi: wethAbi,
+              functionName: 'withdraw',
+              args: [BigInt(amount)],
+            }) as `0x${string}`,
+            value: BigInt(0),
+          },
+        };
+        
+        const depositTx = this.buildDepositTx(zeroAddress, quote.quote);
+        return [unwrapTx, depositTx].filter((x) => !!x);
+      } else {
+        // For all other cases, just build the deposit transaction
+        const depositTx = this.buildDepositTx(route.asset, quote.quote);
+        return [depositTx].filter((x) => !!x);
+      }
     } catch (err) {
       this.logger.error('OneClick send failed', { error: err });
       throw err;
