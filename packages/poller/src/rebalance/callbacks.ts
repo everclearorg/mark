@@ -42,6 +42,9 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         logger.info('Action is not ready to execute callback', { ...logContext, receipt, required });
         continue;
       }
+
+      // Funds are ready
+      logger.info('Funds received on destination', { ...logContext });
     } catch (e: unknown) {
       logger.error('Failed to determine if destination action required', { ...logContext, error: jsonifyError(e) });
       // Move on to the next action to avoid blocking
