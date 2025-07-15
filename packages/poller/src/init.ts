@@ -147,7 +147,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       statusCode: 200,
       body: JSON.stringify({
         invoiceResult: invoiceResult ?? {},
-        rebalanceResult: rebalanceOperations ?? [],
+        rebalanceOperations: rebalanceOperations ?? [],
       }),
     };
   } catch (_error: unknown) {
