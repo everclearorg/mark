@@ -165,6 +165,16 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 20,
         preferences: [SupportedBridge.Across],
       },
+      // scroll    ethereum    WETH    10000000000000000000 20
+      {
+        origin: 324,
+        destination: 1,
+        asset: '0x5300000000000000000000000000000000000004',
+        maximum: '10000000000000000000',
+        reserve: '5000000000000000000',
+        slippage: 20,
+        preferences: [SupportedBridge.Binance],
+      },
       // optimism ethereum    USDC    20000000000000000000000 140
       {
         origin: 10,
