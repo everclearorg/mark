@@ -150,7 +150,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           receivedAmount: receivedAmountStr,
         });
       } catch (quoteError) {
-        logger.error('Failed to get quote from adapter', {
+        logger.error('Failed to get quote from adapter, trying next preference', {
           requestId,
           route,
           bridgeType,
@@ -171,7 +171,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
       const actualSlippageBps = ((amountToBridge - receivedAmount) * scaleFactor) / amountToBridge;
 
       if (receivedAmount < minimumAcceptableAmount) {
-        logger.warn('Quote does not meet slippage requirements', {
+        logger.warn('Quote does not meet slippage requirements, trying next preference', {
           requestId,
           route,
           bridgeType,
