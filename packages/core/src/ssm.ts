@@ -7,7 +7,12 @@ import { SSMClient, DescribeParametersCommand, GetParameterCommand } from '@aws-
  */
 export const getSsmParameter = async (name: string): Promise<string | undefined> => {
   try {
-    const client = new SSMClient();
+    let client: SSMClient;
+    try {
+      client = new SSMClient();
+    } catch {
+      return undefined;
+    }
 
     // Check if the parameter exists.
     const describeParametersCommand = new DescribeParametersCommand({
