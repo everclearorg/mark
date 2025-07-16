@@ -205,7 +205,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       },
       // bnb ethereum    USDT    10000000000000000000000 140
       {
-        origin: 10,
+        origin: 56,
         destination: 1,
         asset: '0x55d398326f99059fF775485246999027B3197955',
         maximum: '5000000000000000000000',
