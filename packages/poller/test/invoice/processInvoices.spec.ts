@@ -783,8 +783,8 @@ describe('Invoice Processing', () => {
       // Verify the correct purchases were created
       expect(result.purchases).to.deep.equal([expectedPurchase]);
 
-      // Verify remaining balances unchanged during batch processing
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('1000000000000000000'));
+      // Verify remaining balances were updated correctly
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
     it('should process multiple invoices in a ticker group correctly', async () => {
@@ -799,7 +799,7 @@ describe('Invoice Processing', () => {
       });
       
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
-        minAmounts: { '8453': '2000000000000000000' }, // Second invoice: 1+1=2 WETH cumulative
+        minAmounts: { '8453': '1000000000000000000' }, // Second invoice: 1 WETH independent
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
@@ -889,8 +889,8 @@ describe('Invoice Processing', () => {
       // Verify the correct purchases were created
       expect(result.purchases).to.deep.equal(expectedPurchases);
 
-      // Verify remaining balances unchanged during batch processing
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('2000000000000000000'));
+      // Verify remaining balances were updated correctly (2 ETH - 1 ETH - 1 ETH = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
     it('should process split purchases for a single invoice correctly', async () => {
@@ -994,8 +994,8 @@ describe('Invoice Processing', () => {
       // Verify the correct split intent purchases were created
       expect(result.purchases).to.deep.equal(expectedPurchases);
 
-      // Verify remaining balances unchanged during batch processing
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('2000000000000000000'));
+      // Verify remaining balances were updated correctly (2 ETH - 2 ETH = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
     it('should filter out invalid invoices correctly', async () => {
@@ -1442,8 +1442,8 @@ describe('Invoice Processing', () => {
         expect(purchase.purchase.params.origin).to.equal('8453');
       });
 
-      // Verify remaining balances unchanged during batch processing
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('3000000000000000000'));
+      // Verify remaining balances were updated correctly (3 ETH - 1 ETH - 1 ETH - 1 ETH = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
     it('should skip invoices with insufficient balance on chosen origin but continue processing others', async () => {
@@ -1471,7 +1471,7 @@ describe('Invoice Processing', () => {
       });
 
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
-        minAmounts: { '8453': '3000000000000000000' }, // Second invoice: 1+2=3 WETH cumulative
+        minAmounts: { '8453': '2000000000000000000' }, // Second invoice: 2 WETH independent
         invoiceAmount: '2000000000000000000',
         amountAfterDiscount: '2000000000000000000',
         discountBps: '0',
@@ -1479,7 +1479,7 @@ describe('Invoice Processing', () => {
       });
 
       mockDeps.everclear.getMinAmounts.onThirdCall().resolves({
-        minAmounts: { '8453': '1500000000000000000' }, // Third invoice: 1+0.5=1.5 WETH cumulative
+        minAmounts: { '8453': '500000000000000000' }, // Third invoice: 0.5 WETH independent
         invoiceAmount: '500000000000000000',
         amountAfterDiscount: '500000000000000000',
         discountBps: '0',
@@ -1538,8 +1538,8 @@ describe('Invoice Processing', () => {
       expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
       expect(result.purchases[1].target.intent_id).to.equal(invoice3.intent_id);
 
-      // Verify the remaining balance unchanged during batch processing (no per-invoice decrements)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('1500000000000000000')); // Original balance unchanged
+      // Verify the remaining balance was updated correctly (1.5 ETH - 1 ETH - 0.5 ETH = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
     it('should handle getMinAmounts failure gracefully', async () => {
@@ -1860,16 +1860,16 @@ describe('Invoice Processing', () => {
         }
       });
 
-      // Second call to getMinAmounts (for second invoice) - cumulative amount
+      // Second call to getMinAmounts (for second invoice) - independent amount
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
-        minAmounts: { '8453': '5000000000000000000' }, // 5 WETH cumulative for both invoices
+        minAmounts: { '8453': '1000000000000000000' }, // 1 WETH independent for second invoice
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
         custodiedAmounts: {
-          '1': '0', // 3 WETH used up from first invoice purchase
-          '10': '1000000000000000000', // 1 WETH used up from first invoice purchase
-          '8453': '5000000000000000000'
+          '1': '0', // No custodied assets for second invoice
+          '10': '1000000000000000000', // 1 WETH available for second invoice
+          '8453': '1000000000000000000'
         }
       });
 
@@ -1963,8 +1963,8 @@ describe('Invoice Processing', () => {
       expect(result.purchases[1].target.intent_id).to.equal(invoice1.intent_id);
       expect(result.purchases[2].target.intent_id).to.equal(invoice2.intent_id);
 
-      // Verify remaining balances unchanged during batch processing
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('5000000000000000000'));
+      // Verify remaining balances were updated correctly (5 ETH - 4 ETH - 1 ETH = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
 
       // Verify remaining custodied balances were updated correctly
       const remainingCustodied = result.remainingCustodied.get('0xticker1');
@@ -2052,8 +2052,8 @@ describe('Invoice Processing', () => {
       expect(result.purchases[0].target.intent_id).to.equal(invoice.intent_id);
       expect(result.purchases[1].target.intent_id).to.equal(invoice.intent_id);
 
-      // Verify remaining balances unchanged during batch processing
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('6000000000000000000'));
+      // Verify remaining balances were updated correctly (6 ETH - 6 ETH = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
 
       // Verify remaining custodied balances were updated correctly
       const remainingCustodied = result.remainingCustodied.get('0xticker1');
@@ -2105,7 +2105,7 @@ describe('Invoice Processing', () => {
       });
 
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
-        minAmounts: { '8453': '5000000000000000000' }, // Second invoice: 2+3=5 WETH cumulative
+        minAmounts: { '8453': '3000000000000000000' }, // Second invoice: 3 WETH independent
         invoiceAmount: '3000000000000000000',
         amountAfterDiscount: '3000000000000000000',
         discountBps: '0',
@@ -2165,9 +2165,9 @@ describe('Invoice Processing', () => {
       expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
       expect(result.purchases[1].target.intent_id).to.equal(invoice2.intent_id);
 
-      // Verify remaining balances unchanged during batch processing (new incremental logic)
+      // Verify remaining balances were updated correctly (10 ETH - 2 ETH - 3 ETH = 5 ETH)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(
-        BigInt('10000000000000000000')
+        BigInt('5000000000000000000')
       );
 
       // Verify custodied balances remain unchanged (no custodied assets used)

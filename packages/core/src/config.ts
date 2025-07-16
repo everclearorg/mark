@@ -175,13 +175,13 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 20,
         preferences: [SupportedBridge.Binance],
       },
-      // optimism ethereum    USDC    20000000000000000000000 140
+      // optimism ethereum USDC
       {
         origin: 10,
         destination: 1,
         asset: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-        maximum: '105000000000000000000000',
-        reserve: '100000000000000000000000',
+        maximum: '65000000000000000000000',
+        reserve: '60000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
@@ -205,7 +205,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       },
       // bnb ethereum    USDT    10000000000000000000000 140
       {
-        origin: 10,
+        origin: 56,
         destination: 1,
         asset: '0x55d398326f99059fF775485246999027B3197955',
         maximum: '5000000000000000000000',
@@ -217,8 +217,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         origin: 8453,
         destination: 1,
         asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-        maximum: '105000000000000000000000',
-        reserve: '100000000000000000000000',
+        maximum: '65000000000000000000000',
+        reserve: '60000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
@@ -227,8 +227,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         origin: 42161,
         destination: 1,
         asset: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-        maximum: '105000000000000000000000',
-        reserve: '100000000000000000000000',
+        maximum: '65000000000000000000000',
+        reserve: '60000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
