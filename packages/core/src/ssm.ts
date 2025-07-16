@@ -8,16 +8,27 @@ const getSSMClient = (): SSMClient | null => {
   if (clientInitializationFailed) {
     return null;
   }
-  
+
   if (!ssmClient) {
+    // Check if AWS region is available before attempting to initialize
+    if (!process.env.AWS_REGION && !process.env.AWS_DEFAULT_REGION) {
+      console.warn('AWS region not configured, using environment variable fallbacks');
+      clientInitializationFailed = true;
+      return null;
+    }
+
     try {
       ssmClient = new SSMClient();
-    } catch {
+    } catch (error) {
+      console.warn(
+        'SSM client initialization failed, using environment variable fallbacks:',
+        error instanceof Error ? error.message : error,
+      );
       clientInitializationFailed = true;
       return null;
     }
   }
-  
+
   return ssmClient;
 };
 
@@ -43,16 +54,16 @@ export const getSsmParameter = async (name: string): Promise<string | undefined>
         },
       ],
     });
-    
+
     let describeParametersResponse;
     try {
       describeParametersResponse = await client.send(describeParametersCommand);
     } catch (error) {
       // Handle region-related and other AWS configuration errors
-      console.warn(`Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
+      console.warn(`⚠️  Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
       return undefined;
     }
-    
+
     if (!describeParametersResponse.Parameters?.length) {
       return undefined;
     }
@@ -62,20 +73,20 @@ export const getSsmParameter = async (name: string): Promise<string | undefined>
       Name: name,
       WithDecryption: true,
     });
-    
+
     let getParameterResponse;
     try {
       getParameterResponse = await client.send(getParameterCommand);
     } catch (error) {
       // Handle region-related and other AWS configuration errors
-      console.warn(`Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
+      console.warn(`⚠️  Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
       return undefined;
     }
 
     return getParameterResponse.Parameter?.Value;
   } catch (error) {
     // Fallback catch for any unexpected errors
-    console.warn(`Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
+    console.warn(`⚠️  Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
     return undefined;
   }
 };
