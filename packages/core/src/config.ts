@@ -311,7 +311,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     });
 
     const config: MarkConfiguration = {
-      pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
+      pushGatewayUrl: configJson.pushGatewayUrl ?? (await fromEnv('PUSH_GATEWAY_URL')),
       web3SignerUrl: configJson.web3SignerUrl ?? (await requireEnv('SIGNER_URL')),
       everclearApiUrl: configJson.everclearApiUrl ?? (await fromEnv('EVERCLEAR_API_URL')) ?? apiUrl,
       relayer: {
@@ -319,8 +319,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         key: configJson?.relayer?.key ?? (await fromEnv('RELAYER_API_KEY')) ?? undefined,
       },
       binance: {
-        apiKey: configJson.binance_api_key ?? (await fromEnv('BINANCE_API_KEY', true)) ?? undefined,
-        apiSecret: configJson.binance_api_secret ?? (await fromEnv('BINANCE_API_SECRET', true)) ?? undefined,
+        apiKey: configJson.binance_api_key ?? (await requireEnv('BINANCE_API_KEY', true)) ?? undefined,
+        apiSecret: configJson.binance_api_secret ?? (await requireEnv('BINANCE_API_SECRET', true)) ?? undefined,
       },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
@@ -384,6 +384,13 @@ export const fromEnv = async (name: string, checkSsm = false): Promise<string | 
   let value = undefined;
   if (checkSsm) {
     value = await getSsmParameter(name);
+    if (value !== undefined) {
+      console.log(`Using SSM parameter for ${name}`);
+    } else if (process.env[name]) {
+      console.log(`SSM parameter '${name}' not available, falling back to environment variable`);
+    } else {
+      console.log(`Neither SSM parameter nor environment variable found for ${name}`);
+    }
   }
   return value ?? process.env[name];
 };
