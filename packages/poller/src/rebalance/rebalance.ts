@@ -9,12 +9,14 @@ import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
 
-export async function rebalanceInventory(context: ProcessingContext): Promise<void> {
+export async function rebalanceInventory(context: ProcessingContext): Promise<RebalanceAction[]> {
   const { logger, requestId, rebalanceCache, config, chainService, rebalance } = context;
+  const rebalanceOperations: RebalanceAction[] = [];
+
   const isPaused = await rebalanceCache.isPaused();
   if (isPaused) {
     logger.warn('Rebalance loop is paused', { requestId });
-    return;
+    return rebalanceOperations;
   }
 
   logger.info('Starting to rebalance inventory', { requestId });
@@ -97,7 +99,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         requestId,
         route,
         currentBalance: currentBalance.toString(),
-        maximum: route.maximum,
+        maximumThreshold: maximumBalance.toString(),
       });
       continue; // Skip to next route
     }
@@ -116,20 +118,23 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
     }
 
     // --- Bridge Preference Loop ---
-    logger.info('Attempting to bridge amount', { requestId, route, currentBalance });
     let rebalanceSuccessful = false;
     for (const bridgeType of route.preferences) {
-      logger.info('Trying bridge for route', {
+      logger.info('Attempting to bridge', {
         requestId,
         route,
         bridgeType,
-        currentBalance: currentBalance.toString(),
+        amountToBridge: amountToBridge.toString(),
       });
 
       // Get Adapter (Synchronous)
       const adapter = rebalance.getAdapter(bridgeType);
       if (!adapter) {
-        logger.warn('Adapter not found for bridge type, trying next preference', { requestId, bridgeType, route });
+        logger.warn('Adapter not found for bridge type, trying next preference', {
+          requestId,
+          route,
+          bridgeType,
+        });
         continue; // Skip to next bridge preference
       }
 
@@ -137,7 +142,13 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       let receivedAmountStr: string;
       try {
         receivedAmountStr = await adapter.getReceivedAmount(amountToBridge.toString(), route);
-        logger.info('Received quote from adapter', { requestId, route, bridgeType, receivedAmountStr });
+        logger.info('Received quote from adapter', {
+          requestId,
+          route,
+          bridgeType,
+          amountToBridge: amountToBridge.toString(),
+          receivedAmount: receivedAmountStr,
+        });
       } catch (quoteError) {
         logger.error('Failed to get quote from adapter, trying next preference', {
           requestId,
@@ -157,24 +168,33 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
       const minimumAcceptableAmount =
         amountToBridge - (amountToBridge * slippageScaled) / (scaleFactor * dbpsDenominator);
 
+      const actualSlippageBps = ((amountToBridge - receivedAmount) * scaleFactor) / amountToBridge;
+
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Quote does not meet slippage requirements, trying next preference', {
           requestId,
           route,
           bridgeType,
+          amountToBridge: amountToBridge.toString(),
           receivedAmount: receivedAmount.toString(),
           minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-          amountToBridge: amountToBridge.toString(),
-          slippageBPS: route.slippage.toString(),
+          slippageBps: route.slippage.toString(),
+          actualSlippageBps: actualSlippageBps.toString(),
+          configuredSlippageBPS: route.slippage.toString(),
         });
         continue; // Skip to next bridge preference
       }
+
       logger.info('Quote meets slippage requirements', {
         requestId,
         route,
         bridgeType,
+        amountToBridge: amountToBridge.toString(),
         receivedAmount: receivedAmount.toString(),
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
+        slippageBps: route.slippage.toString(),
+        actualSlippageBps: actualSlippageBps.toString(),
+        configuredSlippageBPS: route.slippage.toString(),
       });
 
       // Step 3: Get Bridge Transaction Requests
@@ -188,6 +208,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           route,
           bridgeType,
           bridgeTxRequests,
+          amountToBridge: amountToBridge,
+          receiveAmount: receivedAmount,
+          transactionCount: bridgeTxRequests.length,
           sender,
           recipient,
           useOriginZodiac: originZodiacConfig.walletType,
@@ -201,6 +224,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           requestId,
           route,
           bridgeType,
+          amountToBridge: amountToBridge,
           error: jsonifyError(sendError),
         });
         continue; // Skip to next bridge preference
@@ -213,12 +237,15 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
         let transactionHash: string = '';
         for (const { transaction, memo } of bridgeTxRequests) {
           idx++;
-          logger.info('Submitting rebalance transaction bundle', {
-            transaction,
-            memo,
+          logger.info('Submitting bridge transaction', {
             requestId,
             route,
             bridgeType,
+            transactionIndex: idx,
+            totalTransactions: bridgeTxRequests.length,
+            transaction,
+            memo,
+            amountToBridge: amountToBridge,
             useZodiac: originZodiacConfig.walletType,
           });
           const result = await submitTransactionWithLogging({
@@ -240,8 +267,11 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             requestId,
             route,
             bridgeType,
+            transactionIndex: idx,
+            totalTransactions: bridgeTxRequests.length,
             transactionHash: result.hash,
             memo,
+            amountToBridge: amountToBridge,
             useZodiac: originZodiacConfig.walletType,
           });
 
@@ -268,8 +298,15 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             requestId,
             route,
             bridgeType,
+            originTxHash: transactionHash,
+            amountToBridge: amountToBridge,
+            receiveAmount: receivedAmount,
             action: rebalanceAction,
           });
+
+          // Add for tracking
+          rebalanceOperations.push(rebalanceAction);
+
           rebalanceSuccessful = true;
           // If we got here, the rebalance for this route was successful with this bridge.
           break; // Exit the bridge preference loop for this route
@@ -279,10 +316,15 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
             route,
             bridgeType,
             transactionHash,
+            amountToBridge: amountToBridge,
+            receiveAmount: receivedAmount,
             error: jsonifyError(cacheError),
             rebalanceAction,
-            transaction: bridgeTxRequests[idx],
           });
+
+          // Add for tracking, even if caching failed
+          rebalanceOperations.push(rebalanceAction);
+
           // Consider this a success for the route as funds were moved. Exit bridge loop.
           rebalanceSuccessful = true;
           break; // Exit the bridge preference loop for this route
@@ -293,6 +335,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
           route,
           bridgeType,
           transaction: bridgeTxRequests[idx],
+          transactionIndex: idx,
+          amountToBridge: amountToBridge,
           error: jsonifyError(sendError),
         });
         continue; // Skip to next bridge preference
@@ -301,11 +345,22 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
 
     // Log overall route success/failure
     if (rebalanceSuccessful) {
-      logger.info('Rebalance successful for route', { requestId, route });
+      logger.info('Rebalance successful for route', {
+        requestId,
+        route,
+        finalBalance: currentBalance,
+        amountToBridge: amountToBridge,
+      });
     } else {
-      logger.warn('Failed to rebalance route with any preferred bridge', { requestId, route });
+      logger.warn('Failed to rebalance route with any preferred bridge', {
+        requestId,
+        route,
+        amountToBridge: amountToBridge,
+        bridgesAttempted: route.preferences,
+      });
     }
   } // End of route loop
 
   logger.info('Completed rebalancing inventory', { requestId });
+  return rebalanceOperations;
 }
