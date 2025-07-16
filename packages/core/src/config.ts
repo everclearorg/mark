@@ -92,7 +92,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       {
         origin: 56,
         destination: 1,
-        asset: '0x4200000000000000000000000000000000000006',
+        asset: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
         maximum: '5000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
@@ -198,7 +198,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       {
         origin: 56,
         destination: 1,
-        asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+        asset: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
         maximum: '5000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
@@ -207,7 +207,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       {
         origin: 10,
         destination: 1,
-        asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+        asset: '0x55d398326f99059fF775485246999027B3197955',
         maximum: '5000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
@@ -273,7 +273,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       {
         origin: 57073,
         destination: 1,
-        asset: '0x4200000000000000000000000000000000000006',
+        asset: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
         maximum: '7000000000000000000',
         slippage: 20,
         preferences: [SupportedBridge.Across],
