@@ -78,7 +78,7 @@ describe('CctpBridgeAdapter', () => {
   it('destinationCallback returns mint tx', async () => {
     const spy = jest.spyOn(adapter as any, 'extractMessageHash').mockResolvedValue('0xhash');
     const tx = await adapter.destinationCallback(route, { logs: [] });
-    expect(tx && tx.memo).toBe(RebalanceTransactionMemo.Wrap);
+    expect(tx && tx.memo).toBe(RebalanceTransactionMemo.Mint);
     expect(tx && tx.transaction.data).toBe('0xdata');
     spy.mockRestore();
   });
@@ -112,7 +112,10 @@ describe('CctpBridgeAdapter', () => {
   });
 
   it('extractMessageHash returns a hash if log is found', async () => {
-    const logs = [{ topics: ['0x6d4ce63c7d2e1e2e2e2c1e6b2a4e8b3689464d8e9d8c2c1e6b2a4e8b3689464d'], data: '0xdata' }];
+    const logs = [{
+      topics: ['0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036'],
+      data: '0xdata'
+    }];
     const result = await (adapter as any).extractMessageHash({ logs });
     expect(result).toBe('0xtopic');
   });
