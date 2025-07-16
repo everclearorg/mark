@@ -1,5 +1,26 @@
 import { SSMClient, DescribeParametersCommand, GetParameterCommand } from '@aws-sdk/client-ssm';
 
+// Singleton client to prevent race conditions
+let ssmClient: SSMClient | null = null;
+let clientInitializationFailed = false;
+
+const getSSMClient = (): SSMClient | null => {
+  if (clientInitializationFailed) {
+    return null;
+  }
+  
+  if (!ssmClient) {
+    try {
+      ssmClient = new SSMClient();
+    } catch {
+      clientInitializationFailed = true;
+      return null;
+    }
+  }
+  
+  return ssmClient;
+};
+
 /**
  * Gets a parameter from AWS Systems Manager Parameter Store
  * @param name - The name of the parameter
@@ -7,10 +28,8 @@ import { SSMClient, DescribeParametersCommand, GetParameterCommand } from '@aws-
  */
 export const getSsmParameter = async (name: string): Promise<string | undefined> => {
   try {
-    let client: SSMClient;
-    try {
-      client = new SSMClient();
-    } catch {
+    const client = getSSMClient();
+    if (!client) {
       return undefined;
     }
 
@@ -24,9 +43,18 @@ export const getSsmParameter = async (name: string): Promise<string | undefined>
         },
       ],
     });
-    const describeParametersResponse = await client.send(describeParametersCommand);
+    
+    let describeParametersResponse;
+    try {
+      describeParametersResponse = await client.send(describeParametersCommand);
+    } catch (error) {
+      // Handle region-related and other AWS configuration errors
+      console.warn(`Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
+      return undefined;
+    }
+    
     if (!describeParametersResponse.Parameters?.length) {
-      return;
+      return undefined;
     }
 
     // Get the parameter value.
@@ -34,11 +62,19 @@ export const getSsmParameter = async (name: string): Promise<string | undefined>
       Name: name,
       WithDecryption: true,
     });
-    const getParameterResponse = await client.send(getParameterCommand);
+    
+    let getParameterResponse;
+    try {
+      getParameterResponse = await client.send(getParameterCommand);
+    } catch (error) {
+      // Handle region-related and other AWS configuration errors
+      console.warn(`Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
+      return undefined;
+    }
 
     return getParameterResponse.Parameter?.Value;
   } catch (error) {
-    // Log the error but don't fail - allows fallback to environment variables
+    // Fallback catch for any unexpected errors
     console.warn(`Failed to fetch SSM parameter '${name}':`, error instanceof Error ? error.message : error);
     return undefined;
   }
