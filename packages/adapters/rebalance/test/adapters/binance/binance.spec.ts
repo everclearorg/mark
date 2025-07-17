@@ -76,6 +76,14 @@ const mockAssets: Record<string, AssetConfiguration> = {
     isNative: false,
     balanceThreshold: '0',
   },
+  USDT: {
+    address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    symbol: 'USDT',
+    decimals: 6,
+    tickerHash: '0xUSDTHash',
+    isNative: false,
+    balanceThreshold: '0',
+  },
 };
 
 const mockChains: Record<string, any> = {
@@ -139,7 +147,7 @@ const mockConfig: MarkConfiguration = {
   logLevel: 'debug',
   supportedSettlementDomains: [1, 42161],
   forceOldestInvoice: false,
-  supportedAssets: ['ETH', 'WETH', 'USDC'],
+  supportedAssets: ['ETH', 'WETH', 'USDC', 'USDT'],
   chains: mockChains,
   hub: {
     domain: '25327',
@@ -313,7 +321,7 @@ describe('BinanceBridgeAdapter', () => {
       'test-api-key',
       'test-api-secret',
       'https://api.binance.com',
-      mockChains,
+      mockConfig,
       mockLogger,
       mockRebalanceCache,
     );
@@ -353,7 +361,7 @@ describe('BinanceBridgeAdapter', () => {
           '',
           'test-api-secret',
           'https://api.binance.com',
-          mockChains,
+          mockConfig,
           mockLogger,
           mockRebalanceCache,
         );
@@ -380,7 +388,7 @@ describe('BinanceBridgeAdapter', () => {
           'test-api-key',
           '',
           'https://api.binance.com',
-          mockChains,
+          mockConfig,
           mockLogger,
           mockRebalanceCache,
         );
