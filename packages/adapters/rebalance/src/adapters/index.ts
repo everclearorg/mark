@@ -36,7 +36,7 @@ export class RebalanceAdapter {
           this.config.binance.apiKey,
           this.config.binance.apiSecret,
           process.env.BINANCE_BASE_URL || BINANCE_BASE_URL,
-          this.config.chains,
+          this.config,
           this.logger,
           this.rebalanceCache,
         );
