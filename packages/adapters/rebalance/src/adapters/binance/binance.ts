@@ -7,6 +7,7 @@ import {
   erc20Abi,
   PublicClient,
   formatUnits,
+  parseUnits,
 } from 'viem';
 import { SupportedBridge, RebalanceRoute, MarkConfiguration, getDecimalsFromConfig } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
@@ -82,6 +83,85 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       return undefined;
     }
     return assetConfig.tickerHash;
+  }
+
+  /**
+   * Get withdrawal precision for an asset from Binance API
+   * Returns the number of decimal places required for withdrawal amounts
+   */
+  private getWithdrawalPrecision(coin: string, network: string): number {
+    // These values were fetched from the API; since they don't change much we just use static value here
+    const precisionMap: Record<string, Record<string, number>> = {
+      USDT: {
+        ETH: 6,
+        BSC: 6,
+        ARBITRUM: 6,
+        OPTIMISM: 6,
+        POLYGON: 6,
+        BASE: 6,
+        SCROLL: 6,
+        ZKSYNCERA: 6,
+      },
+      USDC: {
+        ETH: 6,
+        BSC: 6,
+        ARBITRUM: 6,
+        OPTIMISM: 6,
+        POLYGON: 6,
+        BASE: 6,
+        SCROLL: 6,
+      },
+      ETH: {
+        ETH: 8,
+        BSC: 8,
+        ARBITRUM: 8,
+        OPTIMISM: 8,
+        POLYGON: 8,
+        BASE: 8,
+        SCROLL: 8,
+      },
+      BTC: {
+        BTC: 8,
+      },
+    };
+
+    const coinPrecision = precisionMap[coin];
+    if (coinPrecision && coinPrecision[network]) {
+      return coinPrecision[network];
+    }
+
+    // Default fallback to 8 decimal places
+    this.logger.warn(`No precision mapping found for ${coin} on ${network}, using default precision`);
+    return 8;
+  }
+
+  /**
+   * Round up amount to specified precision to ensure we don't have insufficient balance
+   * @param amount - The amount to round
+   * @param precision - Number of decimal places
+   * @returns Rounded amount as string
+   */
+  private roundUpToPrecision(amount: number, precision: number): string {
+    const multiplier = Math.pow(10, precision);
+    const rounded = Math.ceil(amount * multiplier) / multiplier;
+    return rounded.toFixed(precision);
+  }
+
+  /**
+   * Calculate the rounded-up amount in wei for deposits to match withdrawal rounding
+   * @param amount - Original amount in wei
+   * @param coin - Binance coin symbol
+   * @param network - Binance network
+   * @param decimals - Token decimals
+   * @returns Rounded-up amount in wei
+   */
+  private getRoundedDepositAmount(amount: string, coin: string, network: string, decimals: number): string {
+    const amountInUnits = parseFloat(formatUnits(BigInt(amount), decimals));
+    const precision = this.getWithdrawalPrecision(coin, network);
+    const roundedAmount = this.roundUpToPrecision(amountInUnits, precision);
+    const roundedAmountInWei = parseUnits(roundedAmount, decimals);
+
+    return roundedAmountInWei.toString();
   }
 
   type(): SupportedBridge {
@@ -199,11 +279,20 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       const depositInfo = await this.client.getDepositAddress(assetMapping.binanceSymbol, assetMapping.network);
 
+      // Calculate rounded deposit amount to match withdrawal rounding
+      const roundedAmount = this.getRoundedDepositAmount(
+        amount,
+        assetMapping.binanceSymbol,
+        assetMapping.network,
+        decimals,
+      );
+
       this.logger.debug('Binance deposit address obtained', {
         coin: assetMapping.binanceSymbol,
         network: assetMapping.network,
         address: depositInfo.address,
         amount,
+        roundedAmount,
         recipient,
       });
 
@@ -222,7 +311,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: wethAbi,
               functionName: 'withdraw',
-              args: [BigInt(amount)],
+              args: [BigInt(roundedAmount)],
             }) as `0x${string}`,
             value: BigInt(0),
           },
@@ -231,7 +320,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
           memo: RebalanceTransactionMemo.Rebalance,
           transaction: {
             to: depositInfo.address as `0x${string}`,
-            value: BigInt(amount),
+            value: BigInt(roundedAmount),
             data: '0x' as `0x${string}`,
           },
         };
@@ -242,13 +331,13 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
           memo: RebalanceTransactionMemo.Rebalance,
           transaction: {
             to: route.asset === zeroAddress ? (depositInfo.address as `0x${string}`) : (route.asset as `0x${string}`),
-            value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
+            value: route.asset === zeroAddress ? BigInt(roundedAmount) : BigInt(0),
             data:
               route.asset !== zeroAddress
                 ? encodeFunctionData({
                     abi: erc20Abi,
                     functionName: 'transfer',
-                    args: [depositInfo.address as `0x${string}`, BigInt(amount)],
+                    args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
                   })
                 : '0x',
           },
@@ -605,7 +694,10 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       }
 
       // Convert amount from wei to standard unit for Binance API
-      const withdrawAmountFormatted = parseFloat(formatUnits(BigInt(withdrawAmount), decimals)).toFixed(8);
+      // Get the proper withdrawal precision from Binance API configuration
+      const withdrawAmountInUnits = parseFloat(formatUnits(BigInt(withdrawAmount), decimals));
+      const withdrawalPrecision = this.getWithdrawalPrecision(assetMapping.binanceSymbol, assetMapping.network);
+      const withdrawAmountFormatted = this.roundUpToPrecision(withdrawAmountInUnits, withdrawalPrecision);
 
       this.logger.debug(`Initiating Binance withdrawal with id ${withdrawOrderId}`, {
         coin: assetMapping.binanceSymbol,
