@@ -13,7 +13,7 @@ import {
 import { ACROSS_SPOKE_ABI } from '../../../src/adapters/across/abi';
 import { getDepositFromLogs, parseFillLogs } from '../../../src/adapters/across/utils';
 import { RebalanceTransactionMemo } from '../../../src/types';
-import { findMatchingDestinationAsset } from '../../../src/shared/asset-utils';
+import { findMatchingDestinationAsset, findAssetByAddress } from '../../../src/shared/asset';
 
 // Mock the external dependencies
 jest.mock('viem');
@@ -30,6 +30,7 @@ jest.mock('../../../src/adapters/across/utils', () => ({
   getDepositFromLogs: jest.fn(),
   parseFillLogs: jest.fn(),
 }));
+jest.mock('../../../src/shared/asset');
 
 // Test adapter that exposes private methods
 class TestAcrossBridgeAdapter extends AcrossBridgeAdapter {
@@ -188,6 +189,28 @@ describe('AcrossBridgeAdapter', () => {
     mockLogger.warn.mockReset();
     mockLogger.error.mockReset();
 
+    // Reset shared asset module mocks
+    (findMatchingDestinationAsset as jest.Mock).mockReset();
+    (findAssetByAddress as jest.Mock).mockReset();
+
+    // Set up default mock implementations
+    (findAssetByAddress as jest.Mock).mockImplementation((asset, chain) => {
+      const chainConfig = mockChains[(chain as number).toString()];
+      if (!chainConfig) return undefined;
+      return chainConfig.assets.find((a: any) => a.address.toLowerCase() === (asset as string).toLowerCase());
+    });
+
+    (findMatchingDestinationAsset as jest.Mock).mockImplementation((asset, origin, destination) => {
+      const originChainConfig = mockChains[(origin as number).toString()];
+      const destinationChainConfig = mockChains[(destination as number).toString()];
+      if (!originChainConfig || !destinationChainConfig) return undefined;
+      
+      const originAsset = originChainConfig.assets.find((a: any) => a.address.toLowerCase() === (asset as string).toLowerCase());
+      if (!originAsset) return undefined;
+      
+      return destinationChainConfig.assets.find((a: any) => a.tickerHash === originAsset.tickerHash);
+    });
+
     // Create fresh adapter instance
     adapter = new TestAcrossBridgeAdapter(mockUrl, mockChains as Record<string, ChainConfiguration>, mockLogger);
   });
@@ -222,8 +245,8 @@ describe('AcrossBridgeAdapter', () => {
         destination: 10,
       };
 
-      // Mock the findMatchingDestinationAsset method to return just the address
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
+      // Mock the findMatchingDestinationAsset function
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValue({
         ...mockAssets['USDC'],
         address: mockAssets['USDC'].address,
       });
@@ -298,8 +321,8 @@ describe('AcrossBridgeAdapter', () => {
         destination: 10,
       };
 
-      // Mock the findMatchingDestinationAsset method to return the destination asset
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
+      // Mock the findMatchingDestinationAsset function
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValue({
         ...mockAssets['USDC'],
         address: mockAssets['USDC'].address,
       });
@@ -366,8 +389,8 @@ describe('AcrossBridgeAdapter', () => {
       const senderAddress = '0x' + 'sender'.padStart(40, '0');
       const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
 
-      // Mock the findMatchingDestinationAsset method to return the destination asset
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
+      // Mock the findMatchingDestinationAsset function
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValue({
         ...mockAssets['USDC'],
         address: mockAssets['USDC'].address,
       });
@@ -429,8 +452,8 @@ describe('AcrossBridgeAdapter', () => {
       const senderAddress = '0x' + 'sender'.padStart(40, '0');
       const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
 
-      // Mock the findMatchingDestinationAsset method
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
+      // Mock the findMatchingDestinationAsset function
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValue({
         ...mockAssets['USDC'],
         address: mockAssets['USDC'].address,
       });
@@ -772,8 +795,8 @@ describe('AcrossBridgeAdapter', () => {
         destination: 10,
       };
 
-      // Mock the findMatchingDestinationAsset method
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue({
+      // Mock the findMatchingDestinationAsset function
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValue({
         ...mockAssets['USDC'],
         address: mockAssets['USDC'].address,
       });
@@ -859,25 +882,25 @@ describe('AcrossBridgeAdapter', () => {
 
   describe('findMatchingDestinationAsset', () => {
     it('should find matching asset in destination chain', () => {
-      const result = adapter.findMatchingDestinationAsset(mockAssets['USDC'].address, 1, 10);
+      const result = findMatchingDestinationAsset(mockAssets['USDC'].address, 1, 10, mockChains, mockLogger);
 
       expect(result).toEqual(mockAssets['USDC']);
     });
 
     it('should return undefined if origin chain not found', () => {
-      const result = adapter.findMatchingDestinationAsset(mockAssets['USDC'].address, 999, 10);
+      const result = findMatchingDestinationAsset(mockAssets['USDC'].address, 999, 10, mockChains, mockLogger);
 
       expect(result).toBeUndefined();
     });
 
     it('should return undefined if destination chain not found', () => {
-      const result = adapter.findMatchingDestinationAsset(mockAssets['USDC'].address, 1, 999);
+      const result = findMatchingDestinationAsset(mockAssets['USDC'].address, 1, 999, mockChains, mockLogger);
 
       expect(result).toBeUndefined();
     });
 
     it('should return undefined if asset not found in origin chain', () => {
-      const result = adapter.findMatchingDestinationAsset('0xInvalidAddress', 1, 10);
+      const result = findMatchingDestinationAsset('0xInvalidAddress', 1, 10, mockChains, mockLogger);
 
       expect(result).toBeUndefined();
     });
@@ -985,7 +1008,7 @@ describe('AcrossBridgeAdapter', () => {
         destination: 10,
       };
 
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue(undefined);
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValue(undefined);
 
       await expect(adapter.requiresCallback(route, '0xfilltxhash')).rejects.toThrow('Could not find origin asset');
     });
@@ -998,7 +1021,7 @@ describe('AcrossBridgeAdapter', () => {
       };
 
       jest
-        .spyOn(adapter, 'findMatchingDestinationAsset')
+        .spyOn(require('../../../src/shared/asset'), 'findMatchingDestinationAsset')
         .mockReturnValueOnce(mockAssets['WETH'])
         .mockReturnValueOnce({ ...mockAssets['ETH'], symbol: 'MATIC' });
 
@@ -1015,7 +1038,7 @@ describe('AcrossBridgeAdapter', () => {
       };
 
       jest
-        .spyOn(adapter, 'findMatchingDestinationAsset')
+        .spyOn(require('../../../src/shared/asset'), 'findMatchingDestinationAsset')
         .mockReturnValueOnce(mockAssets['WETH'])
         .mockReturnValueOnce(mockAssets['ETH']);
 
@@ -1042,7 +1065,7 @@ describe('AcrossBridgeAdapter', () => {
         destination: 10,
       };
 
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValueOnce(mockAssets['ETH']);
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValueOnce(mockAssets['ETH']);
 
       const mockReceipt = {
         logs: [],
@@ -1092,7 +1115,7 @@ describe('AcrossBridgeAdapter', () => {
         destination: 10,
       };
 
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValueOnce(mockAssets['ETH']);
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValueOnce(mockAssets['ETH']);
 
       const mockReceipt = {
         logs: [
@@ -1157,7 +1180,7 @@ describe('AcrossBridgeAdapter', () => {
       };
 
       jest
-        .spyOn(adapter, 'findMatchingDestinationAsset')
+        .spyOn(require('../../../src/shared/asset'), 'findMatchingDestinationAsset')
         .mockReturnValueOnce(mockAssets['ETH'])
         .mockReturnValueOnce(mockAssets['WETH']);
 
@@ -1235,7 +1258,7 @@ describe('AcrossBridgeAdapter', () => {
       };
 
       jest
-        .spyOn(adapter, 'findMatchingDestinationAsset')
+        .spyOn(require('../../../src/shared/asset'), 'findMatchingDestinationAsset')
         .mockReturnValueOnce(mockAssets['ETH'])
         .mockReturnValueOnce(mockAssets['WETH']);
 
@@ -1302,7 +1325,7 @@ describe('AcrossBridgeAdapter', () => {
       };
 
       jest
-        .spyOn(adapter, 'findMatchingDestinationAsset')
+        .spyOn(require('../../../src/shared/asset'), 'findMatchingDestinationAsset')
         .mockReturnValueOnce(mockAssets['ETH'])
         .mockReturnValueOnce(mockAssets['USDC']);
 
@@ -1370,7 +1393,7 @@ describe('AcrossBridgeAdapter', () => {
         destination: 999, // Unsupported destination
       };
 
-      jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValue(undefined);
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValue(undefined);
 
       await expect(adapter.getReceivedAmount('1000000', route)).rejects.toThrow(
         'Could not find matching destination asset',
@@ -1391,7 +1414,7 @@ describe('AcrossBridgeAdapter', () => {
         mockLogger,
       );
 
-      jest.spyOn(adapterwithoutProviders, 'findMatchingDestinationAsset').mockReturnValue(mockAssets['USDC']);
+      (findMatchingDestinationAsset as jest.Mock).mockReturnValue(mockAssets['USDC']);
 
       (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
         data: mockFeesResponse,
