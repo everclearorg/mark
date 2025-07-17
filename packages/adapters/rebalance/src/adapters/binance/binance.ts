@@ -25,7 +25,7 @@ import {
   generateWithdrawOrderId,
   checkWithdrawQuota,
 } from './utils';
-import { getDestinationAssetAddress } from '../../shared/asset';
+import { getDestinationAssetAddress, findAssetByAddress } from '../../shared/asset';
 
 const wethAbi = [
   ...erc20Abi,
@@ -69,21 +69,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     if (!this.client.isConfigured()) {
       throw new Error('Binance adapter requires API key and secret');
     }
-  }
-
-  /**
-   * Get ticker hash for an asset by address and chain from config
-   */
-  private getTickerForAsset(asset: string, chain: number): string | undefined {
-    const chainConfig = this.config.chains[chain.toString()];
-    if (!chainConfig || !chainConfig.assets) {
-      return undefined;
-    }
-    const assetConfig = chainConfig.assets.find((a) => a.address.toLowerCase() === asset.toLowerCase());
-    if (!assetConfig) {
-      return undefined;
-    }
-    return assetConfig.tickerHash;
   }
 
   /**
@@ -255,10 +240,11 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
-      const ticker = this.getTickerForAsset(route.asset, route.origin);
-      if (!ticker) {
-        throw new Error(`Unable to find ticker for asset ${route.asset} on chain ${route.origin}`);
+      const assetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+      if (!assetConfig) {
+        throw new Error(`Unable to find asset config for asset ${route.asset} on chain ${route.origin}`);
       }
+      const ticker = assetConfig.tickerHash;
       const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
       if (!decimals) {
         throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
@@ -435,22 +421,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     });
 
     try {
-      // Get asset mappings to check if it's ETH/WETH
-      const originMapping = await validateAssetMapping(
-        this.client,
-        route,
-        `route from chain ${route.origin}`,
-        this.config.chains,
-      );
-
-      // Only wrap ETH back to WETH
-      if (originMapping.binanceSymbol !== 'ETH') {
-        this.logger.debug('Asset is not ETH/WETH, no wrapping needed', {
-          binanceSymbol: originMapping.binanceSymbol,
-        });
-        return;
-      }
-
       // Look up recipient from cache
       const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
       if (!recipient) {
@@ -733,10 +703,11 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       const withdrawAmount = amount;
 
       // Check withdrawal quota before initiating (use full amount for quota check)
-      const ticker = this.getTickerForAsset(route.asset, route.origin);
-      if (!ticker) {
-        throw new Error(`Unable to find ticker for asset ${route.asset} on chain ${route.origin}`);
+      const assetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+      if (!assetConfig) {
+        throw new Error(`Unable to find asset config for asset ${route.asset} on chain ${route.origin}`);
       }
+      const ticker = assetConfig.tickerHash;
       const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
       if (!decimals) {
         throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
