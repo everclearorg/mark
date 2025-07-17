@@ -25,6 +25,7 @@ import {
   generateWithdrawOrderId,
   checkWithdrawQuota,
 } from './utils';
+import { getDestinationAssetAddress } from '../../shared/asset';
 
 const wethAbi = [
   ...erc20Abi,
@@ -298,8 +299,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       const transactions: MemoizedTransactionRequest[] = [];
 
-      // Unwrap WETH to ETH before deposit
-      if (assetMapping.binanceSymbol === 'ETH' && route.asset !== zeroAddress) {
+      // Unwrap WETH to ETH before deposit (only if route asset is different from Binance asset)
+      if (
+        assetMapping.binanceSymbol === 'ETH' &&
+        route.asset !== zeroAddress &&
+        route.asset !== assetMapping.binanceAsset
+      ) {
         this.logger.debug('Preparing WETH unwrap transaction before Binance deposit', {
           wethAddress: route.asset,
           amount,
@@ -325,21 +330,46 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
           },
         };
         return [unwrapTx, sendToBinanceTx];
-        // For non-ETH assets send directly
+      } else if (assetMapping.binanceSymbol === 'ETH') {
+        // WETH without unwrapping - check if Binance accepts native ETH or WETH token
+        const binanceTakesNativeETH = assetMapping.binanceAsset === zeroAddress;
+
+        if (binanceTakesNativeETH) {
+          transactions.push({
+            memo: RebalanceTransactionMemo.Rebalance,
+            transaction: {
+              to: depositInfo.address as `0x${string}`,
+              value: BigInt(roundedAmount),
+              data: '0x' as `0x${string}`,
+            },
+          });
+        } else {
+          // BSC: Transfer WETH to Binance
+          transactions.push({
+            memo: RebalanceTransactionMemo.Rebalance,
+            transaction: {
+              to: route.asset as `0x${string}`,
+              value: BigInt(0),
+              data: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: 'transfer',
+                args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
+              }),
+            },
+          });
+        }
       } else {
+        // For all other assets (i.e. USDC, USDT), transfer token
         transactions.push({
           memo: RebalanceTransactionMemo.Rebalance,
           transaction: {
-            to: route.asset === zeroAddress ? (depositInfo.address as `0x${string}`) : (route.asset as `0x${string}`),
-            value: route.asset === zeroAddress ? BigInt(roundedAmount) : BigInt(0),
-            data:
-              route.asset !== zeroAddress
-                ? encodeFunctionData({
-                    abi: erc20Abi,
-                    functionName: 'transfer',
-                    args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
-                  })
-                : '0x',
+            to: route.asset as `0x${string}`,
+            value: BigInt(0),
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: 'transfer',
+              args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
+            }),
           },
         });
       }
@@ -464,18 +494,44 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       const destinationMapping = await getDestinationAssetMapping(this.client, route, this.config.chains);
 
+      // Get the destination asset address that Mark should hold
+      const destinationAsset = getDestinationAssetAddress(
+        route.asset,
+        route.origin,
+        route.destination,
+        this.config.chains,
+        this.logger,
+      );
+      if (!destinationAsset) {
+        this.logger.error('Could not find destination asset address for ticker', {
+          originAsset: route.asset,
+          originChain: route.origin,
+          destinationChain: route.destination,
+        });
+        return;
+      }
+
+      // No wrapping needed if Binance withdrawal asset matches the destination asset Mark should hold
+      if (destinationMapping.binanceAsset.toLowerCase() === destinationAsset.toLowerCase()) {
+        this.logger.debug('Binance withdrawal asset matches destination asset, no wrapping needed', {
+          destinationAsset,
+          binanceAsset: destinationMapping.binanceAsset,
+        });
+        return;
+      }
+
       this.logger.info('Preparing WETH wrap callback', {
         recipient,
         ethAmount: ethAmount.toString(),
-        wethAddress: destinationMapping.onChainAddress,
+        wethAddress: destinationAsset,
         destinationChain: route.destination,
       });
 
-      // Always wrap ETH to WETH on the destination chain after withdrawal
+      // Wrap ETH to WETH on the destination chain after withdrawal if needed
       const wrapTx = {
         memo: RebalanceTransactionMemo.Wrap,
         transaction: {
-          to: destinationMapping.onChainAddress as `0x${string}`,
+          to: destinationAsset as `0x${string}`,
           data: encodeFunctionData({
             abi: wethAbi,
             functionName: 'deposit',
