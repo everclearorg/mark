@@ -8,7 +8,7 @@ import {
   PublicClient,
   formatUnits,
 } from 'viem';
-import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
+import { ChainConfiguration, SupportedBridge, RebalanceRoute, MarkConfiguration, getDecimalsFromConfig } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
@@ -51,12 +51,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     apiKey: string,
     apiSecret: string,
     baseUrl: string,
-    protected readonly chains: Record<string, ChainConfiguration>,
+    protected readonly config: MarkConfiguration,
     protected readonly logger: Logger,
     private readonly rebalanceCache: RebalanceCache,
   ) {
     this.client = new BinanceClient(apiKey, apiSecret, baseUrl, logger);
-    this.dynamicConfig = new DynamicAssetConfig(this.client, this.chains);
+    this.dynamicConfig = new DynamicAssetConfig(this.client, this.config.chains);
 
     this.logger.debug('Initializing BinanceBridgeAdapter', {
       baseUrl,
@@ -67,6 +67,21 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     if (!this.client.isConfigured()) {
       throw new Error('Binance adapter requires API key and secret');
     }
+  }
+
+  /**
+   * Get ticker hash for an asset by address and chain from config
+   */
+  private getTickerForAsset(asset: string, chain: number): string | undefined {
+    const chainConfig = this.config.chains[chain.toString()];
+    if (!chainConfig || !chainConfig.assets) {
+      return undefined;
+    }
+    const assetConfig = chainConfig.assets.find((a) => a.address.toLowerCase() === asset.toLowerCase());
+    if (!assetConfig) {
+      return undefined;
+    }
+    return assetConfig.tickerHash;
   }
 
   type(): SupportedBridge {
@@ -107,9 +122,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         this.client,
         route,
         `route from chain ${route.origin}`,
-        this.chains,
+        this.config.chains,
       );
-      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.chains);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.config.chains);
 
       // Check if amount meets minimum requirements
       if (!meetsMinimumWithdrawal(amount, originMapping)) {
@@ -149,7 +164,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         this.client,
         route,
         `route from chain ${route.origin}`,
-        this.chains,
+        this.config.chains,
       );
 
       // Check minimum amount requirements
@@ -159,7 +174,14 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
-      const decimals = assetMapping.binanceSymbol === 'ETH' ? 18 : 6;
+      const ticker = this.getTickerForAsset(route.asset, route.origin);
+      if (!ticker) {
+        throw new Error(`Unable to find ticker for asset ${route.asset} on chain ${route.origin}`);
+      }
+      const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
+      if (!decimals) {
+        throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
+      }
 
       const quota = await checkWithdrawQuota(amount, assetMapping.binanceSymbol, decimals, this.client);
 
@@ -299,7 +321,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         this.client,
         route,
         `route from chain ${route.origin}`,
-        this.chains,
+        this.config.chains,
       );
 
       // Only wrap ETH back to WETH
@@ -351,7 +373,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         return;
       }
 
-      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.chains);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.config.chains);
 
       this.logger.info('Preparing WETH wrap callback', {
         recipient,
@@ -398,9 +420,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         this.client,
         route,
         `route from chain ${route.origin}`,
-        this.chains,
+        this.config.chains,
       );
-      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.chains);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.config.chains);
 
       // Check if deposit is confirmed first
       const depositStatus = await this.checkDepositConfirmed(route, originTransaction, originMapping);
@@ -566,7 +588,14 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       const withdrawAmount = amount;
 
       // Check withdrawal quota before initiating (use full amount for quota check)
-      const decimals = assetMapping.binanceSymbol === 'ETH' ? 18 : 6;
+      const ticker = this.getTickerForAsset(route.asset, route.origin);
+      if (!ticker) {
+        throw new Error(`Unable to find ticker for asset ${route.asset} on chain ${route.origin}`);
+      }
+      const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
+      if (!decimals) {
+        throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
+      }
       const quota = await checkWithdrawQuota(withdrawAmount, assetMapping.binanceSymbol, decimals, this.client);
 
       if (!quota.allowed) {
@@ -621,7 +650,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
    * Get viem provider for a specific chain
    */
   protected getProvider(chainId: number): PublicClient | undefined {
-    const chainConfig = this.chains[chainId.toString()];
+    const chainConfig = this.config.chains[chainId.toString()];
     if (!chainConfig || !chainConfig.providers || chainConfig.providers.length === 0) {
       this.logger.warn('No provider configured for chain', { chainId });
       return undefined;
