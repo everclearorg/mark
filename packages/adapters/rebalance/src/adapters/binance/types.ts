@@ -54,7 +54,7 @@ export interface WithdrawRecord {
 // Configuration interfaces
 export interface BinanceAssetMapping {
   chainId: number;
-  onChainAddress: string;
+  binanceAsset: string;
   binanceSymbol: string;
   network: string; // e.g., "ETH", "BSC", "MATIC"
   minWithdrawalAmount: string;
