@@ -1715,6 +1715,41 @@ describe('Split Intent Helper Functions', () => {
       expect(result.intents[0].amount).to.equal('50000000000000000000'); // allocated to Ethereum
       expect(result.intents[1].amount).to.equal('50000000000000000000'); // allocated to Base
     });
+
+    it('should throw an error if no input asset is found for the origin', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-no-asset',
+        origin: '9999', // Nonexistent domain
+        destinations: ['8888'], // Nonexistent destination
+        amount: '1000000000000000000', // 1 WETH
+        ticker_hash: 'FAKE', // Ticker not in config
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '9999': '1000000000000000000',
+      };
+
+      // Mark has balance on the fake origin
+      const balances = new Map([
+        ['FAKE', new Map([
+          ['9999', BigInt('1000000000000000000')],
+        ])],
+      ]);
+      // No custodied assets for FAKE
+      const custodiedBalances = new Map<string, Map<string, bigint>>();
+
+      await expect(
+        calculateSplitIntents(
+          mockContext,
+          invoice,
+          minAmounts,
+          balances,
+          custodiedBalances
+        )
+      ).to.be.rejectedWith('No input asset found');
+    });
   });
 
   describe('Zodiac Address Validation', () => {
