@@ -8,13 +8,7 @@ import {
   PublicClient,
   formatUnits,
 } from 'viem';
-import {
-  ChainConfiguration,
-  SupportedBridge,
-  RebalanceRoute,
-  MarkConfiguration,
-  getDecimalsFromConfig,
-} from '@mark/core';
+import { SupportedBridge, RebalanceRoute, MarkConfiguration, getDecimalsFromConfig } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
