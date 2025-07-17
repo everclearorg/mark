@@ -13,6 +13,7 @@ import {
 import { ACROSS_SPOKE_ABI } from '../../../src/adapters/across/abi';
 import { getDepositFromLogs, parseFillLogs } from '../../../src/adapters/across/utils';
 import { RebalanceTransactionMemo } from '../../../src/types';
+import { findMatchingDestinationAsset } from '../../../src/shared/asset-utils';
 
 // Mock the external dependencies
 jest.mock('viem');
@@ -44,13 +45,6 @@ class TestAcrossBridgeAdapter extends AcrossBridgeAdapter {
     return super.handleError(error, context, metadata);
   }
 
-  public findMatchingDestinationAsset(
-    asset: string,
-    origin: number,
-    destination: number,
-  ): AssetConfiguration | undefined {
-    return super.findMatchingDestinationAsset(asset, origin, destination);
-  }
 
   public extractDepositId(origin: number, receipt: TransactionReceipt): number | undefined {
     return super.extractDepositId(origin, receipt);

@@ -112,8 +112,39 @@ const mockChains: Record<string, any> = {
     },
   },
   '42161': {
-    assets: Object.values(mockAssets),
+    assets: [
+      ...Object.values(mockAssets),
+      {
+        address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+        symbol: 'WETH',
+        decimals: 18,
+        tickerHash: '0xWETHHash',
+        isNative: false,
+        balanceThreshold: '0',
+      },
+    ],
     providers: ['https://arb-mainnet.example.com'],
+    invoiceAge: 3600,
+    gasThreshold: '100000000000',
+    gnosisSafeAddress: '0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B',
+    deployments: {
+      everclear: '0xEverclearAddress',
+      permit2: '0xPermit2Address',
+      multicall3: '0xMulticall3Address',
+    },
+  },
+  '56': {
+    assets: [
+      {
+        address: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
+        symbol: 'ETH',
+        decimals: 18,
+        tickerHash: '0xWETHHash',
+        isNative: false,
+        balanceThreshold: '0',
+      },
+    ],
+    providers: ['https://bsc-mainnet.example.com'],
     invoiceAge: 3600,
     gasThreshold: '100000000000',
     gnosisSafeAddress: '0xe569ea3158bB89aD5CFD8C06f0ccB3aD69e0916B',
@@ -173,7 +204,7 @@ const mockETHMapping: BinanceAssetMapping = {
   chainId: 1,
   binanceSymbol: 'ETH',
   network: 'ETH',
-  onChainAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+  binanceAsset: '0x0000000000000000000000000000000000000000',
   minWithdrawalAmount: '10000000000000000', // 0.01 ETH in wei
   withdrawalFee: '40000000000000000', // 0.04 ETH in wei
   depositConfirmations: 12,
@@ -183,7 +214,7 @@ const mockETHArbitrumMapping: BinanceAssetMapping = {
   chainId: 42161,
   binanceSymbol: 'ETH',
   network: 'ARBITRUM',
-  onChainAddress: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+  binanceAsset: '0x0000000000000000000000000000000000000000',
   minWithdrawalAmount: '10000000000000000', // 0.01 ETH in wei
   withdrawalFee: '40000000000000000', // 0.00004 ETH in wei
   depositConfirmations: 12,
@@ -193,7 +224,7 @@ const mockUSDCMapping: BinanceAssetMapping = {
   chainId: 1,
   binanceSymbol: 'USDC',
   network: 'ETH',
-  onChainAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  binanceAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
   minWithdrawalAmount: '1000000', // 1 USDC in smallest units (6 decimals)
   withdrawalFee: '1000000', // 1 USDC fee
   depositConfirmations: 12,
@@ -253,10 +284,10 @@ describe('BinanceBridgeAdapter', () => {
         // Native ETH (zero address)
         if (lowerIdentifier === '0x0000000000000000000000000000000000000000') {
           if (chainId === 1) {
-            return { ...mockETHMapping, onChainAddress: assetIdentifier };
+            return { ...mockETHMapping, userAsset: assetIdentifier };
           }
           if (chainId === 42161) {
-            return { ...mockETHArbitrumMapping, onChainAddress: assetIdentifier };
+            return { ...mockETHArbitrumMapping, userAsset: assetIdentifier };
           }
         }
         // ETH/WETH mappings
@@ -265,7 +296,7 @@ describe('BinanceBridgeAdapter', () => {
             return mockETHMapping;
           }
           if (chainId === 42161) {
-            return { ...mockETHArbitrumMapping, onChainAddress: assetIdentifier };
+            return { ...mockETHArbitrumMapping, userAsset: assetIdentifier };
           }
         }
         // Arbitrum WETH
@@ -278,7 +309,7 @@ describe('BinanceBridgeAdapter', () => {
             return mockUSDCMapping;
           }
           if (chainId === 42161) {
-            return { ...mockUSDCMapping, chainId: 42161, network: 'ARBITRUM', onChainAddress: assetIdentifier };
+            return { ...mockUSDCMapping, chainId: 42161, network: 'ARBITRUM', userAsset: assetIdentifier };
           }
         }
       }
@@ -301,7 +332,7 @@ describe('BinanceBridgeAdapter', () => {
               ...mockUSDCMapping,
               chainId: 42161,
               network: 'ARBITRUM',
-              onChainAddress: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8',
+              userAsset: '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8',
             };
           }
         }
@@ -436,7 +467,7 @@ describe('BinanceBridgeAdapter', () => {
   });
 
   describe('send', () => {
-    it('should prepare unwrap + deposit transactions for WETH', async () => {
+    it('should prepare unwrap + deposit transactions for WETH on Ethereum mainnet', async () => {
       const sender = '0x' + 'sender'.padEnd(40, '0');
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
       const amount = '1000000000000000000'; // 1 ETH
@@ -461,6 +492,79 @@ describe('BinanceBridgeAdapter', () => {
       expect(mockBinanceClient.getDepositAddress).toHaveBeenCalledWith('ETH', 'ETH');
       // Verify dynamic asset mapping was called
       expect(mockDynamicAssetConfig.getAssetMapping).toHaveBeenCalledWith(1, sampleRoute.asset);
+    });
+
+    it('should NOT unwrap ETH on BNB chain since it is the Binance WETH contract for that chain', async () => {
+      const sender = '0x' + 'sender'.padEnd(40, '0');
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const amount = '1000000000000000000'; // 1 ETH
+
+      const bnbRoute: RebalanceRoute = {
+        origin: 56, // BNB chain
+        destination: 1, // Ethereum
+        asset: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', // ETH on BNB chain
+      };
+
+      // Mock asset mapping for BNB chain ETH - the key is that binanceDepositAsset matches the route.asset
+      const mockBNBETHMapping: BinanceAssetMapping = {
+        chainId: 56,
+        binanceSymbol: 'ETH',
+        network: 'BSC',
+        binanceAsset: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', // Binance withdraws WETH on BSC
+        minWithdrawalAmount: '10000000000000000',
+        withdrawalFee: '40000000000000000',
+        depositConfirmations: 12,
+      };
+
+      mockDynamicAssetConfig.getAssetMapping.mockResolvedValueOnce(mockBNBETHMapping);
+
+      const result = await adapter.send(sender, recipient, amount, bnbRoute);
+
+      // Should only have 1 transaction (direct ERC20 transfer, no unwrap)
+      expect(result.length).toBe(1);
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[0].transaction.to).toBe(bnbRoute.asset); // Direct ERC20 transfer
+      expect(result[0].transaction.value).toBe(BigInt(0)); // No native ETH
+      expect(result[0].transaction.data).toEqual(expect.any(String)); // ERC20 transfer encoded
+
+      // Verify deposit address was requested
+      expect(mockBinanceClient.getDepositAddress).toHaveBeenCalledWith('ETH', 'BSC');
+      // Verify dynamic asset mapping was called
+      expect(mockDynamicAssetConfig.getAssetMapping).toHaveBeenCalledWith(56, bnbRoute.asset);
+    });
+
+    it('should unwrap WETH on any chain when the asset is NOT the Binance WETH contract', async () => {
+      const sender = '0x' + 'sender'.padEnd(40, '0');
+      const recipient = '0x' + 'recipient'.padEnd(40, '0');
+      const amount = '1000000000000000000'; // 1 ETH
+
+      const arbitrumRoute: RebalanceRoute = {
+        origin: 42161, // Arbitrum
+        destination: 1, // Ethereum
+        asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', // WETH on Arbitrum
+      };
+
+      // Mock asset mapping where the user asset is different from what Binance expects
+      const mockArbitrumETHMapping: BinanceAssetMapping = {
+        chainId: 42161,
+        binanceSymbol: 'ETH',
+        network: 'ARBITRUM',
+        binanceAsset: '0x0000000000000000000000000000000000000000',
+        minWithdrawalAmount: '10000000000000000',
+        withdrawalFee: '40000000000000000',
+        depositConfirmations: 12,
+      };
+
+      mockDynamicAssetConfig.getAssetMapping.mockResolvedValueOnce(mockArbitrumETHMapping);
+
+      const result = await adapter.send(sender, recipient, amount, arbitrumRoute);
+
+      // Should have 2 transactions (unwrap + send)
+      expect(result.length).toBe(2);
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Unwrap);
+      expect(result[0].transaction.to).toBe(arbitrumRoute.asset); // Unwrap call
+      expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[1].transaction.value).toBe(BigInt(amount)); // Native ETH send
     });
 
     it('should prepare single deposit transaction for USDC', async () => {
@@ -574,7 +678,7 @@ describe('BinanceBridgeAdapter', () => {
         chainId: 1,
         binanceSymbol: 'USDT',
         network: 'ETH',
-        onChainAddress: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+        binanceAsset: '0x0000000000000000000000000000000000000000',
         minWithdrawalAmount: '1000000',
         withdrawalFee: '1000000',
         depositConfirmations: 12,
@@ -584,7 +688,7 @@ describe('BinanceBridgeAdapter', () => {
         chainId: 42161,
         binanceSymbol: 'USDT',
         network: 'ARBITRUM',
-        onChainAddress: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+        binanceAsset: '0x0000000000000000000000000000000000000000',
         minWithdrawalAmount: '1000000',
         withdrawalFee: '1000000',
         depositConfirmations: 12,
@@ -754,6 +858,98 @@ describe('BinanceBridgeAdapter', () => {
       });
     });
 
+    it('should return undefined when destination binance asset matches destination chain asset', async () => {
+      const bnbRoute: RebalanceRoute = {
+        origin: 1, // Ethereum origin (where deposit is made)
+        destination: 56, // BSC destination (where withdrawal is made)
+        asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH on Ethereum (origin asset)
+      };
+
+      const recipient = '0x000000000000000000000000ffffffffffffffff';
+
+      // Mock cache to return recipient
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount: '1000000000000000000',
+        origin: bnbRoute.origin,
+        destination: bnbRoute.destination,
+        asset: bnbRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
+
+      // Mock withdrawal status as completed
+      const getOrInitWithdrawalSpy = jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
+        status: 'completed',
+        onChainConfirmed: true,
+        txId: '0xwithdrawaltx',
+      });
+      
+      // Debug: check if getOrInitWithdrawal is called
+      console.log('Setting up getOrInitWithdrawal spy');
+
+      // Mock provider
+      const mockProvider = {
+        getTransaction: jest.fn<() => Promise<any>>().mockResolvedValueOnce({
+          hash: '0xwithdrawaltx',
+          value: BigInt('1000000000000000000'),
+        }),
+      };
+      jest.spyOn(adapter as any, 'getProvider').mockReturnValueOnce(mockProvider as any);
+
+      // Mock origin mapping (Ethereum)
+      const mockOriginMapping: BinanceAssetMapping = {
+        chainId: 1,
+        binanceSymbol: 'ETH',
+        network: 'ETH',
+        binanceAsset: '0x0000000000000000000000000000000000000000', // Binance takes native ETH on Ethereum
+        minWithdrawalAmount: '10000000000000000',
+        withdrawalFee: '40000000000000000',
+        depositConfirmations: 12,
+      };
+
+      // Mock destination mapping (BSC) - hypothetical case where destination asset matches route asset
+      const mockDestinationMapping: BinanceAssetMapping = {
+        chainId: 56,
+        binanceSymbol: 'ETH',
+        network: 'BSC',
+        binanceAsset: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', // Same as route asset (hypothetical)
+        minWithdrawalAmount: '10000000000000000',
+        withdrawalFee: '40000000000000000',
+        depositConfirmations: 12,
+      };
+
+      mockDynamicAssetConfig.getAssetMapping
+        .mockResolvedValueOnce(mockOriginMapping) // First call for origin mapping
+        .mockResolvedValueOnce(mockDestinationMapping); // Second call for destination mapping
+
+      const result = await adapter.destinationCallback(bnbRoute, mockTransaction);
+      
+      // Debug: Check all logger calls
+      console.log('All logger.debug calls:', mockLogger.debug.mock.calls);
+      console.log('All logger.error calls:', mockLogger.error.mock.calls);
+      if (mockLogger.error.mock.calls.length > 0) {
+        console.log('Error details:', mockLogger.error.mock.calls[0][1]);
+        const errorObj = mockLogger.error.mock.calls[0][1];
+        if (errorObj && errorObj.error) {
+          console.log('Error message:', (errorObj.error as any).message);
+        }
+      }
+      console.log('getOrInitWithdrawal was called:', getOrInitWithdrawalSpy.mock.calls.length, 'times');
+      
+      expect(result).toBeUndefined();
+      // The function should return undefined (no wrapping needed) when destination asset matches binance asset
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Finding matching destination asset',
+        expect.objectContaining({
+          asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          origin: 1,
+          destination: 56,
+        }),
+      );
+    });
+
     it('should return wrap transaction when ETH needs to be wrapped to WETH', async () => {
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
       const ethAmount = BigInt('1000000000000000000'); // 1 ETH
@@ -794,7 +990,7 @@ describe('BinanceBridgeAdapter', () => {
 
       expect(result).toBeDefined();
       expect(result?.memo).toBe(RebalanceTransactionMemo.Wrap);
-      expect(result?.transaction.to).toBe('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'); // Should wrap to destination chain WETH address
+      expect(result?.transaction.to).toBe('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'); // Should wrap to destination chain WETH address from config
       expect(result?.transaction.value).toBe(ethAmount);
       expect(result?.transaction.data).toEqual(expect.any(String)); // Encoded deposit() call
     });
@@ -1071,7 +1267,7 @@ describe('BinanceBridgeAdapter', () => {
         {
           binanceSymbol: 'ETH',
           network: 'ETH',
-          onChainAddress: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          binanceAsset: '0x0000000000000000000000000000000000000000',
           minWithdrawalAmount: '0.01',
           withdrawalFee: '0.00004',
         },
