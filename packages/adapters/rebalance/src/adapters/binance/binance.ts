@@ -254,7 +254,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       if (
         assetMapping.binanceSymbol === 'ETH' &&
         route.asset !== zeroAddress &&
-        route.asset !== assetMapping.binanceAsset
+        route.asset.toLowerCase() !== assetMapping.binanceAsset.toLowerCase()
       ) {
         this.logger.debug('Preparing WETH unwrap transaction before Binance deposit', {
           wethAddress: route.asset,
