@@ -16,7 +16,7 @@ import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } f
 import { BinanceClient } from './client';
 import { DynamicAssetConfig } from './dynamic-config';
 import { WithdrawalStatus, BinanceAssetMapping } from './types';
-import { WITHDRAWAL_STATUS, DEPOSIT_STATUS } from './constants';
+import { WITHDRAWAL_STATUS, DEPOSIT_STATUS, WITHDRAWAL_PRECISION_MAP } from './constants';
 import {
   getDestinationAssetMapping,
   calculateNetAmount,
@@ -76,42 +76,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
    * Returns the number of decimal places required for withdrawal amounts
    */
   private getWithdrawalPrecision(coin: string, network: string): number {
-    // These values were fetched from the API; since they don't change much we just use static value here
-    const precisionMap: Record<string, Record<string, number>> = {
-      USDT: {
-        ETH: 6,
-        BSC: 6,
-        ARBITRUM: 6,
-        OPTIMISM: 6,
-        POLYGON: 6,
-        BASE: 6,
-        SCROLL: 6,
-        ZKSYNCERA: 6,
-      },
-      USDC: {
-        ETH: 6,
-        BSC: 6,
-        ARBITRUM: 6,
-        OPTIMISM: 6,
-        POLYGON: 6,
-        BASE: 6,
-        SCROLL: 6,
-      },
-      ETH: {
-        ETH: 8,
-        BSC: 8,
-        ARBITRUM: 8,
-        OPTIMISM: 8,
-        POLYGON: 8,
-        BASE: 8,
-        SCROLL: 8,
-      },
-      BTC: {
-        BTC: 8,
-      },
-    };
-
-    const coinPrecision = precisionMap[coin];
+    const coinPrecision = WITHDRAWAL_PRECISION_MAP[coin];
     if (coinPrecision && coinPrecision[network]) {
       return coinPrecision[network];
     }
