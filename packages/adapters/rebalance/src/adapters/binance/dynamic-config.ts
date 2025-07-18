@@ -135,13 +135,13 @@ export class DynamicAssetConfig {
       );
     }
 
-    // Get contract address and decimals
-    const contractAddress = this.getContractAddress(externalSymbol, chainId, network);
+    // Get Binance asset address and decimals
+    const binanceAsset = this.getBinanceAddress(externalSymbol, chainId);
     const decimals = this.getTokenDecimals(binanceSymbol);
 
     return {
       chainId,
-      onChainAddress: contractAddress.toLowerCase(),
+      binanceAsset: binanceAsset.toLowerCase(),
       binanceSymbol: coin.coin,
       network: network.network,
       minWithdrawalAmount: parseUnits(network.withdrawMin, decimals).toString(),
@@ -151,19 +151,30 @@ export class DynamicAssetConfig {
   }
 
   /**
-   * Get contract address for asset on specific chain
+   * Get the address that Binance accepts for deposits/withdrawals
    * @param externalSymbol - External symbol (e.g., 'WETH')
    * @param chainId - Chain ID
-   * @param network - Network configuration (optional fallback)
-   * @returns Contract address
+   * @returns Address that Binance accepts for this asset on this chain
    */
-  private getContractAddress(externalSymbol: string, chainId: number, network?: NetworkConfig): string {
-    // First try network configuration if available
-    if (network?.contractAddress) {
-      return network.contractAddress;
+  private getBinanceAddress(externalSymbol: string, chainId: number): string {
+    if (externalSymbol === 'WETH') {
+      // Binance takes WETH token on BSC chain
+      if (chainId === 56) {
+        const chainConfig = this.chains[chainId.toString()];
+        if (!chainConfig) {
+          throw new Error(`No chain configuration found for chain ${chainId}`);
+        }
+        const asset = chainConfig.assets.find((a) => a.symbol === 'WETH');
+        if (!asset) {
+          throw new Error(`No WETH asset found in BSC chain configuration`);
+        }
+        return asset.address;
+      }
+      // Binance takes native ETH for all other chains
+      return '0x0000000000000000000000000000000000000000';
     }
 
-    // Fall back to chain configuration
+    // For non-WETH assets, use the actual contract address
     const chainConfig = this.chains[chainId.toString()];
     if (!chainConfig) {
       throw new Error(`No chain configuration found for chain ${chainId}`);
