@@ -125,7 +125,7 @@ describe('DynamicAssetConfig', () => {
 
       expect(result).toEqual({
         chainId: 1,
-        onChainAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+        binanceAsset: '0x0000000000000000000000000000000000000000',
         binanceSymbol: 'ETH',
         network: 'ETH',
         minWithdrawalAmount: '10000000000000000',
@@ -141,7 +141,7 @@ describe('DynamicAssetConfig', () => {
 
       expect(result).toEqual({
         chainId: 1,
-        onChainAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+        binanceAsset: '0x0000000000000000000000000000000000000000',
         binanceSymbol: 'ETH',
         network: 'ETH',
         minWithdrawalAmount: '10000000000000000',
@@ -215,7 +215,7 @@ describe('DynamicAssetConfig', () => {
 
       const result = await dynamicConfig.getAssetMapping(1, 'WETH');
 
-      expect(result.onChainAddress).toBe('0xcustomcontract');
+      expect(result.binanceAsset).toBe('0x0000000000000000000000000000000000000000');
     });
 
     it('should fall back to chain config when no network contract address', async () => {
@@ -231,7 +231,7 @@ describe('DynamicAssetConfig', () => {
 
       const result = await dynamicConfig.getAssetMapping(1, 'WETH');
 
-      expect(result.onChainAddress).toBe('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2');
+      expect(result.binanceAsset).toBe('0x0000000000000000000000000000000000000000');
     });
 
     it('should throw error when no chain configuration found', async () => {
