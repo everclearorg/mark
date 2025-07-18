@@ -12,7 +12,7 @@ import {
   parseBinanceTimestamp,
 } from '../../../src/adapters/binance/utils';
 import { BinanceAssetMapping } from '../../../src/adapters/binance/types';
-import { RebalanceRoute, ChainConfiguration } from '@mark/core';
+import { RebalanceRoute } from '@mark/core';
 import { BinanceClient } from '../../../src/adapters/binance/client';
 
 // Mock the BinanceClient
@@ -25,21 +25,9 @@ const mockRoute: RebalanceRoute = {
   asset: '0xUnknownAsset',
 };
 
-const mockChainConfig: ChainConfiguration = {
-  providers: [],
-  assets: [],
-  invoiceAge: 0,
-  gasThreshold: '0',
-  deployments: {
-    everclear: '0x',
-    permit2: '0x',
-    multicall3: '0x',
-  },
-};
-
 const mockAssetMapping: BinanceAssetMapping = {
   chainId: 1,
-  onChainAddress: '0xAsset',
+  binanceAsset: '0xAsset',
   binanceSymbol: 'TEST',
   network: 'ETH',
   withdrawalFee: '100',
