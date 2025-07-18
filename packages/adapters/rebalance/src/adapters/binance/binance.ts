@@ -87,29 +87,29 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
   }
 
   /**
-   * Round up amount to specified precision to ensure we don't have insufficient balance
+   * Round amount to specified precision to ensure we don't exceed available balance
    * @param amount - The amount to round
    * @param precision - Number of decimal places
    * @returns Rounded amount as string
    */
-  private roundUpToPrecision(amount: number, precision: number): string {
+  private roundToPrecision(amount: number, precision: number): string {
     const multiplier = Math.pow(10, precision);
-    const rounded = Math.ceil(amount * multiplier) / multiplier;
+    const rounded = Math.floor(amount * multiplier) / multiplier;
     return rounded.toFixed(precision);
   }
 
   /**
-   * Calculate the rounded-up amount in wei for deposits to match withdrawal rounding
+   * Calculate the rounded amount in wei for deposits to match withdrawal rounding
    * @param amount - Original amount in wei
    * @param coin - Binance coin symbol
    * @param network - Binance network
    * @param decimals - Token decimals
-   * @returns Rounded-up amount in wei
+   * @returns Rounded amount in wei
    */
   private getRoundedDepositAmount(amount: string, coin: string, network: string, decimals: number): string {
     const amountInUnits = parseFloat(formatUnits(BigInt(amount), decimals));
     const precision = this.getWithdrawalPrecision(coin, network);
-    const roundedAmount = this.roundUpToPrecision(amountInUnits, precision);
+    const roundedAmount = this.roundToPrecision(amountInUnits, precision);
     const roundedAmountInWei = parseUnits(roundedAmount, decimals);
 
     return roundedAmountInWei.toString();
@@ -689,7 +689,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       // Get the proper withdrawal precision from Binance API configuration
       const withdrawAmountInUnits = parseFloat(formatUnits(BigInt(withdrawAmount), decimals));
       const withdrawalPrecision = this.getWithdrawalPrecision(assetMapping.binanceSymbol, assetMapping.network);
-      const withdrawAmountFormatted = this.roundUpToPrecision(withdrawAmountInUnits, withdrawalPrecision);
+      const withdrawAmountFormatted = this.roundToPrecision(withdrawAmountInUnits, withdrawalPrecision);
 
       this.logger.debug(`Initiating Binance withdrawal with id ${withdrawOrderId}`, {
         coin: assetMapping.binanceSymbol,
