@@ -146,25 +146,25 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
-      // unichain    ethereum    WETH    10000000000000000000    150
-      {
-        origin: 130,
-        destination: 1,
-        asset: '0x4200000000000000000000000000000000000006',
-        maximum: '35000000000000000000',
-        reserve: '30000000000000000000',
-        slippage: 150,
-        preferences: [SupportedBridge.Across],
-      },
-      // zksync    ethereum    WETH    10000000000000000000 20
-      {
-        origin: 324,
-        destination: 1,
-        asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
-        maximum: '10000000000000000000',
-        slippage: 20,
-        preferences: [SupportedBridge.Across],
-      },
+      // // unichain    ethereum    WETH    10000000000000000000    150
+      // {
+      //   origin: 130,
+      //   destination: 1,
+      //   asset: '0x4200000000000000000000000000000000000006',
+      //   maximum: '35000000000000000000',
+      //   reserve: '30000000000000000000',
+      //   slippage: 150,
+      //   preferences: [SupportedBridge.Across],
+      // },
+      // // zksync    ethereum    WETH    10000000000000000000 20
+      // {
+      //   origin: 324,
+      //   destination: 1,
+      //   asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
+      //   maximum: '10000000000000000000',
+      //   slippage: 20,
+      //   preferences: [SupportedBridge.Across],
+      // },
       // scroll    ethereum    WETH    10000000000000000000 20
       {
         origin: 324,
@@ -251,24 +251,24 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 140,
         preferences: [SupportedBridge.Across],
       },
-      // unichain    ethereum    USDC    20000000000000000000000 30
-      {
-        origin: 130,
-        destination: 1,
-        asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
-        maximum: '20000000000000000000000',
-        slippage: 30,
-        preferences: [SupportedBridge.Across],
-      },
-      // zksync    ethereum    USDC    10000000000000000000000 30
-      {
-        origin: 324,
-        destination: 1,
-        asset: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4',
-        maximum: '10000000000000000000000',
-        slippage: 30,
-        preferences: [SupportedBridge.Across],
-      },
+      // // unichain    ethereum    USDC    20000000000000000000000 30
+      // {
+      //   origin: 130,
+      //   destination: 1,
+      //   asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
+      //   maximum: '20000000000000000000000',
+      //   slippage: 30,
+      //   preferences: [SupportedBridge.Across],
+      // },
+      // // zksync    ethereum    USDC    10000000000000000000000 30
+      // {
+      //   origin: 324,
+      //   destination: 1,
+      //   asset: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4',
+      //   maximum: '10000000000000000000000',
+      //   slippage: 30,
+      //   preferences: [SupportedBridge.Across],
+      // },
       // ink    ethereum    USDC    7000000000000000000 20
       {
         origin: 57073,
