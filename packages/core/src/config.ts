@@ -128,14 +128,14 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         preferences: [SupportedBridge.Binance],
       },
       // blast ethereum WETH    7000000000000000000 160
-      {
-        origin: 81457,
-        destination: 1,
-        asset: '0x4300000000000000000000000000000000000004',
-        maximum: '7000000000000000000',
-        slippage: 160,
-        preferences: [SupportedBridge.Across],
-      },
+      // {
+      //   origin: 81457,
+      //   destination: 1,
+      //   asset: '0x4300000000000000000000000000000000000004',
+      //   maximum: '7000000000000000000',
+      //   slippage: 160,
+      //   preferences: [SupportedBridge.Across],
+      // },
       // linea ethereum WETH    7000000000000000000 30
       {
         origin: 59144,
