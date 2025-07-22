@@ -1,0 +1,226 @@
+On-Demand Rebalancing PRD
+
+Objective
+=========
+Implement an on-demand rebalancing system for Mark that automatically triggers cross-chain fund movement when an invoice cannot be fulfilled due to insufficient balance on the target chain, enabling seamless invoice processing without manual intervention.
+
+Context
+=======
+Mark currently processes invoices by checking available balances on target chains. When insufficient funds are available, invoices fail or are delayed. The existing system has:
+- Multi-chain balance monitoring capabilities
+- Rebalancing infrastructure for scheduled operations
+- Invoice processing pipeline (processInvoices.ts)
+- Cache management system (RebalanceCache) - to be migrated to PostgreSQL
+- Transaction execution framework
+
+The current limitation is that rebalancing only happens on scheduled intervals, not in response to immediate invoice needs.
+
+Constraints
+===========
+- MUST NOT disrupt existing invoice processing workflows
+- MUST respect minimum reserve requirements on all chains
+- MUST maintain durability between polling intervals
+- MUST support all chains with enshrined rebalancing configuration
+- MUST NOT consider partial invoice filling
+- MUST process immediately settleable invoices first
+- Available development resources: existing rebalancing and invoice infrastructure
+
+Reasoning
+=========
+On-demand rebalancing will significantly improve invoice fulfillment rates by:
+1. Eliminating delays caused by insufficient balances on target chains
+2. Reducing the need for over-provisioning funds across all chains
+3. Enabling more efficient capital utilization through dynamic fund movement
+4. Maintaining the FIFO invoice processing order while optimizing for immediate settlements
+
+This approach is superior to increasing scheduled rebalancing frequency because it's event-driven, more efficient, and responds immediately to actual needs rather than predictions.
+
+Features
+========
+
+F1: On-Demand Rebalancing Engine
+- Description: Core logic to evaluate and execute rebalancing when invoices cannot be immediately settled
+- Components:
+  - Invoice insufficiency detection
+  - Multi-chain balance analysis
+  - Optimal rebalancing route calculation
+  - Rebalancing operation execution
+
+F2: Invoice Earmarking System
+- Description: Reservation system to track invoices waiting for rebalancing completion
+- Components:
+  - Earmark creation and management
+  - Invoice-to-rebalancing operation mapping
+  - Completion status tracking
+  - Cleanup after successful purchase
+
+F3: Multi-Source Rebalancing Coordination
+- Description: Orchestrate simultaneous rebalancing from multiple source chains to fulfill large invoices
+- Components:
+  - Multi-chain rebalancing planning
+  - Composite operation tracking
+  - All-or-nothing completion logic
+  - Slippage-aware amount calculations
+
+F4: Intelligent Destination Selection
+- Description: Optimize destination chain selection for rebalancing operations
+- Components:
+  - Multi-destination analysis
+  - Operation count minimization
+  - Total rebalance amount optimization
+  - Feasibility validation
+
+F5: Reserve-Aware Balance Management
+- Description: Respect minimum reserve requirements and existing invoice commitments
+- Components:
+  - Available balance calculations
+  - Reserve requirement validation
+  - Pending invoice consideration
+  - Override capabilities for specific chains
+
+F6: Earmarked Fund Reservation
+- Description: Prevent earmarked funds from being used by other operations
+- Components:
+  - Fund reservation tracking
+  - Balance calculation adjustments
+  - Completion-based reservation release
+
+Technical Requirements
+======================
+
+TR1: Core Implementation Files
+- onDemand.ts: Main rebalancing logic with three key functions:
+  - evaluateOnDemandRebalancing(): Determine rebalancing feasibility
+  - executeOnDemandRebalancing(): Create transactions and earmarks
+  - processEarmarkedInvoices(): Handle completed rebalancing operations
+
+TR2: Persistent Database Migration and Earmark Management
+- PostgreSQL Database Implementation:
+  - Migrate existing RebalanceCache to PostgreSQL for persistence and scalability
+  - Database schema design for earmarks, rebalancing operations, and historical data
+  - Backwards compatibility layer maintaining existing RebalanceCache interface
+  - Database connection pooling and transaction management
+  - Migration scripts for data transition from Redis to PostgreSQL
+- Earmark Management Operations:
+  - createEarmark(): Store invoice earmarks with full audit trail
+  - getEarmarks(): Retrieve active earmarks with filtering and pagination
+  - getEarmarkForInvoice(): Get specific earmark data with related operations
+  - removeEarmark(): Clean up completed earmarks with soft delete options
+  - Database indexing strategy for performance optimization
+
+TR3: Data Structures
+- OnDemandRebalanceEarmark: Track multi-operation rebalancing state
+  - Invoice identification and amounts
+  - Multiple rebalance operation statuses
+  - Destination chain tracking
+  - Completion state management
+
+TR4: Database Schema and Migration Strategy
+- PostgreSQL Schema Design:
+  - earmarks table: Primary storage for earmark data with timestamps and status tracking
+  - rebalance_operations table: Individual rebalancing operations linked to earmarks
+  - earmark_audit_log table: Complete audit trail of all earmark state changes
+  - Proper foreign key relationships and constraints
+- Migration Strategy:
+  - Phased migration approach with zero-downtime deployment
+  - Rollback procedures and data integrity validation
+  - Performance benchmarking and optimization during migration
+- Backwards Compatibility:
+  - Compatibility adapter implementing existing RebalanceCache interface
+  - Gradual migration of existing rebalancing operations
+
+TR5: Integration Points
+- processInvoices.ts integration:
+  - Start-of-cycle earmark validation
+  - End-of-cycle earmark cleanup
+  - Dynamic invoice amount handling
+
+Functional Requirements
+=======================
+
+FR1: Settlement Priority
+- MUST allow immediately settleable invoices to process first
+- SHOULD process invoices in FIFO order with exceptions for immediate settlement
+- MUST NOT consider partial invoice filling
+
+FR2: Fund Management
+- MUST respect earmarked funds in all rebalancing configurations
+- MUST maintain durability between polling intervals
+- MUST support all chains with enshrined rebalancing configuration
+
+FR3: Route Optimization
+- SHOULD prioritize fastest rebalancing options (Across over Binance for earmarked funds)
+- SHOULD choose cheapest option when multiple fast options exist within timeframe
+- MUST calculate slippage-adjusted amounts for accurate planning
+
+FR4: State Consistency
+- MUST handle invoice state changes between polling cycles
+- MUST validate invoice availability before purchase attempts
+- MUST dynamically adjust rebalancing plans for amount changes
+
+FR5: Reserve Compliance
+- MUST respect minimum reserve requirements unless explicitly overridden
+- MUST consider pending invoice requirements in balance calculations
+- MUST prevent disruption of current invoice processing workflows
+
+FR6: Database Migration and Persistence
+- MUST maintain full backwards compatibility with existing RebalanceCache interface during migration
+- MUST provide rollback capabilities in case of migration issues
+- MUST maintain existing performance characteristics or better
+- SHOULD implement gradual migration with monitoring and validation at each step
+
+Edge Case Handling
+==================
+
+EC1: Invoice State Changes
+- Filled Externally: Clean up earmarks and log occurrence
+- Amount Increased: Execute additional rebalancing operations
+- Amount Decreased: Allow excess rebalancing, update earmark amounts
+
+EC2: Multi-Chain Coordination
+- Partial Completion: Wait for all operations before processing
+- Failed Operations: Handle graceful failure and cleanup
+- Timing Variations: Manage different completion times across chains
+
+EC3: Balance Conflicts
+- Concurrent Usage: Reserve earmarked funds from other operations
+- Insufficient Capacity: Validate feasibility before execution
+- Dynamic Allocation: Adjust plans based on real-time availability
+
+Success Criteria
+================
+
+SC1: Performance Metrics
+- Invoice fulfillment rate improvement through on-demand rebalancing
+- Average time to rebalancing completion
+- Success rate of multi-chain rebalancing operations
+
+SC2: System Reliability
+- Zero loss of funds during rebalancing operations
+- Consistent earmark state management across polling cycles
+- Proper cleanup of completed operations
+
+SC3: Operational Efficiency
+- Minimal disruption to existing invoice processing
+- Optimal destination selection reducing unnecessary operations
+- Efficient resource utilization respecting reserves
+
+Implementation Approach
+=======================
+The feature will be implemented through three core integration points:
+
+1. Pre-Processing Phase: Check earmarked invoices and validate rebalancing completion
+2. Processing Phase: Detect insufficient balances and trigger on-demand rebalancing
+3. Post-Processing Phase: Clean up completed earmarks and prepare newly rebalanced invoices
+
+This approach ensures minimal disruption to existing workflows while adding the new capability.
+
+Risk Considerations
+===================
+- Slippage Impact: Insufficient funds arrival due to slippage miscalculations
+- State Synchronization: Earmark state inconsistencies across polling cycles
+- Resource Conflicts: Competition between regular and on-demand rebalancing
+- Chain Failures: Handling partial failures in multi-chain operations
+- Performance Degradation: Potential performance impact during database transition period
+- Compatibility Issues: Breaking changes in existing RebalanceCache interface implementations
+- Data Consistency: Ensuring data synchronization between Redis and PostgreSQL during transition

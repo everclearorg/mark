@@ -1,0 +1,704 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Design PostgreSQL Schema for Rebalancing System",
+        "description": "Design and implement the PostgreSQL database schema for the on-demand rebalancing system, migrating from the existing RebalanceCache.",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "details": "Create a comprehensive database schema that includes:\n\n1. `earmarks` table:\n   - id: UUID PRIMARY KEY\n   - invoice_id: VARCHAR NOT NULL\n   - destination_chain_id: INTEGER NOT NULL\n   - amount: NUMERIC(36,18) NOT NULL\n   - status: VARCHAR NOT NULL (pending, completed, failed)\n   - created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW()\n   - updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW()\n   - metadata: JSONB\n\n2. `rebalance_operations` table:\n   - id: UUID PRIMARY KEY\n   - earmark_id: UUID REFERENCES earmarks(id)\n   - source_chain_id: INTEGER NOT NULL\n   - destination_chain_id: INTEGER NOT NULL\n   - amount: NUMERIC(36,18) NOT NULL\n   - expected_completion_time: TIMESTAMP WITH TIME ZONE\n   - actual_completion_time: TIMESTAMP WITH TIME ZONE\n   - status: VARCHAR NOT NULL (pending, in_progress, completed, failed)\n   - transaction_hash: VARCHAR\n   - created_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW()\n   - updated_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW()\n\n3. `earmark_audit_log` table:\n   - id: UUID PRIMARY KEY\n   - earmark_id: UUID REFERENCES earmarks(id)\n   - previous_state: JSONB\n   - new_state: JSONB\n   - changed_by: VARCHAR\n   - changed_at: TIMESTAMP WITH TIME ZONE DEFAULT NOW()\n\nImplement proper indexes for performance optimization:\n- CREATE INDEX idx_earmarks_invoice_id ON earmarks(invoice_id);\n- CREATE INDEX idx_earmarks_status ON earmarks(status);\n- CREATE INDEX idx_rebalance_operations_earmark_id ON rebalance_operations(earmark_id);\n- CREATE INDEX idx_rebalance_operations_status ON rebalance_operations(status);\n\nUse node-postgres (pg) v8.11.0 or newer with connection pooling:\n```typescript\nimport { Pool } from 'pg';\n\nconst pool = new Pool({\n  user: process.env.DB_USER,\n  host: process.env.DB_HOST,\n  database: process.env.DB_NAME,\n  password: process.env.DB_PASSWORD,\n  port: parseInt(process.env.DB_PORT || '5432'),\n  max: 20, // Maximum number of clients in the pool\n  idleTimeoutMillis: 30000\n});\n```\n\nCreate migration scripts using a tool like node-pg-migrate or TypeORM migrations.",
+        "testStrategy": "1. Create unit tests for schema validation ensuring all required fields and constraints are properly defined\n2. Implement integration tests that verify database operations (CRUD) for each table\n3. Test connection pooling under load to ensure proper resource management\n4. Validate foreign key constraints and cascading behaviors\n5. Benchmark query performance with realistic data volumes to ensure indexes are effective\n6. Test rollback procedures to verify data integrity during migration failures\n7. Verify Terraform infrastructure deployment in a staging environment before production rollout\n8. Test database connectivity and security configurations in the deployed environment",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Database Schema Definition",
+            "description": "Define the PostgreSQL schema with tables, columns, data types, and constraints as specified in the requirements.",
+            "status": "pending",
+            "dependencies": [],
+            "details": "Create SQL definition files for the three required tables (earmarks, rebalance_operations, earmark_audit_log) with all specified columns, data types, and constraints. Include PRIMARY KEY constraints, FOREIGN KEY references, NOT NULL constraints, and DEFAULT values as specified. Ensure proper data type selection, especially for numeric fields that need to handle cryptocurrency amounts with precision.",
+            "testStrategy": "Validate schema definition against PostgreSQL syntax requirements. Verify all required columns, data types, and constraints are properly defined. Test creation of tables in a development environment to ensure they can be created without errors."
+          },
+          {
+            "id": 2,
+            "title": "Implement Database Indexes",
+            "description": "Create the required indexes for performance optimization on the database tables.",
+            "status": "pending",
+            "dependencies": [],
+            "details": "Implement all specified indexes including idx_earmarks_invoice_id, idx_earmarks_status, idx_rebalance_operations_earmark_id, and idx_rebalance_operations_status. Research and recommend additional indexes that might improve query performance based on expected access patterns. Document the purpose of each index and the performance benefits it provides.",
+            "testStrategy": "Verify index creation syntax. Test query performance with and without indexes using EXPLAIN ANALYZE on common query patterns. Ensure indexes are properly utilized by the database query planner."
+          },
+          {
+            "id": 3,
+            "title": "Set Up Connection Pooling",
+            "description": "Implement the PostgreSQL connection pooling configuration using node-postgres as specified.",
+            "status": "pending",
+            "dependencies": [],
+            "details": "Create a database connection module that implements the Pool configuration as specified in the requirements. Include environment variable configuration for database credentials. Implement proper error handling for connection issues. Configure connection pool parameters (max connections, idle timeout) based on expected application load. Create helper functions for acquiring and releasing connections from the pool.",
+            "testStrategy": "Test connection establishment with valid and invalid credentials. Verify connection pooling works under load by simulating multiple concurrent requests. Test error handling when database connections fail. Measure connection acquisition times under various load conditions."
+          },
+          {
+            "id": 4,
+            "title": "Create Database Migration Scripts",
+            "description": "Develop migration scripts for schema creation and future updates using node-pg-migrate or TypeORM.",
+            "status": "pending",
+            "dependencies": [],
+            "details": "Select and set up either node-pg-migrate or TypeORM for database migrations. Create the initial migration script that establishes the complete schema including tables, constraints, and indexes. Implement both up and down migration functions to allow for rollbacks. Document the migration process including how to run migrations and roll them back. Set up a versioning system for tracking applied migrations.",
+            "testStrategy": "Test migration script execution in a clean database environment. Verify all schema elements are created correctly. Test migration rollback functionality. Ensure migrations can be applied idempotently without errors."
+          },
+          {
+            "id": 5,
+            "title": "Implement Database Access Layer",
+            "description": "Create a data access layer with CRUD operations for all tables in the schema.",
+            "status": "pending",
+            "dependencies": [],
+            "details": "Develop a comprehensive data access layer that provides typed interfaces for all database operations. Implement functions for creating, reading, updating, and deleting records in each table. Create transaction support for operations that span multiple tables. Implement proper error handling and logging for database operations. Add data validation before database operations to ensure data integrity.",
+            "testStrategy": "Create unit tests for each CRUD operation. Test transaction integrity by simulating failures during multi-step operations. Verify error handling correctly captures and reports database errors. Test with various valid and invalid input data to ensure proper validation."
+          },
+          {
+            "id": 6,
+            "title": "Update Terraform Database Configuration",
+            "description": "Update the Terraform infrastructure code to support the new PostgreSQL schema and on-demand rebalancing system requirements.",
+            "status": "pending",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Modify the existing Terraform configuration to support the PostgreSQL database requirements for the on-demand rebalancing system. Update the database instance configuration including instance type, storage allocation, and performance parameters based on expected workload. Configure database connection settings including security groups, network ACLs, and VPC settings to ensure proper connectivity. Set up appropriate backup and recovery configurations. Define database parameter groups with optimized settings for the rebalancing workload. Implement proper security measures including encryption at rest and in transit.",
+            "testStrategy": "Validate Terraform configuration using 'terraform validate' and 'terraform plan' before applying changes. Test database connectivity from application environments after deployment. Verify security configurations meet organizational requirements. Test backup and restore procedures to ensure data can be recovered. Perform load testing to verify the database instance can handle expected traffic."
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Implement RebalanceCache PostgreSQL Adapter",
+        "description": "Create a backward-compatible adapter that implements the existing RebalanceCache interface but uses PostgreSQL as the underlying storage.",
+        "details": "Develop a PostgreSQL adapter that maintains full compatibility with the existing RebalanceCache interface:\n\n1. Create a `PostgresRebalanceCache` class that implements all methods from the existing Redis-based cache:\n\n```typescript\nexport class PostgresRebalanceCache implements RebalanceCache {\n  private pool: Pool;\n  \n  constructor(connectionPool: Pool) {\n    this.pool = connectionPool;\n  }\n  \n  // Implement all existing methods with PostgreSQL queries\n  async getRebalanceData(): Promise<RebalanceData> {\n    // Query PostgreSQL for rebalance data\n  }\n  \n  async updateRebalanceData(data: Partial<RebalanceData>): Promise<void> {\n    // Update rebalance data in PostgreSQL\n  }\n  \n  // Additional methods...\n}\n```\n\n2. Implement transaction support for operations that require atomicity:\n\n```typescript\nasync function withTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {\n  const client = await this.pool.connect();\n  try {\n    await client.query('BEGIN');\n    const result = await callback(client);\n    await client.query('COMMIT');\n    return result;\n  } catch (e) {\n    await client.query('ROLLBACK');\n    throw e;\n  } finally {\n    client.release();\n  }\n}\n```\n\n3. Create a feature flag system to gradually migrate from Redis to PostgreSQL:\n\n```typescript\nexport function getRebalanceCache(): RebalanceCache {\n  if (process.env.USE_POSTGRES_REBALANCE_CACHE === 'true') {\n    return new PostgresRebalanceCache(postgresPool);\n  }\n  return new RedisRebalanceCache(redisClient);\n}\n```\n\n4. Implement data synchronization between Redis and PostgreSQL during the transition period to ensure consistency.\n\n5. Add comprehensive error handling and retry logic for database operations.\n\n6. Implement connection pooling optimization and query parameterization to prevent SQL injection.",
+        "testStrategy": "1. Create unit tests for each method in the PostgresRebalanceCache class\n2. Implement integration tests that verify the adapter works with the existing system\n3. Create comparison tests that validate identical behavior between Redis and PostgreSQL implementations\n4. Test error handling and recovery scenarios\n5. Implement performance tests comparing Redis vs PostgreSQL implementations\n6. Test the feature flag system to ensure proper cache selection\n7. Validate data consistency during synchronization between Redis and PostgreSQL",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create PostgresRebalanceCache Class Structure",
+            "description": "Implement the PostgresRebalanceCache class that implements all methods from the existing RebalanceCache interface using PostgreSQL as the storage backend.",
+            "dependencies": [],
+            "details": "Create the class structure with proper typing and implement all required methods from the RebalanceCache interface. This includes methods for getting and updating rebalance data, with PostgreSQL queries replacing Redis commands. Ensure proper connection handling and query parameterization to prevent SQL injection. Create database schema definitions for storing the rebalance data in PostgreSQL tables.",
+            "status": "pending",
+            "testStrategy": "Write unit tests for each implemented method, comparing behavior with the existing Redis implementation. Create mock PostgreSQL clients for testing. Verify proper error handling when database operations fail."
+          },
+          {
+            "id": 2,
+            "title": "Implement Transaction Support",
+            "description": "Create transaction handling functionality to ensure atomicity for operations that modify multiple database records.",
+            "dependencies": [
+              "2.1"
+            ],
+            "details": "Implement a withTransaction helper function that manages database transactions, including proper BEGIN, COMMIT, and ROLLBACK operations. Modify relevant methods to use transactions when appropriate. Ensure proper error handling and resource cleanup in all cases, including when exceptions are thrown.",
+            "status": "pending",
+            "testStrategy": "Test transaction behavior by simulating successful operations and failures. Verify that transactions are properly committed on success and rolled back on failure. Test resource cleanup to ensure no connection leaks."
+          },
+          {
+            "id": 3,
+            "title": "Create Feature Flag System",
+            "description": "Implement a feature flag system to gradually migrate from Redis to PostgreSQL while maintaining system stability.",
+            "dependencies": [
+              "2.1",
+              "2.2"
+            ],
+            "details": "Create a factory function that returns either the Redis or PostgreSQL implementation based on environment variables or configuration settings. Implement logging to track which implementation is being used. Add monitoring capabilities to compare performance between implementations during the transition period.",
+            "status": "pending",
+            "testStrategy": "Test the factory function with different configuration values to ensure it returns the correct implementation. Verify that the system works correctly when switching between implementations."
+          },
+          {
+            "id": 4,
+            "title": "Implement Data Synchronization",
+            "description": "Create a system to synchronize data between Redis and PostgreSQL during the transition period to ensure consistency.",
+            "dependencies": [
+              "2.1",
+              "2.2",
+              "2.3"
+            ],
+            "details": "Implement bidirectional synchronization between Redis and PostgreSQL for rebalance data. Create a background job that periodically checks for inconsistencies and resolves them. Add logging and alerting for synchronization failures. Implement conflict resolution strategies for cases where data differs between systems.",
+            "status": "pending",
+            "testStrategy": "Test synchronization with various data scenarios, including conflicts. Verify that data remains consistent when operations are performed on either system. Test recovery from synchronization failures."
+          },
+          {
+            "id": 5,
+            "title": "Optimize Performance and Error Handling",
+            "description": "Enhance the PostgreSQL adapter with comprehensive error handling, retry logic, and performance optimizations.",
+            "dependencies": [
+              "2.1",
+              "2.2",
+              "2.3",
+              "2.4"
+            ],
+            "details": "Implement connection pooling optimization to efficiently manage database connections. Add retry logic for transient database errors with exponential backoff. Create detailed error logging with contextual information. Optimize query performance through indexing and query analysis. Implement circuit breaker patterns to prevent cascading failures.",
+            "status": "pending",
+            "testStrategy": "Benchmark performance against the Redis implementation under various load conditions. Test error recovery by simulating various database failure scenarios. Verify that the system degrades gracefully under extreme conditions."
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Implement Earmark Management System",
+        "description": "Develop the core earmark management system that tracks invoices waiting for rebalancing completion.",
+        "details": "Create a comprehensive earmark management system with the following components:\n\n1. Define the `OnDemandRebalanceEarmark` interface:\n\n```typescript\ninterface OnDemandRebalanceEarmark {\n  id: string;\n  invoiceId: string;\n  destinationChainId: number;\n  amount: string; // BigNumber string representation\n  operations: RebalanceOperation[];\n  status: 'pending' | 'in_progress' | 'completed' | 'failed';\n  createdAt: Date;\n  updatedAt: Date;\n  metadata?: Record<string, any>;\n}\n\ninterface RebalanceOperation {\n  id: string;\n  sourceChainId: number;\n  destinationChainId: number;\n  amount: string; // BigNumber string representation\n  status: 'pending' | 'in_progress' | 'completed' | 'failed';\n  transactionHash?: string;\n  expectedCompletionTime?: Date;\n  actualCompletionTime?: Date;\n}\n```\n\n2. Implement core earmark management functions:\n\n```typescript\nexport class EarmarkManager {\n  private db: PostgresRebalanceCache;\n  \n  constructor(db: PostgresRebalanceCache) {\n    this.db = db;\n  }\n  \n  async createEarmark(invoiceId: string, destinationChainId: number, amount: string): Promise<OnDemandRebalanceEarmark> {\n    // Create a new earmark in the database\n    // Return the created earmark\n  }\n  \n  async getEarmarks(filters?: { status?: string, invoiceId?: string }): Promise<OnDemandRebalanceEarmark[]> {\n    // Retrieve earmarks with optional filtering\n  }\n  \n  async getEarmarkForInvoice(invoiceId: string): Promise<OnDemandRebalanceEarmark | null> {\n    // Get specific earmark for an invoice\n  }\n  \n  async updateEarmarkStatus(earmarkId: string, status: 'pending' | 'in_progress' | 'completed' | 'failed'): Promise<void> {\n    // Update earmark status with audit logging\n  }\n  \n  async removeEarmark(earmarkId: string, softDelete: boolean = true): Promise<void> {\n    // Remove or soft-delete an earmark\n  }\n  \n  async addOperationToEarmark(earmarkId: string, operation: Omit<RebalanceOperation, 'id'>): Promise<string> {\n    // Add a rebalance operation to an earmark\n    // Return the operation ID\n  }\n  \n  async updateOperationStatus(operationId: string, status: 'pending' | 'in_progress' | 'completed' | 'failed', transactionHash?: string): Promise<void> {\n    // Update operation status\n    // If all operations are completed, update earmark status\n  }\n}\n```\n\n3. Implement audit logging for all earmark state changes:\n\n```typescript\nprivate async logAuditEvent(earmarkId: string, previousState: any, newState: any): Promise<void> {\n  await this.db.query(\n    'INSERT INTO earmark_audit_log (earmark_id, previous_state, new_state, changed_by) VALUES ($1, $2, $3, $4)',\n    [earmarkId, JSON.stringify(previousState), JSON.stringify(newState), 'system']\n  );\n}\n```\n\n4. Implement transaction support for operations that modify multiple tables:\n\n```typescript\nasync updateEarmarkStatus(earmarkId: string, status: string): Promise<void> {\n  return this.db.withTransaction(async (client) => {\n    // Get current state for audit log\n    const currentState = await client.query('SELECT * FROM earmarks WHERE id = $1', [earmarkId]);\n    \n    // Update status\n    await client.query('UPDATE earmarks SET status = $1, updated_at = NOW() WHERE id = $2', [status, earmarkId]);\n    \n    // Log audit event\n    const newState = await client.query('SELECT * FROM earmarks WHERE id = $1', [earmarkId]);\n    await client.query(\n      'INSERT INTO earmark_audit_log (earmark_id, previous_state, new_state, changed_by) VALUES ($1, $2, $3, $4)',\n      [earmarkId, JSON.stringify(currentState.rows[0]), JSON.stringify(newState.rows[0]), 'system']\n    );\n  });\n}\n```",
+        "testStrategy": "1. Create unit tests for each method in the EarmarkManager class\n2. Test earmark creation, retrieval, update, and deletion operations\n3. Verify audit logging captures all state changes correctly\n4. Test transaction integrity by simulating failures during multi-step operations\n5. Implement integration tests that verify earmark lifecycle management\n6. Test concurrent operations to ensure data consistency\n7. Validate that operation status updates correctly propagate to earmark status",
+        "priority": "high",
+        "dependencies": [
+          1,
+          2
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define Database Schema for Earmark Management",
+            "description": "Create the database schema for storing earmarks, operations, and audit logs in PostgreSQL",
+            "dependencies": [],
+            "details": "Design and implement the database schema including tables for earmarks, rebalance operations, and audit logs. Create the necessary indexes for efficient querying. Include migration scripts for schema creation and updates. Define appropriate constraints and relationships between tables.",
+            "status": "pending",
+            "testStrategy": "Verify schema integrity with test data insertion and retrieval. Test foreign key constraints and cascading behaviors. Ensure indexes improve query performance for common access patterns."
+          },
+          {
+            "id": 2,
+            "title": "Implement Core Earmark Management Functions",
+            "description": "Develop the EarmarkManager class with CRUD operations for earmarks",
+            "dependencies": [
+              "3.1"
+            ],
+            "details": "Implement the EarmarkManager class with methods for creating, retrieving, updating, and deleting earmarks. Include functionality for filtering earmarks by status and invoice ID. Ensure proper error handling and validation of inputs. Implement transaction support for operations that modify multiple tables.",
+            "status": "pending",
+            "testStrategy": "Create unit tests for each CRUD operation. Test edge cases like invalid inputs and duplicate entries. Verify transaction rollback on failures. Test concurrent operations for race conditions."
+          },
+          {
+            "id": 3,
+            "title": "Implement Rebalance Operation Management",
+            "description": "Develop functionality for managing rebalance operations within earmarks",
+            "dependencies": [
+              "3.2"
+            ],
+            "details": "Implement methods for adding operations to earmarks, updating operation status, and tracking operation progress. Create logic to automatically update earmark status based on the status of its operations. Implement transaction support for operation updates that affect earmark status.",
+            "status": "pending",
+            "testStrategy": "Test operation creation with various parameters. Verify status propagation from operations to earmarks. Test partial and complete operation sets. Verify transaction integrity during multi-step updates."
+          },
+          {
+            "id": 4,
+            "title": "Implement Audit Logging System",
+            "description": "Create a comprehensive audit logging system for tracking all earmark state changes",
+            "dependencies": [
+              "3.1",
+              "3.2"
+            ],
+            "details": "Implement the logAuditEvent method to record all state changes to earmarks and operations. Store previous and new states as JSON for complete history tracking. Include metadata such as timestamp and change initiator. Ensure audit logs are created within the same transaction as the state changes.",
+            "status": "pending",
+            "testStrategy": "Verify audit logs capture all state transitions correctly. Test audit log creation within transactions. Ensure no state changes occur without corresponding audit entries. Test audit log retrieval and filtering capabilities."
+          },
+          {
+            "id": 5,
+            "title": "Integrate Earmark Manager with Existing Systems",
+            "description": "Connect the Earmark Management System with the PostgreSQL RebalanceCache and other system components",
+            "dependencies": [
+              "3.2",
+              "3.3",
+              "3.4"
+            ],
+            "details": "Integrate the EarmarkManager with the PostgresRebalanceCache. Create adapter methods to ensure compatibility with existing systems. Implement event listeners for system events that should trigger earmark updates. Create a public API for other system components to interact with the earmark management system.",
+            "status": "pending",
+            "testStrategy": "Perform integration tests with the PostgresRebalanceCache. Test end-to-end workflows involving multiple system components. Verify event-driven updates work correctly. Test API endpoints with various request scenarios."
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Implement On-Demand Rebalancing Core Logic",
+        "description": "Develop the core logic for evaluating and executing on-demand rebalancing when invoices cannot be immediately settled.",
+        "details": "Create the main on-demand rebalancing module (`onDemand.ts`) with three key functions:\n\n1. `evaluateOnDemandRebalancing`: Determine if rebalancing is feasible for an invoice\n\n```typescript\ninterface RebalancingEvaluation {\n  feasible: boolean;\n  sourceChains: Array<{\n    chainId: number;\n    availableAmount: string; // BigNumber string representation\n  }>;\n  estimatedCompletionTime: Date | null;\n  reason?: string; // If not feasible\n}\n\nasync function evaluateOnDemandRebalancing(\n  invoice: Invoice,\n  destinationChainId: number,\n  amount: string // BigNumber string representation\n): Promise<RebalancingEvaluation> {\n  // 1. Get current balances across all chains\n  const balances = await getChainBalances();\n  \n  // 2. Calculate available amounts considering reserves and pending operations\n  const availableAmounts = calculateAvailableAmounts(balances);\n  \n  // 3. Find chains that can source the required amount\n  const sourceChains = findPotentialSourceChains(availableAmounts, amount, destinationChainId);\n  \n  // 4. Check if rebalancing is feasible\n  if (sourceChains.length === 0) {\n    return {\n      feasible: false,\n      sourceChains: [],\n      estimatedCompletionTime: null,\n      reason: 'No source chains with sufficient available balance'\n    };\n  }\n  \n  // 5. Estimate completion time based on fastest route\n  const estimatedCompletionTime = estimateCompletionTime(sourceChains, destinationChainId, amount);\n  \n  return {\n    feasible: true,\n    sourceChains,\n    estimatedCompletionTime\n  };\n}\n```\n\n2. `executeOnDemandRebalancing`: Create transactions and earmarks for rebalancing\n\n```typescript\ninterface RebalancingExecution {\n  earmarkId: string;\n  operations: Array<{\n    operationId: string;\n    sourceChainId: number;\n    amount: string; // BigNumber string representation\n    transactionHash?: string;\n  }>;\n  estimatedCompletionTime: Date;\n}\n\nasync function executeOnDemandRebalancing(\n  invoice: Invoice,\n  destinationChainId: number,\n  amount: string, // BigNumber string representation\n  evaluation: RebalancingEvaluation\n): Promise<RebalancingExecution> {\n  // 1. Create earmark for the invoice\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  const earmark = await earmarkManager.createEarmark(invoice.id, destinationChainId, amount);\n  \n  // 2. Determine optimal rebalancing strategy (could be multiple source chains)\n  const rebalancingPlan = calculateOptimalRebalancingPlan(evaluation.sourceChains, destinationChainId, amount);\n  \n  // 3. Create and execute rebalancing operations\n  const operations = [];\n  for (const plan of rebalancingPlan) {\n    // Calculate slippage-adjusted amount\n    const adjustedAmount = calculateSlippageAdjustedAmount(plan.amount, plan.sourceChainId, destinationChainId);\n    \n    // Create operation record\n    const operationId = await earmarkManager.addOperationToEarmark(earmark.id, {\n      sourceChainId: plan.sourceChainId,\n      destinationChainId,\n      amount: adjustedAmount,\n      status: 'pending',\n      expectedCompletionTime: plan.estimatedCompletionTime\n    });\n    \n    // Execute the rebalancing transaction\n    const txHash = await executeRebalancingTransaction(plan.sourceChainId, destinationChainId, adjustedAmount);\n    \n    // Update operation with transaction hash\n    await earmarkManager.updateOperationStatus(operationId, 'in_progress', txHash);\n    \n    operations.push({\n      operationId,\n      sourceChainId: plan.sourceChainId,\n      amount: adjustedAmount,\n      transactionHash: txHash\n    });\n  }\n  \n  return {\n    earmarkId: earmark.id,\n    operations,\n    estimatedCompletionTime: evaluation.estimatedCompletionTime as Date\n  };\n}\n```\n\n3. `processEarmarkedInvoices`: Handle completed rebalancing operations\n\n```typescript\nasync function processEarmarkedInvoices(): Promise<void> {\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  \n  // 1. Get all in-progress earmarks\n  const earmarks = await earmarkManager.getEarmarks({ status: 'in_progress' });\n  \n  for (const earmark of earmarks) {\n    // 2. Check if all operations are completed\n    const allCompleted = earmark.operations.every(op => op.status === 'completed');\n    \n    if (allCompleted) {\n      // 3. Update earmark status to completed\n      await earmarkManager.updateEarmarkStatus(earmark.id, 'completed');\n      \n      // 4. Get the invoice and attempt to process it\n      const invoice = await getInvoice(earmark.invoiceId);\n      if (invoice && invoice.status === 'pending') {\n        // Add to the next processing cycle\n        await addInvoiceToProcessingQueue(invoice);\n      }\n    } else {\n      // 5. Check for failed operations\n      const anyFailed = earmark.operations.some(op => op.status === 'failed');\n      if (anyFailed) {\n        // Handle failed rebalancing\n        await earmarkManager.updateEarmarkStatus(earmark.id, 'failed');\n        // Log failure and potentially retry or notify\n      }\n    }\n  }\n}\n```\n\nAdditional helper functions:\n\n```typescript\n// Calculate available amounts considering reserves and pending operations\nfunction calculateAvailableAmounts(balances: Record<number, string>): Record<number, string> {\n  const availableAmounts: Record<number, string> = {};\n  \n  for (const [chainId, balance] of Object.entries(balances)) {\n    const numericChainId = parseInt(chainId);\n    const reserveRequirement = getReserveRequirement(numericChainId);\n    const pendingOutflows = getPendingOutflows(numericChainId);\n    \n    // Available = Balance - Reserve - Pending Outflows\n    const available = new BigNumber(balance)\n      .minus(reserveRequirement)\n      .minus(pendingOutflows);\n    \n    availableAmounts[numericChainId] = available.isNegative() ? '0' : available.toString();\n  }\n  \n  return availableAmounts;\n}\n\n// Find chains that can source the required amount\nfunction findPotentialSourceChains(\n  availableAmounts: Record<number, string>,\n  requiredAmount: string,\n  destinationChainId: number\n): Array<{ chainId: number, availableAmount: string }> {\n  const sourceChains = [];\n  const requiredBN = new BigNumber(requiredAmount);\n  \n  for (const [chainId, available] of Object.entries(availableAmounts)) {\n    const numericChainId = parseInt(chainId);\n    \n    // Skip destination chain\n    if (numericChainId === destinationChainId) continue;\n    \n    // Skip chains with insufficient balance\n    const availableBN = new BigNumber(available);\n    if (availableBN.isLessThan(requiredBN)) continue;\n    \n    // Check if rebalancing is configured for this route\n    if (!isRebalancingConfigured(numericChainId, destinationChainId)) continue;\n    \n    sourceChains.push({\n      chainId: numericChainId,\n      availableAmount: available\n    });\n  }\n  \n  return sourceChains;\n}\n```",
+        "testStrategy": "1. Create unit tests for each of the three main functions\n2. Test with various invoice scenarios: small amounts, large amounts requiring multiple source chains\n3. Test with different chain configurations and balance distributions\n4. Verify correct handling of reserve requirements\n5. Test edge cases like insufficient funds across all chains\n6. Mock transaction execution to test success and failure scenarios\n7. Verify proper earmark creation and status updates\n8. Test the slippage calculation logic with different chain pairs\n9. Implement integration tests that verify the end-to-end rebalancing flow",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement evaluateOnDemandRebalancing function",
+            "description": "Develop the core function to determine if rebalancing is feasible for an invoice by analyzing available balances across chains and identifying potential source chains.",
+            "dependencies": [],
+            "details": "Implement the evaluateOnDemandRebalancing function that takes an invoice, destination chain ID, and amount as inputs and returns a RebalancingEvaluation object. This function should: 1) Retrieve current balances across all chains, 2) Calculate available amounts considering reserves and pending operations, 3) Find chains that can source the required amount, 4) Check if rebalancing is feasible, and 5) Estimate completion time based on the fastest route.",
+            "status": "pending",
+            "testStrategy": "Create unit tests with various scenarios including: sufficient balances across multiple chains, insufficient balances, edge cases with exact balance matches, and different reserve requirements. Mock chain balance retrieval and verify correct source chain identification."
+          },
+          {
+            "id": 2,
+            "title": "Implement executeOnDemandRebalancing function",
+            "description": "Develop the function to create transactions and earmarks for rebalancing operations based on the evaluation results.",
+            "dependencies": [
+              "4.1"
+            ],
+            "details": "Implement the executeOnDemandRebalancing function that creates and executes rebalancing operations. This function should: 1) Create an earmark for the invoice, 2) Determine the optimal rebalancing strategy, 3) Create and execute rebalancing operations for each source chain, 4) Calculate slippage-adjusted amounts, and 5) Return a RebalancingExecution object with operation details and estimated completion time.",
+            "status": "pending",
+            "testStrategy": "Test with various rebalancing scenarios including single and multiple source chains. Verify earmark creation, transaction execution, and proper operation tracking. Mock blockchain interactions and test error handling during transaction submission."
+          },
+          {
+            "id": 3,
+            "title": "Implement processEarmarkedInvoices function",
+            "description": "Develop the function to handle completed rebalancing operations and process invoices that are ready for settlement.",
+            "dependencies": [
+              "4.2"
+            ],
+            "details": "Implement the processEarmarkedInvoices function that monitors and processes earmarked invoices. This function should: 1) Retrieve all in-progress earmarks, 2) Check if all operations for each earmark are completed, 3) Update earmark status accordingly, 4) Process invoices that are ready for settlement, and 5) Handle failed operations with appropriate error handling and logging.",
+            "status": "pending",
+            "testStrategy": "Test with various earmark statuses including fully completed operations, partially completed operations, and failed operations. Verify correct status transitions and invoice processing queue updates. Test edge cases like operations completing out of order."
+          },
+          {
+            "id": 4,
+            "title": "Implement helper functions for balance and source chain calculations",
+            "description": "Develop the supporting functions for calculating available amounts and finding potential source chains for rebalancing.",
+            "dependencies": [],
+            "details": "Implement the calculateAvailableAmounts and findPotentialSourceChains helper functions. The first function should calculate available amounts considering reserves and pending operations for each chain. The second function should identify chains that can source the required amount based on available balances, destination chain, and rebalancing configuration.",
+            "status": "pending",
+            "testStrategy": "Create unit tests for each helper function with various balance scenarios. Test reserve requirement calculations, pending outflow handling, and proper filtering of potential source chains. Verify correct behavior with edge cases like zero balances or exactly matching available amounts."
+          },
+          {
+            "id": 5,
+            "title": "Implement optimal rebalancing plan calculation",
+            "description": "Develop the function to determine the most efficient rebalancing strategy when multiple source chains are available.",
+            "dependencies": [
+              "4.1",
+              "4.4"
+            ],
+            "details": "Implement the calculateOptimalRebalancingPlan function that determines the best strategy for rebalancing funds from multiple source chains. This function should: 1) Analyze available source chains, 2) Consider factors like gas costs, transaction times, and slippage, 3) Optimize for speed or cost based on configuration, 4) Handle cases where a single source is sufficient or multiple sources are needed, and 5) Return a prioritized plan with amounts and estimated completion times.",
+            "status": "pending",
+            "testStrategy": "Test with various source chain configurations including single sufficient source, multiple sources with varying balances, and complex optimization scenarios. Verify the function correctly balances speed vs. cost optimization based on configuration. Test edge cases like exactly matching amounts across multiple chains."
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Implement Multi-Source Rebalancing Coordination",
+        "description": "Develop the system to orchestrate simultaneous rebalancing from multiple source chains to fulfill large invoices.",
+        "details": "Create a multi-source rebalancing coordination system that can handle large invoices requiring funds from multiple chains:\n\n1. Implement the optimal rebalancing plan calculator:\n\n```typescript\ninterface RebalancingPlanItem {\n  sourceChainId: number;\n  amount: string; // BigNumber string representation\n  estimatedCompletionTime: Date;\n  priority: number; // Lower is higher priority\n}\n\nfunction calculateOptimalRebalancingPlan(\n  sourceChains: Array<{ chainId: number, availableAmount: string }>,\n  destinationChainId: number,\n  requiredAmount: string\n): RebalancingPlanItem[] {\n  const requiredBN = new BigNumber(requiredAmount);\n  const plan: RebalancingPlanItem[] = [];\n  let remainingAmount = requiredBN;\n  \n  // Sort source chains by priority (speed, then cost)\n  const prioritizedChains = sourceChains\n    .map(chain => ({\n      ...chain,\n      priority: calculateChainPriority(chain.chainId, destinationChainId),\n      estimatedTime: estimateTransferTime(chain.chainId, destinationChainId)\n    }))\n    .sort((a, b) => a.priority - b.priority);\n  \n  // Allocate amounts from each source chain until we fulfill the required amount\n  for (const chain of prioritizedChains) {\n    if (remainingAmount.isLessThanOrEqualTo(0)) break;\n    \n    const availableBN = new BigNumber(chain.availableAmount);\n    const amountToTake = BigNumber.min(availableBN, remainingAmount);\n    \n    if (amountToTake.isGreaterThan(0)) {\n      plan.push({\n        sourceChainId: chain.chainId,\n        amount: amountToTake.toString(),\n        estimatedCompletionTime: new Date(Date.now() + chain.estimatedTime),\n        priority: chain.priority\n      });\n      \n      remainingAmount = remainingAmount.minus(amountToTake);\n    }\n  }\n  \n  // Check if we can fulfill the entire amount\n  if (remainingAmount.isGreaterThan(0)) {\n    throw new Error(`Cannot fulfill the entire required amount. Short by ${remainingAmount.toString()}`);\n  }\n  \n  return plan;\n}\n\n// Calculate priority based on speed and cost\nfunction calculateChainPriority(sourceChainId: number, destinationChainId: number): number {\n  // Get configuration for this route\n  const config = getRebalancingConfig(sourceChainId, destinationChainId);\n  \n  // Prioritize faster options (Across over Binance)\n  if (config.provider === 'across') return 1;\n  if (config.provider === 'binance') return 2;\n  \n  // If multiple fast options exist, prioritize by cost\n  return 3 + config.estimatedCost;\n}\n```\n\n2. Implement composite operation tracking:\n\n```typescript\nclass CompositeRebalancingOperation {\n  private earmarkId: string;\n  private operations: RebalanceOperation[];\n  private earmarkManager: EarmarkManager;\n  \n  constructor(earmarkId: string, operations: RebalanceOperation[], earmarkManager: EarmarkManager) {\n    this.earmarkId = earmarkId;\n    this.operations = operations;\n    this.earmarkManager = earmarkManager;\n  }\n  \n  async trackCompletion(): Promise<boolean> {\n    // Check status of all operations\n    const updatedOperations = await Promise.all(\n      this.operations.map(op => this.checkOperationStatus(op))\n    );\n    \n    // Update our local copy\n    this.operations = updatedOperations;\n    \n    // Check if all operations are completed\n    const allCompleted = this.operations.every(op => op.status === 'completed');\n    if (allCompleted) {\n      await this.earmarkManager.updateEarmarkStatus(this.earmarkId, 'completed');\n      return true;\n    }\n    \n    // Check if any operation failed\n    const anyFailed = this.operations.some(op => op.status === 'failed');\n    if (anyFailed) {\n      await this.earmarkManager.updateEarmarkStatus(this.earmarkId, 'failed');\n      return false;\n    }\n    \n    // Still in progress\n    return false;\n  }\n  \n  private async checkOperationStatus(operation: RebalanceOperation): Promise<RebalanceOperation> {\n    if (operation.status === 'completed' || operation.status === 'failed') {\n      return operation;\n    }\n    \n    // Check transaction status on-chain\n    if (operation.transactionHash) {\n      const status = await checkTransactionStatus(operation.sourceChainId, operation.transactionHash);\n      \n      if (status === 'confirmed') {\n        // Verify funds arrived at destination\n        const fundsArrived = await verifyFundsArrival(\n          operation.destinationChainId,\n          operation.amount,\n          operation.transactionHash\n        );\n        \n        if (fundsArrived) {\n          await this.earmarkManager.updateOperationStatus(operation.id, 'completed');\n          return { ...operation, status: 'completed', actualCompletionTime: new Date() };\n        }\n      } else if (status === 'failed') {\n        await this.earmarkManager.updateOperationStatus(operation.id, 'failed');\n        return { ...operation, status: 'failed' };\n      }\n    }\n    \n    return operation;\n  }\n}\n```\n\n3. Implement slippage-aware amount calculations:\n\n```typescript\nfunction calculateSlippageAdjustedAmount(\n  amount: string,\n  sourceChainId: number,\n  destinationChainId: number\n): string {\n  // Get slippage configuration for this route\n  const config = getRebalancingConfig(sourceChainId, destinationChainId);\n  const slippagePercentage = config.expectedSlippage || 0.005; // Default to 0.5%\n  \n  // Calculate adjusted amount: amount * (1 + slippage)\n  const amountBN = new BigNumber(amount);\n  const adjustmentFactor = new BigNumber(1).plus(slippagePercentage);\n  const adjustedAmount = amountBN.times(adjustmentFactor);\n  \n  return adjustedAmount.toString();\n}\n```\n\n4. Implement all-or-nothing completion logic:\n\n```typescript\nasync function processMultiSourceRebalancing(earmarkId: string): Promise<boolean> {\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  const earmark = await earmarkManager.getEarmarks({ id: earmarkId });\n  \n  if (!earmark || earmark.length === 0) {\n    throw new Error(`Earmark ${earmarkId} not found`);\n  }\n  \n  const compositeOperation = new CompositeRebalancingOperation(\n    earmarkId,\n    earmark[0].operations,\n    earmarkManager\n  );\n  \n  // Track completion of all operations\n  return compositeOperation.trackCompletion();\n}\n```",
+        "testStrategy": "1. Create unit tests for the optimal rebalancing plan calculator with various scenarios\n2. Test the composite operation tracking with simulated operation statuses\n3. Verify slippage calculations with different chain pairs and amounts\n4. Test the all-or-nothing completion logic with partial completions and failures\n5. Implement integration tests that verify multi-source rebalancing for large invoices\n6. Test edge cases like single-source fallback when one source has sufficient funds\n7. Verify proper handling of transaction confirmation and fund arrival verification\n8. Test with realistic chain configurations and slippage values",
+        "priority": "medium",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Optimal Rebalancing Plan Calculator",
+            "description": "Develop the algorithm to calculate the most efficient rebalancing plan using multiple source chains to fulfill a large invoice.",
+            "dependencies": [],
+            "details": "Create the calculateOptimalRebalancingPlan function that determines the optimal distribution of funds from multiple source chains to fulfill a required amount on a destination chain. Implement the calculateChainPriority helper function to prioritize chains based on speed and cost. Ensure the algorithm handles edge cases such as insufficient total funds and optimizes for fastest completion time.",
+            "status": "pending",
+            "testStrategy": "Create unit tests with various source chain configurations to verify optimal allocation. Test edge cases including insufficient funds, single source chain scenarios, and equal priority chains. Verify the function correctly throws errors when the required amount cannot be fulfilled."
+          },
+          {
+            "id": 2,
+            "title": "Implement Composite Operation Tracking",
+            "description": "Create a system to track and manage multiple simultaneous rebalancing operations as a single composite operation.",
+            "dependencies": [
+              "5.1"
+            ],
+            "details": "Implement the CompositeRebalancingOperation class that manages a group of related rebalancing operations tied to a single earmark. Develop the trackCompletion method to monitor the status of all operations and update the overall earmark status accordingly. Implement the checkOperationStatus method to verify transaction confirmations and fund arrivals across different chains.",
+            "status": "pending",
+            "testStrategy": "Test the composite tracking with various combinations of operation statuses (all completed, some pending, some failed). Verify proper earmark status updates based on operation outcomes. Mock blockchain interactions to test transaction verification and fund arrival confirmation."
+          },
+          {
+            "id": 3,
+            "title": "Implement Slippage-Aware Amount Calculations",
+            "description": "Develop functionality to adjust rebalancing amounts to account for expected slippage between different chains.",
+            "dependencies": [],
+            "details": "Create the calculateSlippageAdjustedAmount function that adjusts the amount to be transferred based on the expected slippage for a specific source-destination chain pair. Implement configuration retrieval for chain-specific slippage rates. Ensure the calculations properly handle different decimal precisions across tokens and chains.",
+            "status": "pending",
+            "testStrategy": "Test slippage calculations with various amount sizes and chain pairs. Verify correct handling of different slippage percentages from configuration. Test edge cases including very small amounts and very large amounts to ensure precision is maintained."
+          },
+          {
+            "id": 4,
+            "title": "Implement All-or-Nothing Completion Logic",
+            "description": "Create the logic to ensure that multi-source rebalancing operations are treated as atomic units that either completely succeed or fail.",
+            "dependencies": [
+              "5.2"
+            ],
+            "details": "Implement the processMultiSourceRebalancing function that manages the all-or-nothing completion logic for composite rebalancing operations. Develop the integration with the EarmarkManager to retrieve and update earmark statuses. Create logic to handle partial completions and determine when to mark the overall operation as completed or failed.",
+            "status": "pending",
+            "testStrategy": "Test scenarios where all operations complete successfully, some operations fail, and operations complete at different times. Verify proper earmark status updates in each scenario. Test error handling when earmarks are not found or invalid."
+          },
+          {
+            "id": 5,
+            "title": "Integrate Multi-Source Rebalancing with Invoice Processing",
+            "description": "Connect the multi-source rebalancing system with the invoice processing workflow to handle large invoices automatically.",
+            "dependencies": [
+              "5.1",
+              "5.2",
+              "5.3",
+              "5.4"
+            ],
+            "details": "Develop the integration between the invoice processing system and the multi-source rebalancing coordinator. Implement hooks in the invoice processing workflow to trigger multi-source rebalancing when needed. Create logic to determine when an invoice requires multi-source rebalancing versus single-source rebalancing. Implement status reporting to update invoice status based on rebalancing progress.",
+            "status": "pending",
+            "testStrategy": "Test end-to-end invoice processing with various invoice sizes requiring different rebalancing strategies. Verify correct triggering of multi-source rebalancing for large invoices. Test invoice status updates throughout the rebalancing process. Verify proper handling of both successful and failed rebalancing operations."
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Implement Intelligent Destination Selection",
+        "description": "Develop the system to optimize destination chain selection for rebalancing operations.",
+        "details": "Create an intelligent destination selection system that optimizes rebalancing operations:\n\n1. Implement multi-destination analysis:\n\n```typescript\ninterface DestinationAnalysis {\n  chainId: number;\n  currentBalance: string;\n  requiredAmount: string;\n  shortfall: string;\n  pendingInvoices: number;\n  estimatedCompletionTime: number; // milliseconds\n  priority: number; // Lower is higher priority\n}\n\nasync function analyzeDestinations(invoices: Invoice[]): Promise<DestinationAnalysis[]> {\n  // Group invoices by destination chain\n  const invoicesByChain: Record<number, Invoice[]> = {};\n  for (const invoice of invoices) {\n    const chainId = invoice.destinationChainId;\n    if (!invoicesByChain[chainId]) {\n      invoicesByChain[chainId] = [];\n    }\n    invoicesByChain[chainId].push(invoice);\n  }\n  \n  // Get current balances\n  const balances = await getChainBalances();\n  \n  // Analyze each destination chain\n  const analysis: DestinationAnalysis[] = [];\n  \n  for (const [chainIdStr, chainInvoices] of Object.entries(invoicesByChain)) {\n    const chainId = parseInt(chainIdStr);\n    const currentBalance = balances[chainId] || '0';\n    \n    // Calculate total required amount for this chain\n    const requiredAmount = chainInvoices.reduce(\n      (sum, invoice) => sum.plus(invoice.amount),\n      new BigNumber(0)\n    ).toString();\n    \n    // Calculate shortfall\n    const shortfall = new BigNumber(requiredAmount).minus(currentBalance);\n    \n    analysis.push({\n      chainId,\n      currentBalance,\n      requiredAmount,\n      shortfall: shortfall.isNegative() ? '0' : shortfall.toString(),\n      pendingInvoices: chainInvoices.length,\n      estimatedCompletionTime: estimateAverageCompletionTime(chainId),\n      priority: calculateDestinationPriority(chainId, chainInvoices.length, shortfall.toString())\n    });\n  }\n  \n  // Sort by priority\n  return analysis.sort((a, b) => a.priority - b.priority);\n}\n```\n\n2. Implement operation count minimization:\n\n```typescript\ninterface RebalancingStrategy {\n  destinations: Array<{\n    chainId: number;\n    amount: string;\n  }>;\n  sourceChains: Array<{\n    chainId: number;\n    operations: Array<{\n      destinationChainId: number;\n      amount: string;\n    }>;\n  }>;\n  totalOperations: number;\n}\n\nfunction minimizeRebalancingOperations(\n  destinationAnalysis: DestinationAnalysis[],\n  availableSourceChains: Array<{ chainId: number, availableAmount: string }>\n): RebalancingStrategy {\n  // Filter destinations that need rebalancing\n  const destinationsNeedingFunds = destinationAnalysis\n    .filter(d => new BigNumber(d.shortfall).isGreaterThan(0))\n    .sort((a, b) => a.priority - b.priority);\n  \n  // Initialize strategy\n  const strategy: RebalancingStrategy = {\n    destinations: [],\n    sourceChains: availableSourceChains.map(sc => ({\n      chainId: sc.chainId,\n      operations: []\n    })),\n    totalOperations: 0\n  };\n  \n  // Greedy algorithm to minimize operations\n  for (const destination of destinationsNeedingFunds) {\n    let remainingShortfall = new BigNumber(destination.shortfall);\n    \n    // Sort source chains by available amount (descending)\n    const sortedSources = [...strategy.sourceChains]\n      .sort((a, b) => {\n        const aAvailable = availableSourceChains.find(sc => sc.chainId === a.chainId)?.availableAmount || '0';\n        const bAvailable = availableSourceChains.find(sc => sc.chainId === b.chainId)?.availableAmount || '0';\n        return new BigNumber(bAvailable).minus(aAvailable).toNumber();\n      });\n    \n    for (const source of sortedSources) {\n      if (remainingShortfall.isLessThanOrEqualTo(0)) break;\n      \n      const sourceInfo = availableSourceChains.find(sc => sc.chainId === source.chainId);\n      if (!sourceInfo) continue;\n      \n      const availableAmount = new BigNumber(sourceInfo.availableAmount);\n      if (availableAmount.isLessThanOrEqualTo(0)) continue;\n      \n      // Check if rebalancing is configured for this route\n      if (!isRebalancingConfigured(source.chainId, destination.chainId)) continue;\n      \n      // Calculate amount to take from this source\n      const amountToTake = BigNumber.min(availableAmount, remainingShortfall);\n      \n      if (amountToTake.isGreaterThan(0)) {\n        // Add operation to strategy\n        source.operations.push({\n          destinationChainId: destination.chainId,\n          amount: amountToTake.toString()\n        });\n        \n        // Update remaining shortfall and available amount\n        remainingShortfall = remainingShortfall.minus(amountToTake);\n        sourceInfo.availableAmount = availableAmount.minus(amountToTake).toString();\n        \n        // Add destination to strategy if not already added\n        if (!strategy.destinations.some(d => d.chainId === destination.chainId)) {\n          strategy.destinations.push({\n            chainId: destination.chainId,\n            amount: destination.shortfall\n          });\n        }\n        \n        strategy.totalOperations++;\n      }\n    }\n  }\n  \n  return strategy;\n}\n```\n\n3. Implement feasibility validation:\n\n```typescript\nfunction validateRebalancingFeasibility(strategy: RebalancingStrategy): {\n  feasible: boolean;\n  unfulfilledDestinations: Array<{ chainId: number, shortfall: string }>;\n} {\n  const unfulfilledDestinations = [];\n  \n  for (const destination of strategy.destinations) {\n    // Calculate total amount being sent to this destination\n    const totalSent = strategy.sourceChains.reduce(\n      (sum, source) => {\n        const operations = source.operations.filter(op => op.destinationChainId === destination.chainId);\n        const operationSum = operations.reduce(\n          (opSum, op) => opSum.plus(op.amount),\n          new BigNumber(0)\n        );\n        return sum.plus(operationSum);\n      },\n      new BigNumber(0)\n    );\n    \n    // Check if we're fulfilling the entire amount\n    const shortfall = new BigNumber(destination.amount).minus(totalSent);\n    if (shortfall.isGreaterThan(0)) {\n      unfulfilledDestinations.push({\n        chainId: destination.chainId,\n        shortfall: shortfall.toString()\n      });\n    }\n  }\n  \n  return {\n    feasible: unfulfilledDestinations.length === 0,\n    unfulfilledDestinations\n  };\n}\n```\n\n4. Implement destination priority calculation:\n\n```typescript\nfunction calculateDestinationPriority(\n  chainId: number,\n  pendingInvoiceCount: number,\n  shortfall: string\n): number {\n  // Higher priority for chains with more pending invoices\n  const invoiceFactor = pendingInvoiceCount * 10;\n  \n  // Higher priority for larger shortfalls\n  const shortfallBN = new BigNumber(shortfall);\n  const shortfallFactor = shortfallBN.isZero() ? 0 : Math.min(shortfallBN.dividedBy(1e18).toNumber(), 100);\n  \n  // Chain-specific priority adjustments (can be configured)\n  const chainPriority = getChainPriority(chainId) || 0;\n  \n  // Lower number = higher priority\n  return 1000 - (invoiceFactor + shortfallFactor + chainPriority);\n}\n```",
+        "testStrategy": "1. Create unit tests for the destination analysis function with various invoice distributions\n2. Test the operation minimization algorithm with different source and destination configurations\n3. Verify feasibility validation correctly identifies unfulfillable rebalancing strategies\n4. Test destination priority calculation with different chain configurations\n5. Implement integration tests that verify the end-to-end destination selection process\n6. Test edge cases like no available source chains or no destinations needing funds\n7. Verify the algorithm correctly minimizes the number of operations\n8. Test with realistic chain configurations and balance distributions",
+        "priority": "medium",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Multi-Destination Analysis",
+            "description": "Develop the function to analyze destination chains and calculate their rebalancing needs based on pending invoices.",
+            "dependencies": [],
+            "details": "Implement the `analyzeDestinations` function that processes invoices and calculates the rebalancing needs for each destination chain. This includes grouping invoices by chain, retrieving current balances, calculating shortfalls, and determining priority metrics. The function should return a sorted array of DestinationAnalysis objects that can be used for decision-making in the rebalancing process.",
+            "status": "pending",
+            "testStrategy": "Create unit tests with various invoice distributions across chains. Test edge cases like chains with zero balances, chains with sufficient balances, and chains with large shortfalls. Verify that priority calculations correctly sort destinations."
+          },
+          {
+            "id": 2,
+            "title": "Implement Operation Count Minimization Algorithm",
+            "description": "Develop the algorithm to minimize the number of cross-chain operations needed for rebalancing.",
+            "dependencies": [
+              "6.1"
+            ],
+            "details": "Implement the `minimizeRebalancingOperations` function that takes destination analysis results and available source chains to create an optimal rebalancing strategy. The algorithm should prioritize destinations by their calculated priority and minimize the total number of operations by efficiently allocating funds from source chains. The implementation should include route feasibility checks and greedy allocation of funds.",
+            "status": "pending",
+            "testStrategy": "Test the algorithm with various source and destination configurations. Verify that the algorithm correctly minimizes operations while fulfilling high-priority destinations first. Test edge cases where not all destinations can be fulfilled."
+          },
+          {
+            "id": 3,
+            "title": "Implement Rebalancing Feasibility Validation",
+            "description": "Create the validation system to determine if a rebalancing strategy is feasible and identify unfulfilled destinations.",
+            "dependencies": [
+              "6.2"
+            ],
+            "details": "Implement the `validateRebalancingFeasibility` function that analyzes a proposed rebalancing strategy to determine if all destination requirements can be met. The function should calculate the total amount being sent to each destination and compare it with the required amount. It should return a result indicating whether the strategy is feasible and list any destinations that cannot be fully funded.",
+            "status": "pending",
+            "testStrategy": "Create test cases with both feasible and infeasible rebalancing strategies. Verify that the validation correctly identifies partial fulfillments and calculates remaining shortfalls accurately."
+          },
+          {
+            "id": 4,
+            "title": "Implement Destination Priority Calculation",
+            "description": "Develop the algorithm to calculate priority scores for destination chains based on multiple factors.",
+            "dependencies": [],
+            "details": "Implement the `calculateDestinationPriority` function that determines the priority of destination chains based on pending invoice count, shortfall amount, and chain-specific configurations. The function should combine these factors into a single priority score where lower values indicate higher priority. Include support for chain-specific priority adjustments that can be configured externally.",
+            "status": "pending",
+            "testStrategy": "Test priority calculations with various combinations of invoice counts and shortfall amounts. Verify that the priority scoring correctly balances the different factors. Test with different chain-specific priority configurations."
+          },
+          {
+            "id": 5,
+            "title": "Integrate Destination Selection with Rebalancing System",
+            "description": "Connect the intelligent destination selection system with the existing rebalancing infrastructure.",
+            "dependencies": [
+              "6.1",
+              "6.2",
+              "6.3",
+              "6.4"
+            ],
+            "details": "Integrate the destination analysis, operation minimization, and feasibility validation components with the existing rebalancing system. Create an entry point function that orchestrates the entire destination selection process and returns an executable rebalancing plan. Ensure that the system respects chain-specific constraints and handles errors gracefully. Add logging for important decision points in the selection process.",
+            "status": "pending",
+            "testStrategy": "Implement integration tests that verify the end-to-end destination selection process. Test the system's behavior with real-world invoice patterns. Verify that the integration correctly handles errors and edge cases. Test performance with large numbers of invoices and destinations."
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Implement Reserve-Aware Balance Management",
+        "description": "Develop the system to respect minimum reserve requirements and existing invoice commitments when calculating available balances.",
+        "details": "Create a reserve-aware balance management system:\n\n1. Implement available balance calculations:\n\n```typescript\ninterface BalanceDetails {\n  totalBalance: string;\n  reserveRequirement: string;\n  pendingOutflows: string;\n  earmarkedFunds: string;\n  availableBalance: string;\n}\n\nasync function getDetailedBalances(): Promise<Record<number, BalanceDetails>> {\n  // Get raw balances\n  const rawBalances = await getChainBalances();\n  \n  // Get earmarked funds by chain\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  const activeEarmarks = await earmarkManager.getEarmarks({ status: 'in_progress' });\n  \n  const earmarkedByChain: Record<number, BigNumber> = {};\n  const pendingOutflowsByChain: Record<number, BigNumber> = {};\n  \n  // Initialize records\n  for (const chainId of Object.keys(rawBalances)) {\n    const numericChainId = parseInt(chainId);\n    earmarkedByChain[numericChainId] = new BigNumber(0);\n    pendingOutflowsByChain[numericChainId] = new BigNumber(0);\n  }\n  \n  // Calculate earmarked funds and pending outflows\n  for (const earmark of activeEarmarks) {\n    // Add to destination chain's earmarked funds\n    const destChainId = earmark.destinationChainId;\n    if (!earmarkedByChain[destChainId]) {\n      earmarkedByChain[destChainId] = new BigNumber(0);\n    }\n    earmarkedByChain[destChainId] = earmarkedByChain[destChainId].plus(earmark.amount);\n    \n    // Add to source chains' pending outflows\n    for (const operation of earmark.operations) {\n      const sourceChainId = operation.sourceChainId;\n      if (!pendingOutflowsByChain[sourceChainId]) {\n        pendingOutflowsByChain[sourceChainId] = new BigNumber(0);\n      }\n      pendingOutflowsByChain[sourceChainId] = pendingOutflowsByChain[sourceChainId].plus(operation.amount);\n    }\n  }\n  \n  // Calculate detailed balances\n  const detailedBalances: Record<number, BalanceDetails> = {};\n  \n  for (const [chainIdStr, balance] of Object.entries(rawBalances)) {\n    const chainId = parseInt(chainIdStr);\n    const reserveRequirement = getReserveRequirement(chainId);\n    const pendingOutflows = pendingOutflowsByChain[chainId]?.toString() || '0';\n    const earmarkedFunds = earmarkedByChain[chainId]?.toString() || '0';\n    \n    // Available = Total - Reserve - Pending Outflows\n    const availableBalance = new BigNumber(balance)\n      .minus(reserveRequirement)\n      .minus(pendingOutflows);\n    \n    detailedBalances[chainId] = {\n      totalBalance: balance,\n      reserveRequirement,\n      pendingOutflows,\n      earmarkedFunds,\n      availableBalance: availableBalance.isNegative() ? '0' : availableBalance.toString()\n    };\n  }\n  \n  return detailedBalances;\n}\n```\n\n2. Implement reserve requirement validation:\n\n```typescript\nfunction validateReserveRequirements(\n  sourceChainId: number,\n  amount: string\n): { valid: boolean; reason?: string } {\n  // Get detailed balance\n  const balances = getDetailedBalances();\n  const chainBalance = balances[sourceChainId];\n  \n  if (!chainBalance) {\n    return { valid: false, reason: `No balance information for chain ${sourceChainId}` };\n  }\n  \n  // Check if amount exceeds available balance\n  const availableBN = new BigNumber(chainBalance.availableBalance);\n  const amountBN = new BigNumber(amount);\n  \n  if (amountBN.isGreaterThan(availableBN)) {\n    return {\n      valid: false,\n      reason: `Requested amount ${amount} exceeds available balance ${chainBalance.availableBalance} on chain ${sourceChainId}`\n    };\n  }\n  \n  return { valid: true };\n}\n```\n\n3. Implement pending invoice consideration:\n\n```typescript\nasync function calculateAvailableBalanceWithPendingInvoices(\n  chainId: number,\n  pendingInvoices: Invoice[]\n): Promise<string> {\n  // Get detailed balance\n  const balances = await getDetailedBalances();\n  const chainBalance = balances[chainId];\n  \n  if (!chainBalance) {\n    return '0';\n  }\n  \n  // Calculate total amount needed for pending invoices on this chain\n  const pendingInvoiceAmount = pendingInvoices\n    .filter(invoice => invoice.destinationChainId === chainId)\n    .reduce(\n      (sum, invoice) => sum.plus(invoice.amount),\n      new BigNumber(0)\n    );\n  \n  // Available = Total - Reserve - Pending Outflows - Pending Invoices\n  const availableBalance = new BigNumber(chainBalance.totalBalance)\n    .minus(chainBalance.reserveRequirement)\n    .minus(chainBalance.pendingOutflows)\n    .minus(pendingInvoiceAmount);\n  \n  return availableBalance.isNegative() ? '0' : availableBalance.toString();\n}\n```\n\n4. Implement override capabilities for specific chains:\n\n```typescript\ninterface ReserveOverride {\n  chainId: number;\n  newReserveRequirement: string;\n  reason: string;\n  expiresAt: Date;\n}\n\nclass ReserveManager {\n  private db: PostgresRebalanceCache;\n  \n  constructor(db: PostgresRebalanceCache) {\n    this.db = db;\n  }\n  \n  async setReserveOverride(override: ReserveOverride): Promise<void> {\n    await this.db.query(\n      'INSERT INTO reserve_overrides (chain_id, reserve_requirement, reason, expires_at) VALUES ($1, $2, $3, $4)',\n      [override.chainId, override.newReserveRequirement, override.reason, override.expiresAt]\n    );\n  }\n  \n  async getActiveReserveOverride(chainId: number): Promise<ReserveOverride | null> {\n    const result = await this.db.query(\n      'SELECT * FROM reserve_overrides WHERE chain_id = $1 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',\n      [chainId]\n    );\n    \n    if (result.rows.length === 0) {\n      return null;\n    }\n    \n    return {\n      chainId: result.rows[0].chain_id,\n      newReserveRequirement: result.rows[0].reserve_requirement,\n      reason: result.rows[0].reason,\n      expiresAt: result.rows[0].expires_at\n    };\n  }\n  \n  async getReserveRequirement(chainId: number): Promise<string> {\n    // Check for active override\n    const override = await this.getActiveReserveOverride(chainId);\n    if (override) {\n      return override.newReserveRequirement;\n    }\n    \n    // Return default reserve requirement\n    return getDefaultReserveRequirement(chainId);\n  }\n}\n```",
+        "testStrategy": "1. Create unit tests for the detailed balance calculation with various earmark scenarios\n2. Test reserve requirement validation with different balance and amount combinations\n3. Verify pending invoice consideration correctly adjusts available balances\n4. Test reserve override functionality with different expiration times\n5. Implement integration tests that verify the end-to-end balance management process\n6. Test edge cases like zero balances or very large pending outflows\n7. Verify the system correctly respects minimum reserve requirements\n8. Test with realistic chain configurations and balance distributions",
+        "priority": "high",
+        "dependencies": [
+          3,
+          4
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Detailed Balance Calculation Logic",
+            "description": "Create the core function to calculate detailed balances that respect reserve requirements, pending outflows, and earmarked funds.",
+            "dependencies": [],
+            "details": "Implement the getDetailedBalances() function that retrieves raw balances, calculates earmarked funds and pending outflows from active earmarks, and computes available balances by subtracting reserve requirements and pending outflows from total balances. Ensure proper initialization of records and handle edge cases where chains might not have existing records.",
+            "status": "pending",
+            "testStrategy": "Create unit tests with various earmark scenarios including multiple earmarks affecting the same chain, zero balances, and edge cases. Test with mock chain balances and verify correct calculation of available balances."
+          },
+          {
+            "id": 2,
+            "title": "Implement Reserve Requirement Validation",
+            "description": "Create validation logic to ensure operations don't violate minimum reserve requirements.",
+            "dependencies": [
+              "7.1"
+            ],
+            "details": "Implement the validateReserveRequirements() function that checks if a requested amount exceeds the available balance on a specific chain. The function should return a validation result object with a boolean indicating validity and an optional reason for failure. Integrate with the detailed balance calculation to ensure accurate validation.",
+            "status": "pending",
+            "testStrategy": "Test with various balance and amount combinations including valid amounts, amounts exceeding available balance, and edge cases. Verify appropriate error messages are returned when validation fails."
+          },
+          {
+            "id": 3,
+            "title": "Implement Pending Invoice Consideration",
+            "description": "Extend balance calculations to account for pending invoices that haven't been earmarked yet.",
+            "dependencies": [
+              "7.1"
+            ],
+            "details": "Implement the calculateAvailableBalanceWithPendingInvoices() function that adjusts available balances based on pending invoices. The function should filter invoices by destination chain, calculate their total amount, and subtract it from the available balance to provide a more accurate picture of funds that can be allocated.",
+            "status": "pending",
+            "testStrategy": "Test with various combinations of chain balances and pending invoices. Verify that the function correctly reduces available balances based on pending invoice amounts and handles edge cases like zero balances or large pending amounts."
+          },
+          {
+            "id": 4,
+            "title": "Implement Reserve Override System",
+            "description": "Create a system to temporarily override default reserve requirements for specific chains.",
+            "dependencies": [],
+            "details": "Implement the ReserveManager class with methods to set and retrieve reserve overrides. The class should store overrides in the database with expiration times and reasons. Implement the getReserveRequirement method that checks for active overrides before returning the default requirement for a chain.",
+            "status": "pending",
+            "testStrategy": "Test setting and retrieving overrides with various expiration times. Verify that expired overrides are not returned and that the most recent active override is used when multiple exist. Test integration with the balance calculation system."
+          },
+          {
+            "id": 5,
+            "title": "Integrate Reserve-Aware Balance Management with Existing Systems",
+            "description": "Connect the new balance management system with existing rebalancing and invoice processing systems.",
+            "dependencies": [
+              "7.1",
+              "7.2",
+              "7.3",
+              "7.4"
+            ],
+            "details": "Update existing rebalancing and invoice processing systems to use the new reserve-aware balance management. This includes modifying the rebalance operation creation process to validate against available balances, updating the invoice processing flow to consider reserve requirements, and ensuring the earmark system respects the new balance calculations.",
+            "status": "pending",
+            "testStrategy": "Perform integration tests that verify the entire system respects reserve requirements. Test scenarios including invoice creation, rebalance operation initiation, and earmark management. Verify that operations that would violate reserve requirements are properly rejected."
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Implement Earmarked Fund Reservation",
+        "description": "Develop the system to prevent earmarked funds from being used by other operations.",
+        "details": "Create an earmarked fund reservation system:\n\n1. Implement fund reservation tracking:\n\n```typescript\ninterface FundReservation {\n  id: string;\n  chainId: number;\n  amount: string;\n  purpose: 'earmark' | 'scheduled_rebalance' | 'manual_operation';\n  referenceId: string; // earmark ID, rebalance ID, etc.\n  createdAt: Date;\n  expiresAt: Date;\n}\n\nclass FundReservationManager {\n  private db: PostgresRebalanceCache;\n  \n  constructor(db: PostgresRebalanceCache) {\n    this.db = db;\n  }\n  \n  async createReservation(reservation: Omit<FundReservation, 'id' | 'createdAt'>): Promise<string> {\n    const id = uuidv4();\n    \n    await this.db.query(\n      'INSERT INTO fund_reservations (id, chain_id, amount, purpose, reference_id, expires_at) VALUES ($1, $2, $3, $4, $5, $6)',\n      [id, reservation.chainId, reservation.amount, reservation.purpose, reservation.referenceId, reservation.expiresAt]\n    );\n    \n    return id;\n  }\n  \n  async getActiveReservations(chainId: number): Promise<FundReservation[]> {\n    const result = await this.db.query(\n      'SELECT * FROM fund_reservations WHERE chain_id = $1 AND expires_at > NOW()',\n      [chainId]\n    );\n    \n    return result.rows.map(row => ({\n      id: row.id,\n      chainId: row.chain_id,\n      amount: row.amount,\n      purpose: row.purpose,\n      referenceId: row.reference_id,\n      createdAt: row.created_at,\n      expiresAt: row.expires_at\n    }));\n  }\n  \n  async releaseReservation(id: string): Promise<void> {\n    await this.db.query('DELETE FROM fund_reservations WHERE id = $1', [id]);\n  }\n  \n  async releaseReservationsByReference(referenceId: string): Promise<void> {\n    await this.db.query('DELETE FROM fund_reservations WHERE reference_id = $1', [referenceId]);\n  }\n  \n  async cleanupExpiredReservations(): Promise<number> {\n    const result = await this.db.query('DELETE FROM fund_reservations WHERE expires_at <= NOW() RETURNING id');\n    return result.rowCount;\n  }\n}\n```\n\n2. Implement balance calculation adjustments:\n\n```typescript\nasync function getAdjustedAvailableBalance(chainId: number): Promise<string> {\n  // Get raw balance\n  const balances = await getChainBalances();\n  const rawBalance = balances[chainId] || '0';\n  \n  // Get reserve requirement\n  const reserveManager = new ReserveManager(getRebalanceCache());\n  const reserveRequirement = await reserveManager.getReserveRequirement(chainId);\n  \n  // Get active reservations\n  const reservationManager = new FundReservationManager(getRebalanceCache());\n  const activeReservations = await reservationManager.getActiveReservations(chainId);\n  \n  // Calculate total reserved amount\n  const totalReserved = activeReservations.reduce(\n    (sum, reservation) => sum.plus(reservation.amount),\n    new BigNumber(0)\n  );\n  \n  // Available = Raw Balance - Reserve Requirement - Reserved Funds\n  const availableBalance = new BigNumber(rawBalance)\n    .minus(reserveRequirement)\n    .minus(totalReserved);\n  \n  return availableBalance.isNegative() ? '0' : availableBalance.toString();\n}\n```\n\n3. Implement reservation-based balance validation:\n\n```typescript\nasync function validateBalanceWithReservation(\n  chainId: number,\n  amount: string\n): Promise<{ valid: boolean; reason?: string }> {\n  // Get adjusted available balance\n  const availableBalance = await getAdjustedAvailableBalance(chainId);\n  const availableBN = new BigNumber(availableBalance);\n  const amountBN = new BigNumber(amount);\n  \n  if (amountBN.isGreaterThan(availableBN)) {\n    return {\n      valid: false,\n      reason: `Requested amount ${amount} exceeds available balance ${availableBalance} on chain ${chainId}`\n    };\n  }\n  \n  return { valid: true };\n}\n```\n\n4. Implement completion-based reservation release:\n\n```typescript\nasync function releaseReservationsForCompletedEarmark(earmarkId: string): Promise<void> {\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  const earmarks = await earmarkManager.getEarmarks({ id: earmarkId });\n  \n  if (!earmarks || earmarks.length === 0) {\n    throw new Error(`Earmark ${earmarkId} not found`);\n  }\n  \n  const earmark = earmarks[0];\n  \n  // Only release if earmark is completed or failed\n  if (earmark.status !== 'completed' && earmark.status !== 'failed') {\n    throw new Error(`Cannot release reservations for earmark ${earmarkId} with status ${earmark.status}`);\n  }\n  \n  // Release all reservations for this earmark\n  const reservationManager = new FundReservationManager(getRebalanceCache());\n  await reservationManager.releaseReservationsByReference(earmarkId);\n  \n  // Log the release\n  logger.info(`Released fund reservations for earmark ${earmarkId} with status ${earmark.status}`);\n}\n```\n\n5. Implement reservation creation during earmark creation:\n\n```typescript\nasync function createEarmarkWithReservations(\n  invoiceId: string,\n  destinationChainId: number,\n  amount: string,\n  sourceOperations: Array<{ sourceChainId: number, amount: string }>\n): Promise<string> {\n  return await getRebalanceCache().withTransaction(async (client) => {\n    // Create earmark\n    const earmarkManager = new EarmarkManager(getRebalanceCache());\n    const earmark = await earmarkManager.createEarmark(invoiceId, destinationChainId, amount);\n    \n    // Create reservations for each source operation\n    const reservationManager = new FundReservationManager(getRebalanceCache());\n    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now\n    \n    for (const operation of sourceOperations) {\n      await reservationManager.createReservation({\n        chainId: operation.sourceChainId,\n        amount: operation.amount,\n        purpose: 'earmark',\n        referenceId: earmark.id,\n        expiresAt\n      });\n    }\n    \n    return earmark.id;\n  });\n}\n```",
+        "testStrategy": "1. Create unit tests for the fund reservation manager with various reservation scenarios\n2. Test adjusted balance calculations with different reservation combinations\n3. Verify reservation-based balance validation correctly prevents over-allocation\n4. Test reservation release functionality for completed and failed earmarks\n5. Implement integration tests that verify the end-to-end reservation process\n6. Test edge cases like concurrent reservations or very large reservation amounts\n7. Verify the system correctly prevents double-spending of reserved funds\n8. Test with realistic chain configurations and balance distributions\n9. Test cleanup of expired reservations",
+        "priority": "medium",
+        "dependencies": [
+          3,
+          7
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Database Schema for Fund Reservations",
+            "description": "Design and implement the database schema to store fund reservations with proper constraints and indexes.",
+            "dependencies": [],
+            "details": "Create a migration script to add the fund_reservations table to the database with the following columns: id (UUID primary key), chain_id (integer), amount (text), purpose (enum: 'earmark', 'scheduled_rebalance', 'manual_operation'), reference_id (text), created_at (timestamp with default), expires_at (timestamp). Add appropriate indexes on chain_id, reference_id, and expires_at columns for efficient querying. Ensure proper foreign key constraints if applicable.",
+            "status": "pending",
+            "testStrategy": "Write unit tests to verify the schema creation. Test the constraints by attempting to insert invalid data. Verify indexes are created correctly by examining the execution plan of typical queries."
+          },
+          {
+            "id": 2,
+            "title": "Implement FundReservationManager Class",
+            "description": "Develop the FundReservationManager class with methods to create, retrieve, and release fund reservations.",
+            "dependencies": [
+              "8.1"
+            ],
+            "details": "Implement the FundReservationManager class as specified in the task description. Ensure all methods (createReservation, getActiveReservations, releaseReservation, releaseReservationsByReference, cleanupExpiredReservations) are properly implemented with error handling. Add transaction support for operations that require atomicity. Implement proper logging for important operations.",
+            "status": "pending",
+            "testStrategy": "Create unit tests for each method in the FundReservationManager class. Test happy paths and error cases. Verify that expired reservations are properly cleaned up. Test concurrent operations to ensure thread safety."
+          },
+          {
+            "id": 3,
+            "title": "Implement Balance Calculation Adjustments",
+            "description": "Develop functions to calculate available balances taking into account fund reservations.",
+            "dependencies": [
+              "8.2"
+            ],
+            "details": "Implement the getAdjustedAvailableBalance function that calculates the available balance by subtracting reserve requirements and active reservations from the raw balance. Ensure proper handling of BigNumber to avoid precision issues. Add caching if necessary for performance optimization. Implement the validateBalanceWithReservation function to check if a requested amount is available.",
+            "status": "pending",
+            "testStrategy": "Test balance calculations with various combinations of raw balances, reserve requirements, and reservations. Verify edge cases like zero balances and negative results. Test with very large numbers to ensure precision is maintained."
+          },
+          {
+            "id": 4,
+            "title": "Implement Reservation Integration with Earmark System",
+            "description": "Integrate fund reservations with the earmark creation and completion processes.",
+            "dependencies": [
+              "8.2",
+              "8.3"
+            ],
+            "details": "Implement createEarmarkWithReservations function to create reservations when earmarks are created. Implement releaseReservationsForCompletedEarmark function to release reservations when earmarks are completed or failed. Ensure all operations are performed within transactions to maintain data consistency. Add proper error handling and logging.",
+            "status": "pending",
+            "testStrategy": "Test the integration between earmarks and reservations. Verify reservations are created correctly during earmark creation. Test reservation release when earmarks are completed or failed. Test error cases and transaction rollbacks."
+          },
+          {
+            "id": 5,
+            "title": "Implement Periodic Cleanup and Monitoring",
+            "description": "Develop a system to periodically clean up expired reservations and monitor reservation usage.",
+            "dependencies": [
+              "8.2"
+            ],
+            "details": "Implement a scheduled job to run cleanupExpiredReservations periodically (e.g., every hour). Create monitoring endpoints to track active reservations, expired reservations, and total reserved amounts by chain. Implement alerts for reservations approaching expiration. Add metrics collection for reservation usage patterns to help with system optimization.",
+            "status": "pending",
+            "testStrategy": "Test the scheduled cleanup job with artificially expired reservations. Verify monitoring endpoints return correct data. Test alert triggers with reservations approaching expiration. Verify metrics collection accurately captures reservation patterns."
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Integrate On-Demand Rebalancing with Invoice Processing",
+        "description": "Integrate the on-demand rebalancing system with the existing invoice processing pipeline.",
+        "details": "Integrate the on-demand rebalancing system with the existing invoice processing pipeline in `processInvoices.ts`:\n\n1. Modify the invoice processing flow to check for earmarked invoices:\n\n```typescript\n// At the start of the invoice processing cycle\nasync function processInvoices(invoices: Invoice[]): Promise<ProcessingResult> {\n  // Initialize result\n  const result: ProcessingResult = {\n    processed: [],\n    failed: [],\n    earmarked: [],\n    skipped: []\n  };\n  \n  // Check for completed earmarks first\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  const completedEarmarks = await earmarkManager.getEarmarks({ status: 'completed' });\n  \n  // Process invoices with completed earmarks first\n  const completedEarmarkInvoiceIds = new Set(completedEarmarks.map(e => e.invoiceId));\n  const earmarkedInvoices = invoices.filter(invoice => completedEarmarkInvoiceIds.has(invoice.id));\n  const regularInvoices = invoices.filter(invoice => !completedEarmarkInvoiceIds.has(invoice.id));\n  \n  // Process earmarked invoices first\n  for (const invoice of earmarkedInvoices) {\n    try {\n      // Attempt to process the invoice\n      await processInvoice(invoice);\n      \n      // If successful, clean up the earmark\n      const earmark = completedEarmarks.find(e => e.invoiceId === invoice.id);\n      if (earmark) {\n        await earmarkManager.removeEarmark(earmark.id);\n        await releaseReservationsForCompletedEarmark(earmark.id);\n      }\n      \n      result.processed.push(invoice);\n    } catch (error) {\n      logger.error(`Failed to process earmarked invoice ${invoice.id}:`, error);\n      result.failed.push(invoice);\n    }\n  }\n  \n  // Process regular invoices\n  for (const invoice of regularInvoices) {\n    try {\n      // Check if we have sufficient balance\n      const hasBalance = await checkSufficientBalance(invoice.destinationChainId, invoice.amount);\n      \n      if (hasBalance) {\n        // Process normally\n        await processInvoice(invoice);\n        result.processed.push(invoice);\n      } else {\n        // Attempt on-demand rebalancing\n        const evaluation = await evaluateOnDemandRebalancing(invoice, invoice.destinationChainId, invoice.amount);\n        \n        if (evaluation.feasible) {\n          // Execute rebalancing and create earmark\n          await executeOnDemandRebalancing(invoice, invoice.destinationChainId, invoice.amount, evaluation);\n          result.earmarked.push(invoice);\n        } else {\n          // Cannot process or rebalance\n          logger.warn(`Cannot process invoice ${invoice.id}: Insufficient balance and rebalancing not feasible`);\n          result.skipped.push(invoice);\n        }\n      }\n    } catch (error) {\n      logger.error(`Failed to process invoice ${invoice.id}:`, error);\n      result.failed.push(invoice);\n    }\n  }\n  \n  return result;\n}\n```\n\n2. Implement the balance check function:\n\n```typescript\nasync function checkSufficientBalance(chainId: number, amount: string): Promise<boolean> {\n  // Get adjusted available balance\n  const availableBalance = await getAdjustedAvailableBalance(chainId);\n  const availableBN = new BigNumber(availableBalance);\n  const amountBN = new BigNumber(amount);\n  \n  return availableBN.isGreaterThanOrEqualTo(amountBN);\n}\n```\n\n3. Implement a periodic task to process earmarked invoices:\n\n```typescript\nasync function processEarmarkedInvoices(): Promise<void> {\n  // Get all in-progress earmarks\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  const inProgressEarmarks = await earmarkManager.getEarmarks({ status: 'in_progress' });\n  \n  for (const earmark of inProgressEarmarks) {\n    // Check if all operations are completed\n    const allCompleted = earmark.operations.every(op => op.status === 'completed');\n    \n    if (allCompleted) {\n      // Update earmark status\n      await earmarkManager.updateEarmarkStatus(earmark.id, 'completed');\n      \n      // Log completion\n      logger.info(`Earmark ${earmark.id} for invoice ${earmark.invoiceId} completed successfully`);\n      \n      // The invoice will be processed in the next cycle\n    } else {\n      // Check for failed operations\n      const anyFailed = earmark.operations.some(op => op.status === 'failed');\n      \n      if (anyFailed) {\n        // Update earmark status\n        await earmarkManager.updateEarmarkStatus(earmark.id, 'failed');\n        \n        // Release reservations\n        await releaseReservationsForCompletedEarmark(earmark.id);\n        \n        // Log failure\n        logger.error(`Earmark ${earmark.id} for invoice ${earmark.invoiceId} failed due to failed operations`);\n      }\n    }\n  }\n}\n```\n\n4. Implement a function to check transaction status:\n\n```typescript\nasync function checkPendingTransactions(): Promise<void> {\n  // Get all in-progress operations\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  const inProgressEarmarks = await earmarkManager.getEarmarks({ status: 'in_progress' });\n  \n  for (const earmark of inProgressEarmarks) {\n    for (const operation of earmark.operations) {\n      if (operation.status === 'in_progress' && operation.transactionHash) {\n        // Check transaction status\n        const status = await checkTransactionStatus(operation.sourceChainId, operation.transactionHash);\n        \n        if (status === 'confirmed') {\n          // Verify funds arrived at destination\n          const fundsArrived = await verifyFundsArrival(\n            operation.destinationChainId,\n            operation.amount,\n            operation.transactionHash\n          );\n          \n          if (fundsArrived) {\n            await earmarkManager.updateOperationStatus(operation.id, 'completed');\n          }\n        } else if (status === 'failed') {\n          await earmarkManager.updateOperationStatus(operation.id, 'failed');\n        }\n      }\n    }\n  }\n}\n```\n\n5. Schedule periodic tasks:\n\n```typescript\nfunction scheduleRebalancingTasks(): void {\n  // Process earmarked invoices every minute\n  setInterval(async () => {\n    try {\n      await processEarmarkedInvoices();\n    } catch (error) {\n      logger.error('Error processing earmarked invoices:', error);\n    }\n  }, 60 * 1000);\n  \n  // Check pending transactions every 30 seconds\n  setInterval(async () => {\n    try {\n      await checkPendingTransactions();\n    } catch (error) {\n      logger.error('Error checking pending transactions:', error);\n    }\n  }, 30 * 1000);\n  \n  // Clean up expired reservations every hour\n  setInterval(async () => {\n    try {\n      const reservationManager = new FundReservationManager(getRebalanceCache());\n      const cleaned = await reservationManager.cleanupExpiredReservations();\n      if (cleaned > 0) {\n        logger.info(`Cleaned up ${cleaned} expired fund reservations`);\n      }\n    } catch (error) {\n      logger.error('Error cleaning up expired reservations:', error);\n    }\n  }, 60 * 60 * 1000);\n}\n```",
+        "testStrategy": "1. Create unit tests for the modified invoice processing flow\n2. Test the balance check function with various balance and amount combinations\n3. Verify earmarked invoice processing correctly prioritizes completed earmarks\n4. Test the periodic tasks for processing earmarked invoices and checking transactions\n5. Implement integration tests that verify the end-to-end invoice processing flow with rebalancing\n6. Test edge cases like concurrent invoice processing or failed rebalancing operations\n7. Verify the system correctly cleans up completed earmarks and releases reservations\n8. Test with realistic invoice scenarios and chain configurations",
+        "priority": "high",
+        "dependencies": [
+          4,
+          5,
+          7,
+          8
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Modify Invoice Processing Flow for Earmarked Invoices",
+            "description": "Update the processInvoices function to prioritize and handle earmarked invoices separately from regular invoices.",
+            "dependencies": [],
+            "details": "Implement the modified invoice processing flow that first processes invoices with completed earmarks before handling regular invoices. This includes: 1) Retrieving completed earmarks, 2) Separating invoices into earmarked and regular groups, 3) Processing earmarked invoices with cleanup logic, and 4) Processing regular invoices with balance checks and on-demand rebalancing evaluation.",
+            "status": "pending",
+            "testStrategy": "Create unit tests that verify earmarked invoices are processed first, test with various combinations of regular and earmarked invoices, verify earmark cleanup occurs after successful processing, and test error handling for failed earmarked invoice processing."
+          },
+          {
+            "id": 2,
+            "title": "Implement Balance Check and Rebalancing Evaluation",
+            "description": "Create functions to check for sufficient balance and evaluate on-demand rebalancing options for invoices.",
+            "dependencies": [
+              "9.1"
+            ],
+            "details": "Implement the checkSufficientBalance function to determine if there's enough balance to process an invoice immediately. If balance is insufficient, implement the logic to call evaluateOnDemandRebalancing and executeOnDemandRebalancing when feasible, or mark the invoice as skipped when rebalancing isn't possible.",
+            "status": "pending",
+            "testStrategy": "Test the balance check function with various balance and amount combinations, verify correct behavior when balance is sufficient vs. insufficient, test the rebalancing evaluation with different scenarios, and verify proper handling of the evaluation results."
+          },
+          {
+            "id": 3,
+            "title": "Implement Earmarked Invoice Processing System",
+            "description": "Create the periodic task to process and update the status of earmarked invoices.",
+            "dependencies": [
+              "9.1",
+              "9.2"
+            ],
+            "details": "Implement the processEarmarkedInvoices function that: 1) Retrieves all in-progress earmarks, 2) Checks if all operations for an earmark are completed, 3) Updates earmark status to 'completed' when all operations succeed, 4) Handles failed operations by marking the earmark as failed and releasing reservations, and 5) Logs appropriate messages for each status change.",
+            "status": "pending",
+            "testStrategy": "Create unit tests for the earmark processing logic with various operation status combinations, verify correct status transitions, test reservation release for failed earmarks, and verify proper logging of earmark status changes."
+          },
+          {
+            "id": 4,
+            "title": "Implement Transaction Status Monitoring",
+            "description": "Create the system to monitor and update the status of pending rebalancing transactions.",
+            "dependencies": [
+              "9.3"
+            ],
+            "details": "Implement the checkPendingTransactions function that: 1) Retrieves all in-progress earmarks, 2) For each in-progress operation with a transaction hash, checks the transaction status on the blockchain, 3) Verifies funds arrival at the destination when transactions are confirmed, and 4) Updates operation status based on transaction results.",
+            "status": "pending",
+            "testStrategy": "Test transaction status checking with mocked blockchain responses for confirmed, pending, and failed transactions, verify funds arrival verification logic, test operation status updates for different transaction outcomes, and verify proper handling of network errors during status checks."
+          },
+          {
+            "id": 5,
+            "title": "Implement Periodic Task Scheduling",
+            "description": "Set up the scheduling system for periodic rebalancing-related tasks.",
+            "dependencies": [
+              "9.3",
+              "9.4"
+            ],
+            "details": "Implement the scheduleRebalancingTasks function that sets up interval-based execution of: 1) Processing earmarked invoices every minute, 2) Checking pending transactions every 30 seconds, and 3) Cleaning up expired reservations every hour. Include proper error handling for each scheduled task to prevent crashes.",
+            "status": "pending",
+            "testStrategy": "Test the scheduling logic with mocked timer functions, verify correct interval timing for each task, test error handling to ensure one task failure doesn't affect others, and verify proper logging of scheduled task execution and errors."
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Implement Monitoring and Error Handling",
+        "description": "Develop comprehensive monitoring, logging, and error handling for the on-demand rebalancing system.",
+        "details": "Implement comprehensive monitoring, logging, and error handling:\n\n1. Create a structured logging system:\n\n```typescript\nimport winston from 'winston';\n\nconst logger = winston.createLogger({\n  level: process.env.LOG_LEVEL || 'info',\n  format: winston.format.combine(\n    winston.format.timestamp(),\n    winston.format.json()\n  ),\n  defaultMeta: { service: 'on-demand-rebalancing' },\n  transports: [\n    new winston.transports.Console(),\n    new winston.transports.File({ filename: 'error.log', level: 'error' }),\n    new winston.transports.File({ filename: 'combined.log' })\n  ]\n});\n\n// Create specialized loggers for different components\nexport function createComponentLogger(component: string): winston.Logger {\n  return logger.child({ component });\n}\n\n// Example usage\nconst earmarkLogger = createComponentLogger('earmark-manager');\nearmarkLogger.info('Processing earmarks', { count: earmarks.length });\n```\n\n2. Implement error handling and retry logic:\n\n```typescript\nasync function withRetry<T>(\n  operation: () => Promise<T>,\n  options: {\n    maxRetries: number;\n    initialDelay: number; // ms\n    maxDelay: number; // ms\n    factor: number; // exponential backoff factor\n    retryableErrors?: Array<string | RegExp>;\n  }\n): Promise<T> {\n  let lastError: Error | null = null;\n  let delay = options.initialDelay;\n  \n  for (let attempt = 1; attempt <= options.maxRetries + 1; attempt++) {\n    try {\n      return await operation();\n    } catch (error) {\n      lastError = error as Error;\n      \n      // Check if error is retryable\n      if (options.retryableErrors && !isRetryableError(error as Error, options.retryableErrors)) {\n        throw error;\n      }\n      \n      // Last attempt\n      if (attempt > options.maxRetries) {\n        throw error;\n      }\n      \n      // Log retry attempt\n      logger.warn(`Operation failed, retrying (${attempt}/${options.maxRetries})`, {\n        error: (error as Error).message,\n        attempt,\n        nextRetryIn: delay\n      });\n      \n      // Wait before retrying\n      await new Promise(resolve => setTimeout(resolve, delay));\n      \n      // Increase delay for next retry (exponential backoff)\n      delay = Math.min(delay * options.factor, options.maxDelay);\n    }\n  }\n  \n  // This should never happen due to the throw in the loop\n  throw lastError || new Error('Unknown error in retry logic');\n}\n\nfunction isRetryableError(error: Error, retryableErrors: Array<string | RegExp>): boolean {\n  return retryableErrors.some(pattern => {\n    if (typeof pattern === 'string') {\n      return error.message.includes(pattern);\n    }\n    return pattern.test(error.message);\n  });\n}\n```\n\n3. Implement metrics collection:\n\n```typescript\nimport prometheus from 'prom-client';\n\n// Initialize Prometheus registry\nconst register = new prometheus.Registry();\nprometheus.collectDefaultMetrics({ register });\n\n// Define custom metrics\nconst earmarkCreationCounter = new prometheus.Counter({\n  name: 'earmark_creation_total',\n  help: 'Total number of earmarks created',\n  labelNames: ['status']\n});\n\nconst rebalancingOperationCounter = new prometheus.Counter({\n  name: 'rebalancing_operation_total',\n  help: 'Total number of rebalancing operations',\n  labelNames: ['source_chain', 'destination_chain', 'status']\n});\n\nconst rebalancingDurationHistogram = new prometheus.Histogram({\n  name: 'rebalancing_duration_seconds',\n  help: 'Duration of rebalancing operations',\n  labelNames: ['source_chain', 'destination_chain'],\n  buckets: [60, 300, 600, 1800, 3600, 7200, 14400] // 1m, 5m, 10m, 30m, 1h, 2h, 4h\n});\n\nconst invoiceProcessingGauge = new prometheus.Gauge({\n  name: 'pending_earmarked_invoices',\n  help: 'Number of invoices waiting for rebalancing completion'\n});\n\n// Register metrics\nregister.registerMetric(earmarkCreationCounter);\nregister.registerMetric(rebalancingOperationCounter);\nregister.registerMetric(rebalancingDurationHistogram);\nregister.registerMetric(invoiceProcessingGauge);\n\n// Example usage\nearmarkCreationCounter.inc({ status: 'success' });\nrebalancingOperationCounter.inc({ source_chain: '1', destination_chain: '10', status: 'completed' });\n\n// Track operation duration\nconst endTimer = rebalancingDurationHistogram.startTimer({ source_chain: '1', destination_chain: '10' });\n// ... operation completes\nendTimer(); // This records the duration\n\n// Update gauge\nasync function updatePendingInvoiceMetrics(): Promise<void> {\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  const pendingEarmarks = await earmarkManager.getEarmarks({ status: 'in_progress' });\n  invoiceProcessingGauge.set(pendingEarmarks.length);\n}\n```\n\n4. Implement health check endpoints:\n\n```typescript\nimport express from 'express';\n\nconst app = express();\n\n// Prometheus metrics endpoint\napp.get('/metrics', async (req, res) => {\n  res.set('Content-Type', register.contentType);\n  res.end(await register.metrics());\n});\n\n// Health check endpoint\napp.get('/health', async (req, res) => {\n  try {\n    // Check database connection\n    await getRebalanceCache().ping();\n    \n    // Check earmark processing\n    const earmarkManager = new EarmarkManager(getRebalanceCache());\n    await earmarkManager.getEarmarks({ limit: 1 });\n    \n    res.status(200).json({ status: 'healthy' });\n  } catch (error) {\n    logger.error('Health check failed:', error);\n    res.status(500).json({ status: 'unhealthy', error: (error as Error).message });\n  }\n});\n\n// Detailed status endpoint\napp.get('/status', async (req, res) => {\n  try {\n    const earmarkManager = new EarmarkManager(getRebalanceCache());\n    const pendingEarmarks = await earmarkManager.getEarmarks({ status: 'in_progress' });\n    const completedEarmarks = await earmarkManager.getEarmarks({ status: 'completed', limit: 10 });\n    const failedEarmarks = await earmarkManager.getEarmarks({ status: 'failed', limit: 10 });\n    \n    res.status(200).json({\n      status: 'healthy',\n      pendingEarmarksCount: pendingEarmarks.length,\n      recentlyCompletedCount: completedEarmarks.length,\n      recentlyFailedCount: failedEarmarks.length,\n      version: process.env.APP_VERSION || 'unknown'\n    });\n  } catch (error) {\n    logger.error('Status check failed:', error);\n    res.status(500).json({ status: 'error', error: (error as Error).message });\n  }\n});\n\nconst port = process.env.PORT || 3000;\napp.listen(port, () => {\n  logger.info(`Monitoring server listening on port ${port}`);\n});\n```\n\n5. Implement alerting for critical issues:\n\n```typescript\nimport axios from 'axios';\n\nasync function sendAlert(message: string, severity: 'info' | 'warning' | 'error' | 'critical'): Promise<void> {\n  // Skip alerts in development\n  if (process.env.NODE_ENV === 'development') {\n    logger.info(`[DEV ALERT] ${severity}: ${message}`);\n    return;\n  }\n  \n  try {\n    // Send to Slack\n    if (process.env.SLACK_WEBHOOK_URL) {\n      await axios.post(process.env.SLACK_WEBHOOK_URL, {\n        text: `[${severity.toUpperCase()}] ${message}`,\n        username: 'Rebalancing Monitor',\n        icon_emoji: severity === 'critical' ? ':rotating_light:' : ':warning:'\n      });\n    }\n    \n    // Send to PagerDuty for critical alerts\n    if (severity === 'critical' && process.env.PAGERDUTY_SERVICE_KEY) {\n      await axios.post('https://events.pagerduty.com/v2/enqueue', {\n        routing_key: process.env.PAGERDUTY_SERVICE_KEY,\n        event_action: 'trigger',\n        payload: {\n          summary: message,\n          source: 'on-demand-rebalancing',\n          severity: 'critical'\n        }\n      });\n    }\n  } catch (error) {\n    logger.error('Failed to send alert:', error);\n  }\n}\n\n// Example usage\nasync function monitorRebalancingHealth(): Promise<void> {\n  const earmarkManager = new EarmarkManager(getRebalanceCache());\n  \n  // Check for stuck earmarks (in progress for too long)\n  const stuckEarmarks = await earmarkManager.getEarmarks({\n    status: 'in_progress',\n    olderThan: new Date(Date.now() - 4 * 60 * 60 * 1000) // 4 hours\n  });\n  \n  if (stuckEarmarks.length > 0) {\n    await sendAlert(\n      `${stuckEarmarks.length} earmarks have been stuck in progress for over 4 hours`,\n      stuckEarmarks.length > 5 ? 'critical' : 'warning'\n    );\n  }\n  \n  // Check for failed earmarks in the last hour\n  const recentlyFailedEarmarks = await earmarkManager.getEarmarks({\n    status: 'failed',\n    newerThan: new Date(Date.now() - 60 * 60 * 1000) // 1 hour\n  });\n  \n  if (recentlyFailedEarmarks.length > 3) {\n    await sendAlert(\n      `${recentlyFailedEarmarks.length} earmarks have failed in the last hour`,\n      recentlyFailedEarmarks.length > 10 ? 'critical' : 'warning'\n    );\n  }\n}\n\n// Run health monitoring every 15 minutes\nsetInterval(async () => {\n  try {\n    await monitorRebalancingHealth();\n  } catch (error) {\n    logger.error('Error in rebalancing health monitoring:', error);\n  }\n}, 15 * 60 * 1000);\n```",
+        "testStrategy": "1. Create unit tests for the retry logic with various error scenarios\n2. Test the structured logging system with different log levels and components\n3. Verify metrics collection correctly tracks earmark and operation statistics\n4. Test health check endpoints with both healthy and unhealthy system states\n5. Implement integration tests that verify alerting functionality (with mocked external services)\n6. Test error handling in various components of the system\n7. Verify monitoring correctly identifies stuck or failed earmarks\n8. Test with simulated system failures to ensure proper error reporting",
+        "priority": "medium",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Structured Logging System",
+            "description": "Create a comprehensive structured logging system using Winston that supports different log levels, component-specific logging, and multiple output transports.",
+            "dependencies": [],
+            "details": "Implement the structured logging system as outlined in the parent task. This includes setting up Winston with appropriate configuration, creating the component logger factory function, and ensuring proper log formatting with timestamps and JSON structure. Add documentation for proper usage patterns and implement log rotation for file-based logs to prevent excessive disk usage.",
+            "status": "pending",
+            "testStrategy": "Create unit tests to verify logger initialization with different configurations. Test component-specific logging to ensure child loggers inherit properties correctly. Verify log level filtering works as expected. Test log output format matches the expected JSON structure with all required fields."
+          },
+          {
+            "id": 2,
+            "title": "Implement Error Handling and Retry Logic",
+            "description": "Develop a robust error handling system with configurable retry logic that includes exponential backoff, error classification, and proper logging of failures.",
+            "dependencies": [
+              "10.1"
+            ],
+            "details": "Implement the withRetry function as specified in the parent task, ensuring it properly handles different error types, implements exponential backoff, and respects maximum retry limits. Add error classification to distinguish between transient errors (network issues, timeouts) and permanent errors (validation failures, authentication issues). Enhance the isRetryableError function to support more sophisticated error pattern matching.",
+            "status": "pending",
+            "testStrategy": "Test the retry logic with various error scenarios including transient and permanent errors. Verify exponential backoff timing is correctly implemented. Test edge cases such as immediate success, all retries failing, and retries eventually succeeding. Mock time functions to avoid long-running tests."
+          },
+          {
+            "id": 3,
+            "title": "Implement Metrics Collection System",
+            "description": "Create a Prometheus-based metrics collection system that tracks key performance indicators and operational statistics for the rebalancing system.",
+            "dependencies": [],
+            "details": "Implement the metrics collection system using Prometheus client as outlined in the parent task. Define and register all specified metrics (counters, histograms, gauges) and implement helper functions to make metric recording consistent throughout the application. Create a metrics registry and ensure all metrics have appropriate labels and documentation. Implement the updatePendingInvoiceMetrics function to keep gauges current.",
+            "status": "pending",
+            "testStrategy": "Create unit tests to verify metrics are correctly registered and incremented. Test histogram timing functions correctly measure durations. Verify gauge updates reflect the current system state. Test metric label combinations to ensure they provide meaningful segmentation of the data."
+          },
+          {
+            "id": 4,
+            "title": "Implement Health Check and Status Endpoints",
+            "description": "Develop Express endpoints for system health monitoring, detailed status reporting, and Prometheus metrics exposure.",
+            "dependencies": [
+              "10.1",
+              "10.3"
+            ],
+            "details": "Implement the Express server with health check, status, and metrics endpoints as specified in the parent task. Ensure the health check performs meaningful validation of system components including database connectivity and core service functionality. Implement the detailed status endpoint to provide comprehensive information about the system state including pending, completed, and failed earmarks. Configure proper error handling for all endpoints.",
+            "status": "pending",
+            "testStrategy": "Create integration tests for each endpoint to verify correct responses in both healthy and degraded states. Test metrics endpoint returns properly formatted Prometheus metrics. Verify health checks correctly identify system issues. Test status endpoint provides accurate counts and recent operation details."
+          },
+          {
+            "id": 5,
+            "title": "Implement Alerting System for Critical Issues",
+            "description": "Develop an alerting system that can notify appropriate channels (Slack, PagerDuty) about critical system issues based on configurable thresholds.",
+            "dependencies": [
+              "10.1",
+              "10.3",
+              "10.4"
+            ],
+            "details": "Implement the alerting system as outlined in the parent task, supporting multiple notification channels including Slack and PagerDuty. Create the monitorRebalancingHealth function to periodically check for system issues such as stuck earmarks and excessive failures. Implement severity-based routing of alerts to appropriate channels. Add environment-specific configuration to prevent alert spam in development environments.",
+            "status": "pending",
+            "testStrategy": "Test alert generation for different severity levels and verify correct routing to notification channels. Mock external API calls to Slack and PagerDuty to verify payload formatting. Test threshold logic for determining alert severity. Verify environment-specific behavior works correctly in development vs. production contexts."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-07-22T01:13:35.644Z",
+      "updated": "2025-07-22T01:13:35.644Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
