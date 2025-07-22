@@ -1,0 +1,8 @@
+{
+  "db": {
+    "connectionString": "postgresql://localhost:5432/mark_dev"
+  },
+  "outDir": "./src",
+  "outExt": ".ts",
+  "progressListener": true
+}
