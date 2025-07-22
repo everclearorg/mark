@@ -1,0 +1,11 @@
+# Task ID: 4
+# Title: Multi-Chain Rebalancing Coordination
+# Status: pending
+# Dependencies: 3
+# Priority: medium
+# Description: Implement coordinated multi-source rebalancing with composite earmark tracking and all-or-nothing completion logic
+# Details:
+Build destination analysis system that evaluates multiple potential destination chains using requiredRebalanceOps, totalRebalanceAmount, and feasibility criteria. Implement selectOptimalDestination() with primary criteria of minimizing rebalance operations and secondary criteria of minimizing total amounts. Add coordinated multi-chain rebalancing that tracks multiple RebalanceOperation entries under single earmark with proper completion validation using isRebalancingComplete(). Ensure chosen destination becomes origin chain for invoice purchase allocation.
+
+# Test Strategy:
+Integration tests for multi-chain scenarios, destination selection algorithm validation, partial failure recovery testing, timing variation handling, and end-to-end multi-source rebalancing workflows

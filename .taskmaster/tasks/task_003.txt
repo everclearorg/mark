@@ -1,0 +1,11 @@
+# Task ID: 3
+# Title: On-Demand Rebalancing Core Logic
+# Status: pending
+# Dependencies: 2
+# Priority: high
+# Description: Implement onDemand.ts with evaluation, execution, and processing functions for automated rebalancing decisions
+# Details:
+Create evaluateOnDemandRebalancing() to determine rebalancing feasibility considering slippage, reserves, and multi-chain coordination. Implement executeOnDemandRebalancing() to create rebalancing transactions and database earmarks. Build processEarmarkedInvoices() to check completion status and prepare intents for batching. Include destination optimization logic that minimizes rebalance operations and amounts, with proper slippage calculations and all-or-nothing completion validation.
+
+# Test Strategy:
+Unit tests for each function with mock scenarios, integration tests with database layer, slippage calculation validation, multi-chain coordination testing, and edge case handling for invoice state changes

@@ -5,11 +5,11 @@
         "id": 1,
         "title": "Database Schema Setup and Migration",
         "description": "Create PostgreSQL database schema with earmarks, rebalance_operations, and earmark_audit_log tables including proper indexing strategy",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
         "details": "Create three main tables: 1) earmarks table with id (UUID), invoiceId, destinationChainId, ticker, invoiceAmount, status fields 2) rebalance_operations table with earmarkId foreign key, origin/destination chain info, amounts, slippage, status, and transaction hashes 3) earmark_audit_log table for audit trail. Implement indexing on earmarks.invoiceId, earmarks.destinationChainId+ticker, rebalance_operations.earmarkId, and composite index on earmarks.status+destinationChainId. Set up connection pooling, transaction isolation, and database migration scripts.",
         "testStrategy": "Unit tests for database connection, schema validation, index performance testing, transaction rollback scenarios, and data consistency checks",
-        "priority": "high",
-        "dependencies": [],
-        "status": "pending",
         "subtasks": [
           {
             "id": 1,
@@ -23,57 +23,56 @@
           {
             "id": 2,
             "title": "Install and configure dbmate for migrations",
-            "description": "Set up dbmate as the migration tool with proper configuration for PostgreSQL connection and migration paths",
+            "description": "Install dbmate and configure it for PostgreSQL migrations",
+            "details": "Install dbmate as a dev dependency in package.json. Configure dbmate to use packages/adapters/database/db/migrations as migration directory. Set up package.json scripts (db:create, db:migrate, db:rollback, db:new) for workspace compatibility. Ensure proper PostgreSQL connection configuration using environment variables passed at runtime.",
+            "status": "done",
             "dependencies": [
               "1.1"
             ],
-            "details": "Install dbmate as a dev dependency. Create .env.example with DATABASE_URL template. Configure dbmate to use packages/adapters/database/db/migrations as migration directory. Create dbmate scripts in package.json for new migration creation, up/down operations. Set up GitHub Actions workflow for migration validation in CI.",
-            "status": "pending",
-            "testStrategy": ""
+            "parentTaskId": 1
           },
           {
             "id": 3,
             "title": "Create initial schema.sql with table definitions",
             "description": "Write the complete PostgreSQL schema with earmarks, rebalance_operations, and earmark_audit_log tables",
+            "status": "done",
             "dependencies": [
-              "1.1"
+              1
             ],
-            "details": "Create packages/adapters/database/db/schema.sql with CREATE TABLE statements for: earmarks (id UUID PRIMARY KEY, invoiceId TEXT, destinationChainId INT, ticker TEXT, invoiceAmount NUMERIC, status TEXT, created_at TIMESTAMP), rebalance_operations (id UUID PRIMARY KEY, earmarkId UUID REFERENCES earmarks, originChainId INT, amounts JSONB, slippage NUMERIC, status TEXT, txHashes JSONB), earmark_audit_log (id SERIAL PRIMARY KEY, earmarkId UUID, operation TEXT, details JSONB, timestamp TIMESTAMP).",
-            "status": "pending",
+            "details": "Create packages/adapters/database/db/schema.sql with CREATE TABLE statements for: earmarks (id UUID PRIMARY KEY, invoiceId TEXT, destinationChainId INT, ticker TEXT, invoiceAmount NUMERIC, status TEXT, created_at TIMESTAMP), rebalance_operations (id UUID PRIMARY KEY, earmarkId UUID REFERENCES earmarks, originChainId INT, amounts JSONB, slippage NUMERIC, status TEXT, txHashes JSONB), earmark_audit_log (id SERIAL PRIMARY KEY, earmarkId UUID, operation TEXT, details JSONB, timestamp TIMESTAMP).\n<info added on 2025-07-22T21:23:46.574Z>\nImplementation Status Update: Successfully completed dbmate configuration and setup. Created dbmate.yaml configuration file with proper directory structure (migrations_dir: ./db/migrations, schema_file: ./db/schema.sql). Verified npm package dependencies and scripts are correctly configured (db:create, db:migrate, db:rollback, db:status, db:new). Updated project documentation with dbmate workflow commands. Confirmed dbmate is properly configured to use DATABASE_URL environment variable for database connections. Tested dbmate installation and functionality - all systems operational. Ready to proceed with migration file generation.\n</info added on 2025-07-22T21:23:46.574Z>",
             "testStrategy": ""
           },
           {
             "id": 4,
             "title": "Generate initial migration with indexing strategy",
             "description": "Create dbmate migration file implementing the schema with all required indexes for performance optimization",
-            "dependencies": [
-              "1.2",
-              "1.3"
-            ],
-            "details": "Run dbmate new create_earmark_tables to generate migration file. Copy schema from schema.sql into up migration. Add CREATE INDEX statements: idx_earmarks_invoiceId ON earmarks(invoiceId), idx_earmarks_chain_ticker ON earmarks(destinationChainId, ticker), idx_rebalance_operations_earmarkId ON rebalance_operations(earmarkId), idx_earmarks_status_chain ON earmarks(status, destinationChainId). Write down migration with proper DROP statements in reverse order.",
             "status": "pending",
+            "dependencies": [
+              2
+            ],
+            "details": "Run dbmate new create_earmark_tables to generate migration file. Copy schema from schema.sql into up migration. Add CREATE INDEX statements: idx_earmarks_invoiceId ON earmarks(invoiceId), idx_earmarks_chain_ticker ON earmarks(destinationChainId, ticker), idx_rebalance_operations_earmarkId ON rebalance_operations(earmarkId), idx_earmarks_status_chain ON earmarks(status, destinationChainId). Write down migration with proper DROP statements in reverse order.\n<info added on 2025-07-22T21:20:09.196Z>\nSchema creation completed with comprehensive table structure and indexing. Ready to proceed with migration file generation using dbmate new create_earmark_tables command.\n</info added on 2025-07-22T21:20:09.196Z>",
             "testStrategy": ""
           },
           {
             "id": 5,
             "title": "Configure zapatos for TypeScript client generation",
             "description": "Set up zapatos to generate type-safe PostgreSQL client from the database schema",
+            "status": "pending",
             "dependencies": [
-              "1.4"
+              3
             ],
             "details": "Install zapatos and pg as dependencies. Create zapatos configuration file pointing to DATABASE_URL. Add npm script 'db:generate-types' that runs zapatos to generate TypeScript types from schema. Create src/db.ts that exports configured zapatos pool and typed query functions. Set up automatic type regeneration after migrations in development workflow.",
-            "status": "pending",
             "testStrategy": ""
           },
           {
             "id": 6,
             "title": "Create database adapter module exports and tests",
             "description": "Implement the main adapter module with connection management, exports, and basic connectivity tests",
+            "status": "pending",
             "dependencies": [
-              "1.5"
+              4
             ],
             "details": "Create src/index.ts exporting database pool, typed tables, and utility functions. Implement connection health check, retry logic, and graceful shutdown. Create test/adapter.test.ts with basic connectivity tests, migration verification, and type generation validation. Add README.md documenting database setup, migration workflow, and zapatos usage. Ensure module integrates cleanly with existing project structure.",
-            "status": "pending",
             "testStrategy": ""
           }
         ]
@@ -146,7 +145,7 @@
     ],
     "metadata": {
       "created": "2025-07-22T20:23:01.952Z",
-      "updated": "2025-07-22T20:46:25.780Z",
+      "updated": "2025-07-22T21:32:15.701Z",
       "description": "Tasks for master context"
     }
   }

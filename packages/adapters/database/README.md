@@ -17,24 +17,47 @@ PostgreSQL database adapter for Mark using dbmate for migrations and zapatos for
    ```
 
 3. **Database Operations**
+
+   From the project root, use workspace commands:
    ```bash
+   # Set database URL
+   export DATABASE_URL=postgres://postgres:qwerty@localhost:5432/mark_db?sslmode=disable
+
    # Create database
-   yarn db:create
+   yarn workspace @mark/database db:create
+
+   # Run migrations
+   yarn workspace @mark/database db:migrate
+
+   # Check migration status
+   yarn workspace @mark/database db:status
+
+   # Create new migration
+   yarn workspace @mark/database db:new migration_name
+
+   # Rollback last migration
+   yarn workspace @mark/database db:rollback
+
+   # Generate TypeScript types from schema
+   yarn workspace @mark/database db:generate-types
+   ```
+
+   Or from within the database adapter directory:
+   ```bash
+   # Set database URL
+   export DATABASE_URL=postgres://postgres:qwerty@localhost:5432/mark_db?sslmode=disable
 
    # Run migrations
    yarn db:migrate
 
-   # Check migration status
-   yarn db:status
-
    # Create new migration
    yarn db:new migration_name
 
+   # Check migration status
+   yarn db:status
+
    # Rollback last migration
    yarn db:rollback
-
-   # Generate TypeScript types from schema
-   yarn db:generate-types
    ```
 
 ## Structure

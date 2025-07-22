@@ -1,0 +1,51 @@
+# Task ID: 1
+# Title: Database Schema Setup and Migration
+# Status: pending
+# Dependencies: None
+# Priority: high
+# Description: Create PostgreSQL database schema with earmarks, rebalance_operations, and earmark_audit_log tables including proper indexing strategy
+# Details:
+Create three main tables: 1) earmarks table with id (UUID), invoiceId, destinationChainId, ticker, invoiceAmount, status fields 2) rebalance_operations table with earmarkId foreign key, origin/destination chain info, amounts, slippage, status, and transaction hashes 3) earmark_audit_log table for audit trail. Implement indexing on earmarks.invoiceId, earmarks.destinationChainId+ticker, rebalance_operations.earmarkId, and composite index on earmarks.status+destinationChainId. Set up connection pooling, transaction isolation, and database migration scripts.
+
+# Test Strategy:
+Unit tests for database connection, schema validation, index performance testing, transaction rollback scenarios, and data consistency checks
+
+# Subtasks:
+## 1. Set up database adapter package structure [done]
+### Dependencies: None
+### Description: Create packages/adapters/database folder structure mirroring packages/adapters/cache pattern with proper TypeScript configuration
+### Details:
+Create packages/adapters/database directory structure with src/, test/, and db/ folders. Copy and adapt package.json, tsconfig.json from cache adapter. Create db/ subdirectory for dbmate migrations and schema.sql. Set up npm scripts for database operations including 'db:create', 'db:migrate', 'db:rollback'. Configure TypeScript build process and module exports.
+<info added on 2025-07-22T20:46:49.818Z>
+Package structure implementation completed successfully. Directory structure created with all required folders (src/, test/, db/), package.json configured with dbmate and zapatos dependencies, TypeScript and Jest configurations set up, basic connection module and types implemented, test framework initialized, and README documentation provided. All files follow cache adapter pattern for consistency. Database adapter package is ready for dbmate installation and configuration.
+</info added on 2025-07-22T20:46:49.818Z>
+
+## 2. Install and configure dbmate for migrations [pending]
+### Dependencies: 1.1
+### Description: Install dbmate and configure it for PostgreSQL migrations
+### Details:
+Install dbmate as a dev dependency in package.json. Configure dbmate to use packages/adapters/database/db/migrations as migration directory. Set up package.json scripts (db:create, db:migrate, db:rollback, db:new) for workspace compatibility. Ensure proper PostgreSQL connection configuration using environment variables passed at runtime.
+
+## 3. Create initial schema.sql with table definitions [pending]
+### Dependencies: 1.1
+### Description: Write the complete PostgreSQL schema with earmarks, rebalance_operations, and earmark_audit_log tables
+### Details:
+Create packages/adapters/database/db/schema.sql with CREATE TABLE statements for: earmarks (id UUID PRIMARY KEY, invoiceId TEXT, destinationChainId INT, ticker TEXT, invoiceAmount NUMERIC, status TEXT, created_at TIMESTAMP), rebalance_operations (id UUID PRIMARY KEY, earmarkId UUID REFERENCES earmarks, originChainId INT, amounts JSONB, slippage NUMERIC, status TEXT, txHashes JSONB), earmark_audit_log (id SERIAL PRIMARY KEY, earmarkId UUID, operation TEXT, details JSONB, timestamp TIMESTAMP).
+
+## 4. Generate initial migration with indexing strategy [pending]
+### Dependencies: 1.2
+### Description: Create dbmate migration file implementing the schema with all required indexes for performance optimization
+### Details:
+Run dbmate new create_earmark_tables to generate migration file. Copy schema from schema.sql into up migration. Add CREATE INDEX statements: idx_earmarks_invoiceId ON earmarks(invoiceId), idx_earmarks_chain_ticker ON earmarks(destinationChainId, ticker), idx_rebalance_operations_earmarkId ON rebalance_operations(earmarkId), idx_earmarks_status_chain ON earmarks(status, destinationChainId). Write down migration with proper DROP statements in reverse order.
+
+## 5. Configure zapatos for TypeScript client generation [pending]
+### Dependencies: 1.4
+### Description: Set up zapatos to generate type-safe PostgreSQL client from the database schema
+### Details:
+Install zapatos and pg as dependencies. Create zapatos configuration file pointing to DATABASE_URL. Add npm script 'db:generate-types' that runs zapatos to generate TypeScript types from schema. Create src/db.ts that exports configured zapatos pool and typed query functions. Set up automatic type regeneration after migrations in development workflow.
+
+## 6. Create database adapter module exports and tests [pending]
+### Dependencies: 1.5
+### Description: Implement the main adapter module with connection management, exports, and basic connectivity tests
+### Details:
+Create src/index.ts exporting database pool, typed tables, and utility functions. Implement connection health check, retry logic, and graceful shutdown. Create test/adapter.test.ts with basic connectivity tests, migration verification, and type generation validation. Add README.md documenting database setup, migration workflow, and zapatos usage. Ensure module integrates cleanly with existing project structure.

@@ -1,0 +1,11 @@
+# Task ID: 5
+# Title: Integration with processInvoices.ts
+# Status: pending
+# Dependencies: 4
+# Priority: high
+# Description: Integrate on-demand rebalancing into existing invoice processing workflow with three-phase approach
+# Details:
+Phase 1 (Pre-processing): Add checks for earmarked invoices at start of processing, validate rebalancing completion, handle invoice amount changes, prepare intents for completed rebalances. Phase 2 (Processing): Detect insufficient balances and trigger on-demand evaluation, execute rebalancing when viable. Phase 3 (Post-processing): Clean up completed earmarks, handle failures, log audit trails. Ensure earmarked funds are properly reserved by modifying getAvailableBalance() to subtract earmarked amounts and prevent conflicts with regular processing.
+
+# Test Strategy:
+Integration tests with existing processInvoices.ts workflow, FIFO ordering validation, earmark reservation testing, conflict resolution between regular and on-demand rebalancing, and full end-to-end invoice processing scenarios

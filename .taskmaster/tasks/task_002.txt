@@ -1,0 +1,11 @@
+# Task ID: 2
+# Title: Core Database Operations Layer
+# Status: pending
+# Dependencies: 1
+# Priority: high
+# Description: Implement database CRUD operations for earmark management with transaction support and error handling
+# Details:
+Implement createEarmark(), getEarmarks(), getEarmarkForInvoice(), removeEarmark() functions with proper PostgreSQL integration. Add getAvailableForOnDemandSource() and getEarmarkedAmount() functions that calculate available balances while respecting reserves and current invoice requirements. Include atomic operations for creating earmarks with multiple rebalance operations, proper error handling, connection retry logic, and audit logging for all state changes.
+
+# Test Strategy:
+Unit tests for each CRUD operation, integration tests with PostgreSQL, transaction rollback testing, concurrent access testing, and performance benchmarking for high-volume scenarios

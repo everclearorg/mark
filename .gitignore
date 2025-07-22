@@ -151,8 +151,9 @@ dev-debug.log
 # OS specific
 
 # Task files
-tasks.json
-tasks/
 .claude
 .mcp.json
+reports
+templates
+state.json
 CLAUDE.md
