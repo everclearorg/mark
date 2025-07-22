@@ -1,0 +1,48 @@
+{
+    "name": "@mark/database",
+    "version": "0.0.1",
+    "private": true,
+    "description": "Everclear database adapter for Mark using PostgreSQL.",
+    "author": "Everclear",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist/**/*",
+        "src/**/*"
+    ],
+    "scripts": {
+        "build": "tsc --build ./tsconfig.json",
+        "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+        "db:create": "dbmate create",
+        "db:migrate": "dbmate migrate",
+        "db:rollback": "dbmate rollback",
+        "db:status": "dbmate status",
+        "db:new": "dbmate new",
+        "db:generate-types": "zapatos",
+        "lint": "yarn lint:package && yarn lint:ts",
+        "lint:fix": "yarn lint --fix",
+        "lint:package": "sort-package-json",
+        "lint:ts": "eslint ./src",
+        "purge": "yarn clean && rimraf ./coverage ./node_modules",
+        "test": "yarn test:unit",
+        "test:unit": "jest --coverage"
+    },
+    "dependencies": {
+        "@mark/core": "workspace:*",
+        "@mark/logger": "workspace:*",
+        "pg": "^8.11.0",
+        "zapatos": "^6.1.1"
+    },
+    "devDependencies": {
+        "@types/jest": "29.5.12",
+        "@types/node": "20.17.12",
+        "@types/pg": "^8.10.0",
+        "dbmate": "^2.0.0",
+        "eslint": "9.17.0",
+        "jest": "29.7.0",
+        "rimraf": "6.0.1",
+        "sort-package-json": "2.12.0",
+        "ts-jest": "29.1.2",
+        "typescript": "5.7.2"
+    }
+}
