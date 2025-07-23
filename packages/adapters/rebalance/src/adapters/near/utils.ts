@@ -7,7 +7,7 @@ import {
   TokenResponse,
 } from '@defuse-protocol/one-click-sdk-typescript';
 import assert from 'assert';
-import { Address, Hash, Log, TransactionReceipt, Transaction } from 'viem';
+import { Address, Hash, TransactionReceipt } from 'viem';
 import { parseEventLogs, erc20Abi, zeroAddress } from 'viem';
 
 type GetDepositLogsParams = {
@@ -146,14 +146,14 @@ export function parseDepositLogs(
     inputAmount: bigint;
   }>,
 ): DepositLog | undefined {
-    const logs = fillReceipt.logs;
-    
-    // Handle case where logs might be empty or not have expected structure
-    const blockData = {
-      depositTxHash: logs.length > 0 && logs[0]?.blockHash ? logs[0].blockHash : fillReceipt.blockHash,
-      depositTxBlock: logs.length > 0 && logs[0]?.blockNumber ? logs[0].blockNumber : fillReceipt.blockNumber,
-    };
-    
+  const logs = fillReceipt.logs;
+
+  // Handle case where logs might be empty or not have expected structure
+  const blockData = {
+    depositTxHash: logs.length > 0 && logs[0]?.blockHash ? logs[0].blockHash : fillReceipt.blockHash,
+    depositTxBlock: logs.length > 0 && logs[0]?.blockNumber ? logs[0].blockNumber : fillReceipt.blockNumber,
+  };
+
   // Parse Transfer Logs
   const parsedTransferLog = parseEventLogs({
     abi: erc20Abi,
@@ -178,10 +178,10 @@ export function parseDepositLogs(
     };
   } else {
     return {
-        ...blockData,
-        tokenAddress: zeroAddress,
-        receiverAddress: fillReceipt.to as Address,
-        amount: value
-    }
+      ...blockData,
+      tokenAddress: zeroAddress,
+      receiverAddress: fillReceipt.to as Address,
+      amount: value,
+    };
   }
 }

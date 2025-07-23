@@ -41,10 +41,7 @@ export class RebalanceAdapter {
           this.rebalanceCache,
         );
       case SupportedBridge.Near:
-        return new NearBridgeAdapter(
-          this.config.chains,
-          this.logger,
-        );
+        return new NearBridgeAdapter(this.config.chains, this.logger);
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }
