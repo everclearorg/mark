@@ -12,13 +12,40 @@ const mockLogger = {
 } as unknown as Logger;
 
 const mockChains = {
-  '42161': { providers: ['https://mock'], assets: [] },
+  '42161': {
+    providers: ['https://mock'],
+    assets: [],
+    invoiceAge: 0,
+    gasThreshold: '0',
+    deployments: {
+      everclear: '0x0000000000000000000000000000000000000001',
+      permit2: '0x0000000000000000000000000000000000000002',
+      multicall3: '0x0000000000000000000000000000000000000003',
+    },
+  },
 };
 
 const sender = '0x' + '1'.repeat(40);
 const recipient = '0x' + '2'.repeat(40);
 const amount = '1000000';
 const route = { asset: USDC_CONTRACTS['arbitrum'], origin: 42161, destination: 42161 };
+
+const mockReceipt = {
+  blockHash: '0xblock',
+  blockNumber: 1n,
+  contractAddress: null,
+  cumulativeGasUsed: 0n,
+  effectiveGasPrice: 0n,
+  from: sender,
+  gasUsed: 0n,
+  logs: [],
+  logsBloom: '0x' + '0'.repeat(512),
+  status: 'success',
+  to: recipient,
+  transactionHash: '0xhash',
+  transactionIndex: 0,
+  type: 'eip1559',
+} as any;
 
 jest.mock('viem', () => {
   const actual = jest.requireActual('viem');
@@ -48,7 +75,7 @@ describe('CctpBridgeAdapter', () => {
   });
 
   it('constructs and returns correct type', () => {
-    expect(adapter.type()).toBe('cctp');
+    expect(adapter.type()).toBe('cctpv1');
   });
 
   it('getReceivedAmount returns input amount', async () => {
@@ -70,14 +97,14 @@ describe('CctpBridgeAdapter', () => {
 
   it('readyOnDestination returns true if attestation is ready', async () => {
     const spy = jest.spyOn(adapter as any, 'extractMessageHash').mockResolvedValue('0xhash');
-    const ready = await adapter.readyOnDestination(amount, route, { logs: [] });
+    const ready = await adapter.readyOnDestination(amount, route, mockReceipt);
     expect(ready).toBe(true);
     spy.mockRestore();
   });
 
   it('destinationCallback returns mint tx', async () => {
     const spy = jest.spyOn(adapter as any, 'extractMessageHash').mockResolvedValue('0xhash');
-    const tx = await adapter.destinationCallback(route, { logs: [] });
+    const tx = await adapter.destinationCallback(route, mockReceipt);
     expect(tx && tx.memo).toBe(RebalanceTransactionMemo.Mint);
     expect(tx && tx.transaction.data).toBe('0xdata');
     spy.mockRestore();
@@ -114,9 +141,10 @@ describe('CctpBridgeAdapter', () => {
   it('extractMessageHash returns a hash if log is found', async () => {
     const logs = [{
       topics: ['0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036'],
-      data: '0xdata'
+      data: '0xdata',
     }];
-    const result = await (adapter as any).extractMessageHash({ logs });
+    const receipt = { ...mockReceipt, logs };
+    const result = await (adapter as any).extractMessageHash(receipt);
     expect(result).toBe('0xtopic');
   });
 }); 

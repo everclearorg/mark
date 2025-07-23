@@ -4,6 +4,7 @@ import { Logger } from '@mark/logger';
 import { USDC_CONTRACTS } from '../../../src/adapters/cctp/constants';
 import { createPublicClient, http } from 'viem';
 import { arbitrum } from 'viem/chains';
+import { AssetConfiguration } from '@mark/core';
 
 const mockLogger = {
   debug: () => {},
@@ -12,8 +13,67 @@ const mockLogger = {
   error: () => {},
 } as unknown as Logger;
 
-const mockChains = {
-  '42161': { providers: ['https://arb1.arbitrum.io/rpc'], assets: [] },
+const mockAssets: Record<string, AssetConfiguration> = {
+  ETH: {
+      address: '0x0000000000000000000000000000000000000000',
+      symbol: 'ETH',
+      decimals: 18,
+      tickerHash: '0xETHHash',
+      isNative: true,
+      balanceThreshold: '0',
+  },
+  USDC_ETH: {
+      address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      symbol: 'USDC',
+      decimals: 6,
+      tickerHash: '0xUSDCHash',
+      isNative: false,
+      balanceThreshold: '0',
+  },
+  USDC_ARB: {
+      address: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
+      symbol: 'USDC',
+      decimals: 6,
+      tickerHash: '0xUSDCHash',
+      isNative: false,
+      balanceThreshold: '0',
+  },
+};
+
+const mockChains: Record<string, any> = {
+  '1': {
+      assets: [mockAssets.ETH, mockAssets.USDC_ETH],
+      providers: ['https://eth.llamarpc.com'],
+      invoiceAge: 3600,
+      gasThreshold: '100000000000',
+      deployments: {
+          everclear: '0xEverclearAddress',
+          permit2: '0xPermit2Address',
+          multicall3: '0xMulticall3Address',
+      },
+  },
+  '8453': { // Base chain
+      assets: [mockAssets.ETH, mockAssets.USDC_ETH],
+      providers: ['https://mainnet.base.org'],
+      invoiceAge: 3600,
+      gasThreshold: '100000000000',
+      deployments: {
+          everclear: '0xEverclearAddress',
+          permit2: '0xPermit2Address',
+          multicall3: '0xMulticall3Address',
+      },
+  },
+  '42161': { // Arbitrum chain
+      assets: [mockAssets.ETH, mockAssets.USDC_ARB],
+      providers: ['https://arb1.arbitrum.io/rpc'],
+      invoiceAge: 3600,
+      gasThreshold: '100000000000',
+      deployments: {
+          everclear: '0xEverclearAddress',
+          permit2: '0xPermit2Address',
+          multicall3: '0xMulticall3Address',
+      },
+  },
 };
 
 const sender = '0x8c0bcb51508675535e43760fb93B7F5dcD1b73d0';
@@ -64,8 +124,7 @@ describe('CctpBridgeAdapter Integration (V1)', () => {
       transport: http('https://arb1.arbitrum.io/rpc'),
     });
     const receipt = await client.getTransactionReceipt({ hash: transactionHash as `0x${string}` });
-    const originTransaction = { logs: receipt.logs };
-    const ready = await adapter.readyOnDestination(amount, route, originTransaction);
+    const ready = await adapter.readyOnDestination(amount, route, receipt);
     expect(typeof ready).toBe('boolean');
     expect(ready).toBe(true);
   });
@@ -90,8 +149,7 @@ describe('CctpBridgeAdapter Integration (V1)', () => {
       transport: http('https://arb1.arbitrum.io/rpc'),
     });
     const receipt = await client.getTransactionReceipt({ hash: transactionHash as `0x${string}` });
-    const originTransaction = { logs: receipt.logs };
-    const tx = await adapter.destinationCallback(route, originTransaction);
+    const tx = await adapter.destinationCallback(route, receipt);
     expect(tx && tx.transaction.data).toBeDefined();
   });
 });
@@ -146,8 +204,7 @@ describe('CctpBridgeAdapter Integration (V2)', () => {
       transport: http('https://arb1.arbitrum.io/rpc'),
     });
     const receipt = await client.getTransactionReceipt({ hash: transactionHash as `0x${string}` });
-    const originTransaction = { logs: receipt.logs };
-    const ready = await v2adapter.readyOnDestination(amount, route, originTransaction);
+    const ready = await v2adapter.readyOnDestination(amount, route, receipt);
     expect(typeof ready).toBe('boolean');
   });
 
@@ -171,7 +228,6 @@ describe('CctpBridgeAdapter Integration (V2)', () => {
       transport: http('https://arb1.arbitrum.io/rpc'),
     });
     const receipt = await client.getTransactionReceipt({ hash: transactionHash as `0x${string}` });
-    // Instead of just { logs: receipt.logs }, pass the full receipt:
     const tx = await v2adapter.destinationCallback(route, receipt);
     expect(tx && tx.transaction.data).toBeDefined();
   });

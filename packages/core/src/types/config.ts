@@ -54,7 +54,8 @@ export type Stage = 'development' | 'staging' | 'production';
 export enum SupportedBridge {
   Across = 'across',
   Binance = 'binance',
-  CCTP = 'cctp',
+  CCTPV1 = 'cctpv1',
+  CCTPV2 = 'cctpv2',
 }
 
 export interface RebalanceRoute {

@@ -7,9 +7,10 @@ import {
   keccak256,
   decodeAbiParameters,
   pad,
+  TransactionReceipt,
 } from 'viem';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
-import { RebalanceRoute, SupportedBridge } from '@mark/core';
+import { ChainConfiguration, RebalanceRoute, SupportedBridge } from '@mark/core';
 import { Logger } from '@mark/logger';
 import {
   USDC_CONTRACTS,
@@ -37,12 +38,12 @@ const receiveMessageAbi = [
 export class CctpBridgeAdapter implements BridgeAdapter {
   constructor(
     protected readonly version: 'v1' | 'v2',
-    protected readonly chains: Record<string, any>,
+    protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
   ) {}
 
   type(): SupportedBridge {
-    return SupportedBridge.CCTP;
+    return this.version === 'v1' ? SupportedBridge.CCTPV1 : SupportedBridge.CCTPV2;
   }
   // Fees: https://developers.circle.com/cctp
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
@@ -119,13 +120,18 @@ export class CctpBridgeAdapter implements BridgeAdapter {
       throw new Error(`USDC contract not found for origin domain ${originDomainName}`);
     }
 
+    const circleDomainId = CHAIN_ID_TO_NUMERIC_DOMAIN[route.destination];
+    if (circleDomainId === undefined || circleDomainId === null) {
+      throw new Error(`Circle domain not found for destination chain ${route.destination}`);
+    }
+
     const tokenMessenger =
       this.version === 'v1' ? TOKEN_MESSENGERS_V1[originDomainName] : TOKEN_MESSENGERS_V2[originDomainName];
     if (!tokenMessenger) {
       throw new Error(`Token messenger not found for origin domain ${originDomainName}`);
     }
 
-    // Approval 
+    // Approval
     let approvalTx: MemoizedTransactionRequest | undefined;
     const providers = this.chains[route.origin.toString()]?.providers ?? [];
     if (!providers.length) {
@@ -175,11 +181,11 @@ export class CctpBridgeAdapter implements BridgeAdapter {
           },
         ],
         functionName: 'depositForBurn',
-        args: [BigInt(amount), route.destination, paddedRecipient as `0x${string}`, usdcContract as `0x${string}`],
+        args: [BigInt(amount), circleDomainId, paddedRecipient as `0x${string}`, usdcContract as `0x${string}`],
       });
     } else {
       // Calculating maxFee as 1 BPS of amount for fast transfer and 0 for standard transfer
-      const maxFee = fastTransfer ? BigInt(amount) * BigInt(100) / BigInt(1000000) : BigInt(0);
+      const maxFee = fastTransfer ? (BigInt(amount) * BigInt(100)) / BigInt(1000000) : BigInt(0);
       // Setting minFinalityThreshold to 1000 for fast transfer and 2000 for standard transfer
       const minFinalityThreshold = fastTransfer ? 1000 : 2000;
       burnData = encodeFunctionData({
@@ -203,7 +209,7 @@ export class CctpBridgeAdapter implements BridgeAdapter {
         functionName: 'depositForBurn',
         args: [
           BigInt(amount),
-          route.destination,
+          circleDomainId,
           paddedSender as `0x${string}`,
           usdcContract as `0x${string}`,
           paddedRecipient as `0x${string}`, // destinationCaller could be different
@@ -228,10 +234,10 @@ export class CctpBridgeAdapter implements BridgeAdapter {
   async readyOnDestination(
     amount: string,
     route: RebalanceRoute,
-    originTransaction: any, // TransactionReceipt
+    originTransaction: TransactionReceipt,
   ): Promise<boolean> {
     // Poll the attestation endpoint for the message hash
-    const messageHash = await this.extractMessageHash(originTransaction);
+    const { messageHash } = await this.extractMessageHash(originTransaction);
     if (!messageHash) return false;
 
     const originDomain = CHAIN_ID_TO_NUMERIC_DOMAIN[route.origin];
@@ -245,20 +251,27 @@ export class CctpBridgeAdapter implements BridgeAdapter {
 
   async destinationCallback(
     route: RebalanceRoute,
-    originTransaction: any, // TransactionReceipt
+    originTransaction: TransactionReceipt, // TransactionReceipt
   ): Promise<MemoizedTransactionRequest | void> {
     // Get messageBytes and attestation
-    const messageHash = await this.extractMessageHash(originTransaction);
-    if (!messageHash) return;
+    const { messageHash, messageBytesV1 } = await this.extractMessageHash(originTransaction);
+    if (!messageHash) {
+      throw new Error('Message hash not found');
+    }
 
-    const domainId = this.version === 'v1' ? route.origin.toString() : CHAIN_ID_TO_NUMERIC_DOMAIN[route.origin].toString();
+    const domainId =
+      this.version === 'v1' ? route.origin.toString() : CHAIN_ID_TO_NUMERIC_DOMAIN[route.origin].toString();
     if (!domainId) {
       throw new Error(`Invalid domain ID: ${route.origin}`);
     }
 
-    const { messageBytes, attestation } = await this.fetchAttestation(messageHash, domainId);
-    const destinationDomainName = CHAIN_ID_TO_DOMAIN[route.destination];
+    let { messageBytes, attestation } = await this.fetchAttestation(messageHash, domainId);
+    if (messageBytes === 'v1' && messageBytesV1) messageBytes = messageBytesV1;
+    if (messageBytes === undefined) {
+      throw new Error('Message bytes not found');
+    }
 
+    const destinationDomainName = CHAIN_ID_TO_DOMAIN[route.destination];
     const messageTransmitter =
       this.version === 'v1'
         ? MESSAGE_TRANSMITTERS_V1[destinationDomainName]
@@ -276,22 +289,32 @@ export class CctpBridgeAdapter implements BridgeAdapter {
         value: BigInt(0),
       },
     };
-
     return mintTx;
   }
 
   // --- Helper methods ---
-  private async extractMessageHash(originTransaction: any): Promise<string | undefined> {
+  private async extractMessageHash(
+    originTransaction: TransactionReceipt,
+  ): Promise<{ messageBytesV1: string; messageHash: string }> {
     if (this.version === 'v1') {
       // The event topic for MessageSent(bytes)
       const eventTopic = '0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036';
-      const log = originTransaction.logs.find((l: any) => l.topics && l.topics[0] === eventTopic);
-      if (!log) return undefined;
+      const log = originTransaction.logs.find((l) => l.topics && l.topics[0] === eventTopic);
+      if (!log) {
+        throw new Error('Message sent event not found');
+      }
+
       // Decode the message bytes
-      const messageBytes = decodeAbiParameters([{ type: 'bytes' }], log.data)[0];
-      return keccak256(messageBytes);
+      const messageBytesV1 = decodeAbiParameters([{ type: 'bytes' }], log.data)[0];
+      return {
+        messageBytesV1,
+        messageHash: keccak256(messageBytesV1),
+      };
     } else {
-      return originTransaction.transactionHash;
+      return {
+        messageBytesV1: 'v2',
+        messageHash: originTransaction.transactionHash,
+      };
     }
   }
 
@@ -308,7 +331,7 @@ export class CctpBridgeAdapter implements BridgeAdapter {
           throw new Error('Attestation not complete');
         }
       } catch (e) {
-        throw new Error('Attestation fetch failed');
+        throw new Error(`Attestation fetch failed: ${e}`);
       }
     } else {
       // V2: https://iris-api.circle.com/v2/messages/{domain}?transactionHash={messageHash}
@@ -322,7 +345,7 @@ export class CctpBridgeAdapter implements BridgeAdapter {
           throw new Error('Attestation not complete');
         }
       } catch (e) {
-        throw new Error('Attestation fetch failed');
+        throw new Error(`Attestation fetch failed: ${e}`);
       }
     }
   }
@@ -340,14 +363,14 @@ export class CctpBridgeAdapter implements BridgeAdapter {
         const attestationResponse = await response.json();
         if (attestationResponse.status === 'complete') {
           return {
-            messageBytes: attestationResponse.message,
+            messageBytes: 'v1',
             attestation: attestationResponse.attestation,
           };
         } else {
           throw new Error('Attestation not complete');
         }
       } catch (e) {
-        throw new Error('Attestation fetch failed');
+        throw new Error(`Attestation fetch failed: ${e}`);
       }
     } else {
       // V2: https://iris-api.circle.com/v2/messages/{domain}?transactionHash={transactionHash}
@@ -364,7 +387,7 @@ export class CctpBridgeAdapter implements BridgeAdapter {
           throw new Error('Attestation not complete');
         }
       } catch (e) {
-        throw new Error('Attestation fetch failed');
+        throw new Error(`Attestation fetch failed: ${e}`);
       }
     }
   }
