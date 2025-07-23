@@ -68,7 +68,7 @@ variable "supported_settlement_domains" {
 variable "supported_asset_symbols" {
   description = "Comma-separated list of supported asset symbols"
   type        = string
-  default     = "WETH,cbBTC"
+  default     = "WETH,cbBTC,WBTC"
 }
 
 variable "log_level" {
