@@ -2056,6 +2056,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@defuse-protocol/one-click-sdk-typescript@npm:^0.1.5":
+  version: 0.1.5
+  resolution: "@defuse-protocol/one-click-sdk-typescript@npm:0.1.5"
+  dependencies:
+    axios: ^1.6.8
+    form-data: ^4.0.0
+  checksum: 6b87718f7b0bdb517045b3fcbf31cea615a618756ded7495854474c539012cc4e5aacdb9cd7fce460b071b373ba7d52bcb51f4b676a8645fa045a7e841727eaf
+  languageName: node
+  linkType: hard
+
 "@eslint-community/eslint-utils@npm:^4.2.0, @eslint-community/eslint-utils@npm:^4.4.0":
   version: 4.7.0
   resolution: "@eslint-community/eslint-utils@npm:4.7.0"
@@ -3989,6 +3999,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/rebalance@workspace:packages/adapters/rebalance"
   dependencies:
+    "@defuse-protocol/one-click-sdk-typescript": ^0.1.5
     "@mark/cache": "workspace:*"
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
@@ -6615,6 +6626,17 @@ __metadata:
   dependencies:
     follow-redirects: ^1.14.0
   checksum: 44245f24ac971e7458f3120c92f9d66d1fc695e8b97019139de5b0cc65d9b8104647db01e5f46917728edfc0cfd88eb30fc4c55e6053eef4ace76768ce95ff3c
+  languageName: node
+  linkType: hard
+
+"axios@npm:^1.6.8":
+  version: 1.10.0
+  resolution: "axios@npm:1.10.0"
+  dependencies:
+    follow-redirects: ^1.15.6
+    form-data: ^4.0.0
+    proxy-from-env: ^1.1.0
+  checksum: b5fd840d499469bf968e44b8ac96f4b363c6aa4c791a50834c086a7cffbc2d77fe24f27af1aba46c3e1f4840aaf991461fc27537990596b93dea0f4df3245a86
   languageName: node
   linkType: hard
 

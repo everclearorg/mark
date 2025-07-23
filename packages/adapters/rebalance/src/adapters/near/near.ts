@@ -22,6 +22,7 @@ import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } f
 import { DepositStatusResponse } from './types';
 import { EOA_ADDRESS, NEAR_IDENTIFIER_MAP } from './constants';
 import { getDepositFromLogs, parseDepositLogs } from './utils';
+import { findAssetByAddress, findMatchingDestinationAsset } from '../../shared/asset';
 
 const wethAbi = [
   ...erc20Abi,
@@ -149,7 +150,25 @@ export class NearBridgeAdapter implements BridgeAdapter {
         return;
       }
 
-      const destinationWETH = callbackInfo.asset;
+      const originAsset = findAssetByAddress(route.asset, route.origin, this.chains, this.logger);
+      if (!originAsset) {
+        throw new Error('Could not find origin asset');
+      }
+
+      // Only WETH transfers need wrapping callbacks
+      if (originAsset.symbol.toLowerCase() !== 'weth') {
+        this.logger.debug('Asset is not WETH, no callback needed', { route, originAsset });
+        return;
+      }
+
+      this.logger.debug('Found WETH origin asset', { route, originAsset });
+      const destinationWETH = findMatchingDestinationAsset(
+        route.asset,
+        route.origin,
+        route.destination,
+        this.chains,
+        this.logger,
+      );
       if (!destinationWETH) {
         throw new Error('Failed to find destination WETH');
       }
