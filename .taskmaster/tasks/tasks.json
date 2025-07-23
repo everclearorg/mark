@@ -5,7 +5,7 @@
         "id": 1,
         "title": "Database Schema Setup and Migration",
         "description": "Create PostgreSQL database schema with earmarks, rebalance_operations, and earmark_audit_log tables including proper indexing strategy",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "details": "Create three main tables: 1) earmarks table with id (UUID), invoiceId, destinationChainId, ticker, invoiceAmount, status fields 2) rebalance_operations table with earmarkId foreign key, origin/destination chain info, amounts, slippage, status, and transaction hashes 3) earmark_audit_log table for audit trail. Implement indexing on earmarks.invoiceId, earmarks.destinationChainId+ticker, rebalance_operations.earmarkId, and composite index on earmarks.status+destinationChainId. Set up connection pooling, transaction isolation, and database migration scripts.",
@@ -68,7 +68,7 @@
             "id": 6,
             "title": "Create database adapter module exports and tests",
             "description": "Implement the main adapter module with connection management, exports, and basic connectivity tests",
-            "status": "pending",
+            "status": "done",
             "dependencies": [
               5
             ],
@@ -145,7 +145,7 @@
     ],
     "metadata": {
       "created": "2025-07-22T20:23:01.952Z",
-      "updated": "2025-07-22T23:47:12.028Z",
+      "updated": "2025-07-23T00:05:28.822Z",
       "description": "Tasks for master context"
     }
   }

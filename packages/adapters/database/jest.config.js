@@ -1,8 +1,9 @@
-const base = require('../../../jest.config.base.js');
-
 module.exports = {
-  ...base,
+  preset: 'ts-jest',
+  testEnvironment: 'node',
   displayName: 'Database Adapter',
-  testMatch: ['<rootDir>/test/**/*.spec.ts'],
-  setupFiles: ['<rootDir>/test/setup.ts'],
+  testMatch: ['<rootDir>/test/**/*.test.ts'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts'],
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
 };
