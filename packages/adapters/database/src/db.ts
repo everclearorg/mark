@@ -250,6 +250,217 @@ export const db = {
   },
 };
 
+// Core earmark operations with business logic
+export interface CreateEarmarkInput {
+  invoiceId: string;
+  destinationChainId: number;
+  ticker: string;
+  invoiceAmount: string;
+  initialRebalanceOperations?: {
+    originChainId: number;
+    amount: string;
+    slippage?: string;
+  }[];
+}
+
+export interface GetEarmarksFilter {
+  status?: string | string[];
+  destinationChainId?: number | number[];
+  ticker?: string | string[];
+  invoiceId?: string;
+  createdAfter?: Date;
+  createdBefore?: Date;
+}
+
+export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks> {
+  return withTransaction(async (client) => {
+    // Insert earmark
+    const earmarkData: earmarks_insert = {
+      invoiceId: input.invoiceId,
+      destinationChainId: input.destinationChainId,
+      ticker: input.ticker,
+      invoiceAmount: input.invoiceAmount,
+      status: 'pending',
+    };
+
+    const insertQuery = `
+      INSERT INTO earmarks (invoiceId, destinationChainId, ticker, invoiceAmount, status)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `;
+
+    const earmarkResult = await client.query(insertQuery, [
+      earmarkData.invoiceId,
+      earmarkData.destinationChainId,
+      earmarkData.ticker,
+      earmarkData.invoiceAmount,
+      earmarkData.status,
+    ]);
+
+    const earmark = earmarkResult.rows[0] as earmarks;
+
+    // Create associated rebalance operations if provided
+    if (input.initialRebalanceOperations && input.initialRebalanceOperations.length > 0) {
+      for (const operation of input.initialRebalanceOperations) {
+        const operationQuery = `
+          INSERT INTO rebalance_operations (earmarkId, originChainId, destinationChainId, ticker, amount, slippage, status)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `;
+
+        await client.query(operationQuery, [
+          earmark.id,
+          operation.originChainId,
+          input.destinationChainId,
+          input.ticker,
+          operation.amount,
+          operation.slippage || '0.005',
+          'pending',
+        ]);
+      }
+    }
+
+    // Create audit log entry
+    const auditQuery = `
+      INSERT INTO earmark_audit_log (earmarkId, operation, new_status, details)
+      VALUES ($1, $2, $3, $4)
+    `;
+
+    await client.query(auditQuery, [
+      earmark.id,
+      'CREATE',
+      'pending',
+      JSON.stringify({
+        invoiceId: input.invoiceId,
+        destinationChainId: input.destinationChainId,
+        ticker: input.ticker,
+        invoiceAmount: input.invoiceAmount,
+        initialOperationsCount: input.initialRebalanceOperations?.length || 0,
+      }),
+    ]);
+
+    return earmark;
+  });
+}
+
+export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[]> {
+  let query = 'SELECT * FROM earmarks';
+  const values: unknown[] = [];
+  const conditions: string[] = [];
+  let paramCount = 1;
+
+  if (filter) {
+    if (filter.status) {
+      if (Array.isArray(filter.status)) {
+        const placeholders = filter.status.map(() => `$${paramCount++}`).join(', ');
+        conditions.push(`status IN (${placeholders})`);
+        values.push(...filter.status);
+      } else {
+        conditions.push(`status = $${paramCount++}`);
+        values.push(filter.status);
+      }
+    }
+
+    if (filter.destinationChainId) {
+      if (Array.isArray(filter.destinationChainId)) {
+        const placeholders = filter.destinationChainId.map(() => `$${paramCount++}`).join(', ');
+        conditions.push(`destinationChainId IN (${placeholders})`);
+        values.push(...filter.destinationChainId);
+      } else {
+        conditions.push(`destinationChainId = $${paramCount++}`);
+        values.push(filter.destinationChainId);
+      }
+    }
+
+    if (filter.ticker) {
+      if (Array.isArray(filter.ticker)) {
+        const placeholders = filter.ticker.map(() => `$${paramCount++}`).join(', ');
+        conditions.push(`ticker IN (${placeholders})`);
+        values.push(...filter.ticker);
+      } else {
+        conditions.push(`ticker = $${paramCount++}`);
+        values.push(filter.ticker);
+      }
+    }
+
+    if (filter.invoiceId) {
+      conditions.push(`invoiceId = $${paramCount++}`);
+      values.push(filter.invoiceId);
+    }
+
+    if (filter.createdAfter) {
+      conditions.push(`created_at >= $${paramCount++}`);
+      values.push(filter.createdAfter);
+    }
+
+    if (filter.createdBefore) {
+      conditions.push(`created_at <= $${paramCount++}`);
+      values.push(filter.createdBefore);
+    }
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+
+  query += ' ORDER BY created_at DESC';
+
+  return queryWithClient<earmarks>(query, values);
+}
+
+export async function getEarmarkForInvoice(invoiceId: string): Promise<earmarks | null> {
+  const query = 'SELECT * FROM earmarks WHERE invoiceId = $1';
+  const result = await queryWithClient<earmarks>(query, [invoiceId]);
+
+  if (result.length === 0) {
+    return null;
+  }
+
+  if (result.length > 1) {
+    throw new Error(`Multiple earmarks found for invoice ${invoiceId}. Expected unique constraint violation.`);
+  }
+
+  return result[0];
+}
+
+export async function removeEarmark(earmarkId: string): Promise<void> {
+  return withTransaction(async (client) => {
+    // Get earmark details for audit log
+    const earmarkQuery = 'SELECT * FROM earmarks WHERE id = $1';
+    const earmarkResult = await client.query(earmarkQuery, [earmarkId]);
+
+    if (earmarkResult.rows.length === 0) {
+      throw new Error(`Earmark with id ${earmarkId} not found`);
+    }
+
+    const earmark = earmarkResult.rows[0] as earmarks;
+
+    // Create audit log entry before deletion
+    const auditQuery = `
+      INSERT INTO earmark_audit_log (earmarkId, operation, previous_status, details)
+      VALUES ($1, $2, $3, $4)
+    `;
+
+    await client.query(auditQuery, [
+      earmarkId,
+      'DELETE',
+      earmark.status,
+      JSON.stringify({
+        deletedAt: new Date().toISOString(),
+        finalStatus: earmark.status,
+        invoiceId: earmark.invoiceId,
+      }),
+    ]);
+
+    // Delete rebalance operations (will cascade due to FK constraint)
+    const deleteOperationsQuery = 'DELETE FROM rebalance_operations WHERE earmarkId = $1';
+    await client.query(deleteOperationsQuery, [earmarkId]);
+
+    // Delete the earmark (audit log entries will cascade)
+    const deleteEarmarkQuery = 'DELETE FROM earmarks WHERE id = $1';
+    await client.query(deleteEarmarkQuery, [earmarkId]);
+  });
+}
+
 // Re-export types for convenience
 export type {
   earmarks,

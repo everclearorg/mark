@@ -88,7 +88,154 @@
           1
         ],
         "status": "pending",
-        "subtasks": []
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Core Earmark CRUD Operations",
+            "description": "Create the fundamental database operations for earmark management including createEarmark, getEarmarks, getEarmarkForInvoice, and removeEarmark with proper transaction support",
+            "dependencies": [],
+            "details": "Implement createEarmark() with atomic transaction support for creating earmark records and associated rebalance_operations in a single transaction. Add getEarmarks() with efficient filtering by status, destinationChainId, and ticker using prepared statements and proper indexing. Create getEarmarkForInvoice() with unique constraint enforcement and proper error handling for missing records. Implement removeEarmark() with cascading cleanup of associated rebalance_operations and audit log entries. Use pg-promise or similar for connection pooling and transaction management.\n<info added on 2025-07-23T00:31:07.847Z>\nImplementation completed successfully. Created 4 core CRUD functions: createEarmark (with atomic transactions), getEarmarks (with flexible filtering), getEarmarkForInvoice (with unique constraint checking), and removeEarmark (with cascading cleanup). All functions include proper audit logging and comprehensive test coverage. Code follows TypeScript strict typing rules and passes linting checks.\n</info added on 2025-07-23T00:31:07.847Z>",
+            "status": "done",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Build Balance Calculation Functions",
+            "description": "Implement getAvailableForOnDemandSource and getEarmarkedAmount functions that accurately calculate available balances while respecting reserves and earmarks",
+            "dependencies": [
+              "2.1"
+            ],
+            "details": "Create getAvailableForOnDemandSource() that calculates true available balance by subtracting earmarked amounts and required reserves from total balance. Implement getEarmarkedAmount() to aggregate all active earmarks for a given chainId and ticker combination. Add support for slippage calculations in balance determinations. Ensure functions handle concurrent access patterns correctly with appropriate isolation levels. Include reserve threshold configurations and validation logic.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Implement Atomic Multi-Source Transaction Patterns",
+            "description": "Create transaction patterns for atomic multi-source earmark creation with proper rollback mechanisms and isolation levels",
+            "dependencies": [
+              "2.1"
+            ],
+            "details": "Design transaction wrapper functions that handle creating an earmark with multiple rebalance_operations atomically. Implement proper isolation levels (SERIALIZABLE for critical operations) to prevent race conditions. Add savepoint support for partial rollbacks within larger transactions. Create retry logic with exponential backoff for transient failures. Include deadlock detection and resolution strategies for concurrent earmark creation scenarios.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Add Comprehensive Error Handling Layer",
+            "description": "Implement robust error handling for database operations, business logic violations, and network failures with proper error categorization",
+            "dependencies": [
+              "2.1",
+              "2.2",
+              "2.3"
+            ],
+            "details": "Create custom error classes for different failure scenarios: DatabaseError, BusinessLogicError, ConcurrencyError, ValidationError. Implement error recovery strategies including connection retry with circuit breaker pattern, transaction rollback with state cleanup, and partial failure handling for multi-chain operations. Add detailed error logging with context preservation. Include error metrics collection for monitoring integration.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Build Audit Logging System",
+            "description": "Implement comprehensive audit logging for all earmark state changes and rebalancing operations with proper event tracking",
+            "dependencies": [
+              "2.1",
+              "2.3"
+            ],
+            "details": "Create audit log triggers or application-level logging for all CRUD operations on earmarks and rebalance_operations tables. Implement structured logging with operation type, before/after states, user context, and timestamps. Add correlation IDs for tracking related operations across multiple tables. Include audit log retention policies and archival strategies. Build query interfaces for audit trail analysis and compliance reporting.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Implement TTL and Cleanup Mechanisms",
+            "description": "Create TTL management system for earmarks with automatic cleanup of stale records and failed operations",
+            "dependencies": [
+              "2.1",
+              "2.5"
+            ],
+            "details": "Implement background job or trigger-based system for earmark expiration based on configurable TTL values. Create cleanup procedures for orphaned rebalance_operations and incomplete earmarks. Add status transition logic for timeout scenarios (PENDING -> EXPIRED). Implement soft-delete patterns with purge scheduling for audit compliance. Include monitoring for cleanup job health and performance metrics.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Create Business Logic Validation Layer",
+            "description": "Implement comprehensive validation for earmark creation, updates, and state transitions with referential integrity checks",
+            "dependencies": [
+              "2.1",
+              "2.2"
+            ],
+            "details": "Build validation functions for earmark amount limits, destination chain validity, and ticker support verification. Implement state machine validation for allowed status transitions. Add referential integrity checks beyond database constraints for business rules. Create validation for sufficient source liquidity before earmark creation. Include cross-chain validation for rebalance operation feasibility.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 8,
+            "title": "Optimize Query Performance and Indexing",
+            "description": "Implement query optimization strategies, batch operations, and enhanced indexing for high-volume scenarios",
+            "dependencies": [
+              "2.1",
+              "2.2"
+            ],
+            "details": "Create batch insert/update operations for multiple earmarks using COPY commands or multi-row inserts. Implement query plan analysis and optimization for complex joins between earmarks and rebalance_operations. Add partial indexes for common query patterns (e.g., active earmarks only). Create materialized views for expensive aggregation queries. Include query performance monitoring and slow query logging.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 9,
+            "title": "Enhance Connection Pool Management",
+            "description": "Implement advanced connection pooling with health checks, retry logic, and failover support for database resilience",
+            "dependencies": [
+              "2.1",
+              "2.4"
+            ],
+            "details": "Configure connection pool with appropriate size limits based on expected concurrency. Implement connection health checks with automatic bad connection eviction. Add connection retry logic with exponential backoff and jitter. Create failover support for read replicas in case of primary database issues. Include connection pool metrics for monitoring (active, idle, waiting connections).",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 10,
+            "title": "Build Integration Testing Framework",
+            "description": "Create comprehensive integration testing suite for concurrent access patterns, high-volume scenarios, and edge cases",
+            "dependencies": [
+              "2.1",
+              "2.2",
+              "2.3",
+              "2.4"
+            ],
+            "details": "Implement concurrent access tests simulating multiple invoice processors creating earmarks simultaneously. Create high-volume performance tests with thousands of earmarks and rebalance operations. Add edge case testing for database connection failures, transaction timeouts, and partial operation completions. Include data consistency validation tests across related tables. Build test fixtures and data generators for realistic scenarios.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 11,
+            "title": "Add Monitoring and Health Check Integration",
+            "description": "Implement monitoring endpoints and health checks for database operations layer with metrics collection",
+            "dependencies": [
+              "2.1",
+              "2.6",
+              "2.8",
+              "2.9"
+            ],
+            "details": "Create health check endpoints validating database connectivity, query performance, and cleanup job status. Implement metrics collection for operation latencies, error rates, and throughput. Add custom Prometheus metrics for earmark creation rate, TTL expiration rate, and balance calculation performance. Include alerting thresholds for critical metrics. Build dashboard templates for operational visibility.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 12,
+            "title": "Create Type Definitions and Documentation",
+            "description": "Implement complete TypeScript type definitions and comprehensive documentation for the database operations layer",
+            "dependencies": [
+              "2.1",
+              "2.2",
+              "2.3",
+              "2.7"
+            ],
+            "details": "Create detailed TypeScript interfaces for all database entities, function parameters, and return types. Add JSDoc comments for all public functions with usage examples. Build API documentation using TypeDoc or similar tools. Include architecture diagrams showing transaction flows and state transitions. Create operational runbooks for common maintenance tasks and troubleshooting procedures.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
       },
       {
         "id": 3,
@@ -145,7 +292,7 @@
     ],
     "metadata": {
       "created": "2025-07-22T20:23:01.952Z",
-      "updated": "2025-07-23T00:05:28.822Z",
+      "updated": "2025-07-23T00:30:44.613Z",
       "description": "Tasks for master context"
     }
   }

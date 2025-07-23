@@ -8,6 +8,16 @@ export * from './db';
 export * from './types';
 export * from './zapatos/schema';
 
+// Core earmark operations
+export {
+  createEarmark,
+  getEarmarks,
+  getEarmarkForInvoice,
+  removeEarmark,
+  type CreateEarmarkInput,
+  type GetEarmarksFilter,
+} from './db';
+
 // Health check and utility functions
 export interface HealthCheckResult {
   healthy: boolean;
