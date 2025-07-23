@@ -92,7 +92,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       {
         origin: 56,
         destination: 1,
-        asset: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
+        asset: '0x4200000000000000000000000000000000000006',
         maximum: '5000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
@@ -128,14 +128,14 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         preferences: [SupportedBridge.Binance],
       },
       // blast ethereum WETH    7000000000000000000 160
-      // {
-      //   origin: 81457,
-      //   destination: 1,
-      //   asset: '0x4300000000000000000000000000000000000004',
-      //   maximum: '7000000000000000000',
-      //   slippage: 160,
-      //   preferences: [SupportedBridge.Across],
-      // },
+      {
+        origin: 81457,
+        destination: 1,
+        asset: '0x4300000000000000000000000000000000000004',
+        maximum: '7000000000000000000',
+        slippage: 160,
+        preferences: [SupportedBridge.Across],
+      },
       // linea ethereum WETH    7000000000000000000 30
       {
         origin: 59144,
@@ -146,42 +146,32 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
-      // // unichain    ethereum    WETH    10000000000000000000    150
-      // {
-      //   origin: 130,
-      //   destination: 1,
-      //   asset: '0x4200000000000000000000000000000000000006',
-      //   maximum: '35000000000000000000',
-      //   reserve: '30000000000000000000',
-      //   slippage: 150,
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // // zksync    ethereum    WETH    10000000000000000000 20
-      // {
-      //   origin: 324,
-      //   destination: 1,
-      //   asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
-      //   maximum: '10000000000000000000',
-      //   slippage: 20,
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // scroll    ethereum    WETH    10000000000000000000 20
+      // unichain    ethereum    WETH    10000000000000000000    150
+      {
+        origin: 130,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '35000000000000000000',
+        reserve: '30000000000000000000',
+        slippage: 150,
+        preferences: [SupportedBridge.Across],
+      },
+      // zksync    ethereum    WETH    10000000000000000000 20
       {
         origin: 324,
         destination: 1,
-        asset: '0x5300000000000000000000000000000000000004',
+        asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
         maximum: '10000000000000000000',
-        reserve: '5000000000000000000',
         slippage: 20,
-        preferences: [SupportedBridge.Binance],
+        preferences: [SupportedBridge.Across],
       },
-      // optimism ethereum USDC
+      // optimism ethereum    USDC    20000000000000000000000 140
       {
         origin: 10,
         destination: 1,
         asset: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-        maximum: '65000000000000000000000',
-        reserve: '60000000000000000000000',
+        maximum: '105000000000000000000000',
+        reserve: '100000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
@@ -198,16 +188,16 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       {
         origin: 56,
         destination: 1,
-        asset: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+        asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
         maximum: '5000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
       // bnb ethereum    USDT    10000000000000000000000 140
       {
-        origin: 56,
+        origin: 10,
         destination: 1,
-        asset: '0x55d398326f99059fF775485246999027B3197955',
+        asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
         maximum: '5000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
@@ -217,8 +207,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         origin: 8453,
         destination: 1,
         asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-        maximum: '65000000000000000000000',
-        reserve: '60000000000000000000000',
+        maximum: '105000000000000000000000',
+        reserve: '100000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
@@ -227,8 +217,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         origin: 42161,
         destination: 1,
         asset: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-        maximum: '65000000000000000000000',
-        reserve: '60000000000000000000000',
+        maximum: '105000000000000000000000',
+        reserve: '100000000000000000000000',
         slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
@@ -251,27 +241,9 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 140,
         preferences: [SupportedBridge.Across],
       },
-      // // unichain    ethereum    USDC    20000000000000000000000 30
-      // {
-      //   origin: 130,
-      //   destination: 1,
-      //   asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
-      //   maximum: '20000000000000000000000',
-      //   slippage: 30,
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // // zksync    ethereum    USDC    10000000000000000000000 30
-      // {
-      //   origin: 324,
-      //   destination: 1,
-      //   asset: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4',
-      //   maximum: '10000000000000000000000',
-      //   slippage: 30,
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // ink    ethereum    USDC    7000000000000000000 20
+      // unichain    ethereum    USDC    20000000000000000000000 30
       {
-        origin: 57073,
+        origin: 130,
         destination: 1,
         asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
         maximum: '20000000000000000000000',
@@ -287,22 +259,13 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippage: 30,
         preferences: [SupportedBridge.Across],
       },
-      // arbitrum ethereum WETH    10000000000000000000 50
+      // ink    ethereum    USDC    7000000000000000000 20
       {
-        origin: 42161,
+        origin: 57073,
         destination: 1,
-        asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-        maximum: '100000000000000000',
-        slippage: 50,
-        preferences: [SupportedBridge.Across],
-      },
-      // arbitrum ethereum USDC    20000000000000000000000 30
-      {
-        origin: 42161,
-        destination: 1,
-        asset: '0xA0b86a33E6441d75dcb7b133b09d3Bb9b5b5Ec2F',
-        maximum: '20000000000000000000000',
-        slippage: 30,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '7000000000000000000',
+        slippage: 20,
         preferences: [SupportedBridge.Across],
       },
     ],
@@ -348,7 +311,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     });
 
     const config: MarkConfiguration = {
-      pushGatewayUrl: configJson.pushGatewayUrl ?? (await fromEnv('PUSH_GATEWAY_URL')),
+      pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
       web3SignerUrl: configJson.web3SignerUrl ?? (await requireEnv('SIGNER_URL')),
       everclearApiUrl: configJson.everclearApiUrl ?? (await fromEnv('EVERCLEAR_API_URL')) ?? apiUrl,
       relayer: {
@@ -356,8 +319,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         key: configJson?.relayer?.key ?? (await fromEnv('RELAYER_API_KEY')) ?? undefined,
       },
       binance: {
-        apiKey: configJson.binance_api_key ?? (await requireEnv('BINANCE_API_KEY', true)) ?? undefined,
-        apiSecret: configJson.binance_api_secret ?? (await requireEnv('BINANCE_API_SECRET', true)) ?? undefined,
+        apiKey: configJson.binance_api_key ?? (await fromEnv('BINANCE_API_KEY', true)) ?? undefined,
+        apiSecret: configJson.binance_api_secret ?? (await fromEnv('BINANCE_API_SECRET', true)) ?? undefined,
       },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
@@ -421,13 +384,6 @@ export const fromEnv = async (name: string, checkSsm = false): Promise<string | 
   let value = undefined;
   if (checkSsm) {
     value = await getSsmParameter(name);
-    if (value !== undefined) {
-      console.log(`Using SSM parameter for ${name}`);
-    } else if (process.env[name]) {
-      console.log(`SSM parameter '${name}' not available, falling back to environment variable`);
-    } else {
-      console.log(`Neither SSM parameter nor environment variable found for ${name}`);
-    }
   }
   return value ?? process.env[name];
 };
