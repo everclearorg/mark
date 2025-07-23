@@ -24,22 +24,22 @@ import { EOA_ADDRESS, NEAR_IDENTIFIER_MAP } from './constants';
 import { getDepositFromLogs, parseDepositLogs } from './utils';
 
 const wethAbi = [
-    ...erc20Abi,
-    {
-      type: 'function',
-      name: 'withdraw',
-      stateMutability: 'nonpayable',
-      inputs: [{ name: 'wad', type: 'uint256' }],
-      outputs: [],
-    },
-    {
-      type: 'function',
-      name: 'deposit',
-      stateMutability: 'payable',
-      inputs: [],
-      outputs: [],
-    },
-  ] as const;
+  ...erc20Abi,
+  {
+    type: 'function',
+    name: 'withdraw',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'wad', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'deposit',
+    stateMutability: 'payable',
+    inputs: [],
+    outputs: [],
+  },
+] as const;
 
 // Structure to hold callback info
 interface CallbackInfo {
@@ -64,7 +64,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
       const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, amount);
-      return quote.amountOutFormatted;
+      return quote.amountOut;
     } catch (error) {
       this.handleError(error, 'get received amount from Near', { amount, route });
     }
@@ -78,19 +78,19 @@ export class NearBridgeAdapter implements BridgeAdapter {
   ): Promise<MemoizedTransactionRequest[]> {
     try {
       const quote = await this.getSuggestedFees(route, refundTo, recipient, amount);
-      
+
       // Check if we need to unwrap WETH to ETH before bridging
       const originAsset = this.getAsset(route.asset, route.origin);
-      
+
       // If origin is WETH then we need to unwrap
       const needsUnwrap = originAsset?.symbol === 'WETH';
-      
+
       if (needsUnwrap) {
         this.logger.debug('Preparing WETH unwrap transaction before Near bridge deposit', {
           wethAddress: route.asset,
           amount,
         });
-        
+
         const unwrapTx = {
           memo: RebalanceTransactionMemo.Unwrap,
           transaction: {
@@ -103,7 +103,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
             value: BigInt(0),
           },
         };
-        
+
         const depositTx = this.buildDepositTx(zeroAddress, quote.quote);
         return [unwrapTx, depositTx].filter((x) => !!x);
       } else {
@@ -122,7 +122,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
     originTransaction: TransactionReceipt,
   ): Promise<MemoizedTransactionRequest | void> {
     try {
-     const provider = this.chains[route.origin]?.providers?.[0];
+      const provider = this.chains[route.origin]?.providers?.[0];
       const value = await this.getTransactionValue(provider, originTransaction);
       const depositAddress = this.extractDepositAddress(route.origin, originTransaction, value);
       if (!depositAddress) {
@@ -443,7 +443,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
       return { needsCallback: balance >= outputAmount, amount: outputAmount, recipient };
     }
 
-    // TODO: Need to validate the destination supports ETH unwrapping
+    // NOTE: The origin tx would be sending ETH and destination would need to find WETH to wrap it
     const destinationWeth = this.findMatchingDestinationAsset(originAsset.address, route.origin, route.destination);
     if (!destinationWeth) {
       this.logger.debug('No destination WETH found, no callback', { route, event: decodedEvent });
@@ -484,7 +484,12 @@ export class NearBridgeAdapter implements BridgeAdapter {
     return balance;
   }
 
-  protected async getSuggestedFees(route: RebalanceRoute, refundTo: string, receiver: string, amount: string): Promise<QuoteResponse> {
+  protected async getSuggestedFees(
+    route: RebalanceRoute,
+    refundTo: string,
+    receiver: string,
+    amount: string,
+  ): Promise<QuoteResponse> {
     const { inputAssetIdentifier, outputAssetIdentifier } = this.getIdentifiers(route);
 
     const quote = await OneClickService.getQuote({
@@ -538,7 +543,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
       return {
         memo: RebalanceTransactionMemo.Rebalance,
         transaction: {
-          to: quote.depositAddress as `0x${string}`,
+          to: inputAsset as `0x${string}`,
           data: encodeFunctionData({
             abi: erc20Abi,
             functionName: 'transfer',
@@ -570,7 +575,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
     if (!outputAsset) {
       throw new Error(`Could not find matching output asset: ${route.asset} for ${route.destination}`);
     }
-    
+
     const outputAssetIdentifier =
       NEAR_IDENTIFIER_MAP[outputAsset.symbol as keyof typeof NEAR_IDENTIFIER_MAP]?.[
         route.destination as keyof (typeof NEAR_IDENTIFIER_MAP)[keyof typeof NEAR_IDENTIFIER_MAP]

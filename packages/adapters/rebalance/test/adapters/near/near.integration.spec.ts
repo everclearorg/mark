@@ -163,7 +163,9 @@ describe('NearBridgeAdapter Integration', () => {
             const result = await adapter.getReceivedAmount('1000000000', route);
             expect(result).toBeDefined();
             expect(typeof result).toBe('string');
-            expect(parseFloat(result)).toBeGreaterThan(0);
+            // Now expect the result to be a raw integer string (amountOut)
+            // Optionally, you can check that it only contains digits
+            expect(/^[0-9]+$/.test(result)).toBe(true);
         } catch (error) {
             // Real API might fail due to network issues, rate limits, etc.
             // This is expected in integration tests
