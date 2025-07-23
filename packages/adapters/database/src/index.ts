@@ -18,6 +18,17 @@ export {
   type GetEarmarksFilter,
 } from './db';
 
+export {
+  withTransaction,
+  recordRebalanceOperation,
+  updateOperationStatus,
+  getPendingOperations,
+  DatabaseError,
+  ConnectionError,
+  type BasicTransactionOptions,
+  type RebalanceOperationRecord,
+} from './transactions';
+
 // Health check and utility functions
 export interface HealthCheckResult {
   healthy: boolean;
