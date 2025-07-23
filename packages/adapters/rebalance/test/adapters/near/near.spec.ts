@@ -329,8 +329,8 @@ describe('NearBridgeAdapter', () => {
             const amount = '1000000000'; // 1000 USDC
             const result = await adapter.getReceivedAmount(amount, route);
 
-            // Expected: amountOutFormatted from quote
-            expect(result).toBe(mockQuoteResponse.quote.amountOutFormatted);
+            // Expected: amountOut from quote (raw integer string)
+            expect(result).toBe(mockQuoteResponse.quote.amountOut);
             expect(OneClickService.getQuote).toHaveBeenCalledWith({
                 dry: false,
                 swapType: 'EXACT_INPUT',
@@ -389,7 +389,7 @@ describe('NearBridgeAdapter', () => {
             // Assert
             expect(result.length).toBe(1);
             expect(result[0].memo).toEqual(RebalanceTransactionMemo.Rebalance);
-            expect(result[0].transaction.to).toBe(mockQuoteResponse.quote.depositAddress);
+            expect(result[0].transaction.to).toBe(mockAssets['USDC_ETH'].address);
             expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer, not native ETH
             expect(result[0].transaction.data).toEqual('0x');
 
