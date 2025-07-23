@@ -5,7 +5,7 @@ export const USDC_CONTRACTS: Record<string, string> = {
   arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
   base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
   polygon: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-  unichain: '0x078D782b760474a361dDA0AF3839290b0EF57AD6', 
+  unichain: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
   linea: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff',
   sonic: '0x29219dd400f2Bf60E5a23d13Be72B486D4038894',
   solana: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
@@ -13,29 +13,29 @@ export const USDC_CONTRACTS: Record<string, string> = {
 
 // Transfer Parameters
 export const CHAIN_ID_TO_DOMAIN: Record<number, string> = {
-    42161: 'arbitrum',
-    10: 'optimism',
-    1: 'ethereum',
-    137: 'polygon',
-    8453: 'base',
-    1399811149: 'solana',
-    130: 'unichain',
-    43114: 'avalanche',
-    59144: 'linea',
-    146: 'sonic',
-  };
+  42161: 'arbitrum',
+  10: 'optimism',
+  1: 'ethereum',
+  137: 'polygon',
+  8453: 'base',
+  1399811149: 'solana',
+  130: 'unichain',
+  43114: 'avalanche',
+  59144: 'linea',
+  146: 'sonic',
+};
 
 export const CHAIN_ID_TO_NUMERIC_DOMAIN: Record<number, number> = {
-  1: 0,    // ethereum
-  43114: 1,// avalanche 
-  10: 2,    // optimism
+  1: 0, // ethereum
+  43114: 1, // avalanche
+  10: 2, // optimism
   42161: 3, // arbitrum
   1399811149: 5, // Solana
-  8453: 6,  // base
-  137: 7,  // polygon,
-  130: 10,  // unichain
-  59144: 11,  // linea
-  146: 13,  // sonic
+  8453: 6, // base
+  137: 7, // polygon,
+  130: 10, // unichain
+  59144: 11, // linea
+  146: 13, // sonic
 };
 
 export const TOKEN_MESSENGERS_V1: Record<string, string> = {
@@ -59,7 +59,7 @@ export const MESSAGE_TRANSMITTERS_V1: Record<string, string> = {
 };
 
 export const TOKEN_MESSENGERS_V2: Record<string, string> = {
-  ethereun: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d', 
+  ethereun: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
   avalanche: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
   optimism: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
   arbitrum: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
