@@ -883,7 +883,7 @@ describe('BinanceBridgeAdapter', () => {
         onChainConfirmed: true,
         txId: '0xwithdrawaltx',
       });
-      
+
       // Debug: check if getOrInitWithdrawal is called
       console.log('Setting up getOrInitWithdrawal spy');
 
@@ -923,7 +923,7 @@ describe('BinanceBridgeAdapter', () => {
         .mockResolvedValueOnce(mockDestinationMapping); // Second call for destination mapping
 
       const result = await adapter.destinationCallback(bnbRoute, mockTransaction);
-      
+
       // Debug: Check all logger calls
       console.log('All logger.debug calls:', mockLogger.debug.mock.calls);
       console.log('All logger.error calls:', mockLogger.error.mock.calls);
@@ -935,7 +935,7 @@ describe('BinanceBridgeAdapter', () => {
         }
       }
       console.log('getOrInitWithdrawal was called:', getOrInitWithdrawalSpy.mock.calls.length, 'times');
-      
+
       expect(result).toBeUndefined();
       // The function should return undefined (no wrapping needed) when destination asset matches binance asset
       expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -1023,6 +1023,90 @@ describe('BinanceBridgeAdapter', () => {
           status: 'pending',
           onChainConfirmed: false,
         },
+      });
+    });
+  });
+
+  describe('error handling', () => {
+    describe('getReceivedAmount errors', () => {
+      it('should throw error when asset mapping validation fails', async () => {
+        const sampleRoute: RebalanceRoute = {
+          asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          origin: 1,
+          destination: 56,
+        };
+
+        mockBinanceClient.getAssetConfig.mockRejectedValueOnce(new Error('Asset not found'));
+
+        await expect(adapter.getReceivedAmount('1000000000000000000', sampleRoute)).rejects.toThrow(
+          'Failed to calculate received amount',
+        );
+
+        expect(mockLogger.error).toHaveBeenCalledWith('Failed to calculate received amount', expect.any(Object));
+      });
+    });
+
+    describe('send errors', () => {
+      it('should handle errors when getting withdrawal fee', async () => {
+        const sampleRoute: RebalanceRoute = {
+          asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          origin: 1,
+          destination: 56,
+        };
+
+        // Clear the default mock behavior and reject getAssetConfig
+        mockDynamicAssetConfig.getAssetMapping.mockReset();
+        mockBinanceClient.getAssetConfig.mockRejectedValueOnce(new Error('Network error'));
+
+        await expect(adapter.send('0xsender', '0xrecipient', '1000000000000000000', sampleRoute)).rejects.toThrow(
+          'Failed to prepare Binance deposit transaction',
+        );
+      });
+    });
+
+    describe('destinationCallback errors', () => {
+      it('should handle missing withdrawal initialization', async () => {
+        const sampleRoute: RebalanceRoute = {
+          asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          origin: 1,
+          destination: 56,
+        };
+
+        const mockTransaction: TransactionReceipt = {
+          transactionHash: '0x123' as `0x${string}`,
+          blockNumber: 12345678n,
+          logs: [],
+          blockHash: '0x456' as `0x${string}`,
+          contractAddress: null,
+          cumulativeGasUsed: 21000n,
+          effectiveGasPrice: 1n,
+          from: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+          gasUsed: 21000n,
+          logsBloom: '0x' as `0x${string}`,
+          status: 'success' as const,
+          to: '0x1234567890123456789012345678901234567890' as `0x${string}`,
+          transactionIndex: 0,
+          type: 'legacy' as const,
+        };
+
+        mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+          id: 'test-id',
+          bridge: SupportedBridge.Binance,
+          amount: '1000000000000000000',
+          origin: sampleRoute.origin,
+          destination: sampleRoute.destination,
+          asset: sampleRoute.asset,
+          transaction: mockTransaction.transactionHash,
+          recipient: '0xrecipient',
+        });
+
+        jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce(undefined);
+
+        const result = await adapter.destinationCallback(sampleRoute, mockTransaction);
+        expect(result).toBeUndefined();
+        expect(mockLogger.debug).toHaveBeenCalledWith('Withdrawal not completed yet, skipping callback', {
+          withdrawalStatus: undefined,
+        });
       });
     });
   });
