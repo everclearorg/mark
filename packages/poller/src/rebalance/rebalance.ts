@@ -26,13 +26,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
   logger.debug('Executed destination callbacks');
 
   // Get all of mark balances
-  const balances = await getMarkBalances(config, context.prometheus);
-  logger.debug('Retrieved all mark balances', { balances: balances instanceof Map ? jsonifyMap(balances) : {} });
-
-  if (!balances) {
-    logger.error('Failed to retrieve mark balances');
-    return rebalanceOperations;
-  }
+  const balances = await getMarkBalances(config, chainService, context.prometheus);
+  logger.debug('Retrieved all mark balances', { balances: jsonifyMap(balances) });
 
   // For each route that is configured,
   for (const route of config.routes) {
