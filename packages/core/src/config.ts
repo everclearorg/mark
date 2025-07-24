@@ -336,6 +336,9 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
+      database: configJson.database ?? {
+        connectionString: await requireEnv('DATABASE_URL'),
+      },
       ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
       supportedSettlementDomains:
         configJson.supportedSettlementDomains ??

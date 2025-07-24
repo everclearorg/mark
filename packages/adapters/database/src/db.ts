@@ -461,6 +461,156 @@ export async function removeEarmark(earmarkId: string): Promise<void> {
   });
 }
 
+// Additional helper functions for on-demand rebalancing
+
+export async function updateEarmarkStatus(
+  earmarkId: string,
+  status: 'pending' | 'completed' | 'failed',
+): Promise<earmarks> {
+  return withTransaction(async (client) => {
+    // Get current earmark for audit
+    const currentQuery = 'SELECT * FROM earmarks WHERE id = $1';
+    const currentResult = await client.query(currentQuery, [earmarkId]);
+
+    if (currentResult.rows.length === 0) {
+      throw new Error(`Earmark with id ${earmarkId} not found`);
+    }
+
+    const current = currentResult.rows[0] as earmarks;
+
+    // Update earmark status
+    const updateQuery = 'UPDATE earmarks SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *';
+    const updateResult = await client.query(updateQuery, [status, earmarkId]);
+    const updated = updateResult.rows[0] as earmarks;
+
+    // Create audit log entry
+    const auditQuery = `
+      INSERT INTO earmark_audit_log (earmarkId, operation, previous_status, new_status, details)
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+
+    await client.query(auditQuery, [
+      earmarkId,
+      'STATUS_CHANGE',
+      current.status,
+      status,
+      JSON.stringify({
+        reason: `Status changed from ${current.status} to ${status}`,
+        timestamp: new Date().toISOString(),
+      }),
+    ]);
+
+    return updated;
+  });
+}
+
+export async function getActiveEarmarksForChain(chainId: number): Promise<earmarks[]> {
+  const query = `
+    SELECT * FROM earmarks
+    WHERE destinationChainId = $1
+    AND status = 'pending'
+    ORDER BY created_at ASC
+  `;
+  return queryWithClient<earmarks>(query, [chainId]);
+}
+
+export async function createRebalanceOperation(input: {
+  earmarkId: string;
+  originChainId: number;
+  destinationChainId: number;
+  amountSent: string;
+  amountReceived: string;
+  slippage: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  recipient: string;
+  originTxHash?: string;
+}): Promise<rebalance_operations> {
+  const query = `
+    INSERT INTO rebalance_operations (
+      earmarkId, originChainId, destinationChainId,
+      amountSent, amountReceived, maxSlippage,
+      status, recipient, originTxHash
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING *
+  `;
+
+  const values = [
+    input.earmarkId,
+    input.originChainId,
+    input.destinationChainId,
+    input.amountSent,
+    input.amountReceived,
+    input.slippage,
+    input.status,
+    input.recipient,
+    input.originTxHash || null,
+  ];
+
+  const result = await queryWithClient<rebalance_operations>(query, values);
+  return result[0];
+}
+
+export async function updateRebalanceOperation(
+  operationId: string,
+  updates: {
+    status?: 'pending' | 'in_progress' | 'completed' | 'failed';
+    originTxHash?: string;
+    destinationTxHash?: string;
+    callbackTxHash?: string;
+  },
+): Promise<rebalance_operations> {
+  const setClause: string[] = ['updated_at = NOW()'];
+  const values: unknown[] = [];
+  let paramCount = 1;
+
+  if (updates.status !== undefined) {
+    setClause.push(`status = $${paramCount++}`);
+    values.push(updates.status);
+  }
+
+  if (updates.originTxHash !== undefined) {
+    setClause.push(`originTxHash = $${paramCount++}`);
+    values.push(updates.originTxHash);
+  }
+
+  if (updates.destinationTxHash !== undefined) {
+    setClause.push(`destinationTxHash = $${paramCount++}`);
+    values.push(updates.destinationTxHash);
+  }
+
+  if (updates.callbackTxHash !== undefined) {
+    setClause.push(`callbackTxHash = $${paramCount++}`);
+    values.push(updates.callbackTxHash);
+  }
+
+  values.push(operationId);
+
+  const query = `
+    UPDATE rebalance_operations
+    SET ${setClause.join(', ')}
+    WHERE id = $${paramCount}
+    RETURNING *
+  `;
+
+  const result = await queryWithClient<rebalance_operations>(query, values);
+
+  if (result.length === 0) {
+    throw new Error(`Rebalance operation with id ${operationId} not found`);
+  }
+
+  return result[0];
+}
+
+export async function getRebalanceOperationsByEarmark(earmarkId: string): Promise<rebalance_operations[]> {
+  const query = `
+    SELECT * FROM rebalance_operations
+    WHERE earmarkId = $1
+    ORDER BY created_at ASC
+  `;
+  return queryWithClient<rebalance_operations>(query, [earmarkId]);
+}
+
 // Re-export types for convenience
 export type {
   earmarks,
