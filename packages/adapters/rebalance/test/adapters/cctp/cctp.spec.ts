@@ -96,14 +96,14 @@ describe('CctpBridgeAdapter', () => {
   });
 
   it('readyOnDestination returns true if attestation is ready', async () => {
-    const spy = jest.spyOn(adapter as any, 'extractMessageHash').mockResolvedValue('0xhash');
+    const spy = jest.spyOn(adapter as any, 'extractMessageHash').mockResolvedValue({ messageHash: '0xhash', messageBytesV1: '0xdeadbeef' });
     const ready = await adapter.readyOnDestination(amount, route, mockReceipt);
     expect(ready).toBe(true);
     spy.mockRestore();
   });
 
   it('destinationCallback returns mint tx', async () => {
-    const spy = jest.spyOn(adapter as any, 'extractMessageHash').mockResolvedValue('0xhash');
+    const spy = jest.spyOn(adapter as any, 'extractMessageHash').mockResolvedValue({ messageHash: '0xhash', messageBytesV1: '0xdeadbeef' });
     const tx = await adapter.destinationCallback(route, mockReceipt);
     expect(tx && tx.memo).toBe(RebalanceTransactionMemo.Mint);
     expect(tx && tx.transaction.data).toBe('0xdata');
@@ -112,7 +112,7 @@ describe('CctpBridgeAdapter', () => {
 
   it('fetchAttestation (v1) returns messageBytes and attestation', async () => {
     const result = await (adapter as any).fetchAttestation('0xhash', 'arbitrum');
-    expect(result).toEqual({ messageBytes: '0xmsg', attestation: '0xatt' });
+    expect(result).toEqual({ messageBytes: 'v1', attestation: '0xatt' });
   });
 
   it('fetchAttestation (v2) returns messageBytes and attestation', async () => {
@@ -145,6 +145,6 @@ describe('CctpBridgeAdapter', () => {
     }];
     const receipt = { ...mockReceipt, logs };
     const result = await (adapter as any).extractMessageHash(receipt);
-    expect(result).toBe('0xtopic');
+    expect(result).toEqual({ messageBytesV1: '0xdeadbeef', messageHash: '0xtopic' });
   });
 }); 
