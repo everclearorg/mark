@@ -14,6 +14,11 @@ export {
   getEarmarks,
   getEarmarkForInvoice,
   removeEarmark,
+  updateEarmarkStatus,
+  getActiveEarmarksForChain,
+  createRebalanceOperation,
+  updateRebalanceOperation,
+  getRebalanceOperationsByEarmark,
   type CreateEarmarkInput,
   type GetEarmarksFilter,
 } from './db';
