@@ -66,14 +66,20 @@ export interface RouteRebalancingConfig extends RebalanceRoute {
   slippage: number; // If quoted to receive less than this, skip. using DBPS
   preferences: SupportedBridge[]; // Priority ordered platforms
   reserve?: string; // Amount to keep on origin chain during rebalancing
+  onDemandEnabled?: boolean; // Enable on-demand rebalancing for this route
 }
 export interface RebalanceConfig {
   routes: RouteRebalancingConfig[];
+  onDemandRoutes?: RouteRebalancingConfig[];
 }
 
 export interface RedisConfig {
   host: string;
   port: number;
+}
+
+export interface DatabaseConfig {
+  connectionString: string;
 }
 
 export interface MarkConfiguration extends RebalanceConfig {
@@ -89,6 +95,7 @@ export interface MarkConfiguration extends RebalanceConfig {
     apiSecret?: string;
   };
   redis: RedisConfig;
+  database: DatabaseConfig;
   ownAddress: string;
   stage: Stage;
   environment: Environment;

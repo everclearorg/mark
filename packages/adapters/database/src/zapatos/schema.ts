@@ -14,8 +14,8 @@ export interface earmarks {
   tickerHash: string;
   invoiceAmount: string; // NUMERIC becomes string
   status: string;
-  created_at: Date;
-  updated_at: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface rebalance_operations {
@@ -28,16 +28,16 @@ export interface rebalance_operations {
   slippage: string; // NUMERIC becomes string
   status: string;
   txHashes: JSONObject;
-  created_at: Date;
-  updated_at: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface earmark_audit_log {
   id: number;
   earmarkId: string;
   operation: string;
-  previous_status: string | null;
-  new_status: string | null;
+  previousStatus: string | null;
+  newStatus: string | null;
   details: JSONObject;
   timestamp: Date;
 }
@@ -50,8 +50,8 @@ export interface earmarks_insert {
   tickerHash: string;
   invoiceAmount: string;
   status?: string;
-  created_at?: Date;
-  updated_at?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface rebalance_operations_insert {
@@ -64,8 +64,8 @@ export interface rebalance_operations_insert {
   slippage?: string;
   status?: string;
   txHashes?: JSONObject;
-  created_at?: Date;
-  updated_at?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface earmark_audit_log_insert {
@@ -86,8 +86,8 @@ export interface earmarks_update {
   tickerHash?: string;
   invoiceAmount?: string;
   status?: string;
-  created_at?: Date;
-  updated_at?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface rebalance_operations_update {
@@ -100,8 +100,8 @@ export interface rebalance_operations_update {
   slippage?: string;
   status?: string;
   txHashes?: JSONObject;
-  created_at?: Date;
-  updated_at?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface earmark_audit_log_update {

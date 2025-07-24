@@ -88,7 +88,9 @@ export const db = {
 
         Object.entries(where).forEach(([key, value]) => {
           if (value !== undefined) {
-            conditions.push(`${key} = $${paramCount}`);
+            // Only quote camelCase identifiers, not simple lowercase ones
+            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
+            conditions.push(`${quotedKey} = $${paramCount}`);
             values.push(value);
             paramCount++;
           }
@@ -122,7 +124,12 @@ export const db = {
       const updateValues = Object.values(data);
       let paramCount = 1;
 
-      const setClause = updateKeys.map((key) => `${key} = $${paramCount++}`).join(', ');
+      const setClause = updateKeys
+        .map((key) => {
+          const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
+          return `${quotedKey} = $${paramCount++}`;
+        })
+        .join(', ');
 
       let whereClause = '';
       if (where && typeof where === 'object') {
@@ -150,7 +157,9 @@ export const db = {
 
         Object.entries(where).forEach(([key, value]) => {
           if (value !== undefined) {
-            conditions.push(`${key} = $${paramCount}`);
+            // Only quote camelCase identifiers, not simple lowercase ones
+            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
+            conditions.push(`${quotedKey} = $${paramCount}`);
             values.push(value);
             paramCount++;
           }
@@ -177,7 +186,9 @@ export const db = {
 
         Object.entries(where).forEach(([key, value]) => {
           if (value !== undefined) {
-            conditions.push(`${key} = $${paramCount}`);
+            // Only quote camelCase identifiers, not simple lowercase ones
+            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
+            conditions.push(`${quotedKey} = $${paramCount}`);
             values.push(value);
             paramCount++;
           }
@@ -233,7 +244,9 @@ export const db = {
 
         Object.entries(where).forEach(([key, value]) => {
           if (value !== undefined) {
-            conditions.push(`${key} = $${paramCount}`);
+            // Only quote camelCase identifiers, not simple lowercase ones
+            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
+            conditions.push(`${quotedKey} = $${paramCount}`);
             values.push(value);
             paramCount++;
           }
@@ -284,7 +297,7 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks
     };
 
     const insertQuery = `
-      INSERT INTO earmarks (invoiceId, destinationChainId, tickerHash, invoiceAmount, status)
+      INSERT INTO earmarks ("invoiceId", "destinationChainId", "tickerHash", "invoiceAmount", status)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
@@ -292,7 +305,7 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks
     const earmarkResult = await client.query(insertQuery, [
       earmarkData.invoiceId,
       earmarkData.destinationChainId,
-      earmarkData.tickerHash,
+      input.tickerHash,
       earmarkData.invoiceAmount,
       earmarkData.status,
     ]);
@@ -303,7 +316,7 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks
     if (input.initialRebalanceOperations && input.initialRebalanceOperations.length > 0) {
       for (const operation of input.initialRebalanceOperations) {
         const operationQuery = `
-          INSERT INTO rebalance_operations (earmarkId, originChainId, destinationChainId, tickerHash, amount, slippage, status)
+          INSERT INTO rebalance_operations ("earmarkId", "originChainId", "destinationChainId", "tickerHash", amount, slippage, status)
           VALUES ($1, $2, $3, $4, $5, $6, $7)
         `;
 
@@ -321,7 +334,7 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks
 
     // Create audit log entry
     const auditQuery = `
-      INSERT INTO earmark_audit_log (earmarkId, operation, new_status, details)
+      INSERT INTO earmark_audit_log ("earmarkId", operation, "newStatus", details)
       VALUES ($1, $2, $3, $4)
     `;
 
@@ -363,10 +376,10 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[
     if (filter.destinationChainId) {
       if (Array.isArray(filter.destinationChainId)) {
         const placeholders = filter.destinationChainId.map(() => `$${paramCount++}`).join(', ');
-        conditions.push(`destinationChainId IN (${placeholders})`);
+        conditions.push(`"destinationChainId" IN (${placeholders})`);
         values.push(...filter.destinationChainId);
       } else {
-        conditions.push(`destinationChainId = $${paramCount++}`);
+        conditions.push(`"destinationChainId" = $${paramCount++}`);
         values.push(filter.destinationChainId);
       }
     }
@@ -374,26 +387,26 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[
     if (filter.tickerHash) {
       if (Array.isArray(filter.tickerHash)) {
         const placeholders = filter.tickerHash.map(() => `$${paramCount++}`).join(', ');
-        conditions.push(`tickerHash IN (${placeholders})`);
+        conditions.push(`"tickerHash" IN (${placeholders})`);
         values.push(...filter.tickerHash);
       } else {
-        conditions.push(`tickerHash = $${paramCount++}`);
+        conditions.push(`"tickerHash" = $${paramCount++}`);
         values.push(filter.tickerHash);
       }
     }
 
     if (filter.invoiceId) {
-      conditions.push(`invoiceId = $${paramCount++}`);
+      conditions.push(`"invoiceId" = $${paramCount++}`);
       values.push(filter.invoiceId);
     }
 
     if (filter.createdAfter) {
-      conditions.push(`created_at >= $${paramCount++}`);
+      conditions.push(`"createdAt" >= $${paramCount++}`);
       values.push(filter.createdAfter);
     }
 
     if (filter.createdBefore) {
-      conditions.push(`created_at <= $${paramCount++}`);
+      conditions.push(`"createdAt" <= $${paramCount++}`);
       values.push(filter.createdBefore);
     }
   }
@@ -402,13 +415,13 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[
     query += ' WHERE ' + conditions.join(' AND ');
   }
 
-  query += ' ORDER BY created_at DESC';
+  query += ' ORDER BY "createdAt" DESC';
 
   return queryWithClient<earmarks>(query, values);
 }
 
 export async function getEarmarkForInvoice(invoiceId: string): Promise<earmarks | null> {
-  const query = 'SELECT * FROM earmarks WHERE invoiceId = $1';
+  const query = 'SELECT * FROM earmarks WHERE "invoiceId" = $1';
   const result = await queryWithClient<earmarks>(query, [invoiceId]);
 
   if (result.length === 0) {
@@ -436,7 +449,7 @@ export async function removeEarmark(earmarkId: string): Promise<void> {
 
     // Create audit log entry before deletion
     const auditQuery = `
-      INSERT INTO earmark_audit_log (earmarkId, operation, previous_status, details)
+      INSERT INTO earmark_audit_log ("earmarkId", operation, "previousStatus", details)
       VALUES ($1, $2, $3, $4)
     `;
 
@@ -452,7 +465,7 @@ export async function removeEarmark(earmarkId: string): Promise<void> {
     ]);
 
     // Delete rebalance operations (will cascade due to FK constraint)
-    const deleteOperationsQuery = 'DELETE FROM rebalance_operations WHERE earmarkId = $1';
+    const deleteOperationsQuery = 'DELETE FROM rebalance_operations WHERE "earmarkId" = $1';
     await client.query(deleteOperationsQuery, [earmarkId]);
 
     // Delete the earmark (audit log entries will cascade)
@@ -479,13 +492,13 @@ export async function updateEarmarkStatus(
     const current = currentResult.rows[0] as earmarks;
 
     // Update earmark status
-    const updateQuery = 'UPDATE earmarks SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *';
+    const updateQuery = 'UPDATE earmarks SET status = $1, "updatedAt" = NOW() WHERE id = $2 RETURNING *';
     const updateResult = await client.query(updateQuery, [status, earmarkId]);
     const updated = updateResult.rows[0] as earmarks;
 
     // Create audit log entry
     const auditQuery = `
-      INSERT INTO earmark_audit_log (earmarkId, operation, previous_status, new_status, details)
+      INSERT INTO earmark_audit_log ("earmarkId", operation, "previousStatus", "newStatus", details)
       VALUES ($1, $2, $3, $4, $5)
     `;
 
@@ -507,9 +520,9 @@ export async function updateEarmarkStatus(
 export async function getActiveEarmarksForChain(chainId: number): Promise<earmarks[]> {
   const query = `
     SELECT * FROM earmarks
-    WHERE destinationChainId = $1
+    WHERE "destinationChainId" = $1
     AND status = 'pending'
-    ORDER BY created_at ASC
+    ORDER BY "createdAt" ASC
   `;
   return queryWithClient<earmarks>(query, [chainId]);
 }
@@ -518,20 +531,18 @@ export async function createRebalanceOperation(input: {
   earmarkId: string;
   originChainId: number;
   destinationChainId: number;
-  amountSent: string;
-  amountReceived: string;
+  tickerHash: string;
+  amount: string;
   slippage: string;
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  recipient: string;
-  originTxHash?: string;
+  txHashes?: any;
 }): Promise<rebalance_operations> {
   const query = `
     INSERT INTO rebalance_operations (
-      earmarkId, originChainId, destinationChainId,
-      amountSent, amountReceived, maxSlippage,
-      status, recipient, originTxHash
+      "earmarkId", "originChainId", "destinationChainId",
+      "tickerHash", amount, slippage, status, "txHashes"
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     RETURNING *
   `;
 
@@ -539,12 +550,11 @@ export async function createRebalanceOperation(input: {
     input.earmarkId,
     input.originChainId,
     input.destinationChainId,
-    input.amountSent,
-    input.amountReceived,
+    input.tickerHash,
+    input.amount,
     input.slippage,
     input.status,
-    input.recipient,
-    input.originTxHash || null,
+    input.txHashes || {},
   ];
 
   const result = await queryWithClient<rebalance_operations>(query, values);
@@ -555,12 +565,10 @@ export async function updateRebalanceOperation(
   operationId: string,
   updates: {
     status?: 'pending' | 'in_progress' | 'completed' | 'failed';
-    originTxHash?: string;
-    destinationTxHash?: string;
-    callbackTxHash?: string;
+    txHashes?: any;
   },
 ): Promise<rebalance_operations> {
-  const setClause: string[] = ['updated_at = NOW()'];
+  const setClause: string[] = ['"updatedAt" = NOW()'];
   const values: unknown[] = [];
   let paramCount = 1;
 
@@ -569,19 +577,9 @@ export async function updateRebalanceOperation(
     values.push(updates.status);
   }
 
-  if (updates.originTxHash !== undefined) {
-    setClause.push(`originTxHash = $${paramCount++}`);
-    values.push(updates.originTxHash);
-  }
-
-  if (updates.destinationTxHash !== undefined) {
-    setClause.push(`destinationTxHash = $${paramCount++}`);
-    values.push(updates.destinationTxHash);
-  }
-
-  if (updates.callbackTxHash !== undefined) {
-    setClause.push(`callbackTxHash = $${paramCount++}`);
-    values.push(updates.callbackTxHash);
+  if (updates.txHashes !== undefined) {
+    setClause.push(`"txHashes" = $${paramCount++}`);
+    values.push(updates.txHashes);
   }
 
   values.push(operationId);
@@ -605,8 +603,8 @@ export async function updateRebalanceOperation(
 export async function getRebalanceOperationsByEarmark(earmarkId: string): Promise<rebalance_operations[]> {
   const query = `
     SELECT * FROM rebalance_operations
-    WHERE earmarkId = $1
-    ORDER BY created_at ASC
+    WHERE "earmarkId" = $1
+    ORDER BY "createdAt" ASC
   `;
   return queryWithClient<rebalance_operations>(query, [earmarkId]);
 }
