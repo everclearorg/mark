@@ -218,7 +218,7 @@ const mockStatusResponse = {
         amountOut: '998000000000000000',
         amountOutFormatted: '0.998',
         amountOutUsd: '1996',
-        slippage: 0,
+        slippages: [0],
         refundedAmount: '0',
         refundedAmountFormatted: '0',
         refundedAmountUsd: '0',
