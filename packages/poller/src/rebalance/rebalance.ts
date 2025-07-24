@@ -27,7 +27,12 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
   // Get all of mark balances
   const balances = await getMarkBalances(config, context.prometheus);
-  logger.debug('Retrieved all mark balances', { balances: jsonifyMap(balances) });
+  logger.debug('Retrieved all mark balances', { balances: balances instanceof Map ? jsonifyMap(balances) : {} });
+
+  if (!balances) {
+    logger.error('Failed to retrieve mark balances');
+    return rebalanceOperations;
+  }
 
   // For each route that is configured,
   for (const route of config.routes) {
@@ -119,7 +124,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
     // --- Bridge Preference Loop ---
     let rebalanceSuccessful = false;
-    for (const bridgeType of route.preferences) {
+    for (let bridgeIndex = 0; bridgeIndex < route.preferences.length; bridgeIndex++) {
+      const bridgeType = route.preferences[bridgeIndex];
       logger.info('Attempting to bridge', {
         requestId,
         route,
@@ -163,7 +169,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
       const receivedAmount = BigInt(receivedAmountStr);
       const scaleFactor = BigInt(10_000);
       const dbpsDenominator = BigInt(100_000);
-      const slippage = safeStringToBigInt(route.slippage.toString(), scaleFactor);
+      const currentSlippage = route.slippages[bridgeIndex];
+      const slippage = safeStringToBigInt(currentSlippage.toString(), scaleFactor);
       const slippageScaled = slippage * scaleFactor;
       const minimumAcceptableAmount =
         amountToBridge - (amountToBridge * slippageScaled) / (scaleFactor * dbpsDenominator);
@@ -178,9 +185,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           amountToBridge: amountToBridge.toString(),
           receivedAmount: receivedAmount.toString(),
           minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-          slippageBps: route.slippage.toString(),
+          slippageBps: currentSlippage.toString(),
           actualSlippageBps: actualSlippageBps.toString(),
-          configuredSlippageBPS: route.slippage.toString(),
+          configuredSlippageBPS: currentSlippage.toString(),
         });
         continue; // Skip to next bridge preference
       }
@@ -192,9 +199,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
         amountToBridge: amountToBridge.toString(),
         receivedAmount: receivedAmount.toString(),
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-        slippageBps: route.slippage.toString(),
+        slippageBps: currentSlippage.toString(),
         actualSlippageBps: actualSlippageBps.toString(),
-        configuredSlippageBPS: route.slippage.toString(),
+        configuredSlippageBPS: currentSlippage.toString(),
       });
 
       // Step 3: Get Bridge Transaction Requests
