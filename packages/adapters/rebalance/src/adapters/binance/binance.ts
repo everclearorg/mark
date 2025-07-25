@@ -270,6 +270,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
               args: [BigInt(roundedAmount)],
             }) as `0x${string}`,
             value: BigInt(0),
+            funcSig: 'withdraw(uint256)',
           },
         };
         const sendToBinanceTx = {
@@ -278,6 +279,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
             to: depositInfo.address as `0x${string}`,
             value: BigInt(roundedAmount),
             data: '0x' as `0x${string}`,
+            funcSig: '', // Native ETH transfer doesn't need function signature
           },
         };
         return [unwrapTx, sendToBinanceTx];
@@ -321,6 +323,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
               functionName: 'transfer',
               args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
             }),
+            funcSig: route.asset !== zeroAddress ? 'transfer(address,uint256)' : '',
           },
         });
       }
@@ -473,6 +476,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
             args: [],
           }) as `0x${string}`,
           value: ethAmount,
+          funcSig: 'deposit()',
         },
       };
       return wrapTx;

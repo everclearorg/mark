@@ -353,6 +353,7 @@ export const sendEvmIntents = async (
         data: feeAdapterTxData.data as Hex,
         value: feeAdapterTxData.value ?? '0',
         from: config.ownAddress,
+        funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))', // FeeAdapter newIntent function
       },
       zodiacConfig: originWalletConfig,
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
@@ -477,6 +478,7 @@ export const sendSvmIntents = async (
             value: lookupTableTxData.value,
             data: lookupTableTxData.data,
             chainId: +originChainId,
+            funcSig: '', // Solana don't need function signatures
           });
 
           logger.info('solana lookup table transaction sent successfully', {
@@ -533,6 +535,7 @@ export const sendSvmIntents = async (
         value: purchaseTxValue,
         data: purchaseTxData,
         chainId: +originChainId,
+        funcSig: '',
       });
       console.warn('debug tx', purchaseTx);
 
@@ -737,6 +740,7 @@ export const sendIntentsMulticall = async (
       data: multicallTx.data,
       value: '0',
       chainId: +chainId,
+      funcSig: 'aggregate3((address,bool,bytes)[])',
     });
 
     // Extract individual intent IDs from transaction logs

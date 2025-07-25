@@ -6,7 +6,7 @@ import * as balanceHelpers from '../../src/helpers/balance';
 import * as assetHelpers from '../../src/helpers/asset';
 import { IntentStatus } from '@mark/everclear';
 import { RebalanceCache } from '@mark/cache';
-import { InvalidPurchaseReasons, TransactionSubmissionType } from '@mark/core';
+import { InvalidPurchaseReasons, TransactionSubmissionType, GasType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
@@ -470,7 +470,7 @@ describe('Invoice Processing', () => {
       ]));
       // Mark has enough gas balance on domain2
       getMarkGasBalancesStub.resolves(new Map([
-        [ticker, new Map([[domain2, BigInt('1000000000000000000')]])]
+        [{ chainId: domain2, gasType: GasType.Gas }, BigInt('1000000000000000000')]
       ]));
 
       // Mock custodied balances - domain1 has insufficient custodied assets 

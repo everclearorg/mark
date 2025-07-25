@@ -1,4 +1,4 @@
-import { MarkConfiguration } from '@mark/core';
+import { MarkConfiguration, GasType } from '@mark/core';
 import { Logger } from '@mark/logger';
 
 /**
@@ -38,25 +38,49 @@ export const logBalanceThresholds = (
   });
 };
 
-export const logGasThresholds = (gas: Map<string, bigint>, config: MarkConfiguration, logger: Logger) => {
+export const logGasThresholds = (
+  gas: Map<{ chainId: string; gasType: GasType }, bigint>,
+  config: MarkConfiguration,
+  logger: Logger,
+) => {
   // Log if the gas balance is below threshold. Still try to send intents if this threshold
   // is configured generously.
-  [...gas.keys()].map((chain) => {
-    const threshold = config.chains[chain].gasThreshold ?? '0';
+  // TODO: Update getMarkGasBalances calls to support TronWeb and new gas type keys if used in this file.
+  [...gas.keys()].map((gasKey) => {
+    const { chainId, gasType } = gasKey;
+    let threshold: string | undefined;
+
+    switch (gasType) {
+      case GasType.Gas:
+        threshold = config.chains[chainId].gasThreshold ?? '0';
+        break;
+      case GasType.Bandwidth:
+        threshold = config.chains[chainId].bandwidthThreshold ?? '0';
+        break;
+      case GasType.Energy:
+        threshold = config.chains[chainId].energyThreshold ?? '0';
+        break;
+      default:
+        logger.error('Unknown gas type', { chainId, gasType });
+        return;
+    }
+
     if (!threshold) {
       logger.error('No configured gas threshold', {
-        chain,
-        config: config.chains[chain],
+        chain: chainId,
+        gasType,
+        config: config.chains[chainId],
       });
       return;
     }
-    if (gas.get(chain)! > BigInt(threshold ?? '0')) {
+    if (gas.get(gasKey)! > BigInt(threshold ?? '0')) {
       return;
     }
     logger.error('Gas balance is below threshold', {
-      chain,
+      chain: chainId,
+      gasType,
       threshold,
-      balance: gas.get(chain)!.toString(),
+      balance: gas.get(gasKey)!.toString(),
     });
   });
 };

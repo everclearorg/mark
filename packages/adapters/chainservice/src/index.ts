@@ -70,8 +70,7 @@ export class ChainService {
       value: transaction.value ? transaction.value.toString() : '0',
       domain: parseInt(chainId),
       from: transaction.from ?? undefined,
-      // TODO: fill this for tron support
-      funcSig: '',
+      funcSig: transaction.funcSig,
     };
     try {
       // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.

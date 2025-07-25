@@ -85,6 +85,7 @@ export async function approvePermit2(
     data: data,
     value: '0x0',
     chainId: +chainId,
+    funcSig: 'approve(address,uint256)',
   });
 
   return receipt.transactionHash;

@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "build": "tsc --build ./tsconfig.json",
-    "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+    "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
     "dev": "yarn dev",
     "lint": "yarn lint:package && yarn lint:ts",
     "lint:fix": "yarn lint --fix",

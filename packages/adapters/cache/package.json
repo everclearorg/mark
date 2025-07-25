@@ -12,7 +12,7 @@
     ],
     "scripts": {
         "build": "tsc --build ./tsconfig.json",
-        "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+        "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
         "docker:redis:up": "docker run -it --rm --name redis -p 6379:6379 redis",
         "lint": "yarn lint:package && yarn lint:ts",
         "lint:fix": "yarn lint --fix",

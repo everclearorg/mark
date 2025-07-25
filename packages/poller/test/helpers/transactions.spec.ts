@@ -27,14 +27,15 @@ describe('submitTransactionWithLogging', () => {
       logger: createStubInstance(Logger),
     };
 
-    // Initialize common test data
-    mockTxRequest = {
-      to: '0xabc4567890123456789012345678901234567890',
-      data: '0x',
-      value: '0',
-      chainId: MOCK_CHAIN_ID,
-      from: '0x1234567890123456789012345678901234567890',
-    };
+        // Initialize common test data
+        mockTxRequest = {
+            to: '0xabc4567890123456789012345678901234567890',
+            data: '0x',
+            value: '0',
+            chainId: MOCK_CHAIN_ID,
+            from: '0x1234567890123456789012345678901234567890',
+            funcSig: 'transfer(address,uint256)',
+        };
 
     mockZodiacConfig = {
       walletType: WalletType.EOA,
@@ -113,14 +114,15 @@ describe('submitTransactionWithLogging', () => {
         roleKey: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' as `0x${string}`,
       };
 
-      wrapTransactionWithZodiacStub.resolves({
-        to: mockZodiacConfig.moduleAddress,
-        data: '0xabc123',
-        value: '0',
-        from: mockTxRequest.from,
-        chainId: mockTxRequest.chainId,
-      });
-    });
+            wrapTransactionWithZodiacStub.resolves({
+                to: mockZodiacConfig.moduleAddress,
+                data: '0xabc123',
+                value: '0',
+                from: mockTxRequest.from,
+                chainId: mockTxRequest.chainId,
+                funcSig: 'execute(bytes)',
+            });
+        });
 
     it('should successfully submit a zodiac transaction', async () => {
       const mockReceipt = {
