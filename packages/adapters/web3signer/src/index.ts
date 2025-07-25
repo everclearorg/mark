@@ -1,6 +1,6 @@
 import { Signer, providers, utils, Bytes, BigNumber, TypedDataDomain, TypedDataField } from 'ethers';
 import { getAddressFromPublicKey } from '@connext/nxtp-utils';
-
+import { ITransactionRequest } from '@chimera-monorepo/chainservice';
 import { Web3SignerApi } from './api';
 
 export class Web3Signer extends Signer {
@@ -23,7 +23,7 @@ export class Web3Signer extends Signer {
 
   public address?: string;
   public provider?: providers.Provider;
-  private api: Web3SignerApi;
+  private readonly api: Web3SignerApi;
 
   constructor(
     public readonly web3SignerUrl: string,
@@ -106,5 +106,12 @@ export class Web3Signer extends Signer {
     };
 
     return await this.api.signTypedData(identifier, typedData);
+  }
+
+  public async sendTransaction(transaction: providers.TransactionRequest): Promise<providers.TransactionResponse> {
+    // exclude funcSig
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { funcSig, ...tx } = transaction as unknown as ITransactionRequest;
+    return await super.sendTransaction(tx);
   }
 }
