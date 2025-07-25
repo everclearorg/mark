@@ -37,6 +37,7 @@ export async function submitTransactionWithLogging(
     walletType: zodiacConfig.walletType,
     originalTo: txRequest.to,
     value: preparedTx.value?.toString() || '0',
+    funcSig: preparedTx.funcSig,
   });
 
   try {

@@ -231,6 +231,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<vo
               value: (transaction.value || 0).toString(),
               chainId: route.origin,
               from: config.ownAddress,
+              funcSig: transaction.funcSig || '',
             },
             zodiacConfig: originZodiacConfig,
             context: { requestId, route, bridgeType, transactionType: memo },

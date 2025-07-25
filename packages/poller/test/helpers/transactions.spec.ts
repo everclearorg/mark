@@ -34,6 +34,7 @@ describe('submitTransactionWithLogging', () => {
             value: '0',
             chainId: MOCK_CHAIN_ID,
             from: '0x1234567890123456789012345678901234567890',
+            funcSig: 'transfer(address,uint256)',
         };
 
         mockZodiacConfig = {
@@ -117,6 +118,7 @@ describe('submitTransactionWithLogging', () => {
                 value: '0',
                 from: mockTxRequest.from,
                 chainId: mockTxRequest.chainId,
+                funcSig: 'execute(bytes)',
             });
         });
 

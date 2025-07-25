@@ -96,6 +96,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
                 args: [feesData.spokePoolAddress as `0x${string}`, BigInt(amount)],
               }),
               value: BigInt(0),
+              funcSig: 'approve(address,uint256)',
             },
           };
         }
@@ -124,6 +125,8 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
             ],
           }),
           value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
+          funcSig:
+            'depositV3(bytes32,bytes32,bytes32,bytes32,uint256,uint256,uint256,bytes32,uint256,uint256,uint256,bytes)',
         },
       };
 
@@ -157,10 +160,11 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         throw new Error('Failed to find destination WETH');
       }
 
-      const callbackTx: TransactionRequestBase = {
+      const callbackTx: TransactionRequestBase & { funcSig: string } = {
         to: destinationWETH.address as `0x${string}`,
         data: '0xd0e30db0' as `0x${string}`, // deposit() function selector
         value: callbackInfo.amount!,
+        funcSig: 'deposit()',
       };
 
       this.logger.debug('Destination callback transaction prepared', {

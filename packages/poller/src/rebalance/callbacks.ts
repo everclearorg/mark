@@ -84,6 +84,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
           data: callback.transaction.data!,
           value: (callback.transaction.value || 0).toString(),
           from: config.ownAddress,
+          funcSig: callback.transaction.funcSig || '',
         },
         zodiacConfig,
         context: { ...logContext, callbackType: `destination: ${callback.memo}` },

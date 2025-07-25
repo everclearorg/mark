@@ -34,6 +34,9 @@ export interface ChainConfiguration {
   zodiacRoleKey?: string;
   gnosisSafeAddress?: string;
   squadsAddress?: string;
+  privateKey?: string;
+  bandwidthThreshold?: string;
+  energyThreshold?: string;
 }
 
 export interface HubConfig {
@@ -55,6 +58,12 @@ export type Stage = 'development' | 'staging' | 'production';
 export enum SupportedBridge {
   Across = 'across',
   Binance = 'binance',
+}
+
+export enum GasType {
+  Gas = 'gas',
+  Bandwidth = 'bandwidth',
+  Energy = 'energy',
 }
 
 export interface RebalanceRoute {

@@ -577,6 +577,7 @@ describe('AcrossBridgeAdapter', () => {
                     to: mockAssets['WETH'].address,
                     data: '0xd0e30db0',
                     value: BigInt('1000000000000000000'),
+                    funcSig: 'deposit()',
                 },
                 memo: RebalanceTransactionMemo.Wrap,
             });
