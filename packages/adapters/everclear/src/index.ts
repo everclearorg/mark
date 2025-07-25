@@ -6,7 +6,6 @@ import {
   TransactionRequest,
   Invoice,
   NewIntentWithPermit2Params,
-  CreateLookupTableParams,
 } from '@mark/core';
 
 export interface MinAmountsResponse {
@@ -133,33 +132,6 @@ export class EverclearAdapter {
     }
   }
 
-  async solanaCreateNewIntent(
-    params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[],
-  ): Promise<TransactionRequest> {
-    try {
-      const url = `${this.apiUrl}/solana/intents`;
-      const { data } = await axiosPost<TransactionRequest>(url, params);
-      return data;
-    } catch (err) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const ctx = (err as any).context;
-      if (ctx?.error?.status === 404) {
-        throw new LookupTableNotFoundError();
-      }
-      throw new Error(`Failed to fetch create solana intent from API ${err}`);
-    }
-  }
-
-  async solanaCreateLookupTable(params: CreateLookupTableParams): Promise<TransactionRequest> {
-    try {
-      const url = `${this.apiUrl}/solana/create-lookup-table`;
-      const { data } = await axiosPost<TransactionRequest>(url, params);
-      return data;
-    } catch (err) {
-      throw new Error(`Failed to fetch create solana intent from API ${err}`);
-    }
-  }
-
   async getMinAmounts(intentId: string): Promise<MinAmountsResponse> {
     const url = `${this.apiUrl}/invoices/${intentId}/min-amounts`;
     const { data } = await axiosGet<MinAmountsResponse>(url);
@@ -206,15 +178,5 @@ export class EverclearAdapter {
       });
       throw new Error(`Failed to fetch economy data for ${chain}/${tickerHash}: ${error}`);
     }
-  }
-}
-
-export class LookupTableNotFoundError extends Error {
-  constructor(
-    message: string = 'lookup table not found',
-    public readonly context?: Record<string, unknown>,
-  ) {
-    super(message);
-    this.name = this.constructor.name;
   }
 }

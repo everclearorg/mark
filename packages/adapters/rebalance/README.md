@@ -6,7 +6,7 @@ This package contains bridge adapters for the Mark protocol, allowing for cross-
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 18+
 - Yarn
 - A private key with test funds on the networks you want to test with
 

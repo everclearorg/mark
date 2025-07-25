@@ -1,7 +1,6 @@
 import axios, { AxiosResponse, AxiosRequestConfig, AxiosInstance } from 'axios';
 import { Agent } from 'https';
 import { Agent as HttpAgent } from 'http';
-import { AxiosQueryError } from './errors';
 
 // Singleton axios instance with connection pooling
 let axiosInstance: AxiosInstance | null = null;
@@ -84,8 +83,7 @@ export const axiosPost = async <
     }
     await delay(retryDelay);
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  throw new AxiosQueryError(`AxiosQueryError Post: ${JSON.stringify(lastError)}`, lastError as any);
+  throw new Error(`AxiosQueryError Post: ${JSON.stringify(lastError)}`);
 };
 
 export const axiosGet = async <
@@ -113,6 +111,5 @@ export const axiosGet = async <
     }
     await delay(retryDelay);
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  throw new AxiosQueryError(`AxiosQueryError Get: ${JSON.stringify(lastError)}`, lastError as any);
+  throw new Error(`AxiosQueryError Get: ${JSON.stringify(lastError)}`);
 };

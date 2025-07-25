@@ -175,8 +175,8 @@ describe('RebalanceCache', () => {
         it('should return rebalance actions matching the config', async () => {
             const config: RebalancingConfig = {
                 routes: [
-                    { destination: 2, origin: 1, asset: 'ETH', maximum: '1000', slippages: [0.1], preferences: [] },
-                    { destination: 2, origin: 1, asset: 'BTC', maximum: '1000', slippages: [0.1], preferences: [] },
+                    { destination: 2, origin: 1, asset: 'ETH', maximum: '1000', slippage: 0.1, preferences: [] },
+                    { destination: 2, origin: 1, asset: 'BTC', maximum: '1000', slippage: 0.1, preferences: [] },
                 ],
             };
 
@@ -219,7 +219,7 @@ describe('RebalanceCache', () => {
 
         it('should return an empty array if smembers returns no ids', async () => {
             const config: RebalancingConfig = {
-                routes: [{ destination: 9, origin: 9, asset: 'XYZ', maximum: '100', slippages: [0.1], preferences: [] }],
+                routes: [{ destination: 9, origin: 9, asset: 'XYZ', maximum: '100', slippage: 0.1, preferences: [] }],
             };
             (mockPipelineInstance.exec as jest.Mock).mockResolvedValueOnce([[null, []]]); // No IDs for this route
 
@@ -232,7 +232,7 @@ describe('RebalanceCache', () => {
 
         it('should return an empty array if hmget returns no data for ids', async () => {
             const config: RebalancingConfig = {
-                routes: [{ destination: 2, origin: 1, asset: 'ETH', maximum: '1000', slippages: [0.1], preferences: [] }],
+                routes: [{ destination: 2, origin: 1, asset: 'ETH', maximum: '1000', slippage: 0.1, preferences: [] }],
             };
             (mockPipelineInstance.exec as jest.Mock).mockResolvedValueOnce([[null, [id1]]]);
             (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([null]); // No data for id1
@@ -244,9 +244,9 @@ describe('RebalanceCache', () => {
         it('should handle multiple routes, some with no matching IDs', async () => {
             const config: RebalancingConfig = {
                 routes: [
-                    { destination: 2, origin: 1, asset: 'ETH', maximum: '1000', slippages: [0.1], preferences: [] }, // Has id1
-                    { destination: 9, origin: 9, asset: 'XYZ', maximum: '100', slippages: [0.1], preferences: [] }, // No IDs
-                    { destination: 4, origin: 3, asset: 'ETH', maximum: '1000', slippages: [0.1], preferences: [] }, // Has id3
+                    { destination: 2, origin: 1, asset: 'ETH', maximum: '1000', slippage: 0.1, preferences: [] }, // Has id1
+                    { destination: 9, origin: 9, asset: 'XYZ', maximum: '100', slippage: 0.1, preferences: [] }, // No IDs
+                    { destination: 4, origin: 3, asset: 'ETH', maximum: '1000', slippage: 0.1, preferences: [] }, // Has id3
                 ],
             };
 
