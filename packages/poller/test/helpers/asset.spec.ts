@@ -413,6 +413,20 @@ describe('Asset Helper Functions', () => {
       // Unknown asset defaults to 18 decimals, so formatUnits should be called with 18-18=0 decimals
       expect(result).to.match(/^\d+$/); // Should be a numeric string
     });
+
+    it('should return integer directly when amount has no decimal part', () => {
+      // Test with exact whole number (no decimal part after formatting)
+      // For DAI (18 decimals), formatUnits is called with 18-18=0 decimals,
+      // so the amount stays as is without decimal conversion
+      const result = convertHubAmountToLocalDecimals(
+        BigInt('1000000000000000000'), // Exactly 1 token in 18 decimals
+        '0xDAI',
+        '1',
+        mockConfig as MarkConfiguration,
+      );
+
+      expect(result).to.equal('1000000000000000000');
+    });
   });
 
   describe('getSupportedDomainsForTicker', () => {

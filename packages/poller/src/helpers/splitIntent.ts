@@ -1,4 +1,4 @@
-import { getTokenAddressFromConfig, Invoice, NewIntentParams, WalletType } from '@mark/core';
+import { getTokenAddressFromConfig, Invoice, NewIntentParams, WalletType, isSvmChain, AddressFormat } from '@mark/core';
 import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
@@ -238,7 +238,8 @@ export async function calculateSplitIntents(
   // Generate the intent parameters for each allocation
   const intents: NewIntentParams[] = [];
 
-  const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config);
+  const format = isSvmChain(bestAllocation.origin) ? AddressFormat.Base58 : AddressFormat.Hex;
+  const inputAsset = getTokenAddressFromConfig(ticker, bestAllocation.origin, config, format);
   if (!inputAsset) {
     throw new Error('No input asset found');
   }
@@ -247,11 +248,21 @@ export async function calculateSplitIntents(
   for (const { domain, amount } of bestAllocation.allocations) {
     if (amount <= BigInt(0)) continue;
 
-    // Get Zodiac configuration for the destination chain to determine correct 'to' address
+    let toAddress: string;
+
+    // Check if the selected domain is Solana and get squads address for 'to' address
+    const isSvm = isSvmChain(domain);
     const destinationChainConfig = config.chains[domain];
-    const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
-    const toAddress =
-      destinationZodiacConfig.walletType !== WalletType.EOA ? destinationZodiacConfig.safeAddress! : config.ownAddress;
+    if (isSvm) {
+      toAddress = config.ownSolAddress;
+    } else {
+      // Get Zodiac configuration for the destination chain to determine correct 'to' address
+      const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
+      toAddress =
+        destinationZodiacConfig.walletType !== WalletType.EOA
+          ? destinationZodiacConfig.safeAddress!
+          : config.ownAddress;
+    }
 
     const params: NewIntentParams = {
       origin: bestAllocation.origin,
@@ -262,6 +273,7 @@ export async function calculateSplitIntents(
       callData: '0x',
       maxFee: '0',
     };
+
     intents.push(params);
   }
 
@@ -280,13 +292,21 @@ export async function calculateSplitIntents(
 
         if (amountForThisSplit <= BigInt(0)) continue;
 
-        // Get Zodiac configuration for the destination chain to determine correct 'to' address
+        let toAddress: string;
         const destinationChainConfig = config.chains[targetDomain];
-        const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
-        const toAddress =
-          destinationZodiacConfig.walletType !== WalletType.EOA
-            ? destinationZodiacConfig.safeAddress!
-            : config.ownAddress;
+
+        // Check if the target domain is SVM
+        const isSVM = isSvmChain(targetDomain);
+        if (isSVM) {
+          toAddress = config.ownSolAddress;
+        } else {
+          // Get Zodiac configuration for the destination chain to determine correct 'to' address
+          const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
+          toAddress =
+            destinationZodiacConfig.walletType !== WalletType.EOA
+              ? destinationZodiacConfig.safeAddress!
+              : config.ownAddress;
+        }
 
         const params: NewIntentParams = {
           origin: bestAllocation.origin,
