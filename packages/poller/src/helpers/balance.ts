@@ -67,6 +67,7 @@ export const getMarkGasBalances = async (
           gasBalances.set({ chainId: chain, gasType: GasType.Gas }, balance);
           prometheus.updateGasBalance(chain, balance);
         }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (e) {
         if (isTvmChain(chain)) {
           gasBalances.set({ chainId: chain, gasType: GasType.Bandwidth }, 0n);

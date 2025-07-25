@@ -38,14 +38,18 @@ export const logBalanceThresholds = (
   });
 };
 
-export const logGasThresholds = (gas: Map<{ chainId: string; gasType: GasType }, bigint>, config: MarkConfiguration, logger: Logger) => {
+export const logGasThresholds = (
+  gas: Map<{ chainId: string; gasType: GasType }, bigint>,
+  config: MarkConfiguration,
+  logger: Logger,
+) => {
   // Log if the gas balance is below threshold. Still try to send intents if this threshold
   // is configured generously.
   // TODO: Update getMarkGasBalances calls to support TronWeb and new gas type keys if used in this file.
   [...gas.keys()].map((gasKey) => {
     const { chainId, gasType } = gasKey;
     let threshold: string | undefined;
-    
+
     switch (gasType) {
       case GasType.Gas:
         threshold = config.chains[chainId].gasThreshold ?? '0';
@@ -60,7 +64,7 @@ export const logGasThresholds = (gas: Map<{ chainId: string; gasType: GasType },
         logger.error('Unknown gas type', { chainId, gasType });
         return;
     }
-    
+
     if (!threshold) {
       logger.error('No configured gas threshold', {
         chain: chainId,
