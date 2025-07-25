@@ -14,7 +14,6 @@ import {
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
 import { existsSync, readFileSync } from 'fs';
-import { hexToBase58 } from './solana';
 
 config();
 
@@ -95,7 +94,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
         maximum: '5000000000000000000',
-        slippages: [30],
+        slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
       // optimism    ethereum    WETH
@@ -105,7 +104,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x4200000000000000000000000000000000000006',
         maximum: '55000000000000000000',
         reserve: '50000000000000000000',
-        slippages: [30],
+        slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
       // arbitrum    ethereum    WETH
@@ -115,8 +114,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
         maximum: '105000000000000000000',
         reserve: '100000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // base    ethereum    WETH    20000000000000000000 30
       {
@@ -125,8 +124,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x4200000000000000000000000000000000000006',
         maximum: '25000000000000000000',
         reserve: '20000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // blast ethereum WETH    7000000000000000000 160
       // {
@@ -134,7 +133,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       //   destination: 1,
       //   asset: '0x4300000000000000000000000000000000000004',
       //   maximum: '7000000000000000000',
-      //   slippages: [160],
+      //   slippage: 160,
       //   preferences: [SupportedBridge.Across],
       // },
       // linea ethereum WETH    7000000000000000000 30
@@ -144,7 +143,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f',
         maximum: '21000000000000000000',
         reserve: '20000000000000000000',
-        slippages: [30],
+        slippage: 30,
         preferences: [SupportedBridge.Across],
       },
       // // unichain    ethereum    WETH    10000000000000000000    150
@@ -154,7 +153,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       //   asset: '0x4200000000000000000000000000000000000006',
       //   maximum: '35000000000000000000',
       //   reserve: '30000000000000000000',
-      //   slippages: [150],
+      //   slippage: 150,
       //   preferences: [SupportedBridge.Across],
       // },
       // // zksync    ethereum    WETH    10000000000000000000 20
@@ -163,7 +162,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       //   destination: 1,
       //   asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
       //   maximum: '10000000000000000000',
-      //   slippages: [20],
+      //   slippage: 20,
       //   preferences: [SupportedBridge.Across],
       // },
       // scroll    ethereum    WETH    10000000000000000000 20
@@ -173,28 +172,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x5300000000000000000000000000000000000004',
         maximum: '10000000000000000000',
         reserve: '5000000000000000000',
-        slippages: [20],
+        slippage: 20,
         preferences: [SupportedBridge.Binance],
-      },
-      // polygon ethereum USDC
-      {
-        origin: 137,
-        destination: 1,
-        asset: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-        maximum: '55000000000000000000000',
-        reserve: '50000000000000000000000',
-        slippages: [-1000],
-        preferences: [SupportedBridge.Near],
-      },
-      // polygon ethereum USDT
-      {
-        origin: 137,
-        destination: 1,
-        asset: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
-        maximum: '55000000000000000000000',
-        reserve: '50000000000000000000000',
-        slippages: [-1000],
-        preferences: [SupportedBridge.Near],
       },
       // optimism ethereum USDC
       {
@@ -203,7 +182,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
         maximum: '65000000000000000000000',
         reserve: '60000000000000000000000',
-        slippages: [30],
+        slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
       // optimism ethereum    USDT    5000000000000000000000 140
@@ -212,7 +191,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
         maximum: '5000000000000000000000',
-        slippages: [30],
+        slippage: 30,
         preferences: [SupportedBridge.Binance],
       },
       // bnb ethereum    USDC    5000000000000000000000 140
@@ -220,20 +199,18 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         origin: 56,
         destination: 1,
         asset: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-        maximum: '5500000000000000000000',
-        reserve: '5000000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        maximum: '5000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // bnb ethereum    USDT    10000000000000000000000 140
       {
         origin: 56,
         destination: 1,
         asset: '0x55d398326f99059fF775485246999027B3197955',
-        maximum: '5500000000000000000000',
-        reserve: '5000000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        maximum: '5000000000000000000000',
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // base ethereum    USDC    10000000000000000000000 140
       {
@@ -242,8 +219,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
         maximum: '65000000000000000000000',
         reserve: '60000000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // arbitrum ethereum    USDC
       {
@@ -252,8 +229,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
         maximum: '65000000000000000000000',
         reserve: '60000000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // arbitrum ethereum    USDT
       {
@@ -262,8 +239,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
         maximum: '55000000000000000000000',
         reserve: '50000000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        slippage: 30,
+        preferences: [SupportedBridge.Binance],
       },
       // linea ethereum    USDC    10000000000000000000000 140
       {
@@ -271,7 +248,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff',
         maximum: '10000000000000000000000',
-        slippages: [140],
+        slippage: 140,
         preferences: [SupportedBridge.Across],
       },
       // // unichain    ethereum    USDC    20000000000000000000000 30
@@ -280,7 +257,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       //   destination: 1,
       //   asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
       //   maximum: '20000000000000000000000',
-      //   slippages: [30],
+      //   slippage: 30,
       //   preferences: [SupportedBridge.Across],
       // },
       // // zksync    ethereum    USDC    10000000000000000000000 30
@@ -289,48 +266,17 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
       //   destination: 1,
       //   asset: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4',
       //   maximum: '10000000000000000000000',
-      //   slippages: [30],
+      //   slippage: 30,
       //   preferences: [SupportedBridge.Across],
       // },
-      // ink    ethereum    USDC    70000000000000000000000 20
+      // ink    ethereum    USDC    7000000000000000000 20
       {
         origin: 57073,
         destination: 1,
         asset: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
-        maximum: '70000000000000000000000',
-        reserve: '65000000000000000000000',
-        slippages: [20],
+        maximum: '7000000000000000000',
+        slippage: 20,
         preferences: [SupportedBridge.Across],
-      },
-      // solana ethereum USDC
-      {
-        origin: 1399811149,
-        destination: 1,
-        asset: '0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61',
-        maximum: '75000000000000000000000',
-        reserve: '70000000000000000000000',
-        slippages: [-1000],
-        preferences: [SupportedBridge.Near],
-      },
-      // solana ethereum USDT
-      {
-        origin: 1399811149,
-        destination: 1,
-        asset: '0xce010e60afedb22717bd63192f54145a3f965a33bb82d2c7029eb2ce1e208264',
-        maximum: '75000000000000000000000',
-        reserve: '70000000000000000000000',
-        slippages: [-1000],
-        preferences: [SupportedBridge.Near],
-      },
-      // base ethereum    cbBTC    10000000000000000000000 140
-      {
-        origin: 8453,
-        destination: 1,
-        asset: '0x0555E30da8f98308EdB960aa94C0Db47230d2B9c',
-        maximum: '65000000000000000000000',
-        reserve: '60000000000000000000000',
-        slippages: [-1000],
-        preferences: [SupportedBridge.Near],
       },
     ],
   };
@@ -391,7 +337,6 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
       ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
-      ownSolAddress: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
       supportedSettlementDomains:
         configJson.supportedSettlementDomains ??
         parseSettlementDomains(await requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
@@ -434,15 +379,6 @@ function validateConfiguration(config: MarkConfiguration): void {
 
   if (config.supportedSettlementDomains.length === 0) {
     throw new ConfigurationError('At least one settlement domain is required');
-  }
-
-  // Validate route configurations
-  for (const route of config.routes) {
-    if (route.slippages.length !== route.preferences.length) {
-      throw new ConfigurationError(
-        `Route ${route.origin}->${route.destination} for ${route.asset}: slippages array length (${route.slippages.length}) must match preferences array length (${route.preferences.length})`,
-      );
-    }
   }
 }
 
@@ -562,9 +498,6 @@ export const parseChainConfigurations = async (
     const gnosisSafeAddress =
       configJson?.chains?.[chainId]?.gnosisSafeAddress ?? (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
 
-    const squadsAddress =
-      configJson?.chains?.[chainId]?.squadsAddress ?? (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
-
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
@@ -578,7 +511,6 @@ export const parseChainConfigurations = async (
       zodiacRoleModuleAddress,
       zodiacRoleKey,
       gnosisSafeAddress,
-      squadsAddress,
     };
   }
 
@@ -626,25 +558,16 @@ function parseAssets(assets: string): AssetConfiguration[] {
   });
 }
 
-export enum AddressFormat {
-  Hex,
-  Base58,
-}
-
 export const getTokenAddressFromConfig = (
   tickerHash: string,
   domain: string,
   config: MarkConfiguration,
-  format: AddressFormat = AddressFormat.Hex,
 ): string | undefined => {
   const asset = (config.chains[domain]?.assets ?? []).find(
     (a) => a.tickerHash.toLowerCase() === tickerHash.toLowerCase(),
   );
   if (!asset) {
     return undefined;
-  }
-  if (format === AddressFormat.Base58) {
-    return hexToBase58(asset.address);
   }
   return asset.address;
 };
