@@ -7,15 +7,16 @@ import {
   erc20Abi,
   PublicClient,
   formatUnits,
+  parseUnits,
 } from 'viem';
-import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
+import { SupportedBridge, RebalanceRoute, MarkConfiguration, getDecimalsFromConfig } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { BinanceClient } from './client';
 import { DynamicAssetConfig } from './dynamic-config';
 import { WithdrawalStatus, BinanceAssetMapping } from './types';
-import { WITHDRAWAL_STATUS, DEPOSIT_STATUS } from './constants';
+import { WITHDRAWAL_STATUS, DEPOSIT_STATUS, WITHDRAWAL_PRECISION_MAP } from './constants';
 import {
   getDestinationAssetMapping,
   calculateNetAmount,
@@ -24,6 +25,7 @@ import {
   generateWithdrawOrderId,
   checkWithdrawQuota,
 } from './utils';
+import { getDestinationAssetAddress, findAssetByAddress } from '../../shared/asset';
 
 const wethAbi = [
   ...erc20Abi,
@@ -51,12 +53,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     apiKey: string,
     apiSecret: string,
     baseUrl: string,
-    protected readonly chains: Record<string, ChainConfiguration>,
+    protected readonly config: MarkConfiguration,
     protected readonly logger: Logger,
     private readonly rebalanceCache: RebalanceCache,
   ) {
     this.client = new BinanceClient(apiKey, apiSecret, baseUrl, logger);
-    this.dynamicConfig = new DynamicAssetConfig(this.client, this.chains);
+    this.dynamicConfig = new DynamicAssetConfig(this.client, this.config.chains);
 
     this.logger.debug('Initializing BinanceBridgeAdapter', {
       baseUrl,
@@ -67,6 +69,50 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     if (!this.client.isConfigured()) {
       throw new Error('Binance adapter requires API key and secret');
     }
+  }
+
+  /**
+   * Get withdrawal precision for an asset from Binance API
+   * Returns the number of decimal places required for withdrawal amounts
+   */
+  private getWithdrawalPrecision(coin: string, network: string): number {
+    const coinPrecision = WITHDRAWAL_PRECISION_MAP[coin];
+    if (coinPrecision && coinPrecision[network]) {
+      return coinPrecision[network];
+    }
+
+    // Default fallback to 8 decimal places
+    this.logger.warn(`No precision mapping found for ${coin} on ${network}, using default precision`);
+    return 8;
+  }
+
+  /**
+   * Round amount to specified precision to ensure we don't exceed available balance
+   * @param amount - The amount to round
+   * @param precision - Number of decimal places
+   * @returns Rounded amount as string
+   */
+  private roundToPrecision(amount: number, precision: number): string {
+    const multiplier = Math.pow(10, precision);
+    const rounded = Math.floor(amount * multiplier) / multiplier;
+    return rounded.toFixed(precision);
+  }
+
+  /**
+   * Calculate the rounded amount in wei for deposits to match withdrawal rounding
+   * @param amount - Original amount in wei
+   * @param coin - Binance coin symbol
+   * @param network - Binance network
+   * @param decimals - Token decimals
+   * @returns Rounded amount in wei
+   */
+  private getRoundedDepositAmount(amount: string, coin: string, network: string, decimals: number): string {
+    const amountInUnits = parseFloat(formatUnits(BigInt(amount), decimals));
+    const precision = this.getWithdrawalPrecision(coin, network);
+    const roundedAmount = this.roundToPrecision(amountInUnits, precision);
+    const roundedAmountInWei = parseUnits(roundedAmount, decimals);
+
+    return roundedAmountInWei.toString();
   }
 
   type(): SupportedBridge {
@@ -107,9 +153,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         this.client,
         route,
         `route from chain ${route.origin}`,
-        this.chains,
+        this.config.chains,
       );
-      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.chains);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.config.chains);
 
       // Check if amount meets minimum requirements
       if (!meetsMinimumWithdrawal(amount, originMapping)) {
@@ -149,7 +195,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         this.client,
         route,
         `route from chain ${route.origin}`,
-        this.chains,
+        this.config.chains,
       );
 
       // Check minimum amount requirements
@@ -159,7 +205,15 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
-      const decimals = assetMapping.binanceSymbol === 'ETH' ? 18 : 6;
+      const assetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+      if (!assetConfig) {
+        throw new Error(`Unable to find asset config for asset ${route.asset} on chain ${route.origin}`);
+      }
+      const ticker = assetConfig.tickerHash;
+      const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
+      if (!decimals) {
+        throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
+      }
 
       const quota = await checkWithdrawQuota(amount, assetMapping.binanceSymbol, decimals, this.client);
 
@@ -177,18 +231,31 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       const depositInfo = await this.client.getDepositAddress(assetMapping.binanceSymbol, assetMapping.network);
 
+      // Calculate rounded deposit amount to match withdrawal rounding
+      const roundedAmount = this.getRoundedDepositAmount(
+        amount,
+        assetMapping.binanceSymbol,
+        assetMapping.network,
+        decimals,
+      );
+
       this.logger.debug('Binance deposit address obtained', {
         coin: assetMapping.binanceSymbol,
         network: assetMapping.network,
         address: depositInfo.address,
         amount,
+        roundedAmount,
         recipient,
       });
 
       const transactions: MemoizedTransactionRequest[] = [];
 
-      // Unwrap WETH to ETH before deposit
-      if (assetMapping.binanceSymbol === 'ETH' && route.asset !== zeroAddress) {
+      // Unwrap WETH to ETH before deposit (only if route asset is different from Binance asset)
+      if (
+        assetMapping.binanceSymbol === 'ETH' &&
+        route.asset !== zeroAddress &&
+        route.asset.toLowerCase() !== assetMapping.binanceAsset.toLowerCase()
+      ) {
         this.logger.debug('Preparing WETH unwrap transaction before Binance deposit', {
           wethAddress: route.asset,
           amount,
@@ -200,7 +267,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: wethAbi,
               functionName: 'withdraw',
-              args: [BigInt(amount)],
+              args: [BigInt(roundedAmount)],
             }) as `0x${string}`,
             value: BigInt(0),
           },
@@ -209,26 +276,51 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
           memo: RebalanceTransactionMemo.Rebalance,
           transaction: {
             to: depositInfo.address as `0x${string}`,
-            value: BigInt(amount),
+            value: BigInt(roundedAmount),
             data: '0x' as `0x${string}`,
           },
         };
         return [unwrapTx, sendToBinanceTx];
-        // For non-ETH assets send directly
+      } else if (assetMapping.binanceSymbol === 'ETH') {
+        // WETH without unwrapping - check if Binance accepts native ETH or WETH token
+        const binanceTakesNativeETH = assetMapping.binanceAsset === zeroAddress;
+
+        if (binanceTakesNativeETH) {
+          transactions.push({
+            memo: RebalanceTransactionMemo.Rebalance,
+            transaction: {
+              to: depositInfo.address as `0x${string}`,
+              value: BigInt(roundedAmount),
+              data: '0x' as `0x${string}`,
+            },
+          });
+        } else {
+          // BSC: Transfer WETH to Binance
+          transactions.push({
+            memo: RebalanceTransactionMemo.Rebalance,
+            transaction: {
+              to: route.asset as `0x${string}`,
+              value: BigInt(0),
+              data: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: 'transfer',
+                args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
+              }),
+            },
+          });
+        }
       } else {
+        // For all other assets (i.e. USDC, USDT), transfer token
         transactions.push({
           memo: RebalanceTransactionMemo.Rebalance,
           transaction: {
-            to: route.asset === zeroAddress ? (depositInfo.address as `0x${string}`) : (route.asset as `0x${string}`),
-            value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
-            data:
-              route.asset !== zeroAddress
-                ? encodeFunctionData({
-                    abi: erc20Abi,
-                    functionName: 'transfer',
-                    args: [depositInfo.address as `0x${string}`, BigInt(amount)],
-                  })
-                : '0x',
+            to: route.asset as `0x${string}`,
+            value: BigInt(0),
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: 'transfer',
+              args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
+            }),
           },
         });
       }
@@ -294,22 +386,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     });
 
     try {
-      // Get asset mappings to check if it's ETH/WETH
-      const originMapping = await validateAssetMapping(
-        this.client,
-        route,
-        `route from chain ${route.origin}`,
-        this.chains,
-      );
-
-      // Only wrap ETH back to WETH
-      if (originMapping.binanceSymbol !== 'ETH') {
-        this.logger.debug('Asset is not ETH/WETH, no wrapping needed', {
-          binanceSymbol: originMapping.binanceSymbol,
-        });
-        return;
-      }
-
       // Look up recipient from cache
       const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
       if (!recipient) {
@@ -351,20 +427,46 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         return;
       }
 
-      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.chains);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.config.chains);
+
+      // Get the destination asset address that Mark should hold
+      const destinationAsset = getDestinationAssetAddress(
+        route.asset,
+        route.origin,
+        route.destination,
+        this.config.chains,
+        this.logger,
+      );
+      if (!destinationAsset) {
+        this.logger.error('Could not find destination asset address for ticker', {
+          originAsset: route.asset,
+          originChain: route.origin,
+          destinationChain: route.destination,
+        });
+        return;
+      }
+
+      // No wrapping needed if Binance withdrawal asset matches the destination asset Mark should hold
+      if (destinationMapping.binanceAsset.toLowerCase() === destinationAsset.toLowerCase()) {
+        this.logger.debug('Binance withdrawal asset matches destination asset, no wrapping needed', {
+          destinationAsset,
+          binanceAsset: destinationMapping.binanceAsset,
+        });
+        return;
+      }
 
       this.logger.info('Preparing WETH wrap callback', {
         recipient,
         ethAmount: ethAmount.toString(),
-        wethAddress: destinationMapping.onChainAddress,
+        wethAddress: destinationAsset,
         destinationChain: route.destination,
       });
 
-      // Always wrap ETH to WETH on the destination chain after withdrawal
+      // Wrap ETH to WETH on the destination chain after withdrawal if needed
       const wrapTx = {
         memo: RebalanceTransactionMemo.Wrap,
         transaction: {
-          to: destinationMapping.onChainAddress as `0x${string}`,
+          to: destinationAsset as `0x${string}`,
           data: encodeFunctionData({
             abi: wethAbi,
             functionName: 'deposit',
@@ -398,9 +500,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         this.client,
         route,
         `route from chain ${route.origin}`,
-        this.chains,
+        this.config.chains,
       );
-      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.chains);
+      const destinationMapping = await getDestinationAssetMapping(this.client, route, this.config.chains);
 
       // Check if deposit is confirmed first
       const depositStatus = await this.checkDepositConfirmed(route, originTransaction, originMapping);
@@ -566,7 +668,15 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       const withdrawAmount = amount;
 
       // Check withdrawal quota before initiating (use full amount for quota check)
-      const decimals = assetMapping.binanceSymbol === 'ETH' ? 18 : 6;
+      const assetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+      if (!assetConfig) {
+        throw new Error(`Unable to find asset config for asset ${route.asset} on chain ${route.origin}`);
+      }
+      const ticker = assetConfig.tickerHash;
+      const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
+      if (!decimals) {
+        throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
+      }
       const quota = await checkWithdrawQuota(withdrawAmount, assetMapping.binanceSymbol, decimals, this.client);
 
       if (!quota.allowed) {
@@ -576,7 +686,10 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       }
 
       // Convert amount from wei to standard unit for Binance API
-      const withdrawAmountFormatted = parseFloat(formatUnits(BigInt(withdrawAmount), decimals)).toFixed(8);
+      // Get the proper withdrawal precision from Binance API configuration
+      const withdrawAmountInUnits = parseFloat(formatUnits(BigInt(withdrawAmount), decimals));
+      const withdrawalPrecision = this.getWithdrawalPrecision(assetMapping.binanceSymbol, assetMapping.network);
+      const withdrawAmountFormatted = this.roundToPrecision(withdrawAmountInUnits, withdrawalPrecision);
 
       this.logger.debug(`Initiating Binance withdrawal with id ${withdrawOrderId}`, {
         coin: assetMapping.binanceSymbol,
@@ -621,7 +734,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
    * Get viem provider for a specific chain
    */
   protected getProvider(chainId: number): PublicClient | undefined {
-    const chainConfig = this.chains[chainId.toString()];
+    const chainConfig = this.config.chains[chainId.toString()];
     if (!chainConfig || !chainConfig.providers || chainConfig.providers.length === 0) {
       this.logger.warn('No provider configured for chain', { chainId });
       return undefined;

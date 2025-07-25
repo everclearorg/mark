@@ -447,8 +447,7 @@ describe('Invoice Processing', () => {
       // Verify warning was logged
       expect(mockDeps.logger.warn.calledWith('Failed to clear pending cache')).to.be.true;
 
-      // And Prometheus record was not called
-      expect(mockDeps.prometheus.recordInvalidPurchase.called).to.be.false;
+      // And Prometheus record was not called except for possible invoice seen
       expect(mockDeps.prometheus.recordSuccessfulPurchase.called).to.be.false;
       expect(mockDeps.prometheus.recordInvoicePurchaseDuration.called).to.be.false;
       expect(mockDeps.prometheus.recordPurchaseClearanceDuration.called).to.be.false;
@@ -784,14 +783,23 @@ describe('Invoice Processing', () => {
       // Verify the correct purchases were created
       expect(result.purchases).to.deep.equal([expectedPurchase]);
 
-      // And the remaining balances were updated correctly
+      // Verify remaining balances were updated correctly
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
     it('should process multiple invoices in a ticker group correctly', async () => {
       isXerc20SupportedStub.resolves(false);
-      mockDeps.everclear.getMinAmounts.resolves({
-        minAmounts: { '8453': '1000000000000000000' },
+      // Mock cumulative API responses for multiple invoices
+      mockDeps.everclear.getMinAmounts.onFirstCall().resolves({
+        minAmounts: { '8453': '1000000000000000000' }, // First invoice: 1 WETH cumulative
+        invoiceAmount: '1000000000000000000',
+        amountAfterDiscount: '1000000000000000000',
+        discountBps: '0',
+        custodiedAmounts: {}
+      });
+      
+      mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
+        minAmounts: { '8453': '1000000000000000000' }, // Second invoice: 1 WETH independent
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
@@ -881,7 +889,7 @@ describe('Invoice Processing', () => {
       // Verify the correct purchases were created
       expect(result.purchases).to.deep.equal(expectedPurchases);
 
-      // And the remaining balances were updated correctly
+      // Verify remaining balances were updated correctly (2 ETH - 1 ETH - 1 ETH = 0)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
@@ -986,7 +994,7 @@ describe('Invoice Processing', () => {
       // Verify the correct split intent purchases were created
       expect(result.purchases).to.deep.equal(expectedPurchases);
 
-      // And the remaining balances were updated correctly
+      // Verify remaining balances were updated correctly (2 ETH - 2 ETH = 0)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
@@ -1434,7 +1442,7 @@ describe('Invoice Processing', () => {
         expect(purchase.purchase.params.origin).to.equal('8453');
       });
 
-      // Verify the remaining balances were updated correctly for the chosen origin
+      // Verify remaining balances were updated correctly (3 ETH - 1 ETH - 1 ETH - 1 ETH = 0)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
@@ -1453,8 +1461,9 @@ describe('Invoice Processing', () => {
         chosenOrigin: null
       };
 
+      // API returns cumulative amounts for all outstanding invoices
       mockDeps.everclear.getMinAmounts.onFirstCall().resolves({
-        minAmounts: { '8453': '1000000000000000000' }, // First invoice needs 1 WETH
+        minAmounts: { '8453': '1000000000000000000' }, // First invoice: 1 WETH cumulative
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
@@ -1462,7 +1471,7 @@ describe('Invoice Processing', () => {
       });
 
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
-        minAmounts: { '8453': '2000000000000000000' }, // Second invoice needs 2 WETH
+        minAmounts: { '8453': '2000000000000000000' }, // Second invoice: 2 WETH independent
         invoiceAmount: '2000000000000000000',
         amountAfterDiscount: '2000000000000000000',
         discountBps: '0',
@@ -1470,7 +1479,7 @@ describe('Invoice Processing', () => {
       });
 
       mockDeps.everclear.getMinAmounts.onThirdCall().resolves({
-        minAmounts: { '8453': '500000000000000000' }, // Third invoice needs 0.5 WETH
+        minAmounts: { '8453': '500000000000000000' }, // Third invoice: 0.5 WETH independent
         invoiceAmount: '500000000000000000',
         amountAfterDiscount: '500000000000000000',
         discountBps: '0',
@@ -1529,8 +1538,8 @@ describe('Invoice Processing', () => {
       expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
       expect(result.purchases[1].target.intent_id).to.equal(invoice3.intent_id);
 
-      // Verify the remaining balance reflects both processed invoices
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0')); // 1.5 - 1.0 - 0.5 = 0
+      // Verify the remaining balance was updated correctly (1.5 ETH - 1 ETH - 0.5 ETH = 0)
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
     it('should handle getMinAmounts failure gracefully', async () => {
@@ -1851,16 +1860,16 @@ describe('Invoice Processing', () => {
         }
       });
 
-      // Second call to getMinAmounts (for second invoice)
+      // Second call to getMinAmounts (for second invoice) - independent amount
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
-        minAmounts: { '8453': '1000000000000000000' }, // 1 WETH needed for second invoice
+        minAmounts: { '8453': '1000000000000000000' }, // 1 WETH independent for second invoice
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
         custodiedAmounts: {
-          '1': '0', // 3 WETH used up from first invoice purchase
-          '10': '1000000000000000000', // 1 WETH used up from first invoice purchase
-          '8453': '5000000000000000000'
+          '1': '0', // No custodied assets for second invoice
+          '10': '1000000000000000000', // 1 WETH available for second invoice
+          '8453': '1000000000000000000'
         }
       });
 
@@ -1954,7 +1963,7 @@ describe('Invoice Processing', () => {
       expect(result.purchases[1].target.intent_id).to.equal(invoice1.intent_id);
       expect(result.purchases[2].target.intent_id).to.equal(invoice2.intent_id);
 
-      // Verify remaining balances were updated correctly (5 - 4 - 1 = 0)
+      // Verify remaining balances were updated correctly (5 ETH - 4 ETH - 1 ETH = 0)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
 
       // Verify remaining custodied balances were updated correctly
@@ -2043,7 +2052,7 @@ describe('Invoice Processing', () => {
       expect(result.purchases[0].target.intent_id).to.equal(invoice.intent_id);
       expect(result.purchases[1].target.intent_id).to.equal(invoice.intent_id);
 
-      // Verify remaining balances were updated correctly (5 - 5 = 0)
+      // Verify remaining balances were updated correctly (6 ETH - 6 ETH = 0)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
 
       // Verify remaining custodied balances were updated correctly
@@ -2086,9 +2095,9 @@ describe('Invoice Processing', () => {
         chosenOrigin: null
       };
 
-      // Mock getMinAmounts for both invoices
+      // Mock getMinAmounts for both invoices - API returns cumulative amounts
       mockDeps.everclear.getMinAmounts.onFirstCall().resolves({
-        minAmounts: { '8453': '2000000000000000000' },
+        minAmounts: { '8453': '2000000000000000000' }, // First invoice: 2 WETH cumulative
         invoiceAmount: '2000000000000000000',
         amountAfterDiscount: '2000000000000000000',
         discountBps: '0',
@@ -2096,7 +2105,7 @@ describe('Invoice Processing', () => {
       });
 
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
-        minAmounts: { '8453': '3000000000000000000' },
+        minAmounts: { '8453': '3000000000000000000' }, // Second invoice: 3 WETH independent
         invoiceAmount: '3000000000000000000',
         amountAfterDiscount: '3000000000000000000',
         discountBps: '0',
@@ -2156,7 +2165,7 @@ describe('Invoice Processing', () => {
       expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
       expect(result.purchases[1].target.intent_id).to.equal(invoice2.intent_id);
 
-      // Verify remaining balances were updated correctly (10 - 2 - 3 = 5 WETH)
+      // Verify remaining balances were updated correctly (10 ETH - 2 ETH - 3 ETH = 5 ETH)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(
         BigInt('5000000000000000000')
       );

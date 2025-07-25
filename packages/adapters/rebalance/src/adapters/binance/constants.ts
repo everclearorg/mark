@@ -41,3 +41,39 @@ export const DEPOSIT_STATUS = {
   PENDING: 0,
   SUCCESS: 1,
 } as const;
+
+// Withdrawal precision mappings
+// These values were fetched from the API; since they don't change much we just use static value here
+export const WITHDRAWAL_PRECISION_MAP: Record<string, Record<string, number>> = {
+  USDT: {
+    ETH: 6,
+    BSC: 6,
+    ARBITRUM: 6,
+    OPTIMISM: 6,
+    POLYGON: 6,
+    BASE: 6,
+    SCROLL: 6,
+    ZKSYNCERA: 6,
+  },
+  USDC: {
+    ETH: 6,
+    BSC: 6,
+    ARBITRUM: 6,
+    OPTIMISM: 6,
+    POLYGON: 6,
+    BASE: 6,
+    SCROLL: 6,
+  },
+  ETH: {
+    ETH: 8,
+    BSC: 8,
+    ARBITRUM: 8,
+    OPTIMISM: 8,
+    POLYGON: 8,
+    BASE: 8,
+    SCROLL: 8,
+  },
+  BTC: {
+    BTC: 8,
+  },
+};

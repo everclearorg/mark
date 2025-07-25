@@ -129,8 +129,19 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
 
     logFileDescriptorUsage(logger);
 
-    const rebalanceResult = await rebalanceInventory(context);
-    logger.info('Successfully rebalanced inventory', { requestId: context.requestId, rebalanceResult });
+    const rebalanceOperations = await rebalanceInventory(context);
+
+    if (rebalanceOperations.length === 0) {
+      logger.info('Rebalancing completed: no operations needed', {
+        requestId: context.requestId,
+      });
+    } else {
+      logger.info('Successfully completed ${rebalanceOperations.length} rebalancing operations', {
+        requestId: context.requestId,
+        numOperations: rebalanceOperations.length,
+        operations: rebalanceOperations,
+      });
+    }
 
     logFileDescriptorUsage(logger);
 
@@ -138,7 +149,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       statusCode: 200,
       body: JSON.stringify({
         invoiceResult: invoiceResult ?? {},
-        rebalanceResult: rebalanceResult ?? {},
+        rebalanceOperations: rebalanceOperations ?? [],
       }),
     };
   } catch (_error: unknown) {

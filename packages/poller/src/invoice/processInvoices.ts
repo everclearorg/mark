@@ -59,30 +59,33 @@ interface BatchedTickerGroup {
 /**
  * Groups invoices by ticker hash
  * @param context - The processing context
- * @param invoices - The invoices to group
- * @returns A map of ticker hash to invoices, sorted by oldest first
+ * @param invoices - The invoices to group (already ordered by API in FIFO order)
+ * @returns A map of ticker hash to invoices, preserving API order
  */
 export function groupInvoicesByTicker(context: ProcessingContext, invoices: Invoice[]): Map<string, Invoice[]> {
   const { prometheus } = context;
 
   const invoiceQueues = new Map<string, Invoice[]>();
 
-  invoices
-    .sort((a, b) => a.hub_invoice_enqueued_timestamp - b.hub_invoice_enqueued_timestamp)
-    .forEach((invoice) => {
-      if (!invoiceQueues.has(invoice.ticker_hash)) {
-        invoiceQueues.set(invoice.ticker_hash, []);
-      }
-      invoiceQueues.get(invoice.ticker_hash)!.push(invoice);
+  invoices.forEach((invoice) => {
+    if (!invoiceQueues.has(invoice.ticker_hash)) {
+      invoiceQueues.set(invoice.ticker_hash, []);
+    }
+    invoiceQueues.get(invoice.ticker_hash)!.push(invoice);
 
-      // Record invoice as seen
-      const labels: InvoiceLabels = {
-        origin: invoice.origin,
-        id: invoice.intent_id,
-        ticker: invoice.ticker_hash,
-      };
-      prometheus.recordPossibleInvoice(labels);
-    });
+    // Record invoice as seen
+    const labels: InvoiceLabels = {
+      origin: invoice.origin,
+      id: invoice.intent_id,
+      ticker: invoice.ticker_hash,
+    };
+    prometheus.recordPossibleInvoice(labels);
+  });
+
+  // Sort invoices within each group by age (oldest to newest)
+  invoiceQueues.forEach((invoiceGroup) => {
+    invoiceGroup.sort((a, b) => a.hub_invoice_enqueued_timestamp - b.hub_invoice_enqueued_timestamp);
+  });
 
   return invoiceQueues;
 }
@@ -185,16 +188,22 @@ export async function processTickerGroup(
         });
         return _minAmounts;
       } catch (e) {
-        logger.error('Failed to get min amounts for invoice', {
+        logger.error('Failed to get min amounts for invoice, skipping', {
           requestId,
           invoiceId,
           invoice,
           error: jsonifyError(e),
           duration: getTimeSeconds() - start,
         });
-        return Object.fromEntries(invoice.destinations.map((d) => [d, '0']));
+        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, labels);
+        return null;
       }
     })();
+
+    // Skip this invoice if we couldn't get min amounts
+    if (!minAmounts) {
+      continue;
+    }
 
     // Set for ticker-destination pair lookup
     const existingDestinations = new Set(
@@ -301,11 +310,6 @@ export async function processTickerGroup(
       });
       batchedGroup.totalIntents += intents.length;
 
-      // Update remaining balance for the chosen origin
-      const currentBalance = remainingBalances.get(invoice.ticker_hash)?.get(originDomain) || BigInt('0');
-      const requiredAmount = BigInt(minAmounts[originDomain]);
-      remainingBalances.get(invoice.ticker_hash)?.set(originDomain, currentBalance - requiredAmount);
-
       // Update remaining custodied - handle allocated intents (up to totalAllocated)
       let runningSum = BigInt('0');
       let targetIdx = 0;
@@ -360,6 +364,11 @@ export async function processTickerGroup(
         batchSize: batchedGroup.invoicesWithIntents.length,
         duration: getTimeSeconds() - start,
       });
+
+      // Update remaining balance for the chosen origin
+      const currentBalance = remainingBalances.get(invoice.ticker_hash)?.get(originDomain) || BigInt('0');
+      const requiredAmount = BigInt(minAmounts[originDomain]);
+      remainingBalances.get(invoice.ticker_hash)?.set(originDomain, currentBalance - requiredAmount);
     }
   }
 
@@ -379,6 +388,10 @@ export async function processTickerGroup(
   // Send all intents in one batch
   let purchases: PurchaseAction[] = [];
   try {
+    if (allIntents.length === 0) {
+      throw new Error('No intents to send');
+    }
+
     const intentResults = await sendIntents(
       allIntents[0].invoice.intent_id,
       allIntents.map((i) => i.params),
