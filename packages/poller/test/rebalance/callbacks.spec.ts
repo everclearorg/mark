@@ -292,4 +292,33 @@ describe('executeDestinationCallbacks', () => {
         expect(mockRebalanceCache.removeRebalances.calledWith([mockAction3Id])).to.be.false;
         expect(mockRebalanceCache.removeRebalances.callCount).to.equal(1);
     });
+
+    it('should handle callback transaction with undefined value', async () => {
+        const callbackWithUndefinedValue = {
+            transaction: {
+                to: '0xDestinationContract',
+                data: '0xcallbackdata',
+                // value is undefined
+            },
+            memo: 'Callback'
+        };
+
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.resolves(mockReceipt1);
+        mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
+        mockSpecificBridgeAdapter.readyOnDestination.resolves(true);
+        mockSpecificBridgeAdapter.destinationCallback.resolves(callbackWithUndefinedValue);
+        submitTransactionStub.resolves({
+            transactionHash: mockSubmitSuccessReceipt.transactionHash,
+            receipt: mockSubmitSuccessReceipt,
+        });
+
+        await executeDestinationCallbacks(mockContext);
+
+        // Verify the transaction was called with value defaulting to '0'
+        expect(submitTransactionStub.calledOnce).to.be.true;
+        const callArgs = submitTransactionStub.firstCall.args[0];
+        expect(callArgs.txRequest.value).to.equal('0');
+        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction1Id])).to.be.true;
+    });
 });

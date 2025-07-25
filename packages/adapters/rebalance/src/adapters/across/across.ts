@@ -10,12 +10,13 @@ import {
   padHex,
   fallback,
 } from 'viem';
-import { AssetConfiguration, ChainConfiguration, SupportedBridge, RebalanceRoute, axiosGet } from '@mark/core';
+import { ChainConfiguration, SupportedBridge, RebalanceRoute, axiosGet } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { SuggestedFeesResponse, DepositStatusResponse, WETH_WITHDRAWAL_TOPIC } from './types';
 import { parseFillLogs, getDepositFromLogs } from './utils';
 import { ACROSS_SPOKE_ABI } from './abi';
+import { findAssetByAddress, findMatchingDestinationAsset } from '../../shared/asset';
 
 // Structure to hold callback info
 interface CallbackInfo {
@@ -64,7 +65,13 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         throw new Error('Amount is too low for bridging via Across');
       }
 
-      const outputToken = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+      const outputToken = findMatchingDestinationAsset(
+        route.asset,
+        route.origin,
+        route.destination,
+        this.chains,
+        this.logger,
+      );
       if (!outputToken) {
         throw new Error('Could not find matching destination asset');
       }
@@ -151,11 +158,25 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         return;
       }
 
-      const originAsset = this.getAsset(route.asset, route.origin);
-      this.validateAsset(originAsset, 'WETH', 'origin asset');
+      const originAsset = findAssetByAddress(route.asset, route.origin, this.chains, this.logger);
+      if (!originAsset) {
+        throw new Error('Could not find origin asset');
+      }
 
-      this.logger.debug('Found origin asset', { route, originAsset });
-      const destinationWETH = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+      // Only WETH transfers need wrapping callbacks
+      if (originAsset.symbol.toLowerCase() !== 'weth') {
+        this.logger.debug('Asset is not WETH, no callback needed', { route, originAsset });
+        return;
+      }
+
+      this.logger.debug('Found WETH origin asset', { route, originAsset });
+      const destinationWETH = findMatchingDestinationAsset(
+        route.asset,
+        route.origin,
+        route.destination,
+        this.chains,
+        this.logger,
+      );
       if (!destinationWETH) {
         throw new Error('Failed to find destination WETH');
       }
@@ -283,67 +304,6 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     }
   }
 
-  protected getAsset(asset: string, chain: number): AssetConfiguration | undefined {
-    this.logger.debug('Finding matching asset', { asset, chain });
-
-    const chainConfig = this.chains[chain.toString()];
-    if (!chainConfig) {
-      this.logger.warn(`Chain configuration not found`, { asset, chain });
-      return undefined;
-    }
-
-    return chainConfig.assets.find((a: AssetConfiguration) => a.address.toLowerCase() === asset.toLowerCase());
-  }
-
-  // Helper method to find the matching destination token address
-  protected findMatchingDestinationAsset(
-    asset: string,
-    origin: number,
-    destination: number,
-  ): AssetConfiguration | undefined {
-    this.logger.debug('Finding matching destination asset', { asset, origin, destination });
-
-    const destinationChainConfig = this.chains[destination.toString()];
-
-    if (!destinationChainConfig) {
-      this.logger.warn(`Destination chain configuration not found`, { asset, origin, destination });
-      return undefined;
-    }
-
-    // Find the asset in the origin chain
-    const originAsset = this.getAsset(asset, origin);
-    if (!originAsset) {
-      this.logger.warn(`Asset not found on origin chain`, { asset, origin });
-      return undefined;
-    }
-
-    this.logger.debug('Found asset in origin chain', {
-      asset,
-      origin,
-      originAsset,
-    });
-
-    // Find the matching asset in the destination chain by symbol
-    const destinationAsset = destinationChainConfig.assets.find(
-      (a: AssetConfiguration) => a.symbol.toLowerCase() === originAsset.symbol.toLowerCase(),
-    );
-
-    if (!destinationAsset) {
-      this.logger.warn(`Matching asset not found in destination chain`, {
-        asset: originAsset,
-        destination,
-      });
-      return undefined;
-    }
-
-    this.logger.debug('Found matching asset in destination chain', {
-      originAsset,
-      destinationAsset,
-    });
-
-    return destinationAsset;
-  }
-
   // Helper methods to extract data from transaction receipt
   protected extractDepositId(origin: number, receipt: TransactionReceipt): number | undefined {
     this.logger.debug('Extracting deposit ID from transaction receipt', {
@@ -372,13 +332,18 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
    * @returns Object with needsCallback flag and fill information if available
    */
   protected async requiresCallback(route: RebalanceRoute, fillTxHash: string): Promise<CallbackInfo> {
-    const originAsset = this.getAsset(route.asset, route.origin);
+    const originAsset = findAssetByAddress(route.asset, route.origin, this.chains, this.logger);
     if (!originAsset) {
       throw new Error('Could not find origin asset');
     }
-    this.validateAsset(originAsset, 'WETH', 'origin asset');
 
-    const destinationNative = this.findMatchingDestinationAsset(zeroAddress, 1, route.destination);
+    // Only WETH transfers need callbacks for wrapping
+    if (originAsset.symbol.toLowerCase() !== 'weth') {
+      this.logger.debug('Asset is not WETH, no callback needed', { route, originAsset });
+      return { needsCallback: false };
+    }
+
+    const destinationNative = findMatchingDestinationAsset(zeroAddress, 1, route.destination, this.chains, this.logger);
     if (!destinationNative || destinationNative.symbol !== 'ETH') {
       return { needsCallback: false };
     }
@@ -413,7 +378,13 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       return { needsCallback: balance >= outputAmount, amount: outputAmount, recipient };
     }
 
-    const destinationWeth = this.findMatchingDestinationAsset(originAsset.address, route.origin, route.destination);
+    const destinationWeth = findMatchingDestinationAsset(
+      originAsset.address,
+      route.origin,
+      route.destination,
+      this.chains,
+      this.logger,
+    );
     if (!destinationWeth) {
       this.logger.debug('No destination WETH found, no callback', { route, event: decodedEvent });
       return { needsCallback: false };
@@ -454,7 +425,13 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
 
   // Helper methods for API calls
   protected async getSuggestedFees(route: RebalanceRoute, amount: string): Promise<SuggestedFeesResponse> {
-    const outputToken = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+    const outputToken = findMatchingDestinationAsset(
+      route.asset,
+      route.origin,
+      route.destination,
+      this.chains,
+      this.logger,
+    );
     if (!outputToken) {
       throw new Error('Could not find matching destination asset');
     }
@@ -484,15 +461,5 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     throw new Error(`Failed to ${context}: ${(error as any)?.message ?? ''}`);
-  }
-
-  // Helper for asset validation
-  protected validateAsset(asset: AssetConfiguration | undefined, expectedSymbol: string, context: string): void {
-    if (!asset) {
-      throw new Error(`Missing asset configs for ${context}`);
-    }
-    if (asset.symbol.toLowerCase() !== expectedSymbol.toLowerCase()) {
-      throw new Error(`Expected ${expectedSymbol}, but found ${asset.symbol}`);
-    }
   }
 }
