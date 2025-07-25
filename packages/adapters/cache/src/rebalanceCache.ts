@@ -7,7 +7,7 @@ export interface RouteRebalancingConfig {
   origin: number;
   asset: string;
   maximum: string;
-  slippage: number;
+  slippages: number[];
   preferences: string[];
 }
 export interface RebalancingConfig {
