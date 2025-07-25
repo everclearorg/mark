@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc --build ./tsconfig.json && tsc-alias -p tsconfig.json",
-    "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+    "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
     "dev": "ts-node-dev -r tsconfig-paths/register --respawn src/dev.ts",
     "lint": "eslint src",
     "lint:fix": "yarn lint --fix",
