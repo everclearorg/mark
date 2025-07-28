@@ -31,6 +31,8 @@ export class ChainService {
           providers: chainConfig.providers.map((url) => url),
           confirmations: 2,
           confirmationTimeout: config.retryDelay || 45000,
+          // NOTE: enable per chain pk overrides
+          privateKey: chainConfig.privateKey,
         },
       }),
       {},
