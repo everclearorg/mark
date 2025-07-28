@@ -4,6 +4,7 @@ import { ILogger } from '@mark/logger';
 import { createLoggingContext, ChainConfiguration, TransactionRequest } from '@mark/core';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
+export { EthWallet } from '@chimera-monorepo/chainservice';
 export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
   maxRetries?: number;
