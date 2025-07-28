@@ -565,6 +565,9 @@ export const parseChainConfigurations = async (
     const squadsAddress =
       configJson?.chains?.[chainId]?.squadsAddress ?? (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
 
+    // Get signing key from SSM (for non-EVM chains like Solana/Tron)
+    const privateKey = configJson?.chains?.[chainId]?.privateKey;
+
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
@@ -579,6 +582,7 @@ export const parseChainConfigurations = async (
       zodiacRoleKey,
       gnosisSafeAddress,
       squadsAddress,
+      privateKey,
     };
   }
 
