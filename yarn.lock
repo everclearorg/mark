@@ -4087,6 +4087,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/web3signer@workspace:packages/adapters/web3signer"
   dependencies:
+    "@chimera-monorepo/chainservice": 0.0.1-alpha.10
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
     "@types/node": 20.17.12
