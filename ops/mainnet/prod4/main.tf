@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    bucket = "mark-mainnet-prod4"
+    bucket = "mark-mainnet-prod-4"
     key    = "state"
     region = "us-east-1"
   }
