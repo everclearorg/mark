@@ -3,6 +3,7 @@ import {
   NewIntentParams,
   NewIntentWithPermit2Params,
   TransactionSubmissionType,
+  TransactionRequest,
   WalletType,
 } from '@mark/core';
 import { getERC20Contract } from './contracts';
@@ -17,11 +18,13 @@ import {
 } from './permit2';
 import { prepareMulticall } from './multicall';
 import { MarkAdapters } from '../init';
-import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import { checkAndApproveERC20 } from './erc20';
 import { submitTransactionWithLogging } from './transactions';
 import { Logger } from '@mark/logger';
 import { providers } from 'ethers';
+import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
+import { isSvmChain, SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, TOKEN_PROGRAM_ID, hexToBase58 } from '@mark/core';
+import { LookupTableNotFoundError } from '@mark/everclear';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -155,7 +158,7 @@ export const sendIntents = async (
   config: MarkConfiguration,
   requestId?: string,
 ): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
-  const { everclear, chainService, prometheus, logger } = adapters;
+  const { logger } = adapters;
 
   if (!intents.length) {
     logger.info('No intents to process', { invoiceId });
@@ -167,6 +170,22 @@ export const sendIntents = async (
   if (origins.size !== 1) {
     throw new Error('Cannot process multiple intents with different origin domains');
   }
+  const originChainId = intents[0].origin;
+  if (isSvmChain(originChainId)) {
+    return sendSvmIntents(invoiceId, intents, adapters, config, requestId);
+  }
+  // we handle default fallback case as evm intents
+  return sendEvmIntents(invoiceId, intents, adapters, config, requestId);
+};
+
+export const sendEvmIntents = async (
+  invoiceId: string,
+  intents: NewIntentParams[],
+  adapters: MarkAdapters,
+  config: MarkConfiguration,
+  requestId?: string,
+): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
+  const { everclear, chainService, prometheus, logger } = adapters;
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
   const originWalletConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
@@ -199,6 +218,18 @@ export const sendIntents = async (
       const walletConfig = getValidatedZodiacConfig(config.chains[destination], logger, { invoiceId, requestId });
       switch (walletConfig.walletType) {
         case WalletType.EOA:
+          // Sanity checks for intents towards SVM
+          if (isSvmChain(destination)) {
+            if (intent.to !== config.ownSolAddress) {
+              throw new Error(
+                `intent.to (${intent.to}) must be ownSolAddress (${config.ownSolAddress}) for destination ${destination}`,
+              );
+            }
+            if (intent.destinations.length !== 1) {
+              throw new Error(`intent.destination must be length 1 for intents towards SVM`);
+            }
+            break;
+          }
           if (intent.to.toLowerCase() !== config.ownAddress.toLowerCase()) {
             throw new Error(
               `intent.to (${intent.to}) must be ownAddress (${config.ownAddress}) for destination ${destination}`,

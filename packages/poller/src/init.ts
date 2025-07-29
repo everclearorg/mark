@@ -109,10 +109,12 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
 
   try {
     adapters = initializeAdapters(config, logger);
+    const addresses = await adapters.chainService.getAddress();
 
     logger.info('Starting invoice polling', {
       stage: config.stage,
       environment: config.environment,
+      addresses,
     });
 
     const context: ProcessingContext = {
