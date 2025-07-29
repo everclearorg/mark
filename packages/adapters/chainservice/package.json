@@ -27,7 +27,6 @@
     "@connext/nxtp-txservice": "2.5.0-alpha.6",
     "@mark/core": "workspace:*",
     "@mark/logger": "workspace:*",
-    "@solana/addresses": "^2.1.1",
     "ethers": "5.7.2"
   },
   "devDependencies": {
