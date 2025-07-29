@@ -477,6 +477,7 @@ export const sendSvmIntents = async (
             value: lookupTableTxData.value,
             data: lookupTableTxData.data,
             chainId: +originChainId,
+            from: sourceAddress,
           });
 
           logger.info('solana lookup table transaction sent successfully', {
@@ -533,6 +534,7 @@ export const sendSvmIntents = async (
         value: purchaseTxValue,
         data: purchaseTxData,
         chainId: +originChainId,
+        from: sourceAddress,
       });
       console.warn('debug tx', purchaseTx);
 
