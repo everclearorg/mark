@@ -6,8 +6,6 @@ export interface NewIntentParams {
   amount: string | number;
   callData: string;
   maxFee: string | number;
-  // svm intents only
-  user?: string;
 }
 
 export interface OrderParams {

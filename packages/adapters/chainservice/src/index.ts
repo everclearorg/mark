@@ -51,14 +51,6 @@ export class ChainService {
     });
   }
 
-  async getAddress() {
-    const addresses: { [chain: string]: string } = {};
-    for (const chain in this.config.chains) {
-      addresses[chain] = await this.txService.getAddress(+chain);
-    }
-    return addresses;
-  }
-
   async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<providers.TransactionReceipt> {
     const { requestContext } = createLoggingContext('submitAndMonitor');
     const context = { ...requestContext, origin: 'chainservice' };
@@ -73,8 +65,6 @@ export class ChainService {
       value: transaction.value ? transaction.value.toString() : '0',
       domain: parseInt(chainId),
       from: transaction.from ?? undefined,
-      // TODO: fill this for tron support
-      funcSig: '',
     };
     try {
       // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
@@ -119,18 +109,5 @@ export class ChainService {
     if (!chainConfig) return undefined;
 
     return chainConfig.assets.find((asset) => asset.address.toLowerCase() === assetAddress.toLowerCase());
-  }
-
-  deriveProgramAddress(programId: string, seeds: string[]) {
-    const addressEncoder = getAddressEncoder();
-    return getProgramDerivedAddress({
-      programAddress: programId as Address,
-      seeds: seeds.map((seed) => {
-        if (isAddress(seed)) {
-          return addressEncoder.encode(seed as Address);
-        }
-        return new Uint8Array(Buffer.from(seed));
-      }),
-    });
   }
 }
