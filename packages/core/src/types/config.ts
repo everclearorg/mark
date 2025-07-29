@@ -34,6 +34,7 @@ export interface ChainConfiguration {
   zodiacRoleKey?: string;
   gnosisSafeAddress?: string;
   squadsAddress?: string;
+  privateKey?: string;
 }
 
 export interface HubConfig {
