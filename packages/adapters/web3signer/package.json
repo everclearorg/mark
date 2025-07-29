@@ -23,6 +23,7 @@
     "test:unit": ""
   },
   "dependencies": {
+    "@chimera-monorepo/chainservice": "0.0.1-alpha.10",
     "@mark/core": "workspace:*",
     "@mark/logger": "workspace:*",
     "ethers": "5.7.2"

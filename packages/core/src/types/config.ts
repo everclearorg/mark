@@ -33,6 +33,8 @@ export interface ChainConfiguration {
   zodiacRoleModuleAddress?: string;
   zodiacRoleKey?: string;
   gnosisSafeAddress?: string;
+  squadsAddress?: string;
+  privateKey?: string;
 }
 
 export interface HubConfig {
@@ -54,6 +56,7 @@ export type Stage = 'development' | 'staging' | 'production';
 export enum SupportedBridge {
   Across = 'across',
   Binance = 'binance',
+  Near = 'near',
 }
 
 export interface RebalanceRoute {
@@ -63,7 +66,7 @@ export interface RebalanceRoute {
 }
 export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum
-  slippage: number; // If quoted to receive less than this, skip. using DBPS
+  slippages: number[]; // If quoted to receive less than this, skip. using DBPS. Array indices match preferences
   preferences: SupportedBridge[]; // Priority ordered platforms
   reserve?: string; // Amount to keep on origin chain during rebalancing
 }
@@ -90,6 +93,7 @@ export interface MarkConfiguration extends RebalanceConfig {
   };
   redis: RedisConfig;
   ownAddress: string;
+  ownSolAddress: string;
   stage: Stage;
   environment: Environment;
   logLevel: LogLevel;

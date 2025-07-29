@@ -6,6 +6,8 @@ on:
       - main
       - mainnet-prod
       - mainnet-prod-2
+      - mainnet-prod-3
+      - mainnet-prod-4
   pull_request:
 
 concurrency:
@@ -24,7 +26,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'yarn'
 
       - name: Check Yarn version
@@ -64,7 +66,7 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18.x
+          node-version: 20.x
           cache: 'yarn'
 
       - name: Check Yarn version
@@ -99,6 +101,30 @@ jobs:
           fi
     outputs:
       AWS_REGION: ${{ steps.set-aws-region-2.outputs.AWS_REGION }}
+
+  set-aws-region-3:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set AWS Region
+        id: set-aws-region-3
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/mainnet-prod-3" ]]; then
+            echo "AWS_REGION=sa-east-1" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      AWS_REGION: ${{ steps.set-aws-region-3.outputs.AWS_REGION }}
+
+  set-aws-region-4:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set AWS Region
+        id: set-aws-region-4
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/mainnet-prod-4" ]]; then
+            echo "AWS_REGION=ap-southeast-1" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      AWS_REGION: ${{ steps.set-aws-region-4.outputs.AWS_REGION }}
 
   build-and-push-admin-image:
     if: github.ref == 'refs/heads/mainnet-prod'
@@ -237,6 +263,144 @@ jobs:
           docker build -f docker/poller/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
+  build-and-push-admin-image-3:
+    if: github.ref == 'refs/heads/mainnet-prod-3'
+    env:
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region-3.outputs.AWS_REGION }}.amazonaws.com
+      REPOSITORY: mark-admin
+      IMAGE_TAG: mark-admin-${{ github.sha }}
+    runs-on: ubuntu-latest
+    needs: [set-aws-region-3]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ needs.set-aws-region-3.outputs.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Private ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        id: build-image
+        run: |
+          docker build -f docker/admin/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+  build-and-push-admin-image-4:
+    if: github.ref == 'refs/heads/mainnet-prod-4'
+    env:
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region-4.outputs.AWS_REGION }}.amazonaws.com
+      REPOSITORY: mark-admin
+      IMAGE_TAG: mark-admin-${{ github.sha }}
+    runs-on: ubuntu-latest
+    needs: [set-aws-region-4]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ needs.set-aws-region-4.outputs.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Private ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        id: build-image
+        run: |
+          docker build -f docker/admin/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+  build-and-push-poller-image-3:
+    if: github.ref == 'refs/heads/mainnet-prod-3'
+    env:
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region-3.outputs.AWS_REGION }}.amazonaws.com
+      REPOSITORY: mark-poller
+      IMAGE_TAG: mark-poller-${{ github.sha }}
+    runs-on: ubuntu-latest
+    needs: [set-aws-region-3]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ needs.set-aws-region-3.outputs.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Private ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        id: build-image
+        run: |
+          docker build -f docker/poller/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+  build-and-push-poller-image-4:
+    if: github.ref == 'refs/heads/mainnet-prod-4'
+    env:
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region-4.outputs.AWS_REGION }}.amazonaws.com
+      REPOSITORY: mark-poller
+      IMAGE_TAG: mark-poller-${{ github.sha }}
+    runs-on: ubuntu-latest
+    needs: [set-aws-region-4]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: ${{ needs.set-aws-region-4.outputs.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Private ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Build, tag, and push Docker image to Amazon ECR
+        id: build-image
+        run: |
+          docker build -f docker/poller/Dockerfile -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
   terraform-deploy-mainnet-prod:
     if: github.ref == 'refs/heads/mainnet-prod'
     runs-on: ubuntu-latest
@@ -344,6 +508,120 @@ jobs:
       - name: Show Admin API Endpoint URL
         if: success() # Only run if apply was successful
         working-directory: ./ops/mainnet/prod2
+        run: |
+          echo "Admin API Endpoint URL:"
+          terraform output -raw admin_api_endpoint
+
+  terraform-deploy-mainnet-prod-3:
+    if: github.ref == 'refs/heads/mainnet-prod-3'
+    runs-on: ubuntu-latest
+    needs:
+      - build-and-push-poller-image-3
+      - build-and-push-admin-image-3
+      - set-aws-region-3
+    env:
+      AWS_PROFILE: aws-deployer-connext
+      AWS_REGION: ${{ needs.set-aws-region-3.outputs.AWS_REGION }}
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region-3.outputs.AWS_REGION }}.amazonaws.com
+      POLLER_REPOSITORY: mark-poller
+      POLLER_IMAGE_TAG: mark-poller-${{ github.sha }}
+      ADMIN_REPOSITORY: mark-admin
+      ADMIN_IMAGE_TAG: mark-admin-${{ github.sha }}
+
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 1.5.7
+
+      - name: Setup Sops
+        uses: mdgreenwald/mozilla-sops-action@v1.2.0
+        with:
+          version: '3.7.2'
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: Fooji/create-aws-profile-action@v1
+        with:
+          profile: aws-deployer-connext
+          region: ${{ needs.set-aws-region-3.outputs.AWS_REGION }}
+          key: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          secret: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Terraform Init
+        working-directory: ./ops/mainnet/prod3
+        run: terraform init > /dev/null 2>&1
+
+      - name: Terraform Apply
+        working-directory: ./ops/mainnet/prod3
+        run: |
+          terraform apply \
+            -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
+            -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
+            -auto-approve > /dev/null 2>&1
+
+      - name: Show Admin API Endpoint URL
+        if: success() # Only run if apply was successful
+        working-directory: ./ops/mainnet/prod3
+        run: |
+          echo "Admin API Endpoint URL:"
+          terraform output -raw admin_api_endpoint
+
+  terraform-deploy-mainnet-prod-4:
+    if: github.ref == 'refs/heads/mainnet-prod-4'
+    runs-on: ubuntu-latest
+    needs:
+      - build-and-push-poller-image-4
+      - build-and-push-admin-image-4
+      - set-aws-region-4
+    env:
+      AWS_PROFILE: aws-deployer-connext
+      AWS_REGION: ${{ needs.set-aws-region-4.outputs.AWS_REGION }}
+      REGISTRY: 679752396206.dkr.ecr.${{ needs.set-aws-region-4.outputs.AWS_REGION }}.amazonaws.com
+      POLLER_REPOSITORY: mark-poller
+      POLLER_IMAGE_TAG: mark-poller-${{ github.sha }}
+      ADMIN_REPOSITORY: mark-admin
+      ADMIN_IMAGE_TAG: mark-admin-${{ github.sha }}
+
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 1.5.7
+
+      - name: Setup Sops
+        uses: mdgreenwald/mozilla-sops-action@v1.2.0
+        with:
+          version: '3.7.2'
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: Fooji/create-aws-profile-action@v1
+        with:
+          profile: aws-deployer-connext
+          region: ${{ needs.set-aws-region-4.outputs.AWS_REGION }}
+          key: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          secret: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Terraform Init
+        working-directory: ./ops/mainnet/prod4
+        run: terraform init > /dev/null 2>&1
+
+      - name: Terraform Apply
+        working-directory: ./ops/mainnet/prod4
+        run: |
+          terraform apply \
+            -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
+            -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
+            -auto-approve > /dev/null 2>&1
+
+      - name: Show Admin API Endpoint URL
+        if: success() # Only run if apply was successful
+        working-directory: ./ops/mainnet/prod4
         run: |
           echo "Admin API Endpoint URL:"
           terraform output -raw admin_api_endpoint

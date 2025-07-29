@@ -1,4 +1,4 @@
-import { getTokenAddressFromConfig, MarkConfiguration } from '@mark/core';
+import { getTokenAddressFromConfig, MarkConfiguration, base58ToHex, isSvmChain, isAddress } from '@mark/core';
 import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex, formatUnits } from 'viem';
 import { getHubStorageContract } from './contracts';
 
@@ -34,8 +34,9 @@ export const convertHubAmountToLocalDecimals = (
   domain: string,
   config: MarkConfiguration,
 ): string => {
+  const assetAddr = isAddress(asset) ? '0x' + base58ToHex(asset) : asset.toLowerCase();
   const assetDecimals =
-    (config.chains[domain]?.assets ?? []).find((a) => a.address.toLowerCase() === asset.toLowerCase())?.decimals ?? 18;
+    (config.chains[domain]?.assets ?? []).find((a) => a.address.toLowerCase() === assetAddr)?.decimals ?? 18;
   const [integer, decimal] = formatUnits(amount, 18 - assetDecimals).split('.');
   const ret = decimal ? (BigInt(integer) + 1n).toString() : integer;
   return ret;
@@ -68,6 +69,9 @@ export const isXerc20Supported = async (
   config: MarkConfiguration,
 ): Promise<boolean> => {
   for (const domain of domains) {
+    if (isSvmChain(domain)) {
+      continue;
+    }
     // Get the asset hash
     const assetHash = getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
     if (!assetHash) {
