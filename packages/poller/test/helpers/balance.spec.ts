@@ -102,7 +102,7 @@ describe('Wallet Balance Utilities', () => {
       const mockClient2 = {
         getBalance: stub().rejects(new Error('RPC error')),
       } as any;
-      
+
       stub(contractModule, 'createClient')
         .withArgs('1', mockConfig).returns(mockClient1)
         .withArgs('2', mockConfig).returns(mockClient2);
@@ -119,7 +119,7 @@ describe('Wallet Balance Utilities', () => {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
       } as any;
       stub(contractModule, 'createClient').returns(mockClient);
-      
+
       const mockTronWeb = {
         trx: {
           getAccountResources: stub().resolves({
@@ -137,15 +137,15 @@ describe('Wallet Balance Utilities', () => {
 
       // Should have 3 entries: 1 for regular gas, 2 for Tron (bandwidth + energy)
       expect(balances.size).to.equal(3);
-      
+
       // Check regular gas balance
       const gasBalance = findMapKey(balances, '1', GasType.Gas);
       expect(gasBalance?.toString()).to.equal('1000000000000000000');
-      
+
       // Check Tron bandwidth: (1000 - 100) + (2000 - 200) = 2700
       const bandwidthBalance = findMapKey(balances, '728126428', GasType.Bandwidth);
       expect(bandwidthBalance?.toString()).to.equal('2700');
-      
+
       // Check Tron energy: 5000 - 500 = 4500
       const energyBalance = findMapKey(balances, '728126428', GasType.Energy);
       expect(energyBalance?.toString()).to.equal('4500');
@@ -156,20 +156,20 @@ describe('Wallet Balance Utilities', () => {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
       } as any;
       stub(contractModule, 'createClient').returns(mockClient);
-      
+
       const balances = await getMarkGasBalances(mockConfigWithTron, chainService, prometheus);
 
       // Should have 3 entries: 1 for regular gas, 2 for Tron (bandwidth + energy) set to 0
       expect(balances.size).to.equal(3);
-      
+
       // Check regular gas balance (should work)
       const gasBalance = findMapKey(balances, '1', GasType.Gas);
       expect(gasBalance?.toString()).to.equal('1000000000000000000');
-      
+
       // Check Tron bandwidth (should be 0 due to missing TronWeb)
       const bandwidthBalance = findMapKey(balances, '728126428', GasType.Bandwidth);
       expect(bandwidthBalance?.toString()).to.equal('0');
-      
+
       // Check Tron energy (should be 0 due to missing TronWeb)
       const energyBalance = findMapKey(balances, '728126428', GasType.Energy);
       expect(energyBalance?.toString()).to.equal('0');

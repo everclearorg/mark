@@ -121,7 +121,7 @@ jobs:
         id: set-aws-region-4
         run: |
           if [[ "${{ github.ref }}" == "refs/heads/mainnet-prod-4" ]]; then
-            echo "AWS_REGION=ap-east-1" >> $GITHUB_OUTPUT
+            echo "AWS_REGION=ap-southeast-1" >> $GITHUB_OUTPUT
           fi
     outputs:
       AWS_REGION: ${{ steps.set-aws-region-4.outputs.AWS_REGION }}
@@ -578,17 +578,21 @@ jobs:
       POLLER_IMAGE_TAG: mark-poller-${{ github.sha }}
       ADMIN_REPOSITORY: mark-admin
       ADMIN_IMAGE_TAG: mark-admin-${{ github.sha }}
+
     steps:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
         with:
           terraform_version: 1.5.7
+
       - name: Setup Sops
         uses: mdgreenwald/mozilla-sops-action@v1.2.0
         with:
           version: '3.7.2'
+
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Configure AWS Credentials
         uses: Fooji/create-aws-profile-action@v1
         with:
@@ -596,9 +600,11 @@ jobs:
           region: ${{ needs.set-aws-region-4.outputs.AWS_REGION }}
           key: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
           secret: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
       - name: Terraform Init
         working-directory: ./ops/mainnet/prod4
         run: terraform init > /dev/null 2>&1
+
       - name: Terraform Apply
         working-directory: ./ops/mainnet/prod4
         run: |
@@ -606,8 +612,9 @@ jobs:
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
             -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
             -auto-approve > /dev/null 2>&1
+
       - name: Show Admin API Endpoint URL
-        if: success()
+        if: success() # Only run if apply was successful
         working-directory: ./ops/mainnet/prod4
         run: |
           echo "Admin API Endpoint URL:"

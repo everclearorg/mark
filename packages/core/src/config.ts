@@ -566,6 +566,8 @@ export const parseChainConfigurations = async (
     const squadsAddress =
       configJson?.chains?.[chainId]?.squadsAddress ?? (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
 
+    const privateKey = configJson?.chains?.[chainId]?.privateKey ?? (await fromEnv(`CHAIN_${chainId}_PRIVATE_KEY`));
+
     chains[chainId] = {
       providers,
       assets: assets.filter((asset) => supportedAssets.includes(asset.symbol) || asset.isNative),
@@ -580,8 +582,8 @@ export const parseChainConfigurations = async (
       zodiacRoleKey,
       gnosisSafeAddress,
       squadsAddress,
+      privateKey,
       ...(isTvmChain(chainId) && {
-        privateKey: configJson?.chains?.[chainId]?.privateKey ?? (await fromEnv(`WEB3_SIGNER_PRIVATE_KEY`)),
         bandwidthThreshold: configJson?.chains?.[chainId]?.bandwidthThreshold,
         energyThreshold: configJson?.chains?.[chainId]?.energyThreshold,
       }),
