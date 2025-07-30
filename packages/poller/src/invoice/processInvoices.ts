@@ -554,32 +554,27 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   start = getTimeSeconds();
 
   // Remove cached purchases that no longer apply to an invoice.
-  const targetsToRemove = (
-    await Promise.all(
-      allCachedPurchases.map(async (purchase: PurchaseAction) => {
-        if (!purchase.purchase.intentId) {
-          return undefined;
-        }
-        // Remove purchases that are invoiced or settled
-        const status = await everclear.intentStatus(purchase.purchase.intentId!);
-        const spentStatuses = [
-          IntentStatus.INVOICED,
-          IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
-          IntentStatus.SETTLED,
-          IntentStatus.SETTLED_AND_COMPLETED,
-          IntentStatus.DISPATCHED_HUB,
-          IntentStatus.DISPATCHED_UNSUPPORTED,
-          IntentStatus.UNSUPPORTED,
-          IntentStatus.UNSUPPORTED_RETURNED,
-        ];
-        if (!spentStatuses.includes(status)) {
-          // Purchase intent could still be used to pay down target invoice
-          return undefined;
-        }
-        return purchase.target.intent_id;
-      }),
-    )
-  ).filter((x: string | undefined) => !!x);
+  const purchasesWithIntentIds = allCachedPurchases.filter((purchase: PurchaseAction) => purchase.purchase.intentId);
+  const intentIds = purchasesWithIntentIds.map((purchase: PurchaseAction) => purchase.purchase.intentId!);
+  const intentStatusesMap = await everclear.intentStatuses(intentIds);
+
+  const spentStatuses = [
+    IntentStatus.INVOICED,
+    IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
+    IntentStatus.SETTLED,
+    IntentStatus.SETTLED_AND_COMPLETED,
+    IntentStatus.DISPATCHED_HUB,
+    IntentStatus.DISPATCHED_UNSUPPORTED,
+    IntentStatus.UNSUPPORTED,
+    IntentStatus.UNSUPPORTED_RETURNED,
+  ];
+
+  const targetsToRemove = purchasesWithIntentIds
+    .filter((purchase: PurchaseAction) => {
+      const status = intentStatusesMap.get(purchase.purchase.intentId!) || IntentStatus.NONE;
+      return spentStatuses.includes(status);
+    })
+    .map((purchase: PurchaseAction) => purchase.target.intent_id);
 
   const pendingPurchases = allCachedPurchases.filter(
     ({ target }: PurchaseAction) => !targetsToRemove.includes(target.intent_id),
