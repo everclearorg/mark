@@ -62,13 +62,13 @@ variable "relayer_api_key" {
 variable "supported_settlement_domains" {
   description = "Comma-separated list of supported settlement domains"
   type        = string
-  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,33139,2020,80094,100,5000,146,57073"
+  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,33139,2020,80094,100,5000,146,57073,1399811149"
 }
 
 variable "supported_asset_symbols" {
   description = "Comma-separated list of supported asset symbols"
   type        = string
-  default     = "WETH,cbBTC"
+  default     = "WETH"
 }
 
 variable "log_level" {
@@ -80,7 +80,7 @@ variable "log_level" {
 variable "chain_ids" {
   description = "Comma-separated list of chain IDs"
   type        = string
-  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,33139,2020,80094,100,5000,146,57073"
+  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,33139,2020,80094,100,5000,146,57073,1399811149"
 }
 variable "zone_id" {
   description = "Route 53 hosted zone ID for the everclear.ninja domain"
