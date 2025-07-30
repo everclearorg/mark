@@ -6,6 +6,7 @@ import * as assetModule from '../../src/helpers/asset';
 import * as zodiacModule from '../../src/helpers/zodiac';
 import { AssetConfiguration, MarkConfiguration, WalletType } from '@mark/core';
 import { PrometheusAdapter } from '@mark/prometheus';
+import { ChainService } from '@mark/chainservice';
 
 describe('Wallet Balance Utilities', () => {
   const mockAssetConfig: AssetConfiguration = {
@@ -46,9 +47,11 @@ describe('Wallet Balance Utilities', () => {
   } as unknown as MarkConfiguration;
 
   let prometheus: SinonStubbedInstance<PrometheusAdapter>;
+  let mockChainService: SinonStubbedInstance<ChainService>;
 
   beforeEach(() => {
     prometheus = createStubInstance(PrometheusAdapter);
+    mockChainService = createStubInstance(ChainService);
   });
 
   describe('getMarkGasBalances', () => {
@@ -57,7 +60,7 @@ describe('Wallet Balance Utilities', () => {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
       } as any);
 
-      const balances = await getMarkGasBalances(mockConfig, prometheus);
+      const balances = await getMarkGasBalances(mockConfig, mockChainService as any, prometheus);
 
       expect(balances.size).to.equal(Object.keys(mockConfig.chains).length);
       for (const chain of Object.keys(mockConfig.chains)) {
@@ -75,7 +78,7 @@ describe('Wallet Balance Utilities', () => {
           getBalance: stub().rejects(new Error('RPC error')),
         } as any);
 
-      const balances = await getMarkGasBalances(mockConfig, prometheus);
+      const balances = await getMarkGasBalances(mockConfig, mockChainService as any, prometheus);
       expect(balances.get('1')?.toString()).to.equal('1000000000000000000');
       expect(balances.get('2')?.toString()).to.equal('0'); // Should return 0 for failed chain
     });
@@ -94,7 +97,7 @@ describe('Wallet Balance Utilities', () => {
 
       stub(assetModule, 'getTickers').returns(mockTickers);
 
-      const balances = await getMarkBalances(mockConfig, prometheus);
+      const balances = await getMarkBalances(mockConfig, mockChainService as any, prometheus);
 
       expect(balances.size).to.equal(mockTickers.length);
       for (const ticker of mockTickers) {
@@ -135,7 +138,7 @@ describe('Wallet Balance Utilities', () => {
         .withArgs(mockConfigWithZodiac, '1', '0xtest').resolves(mockContract1 as any)
         .withArgs(mockConfigWithZodiac, '2', '0xtest').resolves(mockContract2 as any);
 
-      const balances = await getMarkBalances(mockConfigWithZodiac, prometheus);
+      const balances = await getMarkBalances(mockConfigWithZodiac, mockChainService as any, prometheus);
 
       // Verify correct addresses were used for balance checks
       expect(mockBalanceOf1.calledWith(['0xGnosisSafe'])).to.be.true;
@@ -178,7 +181,7 @@ describe('Wallet Balance Utilities', () => {
         },
       } as any);
 
-      const balances = await getMarkBalances(configWithSixDecimals, prometheus);
+      const balances = await getMarkBalances(configWithSixDecimals, mockChainService as any, prometheus);
       const assetBalances = balances.get(sixDecimalAsset.tickerHash);
 
       expect(assetBalances?.get('1')?.toString()).to.equal(expectedBalance.toString());
@@ -208,7 +211,7 @@ describe('Wallet Balance Utilities', () => {
         },
       } as any);
 
-      const balances = await getMarkBalances(configWithoutAddress, prometheus);
+      const balances = await getMarkBalances(configWithoutAddress, mockChainService as any, prometheus);
       expect(balances.get(mockAssetConfig.tickerHash)?.get('1')).to.be.undefined;
       expect(prometheus.updateChainBalance.calledOnce).to.be.false;
     });
@@ -217,7 +220,7 @@ describe('Wallet Balance Utilities', () => {
       stub(assetModule, 'getTickers').returns(mockTickers);
       stub(contractModule, 'getERC20Contract').rejects(new Error('Contract error'));
 
-      const balances = await getMarkBalances(mockConfig, prometheus);
+      const balances = await getMarkBalances(mockConfig, mockChainService as any, prometheus);
       const domainBalances = balances.get(mockAssetConfig.tickerHash);
       expect(domainBalances?.get('1')?.toString()).to.equal('0'); // Should return 0 for failed contract
     });
