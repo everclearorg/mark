@@ -1314,7 +1314,7 @@ describe('Decimal Handling', () => {
         routes: [{
           origin: 42161, destination: 10, asset: MOCK_USDC_ADDRESS,
           maximum: '1000000000000000000', // 1 USDC in 18 decimal format
-          slippage: 50, preferences: [SupportedBridge.Binance],
+          slippages: [50], preferences: [SupportedBridge.Binance],
         }],
         ownAddress: '0x1111111111111111111111111111111111111111' as `0x${string}`,
         chains: {
