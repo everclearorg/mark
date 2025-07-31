@@ -1,7 +1,7 @@
 variable "region" {
   description = "AWS region"
   type        = string
-  default     = "ap-northeast-1"
+  default     = "ap-southeast-1"
 }
 
 variable "environment" {
@@ -13,7 +13,7 @@ variable "environment" {
 variable "stage" {
   description = "Stage name"
   type        = string
-  default     = "prod"
+  default     = "prod4"
 }
 
 variable "domain" {
@@ -68,7 +68,7 @@ variable "supported_settlement_domains" {
 variable "supported_asset_symbols" {
   description = "Comma-separated list of supported asset symbols"
   type        = string
-  default     = "WETH"
+  default     = "WBTC,cbBTC"
 }
 
 variable "log_level" {
@@ -89,7 +89,7 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:ap-northeast-1:679752396206:certificate/0c43e36e-702c-4623-94d1-4d2a1cdfa302"
+  default = "arn:aws:acm:ap-southeast-1:679752396206:certificate/b7d237ce-cf7e-46e6-b91c-b1240c629b68"
 }
 
 variable "admin_image_uri" {
