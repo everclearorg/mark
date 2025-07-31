@@ -313,9 +313,17 @@ export class NearBridgeAdapter implements BridgeAdapter {
         statusData,
       });
 
-      const fillTx = statusData.swapDetails.destinationChainTxHashes[0].hash;
+      const destinationTxHashes = statusData.swapDetails.destinationChainTxHashes;
+      if (!destinationTxHashes || destinationTxHashes.length === 0) {
+        this.logger.debug('No destination transaction hashes available yet', {
+          status: statusData.status,
+        });
+        return undefined;
+      }
+
+      const fillTx = destinationTxHashes[0].hash;
       if (!fillTx) {
-        this.logger.warn('No fill transaction found', {
+        this.logger.warn('No fill transaction hash found', {
           statusData,
         });
         return undefined;
