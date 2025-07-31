@@ -22,6 +22,7 @@ import {
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { PurchaseAction } from '@mark/cache';
+import { TronWeb } from 'tronweb';
 
 export const MAX_DESTINATIONS = 10; // enforced onchain at 10
 export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
@@ -528,11 +529,25 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Query all of Mark's gas balances across chains
   logger.info('Getting mark gas balances', { requestId, chains: Object.keys(config.chains) });
   start = getTimeSeconds();
-  const gasBalances = await getMarkGasBalances(config, chainService, prometheus);
+  let tronWeb: TronWeb | undefined = undefined;
+  const tronChainId = Object.keys(config.chains).find((id) => id === '728126428');
+  if (tronChainId) {
+    tronWeb = new TronWeb({
+      fullHost: config.chains[tronChainId].providers[0],
+    });
+  }
+  const gasBalances = await getMarkGasBalances(config, chainService, prometheus, tronWeb);
   logGasThresholds(gasBalances, config, logger);
   logger.debug('Retrieved gas balances', {
     requestId,
-    gasBalances: jsonifyMap(gasBalances),
+    gasBalances: jsonifyMap(
+      new Map(
+        [...gasBalances.entries()].map(([key, value]) => [
+          key.gasType === 'gas' ? key.chainId : `${key.chainId}:${key.gasType}`,
+          value,
+        ]),
+      ),
+    ),
     duration: getTimeSeconds() - start,
   });
 
@@ -554,32 +569,27 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   start = getTimeSeconds();
 
   // Remove cached purchases that no longer apply to an invoice.
-  const targetsToRemove = (
-    await Promise.all(
-      allCachedPurchases.map(async (purchase: PurchaseAction) => {
-        if (!purchase.purchase.intentId) {
-          return undefined;
-        }
-        // Remove purchases that are invoiced or settled
-        const status = await everclear.intentStatus(purchase.purchase.intentId!);
-        const spentStatuses = [
-          IntentStatus.INVOICED,
-          IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
-          IntentStatus.SETTLED,
-          IntentStatus.SETTLED_AND_COMPLETED,
-          IntentStatus.DISPATCHED_HUB,
-          IntentStatus.DISPATCHED_UNSUPPORTED,
-          IntentStatus.UNSUPPORTED,
-          IntentStatus.UNSUPPORTED_RETURNED,
-        ];
-        if (!spentStatuses.includes(status)) {
-          // Purchase intent could still be used to pay down target invoice
-          return undefined;
-        }
-        return purchase.target.intent_id;
-      }),
-    )
-  ).filter((x: string | undefined) => !!x);
+  const purchasesWithIntentIds = allCachedPurchases.filter((purchase: PurchaseAction) => purchase.purchase.intentId);
+  const intentIds = purchasesWithIntentIds.map((purchase: PurchaseAction) => purchase.purchase.intentId!);
+  const intentStatusesMap = await everclear.intentStatuses(intentIds);
+
+  const spentStatuses = [
+    IntentStatus.INVOICED,
+    IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
+    IntentStatus.SETTLED,
+    IntentStatus.SETTLED_AND_COMPLETED,
+    IntentStatus.DISPATCHED_HUB,
+    IntentStatus.DISPATCHED_UNSUPPORTED,
+    IntentStatus.UNSUPPORTED,
+    IntentStatus.UNSUPPORTED_RETURNED,
+  ];
+
+  const targetsToRemove = purchasesWithIntentIds
+    .filter((purchase: PurchaseAction) => {
+      const status = intentStatusesMap.get(purchase.purchase.intentId!) || IntentStatus.NONE;
+      return spentStatuses.includes(status);
+    })
+    .map((purchase: PurchaseAction) => purchase.target.intent_id);
 
   const pendingPurchases = allCachedPurchases.filter(
     ({ target }: PurchaseAction) => !targetsToRemove.includes(target.intent_id),

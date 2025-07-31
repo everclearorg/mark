@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc --build ./tsconfig.json",
-    "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+    "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
     "dev": "yarn dev",
     "lint": "yarn lint:package && yarn lint:ts",
     "lint:fix": "yarn lint --fix",
@@ -23,7 +23,7 @@
     "test:unit": ""
   },
   "dependencies": {
-    "@chimera-monorepo/chainservice": "0.0.1-alpha.10",
+    "@chimera-monorepo/chainservice": "0.0.1-alpha.11",
     "@mark/core": "workspace:*",
     "@mark/logger": "workspace:*",
     "ethers": "5.7.2"

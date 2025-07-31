@@ -101,6 +101,10 @@ export interface IntentStatusResponse {
   };
 }
 
+export interface IntentStatusesResponse {
+  intents: IntentStatusResponse[];
+}
+
 export class EverclearAdapter {
   private readonly apiUrl: string;
   private readonly logger: Logger;
@@ -178,6 +182,47 @@ export class EverclearAdapter {
       });
       return IntentStatus.NONE;
     }
+  }
+
+  async intentStatuses(intentIds: string[]): Promise<Map<string, IntentStatus>> {
+    const BATCH_SIZE = 100;
+    const result = new Map<string, IntentStatus>();
+
+    // Process intent IDs in batches
+    for (let i = 0; i < intentIds.length; i += BATCH_SIZE) {
+      const batch = intentIds.slice(i, i + BATCH_SIZE);
+
+      try {
+        const url = `${this.apiUrl}/intent/status`;
+        const { data } = await axiosPost<IntentStatusesResponse>(url, { intent_ids: batch });
+
+        // Map the results to intent ID -> status
+        for (const intentResponse of data.intents) {
+          result.set(intentResponse.intent.intent_id, intentResponse.intent.status);
+        }
+
+        // Handle any intent IDs that weren't returned (set to NONE)
+        for (const intentId of batch) {
+          if (!result.has(intentId)) {
+            result.set(intentId, IntentStatus.NONE);
+          }
+        }
+      } catch (e) {
+        this.logger.error('Failed to get intent statuses for batch', {
+          error: jsonifyError(e),
+          batchSize: batch.length,
+          batchStartIndex: i,
+          intentIds: batch,
+        });
+
+        // Set all intents in this batch to NONE on error
+        for (const intentId of batch) {
+          result.set(intentId, IntentStatus.NONE);
+        }
+      }
+    }
+
+    return result;
   }
 
   async getCustodiedAssets(tickerHash: string, domain: string): Promise<CustodiedAssetsResponse> {
