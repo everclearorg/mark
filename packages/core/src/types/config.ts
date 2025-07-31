@@ -91,6 +91,9 @@ export interface MarkConfiguration extends RebalanceConfig {
     apiKey?: string;
     apiSecret?: string;
   };
+  near: {
+    jwtToken?: string;
+  };
   redis: RedisConfig;
   ownAddress: string;
   ownSolAddress: string;
