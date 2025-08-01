@@ -5,6 +5,7 @@ import { NearBridgeAdapter } from './near';
 import { SupportedBridge, MarkConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
+import { CctpBridgeAdapter } from './cctp/cctp';
 
 export { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';
 export { NearBridgeAdapter } from './near';
@@ -40,6 +41,10 @@ export class RebalanceAdapter {
           this.logger,
           this.rebalanceCache,
         );
+      case SupportedBridge.CCTPV1:
+        return new CctpBridgeAdapter('v1', this.config.chains, this.logger);
+      case SupportedBridge.CCTPV2:
+        return new CctpBridgeAdapter('v2', this.config.chains, this.logger);
       case SupportedBridge.Near:
         return new NearBridgeAdapter(this.config.chains, this.logger);
       default:
