@@ -193,7 +193,7 @@ export class EverclearAdapter {
       const batch = intentIds.slice(i, i + BATCH_SIZE);
 
       try {
-        const url = `${this.apiUrl}/intent/status`;
+        const url = `${this.apiUrl}/intents/status`;
         const { data } = await axiosPost<IntentStatusesResponse>(url, { intent_ids: batch });
 
         // Map the results to intent ID -> status
