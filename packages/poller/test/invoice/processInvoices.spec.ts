@@ -193,7 +193,7 @@ describe('Invoice Processing', () => {
       isXerc20SupportedStub.resolves(false);
 
       // Make invoice SETTLED, which means it should be removed
-      mockDeps.everclear.intentStatus.resolves(IntentStatus.SETTLED);
+      mockDeps.everclear.intentStatuses.resolves(new Map([['0x123', IntentStatus.SETTLED]]));
 
       const invoices = [createMockInvoice()];
 
@@ -237,7 +237,7 @@ describe('Invoice Processing', () => {
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
       mockDeps.purchaseCache.getAllPurchases.resolves([]);
-      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      mockDeps.everclear.intentStatuses.resolves(new Map());
 
       const invoice = createMockInvoice({ discountBps: 7 });
 
@@ -418,7 +418,7 @@ describe('Invoice Processing', () => {
       getMarkGasBalancesStub.resolves(new Map());
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
-      mockDeps.everclear.intentStatus.resolves(IntentStatus.SETTLED);
+      mockDeps.everclear.intentStatuses.resolves(new Map([['0x123', IntentStatus.SETTLED]]));
 
       // Setup cache data for removal
       mockDeps.purchaseCache.getAllPurchases.resolves([{
@@ -485,7 +485,7 @@ describe('Invoice Processing', () => {
 
       // Mock cache with no existing purchases
       mockDeps.purchaseCache.getAllPurchases.resolves([]);
-      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      mockDeps.everclear.intentStatuses.resolves(new Map());
 
       // Mock economy data with pending intents for domain1
       mockDeps.everclear.fetchEconomyData.callsFake(async (domain, tickerHash) => {
@@ -574,7 +574,7 @@ describe('Invoice Processing', () => {
 
       // Mock cache with no existing purchases
       mockDeps.purchaseCache.getAllPurchases.resolves([]);
-      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      mockDeps.everclear.intentStatuses.resolves(new Map());
 
       // Mock economy data fetch - domain1 succeeds, domain2 fails
       mockDeps.everclear.fetchEconomyData.callsFake(async (domain, tickerHash) => {
@@ -672,7 +672,7 @@ describe('Invoice Processing', () => {
 
       // Mock cache with no existing purchases
       mockDeps.purchaseCache.getAllPurchases.resolves([]);
-      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      mockDeps.everclear.intentStatuses.resolves(new Map());
 
       // Mock economy data fetch with null incomingIntents
       mockDeps.everclear.fetchEconomyData.resolves({
@@ -1629,7 +1629,7 @@ describe('Invoice Processing', () => {
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
       mockDeps.purchaseCache.getAllPurchases.resolves([]);
-      mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+      mockDeps.everclear.intentStatuses.resolves(new Map());
 
       const invoice1 = createMockInvoice({
         intent_id: '0x123',
@@ -1828,13 +1828,10 @@ describe('Invoice Processing', () => {
 
       mockDeps.purchaseCache.getAllPurchases.resolves(pendingPurchases);
 
-      mockDeps.everclear.intentStatus
-        .withArgs('0xexisting1')
-        .resolves(IntentStatus.SETTLED);
-
-      mockDeps.everclear.intentStatus
-        .withArgs('0xexisting2')
-        .resolves(IntentStatus.ADDED);
+      mockDeps.everclear.intentStatuses.resolves(new Map([
+        ['0xexisting1', IntentStatus.SETTLED],
+        ['0xexisting2', IntentStatus.ADDED]
+      ]));
 
       await processInvoices(mockContext, [invoice]);
 

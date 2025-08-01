@@ -1,5 +1,7 @@
 import { GetExecutionStatusResponse } from '@defuse-protocol/one-click-sdk-typescript';
 
+export const NEAR_BASE_URL = 'https://1click.chaindefuser.com';
+
 // Configuration interfaces
 export interface NearAssetMapping {
   chainId: number;
