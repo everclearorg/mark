@@ -323,15 +323,19 @@ export class CctpBridgeAdapter implements BridgeAdapter {
       // V1: https://iris-api.circle.com/attestations/{messageHash}
       try {
         const response = await fetch(`https://iris-api.circle.com/attestations/${messageHash}`);
-        if (!response.ok) throw new Error('Attestation fetch failed');
-        const attestationResponse = await response.json();
-        if (attestationResponse.status === 'complete') {
-          return true;
-        } else {
-          throw new Error('Attestation not complete');
+        if (!response.ok) {
+          // 404 is expected when attestation isn't ready yet
+          if (response.status === 404) {
+            return false;
+          }
+          throw new Error(`Attestation fetch failed with status: ${response.status}`);
         }
+        const attestationResponse = await response.json();
+        return attestationResponse.status === 'complete';
       } catch (e) {
-        throw new Error(`Attestation fetch failed: ${e}`);
+        // Network errors or other issues
+        this.logger.warn(`Failed to poll attestation: ${e}`);
+        return false;
       }
     } else {
       // V2: https://iris-api.circle.com/v2/messages/{domain}?transactionHash={messageHash}
@@ -339,13 +343,16 @@ export class CctpBridgeAdapter implements BridgeAdapter {
         const axios = (await import('axios')).default;
         const url = `https://iris-api.circle.com/v2/messages/${domain}?transactionHash=${messageHash}`;
         const response = await axios.get(url);
-        if (response.data?.messages?.[0]?.status === 'complete') {
-          return true;
-        } else {
-          throw new Error('Attestation not complete');
-        }
+        return response.data?.messages?.[0]?.status === 'complete';
       } catch (e) {
-        throw new Error(`Attestation fetch failed: ${e}`);
+        // For axios errors, check if it's a 404 (expected when attestation isn't ready)
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        if (errorMessage.includes('404')) {
+          return false;
+        }
+        // Log other errors but don't throw
+        this.logger.warn(`Failed to poll attestation: ${errorMessage}`);
+        return false;
       }
     }
   }
