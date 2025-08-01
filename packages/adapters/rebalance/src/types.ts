@@ -6,6 +6,7 @@ export enum RebalanceTransactionMemo {
   Approval = 'Approval',
   Wrap = 'Wrap',
   Unwrap = 'Unwrap',
+  Mint = 'Mint',
 }
 
 export interface MemoizedTransactionRequest {

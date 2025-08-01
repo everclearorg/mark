@@ -58,6 +58,8 @@ export type Stage = 'development' | 'staging' | 'production';
 export enum SupportedBridge {
   Across = 'across',
   Binance = 'binance',
+  CCTPV1 = 'cctpv1',
+  CCTPV2 = 'cctpv2',
   Near = 'near',
 }
 
@@ -98,6 +100,9 @@ export interface MarkConfiguration extends RebalanceConfig {
   binance: {
     apiKey?: string;
     apiSecret?: string;
+  };
+  near: {
+    jwtToken?: string;
   };
   redis: RedisConfig;
   ownAddress: string;
