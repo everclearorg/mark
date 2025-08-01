@@ -168,6 +168,9 @@ const mockConfig: MarkConfiguration = {
     apiKey: 'test-api-key',
     apiSecret: 'test-api-secret',
   },
+  near: {
+    jwtToken: 'test-jwt-token',
+  },
   redis: {
     host: 'localhost',
     port: 6379,
