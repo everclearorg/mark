@@ -141,7 +141,12 @@ describe('NearBridgeAdapter Integration', () => {
         // mockLogger.error.mockReset();
 
         // Create fresh adapter instance
-        adapter = new TestNearBridgeAdapter(mockChains as Record<string, ChainConfiguration>, mockLogger);
+        adapter = new TestNearBridgeAdapter(
+            mockChains as Record<string, ChainConfiguration>,
+            process.env.NEAR_JWT_TOKEN || 'test-jwt-token',
+            process.env.NEAR_API_BASE_URL,
+            mockLogger,
+        );
     });
 
     afterEach(() => {
@@ -201,7 +206,7 @@ describe('NearBridgeAdapter Integration', () => {
 
             try {
                 const result = await adapter.getSuggestedFees(
-                    route, 
+                    route,
                     REAL_TRANSACTIONS.baseToArbitrum.sender, // Use real sender address
                     REAL_TRANSACTIONS.baseToArbitrum.recipient, // Use real recipient address
                     '1000000000000000000'
@@ -289,12 +294,12 @@ describe('NearBridgeAdapter Integration', () => {
         it('should get real token balance', async () => {
             // Use a real address that we know has balances
             const testAddress = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'; // Vitalik's current address
-            
+
             try {
                 // Test native ETH balance on Ethereum
                 const ethProvider = mockChains['1'].providers[0];
                 const ethClient = createPublicClient({ transport: http(ethProvider) });
-                
+
                 const ethBalance = await adapter.getTokenBalance(
                     '0x0000000000000000000000000000000000000000', // ETH address
                     testAddress,
@@ -315,7 +320,7 @@ describe('NearBridgeAdapter Integration', () => {
                 // Test native ETH balance on Base
                 const baseProvider = mockChains['8453'].providers[0];
                 const baseClient = createPublicClient({ transport: http(baseProvider) });
-                
+
                 const baseEthBalance = await adapter.getTokenBalance(
                     '0x0000000000000000000000000000000000000000', // ETH address
                     testAddress,
@@ -327,7 +332,7 @@ describe('NearBridgeAdapter Integration', () => {
                 // Test USDC balance on Arbitrum
                 const arbProvider = mockChains['42161'].providers[0];
                 const arbClient = createPublicClient({ transport: http(arbProvider) });
-                
+
                 const arbUsdcBalance = await adapter.getTokenBalance(
                     mockAssets['USDC_ARB'].address,
                     testAddress,

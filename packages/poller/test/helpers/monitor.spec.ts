@@ -122,6 +122,29 @@ describe('Monitor Helpers', () => {
             // Should not log error since the balance is equal to the threshold
             expect(logger.error.notCalled).to.be.true;
         });
+
+        it('should handle when domain has no assets configured', () => {
+            const configWithEmptyAssets = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        // assets is undefined or empty array
+                        gasThreshold: '5000'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const balances = new Map([
+                ['TICKER1', new Map([
+                    ['domain1', BigInt(1000)]
+                ])]
+            ]);
+
+            logBalanceThresholds(balances, configWithEmptyAssets, logger);
+
+            expect(logger.warn.calledOnce).to.be.true;
+            expect(logger.warn.firstCall.args[0]).to.equal('Asset not configured');
+        });
     });
 
     describe('logGasThresholds', () => {
@@ -180,6 +203,35 @@ describe('Monitor Helpers', () => {
             expect(logger.error.called).to.be.true;
             const errorCall = logger.error.getCalls().find(
                 call => call.args[0] === 'No configured gas threshold'
+            );
+            expect(errorCall).to.not.be.undefined;
+        });
+
+        it('should handle when threshold is undefined', () => {
+            // Create a config with a chain that has no gas threshold property at all
+            const configWithUndefinedThreshold = {
+                ...config,
+                chains: {
+                    'domain3': {
+                        assets: []
+                        // gasThreshold is not defined - will default to '0'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                ['domain3', BigInt(0)]  // Set to 0 to trigger the error condition
+            ]);
+
+            // Reset logger before this test
+            logger = createStubInstance(Logger);
+
+            logGasThresholds(gas, configWithUndefinedThreshold, logger);
+
+            // When gasThreshold is undefined, it defaults to '0', and since gas is 0 (not > 0), it should log error
+            expect(logger.error.called).to.be.true;
+            const errorCall = logger.error.getCalls().find(
+                call => call.args[0] === 'Gas balance is below threshold'
             );
             expect(errorCall).to.not.be.undefined;
         });

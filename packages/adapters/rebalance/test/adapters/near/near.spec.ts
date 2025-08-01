@@ -4,11 +4,9 @@ import { AssetConfiguration, ChainConfiguration, RebalanceRoute, cleanupHttpConn
 import { jsonifyError, Logger } from '@mark/logger';
 import { createPublicClient, TransactionReceipt, encodeFunctionData, zeroAddress, erc20Abi } from 'viem';
 import { NearBridgeAdapter } from '../../../src/adapters/near/near';
-import { DepositStatusResponse } from '../../../src/adapters/near/types';
 import { getDepositFromLogs, parseDepositLogs } from '../../../src/adapters/near/utils';
 import { RebalanceTransactionMemo } from '../../../src/types';
 import { GetExecutionStatusResponse, OneClickService } from '@defuse-protocol/one-click-sdk-typescript';
-import { mock } from 'node:test';
 
 // Mock the external dependencies
 jest.mock('viem');
@@ -34,6 +32,10 @@ jest.mock('../../../src/adapters/near/utils', () => ({
   parseDepositLogs: jest.fn(),
 }));
 jest.mock('@defuse-protocol/one-click-sdk-typescript', () => ({
+  OpenAPI: {
+    BASE: '',
+    TOKEN: '',
+  },
   OneClickService: {
     getQuote: jest.fn(),
     getExecutionStatus: jest.fn(),
@@ -304,7 +306,12 @@ describe('NearBridgeAdapter', () => {
     mockLogger.error.mockReset();
 
     // Create fresh adapter instance
-    adapter = new TestNearBridgeAdapter(mockChains as Record<string, ChainConfiguration>, mockLogger);
+    adapter = new TestNearBridgeAdapter(
+      mockChains as Record<string, ChainConfiguration>,
+      'test-jwt-token',
+      'https://1click.chaindefuser.com',
+      mockLogger,
+    );
   });
 
   afterEach(() => {
@@ -319,6 +326,17 @@ describe('NearBridgeAdapter', () => {
     it('should initialize correctly', () => {
       expect(adapter).toBeDefined();
       expect(mockLogger.debug).toHaveBeenCalledWith('Initializing NearBridgeAdapter');
+    });
+
+    it('should throw error when JWT token is not provided', () => {
+      expect(() => {
+        new TestNearBridgeAdapter(
+          mockChains as Record<string, ChainConfiguration>,
+          undefined,
+          'https://1click.chaindefuser.com',
+          mockLogger,
+        );
+      }).toThrow('NEAR JWT token is required. Please set NEAR_JWT_TOKEN environment variable.');
     });
   });
 
@@ -1073,7 +1091,12 @@ describe('NearBridgeAdapter', () => {
         ...mockChains,
         '42161': { ...mockChains['42161'], providers: [] },
       };
-      adapter = new TestNearBridgeAdapter(mockChainsWithoutProvider as Record<string, ChainConfiguration>, mockLogger);
+      adapter = new TestNearBridgeAdapter(
+        mockChainsWithoutProvider as Record<string, ChainConfiguration>,
+        'test-jwt-token',
+        'https://1click.chaindefuser.com',
+        mockLogger,
+      );
 
       jest.spyOn(adapter, 'findMatchingDestinationAsset').mockReturnValueOnce(mockAssets['ETH']);
 
