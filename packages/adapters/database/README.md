@@ -103,6 +103,25 @@ yarn workspace @mark/database test        # Run all tests (auto-creates test DB)
 yarn workspace @mark/database lint        # Run linting
 ```
 
+#### Test Structure
+
+- **`test/unit.spec.ts`** - Mocked unit tests
+  - Connection management
+  - Health checks and retry logic
+  - Type definitions and error classes
+  - No real database required
+
+- **`test/integration.spec.ts`** - Local database integration tests
+  - CRUD operations for earmarks
+  - Transaction safety
+  - Database constraints
+  - Requires PostgreSQL container running
+
+- **`test/setup.ts`** - Shared test utilities
+  - Global Jest setup (auto-creates test DB)
+  - Mock factories for unit tests
+  - Database cleanup utilities
+
 The test database is automatically created and migrated when you run tests for the first time.
 
 ## Database Schema
