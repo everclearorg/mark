@@ -102,7 +102,10 @@ export interface IntentStatusResponse {
 }
 
 export interface IntentStatusesResponse {
-  intents: IntentStatusResponse[];
+  intents: {
+    intentId: string;
+    status: IntentStatus;
+  }[];
 }
 
 export class EverclearAdapter {
@@ -194,11 +197,11 @@ export class EverclearAdapter {
 
       try {
         const url = `${this.apiUrl}/intents/status`;
-        const { data } = await axiosPost<IntentStatusesResponse>(url, { intent_ids: batch });
+        const { data } = await axiosPost<IntentStatusesResponse>(url, { intentIds: batch });
 
         // Map the results to intent ID -> status
         for (const intentResponse of data.intents) {
-          result.set(intentResponse.intent.intent_id, intentResponse.intent.status);
+          result.set(intentResponse.intentId, intentResponse.status);
         }
 
         // Handle any intent IDs that weren't returned (set to NONE)
