@@ -6,7 +6,7 @@ import { DatabaseConfig } from './types';
 // Re-export all core functionality
 export * from './db';
 export * from './types';
-export * from './zapatos/schema';
+// Schema types are exported via db.ts
 
 // Core earmark operations
 export {

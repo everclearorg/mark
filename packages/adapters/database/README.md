@@ -2,6 +2,8 @@
 
 PostgreSQL database adapter for Mark using dbmate migrations and zapatos type generation.
 
+> **Note**: This is a Yarn workspace package. All commands should be run from the repository root using `yarn workspace @mark/database <command>`.
+
 ## Overview
 
 This package provides a type-safe PostgreSQL database adapter with:
@@ -10,18 +12,28 @@ This package provides a type-safe PostgreSQL database adapter with:
 - **zapatos** for TypeScript type generation
 - **Connection pooling** with retry logic and health checks
 - **Transaction support** for atomic operations
+- **Docker Compose** setup for local development
 
 ## Quick Start
 
 ```bash
-# Setup database
-DATABASE_URL=postgresql://localhost:5432/mark_dev yarn db:create
-DATABASE_URL=postgresql://localhost:5432/mark_dev yarn db:migrate
-DATABASE_URL=postgresql://localhost:5432/mark_dev yarn db:generate-types
+# From the repository root:
+
+# Setup database (starts Docker, runs migrations, generates types)
+yarn workspace @mark/database db:setup
+
+# Or manually run individual steps
+yarn workspace @mark/database db:migrate      # Run migrations
+yarn workspace @mark/database db:types       # Generate TypeScript types
 ```
 
 ```typescript
-import { initializeDatabase, db, connectWithRetry } from '@mark/database';
+import {
+  initializeDatabase,
+  connectWithRetry,
+  createEarmark,
+  getEarmarks
+} from '@mark/database';
 
 // Initialize with retry logic
 const pool = await connectWithRetry({
@@ -29,50 +41,69 @@ const pool = await connectWithRetry({
   maxConnections: 20
 });
 
-// Use typed operations
-const earmarks = await db.earmarks.select({ status: 'pending' });
-const newEarmark = await db.earmarks.insert({
+// Create an earmark
+const newEarmark = await createEarmark({
   invoiceId: 'inv-123',
-  destinationChainId: 1,
-  ticker: 'USDC',
-  invoiceAmount: '100.50'
+  designatedPurchaseChain: 1,
+  tickerHash: '0x1234567890123456789012345678901234567890',
+  minAmount: '100000000000'
 });
+
+// Query earmarks
+const pendingEarmarks = await getEarmarks({ status: 'pending' });
 ```
 
 ## Development Workflow
+
+### Database Setup
+
+The `yarn workspace @mark/database db:setup` command starts a PostgreSQL 15 instance with Docker on port 5433:
+- Database: `mark_dev`
+- User: `postgres`
+- Password: `postgres`
+
+To manage the database container manually:
+```bash
+docker compose up -d    # Start container
+docker compose stop     # Stop container
+docker compose down -v  # Remove container and volumes
+```
 
 ### Migrations
 
 ```bash
 # Create new migration
-yarn db:new add_feature_name
+yarn workspace @mark/database db:new add_feature_name
 
 # Apply migrations
-yarn db:migrate
+yarn workspace @mark/database db:migrate
 
 # Check status
-yarn db:status
+yarn workspace @mark/database db:status
 
 # Rollback last migration
-yarn db:rollback
+yarn workspace @mark/database db:rollback
 ```
 
 ### Type Generation
 
 ```bash
 # Regenerate types after schema changes
-yarn db:generate-types
+yarn workspace @mark/database db:types
 
 # Build package
-yarn build
+yarn workspace @mark/database build
 ```
 
 ### Testing
 
 ```bash
-yarn test        # Run all tests
-yarn lint        # Run linting
+# Run tests (from repository root)
+yarn workspace @mark/database test        # Run all tests (auto-creates test DB)
+yarn workspace @mark/database lint        # Run linting
 ```
+
+The test database is automatically created and migrated when you run tests for the first time.
 
 ## Database Schema
 
@@ -80,7 +111,6 @@ Three main tables for earmark tracking:
 
 - **earmarks** - Invoice earmarks awaiting rebalancing
 - **rebalance_operations** - Individual rebalancing operations
-- **earmark_audit_log** - Complete audit trail
 
 See migration files in `db/migrations/` for full schema.
 
@@ -92,10 +122,12 @@ See migration files in `db/migrations/` for full schema.
 - `closeDatabase()` - Close connections gracefully
 - `checkDatabaseHealth()` - Health check with latency
 
-### Database Operations
-- `db.earmarks` - CRUD operations for earmarks table
-- `db.rebalance_operations` - CRUD operations for rebalance operations
-- `db.earmark_audit_log` - CRUD operations for audit log
+### Earmark Operations
+- `createEarmark(input)` - Create a new earmark
+- `getEarmarks(filter?)` - Query earmarks with optional filters
+- `getEarmarkForInvoice(invoiceId)` - Get earmark for specific invoice
+- `updateEarmarkStatus(id, status)` - Update earmark status
+- `getActiveEarmarksForChain(chainId)` - Get pending earmarks for a chain
 - `withTransaction(callback)` - Execute operations in transaction
 
 ### Types
@@ -106,16 +138,18 @@ import type { earmarks, earmarks_insert, rebalance_operations } from '@mark/data
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
+No environment variables are required for local development. The database connections are configured automatically:
+- Development: `postgresql://postgres:postgres@localhost:5433/mark_dev`
+- Test: `postgresql://postgres:postgres@localhost:5433/mark_test`
+
+For production or custom setups, you can override with `DATABASE_URL`.
 
 ## Troubleshooting
 
 **Database connection issues:**
-- Ensure PostgreSQL is running
-- Check `DATABASE_URL` format: `postgresql://user:pass@localhost:5432/dbname`
-- Use `yarn db:status` to verify migrations
+- Ensure Docker is running: `docker ps | grep mark-database`
+- Check if using correct port (5433, not 5432)
+- Use `yarn workspace @mark/database db:status` to verify migrations
 
 **Type generation fails:**
 - Run `yarn db:migrate` first

@@ -208,7 +208,6 @@ describe('Database Adapter', () => {
     it('should have properly typed database operations', () => {
       expect(db.earmarks).toBeDefined();
       expect(db.rebalance_operations).toBeDefined();
-      expect(db.earmark_audit_log).toBeDefined();
 
       expect(typeof db.earmarks.select).toBe('function');
       expect(typeof db.earmarks.insert).toBe('function');

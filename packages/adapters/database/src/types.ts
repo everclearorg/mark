@@ -1,5 +1,7 @@
 // Database type definitions (will be enhanced with zapatos generated types)
 
+import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
+
 export interface DatabaseConfig {
   connectionString: string;
   maxConnections?: number;
@@ -11,10 +13,10 @@ export interface DatabaseConfig {
 export interface EarmarkRecord {
   id: string;
   invoiceId: string;
-  destinationChainId: number;
+  designatedPurchaseChain: number;
   tickerHash: string;
-  invoiceAmount: string;
-  status: 'pending' | 'completed' | 'failed';
+  minAmount: string;
+  status: EarmarkStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,7 +29,7 @@ export interface RebalanceOperationRecord {
   amountSent: string;
   amountReceived: string;
   slippage: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  status: RebalanceOperationStatus;
   recipient?: string;
   originTxHash?: string;
   destinationTxHash?: string;

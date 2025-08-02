@@ -1,8 +1,13 @@
 {
   "db": {
-    "connectionString": "postgresql://localhost:5432/mark_dev"
+    "connectionString": "postgresql://postgres:postgres@localhost:5433/mark_dev"
   },
-  "outDir": "./src",
-  "outExt": ".ts",
+  "outDir": "./src/zapatos",
+  "schemas": {
+    "public": {
+      "include": "*",
+      "exclude": []
+    }
+  },
   "progressListener": true
 }
