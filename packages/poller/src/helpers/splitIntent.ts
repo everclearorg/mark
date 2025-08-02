@@ -117,6 +117,11 @@ export async function calculateSplitIntents(
     return Number(bAssets - aAssets); // Sort descending
   });
 
+  // Check if the top custodied domain is SVM
+  // TODO: similarly for tvm later
+  const topCustodiedDomain = allDomainsSortedByCustodied[0];
+  const isTopDomainSvm = topCustodiedDomain && isSvmChain(topCustodiedDomain);
+
   // Evaluate each possible origin domain
   const possibleAllocations: SplitIntentAllocation[] = [];
   for (const origin of Object.keys(minAmounts)) {
@@ -136,21 +141,29 @@ export async function calculateSplitIntents(
       continue;
     }
 
+    // Filter domains based on which chain the top custodied domain is on
+    let filteredTopNDomains: string[];
+    let filteredAllDomains: string[];
+
+    if (isTopDomainSvm) {
+      // If top domain is SVM, only use SVM domains
+      filteredTopNDomains = topNDomainsSortedByCustodied.filter((d) => isSvmChain(d));
+      filteredAllDomains = allDomainsSortedByCustodied.filter((d) => isSvmChain(d));
+    } else {
+      // If top domain is EVM, exclude SVM domains
+      filteredTopNDomains = topNDomainsSortedByCustodied.filter((d) => !isSvmChain(d));
+      filteredAllDomains = allDomainsSortedByCustodied.filter((d) => !isSvmChain(d));
+    }
+
     // Try allocating with top-N domains
-    const topNAllocation = evaluateDomainForOrigin(
-      origin,
-      totalNeeded,
-      allCustodiedAssets,
-      topNDomainsSortedByCustodied,
-      true,
-    );
+    const topNAllocation = evaluateDomainForOrigin(origin, totalNeeded, allCustodiedAssets, filteredTopNDomains, true);
     logger.info('Evaluated top-N domains for invoice', {
       requestId,
       invoiceId: invoice.intent_id,
       origin,
       totalNeeded,
       topNAllocation,
-      topNDomainsSortedByCustodied,
+      filteredTopNDomains,
       allCustodiedAssets: jsonifyMap(allCustodiedAssets),
     });
 
@@ -166,7 +179,7 @@ export async function calculateSplitIntents(
     // If top-N is not enough, try with the top MAX_DESTINATIONS domains
     // NOTE: This is unconditionally added as a possible allocation. This is deliberate
     //       because Mark should settle the invoice regardless if liquidity can cover his intent.
-    const topMaxDestinations = allDomainsSortedByCustodied.slice(0, MAX_DESTINATIONS);
+    const topMaxDestinations = filteredAllDomains.slice(0, MAX_DESTINATIONS);
     const topMaxAllocation = evaluateDomainForOrigin(
       origin,
       totalNeeded,
@@ -281,7 +294,10 @@ export async function calculateSplitIntents(
   const remainder = totalNeeded - bestAllocation.totalAllocated;
   if (remainder > BigInt(0)) {
     // Split remainder: create separate intents for each valid top-N chain
-    const validTopNDomains = topNDomainsFromConfig.filter((domain) => domain !== bestAllocation.origin);
+    const validTopNDomains = isTopDomainSvm
+      ? topNDomainsFromConfig.filter((d) => isSvmChain(d) && d !== bestAllocation.origin)
+      : topNDomainsFromConfig.filter((d) => !isSvmChain(d) && d !== bestAllocation.origin);
+
     if (validTopNDomains.length > 0) {
       const splitAmount = remainder / BigInt(validTopNDomains.length);
       const dust = remainder % BigInt(validTopNDomains.length);
