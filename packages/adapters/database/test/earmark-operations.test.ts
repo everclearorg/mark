@@ -9,6 +9,7 @@ import {
   getRebalanceOperationsByEarmark,
 } from '../src/db';
 import { setupDatabase, teardownDatabase, getTestConnection } from './setup';
+import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
 
 describe('Earmark Operations', () => {
   let db: any;
@@ -18,7 +19,6 @@ describe('Earmark Operations', () => {
     db = await getTestConnection();
 
     // Clean up all test data before each test
-    await db.query('DELETE FROM earmark_audit_log');
     await db.query('DELETE FROM rebalance_operations');
     await db.query('DELETE FROM earmarks');
   });
@@ -31,18 +31,18 @@ describe('Earmark Operations', () => {
     it('should create a new earmark', async () => {
       const earmarkData = {
         invoiceId: 'invoice-001',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '100000000000',
+        minAmount: '100000000000',
       };
 
       const earmark = await createEarmark(earmarkData);
 
       expect(earmark).toBeDefined();
       expect(earmark.invoiceId).toBe(earmarkData.invoiceId);
-      expect(earmark.destinationChainId).toBe(earmarkData.destinationChainId);
+      expect(earmark.designatedPurchaseChain).toBe(earmarkData.designatedPurchaseChain);
       expect(earmark.tickerHash).toBe(earmarkData.tickerHash);
-      expect(earmark.invoiceAmount).toBe('100000000000.00000000'); // PostgreSQL NUMERIC formatting
+      expect(earmark.minAmount).toBe('100000000000'); // Stored as TEXT, no trailing zeros
       expect(earmark.status).toBe('pending');
       expect(earmark.createdAt).toBeDefined();
     });
@@ -50,9 +50,9 @@ describe('Earmark Operations', () => {
     it('should prevent duplicate earmarks for the same invoice', async () => {
       const earmarkData = {
         invoiceId: 'invoice-001',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '100000000000',
+        minAmount: '100000000000',
       };
 
       await createEarmark(earmarkData);
@@ -66,15 +66,15 @@ describe('Earmark Operations', () => {
       const earmarks = [
         {
           invoiceId: 'invoice-001',
-          destinationChainId: 1,
+          designatedPurchaseChain: 1,
           tickerHash: '0x1234567890123456789012345678901234567890',
-          invoiceAmount: '100000000000',
+          minAmount: '100000000000',
         },
         {
           invoiceId: 'invoice-002',
-          destinationChainId: 10,
+          designatedPurchaseChain: 10,
           tickerHash: '0x1234567890123456789012345678901234567890',
-          invoiceAmount: '200000000000',
+          minAmount: '200000000000',
         },
       ];
 
@@ -91,19 +91,19 @@ describe('Earmark Operations', () => {
     it('should filter by status', async () => {
       const earmark1 = await createEarmark({
         invoiceId: 'invoice-001',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '100000000000',
+        minAmount: '100000000000',
       });
 
       const earmark2 = await createEarmark({
         invoiceId: 'invoice-002',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '100000000000',
+        minAmount: '100000000000',
       });
 
-      await updateEarmarkStatus(earmark2.id, 'completed');
+      await updateEarmarkStatus(earmark2.id, EarmarkStatus.COMPLETED);
 
       const pendingEarmarks = await getEarmarks({ status: 'pending' });
       const completedEarmarks = await getEarmarks({ status: 'completed' });
@@ -119,14 +119,14 @@ describe('Earmark Operations', () => {
     it('should update earmark status', async () => {
       const earmark = await createEarmark({
         invoiceId: 'invoice-001',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '100000000000',
+        minAmount: '100000000000',
       });
 
       expect(earmark.status).toBe('pending');
 
-      await updateEarmarkStatus(earmark.id, 'completed');
+      await updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
 
       const updated = await getEarmarkForInvoice('invoice-001');
       expect(updated?.status).toBe('completed');
@@ -135,7 +135,7 @@ describe('Earmark Operations', () => {
     });
 
     it('should handle invalid earmark ID', async () => {
-      await expect(updateEarmarkStatus('invalid-id', 'completed')).rejects.toThrow();
+      await expect(updateEarmarkStatus('invalid-id', EarmarkStatus.COMPLETED)).rejects.toThrow();
     });
   });
 
@@ -143,9 +143,9 @@ describe('Earmark Operations', () => {
     it('should return earmark for specific invoice', async () => {
       await createEarmark({
         invoiceId: 'invoice-001',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '100000000000',
+        minAmount: '100000000000',
       });
 
       const earmark = await getEarmarkForInvoice('invoice-001');
@@ -164,34 +164,34 @@ describe('Earmark Operations', () => {
     it('should return only pending earmarks for specific chain', async () => {
       await createEarmark({
         invoiceId: 'invoice-001',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '100000000000',
+        minAmount: '100000000000',
       });
 
       await createEarmark({
         invoiceId: 'invoice-002',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '200000000000',
+        minAmount: '200000000000',
       });
 
       const earmark3 = await createEarmark({
         invoiceId: 'invoice-003',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '300000000000',
+        minAmount: '300000000000',
       });
 
       await createEarmark({
         invoiceId: 'invoice-004',
-        destinationChainId: 10, // Different chain
+        designatedPurchaseChain: 10, // Different chain
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '400000000000',
+        minAmount: '400000000000',
       });
 
       // Mark one as completed
-      await updateEarmarkStatus(earmark3.id, 'completed');
+      await updateEarmarkStatus(earmark3.id, EarmarkStatus.COMPLETED);
 
       const activeEarmarks = await getActiveEarmarksForChain(1);
 
@@ -211,18 +211,18 @@ describe('Earmark Operations', () => {
       // First create an earmark
       await createEarmark({
         invoiceId: 'invoice-constraint-test',
-        destinationChainId: 1,
+        designatedPurchaseChain: 1,
         tickerHash: '0x1234567890123456789012345678901234567890',
-        invoiceAmount: '100000000000',
+        minAmount: '100000000000',
       });
 
       // Try to create duplicate - should fail due to unique constraint
       await expect(
         createEarmark({
           invoiceId: 'invoice-constraint-test',
-          destinationChainId: 1,
+          designatedPurchaseChain: 1,
           tickerHash: '0x1234567890123456789012345678901234567890',
-          invoiceAmount: '100000000000',
+          minAmount: '100000000000',
         }),
       ).rejects.toThrow();
 
@@ -240,16 +240,16 @@ describe('Earmark Operations', () => {
       for (let i = 1; i <= 5; i++) {
         const earmark = await createEarmark({
           invoiceId: `invoice-${i}`,
-          destinationChainId: i % 2 === 0 ? 1 : 10,
+          designatedPurchaseChain: i % 2 === 0 ? 1 : 10,
           tickerHash: '0x1234567890123456789012345678901234567890',
-          invoiceAmount: `${i}00000000000`,
+          minAmount: `${i}00000000000`,
         });
         earmarks.push(earmark);
       }
 
       // Update some statuses
-      await updateEarmarkStatus(earmarks[0].id, 'completed');
-      await updateEarmarkStatus(earmarks[1].id, 'failed');
+      await updateEarmarkStatus(earmarks[0].id, EarmarkStatus.COMPLETED);
+      await updateEarmarkStatus(earmarks[1].id, EarmarkStatus.CANCELLED);
 
       // Verify states
       const allEarmarks = await getEarmarks();

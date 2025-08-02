@@ -2,19 +2,19 @@
 
 import { Pool, PoolClient } from 'pg';
 import { DatabaseConfig } from './types';
-import {
-  earmarks,
-  rebalance_operations,
-  earmark_audit_log,
-  earmarks_insert,
-  rebalance_operations_insert,
-  earmark_audit_log_insert,
-  earmarks_update,
-  rebalance_operations_update,
-  earmark_audit_log_update,
-  WhereCondition,
-  DatabaseSchema,
-} from './zapatos/schema';
+import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
+import * as schema from 'zapatos/schema';
+
+type earmarks = schema.earmarks.Selectable;
+type rebalance_operations = schema.rebalance_operations.Selectable;
+type earmarks_insert = schema.earmarks.Insertable;
+type rebalance_operations_insert = schema.rebalance_operations.Insertable;
+type earmarks_update = schema.earmarks.Updatable;
+type rebalance_operations_update = schema.rebalance_operations.Updatable;
+
+// Custom types not provided by Zapatos
+type WhereCondition<T> = Partial<T>;
+type JSONObject = Record<string, unknown>;
 
 let pool: Pool | null = null;
 
@@ -76,7 +76,7 @@ export async function withTransaction<T>(callback: (client: PoolClient) => Promi
 }
 
 // Typed database operations
-export const db = {
+export const database = {
   earmarks: {
     async select(where?: WhereCondition<earmarks>): Promise<earmarks[]> {
       let query = 'SELECT * FROM earmarks';
@@ -136,7 +136,8 @@ export const db = {
         const conditions: string[] = [];
         Object.entries(where).forEach(([key, value]) => {
           if (value !== undefined) {
-            conditions.push(`${key} = $${paramCount++}`);
+            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
+            conditions.push(`${quotedKey} = $${paramCount++}`);
             updateValues.push(value);
           }
         });
@@ -217,68 +218,24 @@ export const db = {
       return result[0];
     },
   },
-
-  earmark_audit_log: {
-    async insert(data: earmark_audit_log_insert): Promise<earmark_audit_log> {
-      const keys = Object.keys(data);
-      const values = Object.values(data);
-      const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-
-      const query = `
-        INSERT INTO earmark_audit_log (${keys.join(', ')})
-        VALUES (${placeholders})
-        RETURNING *
-      `;
-
-      const result = await queryWithClient<earmark_audit_log>(query, values);
-      return result[0];
-    },
-
-    async select(where?: WhereCondition<earmark_audit_log>): Promise<earmark_audit_log[]> {
-      let query = 'SELECT * FROM earmark_audit_log';
-      const values: unknown[] = [];
-
-      if (where && typeof where === 'object') {
-        const conditions: string[] = [];
-        let paramCount = 1;
-
-        Object.entries(where).forEach(([key, value]) => {
-          if (value !== undefined) {
-            // Only quote camelCase identifiers, not simple lowercase ones
-            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
-            conditions.push(`${quotedKey} = $${paramCount}`);
-            values.push(value);
-            paramCount++;
-          }
-        });
-
-        if (conditions.length > 0) {
-          query += ' WHERE ' + conditions.join(' AND ');
-        }
-      }
-
-      query += ' ORDER BY timestamp DESC';
-      return queryWithClient<earmark_audit_log>(query, values);
-    },
-  },
 };
 
 // Core earmark operations with business logic
 export interface CreateEarmarkInput {
   invoiceId: string;
-  destinationChainId: number;
+  designatedPurchaseChain: number;
   tickerHash: string;
-  invoiceAmount: string;
+  minAmount: string;
   initialRebalanceOperations?: {
     originChainId: number;
     amount: string;
-    slippage?: string;
+    slippage: number;
   }[];
 }
 
 export interface GetEarmarksFilter {
   status?: string | string[];
-  destinationChainId?: number | number[];
+  designatedPurchaseChain?: number | number[];
   tickerHash?: string | string[];
   invoiceId?: string;
   createdAfter?: Date;
@@ -290,23 +247,23 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks
     // Insert earmark
     const earmarkData: earmarks_insert = {
       invoiceId: input.invoiceId,
-      destinationChainId: input.destinationChainId,
+      designatedPurchaseChain: input.designatedPurchaseChain,
       tickerHash: input.tickerHash,
-      invoiceAmount: input.invoiceAmount,
-      status: 'pending',
+      minAmount: input.minAmount,
+      status: EarmarkStatus.PENDING,
     };
 
     const insertQuery = `
-      INSERT INTO earmarks ("invoiceId", "destinationChainId", "tickerHash", "invoiceAmount", status)
+      INSERT INTO earmarks ("invoiceId", "designatedPurchaseChain", "tickerHash", "minAmount", status)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
 
     const earmarkResult = await client.query(insertQuery, [
       earmarkData.invoiceId,
-      earmarkData.destinationChainId,
+      earmarkData.designatedPurchaseChain,
       input.tickerHash,
-      earmarkData.invoiceAmount,
+      earmarkData.minAmount,
       earmarkData.status,
     ]);
 
@@ -323,33 +280,14 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks
         await client.query(operationQuery, [
           earmark.id,
           operation.originChainId,
-          input.destinationChainId,
+          input.designatedPurchaseChain,
           input.tickerHash,
           operation.amount,
-          operation.slippage || '0.005',
+          operation.slippage,
           'pending',
         ]);
       }
     }
-
-    // Create audit log entry
-    const auditQuery = `
-      INSERT INTO earmark_audit_log ("earmarkId", operation, "newStatus", details)
-      VALUES ($1, $2, $3, $4)
-    `;
-
-    await client.query(auditQuery, [
-      earmark.id,
-      'CREATE',
-      'pending',
-      JSON.stringify({
-        invoiceId: input.invoiceId,
-        destinationChainId: input.destinationChainId,
-        tickerHash: input.tickerHash,
-        invoiceAmount: input.invoiceAmount,
-        initialOperationsCount: input.initialRebalanceOperations?.length || 0,
-      }),
-    ]);
 
     return earmark;
   });
@@ -373,14 +311,14 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[
       }
     }
 
-    if (filter.destinationChainId) {
-      if (Array.isArray(filter.destinationChainId)) {
-        const placeholders = filter.destinationChainId.map(() => `$${paramCount++}`).join(', ');
-        conditions.push(`"destinationChainId" IN (${placeholders})`);
-        values.push(...filter.destinationChainId);
+    if (filter.designatedPurchaseChain) {
+      if (Array.isArray(filter.designatedPurchaseChain)) {
+        const placeholders = filter.designatedPurchaseChain.map(() => `$${paramCount++}`).join(', ');
+        conditions.push(`"designatedPurchaseChain" IN (${placeholders})`);
+        values.push(...filter.designatedPurchaseChain);
       } else {
-        conditions.push(`"destinationChainId" = $${paramCount++}`);
-        values.push(filter.destinationChainId);
+        conditions.push(`"designatedPurchaseChain" = $${paramCount++}`);
+        values.push(filter.designatedPurchaseChain);
       }
     }
 
@@ -437,7 +375,7 @@ export async function getEarmarkForInvoice(invoiceId: string): Promise<earmarks 
 
 export async function removeEarmark(earmarkId: string): Promise<void> {
   return withTransaction(async (client) => {
-    // Get earmark details for audit log
+    // Verify earmark exists
     const earmarkQuery = 'SELECT * FROM earmarks WHERE id = $1';
     const earmarkResult = await client.query(earmarkQuery, [earmarkId]);
 
@@ -445,30 +383,11 @@ export async function removeEarmark(earmarkId: string): Promise<void> {
       throw new Error(`Earmark with id ${earmarkId} not found`);
     }
 
-    const earmark = earmarkResult.rows[0] as earmarks;
-
-    // Create audit log entry before deletion
-    const auditQuery = `
-      INSERT INTO earmark_audit_log ("earmarkId", operation, "previousStatus", details)
-      VALUES ($1, $2, $3, $4)
-    `;
-
-    await client.query(auditQuery, [
-      earmarkId,
-      'DELETE',
-      earmark.status,
-      JSON.stringify({
-        deletedAt: new Date().toISOString(),
-        finalStatus: earmark.status,
-        invoiceId: earmark.invoiceId,
-      }),
-    ]);
-
     // Delete rebalance operations (will cascade due to FK constraint)
     const deleteOperationsQuery = 'DELETE FROM rebalance_operations WHERE "earmarkId" = $1';
     await client.query(deleteOperationsQuery, [earmarkId]);
 
-    // Delete the earmark (audit log entries will cascade)
+    // Delete the earmark
     const deleteEarmarkQuery = 'DELETE FROM earmarks WHERE id = $1';
     await client.query(deleteEarmarkQuery, [earmarkId]);
   });
@@ -476,12 +395,9 @@ export async function removeEarmark(earmarkId: string): Promise<void> {
 
 // Additional helper functions for on-demand rebalancing
 
-export async function updateEarmarkStatus(
-  earmarkId: string,
-  status: 'pending' | 'completed' | 'failed',
-): Promise<earmarks> {
+export async function updateEarmarkStatus(earmarkId: string, status: EarmarkStatus): Promise<earmarks> {
   return withTransaction(async (client) => {
-    // Get current earmark for audit
+    // Get current earmark
     const currentQuery = 'SELECT * FROM earmarks WHERE id = $1';
     const currentResult = await client.query(currentQuery, [earmarkId]);
 
@@ -489,29 +405,10 @@ export async function updateEarmarkStatus(
       throw new Error(`Earmark with id ${earmarkId} not found`);
     }
 
-    const current = currentResult.rows[0] as earmarks;
-
     // Update earmark status
     const updateQuery = 'UPDATE earmarks SET status = $1, "updatedAt" = NOW() WHERE id = $2 RETURNING *';
     const updateResult = await client.query(updateQuery, [status, earmarkId]);
     const updated = updateResult.rows[0] as earmarks;
-
-    // Create audit log entry
-    const auditQuery = `
-      INSERT INTO earmark_audit_log ("earmarkId", operation, "previousStatus", "newStatus", details)
-      VALUES ($1, $2, $3, $4, $5)
-    `;
-
-    await client.query(auditQuery, [
-      earmarkId,
-      'STATUS_CHANGE',
-      current.status,
-      status,
-      JSON.stringify({
-        reason: `Status changed from ${current.status} to ${status}`,
-        timestamp: new Date().toISOString(),
-      }),
-    ]);
 
     return updated;
   });
@@ -520,7 +417,7 @@ export async function updateEarmarkStatus(
 export async function getActiveEarmarksForChain(chainId: number): Promise<earmarks[]> {
   const query = `
     SELECT * FROM earmarks
-    WHERE "destinationChainId" = $1
+    WHERE "designatedPurchaseChain" = $1
     AND status = 'pending'
     ORDER BY "createdAt" ASC
   `;
@@ -533,9 +430,9 @@ export async function createRebalanceOperation(input: {
   destinationChainId: number;
   tickerHash: string;
   amount: string;
-  slippage: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  txHashes?: any;
+  slippage: number;
+  status: RebalanceOperationStatus;
+  txHashes?: JSONObject;
 }): Promise<rebalance_operations> {
   const query = `
     INSERT INTO rebalance_operations (
@@ -564,8 +461,8 @@ export async function createRebalanceOperation(input: {
 export async function updateRebalanceOperation(
   operationId: string,
   updates: {
-    status?: 'pending' | 'in_progress' | 'completed' | 'failed';
-    txHashes?: any;
+    status?: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+    txHashes?: JSONObject;
   },
 ): Promise<rebalance_operations> {
   const setClause: string[] = ['"updatedAt" = NOW()'];
@@ -613,12 +510,11 @@ export async function getRebalanceOperationsByEarmark(earmarkId: string): Promis
 export type {
   earmarks,
   rebalance_operations,
-  earmark_audit_log,
   earmarks_insert,
   rebalance_operations_insert,
-  earmark_audit_log_insert,
   earmarks_update,
   rebalance_operations_update,
-  earmark_audit_log_update,
-  DatabaseSchema,
 };
+
+// Export database operations as 'db' for shorter access
+export { database as db };
