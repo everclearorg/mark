@@ -137,3 +137,19 @@ export function getValidatedZodiacConfig(
   validateZodiacConfig(zodiacConfig, logger, context);
   return zodiacConfig;
 }
+
+/**
+ * Gets the actual address that should be used for a given chain
+ * (Safe address if Zodiac is configured, otherwise default owner)
+ *
+ */
+export function getActualAddress(
+  chainId: number,
+  config: { chains: Record<number, ChainConfiguration>; ownAddress: string },
+  logger?: Logger,
+  context?: LoggingContext,
+): string {
+  const chainConfig = config.chains[chainId];
+  const zodiacConfig = getValidatedZodiacConfig(chainConfig, logger, context);
+  return getActualOwner(zodiacConfig, config.ownAddress);
+}
