@@ -226,11 +226,6 @@ export interface CreateEarmarkInput {
   designatedPurchaseChain: number;
   tickerHash: string;
   minAmount: string;
-  initialRebalanceOperations?: {
-    originChainId: number;
-    amount: string;
-    slippage: number;
-  }[];
 }
 
 export interface GetEarmarksFilter {
@@ -268,26 +263,6 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks
     ]);
 
     const earmark = earmarkResult.rows[0] as earmarks;
-
-    // Create associated rebalance operations if provided
-    if (input.initialRebalanceOperations && input.initialRebalanceOperations.length > 0) {
-      for (const operation of input.initialRebalanceOperations) {
-        const operationQuery = `
-          INSERT INTO rebalance_operations ("earmarkId", "originChainId", "destinationChainId", "tickerHash", amount, slippage, status)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `;
-
-        await client.query(operationQuery, [
-          earmark.id,
-          operation.originChainId,
-          input.designatedPurchaseChain,
-          input.tickerHash,
-          operation.amount,
-          operation.slippage,
-          'pending',
-        ]);
-      }
-    }
 
     return earmark;
   });
@@ -425,21 +400,22 @@ export async function getActiveEarmarksForChain(chainId: number): Promise<earmar
 }
 
 export async function createRebalanceOperation(input: {
-  earmarkId: string;
+  earmarkId: string | null;
   originChainId: number;
   destinationChainId: number;
   tickerHash: string;
   amount: string;
   slippage: number;
   status: RebalanceOperationStatus;
+  bridge: string;
   txHashes?: JSONObject;
 }): Promise<rebalance_operations> {
   const query = `
     INSERT INTO rebalance_operations (
       "earmarkId", "originChainId", "destinationChainId",
-      "tickerHash", amount, slippage, status, "txHashes"
+      "tickerHash", amount, slippage, status, bridge, "txHashes"
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING *
   `;
 
@@ -451,6 +427,7 @@ export async function createRebalanceOperation(input: {
     input.amount,
     input.slippage,
     input.status,
+    input.bridge,
     input.txHashes || {},
   ];
 
@@ -461,7 +438,7 @@ export async function createRebalanceOperation(input: {
 export async function updateRebalanceOperation(
   operationId: string,
   updates: {
-    status?: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+    status?: RebalanceOperationStatus;
     txHashes?: JSONObject;
   },
 ): Promise<rebalance_operations> {
@@ -504,6 +481,54 @@ export async function getRebalanceOperationsByEarmark(earmarkId: string): Promis
     ORDER BY "createdAt" ASC
   `;
   return queryWithClient<rebalance_operations>(query, [earmarkId]);
+}
+
+export async function getRebalanceOperations(filter?: {
+  status?: RebalanceOperationStatus | RebalanceOperationStatus[];
+  chainId?: number;
+  earmarkId?: string | null;
+}): Promise<rebalance_operations[]> {
+  let query = 'SELECT * FROM rebalance_operations';
+  const values: unknown[] = [];
+  const conditions: string[] = [];
+  let paramCount = 1;
+
+  if (filter) {
+    if (filter.status) {
+      if (Array.isArray(filter.status)) {
+        conditions.push(`status = ANY($${paramCount})`);
+        values.push(filter.status);
+      } else {
+        conditions.push(`status = $${paramCount}`);
+        values.push(filter.status);
+      }
+      paramCount++;
+    }
+
+    if (filter.chainId !== undefined) {
+      conditions.push(`"originChainId" = $${paramCount}`);
+      values.push(filter.chainId);
+      paramCount++;
+    }
+
+    if (filter.earmarkId !== undefined) {
+      if (filter.earmarkId === null) {
+        conditions.push('"earmarkId" IS NULL');
+      } else {
+        conditions.push(`"earmarkId" = $${paramCount}`);
+        values.push(filter.earmarkId);
+        paramCount++;
+      }
+    }
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+
+  query += ' ORDER BY "createdAt" ASC';
+
+  return queryWithClient<rebalance_operations>(query, values);
 }
 
 // Re-export types for convenience

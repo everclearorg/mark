@@ -19,6 +19,7 @@ export {
   createRebalanceOperation,
   updateRebalanceOperation,
   getRebalanceOperationsByEarmark,
+  getRebalanceOperations,
   type CreateEarmarkInput,
   type GetEarmarksFilter,
 } from './db';

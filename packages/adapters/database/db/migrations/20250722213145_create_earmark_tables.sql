@@ -19,17 +19,18 @@ CREATE TABLE earmarks (
 -- Rebalance operations table: Individual rebalancing operations linked to earmarks
 CREATE TABLE rebalance_operations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    "earmarkId" UUID NOT NULL REFERENCES earmarks(id) ON DELETE CASCADE,
+    "earmarkId" UUID REFERENCES earmarks(id) ON DELETE CASCADE,
     "originChainId" INTEGER NOT NULL,
     "destinationChainId" INTEGER NOT NULL,
     "tickerHash" TEXT NOT NULL,
     amount TEXT NOT NULL,
     slippage INTEGER NOT NULL,
+    bridge TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     "txHashes" JSONB DEFAULT '{}',
     "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CONSTRAINT rebalance_operation_status_check CHECK (status IN ('pending', 'in_progress', 'completed', 'failed'))
+    CONSTRAINT rebalance_operation_status_check CHECK (status IN ('pending', 'awaiting_callback', 'completed', 'expired'))
 );
 
 -- Unique constraint for invoiceId
@@ -74,12 +75,13 @@ COMMENT ON COLUMN earmarks."tickerHash" IS 'Token tickerHash (e.g., USDC, ETH) r
 COMMENT ON COLUMN earmarks."minAmount" IS 'Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)';
 COMMENT ON COLUMN earmarks.status IS 'Earmark status: pending, ready, completed, cancelled (enforced by CHECK constraint)';
 
-COMMENT ON COLUMN rebalance_operations."earmarkId" IS 'Foreign key to the earmark this operation fulfills';
+COMMENT ON COLUMN rebalance_operations."earmarkId" IS 'Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)';
 COMMENT ON COLUMN rebalance_operations."originChainId" IS 'Source chain ID where funds are being moved from';
 COMMENT ON COLUMN rebalance_operations."destinationChainId" IS 'Target chain ID where funds are being moved to';
 COMMENT ON COLUMN rebalance_operations.amount IS 'Amount of tokens being rebalanced (stored as string to preserve precision)';
 COMMENT ON COLUMN rebalance_operations.slippage IS 'Expected slippage in basis points (e.g., 30 = 0.3%)';
-COMMENT ON COLUMN rebalance_operations.status IS 'Operation status: pending, in_progress, completed, failed (enforced by CHECK constraint)';
+COMMENT ON COLUMN rebalance_operations.bridge IS 'Bridge adapter type used for this operation (e.g., connext, stargate)';
+COMMENT ON COLUMN rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
 COMMENT ON COLUMN rebalance_operations."txHashes" IS 'Transaction hashes for cross-chain operations stored as JSON';
 
 -- migrate:down
