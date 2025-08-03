@@ -7,9 +7,10 @@ import {
   getActiveEarmarksForChain,
   getRebalanceOperationsByEarmark,
   removeEarmark,
+  createRebalanceOperation,
 } from '../src/db';
 import { setupTestDatabase, teardownTestDatabase, cleanupTestDatabase } from './setup';
-import { EarmarkStatus } from '@mark/core';
+import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
 
 describe('Database Adapter - Integration Tests', () => {
   beforeEach(async () => {
@@ -55,27 +56,39 @@ describe('Database Adapter - Integration Tests', () => {
         await expect(createEarmark(earmarkData)).rejects.toThrow();
       });
 
-      it('should create earmark with initial rebalance operations', async () => {
+      it('should create earmark and then create rebalance operations separately', async () => {
         const earmarkData = {
           invoiceId: 'invoice-002',
           designatedPurchaseChain: 10,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '200000000000',
-          initialRebalanceOperations: [
-            {
-              originChainId: 1,
-              amount: '100000000000',
-              slippage: 100,
-            },
-            {
-              originChainId: 137,
-              amount: '100000000000',
-              slippage: 100,
-            },
-          ],
         };
 
         const earmark = await createEarmark(earmarkData);
+        
+        // Create rebalance operations separately
+        await createRebalanceOperation({
+          earmarkId: earmark.id,
+          originChainId: 1,
+          destinationChainId: 10,
+          tickerHash: earmark.tickerHash,
+          amount: '100000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'test-bridge',
+        });
+        
+        await createRebalanceOperation({
+          earmarkId: earmark.id,
+          originChainId: 137,
+          destinationChainId: 10,
+          tickerHash: earmark.tickerHash,
+          amount: '100000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'test-bridge',
+        });
+        
         const operations = await getRebalanceOperationsByEarmark(earmark.id);
 
         expect(operations).toHaveLength(2);
@@ -259,13 +272,6 @@ describe('Database Adapter - Integration Tests', () => {
           designatedPurchaseChain: 1,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '100000000000',
-          initialRebalanceOperations: [
-            {
-              originChainId: 1,
-              amount: '100000000000',
-              slippage: 100,
-            },
-          ],
         });
 
         // Verify earmark exists
@@ -346,16 +352,35 @@ describe('Database Adapter - Integration Tests', () => {
     });
 
     it('should maintain data integrity across operations', async () => {
-      // Create earmark with operations
+      // Create earmark
       const earmark = await createEarmark({
         invoiceId: 'integrity-test',
         designatedPurchaseChain: 10,
         tickerHash: '0xabc',
         minAmount: '1000000',
-        initialRebalanceOperations: [
-          { originChainId: 1, amount: '500000', slippage: 50 },
-          { originChainId: 137, amount: '500000', slippage: 50 },
-        ],
+      });
+
+      // Create rebalance operations separately
+      await createRebalanceOperation({
+        earmarkId: earmark.id,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: earmark.tickerHash,
+        amount: '500000',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+      });
+      
+      await createRebalanceOperation({
+        earmarkId: earmark.id,
+        originChainId: 137,
+        destinationChainId: 10,
+        tickerHash: earmark.tickerHash,
+        amount: '500000',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
       });
 
       // Update earmark status
