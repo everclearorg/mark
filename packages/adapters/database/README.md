@@ -129,7 +129,17 @@ The test database is automatically created and migrated when you run tests for t
 Three main tables for earmark tracking:
 
 - **earmarks** - Invoice earmarks awaiting rebalancing
+  - States:
+    - `pending` - All rebalancing ops submitted
+    - `ready` - Funds are ready (all rebalancing ops completed)
+    - `completed` - Invoice purchased
+    - `cancelled` - Earmark cancelled before completion
 - **rebalance_operations** - Individual rebalancing operations
+  - States:
+    - `pending` - Operation submitted
+    - `awaiting_callback` - Callback needed
+    - `completed` - Rebalancing completed
+    - `expired` - Rebalancing op expired after 24 hrs
 
 See migration files in `db/migrations/` for full schema.
 

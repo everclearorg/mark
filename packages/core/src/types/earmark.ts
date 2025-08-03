@@ -6,8 +6,8 @@ export enum EarmarkStatus {
 }
 
 export enum RebalanceOperationStatus {
-  PENDING = 'pending',
-  IN_PROGRESS = 'in_progress',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
+  PENDING = 'pending',                     // Transaction submitted on-chain
+  AWAITING_CALLBACK = 'awaiting_callback', // Waiting for callback execution
+  COMPLETED = 'completed',                 // Fully complete
+  EXPIRED = 'expired',                     // Expired (24 hours)
 }
