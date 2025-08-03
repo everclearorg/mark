@@ -238,15 +238,15 @@ describe('Database Adapter - Unit Tests', () => {
     it('should validate operation status types from @mark/core', () => {
       const validStatuses = [
         RebalanceOperationStatus.PENDING,
-        RebalanceOperationStatus.IN_PROGRESS,
+        RebalanceOperationStatus.AWAITING_CALLBACK,
         RebalanceOperationStatus.COMPLETED,
-        RebalanceOperationStatus.FAILED,
+        RebalanceOperationStatus.EXPIRED,
       ];
 
       expect(validStatuses).toContain('pending');
-      expect(validStatuses).toContain('in_progress');
+      expect(validStatuses).toContain('awaiting_callback');
       expect(validStatuses).toContain('completed');
-      expect(validStatuses).toContain('failed');
+      expect(validStatuses).toContain('expired');
     });
   });
 
