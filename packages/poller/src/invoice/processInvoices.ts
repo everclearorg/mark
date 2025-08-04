@@ -1,5 +1,12 @@
-import { getTokenAddressFromConfig, InvalidPurchaseReasons, Invoice, NewIntentParams, EarmarkStatus } from '@mark/core';
-import * as database from '@mark/database';
+import {
+  getTokenAddressFromConfig,
+  InvalidPurchaseReasons,
+  Invoice,
+  NewIntentParams,
+  EarmarkStatus,
+  isSvmChain,
+  AddressFormat,
+} from '@mark/core';
 import { jsonifyError, jsonifyMap } from '@mark/logger';
 import { IntentStatus } from '@mark/everclear';
 import { InvoiceLabels } from '@mark/prometheus';
@@ -515,7 +522,8 @@ export async function processTickerGroup(
         );
       }
 
-      let assetAddr = getTokenAddressFromConfig(invoice.ticker_hash, invoice.origin, config);
+      const format = isSvmChain(invoice.origin) ? AddressFormat.Base58 : AddressFormat.Hex;
+      let assetAddr = getTokenAddressFromConfig(invoice.ticker_hash, invoice.origin, config, format);
       if (!assetAddr) {
         logger.error('Failed to get token address from config', {
           requestId,
@@ -591,7 +599,7 @@ export async function processTickerGroup(
  * @param invoices - The invoices to process
  */
 export async function processInvoices(context: ProcessingContext, invoices: Invoice[]): Promise<void> {
-  const { config, everclear, purchaseCache: cache, logger, prometheus, requestId, startTime } = context;
+  const { config, everclear, chainService, purchaseCache: cache, logger, prometheus, requestId, startTime } = context;
   let start = startTime;
 
   logger.info('Starting invoice processing', {
@@ -606,7 +614,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Process earmarked invoices first
   try {
     await onDemand.processPendingEarmarks(context, invoices);
-    const readyEarmarks = await database.getEarmarks({ status: EarmarkStatus.READY });
+    const readyEarmarks = await context.database.getEarmarks({ status: EarmarkStatus.READY });
     const staleEarmarkIds: string[] = [];
 
     // Create invoice map for lookup
@@ -661,17 +669,13 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Query all of Mark's balances across chains
   logger.info('Getting mark balances', { requestId, chains: Object.keys(config.chains) });
   start = getTimeSeconds();
-  const balances = await getMarkBalances(config, prometheus);
-  logger.debug('Retrieved balances', {
-    requestId,
-    balances: jsonifyMap(balances),
-    duration: getTimeSeconds() - start,
-  });
+  const balances = await getMarkBalances(config, chainService, prometheus);
+  logger.debug('Retrieved balances', { requestId, balances: jsonifyMap(balances), duration: getTimeSeconds() - start });
 
   // Query all of Mark's gas balances across chains
   logger.info('Getting mark gas balances', { requestId, chains: Object.keys(config.chains) });
   start = getTimeSeconds();
-  const gasBalances = await getMarkGasBalances(config, prometheus);
+  const gasBalances = await getMarkGasBalances(config, chainService, prometheus);
   logGasThresholds(gasBalances, config, logger);
   logger.debug('Retrieved gas balances', {
     requestId,
@@ -701,32 +705,27 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   start = getTimeSeconds();
 
   // Remove cached purchases that no longer apply to an invoice.
-  const targetsToRemove = (
-    await Promise.all(
-      allCachedPurchases.map(async (purchase: PurchaseAction) => {
-        if (!purchase.purchase.intentId) {
-          return undefined;
-        }
-        // Remove purchases that are invoiced or settled
-        const status = await everclear.intentStatus(purchase.purchase.intentId!);
-        const spentStatuses = [
-          IntentStatus.INVOICED,
-          IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
-          IntentStatus.SETTLED,
-          IntentStatus.SETTLED_AND_COMPLETED,
-          IntentStatus.DISPATCHED_HUB,
-          IntentStatus.DISPATCHED_UNSUPPORTED,
-          IntentStatus.UNSUPPORTED,
-          IntentStatus.UNSUPPORTED_RETURNED,
-        ];
-        if (!spentStatuses.includes(status)) {
-          // Purchase intent could still be used to pay down target invoice
-          return undefined;
-        }
-        return purchase.target.intent_id;
-      }),
-    )
-  ).filter((x: string | undefined) => !!x);
+  const purchasesWithIntentIds = allCachedPurchases.filter((purchase: PurchaseAction) => purchase.purchase.intentId);
+  const intentIds = purchasesWithIntentIds.map((purchase: PurchaseAction) => purchase.purchase.intentId!);
+  const intentStatusesMap = await everclear.intentStatuses(intentIds);
+
+  const spentStatuses = [
+    IntentStatus.INVOICED,
+    IntentStatus.SETTLED_AND_MANUALLY_EXECUTED,
+    IntentStatus.SETTLED,
+    IntentStatus.SETTLED_AND_COMPLETED,
+    IntentStatus.DISPATCHED_HUB,
+    IntentStatus.DISPATCHED_UNSUPPORTED,
+    IntentStatus.UNSUPPORTED,
+    IntentStatus.UNSUPPORTED_RETURNED,
+  ];
+
+  const targetsToRemove = purchasesWithIntentIds
+    .filter((purchase: PurchaseAction) => {
+      const status = intentStatusesMap.get(purchase.purchase.intentId!) || IntentStatus.NONE;
+      return spentStatuses.includes(status);
+    })
+    .map((purchase: PurchaseAction) => purchase.target.intent_id);
 
   const pendingPurchases = allCachedPurchases.filter(
     ({ target }: PurchaseAction) => !targetsToRemove.includes(target.intent_id),

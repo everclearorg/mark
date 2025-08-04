@@ -388,4 +388,38 @@ describe('executeDestinationCallbacks', () => {
         expect(params![0]).to.equal(RebalanceOperationStatus.EXPIRED);
         expect(params![1]).to.deep.equal([RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK]);
     });
+
+    it('should handle callback transaction with undefined value', async () => {
+        const callbackWithUndefinedValue = {
+            transaction: {
+                to: '0xDestinationContract',
+                data: '0xcallbackdata',
+                // value is undefined
+            },
+            memo: 'Callback'
+        };
+
+        const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+        dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+        (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+        mockChainService.getTransactionReceipt.resolves(mockReceipt1);
+        mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
+        mockSpecificBridgeAdapter.readyOnDestination.resolves(true);
+        mockSpecificBridgeAdapter.destinationCallback.resolves(callbackWithUndefinedValue);
+        submitTransactionStub.resolves({
+            hash: mockSubmitSuccessReceipt.transactionHash,
+            submissionType: TransactionSubmissionType.Onchain,
+            receipt: mockSubmitSuccessReceipt,
+        });
+
+        await executeDestinationCallbacks(mockContext);
+
+        // Verify the transaction was called with value defaulting to '0'
+        expect(submitTransactionStub.calledOnce).to.be.true;
+        const callArgs = submitTransactionStub.firstCall.args[0];
+        expect(callArgs.txRequest.value).to.equal('0');
+        expect((mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, match({
+            status: RebalanceOperationStatus.COMPLETED,
+        }))).to.be.true;
+    });
 });
