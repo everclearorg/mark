@@ -6,6 +6,7 @@ import {
   TransactionRequest,
   Invoice,
   NewIntentWithPermit2Params,
+  CreateLookupTableParams,
 } from '@mark/core';
 
 export interface MinAmountsResponse {
@@ -100,6 +101,13 @@ export interface IntentStatusResponse {
   };
 }
 
+export interface IntentStatusesResponse {
+  intents: {
+    intentId: string;
+    status: IntentStatus;
+  }[];
+}
+
 export class EverclearAdapter {
   private readonly apiUrl: string;
   private readonly logger: Logger;
@@ -132,6 +140,33 @@ export class EverclearAdapter {
     }
   }
 
+  async solanaCreateNewIntent(
+    params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[],
+  ): Promise<TransactionRequest> {
+    try {
+      const url = `${this.apiUrl}/solana/intents`;
+      const { data } = await axiosPost<TransactionRequest>(url, params);
+      return data;
+    } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ctx = (err as any).context;
+      if (ctx?.error?.status === 404) {
+        throw new LookupTableNotFoundError();
+      }
+      throw new Error(`Failed to fetch create solana intent from API ${err}`);
+    }
+  }
+
+  async solanaCreateLookupTable(params: CreateLookupTableParams): Promise<TransactionRequest> {
+    try {
+      const url = `${this.apiUrl}/solana/create-lookup-table`;
+      const { data } = await axiosPost<TransactionRequest>(url, params);
+      return data;
+    } catch (err) {
+      throw new Error(`Failed to fetch create solana intent from API ${err}`);
+    }
+  }
+
   async getMinAmounts(intentId: string): Promise<MinAmountsResponse> {
     const url = `${this.apiUrl}/invoices/${intentId}/min-amounts`;
     const { data } = await axiosGet<MinAmountsResponse>(url);
@@ -150,6 +185,47 @@ export class EverclearAdapter {
       });
       return IntentStatus.NONE;
     }
+  }
+
+  async intentStatuses(intentIds: string[]): Promise<Map<string, IntentStatus>> {
+    const BATCH_SIZE = 100;
+    const result = new Map<string, IntentStatus>();
+
+    // Process intent IDs in batches
+    for (let i = 0; i < intentIds.length; i += BATCH_SIZE) {
+      const batch = intentIds.slice(i, i + BATCH_SIZE);
+
+      try {
+        const url = `${this.apiUrl}/intents/status`;
+        const { data } = await axiosPost<IntentStatusesResponse>(url, { intentIds: batch });
+
+        // Map the results to intent ID -> status
+        for (const intentResponse of data.intents) {
+          result.set(intentResponse.intentId, intentResponse.status);
+        }
+
+        // Handle any intent IDs that weren't returned (set to NONE)
+        for (const intentId of batch) {
+          if (!result.has(intentId)) {
+            result.set(intentId, IntentStatus.NONE);
+          }
+        }
+      } catch (e) {
+        this.logger.error('Failed to get intent statuses for batch', {
+          error: jsonifyError(e),
+          batchSize: batch.length,
+          batchStartIndex: i,
+          intentIds: batch,
+        });
+
+        // Set all intents in this batch to NONE on error
+        for (const intentId of batch) {
+          result.set(intentId, IntentStatus.NONE);
+        }
+      }
+    }
+
+    return result;
   }
 
   async getCustodiedAssets(tickerHash: string, domain: string): Promise<CustodiedAssetsResponse> {
@@ -178,5 +254,15 @@ export class EverclearAdapter {
       });
       throw new Error(`Failed to fetch economy data for ${chain}/${tickerHash}: ${error}`);
     }
+  }
+}
+
+export class LookupTableNotFoundError extends Error {
+  constructor(
+    message: string = 'lookup table not found',
+    public readonly context?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = this.constructor.name;
   }
 }
