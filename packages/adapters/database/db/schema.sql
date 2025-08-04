@@ -107,17 +107,18 @@ COMMENT ON COLUMN public.earmarks.status IS 'Earmark status: pending, ready, com
 
 CREATE TABLE public.rebalance_operations (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
-    "earmarkId" uuid NOT NULL,
+    "earmarkId" uuid,
     "originChainId" integer NOT NULL,
     "destinationChainId" integer NOT NULL,
     "tickerHash" text NOT NULL,
     amount text NOT NULL,
     slippage integer NOT NULL,
+    bridge text,
     status text DEFAULT 'pending'::text NOT NULL,
     "txHashes" jsonb DEFAULT '{}'::jsonb,
     "createdAt" timestamp with time zone DEFAULT now(),
     "updatedAt" timestamp with time zone DEFAULT now(),
-    CONSTRAINT rebalance_operation_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'completed'::text, 'failed'::text])))
+    CONSTRAINT rebalance_operation_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'awaiting_callback'::text, 'completed'::text, 'expired'::text])))
 );
 
 
@@ -132,7 +133,7 @@ COMMENT ON TABLE public.rebalance_operations IS 'Individual rebalancing operatio
 -- Name: COLUMN rebalance_operations."earmarkId"; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.rebalance_operations."earmarkId" IS 'Foreign key to the earmark this operation fulfills';
+COMMENT ON COLUMN public.rebalance_operations."earmarkId" IS 'Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)';
 
 
 --
@@ -164,10 +165,17 @@ COMMENT ON COLUMN public.rebalance_operations.slippage IS 'Expected slippage in 
 
 
 --
+-- Name: COLUMN rebalance_operations.bridge; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.rebalance_operations.bridge IS 'Bridge adapter type used for this operation (e.g., across, binance)';
+
+
+--
 -- Name: COLUMN rebalance_operations.status; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.rebalance_operations.status IS 'Operation status: pending, in_progress, completed, failed (enforced by CHECK constraint)';
+COMMENT ON COLUMN public.rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
 
 
 --

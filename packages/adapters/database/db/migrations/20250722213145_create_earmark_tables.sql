@@ -80,7 +80,7 @@ COMMENT ON COLUMN rebalance_operations."originChainId" IS 'Source chain ID where
 COMMENT ON COLUMN rebalance_operations."destinationChainId" IS 'Target chain ID where funds are being moved to';
 COMMENT ON COLUMN rebalance_operations.amount IS 'Amount of tokens being rebalanced (stored as string to preserve precision)';
 COMMENT ON COLUMN rebalance_operations.slippage IS 'Expected slippage in basis points (e.g., 30 = 0.3%)';
-COMMENT ON COLUMN rebalance_operations.bridge IS 'Bridge adapter type used for this operation (e.g., connext, stargate)';
+COMMENT ON COLUMN rebalance_operations.bridge IS 'Bridge adapter type used for this operation (e.g., across, binance)';
 COMMENT ON COLUMN rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
 COMMENT ON COLUMN rebalance_operations."txHashes" IS 'Transaction hashes for cross-chain operations stored as JSON';
 
