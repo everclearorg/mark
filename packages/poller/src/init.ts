@@ -17,7 +17,7 @@ import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
-import { initializeDatabase, closeDatabase } from '@mark/database';
+import * as database from '@mark/database';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
@@ -28,6 +28,7 @@ export interface MarkAdapters {
   logger: Logger;
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;
+  database: typeof database;
 }
 export interface ProcessingContext extends MarkAdapters {
   config: MarkConfiguration;
@@ -37,7 +38,11 @@ export interface ProcessingContext extends MarkAdapters {
 
 async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
   try {
-    await Promise.all([adapters.purchaseCache.disconnect(), adapters.rebalanceCache.disconnect(), closeDatabase()]);
+    await Promise.all([
+      adapters.purchaseCache.disconnect(),
+      adapters.rebalanceCache.disconnect(),
+      database.closeDatabase(),
+    ]);
     cleanupHttpConnections();
     cleanupViemClients();
   } catch (error) {
@@ -71,7 +76,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
 
   const rebalance = new RebalanceAdapter(config, logger, rebalanceCache);
 
-  initializeDatabase(config.database);
+  database.initializeDatabase(config.database);
 
   return {
     logger,
@@ -82,6 +87,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     rebalanceCache,
     prometheus,
     rebalance,
+    database,
   };
 }
 
