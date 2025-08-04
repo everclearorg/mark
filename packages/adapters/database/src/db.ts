@@ -3,7 +3,9 @@
 import { Pool, PoolClient } from 'pg';
 import { DatabaseConfig } from './types';
 import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
-import * as schema from 'zapatos/schema';
+
+// Import from the module declared in the schema file
+import type * as schema from 'zapatos/schema';
 
 type earmarks = schema.earmarks.Selectable;
 type rebalance_operations = schema.rebalance_operations.Selectable;

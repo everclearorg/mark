@@ -351,6 +351,14 @@ declare module 'zapatos/schema' {
       */
       amount: string;
       /**
+      * **rebalance_operations.bridge**
+      *
+      * Bridge adapter type used for this operation (e.g., across, binance)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      bridge: string | null;
+      /**
       * **rebalance_operations.createdAt**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
@@ -367,11 +375,11 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.earmarkId**
       *
-      * Foreign key to the earmark this operation fulfills
+      * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
-      * - `NOT NULL`, no default
+      * - Nullable, no default
       */
-      earmarkId: string;
+      earmarkId: string | null;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -397,7 +405,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, in_progress, completed, failed (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -433,6 +441,14 @@ declare module 'zapatos/schema' {
       */
       amount: string;
       /**
+      * **rebalance_operations.bridge**
+      *
+      * Bridge adapter type used for this operation (e.g., across, binance)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      bridge: string | null;
+      /**
       * **rebalance_operations.createdAt**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
@@ -449,11 +465,11 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.earmarkId**
       *
-      * Foreign key to the earmark this operation fulfills
+      * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
-      * - `NOT NULL`, no default
+      * - Nullable, no default
       */
-      earmarkId: string;
+      earmarkId: string | null;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -479,7 +495,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, in_progress, completed, failed (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -515,6 +531,14 @@ declare module 'zapatos/schema' {
       */
       amount?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
+      * **rebalance_operations.bridge**
+      *
+      * Bridge adapter type used for this operation (e.g., across, binance)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      bridge?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
       * **rebalance_operations.createdAt**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
@@ -531,9 +555,9 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.earmarkId**
       *
-      * Foreign key to the earmark this operation fulfills
+      * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
-      * - `NOT NULL`, no default
+      * - Nullable, no default
       */
       earmarkId?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
@@ -561,7 +585,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, in_progress, completed, failed (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -597,6 +621,14 @@ declare module 'zapatos/schema' {
       */
       amount: string | db.Parameter<string> | db.SQLFragment;
       /**
+      * **rebalance_operations.bridge**
+      *
+      * Bridge adapter type used for this operation (e.g., across, binance)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      bridge?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
       * **rebalance_operations.createdAt**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
@@ -613,11 +645,11 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.earmarkId**
       *
-      * Foreign key to the earmark this operation fulfills
+      * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
-      * - `NOT NULL`, no default
+      * - Nullable, no default
       */
-      earmarkId: string | db.Parameter<string> | db.SQLFragment;
+      earmarkId?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -643,7 +675,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, in_progress, completed, failed (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -679,6 +711,14 @@ declare module 'zapatos/schema' {
       */
       amount?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
+      * **rebalance_operations.bridge**
+      *
+      * Bridge adapter type used for this operation (e.g., across, binance)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      bridge?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
       * **rebalance_operations.createdAt**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
@@ -695,11 +735,11 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.earmarkId**
       *
-      * Foreign key to the earmark this operation fulfills
+      * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
-      * - `NOT NULL`, no default
+      * - Nullable, no default
       */
-      earmarkId?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      earmarkId?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -725,7 +765,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, in_progress, completed, failed (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
