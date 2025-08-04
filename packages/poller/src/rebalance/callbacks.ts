@@ -3,15 +3,14 @@ import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
-import { getRebalanceOperations, updateRebalanceOperation, queryWithClient } from '@mark/database';
 import { RebalanceOperationStatus } from '@mark/core';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
-  const { logger, requestId, config, rebalance, chainService } = context;
+  const { logger, requestId, config, rebalance, chainService, database: db } = context;
   logger.info('Executing destination callbacks', { requestId });
 
   // Get all pending operations from database
-  const operations = await getRebalanceOperations({
+  const operations = await db.getRebalanceOperations({
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
   });
 
@@ -69,7 +68,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         );
         if (ready) {
           // Update status to awaiting callback
-          await updateRebalanceOperation(operation.id, {
+          await db.updateRebalanceOperation(operation.id, {
             status: RebalanceOperationStatus.AWAITING_CALLBACK,
           });
           logger.info('Operation ready for callback, updated status', {
@@ -79,6 +78,8 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
           // Update the operation object for further processing
           operation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+        } else {
+          logger.info('Action not ready for destination callback', logContext);
         }
       } catch (e: unknown) {
         logger.error('Failed to check if ready on destination', { ...logContext, error: jsonifyError(e) });
@@ -99,7 +100,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       if (!callback) {
         // No callback needed, mark as completed
         logger.info('No destination callback required, marking as completed', logContext);
-        await updateRebalanceOperation(operation.id, {
+        await db.updateRebalanceOperation(operation.id, {
           status: RebalanceOperationStatus.COMPLETED,
         });
         continue;
@@ -140,7 +141,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         });
 
         // Update operation as completed with destination tx hash
-        await updateRebalanceOperation(operation.id, {
+        await db.updateRebalanceOperation(operation.id, {
           status: RebalanceOperationStatus.COMPLETED,
           txHashes: { ...operation.txHashes, destinationTxHash: tx.hash },
         });
@@ -158,7 +159,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
   // Mark PENDING/AWAITING_CALLBACK ops >24 hours since creation as EXPIRED
   try {
-    await queryWithClient(
+    await db.queryWithClient(
       `
       UPDATE rebalance_operations
       SET status = $1, "updatedAt" = NOW()

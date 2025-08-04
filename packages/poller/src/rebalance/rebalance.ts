@@ -7,7 +7,7 @@ import { formatUnits } from 'viem';
 import { RebalanceAction } from '@mark/cache';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
-import { RebalanceTransactionMemo } from '@mark/rebalance'; s
+import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getAvailableBalanceLessEarmarks } from './onDemand';
 import { createRebalanceOperation } from '@mark/database';
 
