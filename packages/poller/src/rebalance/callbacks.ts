@@ -3,7 +3,14 @@ import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
-import { RebalanceOperationStatus } from '@mark/core';
+import { RebalanceOperationStatus, SupportedBridge } from '@mark/core';
+
+// Type for the txHashes JSON field that matches database schema
+interface TxHashes {
+  originTxHash?: string;
+  destinationTxHash?: string;
+  [key: string]: string | undefined;
+}
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, chainService, database: db } = context;
@@ -29,10 +36,15 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       destinationChain: operation.destinationChainId,
     };
 
-    const adapter = rebalance.getAdapter(operation.bridge);
+    if (!operation.bridge) {
+      logger.warn('Operation missing bridge type', logContext);
+      continue;
+    }
+    const adapter = rebalance.getAdapter(operation.bridge as SupportedBridge);
 
-    // Get origin transaction hash
-    const originTxHash = operation.txHashes?.originTxHash as string | undefined;
+    // Get origin transaction hash from JSON field
+    const txHashes = operation.txHashes as TxHashes | null;
+    const originTxHash = txHashes?.originTxHash;
     if (!originTxHash) {
       logger.warn('Operation missing origin transaction hash', logContext);
       continue;
@@ -141,9 +153,10 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         });
 
         // Update operation as completed with destination tx hash
+        const currentTxHashes = (operation.txHashes as TxHashes) || {};
         await db.updateRebalanceOperation(operation.id, {
           status: RebalanceOperationStatus.COMPLETED,
-          txHashes: { ...operation.txHashes, destinationTxHash: tx.hash },
+          txHashes: { ...currentTxHashes, destinationTxHash: tx.hash },
         });
       } catch (e) {
         logger.error('Failed to execute destination callback', {
