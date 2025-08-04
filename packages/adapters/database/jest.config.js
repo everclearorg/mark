@@ -1,10 +1,10 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  displayName: 'Database Adapter',
-  testMatch: ['<rootDir>/test/**/*.spec.ts'],
-  globalSetup: '<rootDir>/test/setup.ts',
-  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts'],
-  coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov', 'html'],
+  setupFilesAfterEnv: ['<rootDir>/../../../jest.setup.shared.js'],
+  testMatch: ['**/test/**/*.spec.ts'],
+  moduleNameMapper: {
+    '^@mark/core$': '<rootDir>/../../core/src',
+    '^@mark/logger$': '<rootDir>/../logger/src',
+  },
 };

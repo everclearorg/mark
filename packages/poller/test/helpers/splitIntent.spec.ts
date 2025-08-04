@@ -1,4 +1,8 @@
 import { expect } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
+import chai from 'chai';
+
+chai.use(chaiAsPromised);
 import { createStubInstance, SinonStubbedInstance, restore as sinonRestore, match } from 'sinon';
 import { Logger } from '@mark/logger';
 import { Invoice, MarkConfiguration } from '@mark/core';
@@ -12,6 +16,7 @@ import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { mockConfig } from '../mocks';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { createMinimalDatabaseMock } from '../mocks/database';
 
 describe('Split Intent Helper Functions', () => {
   let mockContext: ProcessingContext;
@@ -25,6 +30,7 @@ describe('Split Intent Helper Functions', () => {
     rebalance: SinonStubbedInstance<RebalanceAdapter>;
     web3Signer: SinonStubbedInstance<Wallet>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
+    database: any;
   };
 
   beforeEach(() => {
@@ -38,6 +44,7 @@ describe('Split Intent Helper Functions', () => {
       rebalance: createStubInstance(RebalanceAdapter),
       web3Signer: createStubInstance(Wallet),
       prometheus: createStubInstance(PrometheusAdapter),
+      database: createMinimalDatabaseMock(),
     };
 
     mockContext = {
@@ -737,13 +744,13 @@ describe('Split Intent Helper Functions', () => {
         ['UNKNOWN_TICKER', custodiedAssets]
       ]);
 
-      expect(async () => await calculateSplitIntents(
+      await expect(calculateSplitIntents(
         mockContext,
         invoice,
         minAmounts,
         balances,
         custodiedBalances
-      )).to.throw;
+      )).to.be.rejected;
     });
 
     it('should test allocation sorting with top-N chains preference', async () => {
