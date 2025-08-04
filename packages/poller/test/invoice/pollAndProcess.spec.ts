@@ -11,6 +11,7 @@ import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { createMinimalDatabaseMock } from '../mocks/database';
 
 describe('pollAndProcessInvoices', () => {
     let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -53,6 +54,7 @@ describe('pollAndProcessInvoices', () => {
             rebalance: createStubInstance(RebalanceAdapter),
             web3Signer: createStubInstance(Wallet),
             prometheus: createStubInstance(PrometheusAdapter),
+            database: createMinimalDatabaseMock(),
         };
 
         (mockContext.everclear.fetchInvoices as SinonStub).resolves(mockInvoices);

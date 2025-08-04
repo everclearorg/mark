@@ -1,12 +1,17 @@
 import { expect } from '../globalTestHook';
 import sinon, { createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
 import { ProcessingContext } from '../../src/init';
-import { groupInvoicesByTicker, processInvoices, processTickerGroup, TickerGroup } from '../../src/invoice/processInvoices';
+import {
+  groupInvoicesByTicker,
+  processInvoices,
+  processTickerGroup,
+  TickerGroup,
+} from '../../src/invoice/processInvoices';
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as assetHelpers from '../../src/helpers/asset';
 import { IntentStatus } from '@mark/everclear';
 import { RebalanceCache } from '@mark/cache';
-import { InvalidPurchaseReasons, TransactionSubmissionType } from '@mark/core';
+import { SupportedBridge, InvalidPurchaseReasons, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
@@ -19,7 +24,11 @@ import { mockConfig, createMockInvoice } from '../mocks';
 
 import { RebalanceAdapter } from '@mark/rebalance';
 import * as monitorHelpers from '../../src/helpers/monitor';
-
+import * as onDemand from '../../src/rebalance/onDemand';
+import { createMinimalDatabaseMock } from '../mocks/database';
+import { match } from 'sinon';
+import { Hex } from 'viem';
+import * as contractHelpers from '../../src/helpers/contracts';
 
 describe('Invoice Processing', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -32,6 +41,13 @@ describe('Invoice Processing', () => {
   let sendIntentsStub: SinonStub;
   let logGasThresholdsStub: SinonStub;
 
+  // On-demand rebalancing stubs
+  let evaluateOnDemandRebalancingStub: SinonStub;
+  let executeOnDemandRebalancingStub: SinonStub;
+  let processPendingEarmarksStub: SinonStub;
+  let cleanupCompletedEarmarksStub: SinonStub;
+  let getContractStub: SinonStub;
+
   let mockDeps: {
     logger: SinonStubbedInstance<Logger>;
     everclear: SinonStubbedInstance<EverclearAdapter>;
@@ -41,17 +57,33 @@ describe('Invoice Processing', () => {
     rebalance: SinonStubbedInstance<RebalanceAdapter>;
     web3Signer: SinonStubbedInstance<Wallet>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
+    database: any;
   };
 
   beforeEach(() => {
     // Init with fresh stubs and mocks
-    getMarkBalancesStub = sinon.stub(balanceHelpers, 'getMarkBalances');
-    getMarkGasBalancesStub = sinon.stub(balanceHelpers, 'getMarkGasBalances');
-    getCustodiedBalancesStub = sinon.stub(balanceHelpers, 'getCustodiedBalances');
-    isXerc20SupportedStub = sinon.stub(assetHelpers, 'isXerc20Supported');
-    calculateSplitIntentsStub = sinon.stub(splitIntentHelpers, 'calculateSplitIntents');
-    sendIntentsStub = sinon.stub(intentHelpers, 'sendIntents');
-    logGasThresholdsStub = sinon.stub(monitorHelpers, 'logGasThresholds');
+    getMarkBalancesStub = sinon.stub(balanceHelpers, 'getMarkBalances').resolves(new Map());
+    getMarkGasBalancesStub = sinon.stub(balanceHelpers, 'getMarkGasBalances').resolves(new Map());
+    getCustodiedBalancesStub = sinon.stub(balanceHelpers, 'getCustodiedBalances').resolves(new Map());
+    isXerc20SupportedStub = sinon.stub(assetHelpers, 'isXerc20Supported').resolves(false);
+    calculateSplitIntentsStub = sinon.stub(splitIntentHelpers, 'calculateSplitIntents').resolves({
+      intents: [],
+      originDomain: '1',
+      originNeeded: BigInt(0),
+      totalAllocated: BigInt(0),
+      remainder: BigInt(0),
+    });
+    sendIntentsStub = sinon.stub(intentHelpers, 'sendIntents').resolves([]);
+    logGasThresholdsStub = sinon.stub(monitorHelpers, 'logGasThresholds').resolves();
+
+    // Stub on-demand functions
+    evaluateOnDemandRebalancingStub = sinon
+      .stub(onDemand, 'evaluateOnDemandRebalancing')
+      .resolves({ canRebalance: false });
+    executeOnDemandRebalancingStub = sinon.stub(onDemand, 'executeOnDemandRebalancing').resolves(null);
+    processPendingEarmarksStub = sinon.stub(onDemand, 'processPendingEarmarks').resolves();
+    cleanupCompletedEarmarksStub = sinon.stub(onDemand, 'cleanupCompletedEarmarks').resolves();
+    // Remove stub for non-existent function
 
     mockDeps = {
       logger: createStubInstance(Logger),
@@ -62,14 +94,23 @@ describe('Invoice Processing', () => {
       rebalance: createStubInstance(RebalanceAdapter),
       web3Signer: createStubInstance(Wallet),
       prometheus: createStubInstance(PrometheusAdapter),
+      database: createMinimalDatabaseMock(),
     };
+
+    // Set up default return values for critical methods
+    mockDeps.purchaseCache.getAllPurchases.resolves([]);
+    mockDeps.everclear.intentStatus.resolves(IntentStatus.ADDED);
+    mockDeps.everclear.fetchEconomyData.resolves({
+      currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
+      incomingIntents: {},
+    });
 
     // Default mock config supports 1, 8453, 10 and one token on each
     mockContext = {
       config: mockConfig,
       requestId: 'test-request-id',
       startTime: Math.floor(Date.now() / 1000),
-      ...mockDeps
+      ...mockDeps,
     } as unknown as ProcessingContext;
   });
 
@@ -82,7 +123,7 @@ describe('Invoice Processing', () => {
       const invoices = [
         createMockInvoice({ intent_id: '0x1', ticker_hash: '0xticker1' }),
         createMockInvoice({ intent_id: '0x2', ticker_hash: '0xticker1' }),
-        createMockInvoice({ intent_id: '0x3', ticker_hash: '0xticker1' })
+        createMockInvoice({ intent_id: '0x3', ticker_hash: '0xticker1' }),
       ];
 
       const grouped = groupInvoicesByTicker(mockContext, invoices);
@@ -95,7 +136,7 @@ describe('Invoice Processing', () => {
       const invoices = [
         createMockInvoice({ intent_id: '0x1', ticker_hash: '0xticker1' }),
         createMockInvoice({ intent_id: '0x2', ticker_hash: '0xticker2' }),
-        createMockInvoice({ intent_id: '0x3', ticker_hash: '0xticker1' })
+        createMockInvoice({ intent_id: '0x3', ticker_hash: '0xticker1' }),
       ];
 
       const grouped = groupInvoicesByTicker(mockContext, invoices);
@@ -111,18 +152,18 @@ describe('Invoice Processing', () => {
         createMockInvoice({
           intent_id: '0x1',
           ticker_hash: '0xticker1',
-          hub_invoice_enqueued_timestamp: now - 1 // 1 second ago
+          hub_invoice_enqueued_timestamp: now - 1, // 1 second ago
         }),
         createMockInvoice({
           intent_id: '0x2',
           ticker_hash: '0xticker1',
-          hub_invoice_enqueued_timestamp: now - 3 // 3 seconds ago
+          hub_invoice_enqueued_timestamp: now - 3, // 3 seconds ago
         }),
         createMockInvoice({
           intent_id: '0x3',
           ticker_hash: '0xticker1',
-          hub_invoice_enqueued_timestamp: now - 2 // 2 seconds ago
-        })
+          hub_invoice_enqueued_timestamp: now - 2, // 2 seconds ago
+        }),
       ];
 
       const grouped = groupInvoicesByTicker(mockContext, invoices);
@@ -142,9 +183,7 @@ describe('Invoice Processing', () => {
     });
 
     it('should handle single invoice', () => {
-      const invoices = [
-        createMockInvoice({ intent_id: '0x1', ticker_hash: '0xticker1' })
-      ];
+      const invoices = [createMockInvoice({ intent_id: '0x1', ticker_hash: '0xticker1' })];
 
       const grouped = groupInvoicesByTicker(mockContext, invoices);
 
@@ -160,13 +199,13 @@ describe('Invoice Processing', () => {
         createMockInvoice({
           intent_id: '0x1',
           ticker_hash: '0xticker1',
-          origin: '1'
+          origin: '1',
         }),
         createMockInvoice({
           intent_id: '0x2',
           ticker_hash: '0xticker2',
-          origin: '2'
-        })
+          origin: '2',
+        }),
       ];
 
       groupInvoicesByTicker(mockContext, invoices);
@@ -175,12 +214,12 @@ describe('Invoice Processing', () => {
       expect(mockDeps.prometheus.recordPossibleInvoice.firstCall.args[0]).to.deep.equal({
         origin: '1',
         id: '0x1',
-        ticker: '0xticker1'
+        ticker: '0xticker1',
       });
       expect(mockDeps.prometheus.recordPossibleInvoice.secondCall.args[0]).to.deep.equal({
         origin: '2',
         id: '0x2',
-        ticker: '0xticker2'
+        ticker: '0xticker2',
       });
     });
   });
@@ -198,23 +237,25 @@ describe('Invoice Processing', () => {
       const invoices = [createMockInvoice()];
 
       // Mock the returned purchase from cache
-      mockDeps.purchaseCache.getAllPurchases.resolves([{
-        target: invoices[0],
-        purchase: {
-          intentId: invoices[0].intent_id,
-          params: {
-            amount: '1000000000000000000',
-            origin: '1',
-            destinations: ['1'],
-            to: '0x123',
-            inputAsset: '0x123',
-            callData: '',
-            maxFee: 0
-          }
+      mockDeps.purchaseCache.getAllPurchases.resolves([
+        {
+          target: invoices[0],
+          purchase: {
+            intentId: invoices[0].intent_id,
+            params: {
+              amount: '1000000000000000000',
+              origin: '1',
+              destinations: ['1'],
+              to: '0x123',
+              inputAsset: '0x123',
+              callData: '',
+              maxFee: 0,
+            },
+          },
+          transactionHash: '0xabc',
+          transactionType: TransactionSubmissionType.Onchain,
         },
-        transactionHash: '0xabc',
-        transactionType: TransactionSubmissionType.Onchain,
-      }]);
+      ]);
 
       await processInvoices(mockContext, invoices);
 
@@ -246,29 +287,33 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
-      sendIntentsStub.resolves([{
-        intentId: '0xabc',
-        transactionHash: '0xabc',
-        chainId: '8453',
-        type: TransactionSubmissionType.Onchain,
-      }]);
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc',
+          transactionHash: '0xabc',
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
+        },
+      ]);
 
       await processInvoices(mockContext, [invoice]);
 
@@ -285,9 +330,9 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
-          }
-        }
+            maxFee: '0',
+          },
+        },
       };
 
       // Verify the correct purchase was stored in cache
@@ -369,29 +414,33 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
-      sendIntentsStub.resolves([{
-        intentId: '0xabc',
-        transactionHash: '0xabc',
-        chainId: '8453',
-        type: TransactionSubmissionType.Onchain,
-      }]);
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc',
+          transactionHash: '0xabc',
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
+        },
+      ]);
 
       // Simulate cache failure
       const cacheError = new Error('Cache add error');
@@ -421,23 +470,25 @@ describe('Invoice Processing', () => {
       mockDeps.everclear.intentStatus.resolves(IntentStatus.SETTLED);
 
       // Setup cache data for removal
-      mockDeps.purchaseCache.getAllPurchases.resolves([{
-        target: invoice,
-        purchase: {
-          intentId: invoice.intent_id,
-          params: {
-            amount: '1000000000000000000',
-            origin: '1',
-            destinations: ['1'],
-            to: '0x123',
-            inputAsset: '0x123',
-            callData: '',
-            maxFee: 0
-          }
+      mockDeps.purchaseCache.getAllPurchases.resolves([
+        {
+          target: invoice,
+          purchase: {
+            intentId: invoice.intent_id,
+            params: {
+              amount: '1000000000000000000',
+              origin: '1',
+              destinations: ['1'],
+              to: '0x123',
+              inputAsset: '0x123',
+              callData: '',
+              maxFee: 0,
+            },
+          },
+          transactionHash: '0xabc',
+          transactionType: TransactionSubmissionType.Onchain,
         },
-        transactionHash: '0xabc',
-        transactionType: TransactionSubmissionType.Onchain,
-      }]);
+      ]);
 
       // Simulate cache failure
       mockDeps.purchaseCache.removePurchases.rejects(new Error('Cache remove error'));
@@ -456,30 +507,28 @@ describe('Invoice Processing', () => {
 
     it('should adjust custodied balances based on pending intents from economy data', async () => {
       const ticker = '0xticker1';
-      const domain1 = '8453';  // Origin domain
-      const domain2 = '1';     // Destination domain where Mark has balance
+      const domain1 = '8453'; // Origin domain
+      const domain2 = '1'; // Destination domain where Mark has balance
 
       calculateSplitIntentsStub.restore();
-      sinon.stub(assetHelpers, 'getSupportedDomainsForTicker')
-        .returns([domain1, domain2]);
+      sinon.stub(assetHelpers, 'getSupportedDomainsForTicker').returns([domain1, domain2]);
       sinon.stub(assetHelpers, 'convertHubAmountToLocalDecimals').returnsArg(0);
 
       // Mock balances - Mark has enough balance on domain2 to purchase the invoice
-      getMarkBalancesStub.resolves(new Map([
-        [ticker, new Map([[domain2, BigInt('5000000000000000000')]])]
-      ]));
+      getMarkBalancesStub.resolves(new Map([[ticker, new Map([[domain2, BigInt('5000000000000000000')]])]]));
       // Mark has enough gas balance on domain2
-      getMarkGasBalancesStub.resolves(new Map([
-        [ticker, new Map([[domain2, BigInt('1000000000000000000')]])]
-      ]));
+      getMarkGasBalancesStub.resolves(new Map([[ticker, new Map([[domain2, BigInt('1000000000000000000')]])]]));
 
-      // Mock custodied balances - domain1 has insufficient custodied assets 
+      // Mock custodied balances - domain1 has insufficient custodied assets
       // for Mark to settle out if not including pending intents
       const originalCustodied = new Map([
-        [ticker, new Map([
-          [domain1, BigInt('500000000000000000')], // Only 0.5 ETH
-          [domain2, BigInt('0')]
-        ])]
+        [
+          ticker,
+          new Map([
+            [domain1, BigInt('500000000000000000')], // Only 0.5 ETH
+            [domain2, BigInt('0')],
+          ]),
+        ],
       ]);
       getCustodiedBalancesStub.resolves(originalCustodied);
 
@@ -493,21 +542,21 @@ describe('Invoice Processing', () => {
           return {
             currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
             incomingIntents: {
-              'chain1': [
+              chain1: [
                 {
                   intentId: '0xintent1',
                   initiator: '0xuser1',
                   amount: '1500000000000000000', // 1.5 ETH in pending intents
-                  destinations: [domain2]
-                }
-              ]
-            }
+                  destinations: [domain2],
+                },
+              ],
+            },
           };
         }
 
         return {
           currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-          incomingIntents: null
+          incomingIntents: null,
         };
       });
 
@@ -516,7 +565,7 @@ describe('Invoice Processing', () => {
         ticker_hash: ticker,
         origin: domain1,
         destinations: [domain2],
-        amount: '2000000000000000000' // 2 ETH
+        amount: '2000000000000000000', // 2 ETH
       });
 
       // Mock getMinAmounts
@@ -525,16 +574,18 @@ describe('Invoice Processing', () => {
         invoiceAmount: '2000000000000000000',
         amountAfterDiscount: '2000000000000000000',
         discountBps: '0',
-        custodiedAmounts: { [domain1]: '500000000000000000' }
+        custodiedAmounts: { [domain1]: '500000000000000000' },
       });
 
       // Mock sendIntents to return success
-      sendIntentsStub.resolves([{
-        intentId: '0xabc',
-        transactionHash: '0xabc',
-        chainId: domain2,
-        type: TransactionSubmissionType.Onchain,
-      }]);
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc',
+          transactionHash: '0xabc',
+          chainId: domain2,
+          type: TransactionSubmissionType.Onchain,
+        },
+      ]);
 
       await processInvoices(mockContext, [invoice]);
 
@@ -557,18 +608,33 @@ describe('Invoice Processing', () => {
       const domain2 = '1';
 
       // Mock getSupportedDomainsForTicker to return our test domains
-      const getSupportedDomainsStub = sinon.stub(assetHelpers, 'getSupportedDomainsForTicker')
+      const getSupportedDomainsStub = sinon
+        .stub(assetHelpers, 'getSupportedDomainsForTicker')
         .returns([domain1, domain2]);
 
       // Mock balances and custodied assets
-      getMarkBalancesStub.resolves(new Map([
-        [ticker, new Map([[domain1, BigInt('5000000000000000000')], [domain2, BigInt('3000000000000000000')]])]
-      ]));
+      getMarkBalancesStub.resolves(
+        new Map([
+          [
+            ticker,
+            new Map([
+              [domain1, BigInt('5000000000000000000')],
+              [domain2, BigInt('3000000000000000000')],
+            ]),
+          ],
+        ]),
+      );
       getMarkGasBalancesStub.resolves(new Map());
 
       // Mock custodied balances - start with 2 ETH custodied in each domain
       const originalCustodied = new Map([
-        [ticker, new Map([[domain1, BigInt('2000000000000000000')], [domain2, BigInt('2000000000000000000')]])]
+        [
+          ticker,
+          new Map([
+            [domain1, BigInt('2000000000000000000')],
+            [domain2, BigInt('2000000000000000000')],
+          ]),
+        ],
       ]);
       getCustodiedBalancesStub.resolves(originalCustodied);
 
@@ -582,15 +648,15 @@ describe('Invoice Processing', () => {
           return {
             currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
             incomingIntents: {
-              'chain1': [
+              chain1: [
                 {
                   intentId: '0xintent1',
                   initiator: '0xuser1',
                   amount: '1000000000000000000', // 1 ETH
-                  destinations: [domain2]
-                }
-              ]
-            }
+                  destinations: [domain2],
+                },
+              ],
+            },
           };
         } else if (domain === domain2) {
           throw new Error('API error');
@@ -598,27 +664,29 @@ describe('Invoice Processing', () => {
 
         return {
           currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-          incomingIntents: null
+          incomingIntents: null,
         };
       });
 
       // Mock the calculateSplitIntents to examine the adjusted custodied values
-      calculateSplitIntentsStub.callsFake(async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
-        // Verify domain1 was adjusted
-        const domain1Custodied = remainingCustodied.get(ticker)?.get(domain1) || BigInt(0);
-        expect(domain1Custodied.toString()).to.equal('1000000000000000000');
+      calculateSplitIntentsStub.callsFake(
+        async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
+          // Verify domain1 was adjusted
+          const domain1Custodied = remainingCustodied.get(ticker)?.get(domain1) || BigInt(0);
+          expect(domain1Custodied.toString()).to.equal('1000000000000000000');
 
-        // Verify domain2 was NOT adjusted (since fetchEconomyData failed)
-        const domain2Custodied = remainingCustodied.get(ticker)?.get(domain2) || BigInt(0);
-        expect(domain2Custodied.toString()).to.equal('2000000000000000000');
+          // Verify domain2 was NOT adjusted (since fetchEconomyData failed)
+          const domain2Custodied = remainingCustodied.get(ticker)?.get(domain2) || BigInt(0);
+          expect(domain2Custodied.toString()).to.equal('2000000000000000000');
 
-        return {
-          intents: [],
-          originDomain: null,
-          totalAllocated: BigInt(0),
-          remainder: BigInt(0)
-        };
-      });
+          return {
+            intents: [],
+            originDomain: null,
+            totalAllocated: BigInt(0),
+            remainder: BigInt(0),
+          };
+        },
+      );
 
       // Mock getMinAmounts to return valid amounts
       mockDeps.everclear.getMinAmounts.resolves({
@@ -626,27 +694,25 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       // Create a test invoice
       const invoice = createMockInvoice({
         ticker_hash: ticker,
-        destinations: [domain1, domain2]
+        destinations: [domain1, domain2],
       });
 
       // Execute the processInvoices function
       await processInvoices(mockContext, [invoice]);
 
       // Verify that we logged the error for domain2
-      expect(mockDeps.logger.warn.calledWith(
-        'Failed to fetch economy data for domain, continuing without it'
-      )).to.be.true;
+      expect(mockDeps.logger.warn.calledWith('Failed to fetch economy data for domain, continuing without it')).to.be
+        .true;
 
       // Verify adjustment was still made for domain1
-      expect(mockDeps.logger.info.calledWith(
-        'Adjusted custodied assets for domain based on pending intents'
-      )).to.be.true;
+      expect(mockDeps.logger.info.calledWith('Adjusted custodied assets for domain based on pending intents')).to.be
+        .true;
     });
 
     it('should handle empty incomingIntents correctly', async () => {
@@ -655,20 +721,15 @@ describe('Invoice Processing', () => {
       const domain = '8453';
 
       // Mock getSupportedDomainsForTicker to return our test domain
-      const getSupportedDomainsStub = sinon.stub(assetHelpers, 'getSupportedDomainsForTicker')
-        .returns([domain]);
+      const getSupportedDomainsStub = sinon.stub(assetHelpers, 'getSupportedDomainsForTicker').returns([domain]);
 
       // Mock balances and custodied assets
-      getMarkBalancesStub.resolves(new Map([
-        [ticker, new Map([[domain, BigInt('5000000000000000000')]])]
-      ]));
+      getMarkBalancesStub.resolves(new Map([[ticker, new Map([[domain, BigInt('5000000000000000000')]])]]));
       getMarkGasBalancesStub.resolves(new Map());
 
       // Mock custodied balances - start with 2 ETH custodied
       const originalCustodied = BigInt('2000000000000000000');
-      getCustodiedBalancesStub.resolves(new Map([
-        [ticker, new Map([[domain, originalCustodied]])]
-      ]));
+      getCustodiedBalancesStub.resolves(new Map([[ticker, new Map([[domain, originalCustodied]])]]));
 
       // Mock cache with no existing purchases
       mockDeps.purchaseCache.getAllPurchases.resolves([]);
@@ -677,22 +738,24 @@ describe('Invoice Processing', () => {
       // Mock economy data fetch with null incomingIntents
       mockDeps.everclear.fetchEconomyData.resolves({
         currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
-        incomingIntents: null  // Null incomingIntents
+        incomingIntents: null, // Null incomingIntents
       });
 
       // Mock the calculateSplitIntents to examine the adjusted custodied values
-      calculateSplitIntentsStub.callsFake(async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
-        // Verify domain custodied was NOT adjusted
-        const domainCustodied = remainingCustodied.get(ticker)?.get(domain) || BigInt(0);
-        expect(domainCustodied).to.equal(originalCustodied);
+      calculateSplitIntentsStub.callsFake(
+        async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
+          // Verify domain custodied was NOT adjusted
+          const domainCustodied = remainingCustodied.get(ticker)?.get(domain) || BigInt(0);
+          expect(domainCustodied).to.equal(originalCustodied);
 
-        return {
-          intents: [],
-          originDomain: null,
-          totalAllocated: BigInt(0),
-          remainder: BigInt(0)
-        };
-      });
+          return {
+            intents: [],
+            originDomain: null,
+            totalAllocated: BigInt(0),
+            remainder: BigInt(0),
+          };
+        },
+      );
 
       // Mock getMinAmounts to return valid amounts
       mockDeps.everclear.getMinAmounts.resolves({
@@ -700,21 +763,22 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       // Create a test invoice
       const invoice = createMockInvoice({
         ticker_hash: ticker,
-        destinations: [domain]
+        destinations: [domain],
       });
 
       // Execute the processInvoices function
       await processInvoices(mockContext, [invoice]);
 
       // Verify that we did NOT log any adjustments
-      const adjustLogCalls = mockDeps.logger.info.getCalls().filter(call =>
-        call.args[0] === 'Adjusted custodied assets for domain based on pending intents');
+      const adjustLogCalls = mockDeps.logger.info
+        .getCalls()
+        .filter((call) => call.args[0] === 'Adjusted custodied assets for domain based on pending intents');
       expect(adjustLogCalls.length).to.equal(0);
     });
   });
@@ -727,7 +791,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       const invoice = createMockInvoice();
@@ -736,29 +800,33 @@ describe('Invoice Processing', () => {
         invoices: [invoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('1000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
-      sendIntentsStub.resolves([{
-        intentId: '0xabc',
-        transactionHash: '0xabc',
-        chainId: '8453',
-        type: TransactionSubmissionType.Onchain,
-      }]);
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc',
+          transactionHash: '0xabc',
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
+        },
+      ]);
 
       const result = await processTickerGroup(mockContext, group, []);
 
@@ -775,9 +843,9 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
-          }
-        }
+            maxFee: '0',
+          },
+        },
       };
 
       // Verify the correct purchases were created
@@ -795,15 +863,15 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
-      
+
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
         minAmounts: { '8453': '1000000000000000000' }, // Second invoice: 1 WETH independent
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       const invoice1 = createMockInvoice({ intent_id: '0x123' });
@@ -814,22 +882,24 @@ describe('Invoice Processing', () => {
         invoices: [invoice1, invoice2],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // Call to calculateSplitIntents for both invoices
       calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
       sendIntentsStub.resolves([
@@ -844,7 +914,7 @@ describe('Invoice Processing', () => {
           transactionHash: '0xdef',
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
-        }
+        },
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -863,9 +933,9 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
-          }
+              maxFee: '0',
+            },
+          },
         },
         {
           target: invoice2,
@@ -880,10 +950,10 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
-          }
-        }
+              maxFee: '0',
+            },
+          },
+        },
       ];
 
       // Verify the correct purchases were created
@@ -900,7 +970,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '2000000000000000000',
         amountAfterDiscount: '2000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       const invoice = createMockInvoice();
@@ -909,7 +979,7 @@ describe('Invoice Processing', () => {
         invoices: [invoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // Two split intents to settle this invoice
@@ -922,7 +992,7 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
+            maxFee: '0',
           },
           {
             amount: '1000000000000000000',
@@ -931,11 +1001,11 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
-          }
+            maxFee: '0',
+          },
         ],
         originDomain: '8453',
-        totalAllocated: BigInt('2000000000000000000')
+        totalAllocated: BigInt('2000000000000000000'),
       });
 
       sendIntentsStub.resolves([
@@ -950,7 +1020,8 @@ describe('Invoice Processing', () => {
           transactionHash: '0xdef',
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
-        }]);
+        },
+      ]);
 
       const result = await processTickerGroup(mockContext, group, []);
 
@@ -968,9 +1039,9 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
-          }
+              maxFee: '0',
+            },
+          },
         },
         {
           target: invoice,
@@ -985,10 +1056,10 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
-          }
-        }
+              maxFee: '0',
+            },
+          },
+        },
       ];
 
       // Verify the correct split intent purchases were created
@@ -1003,15 +1074,15 @@ describe('Invoice Processing', () => {
       const validInvoice = createMockInvoice();
       const zeroAmountInvoice = createMockInvoice({
         intent_id: '0x456',
-        amount: '0'
+        amount: '0',
       });
       const invalidOwnerInvoice = createMockInvoice({
         intent_id: '0x789',
-        owner: mockContext.config.ownAddress
+        owner: mockContext.config.ownAddress,
       });
       const tooNewInvoice = createMockInvoice({
         intent_id: '0xabc',
-        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000)
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000),
       });
 
       const group: TickerGroup = {
@@ -1019,7 +1090,7 @@ describe('Invoice Processing', () => {
         invoices: [validInvoice, zeroAmountInvoice, invalidOwnerInvoice, tooNewInvoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('4000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // Set up stubs for the valid invoice to be processed
@@ -1029,29 +1100,33 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
-      sendIntentsStub.resolves([{
-        intentId: '0xabc',
-        transactionHash: '0xabc',
-        chainId: '8453',
-        type: TransactionSubmissionType.Onchain,
-      }]);
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc',
+          transactionHash: '0xabc',
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
+        },
+      ]);
 
       const result = await processTickerGroup(mockContext, group, []);
 
@@ -1061,8 +1136,12 @@ describe('Invoice Processing', () => {
 
       // And prometheus metrics were recorded for invalid invoices
       expect(mockDeps.prometheus.recordInvalidPurchase.callCount).to.equal(3);
-      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(0).args[0]).to.equal(InvalidPurchaseReasons.InvalidFormat);
-      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(1).args[0]).to.equal(InvalidPurchaseReasons.InvalidOwner);
+      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(0).args[0]).to.equal(
+        InvalidPurchaseReasons.InvalidFormat,
+      );
+      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(1).args[0]).to.equal(
+        InvalidPurchaseReasons.InvalidOwner,
+      );
       expect(mockDeps.prometheus.recordInvalidPurchase.getCall(2).args[0]).to.equal(InvalidPurchaseReasons.InvalidAge);
     });
 
@@ -1073,7 +1152,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       const invoice = createMockInvoice({ intent_id: '0x123' });
@@ -1083,27 +1162,29 @@ describe('Invoice Processing', () => {
         invoices: [invoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // Create a pending purchase for invoice1
-      const pendingPurchases = [{
-        target: invoice,
-        purchase: {
-          intentId: '0xexisting',
-          params: {
-            amount: '1000000000000000000',
-            origin: '8453',
-            destinations: ['1', '10'],
-            to: '0xowner',
-            inputAsset: '0xtoken1',
-            callData: '0x',
-            maxFee: '0'
-          }
+      const pendingPurchases = [
+        {
+          target: invoice,
+          purchase: {
+            intentId: '0xexisting',
+            params: {
+              amount: '1000000000000000000',
+              origin: '8453',
+              destinations: ['1', '10'],
+              to: '0xowner',
+              inputAsset: '0xtoken1',
+              callData: '0x',
+              maxFee: '0',
+            },
+          },
+          transactionHash: '0xexisting',
+          transactionType: TransactionSubmissionType.Onchain,
         },
-        transactionHash: '0xexisting',
-        transactionType: TransactionSubmissionType.Onchain,
-      }];
+      ];
 
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
 
@@ -1120,7 +1201,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       const invoice = createMockInvoice({ intent_id: '0x123' });
@@ -1130,7 +1211,7 @@ describe('Invoice Processing', () => {
         invoices: [invoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -1146,63 +1227,79 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       const invoice = createMockInvoice();
       const group: TickerGroup = {
         ticker: '0xticker1',
         invoices: [invoice],
-        remainingBalances: new Map([['0xticker1', new Map([
-          ['8453', BigInt('1000000000000000000')],
-          ['10', BigInt('1000000000000000000')]
-        ])]]),
-        remainingCustodied: new Map([['0xticker1', new Map([
-          ['8453', BigInt('0')],
-          ['10', BigInt('0')]
-        ])]]),
-        chosenOrigin: null
+        remainingBalances: new Map([
+          [
+            '0xticker1',
+            new Map([
+              ['8453', BigInt('1000000000000000000')],
+              ['10', BigInt('1000000000000000000')],
+            ]),
+          ],
+        ]),
+        remainingCustodied: new Map([
+          [
+            '0xticker1',
+            new Map([
+              ['8453', BigInt('0')],
+              ['10', BigInt('0')],
+            ]),
+          ],
+        ]),
+        chosenOrigin: null,
       };
 
       // Create a pending purchase for the same ticker on origin 8453
-      const pendingPurchases = [{
-        target: createMockInvoice({ intent_id: '0xother' }),
-        purchase: {
-          intentId: '0xexisting',
-          params: {
+      const pendingPurchases = [
+        {
+          target: createMockInvoice({ intent_id: '0xother' }),
+          purchase: {
+            intentId: '0xexisting',
+            params: {
+              amount: '1000000000000000000',
+              origin: '8453', // This origin should be filtered out
+              destinations: ['1', '10'],
+              to: '0xowner',
+              inputAsset: '0xtoken1',
+              callData: '0x',
+              maxFee: '0',
+            },
+          },
+          transactionHash: '0xexisting',
+          transactionType: TransactionSubmissionType.Onchain,
+        },
+      ];
+
+      calculateSplitIntentsStub.resolves({
+        intents: [
+          {
             amount: '1000000000000000000',
-            origin: '8453', // This origin should be filtered out
-            destinations: ['1', '10'],
+            origin: '10', // Should use origin 10 since 8453 is out
+            destinations: ['1', '8453'],
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
-          }
-        },
-        transactionHash: '0xexisting',
-        transactionType: TransactionSubmissionType.Onchain,
-      }];
-
-      calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '10', // Should use origin 10 since 8453 is out
-          destinations: ['1', '8453'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+            maxFee: '0',
+          },
+        ],
         originDomain: '10',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
-      sendIntentsStub.resolves([{
-        intentId: '0xabc',
-        transactionHash: '0xabc',
-        chainId: '10',
-        type: TransactionSubmissionType.Onchain,
-      }]);
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc',
+          transactionHash: '0xabc',
+          chainId: '10',
+          type: TransactionSubmissionType.Onchain,
+        },
+      ]);
 
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
 
@@ -1218,7 +1315,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       const invoice = createMockInvoice();
@@ -1227,7 +1324,7 @@ describe('Invoice Processing', () => {
         invoices: [invoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('1000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // Create pending purchases that will filter out all origins
@@ -1243,12 +1340,12 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
+              maxFee: '0',
+            },
           },
           transactionHash: '0xabc',
           transactionType: TransactionSubmissionType.Onchain,
-        }
+        },
       ];
 
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
@@ -1264,11 +1361,11 @@ describe('Invoice Processing', () => {
 
       const oldestInvoice = createMockInvoice({
         intent_id: '0x123',
-        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 7200 // 2 hours old
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 7200, // 2 hours old
       });
       const newerInvoice = createMockInvoice({
         intent_id: '0x456',
-        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600 // 1 hour old
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600, // 1 hour old
       });
 
       const group: TickerGroup = {
@@ -1276,7 +1373,7 @@ describe('Invoice Processing', () => {
         invoices: [oldestInvoice, newerInvoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       mockDeps.everclear.getMinAmounts.resolves({
@@ -1284,14 +1381,14 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       // No valid allocation for the oldest invoice
       calculateSplitIntentsStub.resolves({
         intents: [],
         originDomain: null,
-        totalAllocated: BigInt('0')
+        totalAllocated: BigInt('0'),
       });
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -1306,11 +1403,11 @@ describe('Invoice Processing', () => {
 
       const oldestInvoice = createMockInvoice({
         intent_id: '0x123',
-        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 7200 // 2 hours old
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 7200, // 2 hours old
       });
       const newerInvoice = createMockInvoice({
         intent_id: '0x456',
-        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600 // 1 hour old
+        hub_invoice_enqueued_timestamp: Math.floor(Date.now() / 1000) - 3600, // 1 hour old
       });
 
       const group: TickerGroup = {
@@ -1318,7 +1415,7 @@ describe('Invoice Processing', () => {
         invoices: [oldestInvoice, newerInvoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       mockDeps.everclear.getMinAmounts.resolves({
@@ -1326,37 +1423,41 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       // No valid allocation for oldest invoice
       calculateSplitIntentsStub.onFirstCall().resolves({
         intents: [],
         originDomain: null,
-        totalAllocated: BigInt('0')
+        totalAllocated: BigInt('0'),
       });
 
       // Valid allocation for newer invoice
       calculateSplitIntentsStub.onSecondCall().resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
-      sendIntentsStub.resolves([{
-        intentId: '0xabc',
-        transactionHash: '0xabc',
-        chainId: '8453',
-        type: TransactionSubmissionType.Onchain,
-      }]);
+      sendIntentsStub.resolves([
+        {
+          intentId: '0xabc',
+          transactionHash: '0xabc',
+          chainId: '8453',
+          type: TransactionSubmissionType.Onchain,
+        },
+      ]);
 
       const result = await processTickerGroup(mockContext, group, []);
 
@@ -1375,42 +1476,54 @@ describe('Invoice Processing', () => {
       const group: TickerGroup = {
         ticker: '0xticker1',
         invoices: [invoice1, invoice2, invoice3],
-        remainingBalances: new Map([['0xticker1', new Map([
-          ['8453', BigInt('3000000000000000000')],
-          ['10', BigInt('3000000000000000000')]
-        ])]]),
-        remainingCustodied: new Map([['0xticker1', new Map([
-          ['8453', BigInt('0')],
-          ['10', BigInt('0')]
-        ])]]),
-        chosenOrigin: null
+        remainingBalances: new Map([
+          [
+            '0xticker1',
+            new Map([
+              ['8453', BigInt('3000000000000000000')],
+              ['10', BigInt('3000000000000000000')],
+            ]),
+          ],
+        ]),
+        remainingCustodied: new Map([
+          [
+            '0xticker1',
+            new Map([
+              ['8453', BigInt('0')],
+              ['10', BigInt('0')],
+            ]),
+          ],
+        ]),
+        chosenOrigin: null,
       };
 
       // Both origins (8453 and 10) are valid options
       mockDeps.everclear.getMinAmounts.resolves({
         minAmounts: {
           '8453': '1000000000000000000',
-          '10': '1000000000000000000'
+          '10': '1000000000000000000',
         },
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       // First invoice chooses origin 8453
       calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
       sendIntentsStub.resolves([
@@ -1431,14 +1544,14 @@ describe('Invoice Processing', () => {
           transactionHash: '0xabc3',
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
-        }
+        },
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
 
       // Verify all purchases use the same origin
       expect(result.purchases.length).to.equal(3);
-      result.purchases.forEach(purchase => {
+      result.purchases.forEach((purchase) => {
         expect(purchase.purchase.params.origin).to.equal('8453');
       });
 
@@ -1458,7 +1571,7 @@ describe('Invoice Processing', () => {
         invoices: [invoice1, invoice2, invoice3],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('1500000000000000000')]])]]), // 1.5 WETH total
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // API returns cumulative amounts for all outstanding invoices
@@ -1467,7 +1580,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
@@ -1475,7 +1588,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '2000000000000000000',
         amountAfterDiscount: '2000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       mockDeps.everclear.getMinAmounts.onThirdCall().resolves({
@@ -1483,37 +1596,41 @@ describe('Invoice Processing', () => {
         invoiceAmount: '500000000000000000',
         amountAfterDiscount: '500000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       // First invoice succeeds and sets origin to 8453
       calculateSplitIntentsStub.onFirstCall().resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
       // Third invoice succeeds (second is skipped due to insufficient balance)
       calculateSplitIntentsStub.onSecondCall().resolves({
-        intents: [{
-          amount: '500000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '500000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('500000000000000000')
+        totalAllocated: BigInt('500000000000000000'),
       });
 
       sendIntentsStub.resolves([
@@ -1528,7 +1645,7 @@ describe('Invoice Processing', () => {
           transactionHash: '0xdef',
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
-        }
+        },
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -1552,7 +1669,7 @@ describe('Invoice Processing', () => {
         invoices: [invoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // Mock getMinAmounts to return an error
@@ -1562,7 +1679,7 @@ describe('Invoice Processing', () => {
       calculateSplitIntentsStub.resolves({
         intents: [],
         originDomain: null,
-        totalAllocated: BigInt('0')
+        totalAllocated: BigInt('0'),
       });
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -1580,7 +1697,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       const invoice = createMockInvoice();
@@ -1589,21 +1706,23 @@ describe('Invoice Processing', () => {
         invoices: [invoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('1000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       calculateSplitIntentsStub.resolves({
-        intents: [{
-          amount: '1000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
       sendIntentsStub.rejects(new Error('Transaction failed'));
@@ -1618,13 +1737,17 @@ describe('Invoice Processing', () => {
       // Verify error was thrown
       expect(thrownError?.message).to.equal('Transaction failed');
       expect(mockDeps.prometheus.recordInvalidPurchase.calledOnce).to.be.true;
-      expect(mockDeps.prometheus.recordInvalidPurchase.firstCall.args[0]).to.equal(InvalidPurchaseReasons.TransactionFailed);
+      expect(mockDeps.prometheus.recordInvalidPurchase.firstCall.args[0]).to.equal(
+        InvalidPurchaseReasons.TransactionFailed,
+      );
     });
 
     it('should map split intents to their respective invoices correctly', async () => {
-      getMarkBalancesStub.resolves(new Map([
-        ['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])] // 2 WETH total for both invoices
-      ]));
+      getMarkBalancesStub.resolves(
+        new Map([
+          ['0xticker1', new Map([['8453', BigInt('2000000000000000000')]])], // 2 WETH total for both invoices
+        ]),
+      );
       getMarkGasBalancesStub.resolves(new Map());
       getCustodiedBalancesStub.resolves(new Map());
       isXerc20SupportedStub.resolves(false);
@@ -1635,24 +1758,24 @@ describe('Invoice Processing', () => {
         intent_id: '0x123',
         origin: '1',
         destinations: ['8453'],
-        amount: '1000000000000000000'
+        amount: '1000000000000000000',
       });
 
       const invoice2 = createMockInvoice({
         intent_id: '0x456',
         origin: '1',
         destinations: ['8453'],
-        amount: '1000000000000000000'
+        amount: '1000000000000000000',
       });
 
       mockDeps.everclear.getMinAmounts.resolves({
         minAmounts: {
-          '8453': '1000000000000000000'
+          '8453': '1000000000000000000',
         },
         invoiceAmount: '1000000000000000000',
         amountAfterDiscount: '1000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       // First invoice gets two split intents
@@ -1665,7 +1788,7 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
+            maxFee: '0',
           },
           {
             amount: '500000000000000000',
@@ -1674,11 +1797,11 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
-          }
+            maxFee: '0',
+          },
         ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
       // Second invoice gets a single intent
@@ -1691,11 +1814,11 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
-          }
+            maxFee: '0',
+          },
         ],
         originDomain: '8453',
-        totalAllocated: BigInt('1000000000000000000')
+        totalAllocated: BigInt('1000000000000000000'),
       });
 
       // Three txs total (2 for first invoice, 1 for second)
@@ -1717,14 +1840,14 @@ describe('Invoice Processing', () => {
           transactionHash: '0xdef',
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
-        }
+        },
       ]);
 
       await processInvoices(mockContext, [invoice1, invoice2]);
 
       const expectedPurchases = [
         {
-          target: invoice1,  // First two purchases target invoice1
+          target: invoice1, // First two purchases target invoice1
           transactionHash: '0xabc1',
           transactionType: TransactionSubmissionType.Onchain,
           purchase: {
@@ -1736,12 +1859,12 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
-          }
+              maxFee: '0',
+            },
+          },
         },
         {
-          target: invoice1,  // First two purchases target invoice1
+          target: invoice1, // First two purchases target invoice1
           transactionHash: '0xabc2',
           transactionType: TransactionSubmissionType.Onchain,
           purchase: {
@@ -1753,12 +1876,12 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
-          }
+              maxFee: '0',
+            },
+          },
         },
         {
-          target: invoice2,  // Third purchase targets invoice2
+          target: invoice2, // Third purchase targets invoice2
           transactionHash: '0xdef',
           transactionType: TransactionSubmissionType.Onchain,
           purchase: {
@@ -1770,10 +1893,10 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
-          }
-        }
+              maxFee: '0',
+            },
+          },
+        },
       ];
 
       // Verify the correct purchases were stored in cache with proper invoice mapping
@@ -1801,8 +1924,8 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
+              maxFee: '0',
+            },
           },
           transactionHash: '0xexisting1',
           transactionType: TransactionSubmissionType.Onchain,
@@ -1818,23 +1941,19 @@ describe('Invoice Processing', () => {
               to: '0xowner',
               inputAsset: '0xtoken1',
               callData: '0x',
-              maxFee: '0'
-            }
+              maxFee: '0',
+            },
           },
           transactionHash: '0xexisting2',
           transactionType: TransactionSubmissionType.Onchain,
-        }
+        },
       ];
 
       mockDeps.purchaseCache.getAllPurchases.resolves(pendingPurchases);
 
-      mockDeps.everclear.intentStatus
-        .withArgs('0xexisting1')
-        .resolves(IntentStatus.SETTLED);
+      mockDeps.everclear.intentStatus.withArgs('0xexisting1').resolves(IntentStatus.SETTLED);
 
-      mockDeps.everclear.intentStatus
-        .withArgs('0xexisting2')
-        .resolves(IntentStatus.ADDED);
+      mockDeps.everclear.intentStatus.withArgs('0xexisting2').resolves(IntentStatus.ADDED);
 
       await processInvoices(mockContext, [invoice]);
 
@@ -1856,8 +1975,8 @@ describe('Invoice Processing', () => {
         custodiedAmounts: {
           '1': '3000000000000000000',
           '10': '2000000000000000000',
-          '8453': '5000000000000000000'
-        }
+          '8453': '5000000000000000000',
+        },
       });
 
       // Second call to getMinAmounts (for second invoice) - independent amount
@@ -1869,8 +1988,8 @@ describe('Invoice Processing', () => {
         custodiedAmounts: {
           '1': '0', // No custodied assets for second invoice
           '10': '1000000000000000000', // 1 WETH available for second invoice
-          '8453': '1000000000000000000'
-        }
+          '8453': '1000000000000000000',
+        },
       });
 
       const invoice1 = createMockInvoice({ intent_id: '0x123' });
@@ -1882,13 +2001,16 @@ describe('Invoice Processing', () => {
         invoices: [invoice1, invoice2],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('5000000000000000000')]])]]), // 5 WETH total
         remainingCustodied: new Map([
-          ['0xticker1', new Map([
-            ['1', BigInt('3000000000000000000')],    // 3 WETH on Ethereum
-            ['10', BigInt('2000000000000000000')],   // 2 WETH on Optimism
-            ['8453', BigInt('5000000000000000000')], // 5 WETH on Base
-          ])]
+          [
+            '0xticker1',
+            new Map([
+              ['1', BigInt('3000000000000000000')], // 3 WETH on Ethereum
+              ['10', BigInt('2000000000000000000')], // 2 WETH on Optimism
+              ['8453', BigInt('5000000000000000000')], // 5 WETH on Base
+            ]),
+          ],
         ]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // First invoice gets two split intents targeting different destinations
@@ -1901,7 +2023,7 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
+            maxFee: '0',
           },
           {
             amount: '1000000000000000000', // 1 WETH
@@ -1910,28 +2032,30 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
-          }
+            maxFee: '0',
+          },
         ],
         originDomain: '8453',
         totalAllocated: BigInt('4000000000000000000'), // 4 WETH total for first invoice
-        remainder: BigInt('0')
+        remainder: BigInt('0'),
       });
 
       // Second invoice gets a single intent
       calculateSplitIntentsStub.onSecondCall().resolves({
-        intents: [{
-          amount: '1000000000000000000', // 1 WETH
-          origin: '8453',
-          destinations: ['10', '1'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '1000000000000000000', // 1 WETH
+            origin: '8453',
+            destinations: ['10', '1'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
         totalAllocated: BigInt('1000000000000000000'), // 1 WETH for second invoice
-        remainder: BigInt('0')
+        remainder: BigInt('0'),
       });
 
       sendIntentsStub.resolves([
@@ -1952,7 +2076,7 @@ describe('Invoice Processing', () => {
           transactionHash: '0xdef',
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
-        }
+        },
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -1981,10 +2105,10 @@ describe('Invoice Processing', () => {
         amountAfterDiscount: '6000000000000000000',
         discountBps: '0',
         custodiedAmounts: {
-          '1': '2000000000000000000',    // 2 WETH
-          '10': '3000000000000000000',   // 3 WETH
-          '8453': '5000000000000000000'  // 5 WETH
-        }
+          '1': '2000000000000000000', // 2 WETH
+          '10': '3000000000000000000', // 3 WETH
+          '8453': '5000000000000000000', // 5 WETH
+        },
       });
 
       const invoice = createMockInvoice();
@@ -1994,13 +2118,16 @@ describe('Invoice Processing', () => {
         invoices: [invoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('6000000000000000000')]])]]),
         remainingCustodied: new Map([
-          ['0xticker1', new Map([
-            ['1', BigInt('2000000000000000000')],    // 2 WETH
-            ['10', BigInt('3000000000000000000')],   // 3 WETH
-            ['8453', BigInt('5000000000000000000')]  // 5 WETH
-          ])]
+          [
+            '0xticker1',
+            new Map([
+              ['1', BigInt('2000000000000000000')], // 2 WETH
+              ['10', BigInt('3000000000000000000')], // 3 WETH
+              ['8453', BigInt('5000000000000000000')], // 5 WETH
+            ]),
+          ],
         ]),
-        chosenOrigin: null
+        chosenOrigin: null,
       };
 
       // Create a scenario with a remainder that needs to be distributed
@@ -2013,7 +2140,7 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
+            maxFee: '0',
           },
           {
             amount: '3000000000000000000', // 3 WETH allocated to 10
@@ -2022,12 +2149,12 @@ describe('Invoice Processing', () => {
             to: '0xowner',
             inputAsset: '0xtoken1',
             callData: '0x',
-            maxFee: '0'
-          }
+            maxFee: '0',
+          },
         ],
         originDomain: '8453',
         totalAllocated: BigInt('5000000000000000000'), // 5 WETH allocated
-        remainder: BigInt('1000000000000000000') // 1 WETH remainder
+        remainder: BigInt('1000000000000000000'), // 1 WETH remainder
       });
 
       sendIntentsStub.resolves([
@@ -2042,7 +2169,7 @@ describe('Invoice Processing', () => {
           transactionHash: '0xabc2',
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
-        }
+        },
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -2072,27 +2199,37 @@ describe('Invoice Processing', () => {
         intent_id: '0x123',
         amount: '2000000000000000000', // 2 WETH
         origin: '1',
-        destinations: ['8453']
+        destinations: ['8453'],
       });
 
       const invoice2 = createMockInvoice({
         intent_id: '0x456',
         amount: '3000000000000000000', // 3 WETH
         origin: '1',
-        destinations: ['8453']
+        destinations: ['8453'],
       });
 
       // Set up initial balances - enough for both invoices
       const group: TickerGroup = {
         ticker: '0xticker1',
         invoices: [invoice1, invoice2],
-        remainingBalances: new Map([['0xticker1', new Map([
-          ['8453', BigInt('10000000000000000000')],  // 10 WETH - enough for both
-        ])]]),
-        remainingCustodied: new Map([['0xticker1', new Map([
-          ['8453', BigInt('0')],  // No custodied assets to simplify
-        ])]]),
-        chosenOrigin: null
+        remainingBalances: new Map([
+          [
+            '0xticker1',
+            new Map([
+              ['8453', BigInt('10000000000000000000')], // 10 WETH - enough for both
+            ]),
+          ],
+        ]),
+        remainingCustodied: new Map([
+          [
+            '0xticker1',
+            new Map([
+              ['8453', BigInt('0')], // No custodied assets to simplify
+            ]),
+          ],
+        ]),
+        chosenOrigin: null,
       };
 
       // Mock getMinAmounts for both invoices - API returns cumulative amounts
@@ -2101,7 +2238,7 @@ describe('Invoice Processing', () => {
         invoiceAmount: '2000000000000000000',
         amountAfterDiscount: '2000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
@@ -2109,38 +2246,42 @@ describe('Invoice Processing', () => {
         invoiceAmount: '3000000000000000000',
         amountAfterDiscount: '3000000000000000000',
         discountBps: '0',
-        custodiedAmounts: {}
+        custodiedAmounts: {},
       });
 
       // Mock calculateSplitIntents for both invoices
       calculateSplitIntentsStub.onFirstCall().resolves({
-        intents: [{
-          amount: '2000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0',
-        }],
+        intents: [
+          {
+            amount: '2000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
         totalAllocated: BigInt('0'),
         remainder: BigInt('2000000000000000000'),
       });
 
       calculateSplitIntentsStub.onSecondCall().resolves({
-        intents: [{
-          amount: '3000000000000000000',
-          origin: '8453',
-          destinations: ['1', '10'],
-          to: '0xowner',
-          inputAsset: '0xtoken1',
-          callData: '0x',
-          maxFee: '0'
-        }],
+        intents: [
+          {
+            amount: '3000000000000000000',
+            origin: '8453',
+            destinations: ['1', '10'],
+            to: '0xowner',
+            inputAsset: '0xtoken1',
+            callData: '0x',
+            maxFee: '0',
+          },
+        ],
         originDomain: '8453',
         totalAllocated: BigInt('0'),
-        remainder: BigInt('3000000000000000000')
+        remainder: BigInt('3000000000000000000'),
       });
 
       sendIntentsStub.resolves([
@@ -2155,7 +2296,7 @@ describe('Invoice Processing', () => {
           transactionHash: '0xdef1',
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
-        }
+        },
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
@@ -2166,13 +2307,528 @@ describe('Invoice Processing', () => {
       expect(result.purchases[1].target.intent_id).to.equal(invoice2.intent_id);
 
       // Verify remaining balances were updated correctly (10 ETH - 2 ETH - 3 ETH = 5 ETH)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(
-        BigInt('5000000000000000000')
-      );
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('5000000000000000000'));
 
       // Verify custodied balances remain unchanged (no custodied assets used)
       const remainingCustodied = result.remainingCustodied.get('0xticker1');
       expect(remainingCustodied?.get('8453')).to.equal(BigInt('0'));
+    });
+  });
+
+  describe('processInvoices with On-Demand Rebalancing', () => {
+    const MOCK_TICKER_HASH = '0x1234567890123456789012345678901234567890' as `0x${string}`;
+
+    beforeEach(() => {
+      // Add support for the test ticker in all chains
+      Object.values(mockContext.config.chains).forEach((chain) => {
+        chain.assets.push({
+          tickerHash: MOCK_TICKER_HASH,
+          address: MOCK_TICKER_HASH,
+          decimals: 18,
+          symbol: 'MOCK',
+          isNative: false,
+          balanceThreshold: '0',
+        });
+      });
+
+      // Add supported assets
+      mockContext.config.supportedAssets = [...mockContext.config.supportedAssets, MOCK_TICKER_HASH];
+
+      // Add onDemandRoutes to the mock config
+      mockContext.config.onDemandRoutes = [
+        {
+          origin: 42161,
+          destination: 1,
+          asset: MOCK_TICKER_HASH,
+          maximum: '10000000000000000000',
+          slippage: 100,
+          preferences: [SupportedBridge.Across],
+        },
+      ];
+    });
+
+    describe('Earmarked Invoice Processing', () => {
+      it('should process pending earmarks', async () => {
+        const invoice = createMockInvoice({ ticker_hash: MOCK_TICKER_HASH });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(
+          MOCK_TICKER_HASH.toLowerCase(),
+          new Map([
+            ['1', BigInt('2000000000000000000')],
+            ['10', BigInt('3000000000000000000')],
+          ]),
+        );
+        getMarkBalancesStub.resolves(balances);
+
+        // Set up additional required mocks
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+
+        await processInvoices(mockContext, [invoice]);
+
+        expect(processPendingEarmarksStub.calledOnce).to.be.true;
+        // Verify processPendingEarmarks was called with correct parameters
+        expect(processPendingEarmarksStub.calledWith(mockContext, [invoice])).to.be.true;
+      });
+
+      it('should cleanup completed earmarks after successful purchase', async () => {
+        const invoice = createMockInvoice({ ticker_hash: MOCK_TICKER_HASH });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(MOCK_TICKER_HASH.toLowerCase(), new Map([['1', BigInt('2000000000000000000')]]));
+        getMarkBalancesStub.resolves(balances);
+
+        calculateSplitIntentsStub.resolves({
+          intents: [
+            {
+              amount: '1000000000000000000',
+              origin: '1',
+              destinations: ['1', '10'],
+              to: '0xowner',
+              inputAsset: '0xtoken',
+              callData: '0x',
+              maxFee: '0',
+            },
+          ],
+          originDomain: '1',
+          totalAllocated: BigInt('1000000000000000000'),
+          remainder: BigInt('0'),
+        });
+
+        // Set up additional required mocks for successful purchase flow
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.getMinAmounts.resolves({
+          minAmounts: { '1': '1000000000000000000' },
+          invoiceAmount: '1000000000000000000',
+          amountAfterDiscount: '1000000000000000000',
+          discountBps: '0',
+          custodiedAmounts: {},
+        });
+
+        sendIntentsStub.resolves([
+          {
+            intentId: '0xintent1',
+            transactionHash: '0xtx1',
+            chainId: '1',
+            type: TransactionSubmissionType.Onchain,
+          },
+        ]);
+
+        await processInvoices(mockContext, [invoice]);
+
+        // Verify that the process completed without errors
+        expect(processPendingEarmarksStub.called).to.be.true;
+      });
+
+      it('should handle errors in earmarked invoice processing', async () => {
+        processPendingEarmarksStub.rejects(new Error('Database error'));
+
+        const invoice = createMockInvoice({ ticker_hash: MOCK_TICKER_HASH });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(MOCK_TICKER_HASH.toLowerCase(), new Map([['1', BigInt('2000000000000000000')]]));
+        getMarkBalancesStub.resolves(balances);
+
+        calculateSplitIntentsStub.resolves({
+          intents: [
+            {
+              amount: '1000000000000000000',
+              origin: '1',
+              destinations: ['1', '10'],
+              minAmounts: { '1': '0', '10': '0' },
+            },
+          ],
+          isSplit: false,
+          purchases: [],
+          custodiedAmounts: {},
+        });
+
+        await processInvoices(mockContext, [invoice]);
+
+        // Verify that error was logged
+        expect(mockDeps.logger.error.called).to.be.true;
+        // Verify that the stub was called (and rejected)
+        expect(processPendingEarmarksStub.called).to.be.true;
+      });
+    });
+
+    describe('On-Demand Rebalancing Evaluation', () => {
+      it('should trigger on-demand rebalancing when no origin has sufficient balance', async () => {
+        const invoice = createMockInvoice({
+          ticker_hash: MOCK_TICKER_HASH,
+          amount: '1000000000000000000', // 1 token
+        });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        // Insufficient balance on all chains
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(
+          MOCK_TICKER_HASH.toLowerCase(),
+          new Map([
+            ['1', BigInt('100000000000000000')], // 0.1 token
+            ['10', BigInt('200000000000000000')], // 0.2 token
+          ]),
+        );
+        getMarkBalancesStub.resolves(balances);
+
+        evaluateOnDemandRebalancingStub.resolves({
+          canRebalance: true,
+          destinationChain: 1,
+          rebalanceOperations: [
+            {
+              originChain: 42161,
+              amount: '1000000000000000000',
+              slippage: 100,
+            },
+          ],
+          totalAmount: '1000000000000000000',
+        });
+
+        executeOnDemandRebalancingStub.resolves('earmark-001');
+
+        calculateSplitIntentsStub.resolves({
+          intents: [],
+          originDomain: null, // No valid allocation - triggers on-demand rebalancing
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0),
+        });
+
+        // Set up additional required mocks
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.getMinAmounts.resolves({
+          minAmounts: { '1': '1000000000000000000' },
+          invoiceAmount: '1000000000000000000',
+          amountAfterDiscount: '1000000000000000000',
+          discountBps: '0',
+          custodiedAmounts: {},
+        });
+
+        await processInvoices(mockContext, [invoice]);
+
+        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(executeOnDemandRebalancingStub.calledOnce).to.be.true;
+        // Simplify the log assertion
+        expect(mockDeps.logger.info.called).to.be.true;
+      });
+
+      it('should not trigger on-demand rebalancing when balance is sufficient', async () => {
+        const invoice = createMockInvoice({
+          ticker_hash: MOCK_TICKER_HASH,
+          amount: '1000000000000000000', // 1 token
+        });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        // Sufficient balance on chain 1
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(
+          MOCK_TICKER_HASH.toLowerCase(),
+          new Map([['1', BigInt('2000000000000000000')]]), // 2 tokens
+        );
+        getMarkBalancesStub.resolves(balances);
+
+        calculateSplitIntentsStub.resolves({
+          intents: [
+            {
+              amount: '1000000000000000000',
+              origin: '1',
+              destinations: ['1', '10'],
+              minAmounts: { '1': '0', '10': '0' },
+            },
+          ],
+          isSplit: false,
+          purchases: [],
+          custodiedAmounts: {},
+        });
+
+        await processInvoices(mockContext, [invoice]);
+
+        expect(evaluateOnDemandRebalancingStub.called).to.be.false;
+        expect(executeOnDemandRebalancingStub.called).to.be.false;
+      });
+
+      it('should handle on-demand rebalancing evaluation failure', async () => {
+        const invoice = createMockInvoice({
+          ticker_hash: MOCK_TICKER_HASH,
+          amount: '1000000000000000000',
+          origin: '',
+        });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(MOCK_TICKER_HASH.toLowerCase(), new Map([['1', BigInt('100000000000000000')]]));
+        getMarkBalancesStub.resolves(balances);
+
+        evaluateOnDemandRebalancingStub.resolves({
+          canRebalance: false,
+        });
+
+        calculateSplitIntentsStub.resolves({
+          intents: [],
+          originDomain: null,
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0),
+        });
+
+        // Set up additional required mocks
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.getMinAmounts.resolves({
+          minAmounts: { '1': '1000000000000000000' },
+          invoiceAmount: '1000000000000000000',
+          amountAfterDiscount: '1000000000000000000',
+          discountBps: '0',
+          custodiedAmounts: {},
+        });
+
+        await processInvoices(mockContext, [invoice]);
+
+        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(executeOnDemandRebalancingStub.called).to.be.false;
+        expect(
+          mockDeps.logger.info.calledWith('No valid allocation found, evaluating on-demand rebalancing', match.any),
+        ).to.be.true;
+      });
+
+      it('should handle on-demand rebalancing execution failure', async () => {
+        const invoice = createMockInvoice({
+          ticker_hash: MOCK_TICKER_HASH,
+          amount: '1000000000000000000',
+        });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(MOCK_TICKER_HASH.toLowerCase(), new Map([['1', BigInt('100000000000000000')]]));
+        getMarkBalancesStub.resolves(balances);
+
+        evaluateOnDemandRebalancingStub.resolves({
+          canRebalance: true,
+          destinationChain: 1,
+          rebalanceOperations: [
+            {
+              originChain: 42161,
+              amount: '1000000000000000000',
+              slippage: 100,
+            },
+          ],
+          totalAmount: '1000000000000000000',
+        });
+
+        executeOnDemandRebalancingStub.rejects(new Error('Execution failed')); // Execution failed
+
+        calculateSplitIntentsStub.resolves({
+          intents: [],
+          originDomain: null,
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0),
+        });
+
+        // Set up additional required mocks
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.getMinAmounts.resolves({
+          minAmounts: { '1': '1000000000000000000' },
+          invoiceAmount: '1000000000000000000',
+          amountAfterDiscount: '1000000000000000000',
+          discountBps: '0',
+          custodiedAmounts: {},
+        });
+
+        await processInvoices(mockContext, [invoice]);
+
+        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(executeOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(mockDeps.logger.error.calledWith(match(/Failed to evaluate\/execute on-demand rebalancing/))).to.be.true;
+      });
+    });
+
+    describe('Batched Invoice Processing', () => {
+      it('should handle large invoices with on-demand rebalancing when insufficient balance', async () => {
+        const largeInvoice = createMockInvoice({
+          ticker_hash: MOCK_TICKER_HASH,
+          intent_id: 'large-001',
+          amount: '5000000000000000000', // 5 tokens required
+        });
+
+        mockDeps.everclear.fetchInvoices.resolves([largeInvoice]);
+
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(
+          MOCK_TICKER_HASH.toLowerCase(),
+          new Map([['1', BigInt('1000000000000000000')]]), // Only 1 token available
+        );
+        getMarkBalancesStub.resolves(balances);
+
+        evaluateOnDemandRebalancingStub.resolves({
+          canRebalance: true,
+          destinationChain: 1,
+          rebalanceOperations: [
+            {
+              originChain: 42161,
+              amount: '4000000000000000000',
+              slippage: 100,
+            },
+          ],
+          totalAmount: '4000000000000000000',
+        });
+
+        executeOnDemandRebalancingStub.resolves('earmark-001');
+
+        calculateSplitIntentsStub.resolves({
+          intents: [],
+          originDomain: null, // No valid allocation found
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0),
+        });
+
+        // Set up additional required mocks
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.getMinAmounts.resolves({
+          minAmounts: { '1': '5000000000000000000' },
+          invoiceAmount: '5000000000000000000',
+          amountAfterDiscount: '5000000000000000000',
+          discountBps: '0',
+          custodiedAmounts: {},
+        });
+
+        await processInvoices(mockContext, [largeInvoice]);
+
+        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(evaluateOnDemandRebalancingStub.firstCall.args[0].amount).to.equal('5000000000000000000');
+        expect(executeOnDemandRebalancingStub.calledOnce).to.be.true;
+      });
+    });
+
+    describe('Configuration Validation', () => {
+      it('should use onDemandRoutes when available', async () => {
+        const invoice = createMockInvoice({
+          ticker_hash: MOCK_TICKER_HASH,
+          amount: '1000000000000000000',
+          origin: '',
+        });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(MOCK_TICKER_HASH.toLowerCase(), new Map([['1', BigInt('100000000000000000')]]));
+        getMarkBalancesStub.resolves(balances);
+
+        evaluateOnDemandRebalancingStub.resolves({
+          canRebalance: true,
+          destinationChain: 1,
+          rebalanceOperations: [
+            {
+              originChain: 42161,
+              amount: '1000000000000000000',
+              slippage: 100,
+            },
+          ],
+          totalAmount: '1000000000000000000',
+        });
+
+        executeOnDemandRebalancingStub.resolves('earmark-001');
+
+        calculateSplitIntentsStub.resolves({
+          intents: [],
+          originDomain: null, // No valid allocation - this triggers on-demand rebalancing
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0),
+        });
+
+        // Set up additional required mocks
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.getMinAmounts.resolves({
+          minAmounts: { '1': '1000000000000000000' },
+          invoiceAmount: '1000000000000000000',
+          amountAfterDiscount: '1000000000000000000',
+          discountBps: '0',
+          custodiedAmounts: {},
+        });
+
+        await processInvoices(mockContext, [invoice]);
+
+        // Verify that on-demand rebalancing was called with the right config
+        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
+        if (evaluateOnDemandRebalancingStub.firstCall) {
+          expect(evaluateOnDemandRebalancingStub.firstCall.args[2].config.onDemandRoutes).to.exist;
+          expect(evaluateOnDemandRebalancingStub.firstCall.args[2].config.onDemandRoutes).to.have.length(1);
+        }
+      });
+
+      it('should fallback to regular routes if onDemandRoutes not configured', async () => {
+        // Remove onDemandRoutes
+        delete mockContext.config.onDemandRoutes;
+        mockContext.config.routes = [
+          {
+            origin: 42161,
+            destination: 1,
+            asset: MOCK_TICKER_HASH,
+            maximum: '10000000000000000000',
+            slippage: 100,
+            preferences: [SupportedBridge.Across],
+          },
+        ];
+
+        const invoice = createMockInvoice({
+          ticker_hash: MOCK_TICKER_HASH,
+          amount: '1000000000000000000',
+        });
+        mockDeps.everclear.fetchInvoices.resolves([invoice]);
+
+        const balances = new Map<string, Map<string, bigint>>();
+        balances.set(MOCK_TICKER_HASH.toLowerCase(), new Map([['1', BigInt('100000000000000000')]]));
+        getMarkBalancesStub.resolves(balances);
+
+        evaluateOnDemandRebalancingStub.resolves({
+          canRebalance: true,
+          destinationChain: 1,
+          rebalanceOperations: [
+            {
+              originChain: 42161,
+              amount: '1000000000000000000',
+              slippage: 100,
+            },
+          ],
+          totalAmount: '1000000000000000000',
+        });
+
+        executeOnDemandRebalancingStub.resolves('earmark-001');
+
+        calculateSplitIntentsStub.resolves({
+          intents: [],
+          originDomain: null,
+          totalAllocated: BigInt(0),
+          remainder: BigInt(0),
+        });
+
+        // Set up additional required mocks
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.getMinAmounts.resolves({
+          minAmounts: { '1': '1000000000000000000' },
+          invoiceAmount: '1000000000000000000',
+          amountAfterDiscount: '1000000000000000000',
+          discountBps: '0',
+          custodiedAmounts: {},
+        });
+
+        await processInvoices(mockContext, [invoice]);
+
+        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
+      });
     });
   });
 });

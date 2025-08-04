@@ -4,7 +4,11 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "baseUrl": ".",
-    "composite": true
+    "composite": true,
+    "paths": {
+      "zapatos/schema": ["./src/zapatos/zapatos/schema"],
+      "zapatos/db": ["./node_modules/zapatos/dist/db"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["dist", "node_modules", "**/*.spec.ts"],
