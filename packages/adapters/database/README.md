@@ -95,6 +95,8 @@ yarn workspace @mark/database db:types
 yarn workspace @mark/database build
 ```
 
+**Important:** Zapatos generates TypeScript types from the actual database schema, not from migration files. Always ensure migrations are applied to the development database (`mark_dev`) before regenerating types.
+
 ### Testing
 
 ```bash
