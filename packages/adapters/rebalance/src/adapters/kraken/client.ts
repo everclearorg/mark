@@ -36,6 +36,8 @@ export class KrakenClient {
       baseUrl: this.baseUrl,
       hasApiKey: !!apiKey,
       hasApiSecret: !!apiSecret,
+      timeout: 30000,
+      retryCount: this.numRetries,
     });
   }
 
@@ -84,11 +86,14 @@ export class KrakenClient {
         ).toString();
       }
 
-      this.logger.debug('Making Kraken API request', {
-        endpoint,
-        isPrivate,
+      this.logger.debug('Kraken API request initiated', {
+        endpoint: `${isPrivate ? 'private' : 'public'}/${endpoint}`,
+        method: 'POST',
+        baseUrl: this.baseUrl,
         paramCount: Object.keys(params).length,
-        retryCount,
+        retryAttempt: retryCount + 1,
+        maxRetries: this.numRetries,
+        nonce: isPrivate ? nonce : 'N/A',
       });
 
       const response: AxiosResponse = await this.axios.post(
@@ -105,20 +110,25 @@ export class KrakenClient {
     } catch (error) {
       if (retryCount < this.numRetries && this.shouldRetry(error)) {
         const delay = Math.pow(2, retryCount) * 1000;
-        this.logger.warn(`Kraken API request failed, retrying in ${delay}ms`, {
+        this.logger.warn('Kraken API request failed, retrying with exponential backoff', {
+          endpoint: `${isPrivate ? 'private' : 'public'}/${endpoint}`,
           error: jsonifyError(error),
-          endpoint,
-          retryCount,
+          retryAttempt: retryCount + 1,
+          maxRetries: this.numRetries,
+          backoffDelayMs: delay,
+          httpStatus: axios.isAxiosError(error) ? error.response?.status : 'unknown',
         });
         await new Promise((resolve) => setTimeout(resolve, delay));
         return this.request(endpoint, params, isPrivate, retryCount + 1);
       }
 
-      this.logger.error('Kraken API request failed', {
+      this.logger.error('Kraken API request failed after all retries exhausted', {
+        endpoint: `${isPrivate ? 'private' : 'public'}/${endpoint}`,
         error: jsonifyError(error),
-        endpoint,
-        isPrivate,
-        retryCount,
+        totalAttempts: retryCount + 1,
+        maxRetries: this.numRetries,
+        httpStatus: axios.isAxiosError(error) ? error.response?.status : 'unknown',
+        responseData: axios.isAxiosError(error) ? error.response?.data : undefined,
       });
       throw error;
     }
@@ -140,8 +150,11 @@ export class KrakenClient {
       const status = await this.getSystemStatus();
       return status.status === 'online';
     } catch (error) {
-      this.logger.error('Failed to check Kraken system status', {
+      this.logger.error('Kraken system status check failed, assuming offline', {
         error: jsonifyError(error),
+        endpoint: 'public/SystemStatus',
+        fallbackStatus: 'offline',
+        httpStatus: axios.isAxiosError(error) ? error.response?.status : 'unknown',
       });
       return false;
     }

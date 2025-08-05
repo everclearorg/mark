@@ -46,6 +46,8 @@ describe('KrakenClient', () => {
                 baseUrl: KRAKEN_BASE_URL,
                 hasApiKey: true,
                 hasApiSecret: true,
+                timeout: 30000,
+                retryCount: 2,
             });
         });
 
@@ -62,10 +64,12 @@ describe('KrakenClient', () => {
         it('should log configuration status correctly', () => {
             new KrakenClient('', '', mockLogger, KRAKEN_BASE_URL);
 
-            expect(mockLogger.debug).toHaveBeenCalledWith('KrakenClient initialized', {
+            expect(mockLogger.debug).toHaveBeenLastCalledWith('KrakenClient initialized', {
                 baseUrl: KRAKEN_BASE_URL,
                 hasApiKey: false,
                 hasApiSecret: false,
+                timeout: 30000,
+                retryCount: 3,
             });
         });
 
@@ -238,9 +242,12 @@ describe('KrakenClient', () => {
                 const result = await client.isSystemOperational();
                 expect(result).toBe(false);
                 expect(mockLogger.error).toHaveBeenCalledWith(
-                    'Failed to check Kraken system status',
+                    'Kraken system status check failed, assuming offline',
                     expect.objectContaining({
-                        error: expect.any(Object)
+                        error: expect.any(Object),
+                        endpoint: 'public/SystemStatus',
+                        fallbackStatus: 'offline',
+                        httpStatus: 'unknown',
                     })
                 );
             });
@@ -776,12 +783,15 @@ describe('KrakenClient', () => {
             await client.getSystemStatus();
 
             expect(mockLogger.debug).toHaveBeenCalledWith(
-                'Making Kraken API request',
+                'Kraken API request initiated',
                 expect.objectContaining({
-                    endpoint: 'SystemStatus',
-                    isPrivate: false,
+                    endpoint: 'public/SystemStatus',
+                    method: 'POST',
+                    baseUrl: KRAKEN_BASE_URL,
                     paramCount: 0,
-                    retryCount: 0
+                    retryAttempt: 1,
+                    maxRetries: 2,
+                    nonce: 'N/A',
                 })
             );
         });
