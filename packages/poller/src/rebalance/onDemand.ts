@@ -17,7 +17,7 @@ interface OnDemandRebalanceResult {
   rebalanceOperations?: {
     originChain: number;
     amount: string;
-    slippage: number;
+    slippages: number[];
   }[];
   totalAmount?: string;
   minAmount?: string;
@@ -54,7 +54,7 @@ export async function evaluateOnDemandRebalancing(
     return { canRebalance: false };
   }
 
-  const balances = await getMarkBalances(config, context.prometheus);
+  const balances = await getMarkBalances(config, context.chainService, context.prometheus);
 
   // Get active earmarks to exclude from available balance
   const activeEarmarks = await database.getEarmarks({ status: [EarmarkStatus.PENDING, EarmarkStatus.READY] });
@@ -242,12 +242,12 @@ function calculateRebalancingOperations(
   tickerHash: string,
   config: MarkConfiguration,
 ): {
-  operations: { originChain: number; amount: string; slippage: number }[];
+  operations: { originChain: number; amount: string; slippages: number[] }[];
   totalAchievable: bigint;
   canFulfill: boolean;
 } {
   const ticker = tickerHash.toLowerCase();
-  const operations: { originChain: number; amount: string; slippage: number }[] = [];
+  const operations: { originChain: number; amount: string; slippages: number[] }[] = [];
   let remainingNeeded = amountNeeded;
   let totalAchievable = 0n;
 
@@ -266,7 +266,7 @@ function calculateRebalancingOperations(
     if (availableOnOrigin <= 0n) continue;
 
     // Calculate amount to send accounting for slippage
-    const slippageMultiplier = BigInt(10000 + route.slippage); // route.slippage is in basis points
+    const slippageMultiplier = BigInt(10000 + (route.slippages?.[0] || 100)); // route.slippages[0] is in basis points
     const amountToSend = (remainingNeeded * slippageMultiplier) / 10000n;
 
     // Use the minimum of what's needed and what's available
@@ -281,7 +281,7 @@ function calculateRebalancingOperations(
       operations.push({
         originChain: route.origin,
         amount: nativeAmount,
-        slippage: route.slippage,
+        slippages: route.slippages || [100],
       });
 
       remainingNeeded -= expectedReceived;
@@ -388,7 +388,7 @@ export async function executeOnDemandRebalancing(
           successfulOperations.push({
             originChainId: operation.originChain,
             amount: operation.amount,
-            slippage: operation.slippage,
+            slippage: operation.slippages[0],
             bridge: result.bridgeType,
             txHash: result.txHash,
           });
@@ -546,7 +546,7 @@ async function handleMinAmountIncrease(
   });
 
   // Get current balances and earmarked funds
-  const balances = await getMarkBalances(config, context.prometheus);
+  const balances = await getMarkBalances(config, context.chainService, context.prometheus);
   const activeEarmarks = await database.getEarmarks({ status: [EarmarkStatus.PENDING, EarmarkStatus.READY] });
   const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks, config);
 
@@ -642,7 +642,7 @@ async function handleMinAmountIncrease(
         successfulAdditionalOps.push({
           originChainId: operation.originChain,
           amount: operation.amount,
-          slippage: operation.slippage,
+          slippage: operation.slippages[0],
           bridge: result.bridgeType,
           txHash: result.txHash,
         });
@@ -760,14 +760,14 @@ async function executeRebalanceTransaction(
         const received = BigInt(receivedAmount);
         const slippageBps = ((sentAmount - received) * 10000n) / sentAmount;
 
-        if (slippageBps > BigInt(route.slippage)) {
+        if (slippageBps > BigInt(route.slippages?.[0] || 100)) {
           logger.warn('Quote exceeds acceptable slippage for on-demand rebalance', {
             requestId,
             bridgeType,
             sentAmount: amount,
             receivedAmount,
             slippageBps: slippageBps.toString(),
-            maxSlippage: route.slippage,
+            maxSlippage: route.slippages?.[0] || 100,
           });
           continue;
         }
@@ -1007,10 +1007,10 @@ export async function getAvailableBalanceLessEarmarks(
   tickerHash: string,
   context: ProcessingContext,
 ): Promise<bigint> {
-  const { config, prometheus } = context;
+  const { config, chainService, prometheus } = context;
 
   // Get total balance
-  const balances = await getMarkBalances(config, prometheus);
+  const balances = await getMarkBalances(config, chainService, prometheus);
   const ticker = tickerHash.toLowerCase();
   const totalBalance = balances.get(ticker)?.get(chainId.toString()) || 0n;
 
