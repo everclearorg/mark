@@ -386,6 +386,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         apiKey: configJson.binance_api_key ?? (await fromEnv('BINANCE_API_KEY', true)) ?? undefined,
         apiSecret: configJson.binance_api_secret ?? (await fromEnv('BINANCE_API_SECRET', true)) ?? undefined,
       },
+      kraken: {
+        apiKey: configJson.binance_api_key ?? (await fromEnv('KRAKEN_API_KEY', true)) ?? undefined,
+        apiSecret: configJson.binance_api_secret ?? (await fromEnv('KRAKEN_API_SECRET', true)) ?? undefined,
+      },
       near: {
         jwtToken: configJson.near_jwt_token ?? (await fromEnv('NEAR_JWT_TOKEN', true)) ?? undefined,
       },
