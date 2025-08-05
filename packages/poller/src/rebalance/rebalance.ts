@@ -306,7 +306,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             destinationChainId: route.destination,
             tickerHash: route.asset,
             amount: amountToBridge.toString(),
-            slippage: route.slippage,
+            slippage: route.slippages[bridgeIndex],
             status: RebalanceOperationStatus.PENDING,
             bridge: bridgeType,
             txHashes: { originTxHash: transactionHash },
