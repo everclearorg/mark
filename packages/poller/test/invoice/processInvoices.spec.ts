@@ -1,4 +1,3 @@
-import { expect } from '../globalTestHook';
 import sinon, { createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
 import { ProcessingContext } from '../../src/init';
 import {
@@ -10,12 +9,11 @@ import {
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as assetHelpers from '../../src/helpers/asset';
 import { IntentStatus } from '@mark/everclear';
-import { RebalanceCache } from '@mark/cache';
+import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { SupportedBridge, InvalidPurchaseReasons, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
-import { PurchaseCache } from '@mark/cache';
 import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import * as intentHelpers from '../../src/helpers/intent';
@@ -26,9 +24,7 @@ import { RebalanceAdapter } from '@mark/rebalance';
 import * as monitorHelpers from '../../src/helpers/monitor';
 import * as onDemand from '../../src/rebalance/onDemand';
 import { createMinimalDatabaseMock } from '../mocks/database';
-import { match } from 'sinon';
-import { Hex } from 'viem';
-import * as contractHelpers from '../../src/helpers/contracts';
+import * as DatabaseModule from '@mark/database';
 
 describe('Invoice Processing', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -46,7 +42,6 @@ describe('Invoice Processing', () => {
   let executeOnDemandRebalancingStub: SinonStub;
   let processPendingEarmarksStub: SinonStub;
   let cleanupCompletedEarmarksStub: SinonStub;
-  let getContractStub: SinonStub;
 
   let mockDeps: {
     logger: SinonStubbedInstance<Logger>;
@@ -57,7 +52,7 @@ describe('Invoice Processing', () => {
     rebalance: SinonStubbedInstance<RebalanceAdapter>;
     web3Signer: SinonStubbedInstance<Wallet>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
-    database: any;
+    database: typeof DatabaseModule;
   };
 
   beforeEach(() => {
@@ -128,8 +123,8 @@ describe('Invoice Processing', () => {
 
       const grouped = groupInvoicesByTicker(mockContext, invoices);
 
-      expect(grouped.size).to.equal(1);
-      expect(grouped.get('0xticker1')?.length).to.equal(3);
+      expect(grouped.size).toBe(1);
+      expect(grouped.get('0xticker1')?.length).toBe(3);
     });
 
     it('should group invoices with different tickers separately', () => {
@@ -141,9 +136,9 @@ describe('Invoice Processing', () => {
 
       const grouped = groupInvoicesByTicker(mockContext, invoices);
 
-      expect(grouped.size).to.equal(2);
-      expect(grouped.get('0xticker1')?.length).to.equal(2);
-      expect(grouped.get('0xticker2')?.length).to.equal(1);
+      expect(grouped.size).toBe(2);
+      expect(grouped.get('0xticker1')?.length).toBe(2);
+      expect(grouped.get('0xticker2')?.length).toBe(1);
     });
 
     it('should sort invoices by age within groups', () => {
@@ -168,18 +163,18 @@ describe('Invoice Processing', () => {
 
       const grouped = groupInvoicesByTicker(mockContext, invoices);
       const groupedInvoices = grouped.get('0xticker1');
-      expect(groupedInvoices).to.not.be.undefined;
+      expect(groupedInvoices).toBeDefined();
 
       // Should be sorted oldest to newest
-      expect(groupedInvoices?.[0].intent_id).to.equal('0x2');
-      expect(groupedInvoices?.[1].intent_id).to.equal('0x3');
-      expect(groupedInvoices?.[2].intent_id).to.equal('0x1');
+      expect(groupedInvoices?.[0].intent_id).toBe('0x2');
+      expect(groupedInvoices?.[1].intent_id).toBe('0x3');
+      expect(groupedInvoices?.[2].intent_id).toBe('0x1');
     });
 
     it('should handle empty invoice list', () => {
       const grouped = groupInvoicesByTicker(mockContext, []);
 
-      expect(grouped.size).to.equal(0);
+      expect(grouped.size).toBe(0);
     });
 
     it('should handle single invoice', () => {
@@ -187,11 +182,11 @@ describe('Invoice Processing', () => {
 
       const grouped = groupInvoicesByTicker(mockContext, invoices);
 
-      expect(grouped.size).to.equal(1);
+      expect(grouped.size).toBe(1);
       const groupedInvoices = grouped.get('0xticker1');
-      expect(groupedInvoices).to.not.be.undefined;
-      expect(groupedInvoices?.length).to.equal(1);
-      expect(groupedInvoices?.[0].intent_id).to.equal('0x1');
+      expect(groupedInvoices).toBeDefined();
+      expect(groupedInvoices?.length).toBe(1);
+      expect(groupedInvoices?.[0].intent_id).toBe('0x1');
     });
 
     it('should record metrics for each invoice', () => {
@@ -210,13 +205,13 @@ describe('Invoice Processing', () => {
 
       groupInvoicesByTicker(mockContext, invoices);
 
-      expect(mockDeps.prometheus.recordPossibleInvoice.calledTwice).to.be.true;
-      expect(mockDeps.prometheus.recordPossibleInvoice.firstCall.args[0]).to.deep.equal({
+      expect(mockDeps.prometheus.recordPossibleInvoice.calledTwice).toBe(true);
+      expect(mockDeps.prometheus.recordPossibleInvoice.firstCall.args[0]).toEqual({
         origin: '1',
         id: '0x1',
         ticker: '0xticker1',
       });
-      expect(mockDeps.prometheus.recordPossibleInvoice.secondCall.args[0]).to.deep.equal({
+      expect(mockDeps.prometheus.recordPossibleInvoice.secondCall.args[0]).toEqual({
         origin: '2',
         id: '0x2',
         ticker: '0xticker2',
@@ -259,15 +254,15 @@ describe('Invoice Processing', () => {
 
       await processInvoices(mockContext, invoices);
 
-      expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).to.be.true;
+      expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).toBe(true);
 
-      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.calledOnce).to.be.true;
-      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[0]).to.deep.equal({
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.calledOnce).toBe(true);
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[0]).toEqual({
         origin: '1',
         ticker: '0xticker1',
         destination: '8453',
       });
-      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[1]).to.equal(
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[1]).toBe(
         mockContext.startTime - invoices[0].hub_invoice_enqueued_timestamp,
       );
     });
@@ -336,11 +331,11 @@ describe('Invoice Processing', () => {
       };
 
       // Verify the correct purchase was stored in cache
-      expect(mockDeps.purchaseCache.addPurchases.calledOnce).to.be.true;
-      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).to.deep.equal([expectedPurchase]);
+      expect(mockDeps.purchaseCache.addPurchases.calledOnce).toBe(true);
+      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).toEqual([expectedPurchase]);
 
-      expect(mockDeps.prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
-      expect(mockDeps.prometheus.recordSuccessfulPurchase.firstCall.args[0]).to.deep.equal({
+      expect(mockDeps.prometheus.recordSuccessfulPurchase.calledOnce).toBe(true);
+      expect(mockDeps.prometheus.recordSuccessfulPurchase.firstCall.args[0]).toEqual({
         origin: '1',
         id: '0x123',
         ticker: '0xticker1',
@@ -349,24 +344,24 @@ describe('Invoice Processing', () => {
         splitCount: '1',
       });
 
-      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.calledOnce).to.be.true;
-      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.firstCall.args[0]).to.deep.equal({
+      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.calledOnce).toBe(true);
+      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.firstCall.args[0]).toEqual({
         origin: '1',
         ticker: '0xticker1',
         destination: '8453',
       });
-      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.firstCall.args[1]).to.equal(
+      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.firstCall.args[1]).toBe(
         mockContext.startTime - invoice.hub_invoice_enqueued_timestamp,
       );
 
-      expect(mockDeps.prometheus.updateRewards.calledOnce).to.be.true;
-      expect(mockDeps.prometheus.updateRewards.firstCall.args[0]).to.deep.equal({
+      expect(mockDeps.prometheus.updateRewards.calledOnce).toBe(true);
+      expect(mockDeps.prometheus.updateRewards.firstCall.args[0]).toEqual({
         chain: '1',
         asset: '0xtoken1',
         id: '0x123',
         ticker: '0xticker1',
       });
-      expect(mockDeps.prometheus.updateRewards.firstCall.args[1]).to.equal(700000000000000);
+      expect(mockDeps.prometheus.updateRewards.firstCall.args[1]).toBe(700000000000000);
     });
 
     it('should handle cache getAllPurchases failure gracefully', async () => {
@@ -390,12 +385,12 @@ describe('Invoice Processing', () => {
       }
 
       // Verify error was thrown
-      expect(thrownError?.message).to.equal('Cache error');
+      expect(thrownError?.message).toBe('Cache error');
 
       // And no purchases were attempted
-      expect(mockDeps.purchaseCache.addPurchases.called).to.be.false;
-      expect(calculateSplitIntentsStub.called).to.be.false;
-      expect(sendIntentsStub.called).to.be.false;
+      expect(mockDeps.purchaseCache.addPurchases.called).toBe(false);
+      expect(calculateSplitIntentsStub.called).toBe(false);
+      expect(sendIntentsStub.called).toBe(false);
     });
 
     it('should handle cache addPurchases failure gracefully', async () => {
@@ -454,8 +449,8 @@ describe('Invoice Processing', () => {
       }
 
       // Verify error was thrown
-      expect(thrownError).to.exist;
-      expect(thrownError?.message).to.equal('Cache add error');
+      expect(thrownError).toBeDefined();
+      expect(thrownError?.message).toBe('Cache add error');
     });
 
     it('should handle cache removePurchases failure gracefully', async () => {
@@ -496,13 +491,13 @@ describe('Invoice Processing', () => {
       await processInvoices(mockContext, [invoice]);
 
       // Verify warning was logged
-      expect(mockDeps.logger.warn.calledWith('Failed to clear pending cache')).to.be.true;
+      expect(mockDeps.logger.warn.calledWith('Failed to clear pending cache')).toBe(true);
 
       // And Prometheus record was not called except for possible invoice seen
-      expect(mockDeps.prometheus.recordSuccessfulPurchase.called).to.be.false;
-      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.called).to.be.false;
-      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.called).to.be.false;
-      expect(mockDeps.prometheus.updateRewards.called).to.be.false;
+      expect(mockDeps.prometheus.recordSuccessfulPurchase.called).toBe(false);
+      expect(mockDeps.prometheus.recordInvoicePurchaseDuration.called).toBe(false);
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.called).toBe(false);
+      expect(mockDeps.prometheus.updateRewards.called).toBe(false);
     });
 
     it('should adjust custodied balances based on pending intents from economy data', async () => {
@@ -537,7 +532,7 @@ describe('Invoice Processing', () => {
       mockDeps.everclear.intentStatuses.resolves(new Map());
 
       // Mock economy data with pending intents for domain1
-      mockDeps.everclear.fetchEconomyData.callsFake(async (domain, tickerHash) => {
+      mockDeps.everclear.fetchEconomyData.callsFake(async (domain) => {
         if (domain === domain1) {
           return {
             currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
@@ -590,15 +585,15 @@ describe('Invoice Processing', () => {
       await processInvoices(mockContext, [invoice]);
 
       // Verify a purchase was created
-      expect(mockDeps.purchaseCache.addPurchases.calledOnce).to.be.true;
+      expect(mockDeps.purchaseCache.addPurchases.calledOnce).toBe(true);
       const purchases = mockDeps.purchaseCache.addPurchases.firstCall.args[0];
-      expect(purchases.length).to.equal(1);
+      expect(purchases.length).toBe(1);
 
       // Verify the purchase reflects the allocation that would only be possible
       // if the pending intents were properly added to custodied balances
       const purchaseIntent = purchases[0].purchase.params;
-      expect(purchaseIntent.origin).to.equal(domain2);
-      expect(purchaseIntent.destinations).to.include(domain1);
+      expect(purchaseIntent.origin).toBe(domain2);
+      expect(purchaseIntent.destinations).toContain(domain1);
     });
 
     it('should handle failed fetchEconomyData calls gracefully', async () => {
@@ -606,11 +601,6 @@ describe('Invoice Processing', () => {
       const ticker = '0xticker1';
       const domain1 = '8453';
       const domain2 = '1';
-
-      // Mock getSupportedDomainsForTicker to return our test domains
-      const getSupportedDomainsStub = sinon
-        .stub(assetHelpers, 'getSupportedDomainsForTicker')
-        .returns([domain1, domain2]);
 
       // Mock balances and custodied assets
       getMarkBalancesStub.resolves(
@@ -643,7 +633,7 @@ describe('Invoice Processing', () => {
       mockDeps.everclear.intentStatuses.resolves(new Map());
 
       // Mock economy data fetch - domain1 succeeds, domain2 fails
-      mockDeps.everclear.fetchEconomyData.callsFake(async (domain, tickerHash) => {
+      mockDeps.everclear.fetchEconomyData.callsFake(async (domain) => {
         if (domain === domain1) {
           return {
             currentEpoch: { epoch: 1, startBlock: 1, endBlock: 100 },
@@ -673,11 +663,11 @@ describe('Invoice Processing', () => {
         async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
           // Verify domain1 was adjusted
           const domain1Custodied = remainingCustodied.get(ticker)?.get(domain1) || BigInt(0);
-          expect(domain1Custodied.toString()).to.equal('1000000000000000000');
+          expect(domain1Custodied.toString()).toBe('1000000000000000000');
 
           // Verify domain2 was NOT adjusted (since fetchEconomyData failed)
           const domain2Custodied = remainingCustodied.get(ticker)?.get(domain2) || BigInt(0);
-          expect(domain2Custodied.toString()).to.equal('2000000000000000000');
+          expect(domain2Custodied.toString()).toBe('2000000000000000000');
 
           return {
             intents: [],
@@ -707,21 +697,20 @@ describe('Invoice Processing', () => {
       await processInvoices(mockContext, [invoice]);
 
       // Verify that we logged the error for domain2
-      expect(mockDeps.logger.warn.calledWith('Failed to fetch economy data for domain, continuing without it')).to.be
-        .true;
+      expect(mockDeps.logger.warn.calledWith('Failed to fetch economy data for domain, continuing without it')).toBe(
+        true,
+      );
 
       // Verify adjustment was still made for domain1
-      expect(mockDeps.logger.info.calledWith('Adjusted custodied assets for domain based on pending intents')).to.be
-        .true;
+      expect(mockDeps.logger.info.calledWith('Adjusted custodied assets for domain based on pending intents')).toBe(
+        true,
+      );
     });
 
     it('should handle empty incomingIntents correctly', async () => {
       // Setup basic stubs for the test
       const ticker = '0xticker1';
       const domain = '8453';
-
-      // Mock getSupportedDomainsForTicker to return our test domain
-      const getSupportedDomainsStub = sinon.stub(assetHelpers, 'getSupportedDomainsForTicker').returns([domain]);
 
       // Mock balances and custodied assets
       getMarkBalancesStub.resolves(new Map([[ticker, new Map([[domain, BigInt('5000000000000000000')]])]]));
@@ -746,7 +735,7 @@ describe('Invoice Processing', () => {
         async (context, invoice, minAmounts, remainingBalances, remainingCustodied) => {
           // Verify domain custodied was NOT adjusted
           const domainCustodied = remainingCustodied.get(ticker)?.get(domain) || BigInt(0);
-          expect(domainCustodied).to.equal(originalCustodied);
+          expect(domainCustodied).toBe(originalCustodied);
 
           return {
             intents: [],
@@ -779,11 +768,44 @@ describe('Invoice Processing', () => {
       const adjustLogCalls = mockDeps.logger.info
         .getCalls()
         .filter((call) => call.args[0] === 'Adjusted custodied assets for domain based on pending intents');
-      expect(adjustLogCalls.length).to.equal(0);
+      expect(adjustLogCalls.length).toBe(0);
     });
   });
 
   describe('processTickerGroup', () => {
+    it('should handle case when no intents can be allocated', async () => {
+      const invoice = createMockInvoice({
+        intent_id: '0x123',
+        origin: '1',
+        destinations: ['8453'],
+        amount: '1000000000000000000',
+        ticker_hash: '0xticker1',
+      });
+
+      const group: TickerGroup = {
+        ticker: '0xticker1',
+        invoices: [invoice],
+        remainingBalances: new Map(),
+        remainingCustodied: new Map(),
+        chosenOrigin: '1',
+      };
+
+      // Mock to return empty intents (no allocation possible)
+      calculateSplitIntentsStub.resolves({
+        intents: [],
+        originDomain: '',
+        originNeeded: BigInt(0),
+        totalAllocated: BigInt(0),
+        remainder: BigInt(0),
+      });
+
+      const result = await processTickerGroup(mockContext, group, []);
+
+      expect(result.purchases).toEqual([]);
+      expect(sendIntentsStub.called).toBe(false);
+      // When no intents are generated, the function returns early without specific logging
+    });
+
     it('should process a single invoice in a ticker group correctly', async () => {
       isXerc20SupportedStub.resolves(false);
       mockDeps.everclear.getMinAmounts.resolves({
@@ -849,10 +871,10 @@ describe('Invoice Processing', () => {
       };
 
       // Verify the correct purchases were created
-      expect(result.purchases).to.deep.equal([expectedPurchase]);
+      expect(result.purchases).toEqual([expectedPurchase]);
 
       // Verify remaining balances were updated correctly
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
     });
 
     it('should process multiple invoices in a ticker group correctly', async () => {
@@ -957,10 +979,10 @@ describe('Invoice Processing', () => {
       ];
 
       // Verify the correct purchases were created
-      expect(result.purchases).to.deep.equal(expectedPurchases);
+      expect(result.purchases).toEqual(expectedPurchases);
 
       // Verify remaining balances were updated correctly (2 ETH - 1 ETH - 1 ETH = 0)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
     });
 
     it('should process split purchases for a single invoice correctly', async () => {
@@ -1063,10 +1085,10 @@ describe('Invoice Processing', () => {
       ];
 
       // Verify the correct split intent purchases were created
-      expect(result.purchases).to.deep.equal(expectedPurchases);
+      expect(result.purchases).toEqual(expectedPurchases);
 
       // Verify remaining balances were updated correctly (2 ETH - 2 ETH = 0)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
     });
 
     it('should filter out invalid invoices correctly', async () => {
@@ -1131,18 +1153,14 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Verify only the valid invoice made it through
-      expect(result.purchases.length).to.equal(1);
-      expect(result.purchases[0].target.intent_id).to.equal(validInvoice.intent_id);
+      expect(result.purchases.length).toBe(1);
+      expect(result.purchases[0].target.intent_id).toBe(validInvoice.intent_id);
 
       // And prometheus metrics were recorded for invalid invoices
-      expect(mockDeps.prometheus.recordInvalidPurchase.callCount).to.equal(3);
-      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(0).args[0]).to.equal(
-        InvalidPurchaseReasons.InvalidFormat,
-      );
-      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(1).args[0]).to.equal(
-        InvalidPurchaseReasons.InvalidOwner,
-      );
-      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(2).args[0]).to.equal(InvalidPurchaseReasons.InvalidAge);
+      expect(mockDeps.prometheus.recordInvalidPurchase.callCount).toBe(3);
+      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(0).args[0]).toBe(InvalidPurchaseReasons.InvalidFormat);
+      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(1).args[0]).toBe(InvalidPurchaseReasons.InvalidOwner);
+      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(2).args[0]).toBe(InvalidPurchaseReasons.InvalidAge);
     });
 
     it('should skip the entire ticker group if a purchase is pending', async () => {
@@ -1189,7 +1207,7 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
 
       // Should skip entire group, no purchases
-      expect(result.purchases).to.deep.equal([]);
+      expect(result.purchases).toEqual([]);
     });
 
     it('should skip invoice if XERC20 is supported', async () => {
@@ -1217,7 +1235,7 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Should skip the only invoice, no purchases
-      expect(result.purchases).to.deep.equal([]);
+      expect(result.purchases).toEqual([]);
     });
 
     it('should filter out origins with pending purchases', async () => {
@@ -1304,8 +1322,8 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
 
       // Verify the purchase uses origin 10
-      expect(result.purchases.length).to.equal(1);
-      expect(result.purchases[0].purchase.params.origin).to.equal('10');
+      expect(result.purchases.length).toBe(1);
+      expect(result.purchases[0].purchase.params.origin).toBe('10');
     });
 
     it('should skip invoice when all origins are filtered out due to pending purchases', async () => {
@@ -1351,8 +1369,8 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, pendingPurchases);
 
       // Verify the invoice is skipped since no valid origins remain
-      expect(result.purchases).to.deep.equal([]);
-      expect(mockDeps.logger.info.calledWith('No valid origins remain after filtering existing purchases')).to.be.true;
+      expect(result.purchases).toEqual([]);
+      expect(mockDeps.logger.info.calledWith('No valid origins remain after filtering existing purchases')).toBe(true);
     });
 
     it('should skip other invoices when forceOldestInvoice is true and oldest invoice has no valid allocation', async () => {
@@ -1394,7 +1412,7 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Skip entire group since oldest invoice couldn't be processed, no purchases
-      expect(result.purchases).to.deep.equal([]);
+      expect(result.purchases).toEqual([]);
     });
 
     it('should process newer invoices when forceOldestInvoice is false and oldest invoice has no valid allocation', async () => {
@@ -1462,8 +1480,8 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Should process newer invoice
-      expect(result.purchases.length).to.equal(1);
-      expect(result.purchases[0].target.intent_id).to.equal(newerInvoice.intent_id);
+      expect(result.purchases.length).toBe(1);
+      expect(result.purchases[0].target.intent_id).toBe(newerInvoice.intent_id);
     });
 
     it('should use the same origin for all invoices in a group once chosen', async () => {
@@ -1550,13 +1568,13 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Verify all purchases use the same origin
-      expect(result.purchases.length).to.equal(3);
+      expect(result.purchases.length).toBe(3);
       result.purchases.forEach((purchase) => {
-        expect(purchase.purchase.params.origin).to.equal('8453');
+        expect(purchase.purchase.params.origin).toBe('8453');
       });
 
       // Verify remaining balances were updated correctly (3 ETH - 1 ETH - 1 ETH - 1 ETH = 0)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
     });
 
     it('should skip invoices with insufficient balance on chosen origin but continue processing others', async () => {
@@ -1651,12 +1669,12 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Verify only invoice1 and invoice3 were processed (invoice2 skipped)
-      expect(result.purchases.length).to.equal(2);
-      expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
-      expect(result.purchases[1].target.intent_id).to.equal(invoice3.intent_id);
+      expect(result.purchases.length).toBe(2);
+      expect(result.purchases[0].target.intent_id).toBe(invoice1.intent_id);
+      expect(result.purchases[1].target.intent_id).toBe(invoice3.intent_id);
 
       // Verify the remaining balance was updated correctly (1.5 ETH - 1 ETH - 0.5 ETH = 0)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
     });
 
     it('should handle getMinAmounts failure gracefully', async () => {
@@ -1685,9 +1703,9 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Should return an empty result with no purchases
-      expect(result.purchases).to.be.empty;
-      expect(result.remainingBalances).to.deep.equal(group.remainingBalances);
-      expect(result.remainingCustodied).to.deep.equal(group.remainingCustodied);
+      expect(result.purchases).toHaveLength(0);
+      expect(result.remainingBalances).toEqual(group.remainingBalances);
+      expect(result.remainingCustodied).toEqual(group.remainingCustodied);
     });
 
     it('should handle sendIntents failure gracefully', async () => {
@@ -1735,9 +1753,9 @@ describe('Invoice Processing', () => {
       }
 
       // Verify error was thrown
-      expect(thrownError?.message).to.equal('Transaction failed');
-      expect(mockDeps.prometheus.recordInvalidPurchase.calledOnce).to.be.true;
-      expect(mockDeps.prometheus.recordInvalidPurchase.firstCall.args[0]).to.equal(
+      expect(thrownError?.message).toBe('Transaction failed');
+      expect(mockDeps.prometheus.recordInvalidPurchase.calledOnce).toBe(true);
+      expect(mockDeps.prometheus.recordInvalidPurchase.firstCall.args[0]).toBe(
         InvalidPurchaseReasons.TransactionFailed,
       );
     });
@@ -1900,8 +1918,8 @@ describe('Invoice Processing', () => {
       ];
 
       // Verify the correct purchases were stored in cache with proper invoice mapping
-      expect(mockDeps.purchaseCache.addPurchases.calledOnce).to.be.true;
-      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).to.deep.equal(expectedPurchases);
+      expect(mockDeps.purchaseCache.addPurchases.calledOnce).toBe(true);
+      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).toEqual(expectedPurchases);
     });
 
     it('should handle different intent statuses for pending purchases correctly', async () => {
@@ -1951,18 +1969,20 @@ describe('Invoice Processing', () => {
 
       mockDeps.purchaseCache.getAllPurchases.resolves(pendingPurchases);
 
-      mockDeps.everclear.intentStatuses.resolves(new Map([
-        ['0xexisting1', IntentStatus.SETTLED],
-        ['0xexisting2', IntentStatus.ADDED]
-      ]));
+      mockDeps.everclear.intentStatuses.resolves(
+        new Map([
+          ['0xexisting1', IntentStatus.SETTLED],
+          ['0xexisting2', IntentStatus.ADDED],
+        ]),
+      );
 
       await processInvoices(mockContext, [invoice]);
 
       // Verify that SETTLED intent was removed from consideration
-      expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).to.be.true;
+      expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).toBe(true);
 
       // Verify that ADDED intent was kept
-      expect(mockDeps.purchaseCache.removePurchases.neverCalledWith(['0xexisting2'])).to.be.true;
+      expect(mockDeps.purchaseCache.removePurchases.neverCalledWith(['0xexisting2'])).toBe(true);
     });
 
     it('should correctly update remaining custodied balances for split intents', async () => {
@@ -2083,19 +2103,19 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Verify the correct purchases were created
-      expect(result.purchases.length).to.equal(3);
-      expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
-      expect(result.purchases[1].target.intent_id).to.equal(invoice1.intent_id);
-      expect(result.purchases[2].target.intent_id).to.equal(invoice2.intent_id);
+      expect(result.purchases.length).toBe(3);
+      expect(result.purchases[0].target.intent_id).toBe(invoice1.intent_id);
+      expect(result.purchases[1].target.intent_id).toBe(invoice1.intent_id);
+      expect(result.purchases[2].target.intent_id).toBe(invoice2.intent_id);
 
       // Verify remaining balances were updated correctly (5 ETH - 4 ETH - 1 ETH = 0)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
 
       // Verify remaining custodied balances were updated correctly
       const remainingCustodied = result.remainingCustodied.get('0xticker1');
-      expect(remainingCustodied?.get('1')).to.equal(BigInt('0')); // 3 - 3 = 0 left
-      expect(remainingCustodied?.get('10')).to.equal(BigInt('0')); // 2 - 1 - 1 = 0 left
-      expect(remainingCustodied?.get('8453')).to.equal(BigInt('5000000000000000000'));
+      expect(remainingCustodied?.get('1')).toBe(BigInt('0')); // 3 - 3 = 0 left
+      expect(remainingCustodied?.get('10')).toBe(BigInt('0')); // 2 - 1 - 1 = 0 left
+      expect(remainingCustodied?.get('8453')).toBe(BigInt('5000000000000000000'));
     });
 
     it('should correctly distribute remainder intents across destinations', async () => {
@@ -2176,20 +2196,20 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Verify the correct purchases were created
-      expect(result.purchases.length).to.equal(2);
-      expect(result.purchases[0].target.intent_id).to.equal(invoice.intent_id);
-      expect(result.purchases[1].target.intent_id).to.equal(invoice.intent_id);
+      expect(result.purchases.length).toBe(2);
+      expect(result.purchases[0].target.intent_id).toBe(invoice.intent_id);
+      expect(result.purchases[1].target.intent_id).toBe(invoice.intent_id);
 
       // Verify remaining balances were updated correctly (6 ETH - 6 ETH = 0)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
 
       // Verify remaining custodied balances were updated correctly
       const remainingCustodied = result.remainingCustodied.get('0xticker1');
-      expect(remainingCustodied?.get('1')).to.equal(BigInt('0'));
-      expect(remainingCustodied?.get('10')).to.equal(BigInt('0'));
+      expect(remainingCustodied?.get('1')).toBe(BigInt('0'));
+      expect(remainingCustodied?.get('10')).toBe(BigInt('0'));
 
       // Base chain balance remains unchanged
-      expect(remainingCustodied?.get('8453')).to.equal(BigInt('5000000000000000000'));
+      expect(remainingCustodied?.get('8453')).toBe(BigInt('5000000000000000000'));
     });
 
     it('should correctly update balances and custodied after processing multiple invoices', async () => {
@@ -2303,16 +2323,16 @@ describe('Invoice Processing', () => {
       const result = await processTickerGroup(mockContext, group, []);
 
       // Verify both invoices were processed
-      expect(result.purchases.length).to.equal(2);
-      expect(result.purchases[0].target.intent_id).to.equal(invoice1.intent_id);
-      expect(result.purchases[1].target.intent_id).to.equal(invoice2.intent_id);
+      expect(result.purchases.length).toBe(2);
+      expect(result.purchases[0].target.intent_id).toBe(invoice1.intent_id);
+      expect(result.purchases[1].target.intent_id).toBe(invoice2.intent_id);
 
       // Verify remaining balances were updated correctly (10 ETH - 2 ETH - 3 ETH = 5 ETH)
-      expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('5000000000000000000'));
+      expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('5000000000000000000'));
 
       // Verify custodied balances remain unchanged (no custodied assets used)
       const remainingCustodied = result.remainingCustodied.get('0xticker1');
-      expect(remainingCustodied?.get('8453')).to.equal(BigInt('0'));
+      expect(remainingCustodied?.get('8453')).toBe(BigInt('0'));
     });
   });
 
@@ -2369,9 +2389,9 @@ describe('Invoice Processing', () => {
 
         await processInvoices(mockContext, [invoice]);
 
-        expect(processPendingEarmarksStub.calledOnce).to.be.true;
+        expect(processPendingEarmarksStub.calledOnce).toBe(true);
         // Verify processPendingEarmarks was called with correct parameters
-        expect(processPendingEarmarksStub.calledWith(mockContext, [invoice])).to.be.true;
+        expect(processPendingEarmarksStub.calledWith(mockContext, [invoice])).toBe(true);
       });
 
       it('should cleanup completed earmarks after successful purchase', async () => {
@@ -2423,7 +2443,7 @@ describe('Invoice Processing', () => {
         await processInvoices(mockContext, [invoice]);
 
         // Verify that the process completed without errors
-        expect(processPendingEarmarksStub.called).to.be.true;
+        expect(processPendingEarmarksStub.called).toBe(true);
       });
 
       it('should handle errors in earmarked invoice processing', async () => {
@@ -2453,9 +2473,9 @@ describe('Invoice Processing', () => {
         await processInvoices(mockContext, [invoice]);
 
         // Verify that error was logged
-        expect(mockDeps.logger.error.called).to.be.true;
+        expect(mockDeps.logger.error.called).toBe(true);
         // Verify that the stub was called (and rejected)
-        expect(processPendingEarmarksStub.called).to.be.true;
+        expect(processPendingEarmarksStub.called).toBe(true);
       });
     });
 
@@ -2514,10 +2534,10 @@ describe('Invoice Processing', () => {
 
         await processInvoices(mockContext, [invoice]);
 
-        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
-        expect(executeOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(evaluateOnDemandRebalancingStub.calledOnce).toBe(true);
+        expect(executeOnDemandRebalancingStub.calledOnce).toBe(true);
         // Simplify the log assertion
-        expect(mockDeps.logger.info.called).to.be.true;
+        expect(mockDeps.logger.info.called).toBe(true);
       });
 
       it('should not trigger on-demand rebalancing when balance is sufficient', async () => {
@@ -2551,8 +2571,8 @@ describe('Invoice Processing', () => {
 
         await processInvoices(mockContext, [invoice]);
 
-        expect(evaluateOnDemandRebalancingStub.called).to.be.false;
-        expect(executeOnDemandRebalancingStub.called).to.be.false;
+        expect(evaluateOnDemandRebalancingStub.called).toBe(false);
+        expect(executeOnDemandRebalancingStub.called).toBe(false);
       });
 
       it('should handle on-demand rebalancing evaluation failure', async () => {
@@ -2592,11 +2612,15 @@ describe('Invoice Processing', () => {
 
         await processInvoices(mockContext, [invoice]);
 
-        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
-        expect(executeOnDemandRebalancingStub.called).to.be.false;
-        expect(
-          mockDeps.logger.info.calledWith('No valid allocation found, evaluating on-demand rebalancing', match.any),
-        ).to.be.true;
+        expect(evaluateOnDemandRebalancingStub.calledOnce).toBe(true);
+        expect(executeOnDemandRebalancingStub.called).toBe(false);
+        // Check that the logger was called with the expected message
+        const infoCalls = mockDeps.logger.info.getCalls();
+        const rebalancingMessage = infoCalls.find(
+          (call) =>
+            call.args[0] && call.args[0].includes('No valid allocation found, evaluating on-demand rebalancing'),
+        );
+        expect(rebalancingMessage).toBeTruthy();
       });
 
       it('should handle on-demand rebalancing execution failure', async () => {
@@ -2646,9 +2670,14 @@ describe('Invoice Processing', () => {
 
         await processInvoices(mockContext, [invoice]);
 
-        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
-        expect(executeOnDemandRebalancingStub.calledOnce).to.be.true;
-        expect(mockDeps.logger.error.calledWith(match(/Failed to evaluate\/execute on-demand rebalancing/))).to.be.true;
+        expect(evaluateOnDemandRebalancingStub.calledOnce).toBe(true);
+        expect(executeOnDemandRebalancingStub.calledOnce).toBe(true);
+        // Check that the logger was called with the expected error message
+        const errorCalls = mockDeps.logger.error.getCalls();
+        const rebalancingError = errorCalls.find(
+          (call) => call.args[0] && call.args[0].includes('Failed to evaluate/execute on-demand rebalancing'),
+        );
+        expect(rebalancingError).toBeTruthy();
       });
     });
 
@@ -2705,9 +2734,9 @@ describe('Invoice Processing', () => {
 
         await processInvoices(mockContext, [largeInvoice]);
 
-        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
-        expect(evaluateOnDemandRebalancingStub.firstCall.args[0].amount).to.equal('5000000000000000000');
-        expect(executeOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(evaluateOnDemandRebalancingStub.calledOnce).toBe(true);
+        expect(evaluateOnDemandRebalancingStub.firstCall.args[0].amount).toBe('5000000000000000000');
+        expect(executeOnDemandRebalancingStub.calledOnce).toBe(true);
       });
     });
 
@@ -2761,10 +2790,10 @@ describe('Invoice Processing', () => {
         await processInvoices(mockContext, [invoice]);
 
         // Verify that on-demand rebalancing was called with the right config
-        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(evaluateOnDemandRebalancingStub.calledOnce).toBe(true);
         if (evaluateOnDemandRebalancingStub.firstCall) {
-          expect(evaluateOnDemandRebalancingStub.firstCall.args[2].config.onDemandRoutes).to.exist;
-          expect(evaluateOnDemandRebalancingStub.firstCall.args[2].config.onDemandRoutes).to.have.length(1);
+          expect(evaluateOnDemandRebalancingStub.firstCall.args[2].config.onDemandRoutes).toBeDefined();
+          expect(evaluateOnDemandRebalancingStub.firstCall.args[2].config.onDemandRoutes).toHaveLength(1);
         }
       });
 
@@ -2828,7 +2857,7 @@ describe('Invoice Processing', () => {
 
         await processInvoices(mockContext, [invoice]);
 
-        expect(evaluateOnDemandRebalancingStub.calledOnce).to.be.true;
+        expect(evaluateOnDemandRebalancingStub.calledOnce).toBe(true);
       });
     });
   });
