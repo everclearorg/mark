@@ -14,7 +14,7 @@
         "lint:ts": "eslint ./src",
         "test": "yarn test:unit",
         "test:all": "yarn test:unit && yarn test:integration",
-        "test:integration": "RUN_INTEGRATION_TESTS=true jest --coverage",
+        "test:integration": "jest --coverage --testPathPattern='.*\\.integration\\.spec\\.ts$'",
         "test:unit": "jest --coverage --testPathIgnorePatterns='.*\\.integration\\.spec\\.ts$'"
     },
     "dependencies": {
