@@ -9,6 +9,22 @@ module.exports = {
     '^@mark/cache$': '<rootDir>/../adapters/cache/src',
     '^@mark/everclear$': '<rootDir>/../adapters/everclear/src',
     '^@mark/logger$': '<rootDir>/../adapters/logger/src',
+    '^@mark/rebalance$': '<rootDir>/../adapters/rebalance/src',
+    '^@mark/chainservice$': '<rootDir>/../adapters/chainservice/src',
+    '^@mark/prometheus$': '<rootDir>/../adapters/prometheus/src',
+    '^@mark/web3signer$': '<rootDir>/../adapters/web3signer/src',
     '^#/(.*)$': '<rootDir>/src/$1',
   },
+  collectCoverage: false,
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
+  coverageThreshold: {
+    global: {
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70,
+    },
+  },
+  coveragePathIgnorePatterns: ['/node_modules/', '/test/', 'src/rebalance/onDemand.ts'],
 };

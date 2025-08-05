@@ -5,7 +5,6 @@ import { Logger } from '@mark/logger';
 import { LoggingContext, TransactionSubmissionType, WalletType, TransactionRequest, WalletConfig } from '@mark/core';
 import { submitTransactionWithLogging } from '../../src/helpers/transactions';
 import * as zodiacHelpers from '../../src/helpers/zodiac';
-import { expect } from '../globalTestHook';
 
 describe('submitTransactionWithLogging', () => {
   let mockDeps: {
@@ -73,15 +72,15 @@ describe('submitTransactionWithLogging', () => {
         context: mockContext,
       });
 
-      expect(result).to.deep.equal({
+      expect(result).toEqual({
         submissionType: TransactionSubmissionType.Onchain,
         hash: MOCK_TX_HASH,
         receipt: mockReceipt,
       });
 
       // Verify logging
-      expect(mockDeps.logger.info.calledWith('Submitting transaction')).to.be.true;
-      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).to.be.true;
+      expect(mockDeps.logger.info.calledWith('Submitting transaction')).toBe(true);
+      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).toBe(true);
     });
 
     it('should handle EOA transaction failure', async () => {
@@ -97,10 +96,10 @@ describe('submitTransactionWithLogging', () => {
           zodiacConfig: mockZodiacConfig,
           context: mockContext,
         }),
-      ).to.be.rejectedWith(error);
+      ).rejects.toThrow(error);
 
       // Verify error logging
-      expect(mockDeps.logger.error.calledWith('Transaction submission failed')).to.be.true;
+      expect(mockDeps.logger.error.calledWith('Transaction submission failed')).toBe(true);
     });
   });
 
@@ -141,20 +140,21 @@ describe('submitTransactionWithLogging', () => {
         context: mockContext,
       });
 
-      expect(result).to.deep.equal({
+      expect(result).toEqual({
         submissionType: TransactionSubmissionType.Onchain,
         hash: MOCK_TX_HASH,
         receipt: mockReceipt,
       });
 
       // Verify logging
-      expect(mockDeps.logger.info.calledWith('Submitting transaction')).to.be.true;
-      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).to.be.true;
+      expect(mockDeps.logger.info.calledWith('Submitting transaction')).toBe(true);
+      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).toBe(true);
 
       // Verify that the transaction was wrapped with Zodiac
-      expect(wrapTransactionWithZodiacStub.calledOnce).to.be.true;
-      expect(wrapTransactionWithZodiacStub.calledWith({ ...mockTxRequest, chainId: MOCK_CHAIN_ID }, mockZodiacConfig))
-        .to.be.true;
+      expect(wrapTransactionWithZodiacStub.calledOnce).toBe(true);
+      expect(
+        wrapTransactionWithZodiacStub.calledWith({ ...mockTxRequest, chainId: MOCK_CHAIN_ID }, mockZodiacConfig),
+      ).toBe(true);
     });
 
     it('should handle zodiac transaction failure', async () => {
@@ -170,10 +170,10 @@ describe('submitTransactionWithLogging', () => {
           zodiacConfig: mockZodiacConfig,
           context: mockContext,
         }),
-      ).to.be.rejectedWith(error);
+      ).rejects.toThrow(error);
 
       // Verify error logging
-      expect(mockDeps.logger.error.calledWith('Transaction submission failed')).to.be.true;
+      expect(mockDeps.logger.error.calledWith('Transaction submission failed')).toBe(true);
     });
 
     it('should include zodiac-specific fields in logs', async () => {
@@ -197,16 +197,16 @@ describe('submitTransactionWithLogging', () => {
 
       // Check that logging includes zodiac information
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).to.exist;
-      expect(submitCall?.args[1]).to.deep.include({
+      expect(submitCall).toBeDefined();
+      expect(submitCall?.args[1]).toMatchObject({
         chainId: MOCK_CHAIN_ID.toString(),
         walletType: WalletType.Zodiac,
         originalTo: mockTxRequest.to,
       });
 
       const successCall = mockDeps.logger.info.getCall(1);
-      expect(successCall).to.exist;
-      expect(successCall?.args[1]).to.deep.include({
+      expect(successCall).toBeDefined();
+      expect(successCall?.args[1]).toMatchObject({
         chainId: MOCK_CHAIN_ID.toString(),
         transactionHash: MOCK_TX_HASH,
         walletType: WalletType.Zodiac,
@@ -241,8 +241,8 @@ describe('submitTransactionWithLogging', () => {
 
       // Verify value is logged as '0'
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).to.exist;
-      expect(submitCall?.args[1]?.value).to.equal('0');
+      expect(submitCall).toBeDefined();
+      expect(submitCall?.args[1]?.value).toBe('0');
     });
 
     it('should handle transactions with string value', async () => {
@@ -274,8 +274,8 @@ describe('submitTransactionWithLogging', () => {
 
       // Verify value is logged correctly
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).to.exist;
-      expect(submitCall?.args[1]?.value).to.equal('1000000000000000000');
+      expect(submitCall).toBeDefined();
+      expect(submitCall?.args[1]?.value).toBe('1000000000000000000');
     });
 
     it('should handle transactions with bigint value', async () => {
@@ -310,8 +310,8 @@ describe('submitTransactionWithLogging', () => {
 
       // Verify value is logged as string
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).to.exist;
-      expect(submitCall?.args[1]?.value).to.equal('2000000000000000000');
+      expect(submitCall).toBeDefined();
+      expect(submitCall?.args[1]?.value).toBe('2000000000000000000');
     });
   });
 
@@ -343,12 +343,12 @@ describe('submitTransactionWithLogging', () => {
 
       // Verify context is included in logs
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).to.exist;
-      expect(submitCall?.args[1]).to.include(customContext);
+      expect(submitCall).toBeDefined();
+      expect(submitCall?.args[1]).toMatchObject(customContext);
 
       const successCall = mockDeps.logger.info.getCall(1);
-      expect(successCall).to.exist;
-      expect(successCall?.args[1]).to.include(customContext);
+      expect(successCall).toBeDefined();
+      expect(successCall?.args[1]).toMatchObject(customContext);
     });
 
     it('should handle empty context', async () => {
@@ -371,8 +371,8 @@ describe('submitTransactionWithLogging', () => {
       });
 
       // Should not throw and should still log
-      expect(mockDeps.logger.info.calledWith('Submitting transaction')).to.be.true;
-      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).to.be.true;
+      expect(mockDeps.logger.info.calledWith('Submitting transaction')).toBe(true);
+      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).toBe(true);
     });
   });
 
@@ -390,13 +390,13 @@ describe('submitTransactionWithLogging', () => {
           zodiacConfig: mockZodiacConfig,
           context: mockContext,
         }),
-      ).to.be.rejectedWith(error);
+      ).rejects.toThrow(error);
 
       // Verify error logging
       const errorCall = mockDeps.logger.error.getCall(0);
-      expect(errorCall).to.exist;
-      expect(errorCall?.args[0]).to.equal('Transaction submission failed');
-      expect(errorCall?.args[1]).to.include({
+      expect(errorCall).toBeDefined();
+      expect(errorCall?.args[0]).toBe('Transaction submission failed');
+      expect(errorCall?.args[1]).toMatchObject({
         ...mockContext,
         chainId: MOCK_CHAIN_ID.toString(),
         error,
