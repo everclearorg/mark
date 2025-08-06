@@ -1,9 +1,14 @@
-import { getMarkBalances, safeStringToBigInt, getTickerForAsset } from '../helpers';
+import { getMarkBalances, safeStringToBigInt, getTickerForAsset, convertToNativeUnits } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
-import { getDecimalsFromConfig, WalletType, RebalanceOperationStatus } from '@mark/core';
+import {
+  getDecimalsFromConfig,
+  WalletType,
+  RebalanceOperationStatus,
+  BPS_MULTIPLIER,
+  DBPS_MULTIPLIER,
+} from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { formatUnits } from 'viem';
 import { RebalanceAction } from '@mark/cache';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
@@ -92,13 +97,13 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
     // Ticker balances always in 18 units, convert to proper decimals
     const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);
-    const currentBalance = BigInt(formatUnits(availableBalance, 18 - (decimals ?? 18)));
+    const currentBalance = convertToNativeUnits(availableBalance, decimals);
 
     logger.debug('Current balance for route', { requestId, route, currentBalance: currentBalance.toString() });
 
     // Convert route maximum and reserve from standardized 18 decimals to asset's native decimals
-    const maximumBalance = BigInt(formatUnits(BigInt(route.maximum), 18 - (decimals ?? 18)));
-    const reserveAmount = BigInt(formatUnits(BigInt(route.reserve ?? '0'), 18 - (decimals ?? 18)));
+    const maximumBalance = convertToNativeUnits(BigInt(route.maximum), decimals);
+    const reserveAmount = convertToNativeUnits(BigInt(route.reserve ?? '0'), decimals);
     if (currentBalance <= maximumBalance) {
       logger.info('Balance is at or below maximum, skipping route', {
         requestId,
@@ -167,15 +172,13 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
       // Step 2: Check Slippage
       const receivedAmount = BigInt(receivedAmountStr);
-      const scaleFactor = BigInt(10_000);
-      const dbpsDenominator = BigInt(100_000);
       const currentSlippage = route.slippages[bridgeIndex];
-      const slippage = safeStringToBigInt(currentSlippage.toString(), scaleFactor);
-      const slippageScaled = slippage * scaleFactor;
+      const slippage = safeStringToBigInt(currentSlippage.toString(), BPS_MULTIPLIER);
+      const slippageScaled = slippage * BPS_MULTIPLIER;
       const minimumAcceptableAmount =
-        amountToBridge - (amountToBridge * slippageScaled) / (scaleFactor * dbpsDenominator);
+        amountToBridge - (amountToBridge * slippageScaled) / (BPS_MULTIPLIER * DBPS_MULTIPLIER);
 
-      const actualSlippageBps = ((amountToBridge - receivedAmount) * scaleFactor) / amountToBridge;
+      const actualSlippageBps = ((amountToBridge - receivedAmount) * BPS_MULTIPLIER) / amountToBridge;
 
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Quote does not meet slippage requirements, trying next preference', {

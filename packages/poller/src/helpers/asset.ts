@@ -1,6 +1,7 @@
 import { getTokenAddressFromConfig, MarkConfiguration, base58ToHex, isSvmChain, isAddress } from '@mark/core';
-import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex, formatUnits } from 'viem';
+import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex, formatUnits, parseUnits } from 'viem';
 import { getHubStorageContract } from './contracts';
+import { safeStringToBigInt } from './balance';
 
 export const getTickers = (config: MarkConfiguration) => {
   const tickers = Object.values(config.chains)
@@ -21,6 +22,46 @@ export const getTickerForAsset = (asset: string, chain: number, config: MarkConf
     return undefined;
   }
   return assetConfig.tickerHash;
+};
+
+/**
+ * Convert amount from standardized 18 decimals to native token decimals
+ * @param amount Amount in 18 decimal representation
+ * @param decimals Native token decimals
+ * @returns Amount in native token units
+ */
+export const convertToNativeUnits = (amount: bigint, decimals: number | undefined): bigint => {
+  return BigInt(formatUnits(amount, 18 - (decimals ?? 18)));
+};
+
+/**
+ * Convert amount from native token decimals to standardized 18 decimals
+ * @param amount Amount in native token units
+ * @param decimals Native token decimals
+ * @returns Amount in 18 decimal representation
+ */
+export const convertTo18Decimals = (amount: bigint, decimals: number | undefined): bigint => {
+  return parseUnits(formatUnits(amount, decimals ?? 18), 18);
+};
+
+/**
+ * Get the scale factor for converting string amounts to bigint with proper decimals
+ * @param decimals Token decimals
+ * @returns Scale factor as bigint
+ */
+export const getScaleFactor = (decimals: number | undefined): bigint => {
+  return BigInt(10 ** (decimals ?? 18));
+};
+
+/**
+ * Parse a string amount with the given decimals into a bigint
+ * @param amount String amount to parse
+ * @param decimals Token decimals
+ * @returns Parsed amount as bigint in smallest unit
+ */
+export const parseAmountWithDecimals = (amount: string, decimals: number | undefined): bigint => {
+  const scaleFactor = getScaleFactor(decimals);
+  return safeStringToBigInt(amount, scaleFactor);
 };
 
 /**
