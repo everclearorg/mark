@@ -6,7 +6,7 @@
     "types": "dist/index.d.ts",
     "scripts": {
         "build": "tsc --build ./tsconfig.json",
-        "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+        "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
         "dev": "npx tsx scripts/dev.ts",
         "lint": "yarn lint:package && yarn lint:ts",
         "lint:fix": "yarn lint --fix",

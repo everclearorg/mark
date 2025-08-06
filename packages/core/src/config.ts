@@ -15,6 +15,7 @@ import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
 import { existsSync, readFileSync } from 'fs';
 import { hexToBase58 } from './solana';
+import { isTvmChain } from './tron';
 
 config();
 
@@ -585,6 +586,10 @@ export const parseChainConfigurations = async (
       gnosisSafeAddress,
       squadsAddress,
       privateKey,
+      ...(isTvmChain(chainId) && {
+        bandwidthThreshold: configJson?.chains?.[chainId]?.bandwidthThreshold,
+        energyThreshold: configJson?.chains?.[chainId]?.energyThreshold,
+      }),
     };
   }
 
