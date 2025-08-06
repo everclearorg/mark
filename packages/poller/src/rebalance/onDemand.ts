@@ -1,10 +1,9 @@
 import { ProcessingContext } from '../init';
-import { Invoice, EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
+import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge, BPS_MULTIPLIER } from '@mark/core';
 import { RouteRebalancingConfig, MarkConfiguration } from '@mark/core';
 import * as database from '@mark/database';
 import type { earmarks } from '@mark/database';
-import { getMarkBalances, safeStringToBigInt } from '../helpers';
-import { formatUnits } from 'viem';
+import { getMarkBalances, convertToNativeUnits, convertTo18Decimals, parseAmountWithDecimals } from '../helpers';
 import { getDecimalsFromConfig } from '@mark/core';
 import { jsonifyError } from '@mark/logger';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
@@ -17,7 +16,8 @@ interface OnDemandRebalanceResult {
   rebalanceOperations?: {
     originChain: number;
     amount: string;
-    slippages: number[];
+    bridge: SupportedBridge;
+    slippage: number;
   }[];
   totalAmount?: string;
   minAmount?: string;
@@ -98,6 +98,7 @@ export async function evaluateOnDemandRebalancing(
     logger.info('No viable destination found for on-demand rebalancing', {
       requestId,
       invoiceId: invoice.intent_id,
+      evaluatedDestinations: evaluationResults.size,
     });
     return { canRebalance: false };
   }
@@ -127,8 +128,7 @@ async function evaluateDestinationChain(
 
   const ticker = invoice.ticker_hash.toLowerCase();
   const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
-  const scaleFactor = BigInt(10 ** (decimals ?? 18));
-  const requiredAmount = safeStringToBigInt(minAmount, scaleFactor);
+  const requiredAmount = parseAmountWithDecimals(minAmount, decimals);
   if (!requiredAmount) {
     logger.error('Invalid minAmount', { minAmount, destination });
     return { canRebalance: false };
@@ -141,27 +141,31 @@ async function evaluateDestinationChain(
     .reduce((sum, e) => sum + e.amount, 0n);
 
   const availableOnDestination = destinationBalance - earmarkedOnDestination;
+  const amountNeeded = requiredAmount - availableOnDestination;
 
   // If destination already has enough, no need to rebalance
-  if (availableOnDestination >= requiredAmount) {
+  if (amountNeeded <= 0n) {
     return { canRebalance: false };
   }
 
-  // Calculate how much we need to rebalance
-  const amountNeeded = requiredAmount - availableOnDestination;
-
   // Calculate rebalancing operations
-  const { operations, canFulfill } = calculateRebalancingOperations(
+  const { operations, canFulfill, totalAchievable } = await calculateRebalancingOperations(
     amountNeeded,
     applicableRoutes,
     balances,
     earmarkedFunds,
     invoice.ticker_hash,
-    config,
+    context,
   );
 
   // Check if we can fulfill the invoice after all rebalancing
   if (canFulfill) {
+    logger.debug('Can fulfill invoice for destination', {
+      destination,
+      requiredAmount: requiredAmount.toString(),
+      operations: operations.length,
+      totalAchievable: totalAchievable.toString(),
+    });
     return {
       canRebalance: true,
       destinationChain: destination,
@@ -170,6 +174,14 @@ async function evaluateDestinationChain(
     };
   }
 
+  logger.debug('Cannot fulfill invoice for destination', {
+    destination,
+    requiredAmount: requiredAmount.toString(),
+    availableOnDestination: availableOnDestination.toString(),
+    amountNeeded: amountNeeded.toString(),
+    operations: operations.length,
+    totalAchievable: totalAchievable.toString(),
+  });
   return { canRebalance: false };
 }
 
@@ -200,23 +212,20 @@ function calculateEarmarkedFunds(earmarks: earmarks[], config: MarkConfiguration
 
   for (const earmark of earmarks) {
     const key = `${earmark.designatedPurchaseChain}-${earmark.tickerHash}`;
-    const existing = fundsMap.get(key);
 
+    // Calculate amount once
+    const ticker = earmark.tickerHash.toLowerCase();
+    const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
+    const amount = parseAmountWithDecimals(earmark.minAmount, decimals) || 0n;
+
+    const existing = fundsMap.get(key);
     if (existing) {
-      const ticker = earmark.tickerHash.toLowerCase();
-      const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
-      const scaleFactor = BigInt(10 ** (decimals ?? 18));
-      existing.amount += safeStringToBigInt(earmark.minAmount, scaleFactor) || 0n;
+      existing.amount += amount;
     } else {
       fundsMap.set(key, {
         chainId: earmark.designatedPurchaseChain,
         tickerHash: earmark.tickerHash,
-        amount: (() => {
-          const ticker = earmark.tickerHash.toLowerCase();
-          const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
-          const scaleFactor = BigInt(10 ** (decimals ?? 18));
-          return safeStringToBigInt(earmark.minAmount, scaleFactor) || 0n;
-        })(),
+        amount,
       });
     }
   }
@@ -231,23 +240,24 @@ function calculateEarmarkedFunds(earmarks: earmarks[], config: MarkConfiguration
  * @param balances - Current balances across chains
  * @param earmarkedFunds - Funds already earmarked for other operations
  * @param tickerHash - Asset ticker hash
- * @param config - Mark configuration
+ * @param context - Processing context with access to adapters
  * @returns Array of rebalancing operations and total amount that can be achieved
  */
-function calculateRebalancingOperations(
+async function calculateRebalancingOperations(
   amountNeeded: bigint,
   routes: RouteRebalancingConfig[],
   balances: Map<string, Map<string, bigint>>,
   earmarkedFunds: EarmarkedFunds[],
   tickerHash: string,
-  config: MarkConfiguration,
-): {
-  operations: { originChain: number; amount: string; slippages: number[] }[];
+  context: ProcessingContext,
+): Promise<{
+  operations: { originChain: number; amount: string; bridge: SupportedBridge; slippage: number }[];
   totalAchievable: bigint;
   canFulfill: boolean;
-} {
+}> {
+  const { logger, rebalance, config } = context;
   const ticker = tickerHash.toLowerCase();
-  const operations: { originChain: number; amount: string; slippages: number[] }[] = [];
+  const operations: { originChain: number; amount: string; bridge: SupportedBridge; slippage: number }[] = [];
   let remainingNeeded = amountNeeded;
   let totalAchievable = 0n;
 
@@ -265,34 +275,111 @@ function calculateRebalancingOperations(
 
     if (availableOnOrigin <= 0n) continue;
 
-    // Calculate amount to send accounting for slippage
-    const slippageMultiplier = BigInt(10000 + (route.slippages?.[0] || 100)); // route.slippages[0] is in basis points
-    const amountToSend = (remainingNeeded * slippageMultiplier) / 10000n;
+    // Try each bridge preference to find one that works
+    let operationAdded = false;
 
-    // Use the minimum of what's needed and what's available
-    const actualSend = amountToSend < availableOnOrigin ? amountToSend : availableOnOrigin;
-    const expectedReceived = (actualSend * 10000n) / slippageMultiplier;
+    for (let bridgeIndex = 0; bridgeIndex < route.preferences.length; bridgeIndex++) {
+      const bridgeType = route.preferences[bridgeIndex];
+      const adapter = rebalance.getAdapter(bridgeType);
 
-    if (actualSend > 0n) {
-      // Convert from 18 decimals to native decimals for the bridge adapter
-      const originDecimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);
-      const nativeAmount = formatUnits(actualSend, 18 - (originDecimals ?? 18));
+      if (!adapter) {
+        logger.debug('Adapter not found for bridge type during planning', {
+          bridgeType,
+          route,
+        });
+        continue;
+      }
 
-      operations.push({
-        originChain: route.origin,
-        amount: nativeAmount,
-        slippages: route.slippages || [100],
+      try {
+        // Calculate how much to send - we need to account for slippage
+        // so that we receive at least remainingNeeded after slippage
+        // If we need X and slippage is S%, we need to send X / (1 - S/10000)
+        const maxSlippageForBridge = route.slippages?.[bridgeIndex] ?? 100;
+        const slippageDivisor = BPS_MULTIPLIER - BigInt(maxSlippageForBridge);
+        const estimatedAmountToSend = (remainingNeeded * BPS_MULTIPLIER) / slippageDivisor;
+
+        // Use the minimum of our estimate and what's available
+        const amountToTry = estimatedAmountToSend < availableOnOrigin ? estimatedAmountToSend : availableOnOrigin;
+
+        // Convert from 18 decimals to native decimals for the quote
+        const originDecimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);
+        const destDecimals = getDecimalsFromConfig(ticker, route.destination.toString(), config);
+        const nativeAmountBigInt = convertToNativeUnits(amountToTry, originDecimals);
+        const nativeAmount = nativeAmountBigInt.toString();
+
+        // Get quote from adapter
+        const receivedAmountStr = await adapter.getReceivedAmount(nativeAmount, route);
+
+        // Check if quote meets slippage requirements
+        const sentIn18Decimals = convertTo18Decimals(nativeAmountBigInt, originDecimals);
+        const receivedIn18Decimals = convertTo18Decimals(BigInt(receivedAmountStr), destDecimals);
+        const slippageBps = ((sentIn18Decimals - receivedIn18Decimals) * BPS_MULTIPLIER) / sentIn18Decimals;
+
+        logger.debug('Quote evaluation during planning', {
+          bridgeType,
+          bridgeIndex,
+          sentAmount: nativeAmount,
+          receivedAmount: receivedAmountStr,
+          sentIn18Decimals: sentIn18Decimals.toString(),
+          receivedIn18Decimals: receivedIn18Decimals.toString(),
+          slippageBps: slippageBps.toString(),
+          maxSlippage: maxSlippageForBridge,
+          passesSlippage: slippageBps <= BigInt(maxSlippageForBridge),
+        });
+
+        if (slippageBps > BigInt(maxSlippageForBridge)) {
+          continue;
+        }
+
+        // receivedIn18Decimals already calculated above for slippage comparison
+
+        // Quote is acceptable, add this operation
+        operations.push({
+          originChain: route.origin,
+          amount: nativeAmount,
+          bridge: bridgeType,
+          slippage: maxSlippageForBridge,
+        });
+
+        // Update remaining needed and total achievable
+        remainingNeeded -= receivedIn18Decimals;
+        totalAchievable += receivedIn18Decimals;
+        operationAdded = true;
+        break; // Found a working bridge for this route
+      } catch (error) {
+        logger.debug('Failed to get quote during planning', {
+          bridgeType,
+          route,
+          error: jsonifyError(error),
+        });
+        continue;
+      }
+    }
+
+    if (!operationAdded) {
+      logger.debug('No viable bridge found for route during planning', {
+        route,
+        availableBalance: availableOnOrigin.toString(),
       });
-
-      remainingNeeded -= expectedReceived;
-      totalAchievable += expectedReceived;
     }
   }
+
+  // Allow for tiny rounding errors (1 unit in native decimals)
+  // This is 0.000001 USDC for 6-decimal tokens, 0.00000001 for 8-decimal tokens
+  const roundingTolerance = BigInt(10 ** 12); // 1 unit in 6 decimals = 1e12 in 18 decimals
+  const canFulfill = remainingNeeded <= roundingTolerance;
+
+  logger.debug('calculateRebalancingOperations result', {
+    operations: operations.length,
+    totalAchievable: totalAchievable.toString(),
+    remainingNeeded: remainingNeeded.toString(),
+    canFulfill,
+  });
 
   return {
     operations,
     totalAchievable,
-    canFulfill: remainingNeeded <= 0n,
+    canFulfill,
   };
 }
 
@@ -315,8 +402,7 @@ function selectBestDestination(
       result.rebalanceOperations?.reduce((sum, op) => {
         const opTicker = tickerHash.toLowerCase();
         const opDecimals = getDecimalsFromConfig(opTicker, op.originChain.toString(), config);
-        const opScaleFactor = BigInt(10 ** (opDecimals ?? 18));
-        return sum + (safeStringToBigInt(op.amount, opScaleFactor) || 0n);
+        return sum + (parseAmountWithDecimals(op.amount, opDecimals) || 0n);
       }, 0n) || 0n;
 
     if (numOps < minOperations || (numOps === minOperations && totalAmount < minAmount)) {
@@ -371,15 +457,20 @@ export async function executeOnDemandRebalancing(
         // Get recipient address (could be different for Zodiac setup)
         const recipient = getActualAddress(destinationChain!, config, logger, { requestId });
 
-        // Execute the actual rebalancing through the rebalance adapter
-        // This will use the configured bridge preferences
-        const result = await executeRebalanceTransaction(route, operation.amount, recipient, context);
+        // Execute the rebalancing with the pre-determined bridge
+        const result = await executeRebalanceTransactionWithBridge(
+          route,
+          operation.amount,
+          recipient,
+          operation.bridge,
+          context,
+        );
 
         if (result) {
           logger.info('On-demand rebalance transaction confirmed', {
             requestId,
             transactionHash: result.txHash,
-            bridgeType: result.bridgeType,
+            bridgeType: operation.bridge,
             originChain: operation.originChain,
             amount: operation.amount,
           });
@@ -388,8 +479,8 @@ export async function executeOnDemandRebalancing(
           successfulOperations.push({
             originChainId: operation.originChain,
             amount: operation.amount,
-            slippage: operation.slippages[0],
-            bridge: result.bridgeType,
+            slippage: operation.slippage,
+            bridge: operation.bridge,
             txHash: result.txHash,
           });
         } else {
@@ -526,10 +617,9 @@ async function handleMinAmountIncrease(
   const { logger, requestId, config } = context;
   const ticker = earmark.tickerHash.toLowerCase();
   const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
-  const scaleFactor = BigInt(10 ** (decimals ?? 18));
 
-  const currentRequiredAmount = safeStringToBigInt(currentMinAmount, scaleFactor);
-  const earmarkedAmount = safeStringToBigInt(earmark.minAmount, scaleFactor);
+  const currentRequiredAmount = parseAmountWithDecimals(currentMinAmount, decimals);
+  const earmarkedAmount = parseAmountWithDecimals(earmark.minAmount, decimals);
 
   if (!currentRequiredAmount || !earmarkedAmount) {
     return false;
@@ -575,13 +665,13 @@ async function handleMinAmountIncrease(
       route.asset.toLowerCase() === earmark.tickerHash.toLowerCase(),
   );
 
-  const { operations: additionalOperations, canFulfill: canRebalanceAdditional } = calculateRebalancingOperations(
+  const { operations: additionalOperations, canFulfill: canRebalanceAdditional } = await calculateRebalancingOperations(
     additionalAmount,
     applicableRoutes,
     balances,
     earmarkedFunds,
     earmark.tickerHash,
-    config,
+    context,
   );
 
   if (!canRebalanceAdditional || additionalOperations.length === 0) {
@@ -626,14 +716,20 @@ async function handleMinAmountIncrease(
 
       const recipient = getActualAddress(earmark.designatedPurchaseChain, config, logger, { requestId });
 
-      // Execute the additional rebalancing
-      const result = await executeRebalanceTransaction(route, operation.amount, recipient, context);
+      // Execute the additional rebalancing with pre-determined bridge
+      const result = await executeRebalanceTransactionWithBridge(
+        route,
+        operation.amount,
+        recipient,
+        operation.bridge,
+        context,
+      );
 
       if (result) {
         logger.info('Additional rebalance transaction confirmed', {
           requestId,
           transactionHash: result.txHash,
-          bridgeType: result.bridgeType,
+          bridgeType: operation.bridge,
           originChain: operation.originChain,
           amount: operation.amount,
         });
@@ -642,8 +738,8 @@ async function handleMinAmountIncrease(
         successfulAdditionalOps.push({
           originChainId: operation.originChain,
           amount: operation.amount,
-          slippage: operation.slippages[0],
-          bridge: result.bridgeType,
+          slippage: operation.slippage,
+          bridge: operation.bridge,
           txHash: result.txHash,
         });
       }
@@ -714,150 +810,112 @@ async function handleMinAmountIncrease(
   return true;
 }
 
-async function executeRebalanceTransaction(
+/**
+ * Execute rebalance transaction with a pre-determined bridge
+ */
+async function executeRebalanceTransactionWithBridge(
   route: RouteRebalancingConfig,
   amount: string,
   recipient: string,
+  bridgeType: SupportedBridge,
   context: ProcessingContext,
-): Promise<{ txHash: string; bridgeType: string } | null> {
+): Promise<{ txHash: string } | null> {
   const { logger, rebalance, requestId, config } = context;
 
-  // Use the regular rebalance adapter logic
   try {
-    // Get sender address (could be Safe address for Zodiac-enabled chains)
     const sender = getActualAddress(route.origin, config, logger, { requestId });
-
-    // Get Zodiac configuration for origin chain
     const originChainConfig = config.chains[route.origin];
     const zodiacConfig = getValidatedZodiacConfig(originChainConfig, logger, { requestId, route });
 
-    // Try each bridge preference in order
-    for (const bridgeType of route.preferences) {
-      logger.info('Attempting to execute on-demand rebalance via bridge', {
+    const adapter = rebalance.getAdapter(bridgeType);
+    if (!adapter) {
+      logger.error('Bridge adapter not found', {
         requestId,
-        route,
         bridgeType,
-        amount,
-        sender,
-        recipient,
       });
+      return null;
+    }
 
-      const adapter = rebalance.getAdapter(bridgeType);
-      if (!adapter) {
-        logger.warn('Bridge adapter not found, trying next preference', {
+    logger.info('Executing on-demand rebalance with pre-determined bridge', {
+      requestId,
+      route,
+      bridgeType,
+      amount,
+      sender,
+      recipient,
+    });
+
+    // Execute the rebalance transaction
+    const bridgeTxRequests = await adapter.send(sender, recipient, amount, route);
+
+    if (bridgeTxRequests && bridgeTxRequests.length > 0) {
+      let transactionHash: string | null = null;
+
+      for (const { transaction, memo } of bridgeTxRequests) {
+        logger.info('Submitting on-demand rebalance transaction', {
           requestId,
           bridgeType,
+          memo,
+          transaction,
+          useZodiac: zodiacConfig.walletType,
         });
-        continue;
-      }
 
-      try {
-        // Get quote to verify the transaction is viable
-        const receivedAmount = await adapter.getReceivedAmount(amount, route);
+        try {
+          const result = await submitTransactionWithLogging({
+            chainService: context.chainService,
+            logger,
+            chainId: route.origin.toString(),
+            txRequest: {
+              to: transaction.to!,
+              data: transaction.data!,
+              value: (transaction.value || 0).toString(),
+              chainId: route.origin,
+              from: context.config.ownAddress,
+            },
+            zodiacConfig,
+            context: { requestId, bridgeType, transactionType: memo },
+          });
 
-        // Calculate if slippage is acceptable
-        const sentAmount = BigInt(amount);
-        const received = BigInt(receivedAmount);
-        const slippageBps = ((sentAmount - received) * 10000n) / sentAmount;
-
-        if (slippageBps > BigInt(route.slippages?.[0] || 100)) {
-          logger.warn('Quote exceeds acceptable slippage for on-demand rebalance', {
+          logger.info('Successfully submitted on-demand rebalance transaction', {
             requestId,
             bridgeType,
-            sentAmount: amount,
-            receivedAmount,
-            slippageBps: slippageBps.toString(),
-            maxSlippage: route.slippages?.[0] || 100,
+            memo,
+            transactionHash: result.hash,
+            useZodiac: zodiacConfig.walletType,
           });
-          continue;
-        }
 
-        // Execute the rebalance transaction - returns array of transaction requests
-        const bridgeTxRequests = await adapter.send(sender, recipient, amount, route);
-
-        if (bridgeTxRequests && bridgeTxRequests.length > 0) {
-          // Submit all transactions in order (approval + bridge)
-          let transactionHash: string | null = null;
-
-          for (const { transaction, memo } of bridgeTxRequests) {
-            logger.info('Submitting on-demand rebalance transaction', {
-              requestId,
-              bridgeType,
-              memo,
-              transaction,
-              useZodiac: zodiacConfig.walletType,
-            });
-
-            try {
-              const result = await submitTransactionWithLogging({
-                chainService: context.chainService,
-                logger,
-                chainId: route.origin.toString(),
-                txRequest: {
-                  to: transaction.to!,
-                  data: transaction.data!,
-                  value: (transaction.value || 0).toString(),
-                  chainId: route.origin,
-                  from: context.config.ownAddress,
-                },
-                zodiacConfig,
-                context: { requestId, bridgeType, transactionType: memo },
-              });
-
-              logger.info('Successfully submitted on-demand rebalance transaction', {
-                requestId,
-                bridgeType,
-                memo,
-                transactionHash: result.hash,
-                useZodiac: zodiacConfig.walletType,
-              });
-
-              // Keep track of the actual rebalance transaction hash
-              if (memo === RebalanceTransactionMemo.Rebalance) {
-                transactionHash = result.hash;
-              }
-            } catch (txError) {
-              logger.error('Failed to submit on-demand rebalance transaction', {
-                requestId,
-                bridgeType,
-                memo,
-                error: jsonifyError(txError),
-              });
-              throw txError;
-            }
+          if (memo === RebalanceTransactionMemo.Rebalance) {
+            transactionHash = result.hash;
           }
-
-          if (transactionHash) {
-            logger.info('Successfully completed on-demand rebalance transaction', {
-              requestId,
-              bridgeType,
-              amount,
-              route,
-              transactionHash,
-              transactionCount: bridgeTxRequests.length,
-            });
-            return { txHash: transactionHash, bridgeType };
-          }
+        } catch (txError) {
+          logger.error('Failed to submit on-demand rebalance transaction', {
+            requestId,
+            bridgeType,
+            memo,
+            error: jsonifyError(txError),
+          });
+          throw txError;
         }
-      } catch (bridgeError) {
-        logger.error('Failed to execute rebalance via bridge', {
+      }
+
+      if (transactionHash) {
+        logger.info('Successfully completed on-demand rebalance transaction', {
           requestId,
           bridgeType,
-          error: jsonifyError(bridgeError),
+          amount,
+          route,
+          transactionHash,
+          transactionCount: bridgeTxRequests.length,
         });
-        continue;
+        return { txHash: transactionHash };
       }
     }
 
-    logger.error('All bridge preferences exhausted for on-demand rebalance', {
-      requestId,
-      route,
-      amount,
-    });
     return null;
   } catch (error) {
-    logger.error('Failed to execute rebalance transaction', {
+    logger.error('Failed to execute rebalance transaction with bridge', {
       requestId,
+      bridgeType,
       error: jsonifyError(error),
     });
     return null;
@@ -899,9 +957,8 @@ export async function processPendingEarmarks(context: ProcessingContext, current
         // Check if minAmount has changed
         const ticker = earmark.tickerHash.toLowerCase();
         const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
-        const scaleFactor = BigInt(10 ** (decimals ?? 18));
-        const currentRequiredAmount = safeStringToBigInt(currentMinAmount, scaleFactor);
-        const earmarkedAmount = safeStringToBigInt(earmark.minAmount, scaleFactor);
+        const currentRequiredAmount = parseAmountWithDecimals(currentMinAmount, decimals);
+        const earmarkedAmount = parseAmountWithDecimals(earmark.minAmount, decimals);
 
         if (currentRequiredAmount && earmarkedAmount && currentRequiredAmount > earmarkedAmount) {
           // MinAmount increased - see if additional rebalaning is needed
@@ -1020,10 +1077,9 @@ export async function getAvailableBalanceLessEarmarks(
     status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
   });
   const decimals = getDecimalsFromConfig(ticker, chainId.toString(), config);
-  const scaleFactor = BigInt(10 ** (decimals ?? 18));
   const earmarkedAmount = earmarks
     .filter((e) => e.tickerHash.toLowerCase() === ticker)
-    .reduce((sum, e) => sum + (safeStringToBigInt(e.minAmount, scaleFactor) || 0n), 0n);
+    .reduce((sum, e) => sum + (parseAmountWithDecimals(e.minAmount, decimals) || 0n), 0n);
 
   return totalBalance - earmarkedAmount;
 }
