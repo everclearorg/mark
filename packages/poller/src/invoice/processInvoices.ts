@@ -6,6 +6,7 @@ import {
   EarmarkStatus,
   isSvmChain,
   AddressFormat,
+  BPS_MULTIPLIER,
 } from '@mark/core';
 import { jsonifyError, jsonifyMap } from '@mark/logger';
 import { IntentStatus } from '@mark/everclear';
@@ -27,7 +28,6 @@ import * as onDemand from '../rebalance/onDemand';
 
 export const MAX_DESTINATIONS = 10; // enforced onchain at 10
 export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
-export const BPS_MULTIPLIER = BigInt(10 ** 4);
 
 const getTimeSeconds = () => Math.floor(Date.now() / 1000);
 
