@@ -4,7 +4,11 @@ export const BINANCE_NETWORK_TO_CHAIN_ID = {
   OPTIMISM: 10,
   POLYGON: 137,
   BSC: 56,
+  BASE: 8453,
+  SCROLL: 534352,
+  ZKSYNCERA: 324,
 } as const;
+
 
 export const BINANCE_RATE_LIMITS = {
   SAPI_IP_WEIGHT_PER_MINUTE: 12000, // IP limited endpoints

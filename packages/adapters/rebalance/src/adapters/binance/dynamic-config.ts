@@ -2,21 +2,7 @@ import { parseUnits } from 'viem';
 import { ChainConfiguration } from '@mark/core';
 import { BinanceClient } from './client';
 import { BinanceAssetMapping, CoinConfig, NetworkConfig } from './types';
-
-/**
- * Network mapping from Binance network identifiers to chain IDs
- */
-const BINANCE_NETWORK_TO_CHAIN_ID = {
-  ETH: 1,
-  ARBITRUM: 42161,
-  OPTIMISM: 10,
-  POLYGON: 137,
-  BSC: 56,
-  BASE: 8453,
-  SCROLL: 534352,
-  ZKSYNCERA: 324,
-} as const;
-
+import { BINANCE_NETWORK_TO_CHAIN_ID } from './constants';
 /**
  * Chain ID to network mapping
  */
@@ -41,7 +27,7 @@ export class DynamicAssetConfig {
   constructor(
     private readonly client: BinanceClient,
     private readonly chains: Record<string, ChainConfiguration>,
-  ) {}
+  ) { }
 
   /**
    * Get asset mapping for a specific chain and asset address or symbol
@@ -123,7 +109,7 @@ export class DynamicAssetConfig {
     if (!network) {
       throw new Error(
         `Binance does not support ${externalSymbol} on chain ${chainId}. ` +
-          `Available networks: ${coin.networkList.map((n) => n.network).join(', ')}`,
+        `Available networks: ${coin.networkList.map((n) => n.network).join(', ')}`,
       );
     }
 
@@ -131,7 +117,7 @@ export class DynamicAssetConfig {
     if (!network.depositEnable || !network.withdrawEnable) {
       throw new Error(
         `${externalSymbol} on ${network.network} is currently disabled. ` +
-          `Deposit: ${network.depositEnable}, Withdraw: ${network.withdrawEnable}`,
+        `Deposit: ${network.depositEnable}, Withdraw: ${network.withdrawEnable}`,
       );
     }
 
