@@ -1,4 +1,12 @@
-import { getTokenAddressFromConfig, Invoice, NewIntentParams, WalletType, isSvmChain, AddressFormat } from '@mark/core';
+import {
+  getTokenAddressFromConfig,
+  Invoice,
+  NewIntentParams,
+  WalletType,
+  isSvmChain,
+  isTvmChain,
+  AddressFormat,
+} from '@mark/core';
 import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
@@ -80,10 +88,13 @@ export async function calculateSplitIntents(
   balances: Map<string, Map<string, bigint>>,
   custodiedAssets: Map<string, Map<string, bigint>>,
 ): Promise<SplitIntentResult> {
-  const { config, logger, requestId } = context;
+  const { config, logger, requestId, chainService } = context;
   const ticker = invoice.ticker_hash;
   const allCustodiedAssets = custodiedAssets.get(ticker) || new Map<string, bigint>();
   const configDomains = config.supportedSettlementDomains.map((d) => d.toString());
+
+  // Get chain-specific addresses for TVM chains
+  const addresses = await chainService.getAddress();
 
   // Filter for domains that support the given asset, maintaining the
   // original config order
@@ -117,10 +128,10 @@ export async function calculateSplitIntents(
     return Number(bAssets - aAssets); // Sort descending
   });
 
-  // Check if the top custodied domain is SVM
-  // TODO: similarly for tvm later
+  // Check the chain type of the top custodied domain
   const topCustodiedDomain = allDomainsSortedByCustodied[0];
   const isTopDomainSvm = topCustodiedDomain && isSvmChain(topCustodiedDomain);
+  const isTopDomainTvm = topCustodiedDomain && isTvmChain(topCustodiedDomain);
 
   // Evaluate each possible origin domain
   const possibleAllocations: SplitIntentAllocation[] = [];
@@ -141,7 +152,8 @@ export async function calculateSplitIntents(
       continue;
     }
 
-    // Filter domains based on which chain the top custodied domain is on
+    // Filter domains based on which chain type the top custodied domain is on
+    // Don't mix EVM, SVM, and TVM chains
     let filteredTopNDomains: string[];
     let filteredAllDomains: string[];
 
@@ -149,10 +161,14 @@ export async function calculateSplitIntents(
       // If top domain is SVM, only use SVM domains
       filteredTopNDomains = topNDomainsSortedByCustodied.filter((d) => isSvmChain(d));
       filteredAllDomains = allDomainsSortedByCustodied.filter((d) => isSvmChain(d));
+    } else if (isTopDomainTvm) {
+      // If top domain is TVM, only use TVM domains
+      filteredTopNDomains = topNDomainsSortedByCustodied.filter((d) => isTvmChain(d));
+      filteredAllDomains = allDomainsSortedByCustodied.filter((d) => isTvmChain(d));
     } else {
-      // If top domain is EVM, exclude SVM domains
-      filteredTopNDomains = topNDomainsSortedByCustodied.filter((d) => !isSvmChain(d));
-      filteredAllDomains = allDomainsSortedByCustodied.filter((d) => !isSvmChain(d));
+      // If top domain is EVM, exclude SVM and TVM domains
+      filteredTopNDomains = topNDomainsSortedByCustodied.filter((d) => !isSvmChain(d) && !isTvmChain(d));
+      filteredAllDomains = allDomainsSortedByCustodied.filter((d) => !isSvmChain(d) && !isTvmChain(d));
     }
 
     // Try allocating with top-N domains
@@ -263,13 +279,27 @@ export async function calculateSplitIntents(
 
     let toAddress: string;
 
-    // Check if the selected domain is Solana and get squads address for 'to' address
+    // Check the chain type and get the appropriate address
     const isSvm = isSvmChain(domain);
+    const isTvm = isTvmChain(domain);
     const destinationChainConfig = config.chains[domain];
+
     if (isSvm) {
       toAddress = config.ownSolAddress;
+    } else if (isTvm) {
+      // For TVM chains, use chain-specific address
+      const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
+      if (destinationZodiacConfig.walletType !== WalletType.EOA) {
+        toAddress = destinationZodiacConfig.safeAddress!;
+      } else {
+        const tvmAddress = addresses[domain];
+        if (!tvmAddress) {
+          throw new Error(`TVM address not found for domain ${domain}`);
+        }
+        toAddress = tvmAddress;
+      }
     } else {
-      // Get Zodiac configuration for the destination chain to determine correct 'to' address
+      // For EVM chains
       const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
       toAddress =
         destinationZodiacConfig.walletType !== WalletType.EOA
@@ -294,9 +324,16 @@ export async function calculateSplitIntents(
   const remainder = totalNeeded - bestAllocation.totalAllocated;
   if (remainder > BigInt(0)) {
     // Split remainder: create separate intents for each valid top-N chain
-    const validTopNDomains = isTopDomainSvm
-      ? topNDomainsFromConfig.filter((d) => isSvmChain(d) && d !== bestAllocation.origin)
-      : topNDomainsFromConfig.filter((d) => !isSvmChain(d) && d !== bestAllocation.origin);
+    let validTopNDomains: string[];
+    if (isTopDomainSvm) {
+      validTopNDomains = topNDomainsFromConfig.filter((d) => isSvmChain(d) && d !== bestAllocation.origin);
+    } else if (isTopDomainTvm) {
+      validTopNDomains = topNDomainsFromConfig.filter((d) => isTvmChain(d) && d !== bestAllocation.origin);
+    } else {
+      validTopNDomains = topNDomainsFromConfig.filter(
+        (d) => !isSvmChain(d) && !isTvmChain(d) && d !== bestAllocation.origin,
+      );
+    }
 
     if (validTopNDomains.length > 0) {
       const splitAmount = remainder / BigInt(validTopNDomains.length);
@@ -311,12 +348,26 @@ export async function calculateSplitIntents(
         let toAddress: string;
         const destinationChainConfig = config.chains[targetDomain];
 
-        // Check if the target domain is SVM
+        // Check the chain type and get the appropriate address
         const isSVM = isSvmChain(targetDomain);
+        const isTVM = isTvmChain(targetDomain);
+
         if (isSVM) {
           toAddress = config.ownSolAddress;
+        } else if (isTVM) {
+          // For TVM chains, use chain-specific address
+          const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
+          if (destinationZodiacConfig.walletType !== WalletType.EOA) {
+            toAddress = destinationZodiacConfig.safeAddress!;
+          } else {
+            const tvmAddress = addresses[targetDomain];
+            if (!tvmAddress) {
+              throw new Error(`TVM address not found for domain ${targetDomain}`);
+            }
+            toAddress = tvmAddress;
+          }
         } else {
-          // Get Zodiac configuration for the destination chain to determine correct 'to' address
+          // For EVM chains
           const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
           toAddress =
             destinationZodiacConfig.walletType !== WalletType.EOA
