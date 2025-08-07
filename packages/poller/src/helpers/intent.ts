@@ -656,11 +656,11 @@ export const sendTvmIntents = async (
 
     // Get the spender address from the deployment config for approvals
     // const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
-    let spenderForAllowance = chainConfig.deployments?.everclear;
-    if (!spenderForAllowance) {
+    let spokeAddress = chainConfig.deployments?.everclear;
+    if (!spokeAddress) {
       throw new Error(`Everclear deployment not found for chain ${originChainId}`);
     }
-    spenderForAllowance = `0x${TronWeb.address.toHex(spenderForAllowance).slice(2)}` as `0x${string}`;
+    const spenderForAllowance = `0x${TronWeb.address.toHex(spokeAddress).slice(2)}` as `0x${string}`;
     const tronAddress = addresses[originChainId];
     const ownerForAllowance = getActualOwner(originWalletConfig, tronAddress);
 
