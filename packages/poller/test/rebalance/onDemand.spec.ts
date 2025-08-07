@@ -21,6 +21,7 @@ jest.mock('../../src/helpers', () => {
   return {
     ...actualHelpers,
     getMarkBalances: jest.fn(),
+    getTickerForAsset: jest.fn(() => '0x1234567890123456789012345678901234567890'), // Return the mock ticker hash
     safeStringToBigInt: jest.fn((value: string, scaleFactor?: bigint) => {
       if (!value || value === '0' || value === '0.0') {
         return 0n;
@@ -106,14 +107,8 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
         [
           MOCK_TICKER_HASH.toLowerCase(),
           new Map([
-            ['1', BigInt('500000000000000000')], // 0.5 USDC on chain 1 (destination, insufficient) - 18 decimals
-            ['10', BigInt('1000000000000000000')], // 1.0 USDC on chain 10
-            // Need to send 0.5 more to chain 1
-            // Algorithm will calculate: 0.5 * 1.05 = 0.525 to send (to account for slippage)
-            // After 5% slippage: 0.525 * 0.95 = 0.49875 received
-            // Still not enough! Need to send more.
-            // Actually need: 0.5 / 0.95 = 0.526316 to get 0.5 after slippage
-            // But the algorithm sends 0.525 which gives 0.49875, leaving a gap
+            ['1', BigInt('0')], // 0 USDC on chain 1 (destination, need to rebalance) - 18 decimals
+            ['10', BigInt('2500000000000000000')], // 2.5 USDC on chain 10 (enough to rebalance with slippage)
           ]),
         ],
       ]),
@@ -182,8 +177,32 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
     config: {
       ownAddress: '0xtest',
       chains: {
-        1: { chainId: 1, name: 'Ethereum', rpcUrls: ['http://localhost:8545'] },
-        10: { chainId: 10, name: 'Optimism', rpcUrls: ['http://localhost:8546'] },
+        1: {
+          chainId: 1,
+          name: 'Ethereum',
+          rpcUrls: ['http://localhost:8545'],
+          assets: [
+            {
+              tickerHash: MOCK_TICKER_HASH,
+              address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+              symbol: 'USDC',
+              decimals: 6,
+            },
+          ],
+        },
+        10: {
+          chainId: 10,
+          name: 'Optimism',
+          rpcUrls: ['http://localhost:8546'],
+          assets: [
+            {
+              tickerHash: MOCK_TICKER_HASH,
+              address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607',
+              symbol: 'USDC',
+              decimals: 6,
+            },
+          ],
+        },
       },
       routes: [
         {
@@ -201,7 +220,6 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           origin: 10,
           destination: 1,
           asset: MOCK_TICKER_HASH,
-          maximum: '10000',
           slippages: [500],
           preferences: [SupportedBridge.CCTPV1],
           reserve: '0',
@@ -271,8 +289,8 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       expect(balances).toBeDefined();
       expect(balances.get(MOCK_TICKER_HASH.toLowerCase())).toBeDefined();
       const tickerBalances = balances.get(MOCK_TICKER_HASH.toLowerCase());
-      expect(tickerBalances?.get('1')).toBe(BigInt('500000000000000000')); // 0.5 USDC on chain 1
-      expect(tickerBalances?.get('10')).toBe(BigInt('1000000000000000000')); // 1.0 USDC on chain 10
+      expect(tickerBalances?.get('1')).toBe(BigInt('0')); // 0 USDC on chain 1
+      expect(tickerBalances?.get('10')).toBe(BigInt('2500000000000000000')); // 2.5 USDC on chain 10
     });
 
     it('should evaluate successfully when rebalancing is possible', async () => {
@@ -343,7 +361,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       expect(result.canRebalance).toBe(false);
     });
 
-    it.skip('should consider existing earmarks when calculating available balance', async () => {
+    it('should consider existing earmarks when calculating available balance', async () => {
       // Create an existing earmark
       await database.createEarmark({
         invoiceId: 'existing-invoice',

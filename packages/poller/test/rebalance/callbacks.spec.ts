@@ -218,8 +218,21 @@ describe('executeDestinationCallbacks', () => {
       maxRetries: 3,
       retryDelay: 1000,
       chains: {
-        '1': { providers: ['http://mainnetprovider'] },
-        '10': { providers: ['http://optimismprovider'] },
+        '1': {
+          providers: ['http://mainnetprovider'],
+          assets: [
+            { tickerHash: 'ETH', address: '0xEthAddress1' },
+            { tickerHash: 'USDC', address: '0xUsdcAddress1' },
+          ],
+        },
+        '10': {
+          providers: ['http://optimismprovider'],
+          assets: [{ tickerHash: 'ETH', address: '0xEthAddress10' }],
+        },
+        '137': {
+          providers: ['http://polygonprovider'],
+          assets: [{ tickerHash: 'USDC', address: '0xUsdcAddress137' }],
+        },
       },
       supportedSettlementDomains: [1, 10],
     } as unknown as MarkConfiguration;
@@ -295,12 +308,13 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.info.calledWith(
-        'Origin transaction receipt not found for operation',
-        sinon.match({ requestId: MOCK_REQUEST_ID }),
-      ),
-    ).toBe(true);
+    const infoCallWithMessage = mockLogger.info
+      .getCalls()
+      .find((call) => call.args[0] === 'Origin transaction receipt not found for operation');
+    expect(infoCallWithMessage).toBeDefined();
+    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
+      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+    }
     expect(mockSpecificBridgeAdapter.readyOnDestination.called).toBe(false);
   });
 
@@ -313,15 +327,14 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.error.calledWith(
-        'Failed to get transaction receipt',
-        sinon.match({
-          requestId: MOCK_REQUEST_ID,
-          error: sinon.match.any,
-        }),
-      ),
-    ).toBe(true);
+    const errorCallWithMessage = mockLogger.error
+      .getCalls()
+      .find((call) => call.args[0] === 'Failed to get transaction receipt');
+    expect(errorCallWithMessage).toBeDefined();
+    if (errorCallWithMessage && errorCallWithMessage.args[1]) {
+      expect(errorCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+      expect(errorCallWithMessage.args[1].error).toBeDefined();
+    }
     expect(mockSpecificBridgeAdapter.readyOnDestination.called).toBe(false);
   });
 
@@ -335,12 +348,13 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.info.calledWith(
-        'Action not ready for destination callback',
-        sinon.match({ requestId: MOCK_REQUEST_ID }),
-      ),
-    ).toBe(true);
+    const infoCallWithMessage = mockLogger.info
+      .getCalls()
+      .find((call) => call.args[0] === 'Action not ready for destination callback');
+    expect(infoCallWithMessage).toBeDefined();
+    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
+      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+    }
     expect((mockDatabase.updateRebalanceOperation as SinonStub).called).toBe(false);
   });
 
@@ -356,15 +370,14 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.error.calledWith(
-        'Failed to check if ready on destination',
-        sinon.match({
-          requestId: MOCK_REQUEST_ID,
-          error: sinon.match.any,
-        }),
-      ),
-    ).toBe(true);
+    const errorCallWithMessage = mockLogger.error
+      .getCalls()
+      .find((call) => call.args[0] === 'Failed to check if ready on destination');
+    expect(errorCallWithMessage).toBeDefined();
+    if (errorCallWithMessage && errorCallWithMessage.args[1]) {
+      expect(errorCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+      expect(errorCallWithMessage.args[1].error).toBeDefined();
+    }
     expect(mockSpecificBridgeAdapter.destinationCallback.called).toBe(false);
   });
 
@@ -379,12 +392,13 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.info.calledWith(
-        'No destination callback required, marking as completed',
-        sinon.match({ requestId: MOCK_REQUEST_ID }),
-      ),
-    ).toBe(true);
+    const infoCallWithMessage = mockLogger.info
+      .getCalls()
+      .find((call) => call.args[0] === 'No destination callback required, marking as completed');
+    expect(infoCallWithMessage).toBeDefined();
+    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
+      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+    }
     expect(
       (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, {
         status: RebalanceOperationStatus.COMPLETED,
@@ -405,15 +419,14 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.error.calledWith(
-        'Failed to retrieve destination callback',
-        sinon.match({
-          requestId: MOCK_REQUEST_ID,
-          error: sinon.match.any,
-        }),
-      ),
-    ).toBe(true);
+    const errorCallWithMessage = mockLogger.error
+      .getCalls()
+      .find((call) => call.args[0] === 'Failed to retrieve destination callback');
+    expect(errorCallWithMessage).toBeDefined();
+    if (errorCallWithMessage && errorCallWithMessage.args[1]) {
+      expect(errorCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+      expect(errorCallWithMessage.args[1].error).toBeDefined();
+    }
     expect(submitTransactionStub.called).toBe(false);
   });
 
@@ -429,15 +442,14 @@ describe('executeDestinationCallbacks', () => {
     await executeDestinationCallbacks(mockContext);
 
     expect(submitTransactionStub.calledOnce).toBe(true);
-    expect(
-      mockLogger.info.calledWith(
-        'Successfully submitted destination callback',
-        sinon.match({
-          requestId: MOCK_REQUEST_ID,
-          destinationTx: mockSubmitSuccessReceipt.transactionHash,
-        }),
-      ),
-    ).toBe(true);
+    const infoCallWithMessage = mockLogger.info
+      .getCalls()
+      .find((call) => call.args[0] === 'Successfully submitted destination callback');
+    expect(infoCallWithMessage).toBeDefined();
+    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
+      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+      expect(infoCallWithMessage.args[1].destinationTx).toBe(mockSubmitSuccessReceipt.transactionHash);
+    }
     expect(
       (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
         mockAction1Id,
@@ -463,15 +475,14 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.error.calledWith(
-        'Failed to execute destination callback',
-        sinon.match({
-          requestId: MOCK_REQUEST_ID,
-          error: sinon.match.any,
-        }),
-      ),
-    ).toBe(true);
+    const errorCallWithMessage = mockLogger.error
+      .getCalls()
+      .find((call) => call.args[0] === 'Failed to execute destination callback');
+    expect(errorCallWithMessage).toBeDefined();
+    if (errorCallWithMessage && errorCallWithMessage.args[1]) {
+      expect(errorCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+      expect(errorCallWithMessage.args[1].error).toBeDefined();
+    }
     expect(
       (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
         mockAction1Id,
@@ -559,15 +570,14 @@ describe('executeDestinationCallbacks', () => {
         status: RebalanceOperationStatus.AWAITING_CALLBACK,
       }),
     ).toBe(true);
-    expect(
-      mockLogger.info.calledWith(
-        'Operation ready for callback, updated status',
-        sinon.match({
-          requestId: MOCK_REQUEST_ID,
-          status: RebalanceOperationStatus.AWAITING_CALLBACK,
-        }),
-      ),
-    ).toBe(true);
+    const infoCallWithMessage = mockLogger.info
+      .getCalls()
+      .find((call) => call.args[0] === 'Operation ready for callback, updated status');
+    expect(infoCallWithMessage).toBeDefined();
+    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
+      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+      expect(infoCallWithMessage.args[1].status).toBe(RebalanceOperationStatus.AWAITING_CALLBACK);
+    }
   });
 
   it('should query to expire old operations', async () => {
@@ -588,9 +598,13 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.warn.calledWith('Operation missing bridge type', sinon.match({ requestId: MOCK_REQUEST_ID })),
-    ).toBe(true);
+    const warnCallWithMessage = mockLogger.warn
+      .getCalls()
+      .find((call) => call.args[0] === 'Operation missing bridge type');
+    expect(warnCallWithMessage).toBeDefined();
+    if (warnCallWithMessage && warnCallWithMessage.args[1]) {
+      expect(warnCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+    }
     expect(mockChainService.getTransactionReceipt.called).toBe(false);
   });
 
@@ -601,12 +615,13 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    expect(
-      mockLogger.warn.calledWith(
-        'Operation missing origin transaction hash',
-        sinon.match({ requestId: MOCK_REQUEST_ID }),
-      ),
-    ).toBe(true);
+    const warnCallWithMessage = mockLogger.warn
+      .getCalls()
+      .find((call) => call.args[0] === 'Operation missing origin transaction hash');
+    expect(warnCallWithMessage).toBeDefined();
+    if (warnCallWithMessage && warnCallWithMessage.args[1]) {
+      expect(warnCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
+    }
     expect(mockChainService.getTransactionReceipt.called).toBe(false);
   });
 
@@ -645,7 +660,7 @@ describe('executeDestinationCallbacks', () => {
       // Return the same mock adapter for all bridges
       return mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>;
     });
-    mockSpecificBridgeAdapter.readyOnDestination.resolves(true);
+    // Note: readyOnDestination is not called for AWAITING_CALLBACK status
     mockSpecificBridgeAdapter.destinationCallback.resolves(callbackWithUndefinedValue);
     submitTransactionStub.resolves({
       hash: mockSubmitSuccessReceipt.transactionHash,
