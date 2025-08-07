@@ -220,7 +220,7 @@ describe('Monitor Helpers', () => {
             } as unknown as MarkConfiguration;
 
             const gas = new Map([
-                ['domain3', BigInt(0)]  // Set to 0 to trigger the error condition
+                [{ chainId: 'domain3', gasType: GasType.Gas }, BigInt(0)]  // Set to 0 to trigger the error condition
             ]);
 
             // Reset logger before this test
