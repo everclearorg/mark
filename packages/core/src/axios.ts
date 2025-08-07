@@ -77,15 +77,29 @@ export const axiosPost = async <
       return response;
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
-        lastError = { error: err.toJSON(), status: err.response?.status };
+        // Create a clean error object without TLS/socket details
+        lastError = {
+          message: err.message,
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          url: err.config?.url,
+          method: err.config?.method,
+          data: err.response?.data,
+        };
       } else {
         lastError = err;
       }
     }
     await delay(retryDelay);
   }
+  
+  // Create a cleaner error message for logging
+  const errorMessage = axios.isAxiosError(lastError) || (lastError && typeof lastError === 'object' && 'status' in lastError)
+    ? `HTTP ${(lastError as any).status || 'unknown'} error from ${(lastError as any).url || url}`
+    : 'Request failed';
+  
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  throw new AxiosQueryError(`AxiosQueryError Post: ${JSON.stringify(lastError)}`, lastError as any);
+  throw new AxiosQueryError(`AxiosQueryError Post: ${errorMessage}`, lastError as any);
 };
 
 export const axiosGet = async <
@@ -106,13 +120,27 @@ export const axiosGet = async <
       return response;
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
-        lastError = { error: err.toJSON(), status: err.response?.status };
+        // Create a clean error object without TLS/socket details
+        lastError = {
+          message: err.message,
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          url: err.config?.url,
+          method: err.config?.method,
+          data: err.response?.data,
+        };
       } else {
         lastError = err;
       }
     }
     await delay(retryDelay);
   }
+  
+  // Create a cleaner error message for logging
+  const errorMessage = axios.isAxiosError(lastError) || (lastError && typeof lastError === 'object' && 'status' in lastError)
+    ? `HTTP ${(lastError as any).status || 'unknown'} error from ${(lastError as any).url || url}`
+    : 'Request failed';
+  
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  throw new AxiosQueryError(`AxiosQueryError Get: ${JSON.stringify(lastError)}`, lastError as any);
+  throw new AxiosQueryError(`AxiosQueryError Get: ${errorMessage}`, lastError as any);
 };
