@@ -23,7 +23,13 @@ import { submitTransactionWithLogging } from './transactions';
 import { Logger } from '@mark/logger';
 import { providers } from 'ethers';
 import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
-import { isSvmChain, SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID, TOKEN_PROGRAM_ID, hexToBase58 } from '@mark/core';
+import {
+  isSvmChain,
+  isTvmChain,
+  SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  hexToBase58,
+} from '@mark/core';
 import { LookupTableNotFoundError } from '@mark/everclear';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
@@ -173,6 +179,9 @@ export const sendIntents = async (
   const originChainId = intents[0].origin;
   if (isSvmChain(originChainId)) {
     return sendSvmIntents(invoiceId, intents, adapters, config, requestId);
+  }
+  if (isTvmChain(originChainId)) {
+    return sendTvmIntents(invoiceId, intents, adapters, config, requestId);
   }
   // we handle default fallback case as evm intents
   return sendEvmIntents(invoiceId, intents, adapters, config, requestId);
@@ -572,6 +581,247 @@ export const sendSvmIntents = async (
     }));
   } catch (error) {
     logger.error('Error processing batch intents', {
+      invoiceId,
+      requestId,
+      error,
+      intentCount: intents.length,
+    });
+    throw error;
+  }
+};
+
+export const sendTvmIntents = async (
+  invoiceId: string,
+  intents: NewIntentParams[],
+  adapters: MarkAdapters,
+  config: MarkConfiguration,
+  requestId?: string,
+): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
+  const { everclear, chainService, prometheus, logger } = adapters;
+  const originChainId = intents[0].origin;
+  const chainConfig = config.chains[originChainId];
+  const originWalletConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
+
+  // Verify all intents have the same input asset
+  const tokens = new Set(intents.map((intent) => intent.inputAsset.toLowerCase()));
+  if (tokens.size !== 1) {
+    throw new Error('Cannot process multiple intents with different input assets');
+  }
+
+  const addresses = await chainService.getAddress();
+
+  // Sanity check intent constraints
+  intents.forEach((intent) => {
+    // Ensure all intents have the same origin
+    if (intent.origin !== originChainId) {
+      throw new Error(`intent.origin (${intent.origin}) must be ${originChainId}`);
+    }
+
+    // Ensure each of the configured destinations uses the proper `to`.
+    intent.destinations.forEach((destination) => {
+      const walletConfig = getValidatedZodiacConfig(config.chains[destination], logger, { invoiceId, requestId });
+      switch (walletConfig.walletType) {
+        case WalletType.EOA:
+          const expectedAddress = isTvmChain(destination) ? addresses[destination] : config.ownAddress;
+          if (intent.to.toLowerCase() !== expectedAddress.toLowerCase()) {
+            throw new Error(`intent.to (${intent.to}) must be ${expectedAddress} for destination ${destination}`);
+          }
+          break;
+        case WalletType.Zodiac:
+          if (intent.to.toLowerCase() !== walletConfig.safeAddress!.toLowerCase()) {
+            throw new Error(
+              `intent.to (${intent.to}) must be safeAddress (${walletConfig.safeAddress}) for destination ${destination}`,
+            );
+          }
+          break;
+        default:
+          throw new Error(`Unrecognized destination wallet type configured: ${walletConfig.walletType}`);
+      }
+    });
+  });
+
+  try {
+    // Get transaction data for the first intent to use for approval check
+    const firstIntent = intents[0];
+    // API call to get txdata for the newOrder call
+    const feeAdapterTxData = await everclear.tronCreateNewIntent(
+      intents as (NewIntentParams | NewIntentWithPermit2Params)[],
+    );
+
+    // Get total amount needed across all intents
+    const totalAmount = intents.reduce((sum, intent) => {
+      return BigInt(sum) + BigInt(intent.amount);
+    }, BigInt(0));
+
+    const spenderForAllowance = feeAdapterTxData.to as string;
+    const tronAddress = addresses[originChainId];
+    const ownerForAllowance = getActualOwner(originWalletConfig, tronAddress);
+
+    logger.info('Total amount for approvals', {
+      requestId,
+      invoiceId,
+      totalAmount: totalAmount.toString(),
+      intentCount: intents.length,
+      chainId: originChainId,
+      owner: ownerForAllowance,
+      spender: spenderForAllowance,
+      walletType: originWalletConfig.walletType,
+    });
+
+    // Handle TRC20 approval
+    const isUSDT = firstIntent.inputAsset === 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+    const approveFunctionSig = 'approve(address,uint256)';
+    const approveSelector = '0x095ea7b3';
+    const amountHex = totalAmount.toString(16).padStart(64, '0');
+    const approveData = approveSelector + amountHex;
+
+    if (isUSDT) {
+      logger.info('USDT detected, may need zero approval first', {
+        requestId,
+        invoiceId,
+        tokenAddress: firstIntent.inputAsset,
+      });
+
+      const zeroApprovalData = approveSelector + '0'.padStart(64, '0');
+
+      try {
+        const zeroApprovalResult = await submitTransactionWithLogging({
+          chainService,
+          logger,
+          chainId: originChainId,
+          txRequest: {
+            chainId: +originChainId,
+            to: firstIntent.inputAsset,
+            data: zeroApprovalData,
+            value: '0',
+            from: tronAddress,
+            funcSig: approveFunctionSig,
+          },
+          zodiacConfig: originWalletConfig,
+          context: { requestId, invoiceId, transactionType: 'trc20-zero-approval' },
+        });
+
+        logger.info('Zero approval for USDT completed', {
+          requestId,
+          invoiceId,
+          txHash: zeroApprovalResult.hash,
+        });
+      } catch (error) {
+        logger.debug('Zero approval failed or not needed', { error });
+      }
+    }
+
+    try {
+      const approvalResult = await submitTransactionWithLogging({
+        chainService,
+        logger,
+        chainId: originChainId,
+        txRequest: {
+          chainId: +originChainId,
+          to: firstIntent.inputAsset,
+          data: approveData,
+          value: '0',
+          from: tronAddress,
+          funcSig: approveFunctionSig,
+        },
+        zodiacConfig: originWalletConfig,
+        context: { requestId, invoiceId, transactionType: 'trc20-approval' },
+      });
+
+      logger.info('Approval completed for intent batch', {
+        requestId,
+        invoiceId,
+        chainId: originChainId,
+        approvalTxHash: approvalResult.hash,
+        hadZeroApproval: isUSDT,
+        asset: firstIntent.inputAsset,
+        amount: totalAmount.toString(),
+      });
+
+      if (prometheus) {
+        prometheus.updateGasSpent(originChainId, TransactionReason.Approval, BigInt(0));
+      }
+    } catch (error) {
+      logger.error('Failed to approve TRC20 on Tron', {
+        requestId,
+        invoiceId,
+        error,
+        tokenAddress: firstIntent.inputAsset,
+        amount: totalAmount.toString(),
+      });
+      throw error;
+    }
+
+    logger.info(`Processing ${intents.length} total intent(s)`, {
+      requestId,
+      invoiceId,
+      count: intents.length,
+      origin: intents[0].origin,
+      token: intents[0].inputAsset,
+    });
+
+    // Verify min amounts for all intents before sending the batch
+    for (const intent of intents) {
+      // Sanity check -- minAmounts < intent.amount
+      const { minAmounts } = await everclear.getMinAmounts(invoiceId);
+      if (BigInt(minAmounts[intent.origin] ?? '0') < BigInt(intent.amount)) {
+        logger.warn('Latest min amount for origin is smaller than intent size', {
+          minAmount: minAmounts[intent.origin] ?? '0',
+          intent,
+          invoiceId,
+          requestId,
+        });
+        continue;
+        // NOTE: continue instead of exit in case other intents are still below the min amount,
+        // then you would still be contributing to invoice to settlement. The invoice will be handled
+        // again on the next polling cycle.
+      }
+    }
+
+    const purchaseResult = await submitTransactionWithLogging({
+      chainService,
+      logger,
+      chainId: originChainId,
+      txRequest: {
+        chainId: +originChainId,
+        to: feeAdapterTxData.to as string,
+        data: feeAdapterTxData.data,
+        value: feeAdapterTxData.value ?? '0',
+        from: tronAddress,
+        funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))',
+      },
+      zodiacConfig: originWalletConfig,
+      context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
+    });
+
+    const purchaseTx = purchaseResult.receipt!;
+    const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intents[0].origin, logger, {
+      invoiceId,
+      requestId: requestId || '',
+    });
+
+    logger.info('Batch create intent transaction sent successfully', {
+      invoiceId,
+      requestId,
+      batchTxHash: purchaseTx.transactionHash,
+      chainId: intents[0].origin,
+      intentIds: purchaseIntentIds,
+    });
+
+    prometheus.updateGasSpent(
+      intents[0].origin,
+      TransactionReason.CreateIntent,
+      BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
+    );
+
+    return purchaseIntentIds.map((intentId) => ({
+      transactionHash: purchaseTx.transactionHash,
+      type: purchaseResult.submissionType,
+      chainId: intents[0].origin,
+      intentId,
+    }));
+  } catch (error) {
+    logger.error('Error processing Tron intents', {
       invoiceId,
       requestId,
       error,
