@@ -167,11 +167,10 @@ export class EverclearAdapter {
     }
   }
 
-  async tronCreateNewIntent(
-    params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[],
-  ): Promise<TransactionRequest> {
+  async tronCreateNewIntent(params: NewIntentParams | NewIntentWithPermit2Params): Promise<TransactionRequest> {
     try {
       const url = `${this.apiUrl}/tron/intents`;
+      // Tron API only supports single intents (for now - add batching via newOrder later)
       const { data } = await axiosPost<TransactionRequest>(url, params);
       return data;
     } catch (err) {
