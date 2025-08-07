@@ -72,9 +72,16 @@ export interface RouteRebalancingConfig extends RebalanceRoute {
   preferences: SupportedBridge[]; // Priority ordered platforms
   reserve?: string; // Amount to keep on origin chain during rebalancing
 }
+
+export interface OnDemandRouteConfig extends RebalanceRoute {
+  slippages: number[]; // If quoted to receive less than this, skip. using DBPS. Array indices match preferences
+  preferences: SupportedBridge[]; // Priority ordered platforms
+  reserve?: string; // Amount to keep on origin chain during rebalancing
+}
+
 export interface RebalanceConfig {
   routes: RouteRebalancingConfig[];
-  onDemandRoutes?: RouteRebalancingConfig[];
+  onDemandRoutes?: OnDemandRouteConfig[];
 }
 
 export interface RedisConfig {
