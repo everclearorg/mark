@@ -645,16 +645,22 @@ export const sendTvmIntents = async (
     // Get transaction data for the first intent to use for approval check
     const firstIntent = intents[0];
     // API call to get txdata for the newOrder call
-    const feeAdapterTxData = await everclear.tronCreateNewIntent(
-      intents as (NewIntentParams | NewIntentWithPermit2Params)[],
-    );
+    // const feeAdapterTxData = await everclear.tronCreateNewIntent(
+    //   intents as (NewIntentParams | NewIntentWithPermit2Params)[],
+    // );
 
     // Get total amount needed across all intents
     const totalAmount = intents.reduce((sum, intent) => {
       return BigInt(sum) + BigInt(intent.amount);
     }, BigInt(0));
 
-    const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
+    // Get the spender address from the deployment config for approvals
+    // const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
+    let spokeAddress = chainConfig.deployments?.everclear;
+    if (!spokeAddress) {
+      throw new Error(`Everclear deployment not found for chain ${originChainId}`);
+    }
+    const spenderForAllowance = `0x${TronWeb.address.toHex(spokeAddress).slice(2)}` as `0x${string}`;
     const tronAddress = addresses[originChainId];
     const ownerForAllowance = getActualOwner(originWalletConfig, tronAddress);
 
@@ -767,8 +773,22 @@ export const sendTvmIntents = async (
       token: intents[0].inputAsset,
     });
 
-    // Verify min amounts for all intents before sending the batch
-    for (const intent of intents) {
+    // TEMPORARY: Process only first intent for Tron API compatibility
+    // TODO: Revert to process all intents when API supports batching
+    const results: { transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[] =
+      [];
+
+    // Only process first intent for now
+    if (intents.length > 1) {
+      logger.warn('Tron API currently only supports single intents, processing first intent only', {
+        totalIntents: intents.length,
+        processingOnly: 1,
+        invoiceId,
+        requestId,
+      });
+    }
+    const intentsToProcess = intents.slice(0, 1);
+    for (const intent of intentsToProcess) {
       // Sanity check -- minAmounts < intent.amount
       const { minAmounts } = await everclear.getMinAmounts(invoiceId);
       if (BigInt(minAmounts[intent.origin] ?? '0') < BigInt(intent.amount)) {
@@ -783,50 +803,72 @@ export const sendTvmIntents = async (
         // then you would still be contributing to invoice to settlement. The invoice will be handled
         // again on the next polling cycle.
       }
+
+      // API call to get txdata for this single intent
+      const feeAdapterTxData = await everclear.tronCreateNewIntent(
+        intent as NewIntentParams | NewIntentWithPermit2Params,
+      );
+
+      logger.info('Submitting create intent transaction for Tron', {
+        invoiceId,
+        requestId,
+        transaction: {
+          to: feeAdapterTxData.to,
+          value: feeAdapterTxData.value,
+          data: feeAdapterTxData.data,
+          from: tronAddress,
+          chainId: originChainId,
+        },
+      });
+
+      const purchaseResult = await submitTransactionWithLogging({
+        chainService,
+        logger,
+        chainId: originChainId,
+        txRequest: {
+          chainId: +originChainId,
+          to: feeAdapterTxData.to as string,
+          data: feeAdapterTxData.data,
+          value: feeAdapterTxData.value ?? '0',
+          from: tronAddress,
+          funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))',
+        },
+        zodiacConfig: originWalletConfig,
+        context: { requestId, invoiceId, transactionType: 'create-intent' },
+      });
+
+      const purchaseTx = purchaseResult.receipt!;
+      const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intent.origin, logger, {
+        invoiceId,
+        requestId: requestId || '',
+      });
+
+      logger.info('Create intent transaction sent successfully', {
+        invoiceId,
+        requestId,
+        txHash: purchaseTx.transactionHash,
+        chainId: intent.origin,
+        intentIds: purchaseIntentIds,
+      });
+
+      prometheus.updateGasSpent(
+        intent.origin,
+        TransactionReason.CreateIntent,
+        BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
+      );
+
+      // Add results for this intent
+      purchaseIntentIds.forEach((intentId) => {
+        results.push({
+          transactionHash: purchaseTx.transactionHash,
+          type: purchaseResult.submissionType,
+          chainId: intent.origin,
+          intentId,
+        });
+      });
     }
 
-    const purchaseResult = await submitTransactionWithLogging({
-      chainService,
-      logger,
-      chainId: originChainId,
-      txRequest: {
-        chainId: +originChainId,
-        to: feeAdapterTxData.to as string,
-        data: feeAdapterTxData.data,
-        value: feeAdapterTxData.value ?? '0',
-        from: tronAddress,
-        funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))',
-      },
-      zodiacConfig: originWalletConfig,
-      context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
-    });
-
-    const purchaseTx = purchaseResult.receipt!;
-    const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intents[0].origin, logger, {
-      invoiceId,
-      requestId: requestId || '',
-    });
-
-    logger.info('Batch create intent transaction sent successfully', {
-      invoiceId,
-      requestId,
-      batchTxHash: purchaseTx.transactionHash,
-      chainId: intents[0].origin,
-      intentIds: purchaseIntentIds,
-    });
-
-    prometheus.updateGasSpent(
-      intents[0].origin,
-      TransactionReason.CreateIntent,
-      BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
-    );
-
-    return purchaseIntentIds.map((intentId) => ({
-      transactionHash: purchaseTx.transactionHash,
-      type: purchaseResult.submissionType,
-      chainId: intents[0].origin,
-      intentId,
-    }));
+    return results;
   } catch (error) {
     logger.error('Error processing Tron intents', {
       invoiceId,
