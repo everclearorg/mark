@@ -1,9 +1,9 @@
 import { ProcessingContext } from '../init';
 import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge, BPS_MULTIPLIER } from '@mark/core';
-import { RouteRebalancingConfig, MarkConfiguration } from '@mark/core';
+import { OnDemandRouteConfig } from '@mark/core';
 import * as database from '@mark/database';
 import type { earmarks } from '@mark/database';
-import { getMarkBalances, convertToNativeUnits, convertTo18Decimals, parseAmountWithDecimals } from '../helpers';
+import { getMarkBalances, convertToNativeUnits, convertTo18Decimals, getTickerForAsset } from '../helpers';
 import { getDecimalsFromConfig } from '@mark/core';
 import { jsonifyError } from '@mark/logger';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
@@ -64,6 +64,7 @@ export async function evaluateOnDemandRebalancing(
   const evaluationResults: Map<number, OnDemandRebalanceResult & { minAmount: string }> = new Map();
 
   for (const destinationStr of invoice.destinations) {
+    console.log(`Processing destination: ${destinationStr}`);
     const destination = parseInt(destinationStr);
 
     // Skip if no minAmount for this destination
@@ -92,7 +93,7 @@ export async function evaluateOnDemandRebalancing(
   }
 
   // Select the best destination
-  const bestDestination = selectBestDestination(evaluationResults, invoice.ticker_hash, config);
+  const bestDestination = selectBestDestination(evaluationResults);
 
   if (!bestDestination) {
     logger.info('No viable destination found for on-demand rebalancing', {
@@ -110,7 +111,7 @@ async function evaluateDestinationChain(
   invoice: Invoice,
   destination: number,
   minAmount: string,
-  routes: RouteRebalancingConfig[],
+  routes: OnDemandRouteConfig[],
   balances: Map<string, Map<string, bigint>>,
   earmarkedFunds: EarmarkedFunds[],
   context: ProcessingContext,
@@ -118,17 +119,18 @@ async function evaluateDestinationChain(
   const { logger, config } = context;
 
   // Find routes that can send to this destination
-  const applicableRoutes = routes.filter(
-    (route) => route.destination === destination && route.asset.toLowerCase() === invoice.ticker_hash.toLowerCase(),
-  );
+  const applicableRoutes = routes.filter((route) => {
+    if (route.destination !== destination) return false;
+    const routeTickerHash = getTickerForAsset(route.asset, route.origin, config);
+    return routeTickerHash && routeTickerHash.toLowerCase() === invoice.ticker_hash.toLowerCase();
+  });
 
   if (applicableRoutes.length === 0) {
     return { canRebalance: false };
   }
 
   const ticker = invoice.ticker_hash.toLowerCase();
-  const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
-  const requiredAmount = parseAmountWithDecimals(minAmount, decimals);
+  const requiredAmount = BigInt(minAmount);
   if (!requiredAmount) {
     logger.error('Invalid minAmount', { minAmount, destination });
     return { canRebalance: false };
@@ -140,17 +142,25 @@ async function evaluateDestinationChain(
     .filter((e) => e.chainId === destination && e.tickerHash.toLowerCase() === ticker)
     .reduce((sum, e) => sum + e.amount, 0n);
 
-  const availableOnDestination = destinationBalance - earmarkedOnDestination;
-  const amountNeeded = requiredAmount - availableOnDestination;
+  // Calculate available balance, ensuring it doesn't go negative
+  const availableOnDestination =
+    destinationBalance > earmarkedOnDestination ? destinationBalance - earmarkedOnDestination : 0n;
+
+  // Calculate the amount needed to fulfill the invoice
+  const amountNeeded = requiredAmount > availableOnDestination ? requiredAmount - availableOnDestination : 0n;
 
   // If destination already has enough, no need to rebalance
   if (amountNeeded <= 0n) {
     return { canRebalance: false };
   }
 
+  // Convert amountNeeded to 18-decimal format for calculateRebalancingOperations
+  const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
+  const amountNeededIn18Decimals = convertTo18Decimals(amountNeeded, decimals);
+
   // Calculate rebalancing operations
   const { operations, canFulfill, totalAchievable } = await calculateRebalancingOperations(
-    amountNeeded,
+    amountNeededIn18Decimals,
     applicableRoutes,
     balances,
     earmarkedFunds,
@@ -177,8 +187,11 @@ async function evaluateDestinationChain(
   logger.debug('Cannot fulfill invoice for destination', {
     destination,
     requiredAmount: requiredAmount.toString(),
+    destinationBalance: destinationBalance.toString(),
+    earmarkedOnDestination: earmarkedOnDestination.toString(),
     availableOnDestination: availableOnDestination.toString(),
     amountNeeded: amountNeeded.toString(),
+    amountNeededIn18Decimals: amountNeededIn18Decimals.toString(),
     operations: operations.length,
     totalAchievable: totalAchievable.toString(),
   });
@@ -207,16 +220,16 @@ function getAvailableBalance(
   return available > 0n ? available : 0n;
 }
 
-function calculateEarmarkedFunds(earmarks: earmarks[], config: MarkConfiguration): EarmarkedFunds[] {
+function calculateEarmarkedFunds(earmarks: earmarks[], config: ProcessingContext['config']): EarmarkedFunds[] {
   const fundsMap = new Map<string, EarmarkedFunds>();
 
   for (const earmark of earmarks) {
     const key = `${earmark.designatedPurchaseChain}-${earmark.tickerHash}`;
 
-    // Calculate amount once
-    const ticker = earmark.tickerHash.toLowerCase();
-    const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
-    const amount = parseAmountWithDecimals(earmark.minAmount, decimals) || 0n;
+    // Convert earmark amount to 18 decimals for consistent comparison with balances
+    const nativeAmount = BigInt(earmark.minAmount) || 0n;
+    const decimals = getDecimalsFromConfig(earmark.tickerHash, earmark.designatedPurchaseChain.toString(), config);
+    const amount = convertTo18Decimals(nativeAmount, decimals);
 
     const existing = fundsMap.get(key);
     if (existing) {
@@ -245,7 +258,7 @@ function calculateEarmarkedFunds(earmarks: earmarks[], config: MarkConfiguration
  */
 async function calculateRebalancingOperations(
   amountNeeded: bigint,
-  routes: RouteRebalancingConfig[],
+  routes: OnDemandRouteConfig[],
   balances: Map<string, Map<string, bigint>>,
   earmarkedFunds: EarmarkedFunds[],
   tickerHash: string,
@@ -347,11 +360,30 @@ async function calculateRebalancingOperations(
         operationAdded = true;
         break; // Found a working bridge for this route
       } catch (error) {
-        logger.debug('Failed to get quote during planning', {
-          bridgeType,
-          route,
-          error: jsonifyError(error),
-        });
+        // Check if it's an Axios error and extract useful information
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const isAxiosError = errorMessage.includes('AxiosError') || errorMessage.includes('status code');
+
+        if (isAxiosError) {
+          // Extract status code if available
+          const statusMatch = errorMessage.match(/status code (\d+)/);
+          const statusCode = statusMatch ? statusMatch[1] : 'unknown';
+
+          logger.debug('Bridge API request failed', {
+            bridgeType,
+            origin: route.origin,
+            destination: route.destination,
+            statusCode,
+            errorType: 'API_ERROR',
+            message: `Failed to get quote from ${bridgeType} bridge (HTTP ${statusCode})`,
+          });
+        } else {
+          logger.debug('Failed to get quote during planning', {
+            bridgeType,
+            route,
+            error: jsonifyError(error),
+          });
+        }
         continue;
       }
     }
@@ -385,8 +417,6 @@ async function calculateRebalancingOperations(
 
 function selectBestDestination(
   evaluationResults: Map<number, OnDemandRebalanceResult & { minAmount: string }>,
-  tickerHash: string,
-  config: MarkConfiguration,
 ): OnDemandRebalanceResult | null {
   if (evaluationResults.size === 0) return null;
 
@@ -400,9 +430,7 @@ function selectBestDestination(
     const numOps = result.rebalanceOperations?.length || 0;
     const totalAmount =
       result.rebalanceOperations?.reduce((sum, op) => {
-        const opTicker = tickerHash.toLowerCase();
-        const opDecimals = getDecimalsFromConfig(opTicker, op.originChain.toString(), config);
-        return sum + (parseAmountWithDecimals(op.amount, opDecimals) || 0n);
+        return sum + (BigInt(op.amount) || 0n);
       }, 0n) || 0n;
 
     if (numOps < minOperations || (numOps === minOperations && totalAmount < minAmount)) {
@@ -442,12 +470,11 @@ export async function executeOnDemandRebalancing(
     for (const operation of rebalanceOperations!) {
       try {
         // Find the appropriate route config
-        const route = (config.onDemandRoutes || []).find(
-          (r) =>
-            r.origin === operation.originChain &&
-            r.destination === destinationChain &&
-            r.asset.toLowerCase() === invoice.ticker_hash.toLowerCase(),
-        );
+        const route = (config.onDemandRoutes || []).find((r) => {
+          if (r.origin !== operation.originChain || r.destination !== destinationChain) return false;
+          const routeTickerHash = getTickerForAsset(r.asset, r.origin, config);
+          return routeTickerHash && routeTickerHash.toLowerCase() === invoice.ticker_hash.toLowerCase();
+        });
 
         if (!route) {
           logger.error('Route not found for rebalancing operation', { operation });
@@ -616,10 +643,9 @@ async function handleMinAmountIncrease(
 ): Promise<boolean> {
   const { logger, requestId, config } = context;
   const ticker = earmark.tickerHash.toLowerCase();
-  const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
 
-  const currentRequiredAmount = parseAmountWithDecimals(currentMinAmount, decimals);
-  const earmarkedAmount = parseAmountWithDecimals(earmark.minAmount, decimals);
+  const currentRequiredAmount = BigInt(currentMinAmount);
+  const earmarkedAmount = BigInt(earmark.minAmount);
 
   if (!currentRequiredAmount || !earmarkedAmount) {
     return false;
@@ -659,11 +685,11 @@ async function handleMinAmountIncrease(
 
   // Evaluate if we can rebalance the additional amount
   const onDemandRoutes = config.onDemandRoutes || [];
-  const applicableRoutes = onDemandRoutes.filter(
-    (route) =>
-      route.destination === earmark.designatedPurchaseChain &&
-      route.asset.toLowerCase() === earmark.tickerHash.toLowerCase(),
-  );
+  const applicableRoutes = onDemandRoutes.filter((route) => {
+    if (route.destination !== earmark.designatedPurchaseChain) return false;
+    const routeTickerHash = getTickerForAsset(route.asset, route.origin, config);
+    return routeTickerHash && routeTickerHash.toLowerCase() === earmark.tickerHash.toLowerCase();
+  });
 
   const { operations: additionalOperations, canFulfill: canRebalanceAdditional } = await calculateRebalancingOperations(
     additionalAmount,
@@ -702,12 +728,11 @@ async function handleMinAmountIncrease(
   // Execute additional rebalancing operations
   for (const operation of additionalOperations) {
     try {
-      const route = onDemandRoutes.find(
-        (r) =>
-          r.origin === operation.originChain &&
-          r.destination === earmark.designatedPurchaseChain &&
-          r.asset.toLowerCase() === invoice.ticker_hash.toLowerCase(),
-      );
+      const route = onDemandRoutes.find((r) => {
+        if (r.origin !== operation.originChain || r.destination !== earmark.designatedPurchaseChain) return false;
+        const routeTickerHash = getTickerForAsset(r.asset, r.origin, config);
+        return routeTickerHash && routeTickerHash.toLowerCase() === invoice.ticker_hash.toLowerCase();
+      });
 
       if (!route) {
         logger.error('Route not found for additional rebalancing operation', { operation });
@@ -814,7 +839,7 @@ async function handleMinAmountIncrease(
  * Execute rebalance transaction with a pre-determined bridge
  */
 async function executeRebalanceTransactionWithBridge(
-  route: RouteRebalancingConfig,
+  route: OnDemandRouteConfig,
   amount: string,
   recipient: string,
   bridgeType: SupportedBridge,
@@ -929,7 +954,7 @@ async function executeRebalanceTransactionWithBridge(
  * - Updates earmark statuses based on rebalancing operation completion
  */
 export async function processPendingEarmarks(context: ProcessingContext, currentInvoices: Invoice[]): Promise<void> {
-  const { logger, requestId, config } = context;
+  const { logger, requestId } = context;
 
   try {
     const pendingEarmarks = await database.getEarmarks({ status: EarmarkStatus.PENDING });
@@ -954,11 +979,8 @@ export async function processPendingEarmarks(context: ProcessingContext, current
         if (!currentMinAmounts) continue;
         const currentMinAmount = currentMinAmounts[earmark.designatedPurchaseChain.toString()];
 
-        // Check if minAmount has changed
-        const ticker = earmark.tickerHash.toLowerCase();
-        const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
-        const currentRequiredAmount = parseAmountWithDecimals(currentMinAmount, decimals);
-        const earmarkedAmount = parseAmountWithDecimals(earmark.minAmount, decimals);
+        const currentRequiredAmount = BigInt(currentMinAmount);
+        const earmarkedAmount = BigInt(earmark.minAmount);
 
         if (currentRequiredAmount && earmarkedAmount && currentRequiredAmount > earmarkedAmount) {
           // MinAmount increased - see if additional rebalaning is needed
@@ -1076,10 +1098,9 @@ export async function getAvailableBalanceLessEarmarks(
     designatedPurchaseChain: chainId,
     status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
   });
-  const decimals = getDecimalsFromConfig(ticker, chainId.toString(), config);
   const earmarkedAmount = earmarks
     .filter((e) => e.tickerHash.toLowerCase() === ticker)
-    .reduce((sum, e) => sum + (parseAmountWithDecimals(e.minAmount, decimals) || 0n), 0n);
+    .reduce((sum, e) => sum + (BigInt(e.minAmount) || 0n), 0n);
 
   return totalBalance - earmarkedAmount;
 }
