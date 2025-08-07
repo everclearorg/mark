@@ -7,7 +7,7 @@ import {
   WalletType,
 } from '@mark/core';
 import { getERC20Contract } from './contracts';
-import { decodeEventLog, Hex } from 'viem';
+import { decodeEventLog, encodeFunctionData, erc20Abi, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
   generatePermit2Nonce,
@@ -31,6 +31,7 @@ import {
   hexToBase58,
 } from '@mark/core';
 import { LookupTableNotFoundError } from '@mark/everclear';
+import { TronWeb } from 'tronweb';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -653,7 +654,7 @@ export const sendTvmIntents = async (
       return BigInt(sum) + BigInt(intent.amount);
     }, BigInt(0));
 
-    const spenderForAllowance = feeAdapterTxData.to as string;
+    const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
     const tronAddress = addresses[originChainId];
     const ownerForAllowance = getActualOwner(originWalletConfig, tronAddress);
 
@@ -671,9 +672,11 @@ export const sendTvmIntents = async (
     // Handle TRC20 approval
     const isUSDT = firstIntent.inputAsset === 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
     const approveFunctionSig = 'approve(address,uint256)';
-    const approveSelector = '0x095ea7b3';
-    const amountHex = totalAmount.toString(16).padStart(64, '0');
-    const approveData = approveSelector + amountHex;
+    const approveData = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [spenderForAllowance, totalAmount],
+    });
 
     if (isUSDT) {
       logger.info('USDT detected, may need zero approval first', {
@@ -682,7 +685,11 @@ export const sendTvmIntents = async (
         tokenAddress: firstIntent.inputAsset,
       });
 
-      const zeroApprovalData = approveSelector + '0'.padStart(64, '0');
+      const zeroApprovalData = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [spenderForAllowance, 0n],
+      });
 
       try {
         const zeroApprovalResult = await submitTransactionWithLogging({
