@@ -120,6 +120,17 @@ describe('Wallet Balance Utilities', () => {
       } as any;
       stub(contractModule, 'createClient').returns(mockClient);
 
+      // Mock chainService.getAddress() to return addresses for all chains
+      chainService.getAddress.resolves({
+        '1': '0xOwnAddress',
+        '728126428': '0xTronAddress'
+      });
+
+      // Mock zodiac functions
+      const mockZodiacConfig = { walletType: WalletType.EOA };
+      stub(zodiacModule, 'getValidatedZodiacConfig').returns(mockZodiacConfig);
+      stub(zodiacModule, 'getActualOwner').returns('0xTronAddress');
+
       const mockTronWeb = {
         trx: {
           getAccountResources: stub().resolves({

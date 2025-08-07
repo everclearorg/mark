@@ -40,7 +40,8 @@ export const getMarkGasBalances = async (
           if (!tronWeb) throw new Error('TronWeb instance required for Tron chain');
           const chainConfig = chains[chain];
           const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-          const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+          const addresses = await chainService.getAddress();
+          const actualOwner = getActualOwner(zodiacConfig, addresses[chain]);
           const resources = await tronWeb.trx.getAccountResources(actualOwner);
           // Bandwidth: freeNetLimit - freeNetUsed + NetLimit - NetUsed
           const freeNet = (resources.freeNetLimit ?? 0) - (resources.freeNetUsed ?? 0);
@@ -113,7 +114,7 @@ export const getMarkBalances = async (
       const balancePromise = isSvm
         ? getSvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
         : isTvm
-          ? getTvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
+          ? getTvmBalance(chainService, domain, tokenAddr, decimals, prometheus)
           : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
 
       balancePromises.push({
@@ -170,16 +171,15 @@ const getSvmBalance = async (
 };
 
 const getTvmBalance = async (
-  config: MarkConfiguration,
   chainService: ChainService,
   domain: string,
   tokenAddr: string,
   decimals: number,
   prometheus: PrometheusAdapter,
 ): Promise<bigint> => {
-  const { ownAddress } = config;
   try {
-    const balanceStr = await chainService.getBalance(+domain, ownAddress, tokenAddr);
+    const addresses = await chainService.getAddress();
+    const balanceStr = await chainService.getBalance(+domain, addresses[domain], tokenAddr);
     let balance = BigInt(balanceStr);
 
     // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
