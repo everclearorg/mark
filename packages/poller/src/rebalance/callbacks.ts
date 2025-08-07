@@ -3,7 +3,7 @@ import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
-import { RebalanceOperationStatus, SupportedBridge } from '@mark/core';
+import { RebalanceOperationStatus, SupportedBridge, getTokenAddressFromConfig } from '@mark/core';
 
 // Type for the txHashes JSON field that matches database schema
 interface TxHashes {
@@ -64,10 +64,21 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       continue;
     }
 
+    const assetAddress = getTokenAddressFromConfig(operation.tickerHash, operation.originChainId.toString(), config);
+
+    if (!assetAddress) {
+      logger.error('Could not find asset address for ticker hash', {
+        ...logContext,
+        tickerHash: operation.tickerHash,
+        originChain: operation.originChainId,
+      });
+      continue;
+    }
+
     const route = {
       origin: operation.originChainId,
       destination: operation.destinationChainId,
-      asset: operation.tickerHash,
+      asset: assetAddress,
     };
 
     // Check if ready for callback
