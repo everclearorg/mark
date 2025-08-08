@@ -1552,6 +1552,26 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@chimera-monorepo/chainservice@npm:0.0.1-alpha.12":
+  version: 0.0.1-alpha.12
+  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.12"
+  dependencies:
+    "@chimera-monorepo/utils": 0.0.1-alpha.12
+    "@safe-global/api-kit": ^2.5.6
+    "@safe-global/protocol-kit": ^5.1.1
+    "@safe-global/types-kit": ^1.0.1
+    "@sinclair/typebox": 0.25.21
+    "@solana-program/system": ^0.7.0
+    "@solana/kit": ^2.1.1
+    ajv: 8.17.1
+    ethers: 5.7.2
+    interval-promise: 1.4.0
+    p-queue: 6.6.2
+    tronweb: ^6.0.3
+  checksum: b887522d07491e46a956643895700907ba6550f26014fceba27ccc7da5d342be79ad2a486b0e164cade7ce1671219d3a9fd0b70ae2113de8ab5ba45c69750580
+  languageName: node
+  linkType: hard
+
 "@chimera-monorepo/contracts@npm:0.0.1-alpha.11":
   version: 0.0.1-alpha.11
   resolution: "@chimera-monorepo/contracts@npm:0.0.1-alpha.11"
@@ -1568,6 +1588,25 @@ __metadata:
     tweetnacl: ^1.0.3
     viem: ^2.19.8
   checksum: 871395811d0730597dcb0e30c9d1e0debc3e6ed07d34210b217649883cbcd61860bfc4837d1a77117a7b10ecfb3caa1e89385e147317a88b132937708e59a939
+  languageName: node
+  linkType: hard
+
+"@chimera-monorepo/contracts@npm:0.0.1-alpha.12":
+  version: 0.0.1-alpha.12
+  resolution: "@chimera-monorepo/contracts@npm:0.0.1-alpha.12"
+  dependencies:
+    "@coral-xyz/anchor": ^0.30.1
+    "@hyperlane-xyz/core": 3.8.1
+    "@inquirer/prompts": ^5.3.8
+    "@openzeppelin/contracts": 5.0.2
+    "@openzeppelin/contracts-upgradeable": 5.0.2
+    "@solana-developers/helpers": ^2.8.1
+    dotenv: ^16.4.5
+    solmate: ^6.8.0
+    ts-node: ^10.9.2
+    tweetnacl: ^1.0.3
+    viem: ^2.19.8
+  checksum: 518441b769dcc3e417739252a78722d3910affbb0d5a01f5de39200127a890b64a242d294ae24144e4839b55ac79aba9d43f1ddb0eac7003f564012d4848ae7e
   languageName: node
   linkType: hard
 
@@ -1590,6 +1629,29 @@ __metadata:
     secp256k1: 4.0.3
     sinon-chai: 3.7.0
   checksum: 07a9973650feea7a497b12785393e8ec6ac91a43f05f40f6a988a206ce67c8036db21b11c756d7a86e58c07ac75569ebe4a621ddb6f68b1fe2e6943c62e279c8
+  languageName: node
+  linkType: hard
+
+"@chimera-monorepo/utils@npm:0.0.1-alpha.12":
+  version: 0.0.1-alpha.12
+  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.12"
+  dependencies:
+    "@aws-sdk/client-ssm": ^3.735.0
+    "@chimera-monorepo/contracts": 0.0.1-alpha.12
+    "@hyperlane-xyz/sdk": 3.15.1
+    "@sinclair/typebox": 0.25.21
+    "@urql/core": 5.0.4
+    ajv: 8.12.0
+    ajv-formats: 2.1.1
+    axios: 0.24.0
+    chai: 4.3.7
+    chai-as-promised: 7.1.1
+    chai-subset: 1.6.0
+    hyperid: 3.2.0
+    secp256k1: 4.0.3
+    sinon-chai: 3.7.0
+    tronweb: ^6.0.3
+  checksum: 1e9a91593f6bd8f94c89e133eaaddca2c0574683f4e1b659f9de5ed3ebf7c70de12b9b97a2e6654d6067c47ac93507d7794e26c5f2ef4cd3c48960bcf81e04cd
   languageName: node
   linkType: hard
 
@@ -3944,7 +4006,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/chainservice@workspace:packages/adapters/chainservice"
   dependencies:
-    "@chimera-monorepo/chainservice": 0.0.1-alpha.11
+    "@chimera-monorepo/chainservice": 0.0.1-alpha.12
     "@connext/nxtp-txservice": 2.5.0-alpha.6
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
