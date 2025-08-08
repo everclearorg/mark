@@ -65,7 +65,7 @@ const KRAKEN_SYMBOL_TO_ASSET = {
 
 /**
  * Dynamic asset configuration service for Kraken adapter
- * Fetches real-time asset configuration from Kraken API
+ * Fetches real-time asset configuration from Kraken API using clean interface
  */
 export class DynamicAssetConfig {
   constructor(
