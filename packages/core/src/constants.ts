@@ -5,7 +5,7 @@
 export const BPS_MULTIPLIER = 10000n;
 
 /**
- * Deci-basis points multiplier (100000 = 100%)
+ * Decibasis points multiplier (100000 = 100%)
  * Used for percentage calculations where 1 basis point = 0.001%
  */
 export const DBPS_MULTIPLIER = 100000n;

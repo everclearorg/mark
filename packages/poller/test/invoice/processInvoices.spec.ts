@@ -1102,8 +1102,8 @@ describe('Invoice Processing', () => {
         intent_id: '0x456',
         amount: '0',
       });
-      // Owner validation is currently disabled in the implementation
-      const validInvoice2 = createMockInvoice({
+      // This invoice should be invalid because the owner is us
+      const ownInvoice = createMockInvoice({
         intent_id: '0x789',
         owner: mockContext.config.ownAddress,
       });
@@ -1114,7 +1114,7 @@ describe('Invoice Processing', () => {
 
       const group: TickerGroup = {
         ticker: '0xticker1',
-        invoices: [validInvoice, zeroAmountInvoice, validInvoice2, tooNewInvoice],
+        invoices: [validInvoice, zeroAmountInvoice, ownInvoice, tooNewInvoice],
         remainingBalances: new Map([['0xticker1', new Map([['8453', BigInt('4000000000000000000')]])]]),
         remainingCustodied: new Map([['0xticker1', new Map([['8453', BigInt('0')]])]]),
         chosenOrigin: null,
@@ -1130,6 +1130,7 @@ describe('Invoice Processing', () => {
         custodiedAmounts: {},
       });
 
+      // Only one valid invoice, so only one intent
       calculateSplitIntentsStub.resolves({
         intents: [
           {
@@ -1146,6 +1147,7 @@ describe('Invoice Processing', () => {
         totalAllocated: BigInt('1000000000000000000'),
       });
 
+      // sendIntentsStub should return 1 result since we're sending 1 intent
       sendIntentsStub.resolves([
         {
           intentId: '0xabc',
@@ -1153,26 +1155,20 @@ describe('Invoice Processing', () => {
           chainId: '8453',
           type: TransactionSubmissionType.Onchain,
         },
-        {
-          intentId: '0xdef',
-          transactionHash: '0xdef',
-          chainId: '8453',
-          type: TransactionSubmissionType.Onchain,
-        },
       ]);
 
       const result = await processTickerGroup(mockContext, group, []);
 
-      // Verify both valid invoices made it through (owner validation is disabled)
-      expect(result.purchases.length).toBe(2);
+      // Verify only one valid invoice made it through
+      expect(result.purchases.length).toBe(1);
       expect(result.purchases[0].target.intent_id).toBe(validInvoice.intent_id);
-      expect(result.purchases[1].target.intent_id).toBe(validInvoice2.intent_id);
 
       // And prometheus metrics were recorded for invalid invoices
-      // Note: Owner validation is currently disabled in the implementation, so we only get 2 invalid purchases
-      expect(mockDeps.prometheus.recordInvalidPurchase.callCount).toBe(2);
+      // Should have 3 invalid purchases: zero amount, own invoice, and too new
+      expect(mockDeps.prometheus.recordInvalidPurchase.callCount).toBe(3);
       expect(mockDeps.prometheus.recordInvalidPurchase.getCall(0).args[0]).toBe(InvalidPurchaseReasons.InvalidFormat);
-      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(1).args[0]).toBe(InvalidPurchaseReasons.InvalidAge);
+      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(1).args[0]).toBe(InvalidPurchaseReasons.InvalidOwner);
+      expect(mockDeps.prometheus.recordInvalidPurchase.getCall(2).args[0]).toBe(InvalidPurchaseReasons.InvalidAge);
     });
 
     it('should skip the entire ticker group if a purchase is pending', async () => {
@@ -2373,7 +2369,7 @@ describe('Invoice Processing', () => {
           origin: 42161,
           destination: 1,
           asset: MOCK_TICKER_HASH,
-          slippages: [100],
+          slippagesDbps: [1000], // 1% in decibasis points
           preferences: [SupportedBridge.Across],
         },
       ];
@@ -2519,7 +2515,7 @@ describe('Invoice Processing', () => {
             {
               originChain: 42161,
               amount: '1000000000000000000',
-              slippages: [100],
+              slippagesDbps: [1000], // 1% in decibasis points
             },
           ],
           totalAmount: '1000000000000000000',
@@ -2664,7 +2660,7 @@ describe('Invoice Processing', () => {
             {
               originChain: 42161,
               amount: '1000000000000000000',
-              slippages: [100],
+              slippagesDbps: [1000], // 1% in decibasis points
             },
           ],
           totalAmount: '1000000000000000000',
@@ -2731,7 +2727,7 @@ describe('Invoice Processing', () => {
             {
               originChain: 42161,
               amount: '4000000000000000000',
-              slippages: [100],
+              slippagesDbps: [1000], // 1% in decibasis points
             },
           ],
           totalAmount: '4000000000000000000',
@@ -2789,7 +2785,7 @@ describe('Invoice Processing', () => {
             {
               originChain: 42161,
               amount: '1000000000000000000',
-              slippages: [100],
+              slippagesDbps: [1000], // 1% in decibasis points
             },
           ],
           totalAmount: '1000000000000000000',
@@ -2838,7 +2834,7 @@ describe('Invoice Processing', () => {
             destination: 1,
             asset: MOCK_TICKER_HASH,
             maximum: '10000000000000000000',
-            slippages: [100],
+            slippagesDbps: [100],
             preferences: [SupportedBridge.Across],
           },
         ];
@@ -2860,7 +2856,7 @@ describe('Invoice Processing', () => {
             {
               originChain: 42161,
               amount: '1000000000000000000',
-              slippages: [100],
+              slippagesDbps: [1000], // 1% in decibasis points
             },
           ],
           totalAmount: '1000000000000000000',

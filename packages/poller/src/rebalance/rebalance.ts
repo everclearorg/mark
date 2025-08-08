@@ -1,12 +1,6 @@
-import { getMarkBalances, safeStringToBigInt, getTickerForAsset, convertToNativeUnits } from '../helpers';
+import { getMarkBalances, getTickerForAsset, convertToNativeUnits } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
-import {
-  getDecimalsFromConfig,
-  WalletType,
-  RebalanceOperationStatus,
-  BPS_MULTIPLIER,
-  DBPS_MULTIPLIER,
-} from '@mark/core';
+import { getDecimalsFromConfig, WalletType, RebalanceOperationStatus, DBPS_MULTIPLIER } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
 import { RebalanceAction } from '@mark/cache';
@@ -172,13 +166,10 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
       // Step 2: Check Slippage
       const receivedAmount = BigInt(receivedAmountStr);
-      const currentSlippage = route.slippages[bridgeIndex];
-      const slippage = safeStringToBigInt(currentSlippage.toString(), BPS_MULTIPLIER);
-      const slippageScaled = slippage * BPS_MULTIPLIER;
-      const minimumAcceptableAmount =
-        amountToBridge - (amountToBridge * slippageScaled) / (BPS_MULTIPLIER * DBPS_MULTIPLIER);
+      const slippageDbps = BigInt(route.slippagesDbps[bridgeIndex]);
+      const minimumAcceptableAmount = amountToBridge - (amountToBridge * slippageDbps) / DBPS_MULTIPLIER;
 
-      const actualSlippageBps = ((amountToBridge - receivedAmount) * BPS_MULTIPLIER) / amountToBridge;
+      const actualSlippageDbps = ((amountToBridge - receivedAmount) * DBPS_MULTIPLIER) / amountToBridge;
 
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Quote does not meet slippage requirements, trying next preference', {
@@ -188,9 +179,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           amountToBridge: amountToBridge.toString(),
           receivedAmount: receivedAmount.toString(),
           minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-          slippageBps: currentSlippage.toString(),
-          actualSlippageBps: actualSlippageBps.toString(),
-          configuredSlippageBPS: currentSlippage.toString(),
+          slippageDbps: slippageDbps.toString(),
+          actualSlippageDbps: actualSlippageDbps.toString(),
+          configuredSlippageDBPS: slippageDbps.toString(),
         });
         continue; // Skip to next bridge preference
       }
@@ -202,9 +193,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
         amountToBridge: amountToBridge.toString(),
         receivedAmount: receivedAmount.toString(),
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-        slippageBps: currentSlippage.toString(),
-        actualSlippageBps: actualSlippageBps.toString(),
-        configuredSlippageBPS: currentSlippage.toString(),
+        slippageDbps: slippageDbps.toString(),
+        actualSlippageDbps: actualSlippageDbps.toString(),
+        configuredSlippageDBPS: slippageDbps.toString(),
       });
 
       // Step 3: Get Bridge Transaction Requests
@@ -309,7 +300,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             destinationChainId: route.destination,
             tickerHash: route.asset,
             amount: amountToBridge.toString(),
-            slippage: route.slippages[bridgeIndex],
+            slippage: route.slippagesDbps[bridgeIndex],
             status: RebalanceOperationStatus.PENDING,
             bridge: bridgeType,
             txHashes: { originTxHash: transactionHash },

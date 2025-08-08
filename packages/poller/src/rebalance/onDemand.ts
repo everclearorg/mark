@@ -1,5 +1,5 @@
 import { ProcessingContext } from '../init';
-import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge, BPS_MULTIPLIER } from '@mark/core';
+import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge, DBPS_MULTIPLIER } from '@mark/core';
 import { OnDemandRouteConfig } from '@mark/core';
 import * as database from '@mark/database';
 import type { earmarks } from '@mark/database';
@@ -306,10 +306,10 @@ async function calculateRebalancingOperations(
       try {
         // Calculate how much to send - we need to account for slippage
         // so that we receive at least remainingNeeded after slippage
-        // If we need X and slippage is S%, we need to send X / (1 - S/10000)
-        const maxSlippageForBridge = route.slippages?.[bridgeIndex] ?? 100;
-        const slippageDivisor = BPS_MULTIPLIER - BigInt(maxSlippageForBridge);
-        const estimatedAmountToSend = (remainingNeeded * BPS_MULTIPLIER) / slippageDivisor;
+        // If we need X and slippage is S%, we need to send X / (1 - S/100000)
+        const maxSlippageDbps = route.slippagesDbps?.[bridgeIndex] ?? 1000; // Default 1% = 1000 DBPS
+        const slippageDivisor = DBPS_MULTIPLIER - BigInt(maxSlippageDbps);
+        const estimatedAmountToSend = (remainingNeeded * DBPS_MULTIPLIER) / slippageDivisor;
 
         // Use the minimum of our estimate and what's available
         const amountToTry = estimatedAmountToSend < availableOnOrigin ? estimatedAmountToSend : availableOnOrigin;
@@ -326,7 +326,7 @@ async function calculateRebalancingOperations(
         // Check if quote meets slippage requirements
         const sentIn18Decimals = convertTo18Decimals(nativeAmountBigInt, originDecimals);
         const receivedIn18Decimals = convertTo18Decimals(BigInt(receivedAmountStr), destDecimals);
-        const slippageBps = ((sentIn18Decimals - receivedIn18Decimals) * BPS_MULTIPLIER) / sentIn18Decimals;
+        const slippageDbps = ((sentIn18Decimals - receivedIn18Decimals) * DBPS_MULTIPLIER) / sentIn18Decimals;
 
         logger.debug('Quote evaluation during planning', {
           bridgeType,
@@ -335,23 +335,21 @@ async function calculateRebalancingOperations(
           receivedAmount: receivedAmountStr,
           sentIn18Decimals: sentIn18Decimals.toString(),
           receivedIn18Decimals: receivedIn18Decimals.toString(),
-          slippageBps: slippageBps.toString(),
-          maxSlippage: maxSlippageForBridge,
-          passesSlippage: slippageBps <= BigInt(maxSlippageForBridge),
+          slippageDbps: slippageDbps.toString(),
+          maxSlippageDbps: maxSlippageDbps,
+          passesSlippage: slippageDbps <= BigInt(maxSlippageDbps),
         });
 
-        if (slippageBps > BigInt(maxSlippageForBridge)) {
+        if (slippageDbps > BigInt(maxSlippageDbps)) {
           continue;
         }
-
-        // receivedIn18Decimals already calculated above for slippage comparison
 
         // Quote is acceptable, add this operation
         operations.push({
           originChain: route.origin,
           amount: nativeAmount,
           bridge: bridgeType,
-          slippage: maxSlippageForBridge,
+          slippage: maxSlippageDbps,
         });
 
         // Update remaining needed and total achievable

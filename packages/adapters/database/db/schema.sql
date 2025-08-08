@@ -161,7 +161,7 @@ COMMENT ON COLUMN public.rebalance_operations.amount IS 'Amount of tokens being 
 -- Name: COLUMN rebalance_operations.slippage; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.rebalance_operations.slippage IS 'Expected slippage in basis points (e.g., 30 = 0.3%)';
+COMMENT ON COLUMN public.rebalance_operations.slippage IS 'Expected slippage in decibasis points (e.g., 30 = 0.03%)';
 
 
 --

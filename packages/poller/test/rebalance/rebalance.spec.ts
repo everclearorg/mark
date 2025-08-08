@@ -153,7 +153,7 @@ describe('rebalanceInventory', () => {
       destination: 10,
       asset: MOCK_ASSET_ERC20,
       maximum: '10000000000000000000', // 10 tokens
-      slippages: [500, 500], // 5% slippage in basis points
+      slippagesDbps: [5000, 5000], // 5% slippage in decibasis points
       preferences: [MOCK_BRIDGE_TYPE_A, MOCK_BRIDGE_TYPE_B],
     };
 
@@ -162,7 +162,7 @@ describe('rebalanceInventory', () => {
       destination: 42,
       asset: MOCK_ASSET_NATIVE,
       maximum: '5000000000000000000', // 5 ETH
-      slippages: [500], // 5% slippage in basis points
+      slippagesDbps: [5000], // 5% slippage in decibasis points
       preferences: [MOCK_BRIDGE_TYPE_A],
     };
 
@@ -275,9 +275,21 @@ describe('rebalanceInventory', () => {
 
     // Set up proper balances that exceed maximum to trigger rebalancing
     const defaultBalances = new Map<string, Map<string, bigint>>();
-    defaultBalances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('20000000000000000000')]])); // 20 tokens on chain 1
-    defaultBalances.set(MOCK_NATIVE_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('10000000000000000000')]])); // 10 tokens on chain 1
-    getMarkBalancesStub.resolves(defaultBalances);
+    defaultBalances.set(
+      MOCK_ERC20_TICKER_HASH.toLowerCase(),
+      new Map([
+        ['1', BigInt('20000000000000000000')], // 20 tokens on chain 1 (origin)
+        ['10', BigInt('0')], // 0 tokens on chain 10 (destination)
+      ]),
+    );
+    defaultBalances.set(
+      MOCK_NATIVE_TICKER_HASH.toLowerCase(),
+      new Map([
+        ['1', BigInt('10000000000000000000')], // 10 tokens on chain 1
+        ['42', BigInt('0')], // 0 tokens on chain 42 (destination for native route)
+      ]),
+    );
+    getMarkBalancesStub.callsFake(async () => defaultBalances);
   });
 
   afterEach(async () => {
@@ -297,13 +309,6 @@ describe('rebalanceInventory', () => {
   });
 
   it('should handle transaction with undefined value in bridge request', async () => {
-    // Simplify the test - use only one route
-    const singleRouteConfig = {
-      ...mockContext.config,
-      routes: [mockContext.config.routes[0]], // Only ERC20 route
-    };
-    const singleRouteContext = { ...mockContext, config: singleRouteConfig };
-
     // Set up a balance that needs rebalancing
     const originBalance = BigInt('20000000000000000000'); // 20 tokens on origin
     const destinationBalance = BigInt('0'); // 0 tokens on destination
@@ -311,18 +316,18 @@ describe('rebalanceInventory', () => {
     balances.set(
       MOCK_ERC20_TICKER_HASH.toLowerCase(),
       new Map([
-        ['42161', originBalance],
-        ['1', destinationBalance],
+        ['1', originBalance], // Origin chain from route
+        ['10', destinationBalance], // Destination chain from route
       ]),
     );
 
-    getMarkBalancesStub.resolves(balances);
+    getMarkBalancesStub.callsFake(async () => balances);
     getAvailableBalanceLessEarmarksStub.resolves(originBalance);
     getTickerForAssetStub.returns(MOCK_ERC20_TICKER_HASH);
 
     // Mock adapter that returns transaction without value field
     const mockBridgeAdapter = {
-      getReceivedAmount: sinon.stub().resolves('9500000000000000000'),
+      getReceivedAmount: sinon.stub().resolves('19500000000000000000'), // 19.5 tokens (within 5% slippage of 20)
       send: sinon.stub().resolves([
         {
           transaction: { to: '0xbridge', data: '0x123' }, // No value field
@@ -331,10 +336,21 @@ describe('rebalanceInventory', () => {
       ]),
       type: sinon.stub().returns(MOCK_BRIDGE_TYPE_A),
     };
+    // Override the default adapter
     mockRebalanceAdapter.getAdapter.returns(mockBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
 
-    const createRebalanceOpStub = sinon.stub(database, 'createRebalanceOperation').resolves();
-    const result = await rebalanceInventory(singleRouteContext);
+    // Using the createRebalanceOperation stub from beforeEach
+    const result = await rebalanceInventory({
+      ...mockContext,
+      config: {
+        ...mockContext.config,
+        routes: [mockContext.config.routes[0]], // Only ERC20 route
+      },
+    });
+
+    // Check if the adapter methods were called
+    expect(mockBridgeAdapter.getReceivedAmount.called).toBe(true);
+    expect(mockBridgeAdapter.send.called).toBe(true);
 
     // Should handle undefined value properly - defaults to 0
     expect(result).toHaveLength(1);
@@ -342,7 +358,7 @@ describe('rebalanceInventory', () => {
     const submitCall = submitTransactionWithLoggingStub.firstCall;
     expect(submitCall.args[0].txRequest.value).toBe('0');
 
-    createRebalanceOpStub.restore();
+    // No need to restore - handled in afterEach
   });
 
   it('should execute callbacks first', async () => {
@@ -373,7 +389,7 @@ describe('rebalanceInventory', () => {
       destination: 10,
       asset: '0xInvalidAsset',
       maximum: '5000000000000000000',
-      slippages: [100],
+      slippagesDbps: [1000], // 1% in decibasis points
       preferences: [MOCK_BRIDGE_TYPE_A],
     };
 
@@ -417,7 +433,7 @@ describe('rebalanceInventory', () => {
 
     // Mock adapter to return empty transaction requests
     const mockBridgeAdapter = {
-      getReceivedAmount: sinon.stub().resolves('9500000000000000000'),
+      getReceivedAmount: sinon.stub().resolves('19500000000000000000'), // 19.5 tokens (within 5% slippage of 20)
       send: sinon.stub().resolves([]), // Empty array - should trigger error
       type: sinon.stub().returns(MOCK_BRIDGE_TYPE_A),
     };
@@ -431,11 +447,13 @@ describe('rebalanceInventory', () => {
 
   it('should log success message when rebalance completes successfully', async () => {
     // Use single route config
-    const singleRouteConfig = {
-      ...mockContext.config,
-      routes: [mockContext.config.routes[0]], // Only ERC20 route
+    const singleRouteContext = {
+      ...mockContext,
+      config: {
+        ...mockContext.config,
+        routes: [mockContext.config.routes[0]], // Only ERC20 route
+      },
     };
-    const singleRouteContext = { ...mockContext, config: singleRouteConfig };
 
     // Set up a balance that needs rebalancing
     const originBalance = BigInt('20000000000000000000'); // 20 tokens on origin
@@ -444,8 +462,8 @@ describe('rebalanceInventory', () => {
     balances.set(
       MOCK_ERC20_TICKER_HASH.toLowerCase(),
       new Map([
-        ['42161', originBalance],
-        ['1', destinationBalance],
+        ['1', originBalance], // Origin chain from route
+        ['10', destinationBalance], // Destination chain from route
       ]),
     );
     getMarkBalancesStub.callsFake(async () => balances);
@@ -456,7 +474,7 @@ describe('rebalanceInventory', () => {
 
     // Mock successful adapter response
     const mockBridgeAdapter = {
-      getReceivedAmount: sinon.stub().resolves('9500000000000000000'),
+      getReceivedAmount: sinon.stub().resolves('19500000000000000000'), // 19.5 tokens (within 5% slippage of 20)
       send: sinon.stub().resolves([
         {
           transaction: { to: '0xbridge', data: '0x123', value: '0' },
@@ -465,10 +483,11 @@ describe('rebalanceInventory', () => {
       ]),
       type: sinon.stub().returns(MOCK_BRIDGE_TYPE_A),
     };
+    // Override the default adapter
     mockRebalanceAdapter.getAdapter.returns(mockBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
 
     // Mock database operation
-    const createRebalanceOpStub = sinon.stub(database, 'createRebalanceOperation').resolves();
+    // Using the createRebalanceOperation stub from beforeEach
 
     const result = await rebalanceInventory(singleRouteContext);
 
@@ -480,27 +499,35 @@ describe('rebalanceInventory', () => {
       destination: 10,
     });
 
-    createRebalanceOpStub.restore();
+    // No need to restore - handled in afterEach
   });
 
   it('should successfully rebalance when database operation succeeds', async () => {
     // Create context with only ERC20 route
-    const singleRouteConfig = {
-      ...mockContext.config,
-      routes: [mockContext.config.routes[0]], // Only ERC20 route
+    const singleRouteContext = {
+      ...mockContext,
+      config: {
+        ...mockContext.config,
+        routes: [mockContext.config.routes[0]], // Only ERC20 route
+      },
     };
-    const singleRouteContext = { ...mockContext, config: singleRouteConfig };
 
     // Set up a balance that needs rebalancing
     const currentBalance = BigInt('20000000000000000000');
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]])); // Route origin is 1
+    balances.set(
+      MOCK_ERC20_TICKER_HASH.toLowerCase(),
+      new Map([
+        ['1', currentBalance], // Origin chain
+        ['10', BigInt('0')], // Destination chain
+      ]),
+    );
     getMarkBalancesStub.callsFake(async () => balances);
     getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
 
     // Mock successful adapter response
     const mockBridgeAdapter = {
-      getReceivedAmount: sinon.stub().resolves('9500000000000000000'),
+      getReceivedAmount: sinon.stub().resolves('19500000000000000000'), // 19.5 tokens (within 5% slippage of 20)
       send: sinon.stub().resolves([
         {
           transaction: { to: '0xbridge', data: '0x123', value: '0' },
@@ -509,7 +536,10 @@ describe('rebalanceInventory', () => {
       ]),
       type: sinon.stub().returns(MOCK_BRIDGE_TYPE_A),
     };
+    // Override the default adapter
     mockRebalanceAdapter.getAdapter.returns(mockBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+
+    // Using the createRebalanceOperation stub from beforeEach
 
     const result = await rebalanceInventory(singleRouteContext);
 
@@ -521,6 +551,8 @@ describe('rebalanceInventory', () => {
     // Should have attempted the bridge
     expect(mockBridgeAdapter.getReceivedAmount.called).toBe(true);
     expect(mockBridgeAdapter.send.called).toBe(true);
+
+    // No need to restore - handled in afterEach
   });
 
   it('should handle failure when all bridge preferences are exhausted', async () => {
@@ -535,7 +567,7 @@ describe('rebalanceInventory', () => {
     const routeWithMultipleBridges = {
       ...mockContext.config.routes[0],
       preferences: [MOCK_BRIDGE_TYPE_A, MOCK_BRIDGE_TYPE_B],
-      slippages: [100, 100],
+      slippagesDbps: [1000, 1000], // 1% in decibasis points
     };
 
     // Mock both adapters to fail
@@ -575,7 +607,7 @@ describe('rebalanceInventory', () => {
         {
           ...mockContext.config.routes[0],
           preferences: [MOCK_BRIDGE_TYPE_A, MOCK_BRIDGE_TYPE_B],
-          slippages: [100, 100], // 1% slippage tolerance in basis points
+          slippagesDbps: [1000, 1000], // 1% in decibasis points // 1% slippage tolerance in basis points
         },
       ],
     };
@@ -623,7 +655,7 @@ describe('rebalanceInventory', () => {
       .withArgs(MOCK_BRIDGE_TYPE_B)
       .returns(mockBridgeAdapterB as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
 
-    const createRebalanceOpStub = sinon.stub(database, 'createRebalanceOperation').resolves();
+    // Using the createRebalanceOperation stub from beforeEach
     const result = await rebalanceInventory(singleRouteContext);
 
     // Should have failed on first bridge send and used second bridge
@@ -639,7 +671,7 @@ describe('rebalanceInventory', () => {
     expect(result).toHaveLength(1);
     expect(result[0].bridge).toBe(MOCK_BRIDGE_TYPE_B);
 
-    createRebalanceOpStub.restore();
+    // No need to restore - handled in afterEach
   });
 
   it('should respect reserve amount when calculating amount to bridge', async () => {
@@ -650,8 +682,8 @@ describe('rebalanceInventory', () => {
     balances.set(
       MOCK_ERC20_TICKER_HASH.toLowerCase(),
       new Map([
-        ['42161', originBalance],
-        ['1', destinationBalance],
+        ['1', originBalance], // Origin chain from route
+        ['10', destinationBalance], // Destination chain from route
       ]),
     );
     getMarkBalancesStub.callsFake(async () => balances);
@@ -665,7 +697,7 @@ describe('rebalanceInventory', () => {
       ...mockContext.config.routes[0],
       reserve: '5000000000000000000', // Reserve 5 tokens
       preferences: [MOCK_BRIDGE_TYPE_A],
-      slippages: [100],
+      slippagesDbps: [1000], // 1% in decibasis points
     };
 
     // Mock adapter
@@ -681,7 +713,7 @@ describe('rebalanceInventory', () => {
     };
 
     mockRebalanceAdapter.getAdapter.returns(mockBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
-    const createRebalanceOpStub = sinon.stub(database, 'createRebalanceOperation').resolves();
+    // Using the createRebalanceOperation stub from beforeEach
 
     const result = await rebalanceInventory({
       ...mockContext,
@@ -692,7 +724,7 @@ describe('rebalanceInventory', () => {
     expect(result).toHaveLength(1);
     expect(result[0].amount).toBe('15000000000000000000'); // 20 - 5 = 15
 
-    createRebalanceOpStub.restore();
+    // No need to restore - handled in afterEach
   });
 
   it('should skip route when amount to bridge is zero after reserve', async () => {
@@ -709,7 +741,7 @@ describe('rebalanceInventory', () => {
       maximum: '1000000000000000000', // Maximum 1 token (less than current balance)
       reserve: '5000000000000000000', // Reserve 5 tokens (equals current balance)
       preferences: [MOCK_BRIDGE_TYPE_A],
-      slippages: [100],
+      slippagesDbps: [1000], // 1% in decibasis points
     };
 
     const result = await rebalanceInventory({
@@ -740,7 +772,7 @@ describe('rebalanceInventory', () => {
     };
 
     const mockBridgeAdapter = {
-      getReceivedAmount: sinon.stub().resolves('9500000000000000000'),
+      getReceivedAmount: sinon.stub().resolves('19500000000000000000'), // 19.5 tokens (within 5% slippage of 20)
       send: sinon.stub().resolves([
         {
           transaction: { to: '0xbridge', data: '0x123', value: '0' },
@@ -750,7 +782,7 @@ describe('rebalanceInventory', () => {
       type: sinon.stub().returns(MOCK_BRIDGE_TYPE_A),
     };
     mockRebalanceAdapter.getAdapter.returns(mockBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
-    const createRebalanceOpStub = sinon.stub(database, 'createRebalanceOperation').resolves();
+    // Using the createRebalanceOperation stub from beforeEach
 
     const result = await rebalanceInventory({
       ...mockContext,
@@ -760,7 +792,7 @@ describe('rebalanceInventory', () => {
     // Should process with Zodiac config
     expect(result).toBeDefined();
 
-    createRebalanceOpStub.restore();
+    // No need to restore - handled in afterEach
   });
 
   it('should skip route if balance is at or below maximum', async () => {
@@ -894,7 +926,7 @@ describe('rebalanceInventory', () => {
         destinationChainId: routeToTest.destination,
         tickerHash: routeToTest.asset,
         amount: amountToBridge.toString(),
-        slippages: routeToTest.slippages,
+        slippagesDbps: routeToTest.slippagesDbps,
         bridge: MOCK_BRIDGE_TYPE_A,
       });
       expect(dbCall.txHashes.originTxHash).toBe('0xBridgeTxHash');
@@ -1007,12 +1039,12 @@ describe('rebalanceInventory', () => {
     // Add assertions to confirm bridge B logic executed
   });
 
-  it('should successfully use first bridge when slippage calculation allows it', async () => {
+  it('should reject first bridge when slippage exceeds tolerance and use second bridge', async () => {
     // Create route with proper slippage in basis points
     const routeToTest = {
       ...mockContext.config.routes[0],
       preferences: [MOCK_BRIDGE_TYPE_A, MOCK_BRIDGE_TYPE_B],
-      slippages: [100, 100], // 1% slippage tolerance in basis points
+      slippagesDbps: [1000, 1000], // 1% in decibasis points // 1% slippage tolerance in basis points
     };
 
     const balanceForRoute = BigInt('20000000000000000000'); // 20 tokens
@@ -1058,26 +1090,82 @@ describe('rebalanceInventory', () => {
       .resolves(mockContractInstance);
 
     // Add database stub
-    const createRebalanceOpStub = sinon.stub(database, 'createRebalanceOperation').resolves();
+    // Using the createRebalanceOperation stub from beforeEach
 
     // Modify routes directly on the mockContext
     mockContext.config.routes = [routeToTest];
     await rebalanceInventory(mockContext);
 
-    // Due to a bug in slippage calculation, even 10% slippage passes the check
-    // The test verifies current behavior - first adapter is used successfully
+    // With fixed slippage calculation, 10% slippage should be rejected
+    // The first adapter should be tried but rejected, then second adapter used
     expect(mockAdapterA.getReceivedAmount.calledOnce).toBe(true);
-    expect(mockAdapterA.send.calledOnce).toBe(true);
-    expect(mockAdapterB.getReceivedAmount.called).toBe(false); // B should not be tried
+    expect(mockAdapterA.send.called).toBe(false); // A should be rejected due to slippage
+    expect(mockAdapterB.getReceivedAmount.calledOnce).toBe(true); // B should be tried
+    expect(mockAdapterB.send.calledOnce).toBe(true); // B should be used
 
-    // Verify successful rebalance with first adapter
+    // Verify successful rebalance with second adapter
     const infoCalls = mockLogger.info.getCalls();
     const successMessage = infoCalls.find(
       (call) => call.args[0] && call.args[0].includes('Quote meets slippage requirements'),
     );
     expect(successMessage).toBeTruthy();
 
-    createRebalanceOpStub.restore();
+    // No need to restore - handled in afterEach
+  });
+
+  it('should successfully use first bridge when slippage is within tolerance', async () => {
+    // Create route with proper slippage in basis points
+    const routeToTest = {
+      ...mockContext.config.routes[0],
+      preferences: [MOCK_BRIDGE_TYPE_A, MOCK_BRIDGE_TYPE_B],
+      slippagesDbps: [1000, 1000], // 1% in decibasis points // 1% slippage tolerance in basis points
+    };
+
+    const balanceForRoute = BigInt('20000000000000000000'); // 20 tokens
+    const balances = new Map<string, Map<string, bigint>>();
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), balanceForRoute]]));
+    getMarkBalancesStub.callsFake(async () => balances);
+    getAvailableBalanceLessEarmarksStub.resolves(balanceForRoute);
+
+    // First adapter returns quote with acceptable slippage (receiving 19.9 tokens when sending 20)
+    const mockAdapterA = {
+      ...mockSpecificBridgeAdapter,
+      getReceivedAmount: stub().resolves('19900000000000000000'), // 0.5% slippage, within 1%
+      send: stub().resolves([
+        {
+          transaction: { to: '0xSpender', data: '0xbridgeDataA', value: 0n },
+          memo: RebalanceTransactionMemo.Rebalance,
+        },
+      ]),
+      type: stub().returns(MOCK_BRIDGE_TYPE_A),
+    };
+    // Second adapter should not be needed
+    const mockAdapterB = {
+      ...mockSpecificBridgeAdapter,
+      getReceivedAmount: stub().resolves('19950000000000000000'),
+      type: stub().returns(MOCK_BRIDGE_TYPE_B),
+    };
+
+    mockRebalanceAdapter.getAdapter
+      .withArgs(MOCK_BRIDGE_TYPE_A)
+      .returns(mockAdapterA as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+    mockRebalanceAdapter.getAdapter
+      .withArgs(MOCK_BRIDGE_TYPE_B)
+      .returns(mockAdapterB as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+
+    // Add database stub
+    // Using the createRebalanceOperation stub from beforeEach
+
+    // Modify routes directly on the mockContext
+    mockContext.config.routes = [routeToTest];
+    await rebalanceInventory(mockContext);
+
+    // With fixed slippage calculation, 0.5% slippage should be accepted
+    expect(mockAdapterA.getReceivedAmount.calledOnce).toBe(true);
+    expect(mockAdapterA.send.calledOnce).toBe(true); // A should be used
+    expect(mockAdapterB.getReceivedAmount.called).toBe(false); // B should not be tried
+
+    // No need to restore - handled in afterEach
   });
 
   it('should try the next bridge preference if adapter send fails', async () => {
@@ -1260,7 +1348,7 @@ describe('Zodiac Address Validation', () => {
           destination: 1, // Ethereum (without Zodiac)
           asset: MOCK_ASSET_ERC20,
           maximum: '10000000000000000000', // 10 tokens
-          slippages: [0.01],
+          slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
           preferences: [MOCK_BRIDGE_TYPE],
         },
       ],
@@ -1400,7 +1488,7 @@ describe('Zodiac Address Validation', () => {
         destination: 42161, // Arbitrum (with Zodiac)
         asset: MOCK_ASSET_ERC20,
         maximum: '10000000000000000000',
-        slippages: [0.01],
+        slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
         preferences: [MOCK_BRIDGE_TYPE],
       },
     ];
@@ -1454,7 +1542,7 @@ describe('Zodiac Address Validation', () => {
         destination: 10, // Optimism (with Zodiac)
         asset: MOCK_ASSET_ERC20,
         maximum: '10000000000000000000',
-        slippages: [0.01],
+        slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
         preferences: [MOCK_BRIDGE_TYPE],
       },
     ];
@@ -1505,7 +1593,7 @@ describe('Zodiac Address Validation', () => {
         destination: 10, // Optimism (without Zodiac)
         asset: MOCK_ASSET_ERC20,
         maximum: '10000000000000000000',
-        slippages: [0.01],
+        slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
         preferences: [MOCK_BRIDGE_TYPE],
       },
     ];
@@ -1649,7 +1737,7 @@ describe('Reserve Amount Functionality', () => {
       asset: MOCK_ASSET_ERC20,
       maximum: '10000000000000000000', // 10 tokens
       reserve: '3000000000000000000', // 3 tokens reserve
-      slippages: [0.01],
+      slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
       preferences: [MOCK_BRIDGE_TYPE],
     };
 
@@ -1699,7 +1787,7 @@ describe('Reserve Amount Functionality', () => {
       asset: MOCK_ASSET_ERC20,
       maximum: '10000000000000000000', // 10 tokens
       reserve: '15000000000000000000', // 15 tokens reserve
-      slippages: [0.01],
+      slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
       preferences: [MOCK_BRIDGE_TYPE],
     };
 
@@ -1733,7 +1821,7 @@ describe('Reserve Amount Functionality', () => {
       asset: MOCK_ASSET_ERC20,
       maximum: '10000000000000000000', // 10 tokens
       reserve: '25000000000000000000', // 25 tokens reserve (more than current balance)
-      slippages: [0.01],
+      slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
       preferences: [MOCK_BRIDGE_TYPE],
     };
 
@@ -1767,7 +1855,7 @@ describe('Reserve Amount Functionality', () => {
       asset: MOCK_ASSET_ERC20,
       maximum: '10000000000000000000', // 10 tokens
       // No reserve field
-      slippages: [0.01],
+      slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
       preferences: [MOCK_BRIDGE_TYPE],
     };
 
@@ -1817,7 +1905,7 @@ describe('Reserve Amount Functionality', () => {
       asset: MOCK_ASSET_ERC20,
       maximum: '10000000000000000000', // 10 tokens
       reserve: '5000000000000000000', // 5 tokens reserve
-      slippages: [100], // 1% slippage (100 basis points)
+      slippagesDbps: [1000], // 1% in decibasis points // 1% slippage (100 basis points)
       preferences: [MOCK_BRIDGE_TYPE],
     };
 
@@ -1860,9 +1948,6 @@ describe('Reserve Amount Functionality', () => {
 
 describe('Decimal Handling', () => {
   it('should handle USDC (6 decimals) correctly when comparing balances and calling adapters', async () => {
-    console.log('[TEST] Setting up test environment...');
-    console.log('[TEST] Test environment setup complete');
-
     // Setup stubs for this test
     const getAvailableBalanceLessEarmarksStub = stub(onDemand, 'getAvailableBalanceLessEarmarks').resolves(
       BigInt('1000000000000000000'),
@@ -1902,7 +1987,7 @@ describe('Decimal Handling', () => {
       asset: MOCK_USDC_ADDRESS,
       maximum: '1000000000000000000', // 1 USDC in 18 decimal format
       reserve: '47000000000000000000', // 47 USDC in 18 decimal format
-      slippages: [50],
+      slippagesDbps: [500], // 0.5% in decibasis points
       preferences: [SupportedBridge.Binance],
     };
 
@@ -2047,7 +2132,7 @@ describe('Decimal Handling', () => {
             destination: 10,
             asset: MOCK_USDC_ADDRESS,
             maximum: '1000000000000000000', // 1 USDC in 18 decimal format
-            slippages: [50],
+            slippagesDbps: [500], // 0.5% in decibasis points
             preferences: [SupportedBridge.Binance],
           },
         ],

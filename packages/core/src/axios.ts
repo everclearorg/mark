@@ -3,6 +3,15 @@ import { Agent } from 'https';
 import { Agent as HttpAgent } from 'http';
 import { AxiosQueryError } from './errors';
 
+interface CleanedError extends Record<string, unknown> {
+  message: string;
+  status?: number;
+  statusText?: string;
+  url?: string;
+  method?: string;
+  data?: unknown;
+}
+
 // Singleton axios instance with connection pooling
 let axiosInstance: AxiosInstance | null = null;
 
@@ -92,14 +101,14 @@ export const axiosPost = async <
     }
     await delay(retryDelay);
   }
-  
+
   // Create a cleaner error message for logging
-  const errorMessage = axios.isAxiosError(lastError) || (lastError && typeof lastError === 'object' && 'status' in lastError)
-    ? `HTTP ${(lastError as any).status || 'unknown'} error from ${(lastError as any).url || url}`
-    : 'Request failed';
-  
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  throw new AxiosQueryError(`AxiosQueryError Post: ${errorMessage}`, lastError as any);
+  const errorMessage =
+    axios.isAxiosError(lastError) || (lastError && typeof lastError === 'object' && 'status' in lastError)
+      ? `HTTP ${(lastError as CleanedError).status || 'unknown'} error from ${(lastError as CleanedError).url || url}`
+      : 'Request failed';
+
+  throw new AxiosQueryError(`AxiosQueryError Post: ${errorMessage}`, lastError as CleanedError);
 };
 
 export const axiosGet = async <
@@ -135,12 +144,12 @@ export const axiosGet = async <
     }
     await delay(retryDelay);
   }
-  
+
   // Create a cleaner error message for logging
-  const errorMessage = axios.isAxiosError(lastError) || (lastError && typeof lastError === 'object' && 'status' in lastError)
-    ? `HTTP ${(lastError as any).status || 'unknown'} error from ${(lastError as any).url || url}`
-    : 'Request failed';
-  
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  throw new AxiosQueryError(`AxiosQueryError Get: ${errorMessage}`, lastError as any);
+  const errorMessage =
+    axios.isAxiosError(lastError) || (lastError && typeof lastError === 'object' && 'status' in lastError)
+      ? `HTTP ${(lastError as CleanedError).status || 'unknown'} error from ${(lastError as CleanedError).url || url}`
+      : 'Request failed';
+
+  throw new AxiosQueryError(`AxiosQueryError Get: ${errorMessage}`, lastError as CleanedError);
 };

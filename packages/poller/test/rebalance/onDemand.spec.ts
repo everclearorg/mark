@@ -210,7 +210,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           destination: 1,
           asset: MOCK_TICKER_HASH,
           maximum: '10000',
-          slippages: [500],
+          slippagesDbps: [5000], // 5% in decibasis points
           preferences: [SupportedBridge.CCTPV1],
           reserve: '0',
         },
@@ -220,7 +220,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           origin: 10,
           destination: 1,
           asset: MOCK_TICKER_HASH,
-          slippages: [500],
+          slippagesDbps: [5000], // 5% in decibasis points
           preferences: [SupportedBridge.CCTPV1],
           reserve: '0',
         },
@@ -278,12 +278,10 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
     it('should test mock setup', async () => {
       // Test parseAmountWithDecimals mock
       const result = (parseAmountWithDecimals as jest.Mock)('1000000', 6);
-      console.log('parseAmountWithDecimals result:', result?.toString());
       expect(result).toBe(BigInt('1000000000000000000')); // Should be 1e18
 
       // Test getMarkBalances mock
       const balances = await (getMarkBalances as jest.Mock)();
-      console.log('getMarkBalances result:', balances);
 
       // Test that balances are properly returned
       expect(balances).toBeDefined();
