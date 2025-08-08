@@ -184,8 +184,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
         maximum: '55000000000000000000000',
         reserve: '50000000000000000000000',
-        slippages: [-1000],
-        preferences: [SupportedBridge.Near],
+        slippages: [-1000, 0],
+        preferences: [SupportedBridge.Near, SupportedBridge.CCTPV2],
       },
       // polygon ethereum USDT
       {
@@ -204,8 +204,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
         maximum: '65000000000000000000000',
         reserve: '60000000000000000000000',
-        slippages: [30],
-        preferences: [SupportedBridge.Binance],
+        slippages: [30, 0],
+        preferences: [SupportedBridge.Binance, SupportedBridge.CCTPV2],
       },
       // optimism ethereum    USDT    5000000000000000000000 140
       {
@@ -243,8 +243,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
         maximum: '65000000000000000000000',
         reserve: '60000000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        slippages: [-1000, 30, 0],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance, SupportedBridge.CCTPV2],
       },
       // arbitrum ethereum    USDC
       {
@@ -253,8 +253,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
         maximum: '65000000000000000000000',
         reserve: '60000000000000000000000',
-        slippages: [-1000, 30],
-        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+        slippages: [-1000, 30, 0],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance, SupportedBridge.CCTPV2],
       },
       // arbitrum ethereum    USDT
       {
@@ -272,18 +272,36 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff',
         maximum: '10000000000000000000000',
-        slippages: [140],
-        preferences: [SupportedBridge.Across],
+        slippages: [0],
+        preferences: [SupportedBridge.CCTPV2],
       },
-      // // unichain    ethereum    USDC    20000000000000000000000 30
-      // {
-      //   origin: 130,
-      //   destination: 1,
-      //   asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
-      //   maximum: '20000000000000000000000',
-      //   slippages: [30],
-      //   preferences: [SupportedBridge.Across],
-      // },
+      // unichain    ethereum    USDC    20000000000000000000000 30
+      {
+        origin: 130,
+        destination: 1,
+        asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
+        maximum: '20000000000000000000000',
+        slippages: [0],
+        preferences: [SupportedBridge.CCTPV2],
+      },
+      // avalanche    ethereum    USDC    20000000000000000000000 30
+      {
+        origin: 43114,
+        destination: 1,
+        asset: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+        maximum: '20000000000000000000000',
+        slippages: [0],
+        preferences: [SupportedBridge.CCTPV2],
+      },
+      // sonic    ethereum    USDC    20000000000000000000000 30
+      {
+        origin: 146,
+        destination: 1,
+        asset: '0x29219dd400f2Bf60E5a23d13Be72B486D4038894',
+        maximum: '20000000000000000000000',
+        slippages: [0],
+        preferences: [SupportedBridge.CCTPV2],
+      },
       // // zksync    ethereum    USDC    10000000000000000000000 30
       // {
       //   origin: 324,
@@ -310,8 +328,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61',
         maximum: '75000000000000000000000',
         reserve: '70000000000000000000000',
-        slippages: [-1000],
-        preferences: [SupportedBridge.Near],
+        slippages: [-1000, 0],
+        preferences: [SupportedBridge.Near, SupportedBridge.CCTPV2],
       },
       // solana ethereum USDT
       {
