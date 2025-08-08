@@ -645,9 +645,9 @@ export const sendTvmIntents = async (
     // Get transaction data for the first intent to use for approval check
     const firstIntent = intents[0];
     // API call to get txdata for the newOrder call
-    // const feeAdapterTxData = await everclear.tronCreateNewIntent(
-    //   intents as (NewIntentParams | NewIntentWithPermit2Params)[],
-    // );
+    const feeAdapterTxData = await everclear.tronCreateNewIntent(
+      firstIntent as NewIntentParams | NewIntentWithPermit2Params,
+    );
 
     // Get total amount needed across all intents
     const totalAmount = intents.reduce((sum, intent) => {
@@ -655,12 +655,12 @@ export const sendTvmIntents = async (
     }, BigInt(0));
 
     // Get the spender address from the deployment config for approvals
-    // const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
-    let spokeAddress = chainConfig.deployments?.everclear;
-    if (!spokeAddress) {
-      throw new Error(`Everclear deployment not found for chain ${originChainId}`);
-    }
-    const spenderForAllowance = `0x${TronWeb.address.toHex(spokeAddress).slice(2)}` as `0x${string}`;
+    const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
+    // let spokeAddress = chainConfig.deployments?.everclear;
+    // if (!spokeAddress) {
+    //   throw new Error(`Everclear deployment not found for chain ${originChainId}`);
+    // }
+    // const spenderForAllowance = `0x${TronWeb.address.toHex(spokeAddress).slice(2)}` as `0x${string}`;
     const tronAddress = addresses[originChainId];
     const ownerForAllowance = getActualOwner(originWalletConfig, tronAddress);
 
@@ -805,9 +805,9 @@ export const sendTvmIntents = async (
       }
 
       // API call to get txdata for this single intent
-      const feeAdapterTxData = await everclear.tronCreateNewIntent(
-        intent as NewIntentParams | NewIntentWithPermit2Params,
-      );
+      // const feeAdapterTxData = await everclear.tronCreateNewIntent(
+      //   intent as NewIntentParams | NewIntentWithPermit2Params,
+      // );
 
       logger.info('Submitting create intent transaction for Tron', {
         invoiceId,
