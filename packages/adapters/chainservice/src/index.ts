@@ -106,6 +106,10 @@ export class ChainService {
     return this.txService.getBalance(chain, owner, asset === constants.AddressZero ? undefined : asset);
   }
 
+  async readTx(transaction: { to: string; data: string; domain: number; funcSig: string }, blockTag?: string) {
+    return this.txService.readTx(transaction, blockTag || 'latest');
+  }
+
   isAssetSupported(chainId: string, assetAddress: string): boolean {
     const chainConfig = this.config.chains[chainId];
     if (!chainConfig) return false;

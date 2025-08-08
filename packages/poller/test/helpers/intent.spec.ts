@@ -42,7 +42,6 @@ const createMockTransactionReceipt = (transactionHash: string, intentId: string,
 
 describe('sendIntents', () => {
     let mockDeps: SinonStubbedInstance<MarkAdapters>;
-    let getERC20ContractStub: SinonStub;
 
     const invoiceId = '0xmockinvoice';
 
@@ -70,7 +69,8 @@ describe('sendIntents', () => {
                 getMinAmounts: stub(),
             }),
             chainService: createStubInstance(ChainService, {
-                submitAndMonitor: stub()
+                submitAndMonitor: stub(),
+                readTx: stub(),
             }),
             logger: createStubInstance(Logger),
             web3Signer: createStubInstance(Wallet, {
@@ -81,8 +81,6 @@ describe('sendIntents', () => {
             rebalance: createStubInstance(RebalanceAdapter),
             prometheus: createStubInstance(PrometheusAdapter),
         };
-
-        getERC20ContractStub = stub(contractHelpers, 'getERC20Contract');
     });
 
     afterEach(() => {
@@ -114,14 +112,7 @@ describe('sendIntents', () => {
             chainId: 1,
         });
 
-        const mockTokenContract = {
-            address: '0xtoken1',
-            read: {
-                allowance: stub().rejects(new Error('Allowance check failed')),
-            },
-        } as unknown as GetContractReturnType;
-
-        getERC20ContractStub.resolves(mockTokenContract as any);
+        (mockDeps.chainService.readTx as SinonStub).rejects(new Error('Allowance check failed'));
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
@@ -146,14 +137,9 @@ describe('sendIntents', () => {
             chainId: 1,
         });
 
-        const mockTokenContract = {
-            address: '0xtoken1',
-            read: {
-                allowance: stub().resolves(BigInt(0)), // Zero allowance to trigger approval
-            },
-        } as unknown as GetContractReturnType;
-
-        getERC20ContractStub.resolves(mockTokenContract as any);
+        // Mock the encoded allowance data for 500n allowance (insufficient)
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000001f4'; // 500n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
         (mockDeps.chainService.submitAndMonitor as SinonStub).rejects(new Error('Approval failed'));
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
@@ -179,15 +165,12 @@ describe('sendIntents', () => {
             chainId: 1,
         });
 
-        const mockTokenContract = {
-            address: '0xtoken1',
-            read: {
-                allowance: stub().resolves(BigInt(2000)), // Sufficient allowance
-            },
-        } as unknown as GetContractReturnType;
-
-        getERC20ContractStub.resolves(mockTokenContract as any);
-        (mockDeps.chainService.submitAndMonitor as SinonStub).rejects(new Error('Intent transaction failed'));
+        // Mock the encoded allowance data for 500n allowance (insufficient)
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000001f4'; // 500n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
+        (mockDeps.chainService.submitAndMonitor as SinonStub)
+            .onFirstCall().resolves(createMockTransactionReceipt('0xapprovalTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order'))
+            .onSecondCall().rejects(new Error('Intent transaction failed'));
 
         const intentsArray = Array.from(batch.values()).flatMap((assetMap) => Array.from(assetMap.values()));
 
@@ -221,14 +204,9 @@ describe('sendIntents', () => {
             chainId: 1,
         });
 
-        const mockTokenContract = {
-            address: '0xtoken1',
-            read: {
-                allowance: stub().resolves(BigInt(2000)), // More than required
-            },
-        } as unknown as GetContractReturnType;
-
-        getERC20ContractStub.resolves(mockTokenContract as any);
+        // Mock the encoded allowance data for 2000n allowance (sufficient)
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000007d0'; // 2000n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
             createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order')
         );
@@ -263,14 +241,9 @@ describe('sendIntents', () => {
             chainId: 1,
         });
 
-        const mockTokenContract = {
-            address: '0xtoken1',
-            read: {
-                allowance: stub().resolves(BigInt(500)), // Less than required
-            },
-        } as unknown as GetContractReturnType;
-
-        getERC20ContractStub.resolves(mockTokenContract as any);
+        // Mock the encoded allowance data for 500n allowance (insufficient)
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000001f4'; // 500n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
         (mockDeps.chainService.submitAndMonitor as SinonStub)
             .onFirstCall().resolves(createMockTransactionReceipt('0xapprovalTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order'))
             .onSecondCall().resolves(createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order'));
@@ -300,14 +273,9 @@ describe('sendIntents', () => {
             chainId: 1,
         });
 
-        const mockTokenContract = {
-            address: '0xtoken1',
-            read: {
-                allowance: stub().resolves(BigInt(2000)), // More than required
-            },
-        } as unknown as GetContractReturnType;
-
-        getERC20ContractStub.resolves(mockTokenContract as any);
+        // Mock the encoded allowance data for 2000n allowance (sufficient)
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000007d0'; // 2000n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
             createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order')
         );
@@ -352,15 +320,9 @@ describe('sendIntents', () => {
             chainId: '1',
         });
 
-        // Mock USDT contract with existing non-zero allowance
-        const mockUSDTContract = {
-            address: USDT_ADDRESS,
-            read: {
-                allowance: stub().resolves(BigInt(500000)),
-            },
-        } as unknown as GetContractReturnType;
-
-        getERC20ContractStub.resolves(mockUSDTContract as any);
+        // Mock the encoded allowance data for 500000n allowance (non-zero)
+        const encodedAllowance = '0x000000000000000000000000000000000000000000000000000000000007a120'; // 500000n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
 
         (mockDeps.chainService.submitAndMonitor as SinonStub)
             .onFirstCall().resolves(createMockTransactionReceipt('0xzeroTx', '0x0000000000000000000000000000000000000000000000000000000000000001'))  // Zero allowance tx
@@ -464,7 +426,7 @@ describe('sendIntents', () => {
         // Set up createNewIntent to handle the batch call
         const createNewIntentStub = mockDeps.everclear.createNewIntent as SinonStub;
         createNewIntentStub.resolves({
-            to: '0xspoke1',
+            to: '0x1234567890123456789012345678901234567890',
             data: '0xdata1',
             chainId: '1',
             from: mockConfig.ownAddress,
@@ -477,14 +439,9 @@ describe('sendIntents', () => {
             }
         });
 
-        const mockTokenContract = {
-            address: '0xtoken1',
-            read: {
-                allowance: stub().resolves(BigInt(5000)), // Sufficient allowance for both
-            },
-        } as unknown as GetContractReturnType;
-
-        getERC20ContractStub.resolves(mockTokenContract as any);
+        // Mock the encoded allowance data for 5000n allowance (sufficient)
+        const encodedAllowance = '0x0000000000000000000000000000000000000000000000000000000000001388'; // 5000n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
 
         // Mock transaction response with both intent IDs in the OrderCreated event
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
@@ -506,14 +463,9 @@ describe('sendIntents', () => {
                 chainId: 1,
             });
 
-            const mockTokenContract = {
-                address: '0xtoken1',
-                read: {
-                    allowance: stub().resolves(BigInt(2000)), // Sufficient allowance
-                },
-            } as unknown as GetContractReturnType;
-
-            getERC20ContractStub.resolves(mockTokenContract as any);
+            // Mock the encoded allowance data for 2000n allowance (sufficient)
+            const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000007d0'; // 2000n in hex
+            (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
             (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(
                 createMockTransactionReceipt('0xintentTx', '0x0000000000000000000000000000000000000000000000000000000000000000', 'order')
             );

@@ -7,7 +7,7 @@ import {
   WalletType,
 } from '@mark/core';
 import { getERC20Contract } from './contracts';
-import { decodeEventLog, encodeFunctionData, erc20Abi, Hex } from 'viem';
+import { decodeEventLog, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
   generatePermit2Nonce,
@@ -645,9 +645,9 @@ export const sendTvmIntents = async (
     // Get transaction data for the first intent to use for approval check
     const firstIntent = intents[0];
     // API call to get txdata for the newOrder call
-    // const feeAdapterTxData = await everclear.tronCreateNewIntent(
-    //   intents as (NewIntentParams | NewIntentWithPermit2Params)[],
-    // );
+    const feeAdapterTxData = await everclear.tronCreateNewIntent(
+      firstIntent as NewIntentParams | NewIntentWithPermit2Params,
+    );
 
     // Get total amount needed across all intents
     const totalAmount = intents.reduce((sum, intent) => {
@@ -655,12 +655,12 @@ export const sendTvmIntents = async (
     }, BigInt(0));
 
     // Get the spender address from the deployment config for approvals
-    // const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
-    let spokeAddress = chainConfig.deployments?.everclear;
-    if (!spokeAddress) {
-      throw new Error(`Everclear deployment not found for chain ${originChainId}`);
-    }
-    const spenderForAllowance = `0x${TronWeb.address.toHex(spokeAddress).slice(2)}` as `0x${string}`;
+    const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
+    // let spokeAddress = chainConfig.deployments?.everclear;
+    // if (!spokeAddress) {
+    //   throw new Error(`Everclear deployment not found for chain ${originChainId}`);
+    // }
+    // const spenderForAllowance = `0x${TronWeb.address.toHex(spokeAddress).slice(2)}` as `0x${string}`;
     const tronAddress = addresses[originChainId];
     const ownerForAllowance = getActualOwner(originWalletConfig, tronAddress);
 
@@ -675,84 +675,33 @@ export const sendTvmIntents = async (
       walletType: originWalletConfig.walletType,
     });
 
-    // Handle TRC20 approval
-    const isUSDT = firstIntent.inputAsset === 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-    const approveFunctionSig = 'approve(address,uint256)';
-    const approveData = encodeFunctionData({
-      abi: erc20Abi,
-      functionName: 'approve',
-      args: [spenderForAllowance, totalAmount],
-    });
-
-    if (isUSDT) {
-      logger.info('USDT detected, may need zero approval first', {
-        requestId,
-        invoiceId,
-        tokenAddress: firstIntent.inputAsset,
-      });
-
-      const zeroApprovalData = encodeFunctionData({
-        abi: erc20Abi,
-        functionName: 'approve',
-        args: [spenderForAllowance, 0n],
-      });
-
-      try {
-        const zeroApprovalResult = await submitTransactionWithLogging({
-          chainService,
-          logger,
-          chainId: originChainId,
-          txRequest: {
-            chainId: +originChainId,
-            to: firstIntent.inputAsset,
-            data: zeroApprovalData,
-            value: '0',
-            from: tronAddress,
-            funcSig: approveFunctionSig,
-          },
-          zodiacConfig: originWalletConfig,
-          context: { requestId, invoiceId, transactionType: 'trc20-zero-approval' },
-        });
-
-        logger.info('Zero approval for USDT completed', {
-          requestId,
-          invoiceId,
-          txHash: zeroApprovalResult.hash,
-        });
-      } catch (error) {
-        logger.debug('Zero approval failed or not needed', { error });
-      }
-    }
-
     try {
-      const approvalResult = await submitTransactionWithLogging({
+      // Handle TRC20 approval using the general purpose helper
+      const approvalResult = await checkAndApproveERC20({
+        config,
         chainService,
         logger,
+        prometheus,
         chainId: originChainId,
-        txRequest: {
-          chainId: +originChainId,
-          to: firstIntent.inputAsset,
-          data: approveData,
-          value: '0',
-          from: tronAddress,
-          funcSig: approveFunctionSig,
-        },
+        tokenAddress: firstIntent.inputAsset,
+        spenderAddress: spenderForAllowance,
+        amount: totalAmount,
+        owner: ownerForAllowance,
         zodiacConfig: originWalletConfig,
-        context: { requestId, invoiceId, transactionType: 'trc20-approval' },
+        context: { requestId, invoiceId },
       });
 
-      logger.info('Approval completed for intent batch', {
-        requestId,
-        invoiceId,
-        chainId: originChainId,
-        approvalTxHash: approvalResult.hash,
-        hadZeroApproval: isUSDT,
-        asset: firstIntent.inputAsset,
-        amount: totalAmount.toString(),
-      });
-
-      if (prometheus) {
-        prometheus.updateGasSpent(originChainId, TransactionReason.Approval, BigInt(0));
+      if (approvalResult.wasRequired) {
+        logger.info('Approval completed for Tron intent batch', {
+          requestId,
+          invoiceId,
+          chainId: originChainId,
+          approvalTxHash: approvalResult.transactionHash,
+          hadZeroApproval: approvalResult.hadZeroApproval,
+          zeroApprovalTxHash: approvalResult.zeroApprovalTxHash,
+          asset: firstIntent.inputAsset,
+          amount: totalAmount.toString(),
+        });
       }
     } catch (error) {
       logger.error('Failed to approve TRC20 on Tron', {
@@ -805,9 +754,9 @@ export const sendTvmIntents = async (
       }
 
       // API call to get txdata for this single intent
-      const feeAdapterTxData = await everclear.tronCreateNewIntent(
-        intent as NewIntentParams | NewIntentWithPermit2Params,
-      );
+      // const feeAdapterTxData = await everclear.tronCreateNewIntent(
+      //   intent as NewIntentParams | NewIntentWithPermit2Params,
+      // );
 
       logger.info('Submitting create intent transaction for Tron', {
         invoiceId,

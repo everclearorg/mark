@@ -1,5 +1,4 @@
-import { encodeFunctionData, erc20Abi } from 'viem';
-import { getERC20Contract } from './contracts';
+import { encodeFunctionData, erc20Abi, decodeAbiParameters } from 'viem';
 import { MarkConfiguration, LoggingContext, WalletConfig } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
@@ -32,15 +31,29 @@ export interface ApprovalResult {
  * Checks current allowance for a token
  */
 export async function checkTokenAllowance(
-  config: MarkConfiguration,
+  chainService: ChainService,
   chainId: string,
   tokenAddress: string,
   owner: string,
   spender: string,
 ): Promise<bigint> {
-  const tokenContract = await getERC20Contract(config, chainId, tokenAddress as `0x${string}`);
-  const allowance = await tokenContract.read.allowance([owner as `0x${string}`, spender as `0x${string}`]);
-  return allowance as bigint;
+  const encodedAllowance = await chainService.readTx({
+    to: tokenAddress,
+    data: encodeFunctionData({
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [owner as `0x${string}`, spender as `0x${string}`],
+    }),
+    domain: +chainId,
+    funcSig: 'allowance(address,address)',
+  });
+
+  const [allowance] = decodeAbiParameters(
+    [{ type: 'uint256', name: 'allowance' }],
+    encodedAllowance as `0x${string}`,
+  ) as [bigint];
+
+  return allowance;
 }
 
 /**
@@ -74,7 +87,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
   const result: ApprovalResult = { wasRequired: false };
 
   // Check current allowance
-  const currentAllowance = await checkTokenAllowance(config, chainId, tokenAddress, owner, spenderAddress);
+  const currentAllowance = await checkTokenAllowance(chainService, chainId, tokenAddress, owner, spenderAddress);
 
   logger.info('Current token allowance', {
     ...context,
