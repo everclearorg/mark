@@ -84,7 +84,6 @@ export interface KrakenAssetMapping {
   method: string;
   minWithdrawalAmount: string;
   withdrawalFee: string;
-  depositConfirmations: number;
   network: string;
 }
 

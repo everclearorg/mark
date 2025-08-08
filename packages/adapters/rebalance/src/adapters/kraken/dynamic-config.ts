@@ -178,9 +178,6 @@ export class DynamicAssetConfig {
       );
     }
 
-    // Get deposit confirmations based on chain
-    const depositConfirmations = this.getDepositConfirmations(chainId);
-
     // Find the withdraw method that matches our target chain
     const withdrawMethods = await this.client.getWithdrawMethods(krakenAsset);
     const withdrawMethod = await this.findMethodByChainId(withdrawMethods, chainId, assetInfo);
@@ -199,7 +196,6 @@ export class DynamicAssetConfig {
       method: depositMethod.method,
       minWithdrawalAmount: parseUnits(withdrawMethod.minimum, assetInfo.decimals).toString(),
       withdrawalFee: parseUnits(withdrawMethod.fee.fee, assetInfo.decimals).toString(),
-      depositConfirmations,
     };
   }
 
@@ -257,23 +253,5 @@ export class DynamicAssetConfig {
       return matched[0];
     }
     return matched.find((m) => ((m as KrakenWithdrawMethod).network ?? m.method).toLowerCase().includes(symbol));
-  }
-
-  /**
-   * Get deposit confirmations based on chain ID
-   * @param chainId - Chain ID
-   * @returns Number of required confirmations
-   * // FIXME: deposit confirmation fix / pulled dynamically
-   */
-  private getDepositConfirmations(chainId: number): number {
-    const confirmations: Record<number, number> = {
-      1: 20, // Ethereum
-      137: 30, // Polygon
-      42161: 12, // Arbitrum
-      10: 12, // Optimism
-      8453: 12, // Base
-    };
-
-    return confirmations[chainId] || 20; // Default to 20 confirmations
   }
 }

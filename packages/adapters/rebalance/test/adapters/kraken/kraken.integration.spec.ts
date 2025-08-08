@@ -497,8 +497,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         krakenSymbol: 'ETH',
         method: expect.stringMatching(/ether/i),
         minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
-        depositConfirmations: expect.any(Number),
+        withdrawalFee: expect.any(String)
       });
 
       console.log(`✅ ETH mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
@@ -514,7 +513,6 @@ describe('DynamicAssetConfig Integration Tests', () => {
         method: expect.stringMatching(/ether/i),
         minWithdrawalAmount: expect.any(String),
         withdrawalFee: expect.any(String),
-        depositConfirmations: expect.any(Number),
       });
 
       console.log(`✅ WETH mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
@@ -530,7 +528,6 @@ describe('DynamicAssetConfig Integration Tests', () => {
         method: expect.stringMatching(/ether/i),
         minWithdrawalAmount: expect.any(String),
         withdrawalFee: expect.any(String),
-        depositConfirmations: expect.any(Number),
       });
 
       console.log(`✅ USDC mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
@@ -546,7 +543,6 @@ describe('DynamicAssetConfig Integration Tests', () => {
         method: expect.stringMatching(/polygon/i),
         minWithdrawalAmount: expect.any(String),
         withdrawalFee: expect.any(String),
-        depositConfirmations: expect.any(Number),
       });
 
       console.log(`✅ ETH mapping on Polygon: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
@@ -562,7 +558,6 @@ describe('DynamicAssetConfig Integration Tests', () => {
         method: expect.stringMatching(/optimism/i),
         minWithdrawalAmount: expect.any(String),
         withdrawalFee: expect.any(String),
-        depositConfirmations: expect.any(Number),
       });
 
       console.log(`✅ USDC mapping on Optimism: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
