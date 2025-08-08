@@ -5,6 +5,7 @@ import {
   cleanupHttpConnections,
   logFileDescriptorUsage,
   shouldExitForFileDescriptors,
+  TRON_CHAINID,
 } from '@mark/core';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService, EthWallet } from '@mark/chainservice';
@@ -17,6 +18,7 @@ import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
+import * as process from 'node:process';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
@@ -49,6 +51,15 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
   const web3Signer = config.web3SignerUrl.startsWith('http')
     ? new Web3Signer(config.web3SignerUrl)
     : new EthWallet(config.web3SignerUrl);
+
+  // TODO: update chainservice to automatically get Tron private key from config.
+  const tronPrivateKey = config.chains[TRON_CHAINID]?.privateKey;
+  if (tronPrivateKey) {
+    logger.info('Using Tron private key from configuration');
+    process.env.TRON_PRIVATE_KEY = tronPrivateKey;
+  } else {
+    logger.warn('Tron private is not in configuration');
+  }
 
   const chainService = new ChainService(
     {
