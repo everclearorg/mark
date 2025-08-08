@@ -272,8 +272,8 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff',
         maximum: '10000000000000000000000',
-        slippages: [0],
-        preferences: [SupportedBridge.CCTPV2],
+        slippages: [30],
+        preferences: [SupportedBridge.Across],
       },
       // unichain    ethereum    USDC    20000000000000000000000 30
       {
