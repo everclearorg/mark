@@ -675,84 +675,33 @@ export const sendTvmIntents = async (
       walletType: originWalletConfig.walletType,
     });
 
-    // Handle TRC20 approval
-    const isUSDT = firstIntent.inputAsset === 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-    const approveFunctionSig = 'approve(address,uint256)';
-    const approveData = encodeFunctionData({
-      abi: erc20Abi,
-      functionName: 'approve',
-      args: [spenderForAllowance, totalAmount],
-    });
-
-    if (isUSDT) {
-      logger.info('USDT detected, may need zero approval first', {
-        requestId,
-        invoiceId,
-        tokenAddress: firstIntent.inputAsset,
-      });
-
-      const zeroApprovalData = encodeFunctionData({
-        abi: erc20Abi,
-        functionName: 'approve',
-        args: [spenderForAllowance, 0n],
-      });
-
-      try {
-        const zeroApprovalResult = await submitTransactionWithLogging({
-          chainService,
-          logger,
-          chainId: originChainId,
-          txRequest: {
-            chainId: +originChainId,
-            to: firstIntent.inputAsset,
-            data: zeroApprovalData,
-            value: '0',
-            from: tronAddress,
-            funcSig: approveFunctionSig,
-          },
-          zodiacConfig: originWalletConfig,
-          context: { requestId, invoiceId, transactionType: 'trc20-zero-approval' },
-        });
-
-        logger.info('Zero approval for USDT completed', {
-          requestId,
-          invoiceId,
-          txHash: zeroApprovalResult.hash,
-        });
-      } catch (error) {
-        logger.debug('Zero approval failed or not needed', { error });
-      }
-    }
-
     try {
-      const approvalResult = await submitTransactionWithLogging({
+      // Handle TRC20 approval using the general purpose helper
+      const approvalResult = await checkAndApproveERC20({
+        config,
         chainService,
         logger,
+        prometheus,
         chainId: originChainId,
-        txRequest: {
-          chainId: +originChainId,
-          to: firstIntent.inputAsset,
-          data: approveData,
-          value: '0',
-          from: tronAddress,
-          funcSig: approveFunctionSig,
-        },
+        tokenAddress: firstIntent.inputAsset,
+        spenderAddress: spenderForAllowance,
+        amount: totalAmount,
+        owner: ownerForAllowance,
         zodiacConfig: originWalletConfig,
-        context: { requestId, invoiceId, transactionType: 'trc20-approval' },
+        context: { requestId, invoiceId },
       });
 
-      logger.info('Approval completed for intent batch', {
-        requestId,
-        invoiceId,
-        chainId: originChainId,
-        approvalTxHash: approvalResult.hash,
-        hadZeroApproval: isUSDT,
-        asset: firstIntent.inputAsset,
-        amount: totalAmount.toString(),
-      });
-
-      if (prometheus) {
-        prometheus.updateGasSpent(originChainId, TransactionReason.Approval, BigInt(0));
+      if (approvalResult.wasRequired) {
+        logger.info('Approval completed for Tron intent batch', {
+          requestId,
+          invoiceId,
+          chainId: originChainId,
+          approvalTxHash: approvalResult.transactionHash,
+          hadZeroApproval: approvalResult.hadZeroApproval,
+          zeroApprovalTxHash: approvalResult.zeroApprovalTxHash,
+          asset: firstIntent.inputAsset,
+          amount: totalAmount.toString(),
+        });
       }
     } catch (error) {
       logger.error('Failed to approve TRC20 on Tron', {

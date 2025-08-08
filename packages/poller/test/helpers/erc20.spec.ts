@@ -10,7 +10,6 @@ import { MarkConfiguration, WalletConfig, WalletType } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { PrometheusAdapter, TransactionReason } from '@mark/prometheus';
-import * as contractsModule from '../../src/helpers/contracts';
 import * as transactionsModule from '../../src/helpers/transactions';
 import { providers } from 'ethers';
 
@@ -19,7 +18,6 @@ describe('ERC20 Helper Functions', () => {
     let mockChainService: SinonStubbedInstance<ChainService>;
     let mockLogger: SinonStubbedInstance<Logger>;
     let mockPrometheus: SinonStubbedInstance<PrometheusAdapter>;
-    let getERC20ContractStub: sinon.SinonStub;
     let submitTransactionStub: sinon.SinonStub;
 
     const CHAIN_ID = '1';
@@ -75,16 +73,7 @@ describe('ERC20 Helper Functions', () => {
         mockLogger = createStubInstance(Logger);
         mockPrometheus = createStubInstance(PrometheusAdapter);
 
-        getERC20ContractStub = stub(contractsModule, 'getERC20Contract');
         submitTransactionStub = stub(transactionsModule, 'submitTransactionWithLogging');
-
-        // Default mock contract behavior
-        const mockContract = {
-            read: {
-                allowance: stub().resolves(0n),
-            },
-        };
-        getERC20ContractStub.resolves(mockContract);
 
         // Default transaction submission behavior
         submitTransactionStub.resolves({
@@ -94,22 +83,20 @@ describe('ERC20 Helper Functions', () => {
     });
 
     afterEach(() => {
-        getERC20ContractStub.restore();
         submitTransactionStub.restore();
     });
 
     describe('checkTokenAllowance', () => {
         it('should return current allowance from token contract', async () => {
             const expectedAllowance = 1000n;
-            const mockContract = {
-                read: {
-                    allowance: stub().resolves(expectedAllowance),
-                },
-            };
-            getERC20ContractStub.resolves(mockContract);
+            
+            // Mock the encoded allowance data that will decode to 1000n
+            const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000003e8'; // 1000n in hex
+            
+            mockChainService.readTx.resolves(encodedAllowance);
 
             const result = await checkTokenAllowance(
-                mockConfig,
+                mockChainService,
                 CHAIN_ID,
                 TOKEN_ADDRESS,
                 OWNER_ADDRESS,
@@ -117,8 +104,11 @@ describe('ERC20 Helper Functions', () => {
             );
 
             expect(result).to.equal(expectedAllowance);
-            expect(getERC20ContractStub.calledOnceWith(mockConfig, CHAIN_ID, TOKEN_ADDRESS)).to.be.true;
-            expect(mockContract.read.allowance.calledOnceWith([OWNER_ADDRESS, SPENDER_ADDRESS])).to.be.true;
+            expect(mockChainService.readTx.calledOnce).to.be.true;
+            const readTxCall = mockChainService.readTx.firstCall;
+            expect(readTxCall.args[0].to).to.equal(TOKEN_ADDRESS);
+            expect(readTxCall.args[0].domain).to.equal(+CHAIN_ID);
+            expect(readTxCall.args[0].funcSig).to.equal('allowance(address,address)');
         });
     });
 
@@ -177,12 +167,9 @@ describe('ERC20 Helper Functions', () => {
 
         describe('sufficient allowance scenarios', () => {
             it('should return early when allowance is greater than required amount', async () => {
-                const mockContract = {
-                    read: {
-                        allowance: stub().resolves(2000n), // More than required 1000n
-                    },
-                };
-                getERC20ContractStub.resolves(mockContract);
+                // Mock the encoded allowance data for 2000n allowance
+                const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000007d0'; // 2000n in hex
+                mockChainService.readTx.resolves(encodedAllowance);
 
                 const result = await checkAndApproveERC20(baseParams);
 
@@ -192,12 +179,9 @@ describe('ERC20 Helper Functions', () => {
             });
 
             it('should return early when allowance equals required amount', async () => {
-                const mockContract = {
-                    read: {
-                        allowance: stub().resolves(1000n), // Exactly the required amount
-                    },
-                };
-                getERC20ContractStub.resolves(mockContract);
+                // Mock the encoded allowance data for 1000n allowance
+                const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000003e8'; // 1000n in hex
+                mockChainService.readTx.resolves(encodedAllowance);
 
                 const result = await checkAndApproveERC20(baseParams);
 
@@ -208,12 +192,9 @@ describe('ERC20 Helper Functions', () => {
 
         describe('insufficient allowance - non-USDT token', () => {
             beforeEach(() => {
-                const mockContract = {
-                    read: {
-                        allowance: stub().resolves(500n), // Less than required 1000n
-                    },
-                };
-                getERC20ContractStub.resolves(mockContract);
+                // Mock the encoded allowance data for 500n allowance
+                const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000001f4'; // 500n in hex
+                mockChainService.readTx.resolves(encodedAllowance);
             });
 
             it('should set approval when allowance is insufficient', async () => {
@@ -264,12 +245,9 @@ describe('ERC20 Helper Functions', () => {
 
         describe('insufficient allowance - USDT token with zero current allowance', () => {
             beforeEach(() => {
-                const mockContract = {
-                    read: {
-                        allowance: stub().resolves(0n), // Zero current allowance
-                    },
-                };
-                getERC20ContractStub.resolves(mockContract);
+                // Mock the encoded allowance data for 0n allowance
+                const encodedAllowance = '0x0000000000000000000000000000000000000000000000000000000000000000'; // 0n in hex
+                mockChainService.readTx.resolves(encodedAllowance);
             });
 
             it('should set approval directly when USDT has zero allowance', async () => {
@@ -290,12 +268,9 @@ describe('ERC20 Helper Functions', () => {
 
         describe('insufficient allowance - USDT token with non-zero current allowance', () => {
             beforeEach(() => {
-                const mockContract = {
-                    read: {
-                        allowance: stub().resolves(500n), // Non-zero allowance less than required
-                    },
-                };
-                getERC20ContractStub.resolves(mockContract);
+                // Mock the encoded allowance data for 500n allowance
+                const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000001f4'; // 500n in hex
+                mockChainService.readTx.resolves(encodedAllowance);
             });
 
             it('should set zero allowance first when USDT has non-zero allowance', async () => {
@@ -350,23 +325,15 @@ describe('ERC20 Helper Functions', () => {
         describe('error handling', () => {
             it('should propagate allowance check errors', async () => {
                 const error = new Error('Allowance check failed');
-                const mockContract = {
-                    read: {
-                        allowance: stub().rejects(error),
-                    },
-                };
-                getERC20ContractStub.resolves(mockContract);
+                mockChainService.readTx.rejects(error);
 
                 await expect(checkAndApproveERC20(baseParams)).to.be.rejectedWith('Allowance check failed');
             });
 
             it('should propagate transaction submission errors', async () => {
-                const mockContract = {
-                    read: {
-                        allowance: stub().resolves(0n), // Insufficient allowance
-                    },
-                };
-                getERC20ContractStub.resolves(mockContract);
+                // Mock the encoded allowance data for 0n allowance
+                const encodedAllowance = '0x0000000000000000000000000000000000000000000000000000000000000000'; // 0n in hex
+                mockChainService.readTx.resolves(encodedAllowance);
 
                 const error = new Error('Transaction submission failed');
                 submitTransactionStub.rejects(error);
@@ -376,7 +343,7 @@ describe('ERC20 Helper Functions', () => {
 
             it('should propagate contract creation errors', async () => {
                 const error = new Error('Contract creation failed');
-                getERC20ContractStub.rejects(error);
+                mockChainService.readTx.rejects(error);
 
                 await expect(checkAndApproveERC20(baseParams)).to.be.rejectedWith('Contract creation failed');
             });
