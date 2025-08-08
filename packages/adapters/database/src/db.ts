@@ -15,7 +15,6 @@ type earmarks_update = schema.earmarks.Updatable;
 type rebalance_operations_update = schema.rebalance_operations.Updatable;
 
 // Custom types not provided by Zapatos
-type WhereCondition<T> = Partial<T>;
 type JSONObject = Record<string, unknown>;
 
 let pool: Pool | null = null;
@@ -76,151 +75,6 @@ export async function withTransaction<T>(callback: (client: PoolClient) => Promi
     client.release();
   }
 }
-
-// Typed database operations
-export const database = {
-  earmarks: {
-    async select(where?: WhereCondition<earmarks>): Promise<earmarks[]> {
-      let query = 'SELECT * FROM earmarks';
-      const values: unknown[] = [];
-
-      if (where && typeof where === 'object') {
-        const conditions: string[] = [];
-        let paramCount = 1;
-
-        Object.entries(where).forEach(([key, value]) => {
-          if (value !== undefined) {
-            // Only quote camelCase identifiers, not simple lowercase ones
-            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
-            conditions.push(`${quotedKey} = $${paramCount}`);
-            values.push(value);
-            paramCount++;
-          }
-        });
-
-        if (conditions.length > 0) {
-          query += ' WHERE ' + conditions.join(' AND ');
-        }
-      }
-
-      return queryWithClient<earmarks>(query, values);
-    },
-
-    async insert(data: earmarks_insert): Promise<earmarks> {
-      const keys = Object.keys(data);
-      const values = Object.values(data);
-      const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-
-      const query = `
-        INSERT INTO earmarks (${keys.join(', ')})
-        VALUES (${placeholders})
-        RETURNING *
-      `;
-
-      const result = await queryWithClient<earmarks>(query, values);
-      return result[0];
-    },
-
-    async update(where: WhereCondition<earmarks>, data: earmarks_update): Promise<earmarks[]> {
-      const updateKeys = Object.keys(data);
-      const updateValues = Object.values(data);
-      let paramCount = 1;
-
-      const setClause = updateKeys
-        .map((key) => {
-          const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
-          return `${quotedKey} = $${paramCount++}`;
-        })
-        .join(', ');
-
-      let whereClause = '';
-      if (where && typeof where === 'object') {
-        const conditions: string[] = [];
-        Object.entries(where).forEach(([key, value]) => {
-          if (value !== undefined) {
-            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
-            conditions.push(`${quotedKey} = $${paramCount++}`);
-            updateValues.push(value);
-          }
-        });
-        whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
-      }
-
-      const query = `UPDATE earmarks SET ${setClause}${whereClause} RETURNING *`;
-      return queryWithClient<earmarks>(query, updateValues);
-    },
-
-    async delete(where: WhereCondition<earmarks>): Promise<earmarks[]> {
-      let query = 'DELETE FROM earmarks';
-      const values: unknown[] = [];
-
-      if (where && typeof where === 'object') {
-        const conditions: string[] = [];
-        let paramCount = 1;
-
-        Object.entries(where).forEach(([key, value]) => {
-          if (value !== undefined) {
-            // Only quote camelCase identifiers, not simple lowercase ones
-            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
-            conditions.push(`${quotedKey} = $${paramCount}`);
-            values.push(value);
-            paramCount++;
-          }
-        });
-
-        if (conditions.length > 0) {
-          query += ' WHERE ' + conditions.join(' AND ');
-        }
-      }
-
-      query += ' RETURNING *';
-      return queryWithClient<earmarks>(query, values);
-    },
-  },
-
-  rebalance_operations: {
-    async select(where?: WhereCondition<rebalance_operations>): Promise<rebalance_operations[]> {
-      let query = 'SELECT * FROM rebalance_operations';
-      const values: unknown[] = [];
-
-      if (where && typeof where === 'object') {
-        const conditions: string[] = [];
-        let paramCount = 1;
-
-        Object.entries(where).forEach(([key, value]) => {
-          if (value !== undefined) {
-            // Only quote camelCase identifiers, not simple lowercase ones
-            const quotedKey = /[A-Z]/.test(key) ? `"${key}"` : key;
-            conditions.push(`${quotedKey} = $${paramCount}`);
-            values.push(value);
-            paramCount++;
-          }
-        });
-
-        if (conditions.length > 0) {
-          query += ' WHERE ' + conditions.join(' AND ');
-        }
-      }
-
-      return queryWithClient<rebalance_operations>(query, values);
-    },
-
-    async insert(data: rebalance_operations_insert): Promise<rebalance_operations> {
-      const keys = Object.keys(data);
-      const values = Object.values(data);
-      const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-
-      const query = `
-        INSERT INTO rebalance_operations (${keys.join(', ')})
-        VALUES (${placeholders})
-        RETURNING *
-      `;
-
-      const result = await queryWithClient<rebalance_operations>(query, values);
-      return result[0];
-    },
-  },
-};
 
 // Core earmark operations with business logic
 export interface CreateEarmarkInput {
@@ -542,6 +396,3 @@ export type {
   earmarks_update,
   rebalance_operations_update,
 };
-
-// Export database operations as 'db' for shorter access
-export { database as db };
