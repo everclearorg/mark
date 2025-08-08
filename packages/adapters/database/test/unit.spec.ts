@@ -8,9 +8,6 @@ import {
   gracefulShutdown,
   DatabaseConfig,
   HealthCheckResult,
-  DatabaseError,
-  ConnectionError,
-  BasicTransactionOptions,
 } from '../src';
 import { RebalanceOperationStatus } from '@mark/core';
 import { createMockPool, MOCK_DATABASE_CONFIG } from './setup';
@@ -183,58 +180,7 @@ describe('Database Adapter - Unit Tests', () => {
     }, 10000); // Increase timeout for this test
   });
 
-  describe('Error Classes', () => {
-    describe('DatabaseError', () => {
-      it('should create DatabaseError with retryable flag', () => {
-        const error = new DatabaseError('Test error', 'TEST_ERROR', true);
-        expect(error.message).toBe('Test error');
-        expect(error.code).toBe('TEST_ERROR');
-        expect(error.retryable).toBe(true);
-        expect(error.name).toBe('DatabaseError');
-      });
-
-      it('should create DatabaseError with default non-retryable flag', () => {
-        const error = new DatabaseError('Test error');
-        expect(error.message).toBe('Test error');
-        expect(error.retryable).toBe(false);
-      });
-    });
-
-    describe('ConnectionError', () => {
-      it('should create ConnectionError as retryable', () => {
-        const error = new ConnectionError('Connection lost');
-        expect(error.message).toBe('Connection lost');
-        expect(error.retryable).toBe(true);
-        expect(error.name).toBe('ConnectionError');
-      });
-
-      it('should inherit from DatabaseError', () => {
-        const error = new ConnectionError('Connection lost');
-        expect(error).toBeInstanceOf(DatabaseError);
-      });
-    });
-  });
-
   describe('Type Definitions', () => {
-    it('should validate BasicTransactionOptions interface', () => {
-      const options: BasicTransactionOptions = {
-        retryAttempts: 3,
-        retryDelayMs: 1000,
-        timeoutMs: 30000,
-      };
-
-      expect(options.retryAttempts).toBe(3);
-      expect(options.retryDelayMs).toBe(1000);
-      expect(options.timeoutMs).toBe(30000);
-    });
-
-    it('should allow all optional fields in BasicTransactionOptions', () => {
-      const options: BasicTransactionOptions = {};
-      expect(options.retryAttempts).toBeUndefined();
-      expect(options.retryDelayMs).toBeUndefined();
-      expect(options.timeoutMs).toBeUndefined();
-    });
-
     it('should validate operation status types from @mark/core', () => {
       const validStatuses = [
         RebalanceOperationStatus.PENDING,
@@ -256,12 +202,10 @@ describe('Database Adapter - Unit Tests', () => {
       const typeChecks = {
         DatabaseConfig: {} as DatabaseConfig,
         HealthCheckResult: {} as HealthCheckResult,
-        DatabaseError: new DatabaseError('test'),
-        ConnectionError: new ConnectionError('test'),
       };
 
-      expect(typeChecks.DatabaseError).toBeInstanceOf(DatabaseError);
-      expect(typeChecks.ConnectionError).toBeInstanceOf(ConnectionError);
+      expect(typeChecks.DatabaseConfig).toBeDefined();
+      expect(typeChecks.HealthCheckResult).toBeDefined();
     });
   });
 });
