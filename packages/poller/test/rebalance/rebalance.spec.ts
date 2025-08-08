@@ -26,7 +26,7 @@ import {
 import { Logger } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
-import { RebalanceCache } from '@mark/cache';
+import { RebalanceCache, PurchaseCache } from '@mark/cache';
 import { RebalanceAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { zeroAddress, Hex, erc20Abi } from 'viem';
@@ -43,6 +43,7 @@ describe('rebalanceInventory', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
   let mockLogger: SinonStubbedInstance<Logger>;
   let mockRebalanceCache: SinonStubbedInstance<RebalanceCache>;
+  let mockPurchaseCache: SinonStubbedInstance<PurchaseCache>;
   let mockChainService: SinonStubbedInstance<ChainService>;
   let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
   let mockPrometheus: SinonStubbedInstance<PrometheusAdapter>;
@@ -116,6 +117,7 @@ describe('rebalanceInventory', () => {
 
     mockLogger = createStubInstance(Logger);
     mockRebalanceCache = createStubInstance(RebalanceCache);
+    mockPurchaseCache = createStubInstance(PurchaseCache);
     mockChainService = createStubInstance(ChainService);
     mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
     mockPrometheus = createStubInstance(PrometheusAdapter);
@@ -236,11 +238,11 @@ describe('rebalanceInventory', () => {
       startTime: Date.now(),
       logger: mockLogger,
       rebalanceCache: mockRebalanceCache,
+      purchaseCache: mockPurchaseCache,
       chainService: mockChainService,
       rebalance: mockRebalanceAdapter,
       prometheus: mockPrometheus,
       everclear: undefined,
-      purchaseCache: undefined,
       web3Signer: undefined,
       database: createDatabaseMock(),
     } as unknown as SinonStubbedInstance<ProcessingContext>;
@@ -248,6 +250,7 @@ describe('rebalanceInventory', () => {
     // Default Stubs
     mockRebalanceCache.isPaused.resolves(false); // Allow rebalancing to proceed
     mockRebalanceCache.addRebalances.resolves(); // Mock cache addition
+    mockPurchaseCache.isPaused.resolves(false); // Default: purchase cache not paused
     mockRebalanceAdapter.getAdapter.returns(
       mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>,
     );
@@ -361,7 +364,10 @@ describe('rebalanceInventory', () => {
     // No need to restore - handled in afterEach
   });
 
-  it('should execute callbacks first', async () => {
+  it('should execute callbacks when purchase cache is paused', async () => {
+    // Set purchase cache as paused
+    mockPurchaseCache.isPaused.resolves(true);
+
     // Ensure the test doesn't proceed with rebalancing logic by setting balance below maximum
     const balances = new Map<string, Map<string, bigint>>();
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('5000000000000000000')]])); // 5 tokens, below 10 token maximum
@@ -369,7 +375,25 @@ describe('rebalanceInventory', () => {
     getAvailableBalanceLessEarmarksStub.resolves(BigInt('5000000000000000000'));
 
     await rebalanceInventory(mockContext);
+
+    // Should execute callbacks when purchase cache is paused
     expect(executeDestinationCallbacksStub.calledOnceWith(mockContext)).toBe(true);
+  });
+
+  it('should NOT execute callbacks when purchase cache is not paused', async () => {
+    // Ensure purchase cache is not paused (default)
+    mockPurchaseCache.isPaused.resolves(false);
+
+    // Ensure the test doesn't proceed with rebalancing logic by setting balance below maximum
+    const balances = new Map<string, Map<string, bigint>>();
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('5000000000000000000')]])); // 5 tokens, below 10 token maximum
+    getMarkBalancesStub.resolves(balances);
+    getAvailableBalanceLessEarmarksStub.resolves(BigInt('5000000000000000000'));
+
+    await rebalanceInventory(mockContext);
+
+    // Should NOT execute callbacks when purchase cache is not paused
+    expect(executeDestinationCallbacksStub.called).toBe(false);
   });
 
   it('should return early if rebalance is paused', async () => {
@@ -1297,6 +1321,7 @@ describe('Zodiac Address Validation', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
   let mockLogger: SinonStubbedInstance<Logger>;
   let mockRebalanceCache: SinonStubbedInstance<RebalanceCache>;
+  let mockPurchaseCache: SinonStubbedInstance<PurchaseCache>;
   let mockChainService: SinonStubbedInstance<ChainService>;
   let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
   let mockPrometheus: SinonStubbedInstance<PrometheusAdapter>;
@@ -1327,6 +1352,7 @@ describe('Zodiac Address Validation', () => {
   beforeEach(() => {
     mockLogger = createStubInstance(Logger);
     mockRebalanceCache = createStubInstance(RebalanceCache);
+    mockPurchaseCache = createStubInstance(PurchaseCache);
     mockChainService = createStubInstance(ChainService);
     mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
     mockPrometheus = createStubInstance(PrometheusAdapter);
@@ -1417,17 +1443,18 @@ describe('Zodiac Address Validation', () => {
       startTime: Date.now(),
       logger: mockLogger,
       rebalanceCache: mockRebalanceCache,
+      purchaseCache: mockPurchaseCache,
       chainService: mockChainService,
       rebalance: mockRebalanceAdapter,
       prometheus: mockPrometheus,
       everclear: undefined,
-      purchaseCache: undefined,
       web3Signer: undefined,
       database: createDatabaseMock(),
     } as unknown as SinonStubbedInstance<ProcessingContext>;
 
     // Default stubs
     mockRebalanceCache.isPaused.resolves(false); // Critical: allow rebalancing to proceed
+    mockPurchaseCache.isPaused.resolves(false); // Default: purchase cache not paused
     mockRebalanceCache.addRebalances.resolves(); // Mock the cache addition
     mockRebalanceAdapter.getAdapter.returns(
       mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>,
@@ -1617,6 +1644,7 @@ describe('Reserve Amount Functionality', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
   let mockLogger: SinonStubbedInstance<Logger>;
   let mockRebalanceCache: SinonStubbedInstance<RebalanceCache>;
+  let mockPurchaseCache: SinonStubbedInstance<PurchaseCache>;
   let mockChainService: SinonStubbedInstance<ChainService>;
   let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
   let mockPrometheus: SinonStubbedInstance<PrometheusAdapter>;
@@ -1639,6 +1667,7 @@ describe('Reserve Amount Functionality', () => {
   beforeEach(() => {
     mockLogger = createStubInstance(Logger);
     mockRebalanceCache = createStubInstance(RebalanceCache);
+    mockPurchaseCache = createStubInstance(PurchaseCache);
     mockChainService = createStubInstance(ChainService);
     mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
     mockPrometheus = createStubInstance(PrometheusAdapter);
@@ -1664,6 +1693,7 @@ describe('Reserve Amount Functionality', () => {
       logger: mockLogger,
       requestId: MOCK_REQUEST_ID,
       rebalanceCache: mockRebalanceCache,
+      purchaseCache: mockPurchaseCache,
       config: {
         routes: [],
         ownAddress: MOCK_OWN_ADDRESS,
@@ -1718,6 +1748,7 @@ describe('Reserve Amount Functionality', () => {
 
     mockRebalanceCache.isPaused.resolves(false);
     mockRebalanceCache.addRebalances.resolves();
+    mockPurchaseCache.isPaused.resolves(false); // Default: purchase cache not paused
     mockRebalanceAdapter.getAdapter
       .withArgs(MOCK_BRIDGE_TYPE)
       .returns(mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
@@ -1973,10 +2004,12 @@ describe('Decimal Handling', () => {
 
     const mockLogger = createStubInstance(Logger);
     const mockRebalanceCache = createStubInstance(RebalanceCache);
+    const mockPurchaseCache = createStubInstance(PurchaseCache);
     const mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
 
     mockRebalanceCache.isPaused.resolves(false);
     mockRebalanceCache.addRebalances.resolves();
+    mockPurchaseCache.isPaused.resolves(false); // Default: purchase cache not paused
     mockRebalanceAdapter.getAdapter.returns(
       mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>,
     );
@@ -2042,6 +2075,7 @@ describe('Decimal Handling', () => {
         },
       },
       rebalance: mockRebalanceAdapter,
+      purchaseCache: mockPurchaseCache,
     } as unknown as ProcessingContext;
 
     // Balance: 48.796999 USDC (in 18 decimals from balance system)
@@ -2114,9 +2148,11 @@ describe('Decimal Handling', () => {
 
     const mockLogger = createStubInstance(Logger);
     const mockRebalanceCache = createStubInstance(RebalanceCache);
+    const mockPurchaseCache = createStubInstance(PurchaseCache);
     const mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
 
     mockRebalanceCache.isPaused.resolves(false);
+    mockPurchaseCache.isPaused.resolves(false); // Default: purchase cache not paused
     mockRebalanceAdapter.getAdapter.returns(
       mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>,
     );
@@ -2161,6 +2197,7 @@ describe('Decimal Handling', () => {
         },
       },
       rebalance: mockRebalanceAdapter,
+      purchaseCache: mockPurchaseCache,
     } as unknown as ProcessingContext;
 
     // Balance exactly at maximum (1 USDC in 18 decimals)

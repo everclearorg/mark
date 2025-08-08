@@ -11,7 +11,7 @@ import { getAvailableBalanceLessEarmarks } from './onDemand';
 import { createRebalanceOperation } from '@mark/database';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<RebalanceAction[]> {
-  const { logger, requestId, rebalanceCache, config, chainService, rebalance } = context;
+  const { logger, requestId, rebalanceCache, purchaseCache, config, chainService, rebalance } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
   const isPaused = await rebalanceCache.isPaused();
@@ -22,9 +22,11 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
   logger.info('Starting to rebalance inventory', { requestId });
 
-  // Execute any callbacks from stored actions prior to proceeding
-  await executeDestinationCallbacks(context);
-  logger.debug('Executed destination callbacks');
+  // Only execute callbacks if purchase cache is paused
+  const isPurchasePaused = await purchaseCache.isPaused();
+  if (isPurchasePaused) {
+    await executeDestinationCallbacks(context);
+  }
 
   // Get all of mark balances
   const balances = await getMarkBalances(config, chainService, context.prometheus);
