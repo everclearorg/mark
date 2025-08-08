@@ -282,18 +282,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           transactionHash = result.hash;
         }
 
-        // Step 5: Wait for transaction confirmation before creating database record
+        // Step 5: Create database record
         try {
-          const confirmations = 12; // TODO: should be configured per chain
-          logger.info('Waiting for transaction confirmation', {
-            requestId,
-            route,
-            bridgeType,
-            transactionHash,
-            confirmations,
-          });
-
-          // Create database record
           await createRebalanceOperation({
             earmarkId: null, // NULL indicates regular rebalancing
             originChainId: route.origin,
