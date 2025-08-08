@@ -55,10 +55,10 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
   // TODO: update chainservice to automatically get Tron private key from config.
   const tronPrivateKey = config.chains[TRON_CHAINID]?.privateKey;
   if (tronPrivateKey) {
-    logger.info('Using Tron private key from configuration');
+    logger.info('Using Tron signer key from configuration');
     process.env.TRON_PRIVATE_KEY = tronPrivateKey;
   } else {
-    logger.warn('Tron private is not in configuration');
+    logger.warn('Tron signer key is not in configuration');
   }
 
   const chainService = new ChainService(
