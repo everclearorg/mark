@@ -460,12 +460,47 @@ describe('DynamicAssetConfig Integration Tests', () => {
         gasThreshold: '0',
         deployments: { everclear: '0x0', permit2: '0x0', multicall3: '0x0' },
       },
+      '130': {
+        providers: [process.env.UNICHAIN_RPC ?? 'https://unichain.g.alchemy.com'],
+        assets: [
+          { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, tickerHash: 'ETH', isNative: true, balanceThreshold: '0' },
+          { symbol: 'WETH', address: '0x4200000000000000000000000000000000000006', decimals: 18, tickerHash: 'ETH', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDC', address: '0x078D782b760474a361dDA0AF3839290b0EF57AD6', decimals: 6, tickerHash: 'USDC', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDT', address: '0x588CE4F028D8e7B53B687865d6A67b3A54C75518', decimals: 6, tickerHash: 'USDT', isNative: false, balanceThreshold: '0' },
+        ],
+        invoiceAge: 0,
+        gasThreshold: '0',
+        deployments: { everclear: '0x0', permit2: '0x0', multicall3: '0x0' },
+      },
       '137': {
         providers: [process.env.POLYGON_RPC ?? 'https://polygon-mainnet.g.alchemy.com'],
         assets: [
           { symbol: 'WETH', address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, tickerHash: 'ETH', isNative: false, balanceThreshold: '0' },
           { symbol: 'USDC', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6, tickerHash: 'USDC', isNative: false, balanceThreshold: '0' },
           { symbol: 'USDT', address: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', decimals: 6, tickerHash: 'USDT', isNative: false, balanceThreshold: '0' },
+        ],
+        invoiceAge: 0,
+        gasThreshold: '0',
+        deployments: { everclear: '0x0', permit2: '0x0', multicall3: '0x0' },
+      },
+      '324': {
+        providers: [process.env.ZKSYNC_RPC ?? 'https://zksync-era.g.alchemy.com'],
+        assets: [
+          { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, tickerHash: 'ETH', isNative: true, balanceThreshold: '0' },
+          { symbol: 'WETH', address: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91', decimals: 18, tickerHash: 'ETH', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDC', address: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4', decimals: 6, tickerHash: 'USDC', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDT', address: '0x493257fD37EDB34451f62EDf8D2a0C418852bA4C', decimals: 6, tickerHash: 'USDT', isNative: false, balanceThreshold: '0' },
+        ],
+        invoiceAge: 0,
+        gasThreshold: '0',
+        deployments: { everclear: '0x0', permit2: '0x0', multicall3: '0x0' },
+      },
+      '57073': {
+        providers: [process.env.INK_RPC ?? 'https://polygon-mainnet.g.alchemy.com'],
+        assets: [
+          { symbol: 'INK', address: '0x0000000000000000000000000000000000000000', decimals: 18, tickerHash: 'ETH', isNative: true, balanceThreshold: '0' },
+          { symbol: 'WETH', address: '0x4200000000000000000000000000000000000006', decimals: 18, tickerHash: 'ETH', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDC', address: '0xF1815bd50389c46847f0Bda824eC8da914045D14', decimals: 6, tickerHash: 'USDC', isNative: false, balanceThreshold: '0' }
         ],
         invoiceAge: 0,
         gasThreshold: '0',
@@ -561,6 +596,81 @@ describe('DynamicAssetConfig Integration Tests', () => {
       });
 
       console.log(`✅ USDC mapping on Optimism: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve ETH on Unichain', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(130, 'ETH');
+
+      expect(mapping).toMatchObject({
+        chainId: 130,
+        krakenAsset: 'XETH',
+        krakenSymbol: 'ETH',
+        method: expect.stringMatching(/unichain/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+      });
+
+      console.log(`✅ ETH mapping on Unichain: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve WETH on Unichain', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(130, 'WETH');
+
+      expect(mapping).toMatchObject({
+        chainId: 130,
+        krakenAsset: 'XETH',
+        krakenSymbol: 'ETH',
+        method: expect.stringMatching(/unichain/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+      });
+
+      console.log(`✅ WETH mapping on Unichain: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve WETH on Ink', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(57073, 'WETH');
+
+      expect(mapping).toMatchObject({
+        chainId: 57073,
+        krakenAsset: 'XETH',
+        krakenSymbol: 'ETH',
+        method: expect.stringMatching(/ink/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+      });
+
+      console.log(`✅ WETH mapping on Ink: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve ETH on Zksync', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(324, 'ETH');
+
+      expect(mapping).toMatchObject({
+        chainId: 324,
+        krakenAsset: 'XETH',
+        krakenSymbol: 'ETH',
+        method: expect.stringMatching(/zkSync Era/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+      });
+
+      console.log(`✅ ETH mapping on Zksync: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve WETH on Zksync', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(324, 'WETH');
+
+      expect(mapping).toMatchObject({
+        chainId: 324,
+        krakenAsset: 'XETH',
+        krakenSymbol: 'ETH',
+        method: expect.stringMatching(/zkSync Era/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+      });
+
+      console.log(`✅ WETH mapping on Zksync: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
     }, 30000);
 
     it('should handle unsupported asset gracefully', async () => {
