@@ -2,8 +2,9 @@ export const KRAKEN_BASE_URL = 'https://api.kraken.com';
 
 export interface KrakenDepositMethod {
   method: string;
-  fields: string[];
-  gen?: boolean;
+  limit: boolean;
+  minimum: string;
+  'gen-address': boolean;
 }
 
 export interface KrakenDepositAddress {
@@ -28,9 +29,28 @@ export interface KrakenDepositRecord {
 
 export interface KrakenWithdrawMethod {
   asset: string;
+  method_id: string;
   method: string;
-  network?: string;
+  network_id: string;
+  network: string;
   minimum: string;
+  limits: {
+    limit_type: string;
+    description: string;
+    limits: Record<
+      string,
+      {
+        remaining: string;
+        maximum: string;
+        used: string;
+      }
+    >;
+  }[];
+  fee: {
+    aclass: string;
+    asset: string;
+    fee: string;
+  };
 }
 
 export interface KrakenWithdrawInfo {
@@ -65,7 +85,7 @@ export interface KrakenAssetMapping {
   minWithdrawalAmount: string;
   withdrawalFee: string;
   depositConfirmations: number;
-  network?: string;
+  network: string;
 }
 
 export interface WithdrawalStatus {

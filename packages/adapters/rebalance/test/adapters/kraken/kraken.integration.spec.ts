@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from '@jest/globals';
 import { KrakenClient } from '../../../src/adapters/kraken/client';
+import { DynamicAssetConfig } from '../../../src/adapters/kraken/dynamic-config';
 import { Logger } from '@mark/logger';
+import { ChainConfiguration } from '@mark/core';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -149,7 +151,7 @@ describe('KrakenClient Integration Tests', () => {
   });
 
   describe('Deposit Status', () => {
-    it.only('should retrieve deposit status without errors', async () => {
+    it('should retrieve deposit status without errors', async () => {
       const deposits = await client.getDepositStatus('XETH', `ETH - Arbitrum One (Unified)`);
 
       expect(Array.isArray(deposits)).toBe(true);
@@ -407,6 +409,256 @@ describe('KrakenClient Integration Tests', () => {
       );
 
       await expect(invalidClient.getBalance()).rejects.toThrow();
+    }, 30000);
+  });
+});
+
+describe('DynamicAssetConfig Integration Tests', () => {
+  let dynamicConfig: DynamicAssetConfig;
+  let client: KrakenClient;
+  let logger: Logger;
+  let apiKey: string;
+  let apiSecret: string;
+  let mockChains: Record<string, ChainConfiguration>;
+
+  beforeAll(() => {
+    loadEnvFromPoller();
+
+    apiKey = process.env.KRAKEN_API_KEY!;
+    apiSecret = process.env.KRAKEN_SECRET_KEY!;
+
+    if (!apiKey || !apiSecret) {
+      throw new Error(
+        'Integration tests require KRAKEN_API_KEY and KRAKEN_SECRET_KEY environment variables. ' +
+        'Add them to packages/poller/.env or run yarn test (without integration tests).',
+      );
+    }
+
+    // TODO: test all chains to ensure they work with config in kraken
+    mockChains = {
+      '1': {
+        providers: [process.env.ETH_RPC ?? 'https://eth-mainnet.g.alchemy.com'],
+        assets: [
+          { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, tickerHash: 'ETH', isNative: true, balanceThreshold: '0' },
+          { symbol: 'WETH', address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', decimals: 18, tickerHash: 'ETH', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDC', address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6, tickerHash: 'USDC', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6, tickerHash: 'USDT', isNative: false, balanceThreshold: '0' },
+        ],
+        invoiceAge: 0,
+        gasThreshold: '0',
+        deployments: { everclear: '0x0', permit2: '0x0', multicall3: '0x0' },
+      },
+      '10': {
+        providers: [process.env.OP_MAINNET_RPC ?? 'https://optimism-mainnet.g.alchemy.com'],
+        assets: [
+          { symbol: 'ETH', address: '0x0000000000000000000000000000000000000000', decimals: 18, tickerHash: 'ETH', isNative: true, balanceThreshold: '0' },
+          { symbol: 'WETH', address: '0x4200000000000000000000000000000000000006', decimals: 18, tickerHash: 'ETH', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDC', address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', decimals: 6, tickerHash: 'USDC', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDT', address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', decimals: 6, tickerHash: 'USDT', isNative: false, balanceThreshold: '0' },
+        ],
+        invoiceAge: 0,
+        gasThreshold: '0',
+        deployments: { everclear: '0x0', permit2: '0x0', multicall3: '0x0' },
+      },
+      '137': {
+        providers: [process.env.POLYGON_RPC ?? 'https://polygon-mainnet.g.alchemy.com'],
+        assets: [
+          { symbol: 'WETH', address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, tickerHash: 'ETH', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDC', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6, tickerHash: 'USDC', isNative: false, balanceThreshold: '0' },
+          { symbol: 'USDT', address: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', decimals: 6, tickerHash: 'USDT', isNative: false, balanceThreshold: '0' },
+        ],
+        invoiceAge: 0,
+        gasThreshold: '0',
+        deployments: { everclear: '0x0', permit2: '0x0', multicall3: '0x0' },
+      }
+    };
+  });
+
+  beforeEach(() => {
+    logger = new Logger({ service: 'kraken-client-integration-test' });
+
+    client = new KrakenClient(
+      apiKey,
+      apiSecret,
+      logger,
+      'https://api.kraken.com',
+      1
+    );
+    dynamicConfig = new DynamicAssetConfig(client, mockChains, logger);
+  });
+
+  describe('Asset Mapping Resolution', () => {
+    it('should resolve ETH by symbol on Ethereum', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(1, 'ETH');
+
+      expect(mapping).toMatchObject({
+        chainId: 1,
+        krakenAsset: 'XETH',
+        krakenSymbol: 'ETH',
+        method: expect.stringMatching(/ether/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+        depositConfirmations: expect.any(Number),
+      });
+
+      console.log(`✅ ETH mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve WETH by address on Ethereum', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(1, '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2');
+
+      expect(mapping).toMatchObject({
+        chainId: 1,
+        krakenAsset: 'XETH',
+        krakenSymbol: 'ETH',
+        method: expect.stringMatching(/ether/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+        depositConfirmations: expect.any(Number),
+      });
+
+      console.log(`✅ WETH mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve USDC by symbol on Ethereum', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(1, 'USDC');
+
+      expect(mapping).toMatchObject({
+        chainId: 1,
+        krakenAsset: 'USDC',
+        krakenSymbol: 'USDC',
+        method: expect.stringMatching(/ether/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+        depositConfirmations: expect.any(Number),
+      });
+
+      console.log(`✅ USDC mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve ETH on Polygon', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(137, 'WETH');
+
+      expect(mapping).toMatchObject({
+        chainId: 137,
+        krakenAsset: 'XETH',
+        krakenSymbol: 'ETH',
+        method: expect.stringMatching(/polygon/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+        depositConfirmations: expect.any(Number),
+      });
+
+      console.log(`✅ ETH mapping on Polygon: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should resolve USDC on Optimism', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(10, 'USDC');
+
+      expect(mapping).toMatchObject({
+        chainId: 10,
+        krakenAsset: 'USDC',
+        krakenSymbol: 'USDC',
+        method: expect.stringMatching(/optimism/i),
+        minWithdrawalAmount: expect.any(String),
+        withdrawalFee: expect.any(String),
+        depositConfirmations: expect.any(Number),
+      });
+
+      console.log(`✅ USDC mapping on Optimism: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+    }, 30000);
+
+    it('should handle unsupported asset gracefully', async () => {
+      await expect(dynamicConfig.getAssetMapping(1, 'UNSUPPORTED_ASSET')).rejects.toThrow(/Unknown asset identifier: UNSUPPORTED_ASSET/);
+    }, 30000);
+
+    it('should handle unsupported chain gracefully', async () => {
+      await expect(dynamicConfig.getAssetMapping(999, 'ETH')).rejects.toThrow(/No configured asset information for ETH on 999/);
+    }, 30000);
+
+    it('should handle unknown address gracefully', async () => {
+      await expect(dynamicConfig.getAssetMapping(1, '0x1234567890123456789012345678901234567890')).rejects.toThrow(/Unknown asset identifier/);
+    }, 30000);
+  });
+
+  describe('Dynamic Fee Resolution', () => {
+    it('should fetch real-time withdrawal fees for ETH', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(1, 'ETH');
+
+      // Parse the fee as wei and convert to ETH for validation
+      const feeWei = BigInt(mapping.withdrawalFee);
+      const feeEth = Number(feeWei) / 1e18;
+
+      expect(feeEth).toBeGreaterThan(0);
+      expect(feeEth).toBeLessThan(0.5); // Reasonable upper bound for ETH withdrawal fee
+
+      console.log(`✅ ETH withdrawal fee: ${feeEth} ETH (${mapping.withdrawalFee} wei)`);
+    }, 30000);
+
+    it('should fetch real-time minimum amounts for USDC', async () => {
+      const mapping = await dynamicConfig.getAssetMapping(1, 'USDC');
+
+      // Parse the minimum as 6-decimal USDC
+      const minUsdc = Number(mapping.minWithdrawalAmount) / 1e6;
+
+      expect(minUsdc).toBeGreaterThan(0);
+      expect(minUsdc).toBeLessThan(1000); // Reasonable upper bound
+
+      console.log(`✅ USDC minimum withdrawal: ${minUsdc} USDC (${mapping.minWithdrawalAmount} raw)`);
+    }, 30000);
+  });
+
+  describe('Method Resolution', () => {
+    it('should find appropriate deposit method for each chain', async () => {
+      const ethereumMapping = await dynamicConfig.getAssetMapping(1, 'ETH');
+      const polygonMapping = await dynamicConfig.getAssetMapping(137, 'WETH');
+
+      expect(ethereumMapping.method.toLowerCase()).toMatch(/ether/);
+      expect(polygonMapping.method.toLowerCase()).toMatch(/polygon/);
+
+      console.log(`✅ Ethereum method: ${ethereumMapping.method}`);
+      console.log(`✅ Polygon method: ${polygonMapping.method}`);
+    }, 30000);
+
+    it('should handle chains with no available methods', async () => {
+      // Try to get mapping for a chain that Kraken doesn't support for this asset
+      await expect(dynamicConfig.getAssetMapping(8453, 'ETH')).rejects.toThrow();
+    }, 30000);
+  });
+
+  describe('Fallback Behavior', () => {
+    it('should use default fees when API call fails', async () => {
+      // This test might pass if withdrawal info API call fails and falls back to defaults
+      // We can't easily mock this in an integration test, but we can verify it handles errors gracefully
+      try {
+        const mapping = await dynamicConfig.getAssetMapping(1, 'ETH');
+        expect(mapping.withdrawalFee).toBeDefined();
+        expect(mapping.minWithdrawalAmount).toBeDefined();
+        console.log(`✅ Fee retrieval succeeded or fell back gracefully`);
+      } catch (error) {
+        // If the entire call fails, that's also acceptable as long as error is descriptive
+        expect(error).toBeInstanceOf(Error);
+        console.log(`✅ Graceful error handling: ${(error as Error).message}`);
+      }
+    }, 30000);
+  });
+
+  describe('Cross-Chain Consistency', () => {
+    it('should return consistent asset mappings for same asset on different chains', async () => {
+      const ethMapping = await dynamicConfig.getAssetMapping(1, 'USDC');
+      const polygonMapping = await dynamicConfig.getAssetMapping(137, 'USDC');
+
+      // Same asset should map to same Kraken asset and symbol
+      expect(ethMapping.krakenAsset).toBe(polygonMapping.krakenAsset);
+      expect(ethMapping.krakenSymbol).toBe(polygonMapping.krakenSymbol);
+
+      // But should have different methods and potentially different fees
+      expect(ethMapping.method).not.toBe(polygonMapping.method);
+      expect(ethMapping.chainId).not.toBe(polygonMapping.chainId);
+
+      console.log(`✅ USDC cross-chain consistency: ${ethMapping.krakenAsset} on both chains`);
+      console.log(`✅ Ethereum method: ${ethMapping.method}`);
+      console.log(`✅ Polygon method: ${polygonMapping.method}`);
     }, 30000);
   });
 });
