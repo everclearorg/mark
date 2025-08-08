@@ -7,7 +7,7 @@ import {
   WalletType,
 } from '@mark/core';
 import { getERC20Contract } from './contracts';
-import { decodeEventLog, encodeFunctionData, erc20Abi, Hex } from 'viem';
+import { decodeEventLog, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
 import {
   generatePermit2Nonce,
