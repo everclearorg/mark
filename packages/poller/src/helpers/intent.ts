@@ -655,14 +655,32 @@ export const sendTvmIntents = async (
     }, BigInt(0));
 
     // Get the spender address from the deployment config for approvals
-    const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
-    // let spokeAddress = chainConfig.deployments?.everclear;
-    // if (!spokeAddress) {
-    //   throw new Error(`Everclear deployment not found for chain ${originChainId}`);
-    // }
-    // const spenderForAllowance = `0x${TronWeb.address.toHex(spokeAddress).slice(2)}` as `0x${string}`;
+    if (!feeAdapterTxData.to) {
+      throw new Error(`Fee adapter address not found in transaction data for chain ${originChainId}`);
+    }
+
+    // Helper function to convert Tron addresses to Viem-compatible format
+    const toViemAddress = (address: string): `0x${string}` => {
+      // Convert base58 to hex if needed
+      const hexAddr = address.startsWith('T') 
+        ? TronWeb.address.toHex(address) 
+        : address;
+      
+      // Remove 0x prefix if present
+      const cleanHex = hexAddr.startsWith('0x') ? hexAddr.slice(2) : hexAddr;
+      
+      // Remove Tron network prefix (first byte) if it's a 21-byte address
+      const viemHex = cleanHex.length === 42 ? cleanHex.slice(2) : cleanHex;
+      
+      return `0x${viemHex}` as `0x${string}`;
+    };
+
+    // Convert all addresses to Viem-compatible format
+    const addressStr = feeAdapterTxData.to.trim();
+    const spenderForAllowance = toViemAddress(addressStr);
     const tronAddress = addresses[originChainId];
-    const ownerForAllowance = getActualOwner(originWalletConfig, tronAddress);
+    const ownerForAllowance = toViemAddress(getActualOwner(originWalletConfig, tronAddress));
+    const tokenAddressForApproval = toViemAddress(firstIntent.inputAsset);
 
     logger.info('Total amount for approvals', {
       requestId,
@@ -672,6 +690,7 @@ export const sendTvmIntents = async (
       chainId: originChainId,
       owner: ownerForAllowance,
       spender: spenderForAllowance,
+      tokenAddress: tokenAddressForApproval,
       walletType: originWalletConfig.walletType,
     });
 
@@ -683,7 +702,7 @@ export const sendTvmIntents = async (
         logger,
         prometheus,
         chainId: originChainId,
-        tokenAddress: firstIntent.inputAsset,
+        tokenAddress: tokenAddressForApproval,
         spenderAddress: spenderForAllowance,
         amount: totalAmount,
         owner: ownerForAllowance,
@@ -709,6 +728,9 @@ export const sendTvmIntents = async (
         invoiceId,
         error,
         tokenAddress: firstIntent.inputAsset,
+        tokenAddressForApproval: tokenAddressForApproval,
+        owner: ownerForAllowance,
+        spender: spenderForAllowance,
         amount: totalAmount.toString(),
       });
       throw error;
