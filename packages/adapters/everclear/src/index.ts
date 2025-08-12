@@ -136,6 +136,11 @@ export class EverclearAdapter {
       const { data } = await axiosPost<TransactionRequest>(url, params);
       return data;
     } catch (err) {
+      this.logger.error(`Failed to fetch create intent from API`, {
+        params,
+        url: `${this.apiUrl}/intents`,
+        error: jsonifyError(err),
+      });
       throw new Error(`Failed to fetch create intent from API ${err}`);
     }
   }
