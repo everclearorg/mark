@@ -1,5 +1,5 @@
 import { getTokenAddressFromConfig, MarkConfiguration, base58ToHex, isSvmChain, isAddress } from '@mark/core';
-import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex, formatUnits } from 'viem';
+import { formatUnits, zeroHash } from 'viem';
 import { getHubStorageContract } from './contracts';
 
 export const getTickers = (config: MarkConfiguration) => {
@@ -42,21 +42,20 @@ export const convertHubAmountToLocalDecimals = (
   return ret;
 };
 
-export const getAssetHash = (
+export const getAssetHash = async (
   ticker: string,
   domain: string,
   config: MarkConfiguration,
   getTokenAddressFn: (ticker: string, domain: string, config: MarkConfiguration) => string | undefined,
-): string | undefined => {
+): Promise<string | undefined> => {
   const tokenAddr = getTokenAddressFn(ticker, domain, config);
   if (!tokenAddr) {
     return undefined;
   }
 
-  const assetHash = keccak256(
-    encodeAbiParameters([{ type: 'bytes32' }, { type: 'uint32' }], [addressToBytes32(tokenAddr), parseInt(domain)]),
-  );
-  return assetHash;
+  const assetHash = (await getHubStorageContract(config).read.assetHash([ticker, BigInt(domain)])) as string;
+
+  return assetHash === zeroHash ? undefined : assetHash;
 };
 
 /**
@@ -73,7 +72,7 @@ export const isXerc20Supported = async (
       continue;
     }
     // Get the asset hash
-    const assetHash = getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
+    const assetHash = await getAssetHash(ticker, domain, config, getTokenAddressFromConfig);
     if (!assetHash) {
       // asset does not exist on this domain
       continue;
@@ -103,10 +102,6 @@ export const getAssetConfig = async (assetHash: string, config: MarkConfiguratio
   const contract = getHubStorageContract(config);
   const assetConfig = (await contract.read.adoptedForAssets([assetHash])) as unknown as AssetConfig;
   return assetConfig;
-};
-
-const addressToBytes32 = (addr: string): `0x${string}` => {
-  return bytesToHex(padBytes(hexToBytes(addr as `0x${string}`), { size: 32, dir: 'left' }));
 };
 
 /**
