@@ -1,6 +1,6 @@
 import { encodeFunctionData, erc20Abi } from 'viem';
 import { getERC20Contract } from './contracts';
-import { MarkConfiguration, LoggingContext, WalletConfig } from '@mark/core';
+import { MarkConfiguration, LoggingContext, WalletConfig, isTvmChain } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { TransactionReason } from '@mark/prometheus';
@@ -121,7 +121,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
           args: [spenderAddress as `0x${string}`, 0n],
         }),
         value: '0',
-        from: config.ownAddress,
+        from: isTvmChain(chainId) ? config.ownAddress.tvm : config.ownAddress.evm,
         funcSig: 'approve(address,uint256)',
       },
       zodiacConfig,
@@ -170,7 +170,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
         args: [spenderAddress as `0x${string}`, amount],
       }),
       value: '0',
-      from: config.ownAddress,
+      from: isTvmChain(chainId) ? config.ownAddress.tvm : config.ownAddress.evm,
       funcSig: 'approve(address,uint256)',
     },
     zodiacConfig,

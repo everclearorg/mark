@@ -1,4 +1,12 @@
-import { getTokenAddressFromConfig, Invoice, NewIntentParams, WalletType, isSvmChain, AddressFormat } from '@mark/core';
+import {
+  getTokenAddressFromConfig,
+  Invoice,
+  NewIntentParams,
+  WalletType,
+  isSvmChain,
+  AddressFormat,
+  isTvmChain,
+} from '@mark/core';
 import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
@@ -136,7 +144,11 @@ export async function calculateSplitIntents(
         origin,
         required: totalNeeded.toString(),
         available: markOriginBalance.toString(),
-        custodian: getActualOwner(getValidatedZodiacConfig(config.chains[origin]), config.ownAddress),
+        custodian: isSvmChain(origin)
+          ? config.ownAddress.evm
+          : isTvmChain(origin)
+            ? config.ownAddress.tvm
+            : getActualOwner(getValidatedZodiacConfig(config.chains[origin]), config.ownAddress.evm),
       });
       continue;
     }
@@ -267,14 +279,16 @@ export async function calculateSplitIntents(
     const isSvm = isSvmChain(domain);
     const destinationChainConfig = config.chains[domain];
     if (isSvm) {
-      toAddress = config.ownSolAddress;
+      toAddress = config.ownAddress.svm;
+    } else if (isTvmChain(domain)) {
+      toAddress = config.ownAddress.tvm;
     } else {
       // Get Zodiac configuration for the destination chain to determine correct 'to' address
       const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
       toAddress =
         destinationZodiacConfig.walletType !== WalletType.EOA
           ? destinationZodiacConfig.safeAddress!
-          : config.ownAddress;
+          : config.ownAddress.evm;
     }
 
     const params: NewIntentParams = {
@@ -314,14 +328,16 @@ export async function calculateSplitIntents(
         // Check if the target domain is SVM
         const isSVM = isSvmChain(targetDomain);
         if (isSVM) {
-          toAddress = config.ownSolAddress;
+          toAddress = config.ownAddress.svm;
+        } else if (isTvmChain(targetDomain)) {
+          toAddress = config.ownAddress.tvm;
         } else {
           // Get Zodiac configuration for the destination chain to determine correct 'to' address
           const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
           toAddress =
             destinationZodiacConfig.walletType !== WalletType.EOA
               ? destinationZodiacConfig.safeAddress!
-              : config.ownAddress;
+              : config.ownAddress.evm;
         }
 
         const params: NewIntentParams = {

@@ -34,8 +34,9 @@ export function isValidInvoice(
   // Get the actual owner
   const chainConfig = config.chains[invoice.origin];
   const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-  const actualOwner = getActualOwner(zodiacConfig, config.ownAddress);
-  if (invoice.owner.toLowerCase() === actualOwner.toLowerCase()) {
+  const actualOwner = getActualOwner(zodiacConfig, config.ownAddress.evm);
+  const invalidOwners = [config.ownAddress.svm, config.ownAddress.tvm, actualOwner].map((t: string) => t.toLowerCase());
+  if (invalidOwners.includes(invoice.owner.toLowerCase())) {
     return InvalidPurchaseReasons.InvalidOwner;
   }
 

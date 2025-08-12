@@ -1,6 +1,6 @@
 import { getMarkBalances, safeStringToBigInt, getTickerForAsset } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
-import { getDecimalsFromConfig, WalletType } from '@mark/core';
+import { getDecimalsFromConfig, isSvmChain, isTvmChain, WalletType } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
 import { formatUnits } from 'viem';
@@ -201,8 +201,16 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
       // Step 3: Get Bridge Transaction Requests
       let bridgeTxRequests = [];
-      const sender = getActualOwner(originZodiacConfig, config.ownAddress);
-      const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
+      const sender = isSvmChain(origin)
+        ? config.ownAddress.svm
+        : isTvmChain(origin)
+          ? config.ownAddress.tvm
+          : getActualOwner(originZodiacConfig, config.ownAddress.evm);
+      const recipient = isSvmChain(route.destination.toString())
+        ? config.ownAddress.svm
+        : isTvmChain(route.destination.toString())
+          ? config.ownAddress.tvm
+          : getActualOwner(destinationZodiacConfig, config.ownAddress.evm);
       try {
         bridgeTxRequests = await adapter.send(sender, recipient, amountToBridge.toString(), route);
         logger.info('Prepared bridge transaction request from adapter', {
@@ -259,7 +267,11 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
               data: transaction.data!,
               value: (transaction.value || 0).toString(),
               chainId: route.origin,
-              from: config.ownAddress,
+              from: isSvmChain(origin)
+                ? config.ownAddress.svm
+                : isTvmChain(origin)
+                  ? config.ownAddress.tvm
+                  : config.ownAddress.evm,
               funcSig: transaction.funcSig || '',
             },
             zodiacConfig: originZodiacConfig,

@@ -29,7 +29,7 @@ export const getMarkGasBalances = async (
   prometheus: PrometheusAdapter,
   tronWeb?: TronWeb,
 ): Promise<Map<{ chainId: string; gasType: GasType }, bigint>> => {
-  const { chains, ownAddress, ownSolAddress } = config;
+  const { chains, ownAddress } = config;
   const gasBalances = new Map<{ chainId: string; gasType: GasType }, bigint>();
 
   await Promise.all(
@@ -38,10 +38,7 @@ export const getMarkGasBalances = async (
         if (isTvmChain(chain)) {
           // For Tron, get both bandwidth and energy
           if (!tronWeb) throw new Error('TronWeb instance required for Tron chain');
-          const chainConfig = chains[chain];
-          const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-          const actualOwner = getActualOwner(zodiacConfig, ownAddress);
-          const resources = await tronWeb.trx.getAccountResources(actualOwner);
+          const resources = await tronWeb.trx.getAccountResources(config.ownAddress.tvm);
           // Bandwidth: freeNetLimit - freeNetUsed + NetLimit - NetUsed
           const freeNet = (resources.freeNetLimit ?? 0) - (resources.freeNetUsed ?? 0);
           const stakedNet = (resources.NetLimit ?? 0) - (resources.NetUsed ?? 0);
@@ -53,7 +50,7 @@ export const getMarkGasBalances = async (
           gasBalances.set({ chainId: chain, gasType: GasType.Energy }, energy);
           prometheus.updateGasBalance(`${chain}:energy`, energy);
         } else if (isSvmChain(chain)) {
-          const balanceStr = await chainService.getBalance(+chain, ownSolAddress, SOLANA_NATIVE_ASSET_ID);
+          const balanceStr = await chainService.getBalance(+chain, ownAddress.svm, SOLANA_NATIVE_ASSET_ID);
           const balance = BigInt(balanceStr);
           gasBalances.set({ chainId: chain, gasType: GasType.Gas }, balance);
           prometheus.updateGasBalance(chain, balance);
@@ -61,7 +58,7 @@ export const getMarkGasBalances = async (
           // EVM chain with zodiac logic
           const chainConfig = chains[chain];
           const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-          const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+          const actualOwner = getActualOwner(zodiacConfig, ownAddress.evm);
           const client = createClient(chain, config);
           const balance = await client.getBalance({ address: actualOwner as `0x${string}` });
           gasBalances.set({ chainId: chain, gasType: GasType.Gas }, balance);
@@ -114,7 +111,7 @@ export const getMarkBalances = async (
         ? getSvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
         : isTvm
           ? getTvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
-          : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
+          : getEvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus);
 
       balancePromises.push({
         ticker,
@@ -150,9 +147,9 @@ const getSvmBalance = async (
   decimals: number,
   prometheus: PrometheusAdapter,
 ): Promise<bigint> => {
-  const { ownSolAddress } = config;
+  const { ownAddress } = config;
   try {
-    const balanceStr = await chainService.getBalance(+domain, ownSolAddress, tokenAddr);
+    const balanceStr = await chainService.getBalance(+domain, ownAddress.svm, tokenAddr);
     let balance = BigInt(balanceStr);
 
     // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
@@ -179,7 +176,7 @@ const getTvmBalance = async (
 ): Promise<bigint> => {
   const { ownAddress } = config;
   try {
-    const balanceStr = await chainService.getBalance(+domain, ownAddress, tokenAddr);
+    const balanceStr = await chainService.getBalance(+domain, ownAddress.tvm, tokenAddr);
     let balance = BigInt(balanceStr);
 
     // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
@@ -196,9 +193,9 @@ const getTvmBalance = async (
   }
 };
 
-// TODO: make getEvmBalance get from chainService instead of viem call
 const getEvmBalance = async (
   config: MarkConfiguration,
+  chainService: ChainService,
   domain: string,
   tokenAddr: string,
   decimals: number,
@@ -209,15 +206,13 @@ const getEvmBalance = async (
   try {
     // Get Zodiac configuration for this chain
     const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-    const actualOwner = getActualOwner(zodiacConfig, ownAddress);
-
-    const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
-    let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
+    const actualOwner = getActualOwner(zodiacConfig, ownAddress.evm);
+    let balance = BigInt(await chainService.getBalance(+domain, actualOwner, tokenAddr));
 
     // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
     if (decimals !== 18) {
       const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
-      balance = BigInt(balance) * 10n ** DECIMALS_DIFFERENCE;
+      balance = balance * 10n ** DECIMALS_DIFFERENCE;
     }
 
     // Update tracker (this is async but we don't need to wait)

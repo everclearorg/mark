@@ -394,8 +394,11 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
-      ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
-      ownSolAddress: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
+      ownAddress: {
+        evm: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
+        svm: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
+        tvm: configJson.tvmSignerAddress ?? (await requireEnv('TVM_SIGNER_ADDRESS')),
+      },
       supportedSettlementDomains:
         configJson.supportedSettlementDomains ??
         parseSettlementDomains(await requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),

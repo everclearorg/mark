@@ -5,6 +5,7 @@ import {
   TransactionSubmissionType,
   TransactionRequest,
   WalletType,
+  isTvmChain,
 } from '@mark/core';
 import { getERC20Contract } from './contracts';
 import { decodeEventLog, Hex } from 'viem';
@@ -173,6 +174,9 @@ export const sendIntents = async (
   const originChainId = intents[0].origin;
   if (isSvmChain(originChainId)) {
     return sendSvmIntents(invoiceId, intents, adapters, config, requestId);
+  } else if (isTvmChain(originChainId)) {
+    // Handle tvm as an evm intent
+    return sendEvmIntents(invoiceId, intents, adapters, config);
   }
   // we handle default fallback case as evm intents
   return sendEvmIntents(invoiceId, intents, adapters, config, requestId);
@@ -189,6 +193,10 @@ export const sendEvmIntents = async (
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
   const originWalletConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
+
+  if (isSvmChain(originChainId)) {
+    throw new Error(`Cannot send intents from svm chain using sendEvmIntents`);
+  }
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset.toLowerCase()));
@@ -220,17 +228,27 @@ export const sendEvmIntents = async (
         case WalletType.EOA:
           // Sanity checks for intents towards SVM
           if (isSvmChain(destination)) {
-            if (intent.to !== config.ownSolAddress) {
+            if (intent.to.toLowerCase() !== config.ownAddress.svm.toLowerCase()) {
               throw new Error(
-                `intent.to (${intent.to}) must be ownSolAddress (${config.ownSolAddress}) for destination ${destination}`,
+                `intent.to (${intent.to}) must be ownAddress.svm (${config.ownAddress.svm}) for destination ${destination}`,
               );
             }
             if (intent.destinations.length !== 1) {
               throw new Error(`intent.destination must be length 1 for intents towards SVM`);
             }
             break;
+          } else if (isTvmChain(destination)) {
+            if (intent.to.toLowerCase() !== config.ownAddress.tvm.toLowerCase()) {
+              throw new Error(
+                `intent.to (${intent.to}) must be ownAddress.tvm (${config.ownAddress.tvm}) for destination ${destination}`,
+              );
+            }
+            if (intent.destinations.length !== 1) {
+              throw new Error(`intent.destination must be length 1 for intents towards TVM`);
+            }
+            break;
           }
-          if (intent.to.toLowerCase() !== config.ownAddress.toLowerCase()) {
+          if (intent.to.toLowerCase() !== config.ownAddress.evm.toLowerCase()) {
             throw new Error(
               `intent.to (${intent.to}) must be ownAddress (${config.ownAddress}) for destination ${destination}`,
             );
@@ -263,7 +281,9 @@ export const sendEvmIntents = async (
     }, BigInt(0));
 
     const spenderForAllowance = feeAdapterTxData.to as `0x${string}`;
-    const ownerForAllowance = getActualOwner(originWalletConfig, config.ownAddress);
+    const ownerForAllowance = isTvmChain(originChainId)
+      ? config.ownAddress.tvm
+      : getActualOwner(originWalletConfig, config.ownAddress.evm);
 
     logger.info('Total amount for approvals', {
       requestId,
@@ -331,6 +351,7 @@ export const sendEvmIntents = async (
     }
 
     // Submit the batch transaction using the general purpose helper
+    const submitter = isTvmChain(originChainId) ? config.ownAddress.tvm : config.ownAddress.evm;
     logger.info('Submitting batch create intent transaction', {
       invoiceId,
       requestId,
@@ -338,7 +359,7 @@ export const sendEvmIntents = async (
         to: feeAdapterTxData.to,
         value: feeAdapterTxData.value,
         data: feeAdapterTxData.data,
-        from: config.ownAddress,
+        from: submitter,
         chainId: originChainId,
       },
     });
@@ -352,7 +373,7 @@ export const sendEvmIntents = async (
         to: feeAdapterTxData.to as `0x${string}`,
         data: feeAdapterTxData.data as Hex,
         value: feeAdapterTxData.value ?? '0',
-        from: config.ownAddress,
+        from: submitter,
         funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))', // FeeAdapter newIntent function
       },
       zodiacConfig: originWalletConfig,
@@ -409,7 +430,7 @@ export const sendSvmIntents = async (
   const originChainId = intents[0].origin;
   const chainConfig = config.chains[originChainId];
 
-  const sourceAddress = config.ownSolAddress;
+  const sourceAddress = config.ownAddress.svm;
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset));
@@ -516,7 +537,7 @@ export const sendSvmIntents = async (
     logger.info('Submitting create intent transaction', {
       invoiceId,
       requestId,
-      address: config.ownSolAddress,
+      address: config.ownAddress.svm,
       chainId: originChainId,
       transactions: feeAdapterTxDatas,
     });

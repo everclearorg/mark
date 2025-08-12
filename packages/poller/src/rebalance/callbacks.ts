@@ -3,6 +3,7 @@ import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
+import { isSvmChain, isTvmChain } from '@mark/core';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, rebalanceCache, config, rebalance, chainService } = context;
@@ -86,7 +87,11 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
           to: callback.transaction.to!,
           data: callback.transaction.data!,
           value: (callback.transaction.value || 0).toString(),
-          from: config.ownAddress,
+          from: isSvmChain(route.destination.toString())
+            ? config.ownAddress.svm
+            : isTvmChain(route.destination.toString())
+              ? config.ownAddress.tvm
+              : config.ownAddress.evm,
           funcSig: callback.transaction.funcSig || '',
         },
         zodiacConfig,

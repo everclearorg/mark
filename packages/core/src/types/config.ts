@@ -105,8 +105,11 @@ export interface MarkConfiguration extends RebalanceConfig {
     jwtToken?: string;
   };
   redis: RedisConfig;
-  ownAddress: string;
-  ownSolAddress: string;
+  ownAddress: {
+    evm: string;
+    svm: string;
+    tvm: string;
+  };
   stage: Stage;
   environment: Environment;
   logLevel: LogLevel;
