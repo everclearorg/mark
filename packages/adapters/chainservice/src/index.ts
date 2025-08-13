@@ -1,6 +1,5 @@
-import { providers, Signer, constants, BigNumber } from 'ethers';
 import { TronWeb } from 'tronweb';
-import { ChainService as ChimeraChainService, WriteTransaction } from '@chimera-monorepo/chainservice';
+import { ChainService as ChimeraChainService, EthWallet, WriteTransaction } from '@chimera-monorepo/chainservice';
 import { ILogger, jsonifyError } from '@mark/logger';
 import {
   createLoggingContext,
@@ -11,9 +10,16 @@ import {
   delay,
   TRON_CHAINID,
 } from '@mark/core';
+import { zeroAddress } from 'viem';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
 export { EthWallet } from '@chimera-monorepo/chainservice';
+
+export type TransactionReceipt = Awaited<ReturnType<typeof ChimeraChainService.prototype.sendTx>> & {
+  cumulativeGasUsed: string;
+  effectiveGasPrice: string;
+};
+
 export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
   maxRetries?: number;
@@ -25,12 +31,10 @@ export class ChainService {
   private readonly txService: ChimeraChainService;
   private readonly logger: ILogger;
   private readonly config: ChainServiceConfig;
-  private readonly signer: Signer;
 
-  constructor(config: ChainServiceConfig, signer: Signer, logger: ILogger) {
+  constructor(config: ChainServiceConfig, signer: EthWallet, logger: ILogger) {
     this.config = config;
     this.logger = logger;
-    this.signer = signer;
 
     // Convert chain configuration format to nxtp-txservice format
     const nxtpChainConfig = Object.entries(config.chains).reduce(
@@ -85,7 +89,7 @@ export class ChainService {
     return tronWeb;
   }
 
-  async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<providers.TransactionReceipt> {
+  async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<TransactionReceipt> {
     const { requestContext } = createLoggingContext('submitAndMonitor');
     const context = { ...requestContext, origin: 'chainservice' };
 
@@ -160,18 +164,18 @@ export class ChainService {
           to: writeTransaction.to.toLowerCase(),
           transactionHash: broadcast.txid.toLowerCase(),
           from: tronWeb.defaultAddress.hex as string,
-          logs: info.log.map((l) => ({
+          logs: info.log.map((l: { address: string; data: string; topics: string[] }) => ({
             contract: prependHexPrefix(l.address).toLowerCase(),
             data: prependHexPrefix(l.data).toLowerCase(),
-            topics: l.topics.map((t) => prependHexPrefix(t).toLowerCase()),
+            topics: l.topics.map((t: string) => prependHexPrefix(t).toLowerCase()),
           })),
-          cumulativeGasUsed: BigNumber.from(info.receipt.energy_usage_total),
-          effectiveGasPrice: BigNumber.from(info.receipt.energy_fee),
-        } as unknown as providers.TransactionReceipt;
+          cumulativeGasUsed: info.receipt.energy_usage_total.toString(),
+          effectiveGasPrice: info.receipt.energy_fee.toString(),
+        } as unknown as TransactionReceipt;
       }
 
       // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
-      const tx = (await this.txService.sendTx(writeTransaction, context)) as unknown as providers.TransactionReceipt;
+      const tx = (await this.txService.sendTx(writeTransaction, context)) as unknown as TransactionReceipt;
 
       this.logger.info('Transaction mined', {
         chainId,
@@ -197,7 +201,7 @@ export class ChainService {
   }
 
   getBalance(chain: number, owner: string, asset: string) {
-    return this.txService.getBalance(chain, owner, asset === constants.AddressZero ? undefined : asset);
+    return this.txService.getBalance(chain, owner, asset === zeroAddress ? undefined : asset);
   }
 
   async readTx(transaction: { to: string; data: string; domain: number; funcSig: string }, blockTag?: string) {

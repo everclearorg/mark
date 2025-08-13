@@ -21,7 +21,6 @@ import { MarkAdapters } from '../init';
 import { checkAndApproveERC20 } from './erc20';
 import { submitTransactionWithLogging } from './transactions';
 import { jsonifyError, Logger } from '@mark/logger';
-import { providers } from 'ethers';
 import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import {
   isSvmChain,
@@ -31,6 +30,7 @@ import {
   hexToBase58,
 } from '@mark/core';
 import { LookupTableNotFoundError } from '@mark/everclear';
+import { TransactionReceipt } from '@mark/chainservice';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -126,13 +126,15 @@ const intentAddedAbi = [
 ] as const;
 
 export const getAddedIntentIdsFromReceipt = async (
-  receipt: providers.TransactionReceipt,
+  receipt: TransactionReceipt,
   chainId: string,
   logger: Logger,
   context?: { requestId: string; invoiceId: string },
 ) => {
   // Find the IntentAdded event logs
-  const intentAddedLogs = receipt.logs.filter((l) => (l.topics[0] ?? '').toLowerCase() === INTENT_ADDED_TOPIC0);
+  const intentAddedLogs = receipt.logs.filter(
+    (l: { topics: string[] }) => (l.topics[0] ?? '').toLowerCase() === INTENT_ADDED_TOPIC0,
+  );
   if (!intentAddedLogs.length) {
     logger.error('No intents created from purchase transaction', {
       invoiceId: context?.invoiceId,
@@ -143,12 +145,12 @@ export const getAddedIntentIdsFromReceipt = async (
     });
     return [];
   }
-  const purchaseIntentIds = intentAddedLogs.map((log) => {
+  const purchaseIntentIds = intentAddedLogs.map((log: { topics: string[]; data: string }) => {
     const { args } = decodeEventLog({
       abi: intentAddedAbi,
       data: log.data as `0x${string}`,
       topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
-    });
+    }) as { args: { _intentId: string } };
     return args._intentId;
   });
   return purchaseIntentIds;
@@ -368,7 +370,7 @@ export const sendEvmIntents = async (
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
     });
 
-    const purchaseTx = purchaseResult.receipt!;
+    const purchaseTx: TransactionReceipt = purchaseResult.receipt!;
 
     const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intents[0].origin, logger, {
       invoiceId,
@@ -383,14 +385,16 @@ export const sendEvmIntents = async (
       intentIds: purchaseIntentIds,
     });
 
-    prometheus.updateGasSpent(
-      intents[0].origin,
-      TransactionReason.CreateIntent,
-      BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
-    );
+    if (prometheus && purchaseTx && purchaseTx.cumulativeGasUsed && purchaseTx.effectiveGasPrice) {
+      prometheus.updateGasSpent(
+        intents[0].origin.toString(),
+        TransactionReason.CreateIntent,
+        BigInt(purchaseTx.cumulativeGasUsed.toString()) * BigInt(purchaseTx.effectiveGasPrice.toString()),
+      );
+    }
 
     // Return results for each intent in the batch
-    return purchaseIntentIds.map((intentId) => ({
+    return purchaseIntentIds.map((intentId: string) => ({
       transactionHash: purchaseTx.transactionHash,
       type: purchaseResult.submissionType,
       chainId: intents[0].origin,
@@ -802,17 +806,19 @@ export const sendTvmIntents = async (
       });
 
       try {
-        prometheus.updateGasSpent(
-          intent.origin,
-          TransactionReason.CreateIntent,
-          BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
-        );
+        if (prometheus && purchaseTx && purchaseTx.cumulativeGasUsed && purchaseTx.effectiveGasPrice) {
+          prometheus.updateGasSpent(
+            intent.origin.toString(),
+            TransactionReason.CreateIntent,
+            BigInt(purchaseTx.cumulativeGasUsed.toString()) * BigInt(purchaseTx.effectiveGasPrice.toString()),
+          );
+        }
       } catch (err) {
         logger.warn('Failed to update gas spent', { invoiceId, requestId, error: jsonifyError(err), purchaseTx });
       }
 
       // Add results for this intent
-      purchaseIntentIds.forEach((intentId) => {
+      purchaseIntentIds.forEach((intentId: string) => {
         results.push({
           transactionHash: purchaseTx.transactionHash,
           type: TransactionSubmissionType.Onchain,
@@ -999,8 +1005,10 @@ export const sendIntentsMulticall = async (
     });
 
     // Extract individual intent IDs from transaction logs
-    const intentEvents = receipt.logs.filter((log) => log.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0);
-    const individualIntentIds = intentEvents.map((event) => event.topics[1]);
+    const intentEvents = receipt.logs.filter(
+      (log: { topics: string[] }) => log.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0,
+    );
+    const individualIntentIds = intentEvents.map((event: { topics: string[] }) => event.topics[1]);
 
     logger.info('Multicall transaction confirmed', {
       transactionHash: receipt.transactionHash,
@@ -1010,7 +1018,7 @@ export const sendIntentsMulticall = async (
     });
 
     // Log each individual intent ID for DD searching
-    individualIntentIds.forEach((intentId, index) => {
+    individualIntentIds.forEach((intentId: string, index: number) => {
       logger.info('Individual intent created via multicall', {
         transactionHash: receipt.transactionHash,
         chainId,
@@ -1021,11 +1029,11 @@ export const sendIntentsMulticall = async (
     });
 
     // Track gas spent for the multicall transaction
-    if (prometheus) {
+    if (prometheus && receipt && receipt.cumulativeGasUsed && receipt.effectiveGasPrice) {
       prometheus.updateGasSpent(
         chainId.toString(),
         TransactionReason.CreateIntent,
-        BigInt(receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice).toString()),
+        BigInt(receipt.cumulativeGasUsed.toString()) * BigInt(receipt.effectiveGasPrice.toString()),
       );
     }
 

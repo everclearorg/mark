@@ -1,9 +1,7 @@
-import { providers } from 'ethers';
-import { ChainService } from '@mark/chainservice';
+import { ChainService, TransactionReceipt } from '@mark/chainservice';
 import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig, isEvmChain } from '@mark/core';
 import { wrapTransactionWithZodiac } from './zodiac';
 import { Logger } from '@mark/logger';
-
 export interface TransactionSubmissionParams {
   chainService: ChainService;
   logger: Logger;
@@ -16,7 +14,7 @@ export interface TransactionSubmissionParams {
 export interface TransactionSubmissionResult {
   submissionType: TransactionSubmissionType;
   hash: string; // unique identifier for the transaction, could be safe hash or transaction hash
-  receipt?: providers.TransactionReceipt; // The actual receipt type from chainService
+  receipt?: TransactionReceipt; // The actual receipt type from chainService
 }
 
 /**

@@ -10,15 +10,15 @@ import {
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService, EthWallet } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
-import { Signer, Wallet } from 'ethers';
+import { Wallet } from 'ethers';
 import { pollAndProcessInvoices } from './invoice';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
 import * as process from 'node:process';
+import { bytesToHex } from 'viem';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
@@ -68,7 +68,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
       retryDelay: 15000,
       logLevel: config.logLevel,
     },
-    web3Signer as unknown as Signer,
+    web3Signer as EthWallet,
     logger,
   );
 
@@ -84,7 +84,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
   return {
     logger,
     chainService,
-    web3Signer,
+    web3Signer: web3Signer as Web3Signer,
     everclear,
     purchaseCache,
     rebalanceCache,
@@ -131,7 +131,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     const context: ProcessingContext = {
       ...adapters,
       config,
-      requestId: hexlify(randomBytes(32)),
+      requestId: bytesToHex(crypto.getRandomValues(new Uint8Array(32))),
       startTime: Math.floor(Date.now() / 1000),
     };
 

@@ -161,7 +161,8 @@ export async function getPermit2Signature(
       return await signer.signTypedData(domain, types, value);
     } else if (signer instanceof Wallet) {
       // Use ethers Wallet's _signTypedData method - allows for local using private key
-      return await signer._signTypedData(domain, types, value);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return await (signer as unknown as any)._signTypedData(domain, types, value);
     } else {
       throw new Error('Signer does not support signTypedData method');
     }

@@ -1,4 +1,3 @@
-import { NxtpError } from '@connext/nxtp-utils';
 import { axiosPost, axiosGet } from '@mark/core';
 import { Bytes } from 'ethers';
 
@@ -17,7 +16,7 @@ export class Web3SignerApi {
     SIGN_TYPED_DATA: 'eth_signTypedData',
   };
 
-  constructor(private readonly url: string) {}
+  constructor(private readonly url: string) { }
 
   public async sign(identifier: string, data: string | Bytes): Promise<string> {
     const endpoint = Web3SignerApi.ENDPOINTS.SIGN;
@@ -61,7 +60,7 @@ export class Web3SignerApi {
     let response = await axiosPost<{ result: string }>(this.url, payload);
 
     if (!response || !response.data || !(response.data as { result: string }).result) {
-      throw new NxtpError('Received bad response from web3signer instance for signTypedData.', { response });
+      throw new Error('Received bad response from web3signer instance for signTypedData:' + JSON.stringify(response));
     }
 
     return (response.data as { result: string }).result;
@@ -84,12 +83,12 @@ export class Web3SignerApi {
     endpoint: (typeof Web3SignerApi.ENDPOINTS)[keyof typeof Web3SignerApi.ENDPOINTS],
   ) {
     if (!response || !response.data || response.data.length === 0) {
-      throw new NxtpError(
-        'Received bad response from web3signer instance; make sure your key file is configured correctly.',
-        {
+      throw new Error(
+        'Received bad response from web3signer instance; make sure your key file is configured correctly.\n' +
+        JSON.stringify({
           response,
           endpoint,
-        },
+        }),
       );
     }
     return response;

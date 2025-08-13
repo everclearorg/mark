@@ -150,13 +150,17 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       context: { ...context, transactionType: 'zero-approval', asset: tokenAddress },
     });
 
-    if (prometheus && zeroApprovalResult.receipt) {
+    if (
+      prometheus &&
+      zeroApprovalResult.receipt &&
+      zeroApprovalResult.receipt.cumulativeGasUsed &&
+      zeroApprovalResult.receipt.effectiveGasPrice
+    ) {
       prometheus.updateGasSpent(
         chainId,
         TransactionReason.Approval,
-        BigInt(
-          zeroApprovalResult.receipt.cumulativeGasUsed.mul(zeroApprovalResult.receipt.effectiveGasPrice).toString(),
-        ),
+        BigInt(zeroApprovalResult.receipt.cumulativeGasUsed.toString()) *
+        BigInt(zeroApprovalResult.receipt.effectiveGasPrice.toString()),
       );
     }
 
@@ -208,7 +212,8 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
     prometheus.updateGasSpent(
       chainId,
       TransactionReason.Approval,
-      BigInt(approvalResult.receipt.cumulativeGasUsed.mul(approvalResult.receipt.effectiveGasPrice).toString()),
+      BigInt(approvalResult.receipt.cumulativeGasUsed.toString()) *
+      BigInt(approvalResult.receipt.effectiveGasPrice.toString()),
     );
   }
 
