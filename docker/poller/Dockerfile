@@ -86,16 +86,15 @@ COPY --from=build /tmp/build/packages/adapters/web3signer/dist ${LAMBDA_TASK_ROO
 COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/packages/adapters/cache/dist
 
 # Create symlinks for workspace dependencies
-RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
-    rm -rf core logger chainservice everclear prometheus web3signer cache rebalance && \
-    ln -s ../../packages/core/dist core && \
-    ln -s ../../packages/adapters/logger/dist logger && \
-    ln -s ../../packages/adapters/rebalance/dist rebalance && \
-    ln -s ../../packages/adapters/chainservice/dist chainservice && \
-    ln -s ../../packages/adapters/everclear/dist everclear && \
-    ln -s ../../packages/adapters/prometheus/dist prometheus && \
-    ln -s ../../packages/adapters/web3signer/dist web3signer && \
-    ln -s ../../packages/adapters/cache/dist cache
+RUN mkdir -p ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
+    ln -sf ../../packages/core/dist ${LAMBDA_TASK_ROOT}/node_modules/@mark/core && \
+    ln -sf ../../packages/adapters/logger/dist ${LAMBDA_TASK_ROOT}/node_modules/@mark/logger && \
+    ln -sf ../../packages/adapters/rebalance/dist ${LAMBDA_TASK_ROOT}/node_modules/@mark/rebalance && \
+    ln -sf ../../packages/adapters/chainservice/dist ${LAMBDA_TASK_ROOT}/node_modules/@mark/chainservice && \
+    ln -sf ../../packages/adapters/everclear/dist ${LAMBDA_TASK_ROOT}/node_modules/@mark/everclear && \
+    ln -sf ../../packages/adapters/prometheus/dist ${LAMBDA_TASK_ROOT}/node_modules/@mark/prometheus && \
+    ln -sf ../../packages/adapters/web3signer/dist ${LAMBDA_TASK_ROOT}/node_modules/@mark/web3signer && \
+    ln -sf ../../packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/node_modules/@mark/cache
 
 COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
 
