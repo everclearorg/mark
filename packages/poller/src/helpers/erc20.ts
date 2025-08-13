@@ -1,9 +1,10 @@
 import { encodeFunctionData, erc20Abi, decodeAbiParameters } from 'viem';
-import { MarkConfiguration, LoggingContext, WalletConfig } from '@mark/core';
+import { MarkConfiguration, LoggingContext, WalletConfig, isTvmChain } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { TransactionReason } from '@mark/prometheus';
 import { PrometheusAdapter } from '@mark/prometheus';
+import { TronWeb } from 'tronweb';
 import { submitTransactionWithLogging } from './transactions';
 
 export interface ApprovalParams {
@@ -42,7 +43,10 @@ export async function checkTokenAllowance(
     data: encodeFunctionData({
       abi: erc20Abi,
       functionName: 'allowance',
-      args: [owner as `0x${string}`, spender as `0x${string}`],
+      args: [
+        isTvmChain(chainId) ? `0x${TronWeb.address.toHex(owner).slice(2)}` : (owner as `0x${string}`),
+        isTvmChain(chainId) ? `0x${TronWeb.address.toHex(spender).slice(2)}` : (spender as `0x${string}`),
+      ],
     }),
     domain: +chainId,
     funcSig: 'allowance(address,address)',
@@ -131,7 +135,12 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
         data: encodeFunctionData({
           abi: erc20Abi,
           functionName: 'approve',
-          args: [spenderAddress as `0x${string}`, 0n],
+          args: [
+            isTvmChain(chainId)
+              ? `0x${TronWeb.address.toHex(spenderAddress).slice(2)}`
+              : (spenderAddress as `0x${string}`),
+            0n,
+          ],
         }),
         value: '0',
         from: config.ownAddress,
@@ -180,7 +189,12 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       data: encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
-        args: [spenderAddress as `0x${string}`, amount],
+        args: [
+          isTvmChain(chainId)
+            ? `0x${TronWeb.address.toHex(spenderAddress).slice(2)}`
+            : (spenderAddress as `0x${string}`),
+          amount,
+        ],
       }),
       value: '0',
       from: config.ownAddress,

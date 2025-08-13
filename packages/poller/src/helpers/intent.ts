@@ -20,7 +20,7 @@ import { prepareMulticall } from './multicall';
 import { MarkAdapters } from '../init';
 import { checkAndApproveERC20 } from './erc20';
 import { submitTransactionWithLogging } from './transactions';
-import { Logger } from '@mark/logger';
+import { jsonifyError, Logger } from '@mark/logger';
 import { providers } from 'ethers';
 import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import {
@@ -31,7 +31,6 @@ import {
   hexToBase58,
 } from '@mark/core';
 import { LookupTableNotFoundError } from '@mark/everclear';
-import { TronWeb } from 'tronweb';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -655,32 +654,14 @@ export const sendTvmIntents = async (
     }, BigInt(0));
 
     // Get the spender address from the deployment config for approvals
-    if (!feeAdapterTxData.to) {
-      throw new Error(`Fee adapter address not found in transaction data for chain ${originChainId}`);
-    }
-
-    // Helper function to convert Tron addresses to Viem-compatible format
-    const toViemAddress = (address: string): `0x${string}` => {
-      // Convert base58 to hex if needed
-      const hexAddr = address.startsWith('T') 
-        ? TronWeb.address.toHex(address) 
-        : address;
-      
-      // Remove 0x prefix if present
-      const cleanHex = hexAddr.startsWith('0x') ? hexAddr.slice(2) : hexAddr;
-      
-      // Remove Tron network prefix (first byte) if it's a 21-byte address
-      const viemHex = cleanHex.length === 42 ? cleanHex.slice(2) : cleanHex;
-      
-      return `0x${viemHex}` as `0x${string}`;
-    };
-
-    // Convert all addresses to Viem-compatible format
-    const addressStr = feeAdapterTxData.to.trim();
-    const spenderForAllowance = toViemAddress(addressStr);
+    // const spenderForAllowance = `0x${TronWeb.address.toHex(feeAdapterTxData.to || '').slice(2)}` as `0x${string}`;
+    // let spokeAddress = chainConfig.deployments?.everclear;
+    // if (!spokeAddress) {
+    //   throw new Error(`Everclear deployment not found for chain ${originChainId}`);
+    // }
+    // const spenderForAllowance = `0x${TronWeb.address.toHex(spokeAddress).slice(2)}` as `0x${string}`;
     const tronAddress = addresses[originChainId];
-    const ownerForAllowance = toViemAddress(getActualOwner(originWalletConfig, tronAddress));
-    const tokenAddressForApproval = toViemAddress(firstIntent.inputAsset);
+    // const ownerForAllowance = `0x${TronWeb.address.toHex(tronAddress).slice(2)}`;
 
     logger.info('Total amount for approvals', {
       requestId,
@@ -688,9 +669,8 @@ export const sendTvmIntents = async (
       totalAmount: totalAmount.toString(),
       intentCount: intents.length,
       chainId: originChainId,
-      owner: ownerForAllowance,
-      spender: spenderForAllowance,
-      tokenAddress: tokenAddressForApproval,
+      owner: tronAddress,
+      spender: feeAdapterTxData.to,
       walletType: originWalletConfig.walletType,
     });
 
@@ -702,10 +682,10 @@ export const sendTvmIntents = async (
         logger,
         prometheus,
         chainId: originChainId,
-        tokenAddress: tokenAddressForApproval,
-        spenderAddress: spenderForAllowance,
+        tokenAddress: firstIntent.inputAsset,
+        spenderAddress: feeAdapterTxData.to!,
         amount: totalAmount,
-        owner: ownerForAllowance,
+        owner: tronAddress,
         zodiacConfig: originWalletConfig,
         context: { requestId, invoiceId },
       });
@@ -726,11 +706,10 @@ export const sendTvmIntents = async (
       logger.error('Failed to approve TRC20 on Tron', {
         requestId,
         invoiceId,
-        error,
+        error: jsonifyError(error),
         tokenAddress: firstIntent.inputAsset,
-        tokenAddressForApproval: tokenAddressForApproval,
-        owner: ownerForAllowance,
-        spender: spenderForAllowance,
+        spenderAddress: feeAdapterTxData.to!,
+        owner: tronAddress,
         amount: totalAmount.toString(),
       });
       throw error;
@@ -822,17 +801,21 @@ export const sendTvmIntents = async (
         intentIds: purchaseIntentIds,
       });
 
-      prometheus.updateGasSpent(
-        intent.origin,
-        TransactionReason.CreateIntent,
-        BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
-      );
+      try {
+        prometheus.updateGasSpent(
+          intent.origin,
+          TransactionReason.CreateIntent,
+          BigInt(purchaseTx.cumulativeGasUsed.mul(purchaseTx.effectiveGasPrice).toString()),
+        );
+      } catch (err) {
+        logger.warn('Failed to update gas spent', { invoiceId, requestId, error: jsonifyError(err), purchaseTx });
+      }
 
       // Add results for this intent
       purchaseIntentIds.forEach((intentId) => {
         results.push({
           transactionHash: purchaseTx.transactionHash,
-          type: purchaseResult.submissionType,
+          type: TransactionSubmissionType.Onchain,
           chainId: intent.origin,
           intentId,
         });

@@ -28,7 +28,8 @@
     "@mark/core": "workspace:*",
     "@mark/logger": "workspace:*",
     "@solana/addresses": "^2.1.1",
-    "ethers": "5.7.2"
+    "ethers": "5.7.2",
+    "tronweb": "6.0.3"
   },
   "devDependencies": {
     "@types/node": "20.17.12",
