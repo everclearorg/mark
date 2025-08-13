@@ -82,7 +82,7 @@ export class ChainService {
     const tronWeb = new TronWeb({
       fullHost: host,
       privateKey: this.config.chains[TRON_CHAINID].privateKey?.startsWith('0x')
-        ? this.config.chains[TRON_CHAINID].privateKey.slice('0x')
+        ? this.config.chains[TRON_CHAINID].privateKey.slice(2)
         : this.config.chains[TRON_CHAINID].privateKey,
       headers: {
         'TRON-PRO-API-KEY': key,
