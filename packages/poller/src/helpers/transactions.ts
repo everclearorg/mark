@@ -1,6 +1,6 @@
 import { providers } from 'ethers';
 import { ChainService } from '@mark/chainservice';
-import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig } from '@mark/core';
+import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig, isEvmChain } from '@mark/core';
 import { wrapTransactionWithZodiac } from './zodiac';
 import { Logger } from '@mark/logger';
 
@@ -28,7 +28,9 @@ export async function submitTransactionWithLogging(
   const { chainService, logger, chainId, txRequest, zodiacConfig, context = {} } = params;
 
   // Prepare the transaction (wrap with Zodiac if needed)
-  const preparedTx = await wrapTransactionWithZodiac({ ...txRequest, chainId: +params.chainId }, zodiacConfig);
+  const preparedTx = isEvmChain(chainId)
+    ? await wrapTransactionWithZodiac({ ...txRequest, chainId: +params.chainId }, zodiacConfig)
+    : txRequest;
 
   logger.info('Submitting transaction', {
     ...context,
