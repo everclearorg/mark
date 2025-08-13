@@ -273,7 +273,7 @@ export const sendEvmIntents = async (
     }, BigInt(0));
 
     const spenderForAllowance = feeAdapterTxData.to as `0x${string}`;
-    const ownerForAllowance = `0x${getActualOwner(originWalletConfig, config.ownAddress).slice(2)}`;
+    const ownerForAllowance = getActualOwner(originWalletConfig, config.ownAddress);
 
     logger.info('Total amount for approvals', {
       requestId,
