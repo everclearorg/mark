@@ -708,6 +708,8 @@ export const sendTvmIntents = async (
         invoiceId,
         error: jsonifyError(error),
         tokenAddress: firstIntent.inputAsset,
+        spenderAddress: feeAdapterTxData.to!,
+        owner: tronAddress,
         amount: totalAmount.toString(),
       });
       throw error;
