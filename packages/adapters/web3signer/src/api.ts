@@ -1,5 +1,5 @@
 import { axiosPost, axiosGet } from '@mark/core';
-import { Bytes } from 'ethers';
+import { Bytes } from 'ethers5';
 
 // TODO: This class might benefit from some error handling / logging and response sanitization logic.
 /**

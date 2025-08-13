@@ -4114,7 +4114,8 @@ __metadata:
     "@mark/logger": "workspace:*"
     "@types/node": 20.17.12
     eslint: 9.17.0
-    ethers: 5.7.2
+    ethers: 6.13.5
+    ethers5: "npm:ethers@5.7.2"
     rimraf: 6.0.1
     sort-package-json: 2.12.0
     typescript: 5.7.2
@@ -9692,7 +9693,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ethers@npm:5.7.2":
+"ethers5@npm:ethers@5.7.2, ethers@npm:5.7.2":
   version: 5.7.2
   resolution: "ethers@npm:5.7.2"
   dependencies:
