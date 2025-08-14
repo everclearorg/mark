@@ -165,7 +165,7 @@ module "mark_prometheus" {
   entrypoint = [
     "/bin/sh",
     "-c",
-    "mkdir -p /etc/prometheus && echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && chmod 644 /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
+    "set -e; echo 'Setting up Prometheus...'; mkdir -p /etc/prometheus && echo 'Created config directory'; echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && echo 'Created config file'; chmod 644 /etc/prometheus/prometheus.yml && echo 'Set config permissions'; echo 'Starting Prometheus...'; exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
   ]
   cert_arn                = var.cert_arn
   ingress_cdir_blocks     = ["0.0.0.0/0"]
