@@ -161,9 +161,14 @@ resource "aws_api_gateway_deployment" "admin_api" {
   ]
 
   rest_api_id = aws_api_gateway_rest_api.admin_api.id
-  stage_name  = var.stage
 
   lifecycle {
     create_before_destroy = true
   }
+}
+
+resource "aws_api_gateway_stage" "admin_api" {
+  deployment_id = aws_api_gateway_deployment.admin_api.id
+  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
+  stage_name    = var.stage
 } 
