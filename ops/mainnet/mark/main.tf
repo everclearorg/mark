@@ -143,6 +143,9 @@ module "mark_prometheus" {
   memory                  = 1024
   instance_count          = 1
   service_security_groups = [module.sgs.prometheus_sg_id]
+  container_user          = "65534:65534"
+  init_container_enabled  = true
+  init_container_commands = ["sh", "-c", "chown -R 65534:65534 /prometheus && chmod -R 755 /prometheus"]
   container_env_vars      = concat(
     local.prometheus_env_vars,
     [
