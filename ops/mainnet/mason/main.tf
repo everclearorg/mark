@@ -140,7 +140,7 @@ module "mark_prometheus" {
   lb_subnets              = module.network.public_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/prometheus:latest"
+  docker_image            = "prom/prometheus:v2.53.4"
   container_family        = "mark3-prometheus"
   volume_name             = "mark3-prometheus-data"
   volume_container_path   = "/prometheus"
