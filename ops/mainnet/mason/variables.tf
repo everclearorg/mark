@@ -13,7 +13,7 @@ variable "environment" {
 variable "stage" {
   description = "Stage name"
   type        = string
-  default     = "mason"
+  default     = "staging"
 }
 
 variable "domain" {

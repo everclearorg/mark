@@ -22,7 +22,7 @@ data "aws_region" "current" {}
 
 # Read the MARK_CONFIG_MAINNET parameter from SSM
 data "aws_ssm_parameter" "mark_config_mainnet" {
-  name            = "MARK_2_CONFIG_MAINNET"
+  name            = "MANDY_CONFIG_MAINNET"
   with_decryption = true
 }
 
@@ -59,7 +59,7 @@ module "ecs" {
   stage                   = var.stage
   environment             = var.environment
   domain                  = var.domain
-  ecs_cluster_name_prefix = "mark-ecs"
+  ecs_cluster_name_prefix = "mandy-ecs"
 }
 
 module "sgs" {
@@ -107,7 +107,7 @@ module "mark_web3signer" {
   task_subnets        = module.network.private_subnets
   efs_id              = module.efs.mark_efs_id
   docker_image        = "ghcr.io/connext/web3signer:latest"
-  container_family    = "mark2-web3signer"
+  container_family    = "mandy-web3signer"
   container_port      = 9000
   cpu                 = 256
   memory              = 512
@@ -134,8 +134,8 @@ module "mark_prometheus" {
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
   docker_image            = "prom/prometheus:latest"
-  container_family        = "mark2-prometheus"
-  volume_name             = "mark2-prometheus-data"
+  container_family        = "mandy-prometheus"
+  volume_name             = "mandy-prometheus-data"
   volume_container_path   = "/prometheus"
   volume_efs_path         = "/"
   container_port          = 9090
@@ -189,8 +189,8 @@ module "mark_pushgateway" {
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
   docker_image            = "prom/pushgateway:latest"
-  container_family        = "mark2-pushgateway"
-  volume_name             = "mark2-pushgateway-data"
+  container_family        = "mandy-pushgateway"
+  volume_name             = "mandy-pushgateway-data"
   volume_container_path   = "/pushgateway"
   volume_efs_path         = "/"
   entrypoint = [
@@ -213,7 +213,7 @@ module "mark_poller" {
   source              = "../../modules/lambda"
   stage               = var.stage
   environment         = var.environment
-  container_family    = "mark2-poller"
+  container_family    = "mandy-poller"
   execution_role_arn  = module.iam.lambda_role_arn
   image_uri           = var.image_uri
   subnet_ids          = module.network.private_subnets
@@ -241,7 +241,7 @@ module "mark_admin_api" {
   security_group_id   = module.sgs.lambda_sg_id
   image_uri           = var.admin_image_uri # Using the variable we added
   container_env_vars  = {
-    DD_SERVICE                      = "mark2-admin" # Or "mark2-admin" if you want to differentiate in Datadog
+    DD_SERVICE                      = "mandy-admin" # Or "mandy-admin" if you want to differentiate in Datadog
     DD_LAMBDA_HANDLER               = "index.handler"
     DD_LOGS_ENABLED                 = "true"
     DD_TRACES_ENABLED               = "true"
