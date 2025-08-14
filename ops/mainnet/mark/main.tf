@@ -142,10 +142,14 @@ module "mark_prometheus" {
   cpu                     = 512
   memory                  = 1024
   instance_count          = 1
+  deployment_configuration = {
+    maximum_percent         = 100
+    minimum_healthy_percent = 0
+  }
   service_security_groups = [module.sgs.prometheus_sg_id]
   container_user          = "65534:65534"
   init_container_enabled  = true
-  init_container_commands = ["sh", "-c", "chown -R 65534:65534 /prometheus && chmod -R 755 /prometheus"]
+  init_container_commands = ["sh", "-c", "rm -rf /prometheus/lock /prometheus/wal.tmp && mkdir -p /prometheus && chown -R 65534:65534 /prometheus && chmod -R 755 /prometheus"]
   container_env_vars      = concat(
     local.prometheus_env_vars,
     [
@@ -158,7 +162,7 @@ module "mark_prometheus" {
   entrypoint = [
     "/bin/sh",
     "-c",
-    "mkdir -p /etc/prometheus && echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && chmod 644 /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
+    "set -e; echo 'Setting up Prometheus...'; mkdir -p /etc/prometheus && echo 'Created config directory'; echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && echo 'Created config file'; chmod 644 /etc/prometheus/prometheus.yml && echo 'Set config permissions'; echo 'Starting Prometheus...'; exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
   ]
   cert_arn                = var.cert_arn
   ingress_cdir_blocks     = ["0.0.0.0/0"]
