@@ -356,7 +356,7 @@ program
 
         const publicClient = createPublicClient({
             chain: getViemChain(route.origin),
-            transport: http(originChain.providers[0])
+            transport: http(originChain.providers[0]) // TODO: use multiple providers if included
         });
 
         // Get transaction receipt
