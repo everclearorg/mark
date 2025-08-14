@@ -13,7 +13,7 @@ locals {
         honor_labels: true
         metrics_path: /metrics
         static_configs:
-          - targets: ['mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
+          - targets: ['matoshi-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
     EOT
 
   prometheus_env_vars = [
@@ -61,8 +61,8 @@ locals {
     ENVIRONMENT                   = var.environment
     STAGE                         = var.stage
     CHAIN_IDS                     = var.chain_ids
-    PUSH_GATEWAY_URL              = "http://mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
-    PROMETHEUS_URL                = "http://mark-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+    PUSH_GATEWAY_URL              = "http://matoshi-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL                = "http://matoshi-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
     PROMETHEUS_ENABLED            = true
     DD_LOGS_ENABLED               = true
     DD_ENV                        = "${var.environment}-${var.stage}"
