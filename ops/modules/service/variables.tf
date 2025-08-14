@@ -230,3 +230,15 @@ variable "init_container_commands" {
   type        = list(string)
   default     = []
 }
+
+variable "deployment_configuration" {
+  description = "Deployment configuration for the ECS service"
+  type = object({
+    maximum_percent         = number
+    minimum_healthy_percent = number
+  })
+  default = {
+    maximum_percent         = 200
+    minimum_healthy_percent = 100
+  }
+}
