@@ -99,6 +99,7 @@ jobs:
       POLLER_IMAGE_TAG: mark-poller-${{ github.sha }}
       ADMIN_REPOSITORY: mark-admin
       ADMIN_IMAGE_TAG: mark-admin-${{ github.sha }}
+      AWS_PROFILE: aws-deployer-connext
     permissions:
       contents: read
       packages: write
@@ -151,13 +152,9 @@ jobs:
       - name: Terraform Init
         working-directory: ${{ matrix.environment.terraform_dir }}
         run: terraform init > /dev/null 2>&1
-        env:
-          AWS_PROFILE: aws-deployer-connext
 
       - name: Terraform Apply
         working-directory: ${{ matrix.environment.terraform_dir }}
-        env:
-          AWS_PROFILE: aws-deployer-connext
         run: |
           terraform apply \
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
@@ -182,6 +179,7 @@ jobs:
       POLLER_IMAGE_TAG: mark-poller-${{ github.sha }}
       ADMIN_REPOSITORY: mark-admin
       ADMIN_IMAGE_TAG: mark-admin-${{ github.sha }}
+      AWS_PROFILE: aws-deployer-connext
     permissions:
       contents: read
       packages: write
@@ -234,13 +232,9 @@ jobs:
       - name: Terraform Init
         working-directory: ./ops/mainnet/mason
         run: terraform init > /dev/null 2>&1
-        env:
-          AWS_PROFILE: aws-deployer-connext
 
       - name: Terraform Apply
         working-directory: ./ops/mainnet/mason
-        env:
-          AWS_PROFILE: aws-deployer-connext
         run: |
           terraform apply \
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
