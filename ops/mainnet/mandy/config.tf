@@ -68,7 +68,7 @@ locals {
     DD_ENV                        = "${var.environment}-${var.stage}"
     DD_API_KEY                    = local.mark_config.dd_api_key
     DD_LAMBDA_HANDLER             = "packages/poller/dist/index.handler"
-    MARK_CONFIG_SSM_PARAMETER     = "MARK_2_CONFIG_MAINNET"
+    MARK_CONFIG_SSM_PARAMETER     = "MANDY_CONFIG_MAINNET"
     
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"

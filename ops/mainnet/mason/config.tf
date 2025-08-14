@@ -72,7 +72,7 @@ locals {
     DD_PROFILING_ENABLED          = false
     DD_MERGE_XRAY_TRACES          = true
     DD_TRACE_OTEL_ENABLED         = false
-    MARK_CONFIG_SSM_PARAMETER     = "MARK_3_CONFIG_MAINNET"
+    MARK_CONFIG_SSM_PARAMETER     = "MASON_CONFIG_MAINNET"
     EVERCLEAR_API_URL             = "https://api.staging.everclear.org"
 
     WETH_1_THRESHOLD              = "800000000000000000"
