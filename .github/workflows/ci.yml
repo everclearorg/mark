@@ -83,12 +83,12 @@ jobs:
     strategy:
       matrix:
         environment:
-          - name: mark
-            region: ap-northeast-1
-            terraform_dir: ./ops/mainnet/mark
-          - name: mandy
-            region: eu-south-2
-            terraform_dir: ./ops/mainnet/mandy
+          # - name: mark
+          #   region: ap-northeast-1
+          #   terraform_dir: ./ops/mainnet/mark
+          # - name: mandy
+          #   region: eu-south-2
+          #   terraform_dir: ./ops/mainnet/mandy
           - name: matoshi
             region: ap-southeast-1
             terraform_dir: ./ops/mainnet/matoshi
@@ -102,7 +102,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -185,7 +185,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
