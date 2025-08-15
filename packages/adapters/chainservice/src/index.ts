@@ -202,6 +202,7 @@ export class ChainService {
       const nonceManager = createNonceManager({ source: jsonRpc() });
       const account = toAccount({
         address: (addresses[chainId] ?? writeTransaction.from) as `0x${string}`,
+        getAddress: () => Promise.resolve((addresses[chainId] ?? writeTransaction.from) as `0x${string}`),
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         signTransaction: (_) => {
           throw new Error(`Unsupported: signTypedData`);
@@ -235,6 +236,11 @@ export class ChainService {
         account,
         transport,
         chain,
+      });
+      this.logger.info('Viem accounts and providers created', {
+        chainId,
+        account: account.address,
+        writeTransaction,
       });
       const prepared = await wallet.prepareTransactionRequest({
         to: writeTransaction.to,
