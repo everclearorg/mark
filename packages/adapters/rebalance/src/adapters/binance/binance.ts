@@ -321,7 +321,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: erc20Abi,
               functionName: 'transfer',
-              args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
+              args: [depositInfo.address as `0x${string}`, BigInt(amount)],
             }),
             funcSig: route.asset !== zeroAddress ? 'transfer(address,uint256)' : '',
           },
