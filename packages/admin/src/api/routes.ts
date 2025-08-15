@@ -81,22 +81,16 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
 
   const { path, pathParameters, httpMethod } = event;
 
-  if (httpMethod === 'POST' && path.endsWith(HttpPaths.PausePurchase)) {
-    return HttpPaths.PausePurchase;
+  if (httpMethod !== 'POST') {
+    logger.error('Unknown http method', { requestId, path, pathParameters, httpMethod });
+    return undefined;
   }
 
-  if (httpMethod === 'POST' && path.endsWith(HttpPaths.PauseRebalance)) {
-    return HttpPaths.PauseRebalance;
+  for (const path of Object.values(HttpPaths)) {
+    if (path.endsWith(path)) {
+      return path;
+    }
   }
-
-  if (httpMethod === 'POST' && path.endsWith(HttpPaths.UnpausePurchase)) {
-    return HttpPaths.UnpausePurchase;
-  }
-
-  if (httpMethod === 'POST' && path.endsWith(HttpPaths.UnpauseRebalance)) {
-    return HttpPaths.UnpauseRebalance;
-  }
-
   logger.error('Unknown path', { requestId, path, pathParameters, httpMethod });
   return undefined;
 };
