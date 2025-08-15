@@ -11,7 +11,7 @@ import {
   TRON_CHAINID,
   isSvmChain,
 } from '@mark/core';
-import { createPublicClient, createWalletClient, defineChain, http, parseTransaction, zeroAddress } from 'viem';
+import { createPublicClient, defineChain, http, parseTransaction, zeroAddress } from 'viem';
 import { jsonRpc, createNonceManager } from 'viem/nonce';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
@@ -231,29 +231,26 @@ export class ChainService {
         transport,
         chain,
       });
-      const wallet = createWalletClient({
-        account: (addresses[chainId] ?? writeTransaction.from) as `0x${string}`,
-        transport,
-        chain,
-      });
+      const account = (addresses[chainId] ?? writeTransaction.from) as `0x${string}`;
       this.logger.info('Viem accounts and providers created', {
         chainId,
-        account: wallet.account.address,
         writeTransaction,
+        account,
       });
-      const prepared = await wallet.prepareTransactionRequest({
+      const prepared = await publicClient.prepareTransactionRequest({
         to: writeTransaction.to,
         value: BigInt(writeTransaction.value),
         data: writeTransaction.data,
         chainId: +chainId,
         chain,
-        account: wallet.account,
+        account,
         nonceManager,
       });
       this.logger.info('Transaction prepared with viem', {
         chainId,
         prepared,
         writeTransaction,
+        account,
       });
 
       const signed = await this.signer.signTransaction({
@@ -268,7 +265,7 @@ export class ChainService {
         maxPriorityFeePerGas: prepared.maxPriorityFeePerGas?.toString(),
         gasPrice: prepared.gasPrice?.toString(),
       });
-      const sent = await wallet.sendRawTransaction({ serializedTransaction: signed as `0x${string}` });
+      const sent = await publicClient.sendRawTransaction({ serializedTransaction: signed as `0x${string}` });
       this.logger.info('Viem transaction signed', {
         chainId,
         prepared,
