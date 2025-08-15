@@ -245,7 +245,11 @@ export class CctpBridgeAdapter implements BridgeAdapter {
       throw new Error(`Invalid origin domain: ${route.origin}`);
     }
 
-    const attestationReady = await this.pollAttestation(messageHash, originDomain.toString());
+    const attestationReady = await this.pollAttestation(
+      messageHash,
+      originDomain.toString(),
+      originTransaction.transactionHash,
+    );
     return attestationReady;
   }
 
@@ -318,7 +322,7 @@ export class CctpBridgeAdapter implements BridgeAdapter {
     }
   }
 
-  private async pollAttestation(messageHash: string, domain: string): Promise<boolean> {
+  private async pollAttestation(messageHash: string, domain: string, originTransaction: string): Promise<boolean> {
     if (this.version === 'v1') {
       // V1: https://iris-api.circle.com/attestations/{messageHash}
       try {
@@ -341,7 +345,7 @@ export class CctpBridgeAdapter implements BridgeAdapter {
       // V2: https://iris-api.circle.com/v2/messages/{domain}?transactionHash={messageHash}
       try {
         const axios = (await import('axios')).default;
-        const url = `https://iris-api.circle.com/v2/messages/${domain}?transactionHash=${messageHash}`;
+        const url = `https://iris-api.circle.com/v2/messages/${domain}?transactionHash=${originTransaction}`;
         const response = await axios.get(url);
         return response.data?.messages?.[0]?.status === 'complete';
       } catch (e) {
