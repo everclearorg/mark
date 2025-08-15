@@ -193,13 +193,15 @@ export class ChainService {
       // Default to evm case using txservice
       // NOTE: return txservice once gas prices / initial submission errors are fixed
       // (introduced in chainservice version 0.0.1-alpha.12)
+      const addresses = await this.getAddress();
       this.logger.debug('Sending transaction with viem + nonce manager', {
         chainId,
         writeTransaction,
+        addresses,
       });
       const nonceManager = createNonceManager({ source: jsonRpc() });
       const account = toAccount({
-        address: this.signer.address! as `0x${string}`,
+        address: (addresses[chainId] ?? writeTransaction.from) as `0x${string}`,
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         signTransaction: (_) => {
           throw new Error(`Unsupported: signTypedData`);
