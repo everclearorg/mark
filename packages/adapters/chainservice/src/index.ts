@@ -200,22 +200,22 @@ export class ChainService {
         addresses,
       });
       const nonceManager = createNonceManager({ source: jsonRpc() });
-      const account = toAccount({
-        address: (addresses[chainId] ?? writeTransaction.from) as `0x${string}`,
-        getAddress: () => Promise.resolve((addresses[chainId] ?? writeTransaction.from) as `0x${string}`),
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        signTransaction: (_) => {
-          throw new Error(`Unsupported: signTypedData`);
-        },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        signMessage: (_) => {
-          throw new Error(`Unsupported: signTypedData`);
-        },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        signTypedData: (_) => {
-          throw new Error(`Unsupported: signTypedData`);
-        },
-      });
+      // const account = toAccount({
+      //   address: (addresses[chainId] ?? writeTransaction.from) as `0x${string}`,
+      //   getAddress: () => Promise.resolve(),
+      //   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      //   signTransaction: (_) => {
+      //     throw new Error(`Unsupported: signTypedData`);
+      //   },
+      //   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      //   signMessage: (_) => {
+      //     throw new Error(`Unsupported: signTypedData`);
+      //   },
+      //   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      //   signTypedData: (_) => {
+      //     throw new Error(`Unsupported: signTypedData`);
+      //   },
+      // });
       const native = this.getAssetConfig(chainId, zeroAddress);
       const chain = defineChain({
         id: +chainId,
@@ -233,13 +233,13 @@ export class ChainService {
         chain,
       });
       const wallet = createWalletClient({
-        account,
+        account: (addresses[chainId] ?? writeTransaction.from) as `0x${string}`,
         transport,
         chain,
       });
       this.logger.info('Viem accounts and providers created', {
         chainId,
-        account: account.address,
+        account: wallet.account.address,
         writeTransaction,
       });
       const prepared = await wallet.prepareTransactionRequest({
@@ -248,7 +248,7 @@ export class ChainService {
         data: writeTransaction.data,
         chainId: +chainId,
         chain,
-        account,
+        account: wallet.account,
         nonceManager,
       });
       this.logger.info('Transaction prepared with viem', {
