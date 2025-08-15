@@ -25,7 +25,7 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
         context.logger.info('Clearing rebalance cache');
         await context.rebalanceCache.clear();
         break;
-      case HttpPaths.ClearRebalance:
+      case HttpPaths.ClearPurchase:
         context.logger.info('Clearing purchase cache');
         await context.purchaseCache.clear();
         break;
@@ -86,9 +86,9 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
     return undefined;
   }
 
-  for (const path of Object.values(HttpPaths)) {
-    if (path.endsWith(path)) {
-      return path;
+  for (const httpPath of Object.values(HttpPaths)) {
+    if (path.endsWith(httpPath)) {
+      return httpPath as HttpPaths;
     }
   }
   logger.error('Unknown path', { requestId, path, pathParameters, httpMethod });
