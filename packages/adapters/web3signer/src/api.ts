@@ -16,7 +16,7 @@ export class Web3SignerApi {
     SIGN_TYPED_DATA: 'eth_signTypedData',
   };
 
-  constructor(private readonly url: string) { }
+  constructor(private readonly url: string) {}
 
   public async sign(identifier: string, data: string | Bytes): Promise<string> {
     const endpoint = Web3SignerApi.ENDPOINTS.SIGN;
@@ -85,10 +85,10 @@ export class Web3SignerApi {
     if (!response || !response.data || response.data.length === 0) {
       throw new Error(
         'Received bad response from web3signer instance; make sure your key file is configured correctly.\n' +
-        JSON.stringify({
-          response,
-          endpoint,
-        }),
+          JSON.stringify({
+            response,
+            endpoint,
+          }),
       );
     }
     return response;

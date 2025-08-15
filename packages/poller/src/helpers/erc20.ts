@@ -160,7 +160,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
         chainId,
         TransactionReason.Approval,
         BigInt(zeroApprovalResult.receipt.cumulativeGasUsed.toString()) *
-        BigInt(zeroApprovalResult.receipt.effectiveGasPrice.toString()),
+          BigInt(zeroApprovalResult.receipt.effectiveGasPrice.toString()),
       );
     }
 
@@ -213,7 +213,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       chainId,
       TransactionReason.Approval,
       BigInt(approvalResult.receipt.cumulativeGasUsed.toString()) *
-      BigInt(approvalResult.receipt.effectiveGasPrice.toString()),
+        BigInt(approvalResult.receipt.effectiveGasPrice.toString()),
     );
   }
 

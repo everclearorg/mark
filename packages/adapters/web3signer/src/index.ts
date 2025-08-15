@@ -68,14 +68,14 @@ export class Web3Signer extends Signer {
       // If an EIP-1559 transaction, use the EIP-1559 specific fields.
       tx.type === 2
         ? {
-          maxFeePerGas: tx.maxFeePerGas,
-          maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
-          type: 2,
-        }
+            maxFeePerGas: tx.maxFeePerGas,
+            maxPriorityFeePerGas: tx.maxPriorityFeePerGas,
+            type: 2,
+          }
         : {
-          gasPrice: tx.gasPrice,
-          type: 0,
-        },
+            gasPrice: tx.gasPrice,
+            type: 0,
+          },
     );
 
     const identifier = await this.api.getPublicKey();

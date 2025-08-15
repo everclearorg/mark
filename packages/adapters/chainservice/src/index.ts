@@ -14,7 +14,6 @@ import {
 import { createPublicClient, createWalletClient, defineChain, http, parseTransaction, zeroAddress } from 'viem';
 import { jsonRpc, createNonceManager } from 'viem/nonce';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
-import { toAccount } from 'viem/accounts';
 
 export { EthWallet } from '@chimera-monorepo/chainservice';
 
