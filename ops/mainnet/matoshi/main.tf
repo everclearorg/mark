@@ -140,7 +140,7 @@ module "mark_prometheus" {
   lb_subnets              = module.network.public_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/prometheus:latest"
+  docker_image            = "prom/prometheus:v2.53.5"
   container_family        = "matoshi-prometheus"
   volume_name             = "matoshi-prometheus-data"
   volume_container_path   = "/prometheus"
@@ -202,7 +202,7 @@ module "mark_pushgateway" {
   lb_subnets              = module.network.private_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/pushgateway:latest"
+  docker_image            = "prom/pushgateway:v1.11.1"
   container_family        = "matoshi-pushgateway"
   volume_name             = "matoshi-pushgateway-data"
   volume_container_path   = "/pushgateway"

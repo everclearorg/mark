@@ -21,7 +21,7 @@ resource "aws_ecs_task_definition" "service" {
     var.init_container_enabled ? [
       {
         name         = "${var.container_family}-init"
-        image        = "busybox:latest"
+        image        = "busybox:1.37.0"
         essential    = false
         command      = var.init_container_commands
         mountPoints = var.volume_name != "" ? [
