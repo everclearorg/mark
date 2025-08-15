@@ -21,6 +21,14 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
       };
     }
     switch (request) {
+      case HttpPaths.ClearRebalance:
+        context.logger.info('Clearing rebalance cache');
+        await context.rebalanceCache.clear();
+        break;
+      case HttpPaths.ClearRebalance:
+        context.logger.info('Clearing purchase cache');
+        await context.purchaseCache.clear();
+        break;
       case HttpPaths.PausePurchase:
         await pauseIfNeeded(context.purchaseCache, context);
         break;
