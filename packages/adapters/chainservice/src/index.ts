@@ -197,6 +197,7 @@ export class ChainService {
         chainId,
         writeTransaction,
         addresses,
+        signerAddr: await this.signer.getAddress(),
       });
       const nonceManager = createNonceManager({ source: jsonRpc() });
       const native = this.getAssetConfig(chainId, zeroAddress);
