@@ -216,28 +216,11 @@ export class ChainService {
         transport,
         chain,
       });
-      const account = (addresses[chainId] ?? writeTransaction.from) as `0x${string}`;
+      const account = (writeTransaction.from ?? addresses[chainId]) as `0x${string}`;
       this.logger.info('Viem accounts and providers created', {
         chainId,
         writeTransaction,
         account,
-      });
-      const gas = await publicClient.estimateGas({
-        to: writeTransaction.to,
-        value: BigInt(writeTransaction.value),
-        data: writeTransaction.data,
-        account,
-      });
-      this.logger.info('Viem gas estimated', {
-        chainId,
-        writeTransaction,
-        gas,
-      });
-      const price = await publicClient.getGasPrice();
-      this.logger.info('Viem gas retrieved', {
-        chainId,
-        writeTransaction,
-        gas,
       });
       const prepared = await publicClient.prepareTransactionRequest({
         to: writeTransaction.to,
@@ -247,8 +230,6 @@ export class ChainService {
         chain,
         account,
         nonceManager,
-        gas: (gas * 15n) / 10n, // 150% buffer
-        gasPrice: (price * 15n) / 10n, // 150% buffer
       });
       this.logger.info('Transaction prepared with viem', {
         chainId,
