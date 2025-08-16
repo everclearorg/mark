@@ -199,22 +199,6 @@ export class ChainService {
         addresses,
       });
       const nonceManager = createNonceManager({ source: jsonRpc() });
-      // const account = toAccount({
-      //   address: (addresses[chainId] ?? writeTransaction.from) as `0x${string}`,
-      //   getAddress: () => Promise.resolve(),
-      //   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      //   signTransaction: (_) => {
-      //     throw new Error(`Unsupported: signTypedData`);
-      //   },
-      //   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      //   signMessage: (_) => {
-      //     throw new Error(`Unsupported: signTypedData`);
-      //   },
-      //   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      //   signTypedData: (_) => {
-      //     throw new Error(`Unsupported: signTypedData`);
-      //   },
-      // });
       const native = this.getAssetConfig(chainId, zeroAddress);
       const chain = defineChain({
         id: +chainId,
@@ -237,6 +221,23 @@ export class ChainService {
         writeTransaction,
         account,
       });
+      const gas = await publicClient.estimateGas({
+        to: writeTransaction.to,
+        value: BigInt(writeTransaction.value),
+        data: writeTransaction.data,
+        account,
+      });
+      this.logger.info('Viem gas estimated', {
+        chainId,
+        writeTransaction,
+        gas,
+      });
+      const price = await publicClient.getGasPrice();
+      this.logger.info('Viem gas retrieved', {
+        chainId,
+        writeTransaction,
+        gas,
+      });
       const prepared = await publicClient.prepareTransactionRequest({
         to: writeTransaction.to,
         value: BigInt(writeTransaction.value),
@@ -245,6 +246,8 @@ export class ChainService {
         chain,
         account,
         nonceManager,
+        gas: (gas * 15n) / 10n, // 150% buffer
+        gasPrice: (price * 15n) / 10n, // 150% buffer
       });
       this.logger.info('Transaction prepared with viem', {
         chainId,
