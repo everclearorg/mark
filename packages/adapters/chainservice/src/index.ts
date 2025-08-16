@@ -241,6 +241,7 @@ export class ChainService {
       const signed = await this.signer.signTransaction({
         to: prepared.to || undefined,
         value: prepared.value?.toString(),
+        from: account,
         nonce: prepared.nonce,
         data: prepared.data,
         gasLimit: prepared.gas,
