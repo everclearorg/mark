@@ -1,6 +1,6 @@
 output "api_endpoint" {
   description = "Base URL for the API Gateway"
-  value       = aws_api_gateway_deployment.admin_api.invoke_url
+  value       = aws_api_gateway_stage.admin_api.invoke_url
 }
 
 output "admin_lambda_arn" {

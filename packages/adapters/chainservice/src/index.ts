@@ -1,5 +1,5 @@
 import { TronWeb } from 'tronweb';
-import { ChainService as ChimeraChainService, EthWallet, WriteTransaction } from '@chimera-monorepo/chainservice';
+import { ChainService as ChimeraChainService, EthWallet } from '@chimera-monorepo/chainservice';
 import { ILogger, jsonifyError } from '@mark/logger';
 import {
   createLoggingContext,
@@ -9,8 +9,10 @@ import {
   prependHexPrefix,
   delay,
   TRON_CHAINID,
+  isSvmChain,
 } from '@mark/core';
-import { zeroAddress } from 'viem';
+import { createPublicClient, defineChain, http, parseTransaction, zeroAddress } from 'viem';
+import { jsonRpc, createNonceManager } from 'viem/nonce';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
 export { EthWallet } from '@chimera-monorepo/chainservice';
@@ -29,13 +31,12 @@ export interface ChainServiceConfig {
 
 export class ChainService {
   private readonly txService: ChimeraChainService;
-  private readonly logger: ILogger;
-  private readonly config: ChainServiceConfig;
 
-  constructor(config: ChainServiceConfig, signer: EthWallet, logger: ILogger) {
-    this.config = config;
-    this.logger = logger;
-
+  constructor(
+    private readonly config: ChainServiceConfig,
+    private readonly signer: EthWallet,
+    private readonly logger: ILogger,
+  ) {
     // Convert chain configuration format to nxtp-txservice format
     const nxtpChainConfig = Object.entries(config.chains).reduce(
       (acc, [chainId, chainConfig]) => ({
@@ -99,8 +100,8 @@ export class ChainService {
       throw new Error(`Chain ${chainId} not supported / no providers found`);
     }
 
-    const writeTransaction: WriteTransaction = {
-      to: transaction.to!,
+    const writeTransaction = {
+      to: transaction.to! as `0x${string}`,
       data: transaction.data! as `0x${string}`,
       value: transaction.value ? transaction.value.toString() : '0',
       domain: parseInt(chainId),
@@ -176,15 +177,119 @@ export class ChainService {
         } as unknown as TransactionReceipt;
       }
 
-      // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
-      const tx = (await this.txService.sendTx(writeTransaction, context)) as unknown as TransactionReceipt;
+      if (isSvmChain(chainId)) {
+        // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
+        const tx = (await this.txService.sendTx(writeTransaction, context)) as unknown as TransactionReceipt;
+
+        this.logger.info('Transaction mined', {
+          chainId,
+          txHash: tx.transactionHash,
+        });
+
+        return tx;
+      }
+
+      // Default to evm case using txservice
+      // NOTE: return txservice once gas prices / initial submission errors are fixed
+      // (introduced in chainservice version 0.0.1-alpha.12)
+      const addresses = await this.getAddress();
+      this.logger.debug('Sending transaction with viem + nonce manager', {
+        chainId,
+        writeTransaction,
+        addresses,
+        signerAddr: await this.signer.getAddress(),
+      });
+      const nonceManager = createNonceManager({ source: jsonRpc() });
+      const native = this.getAssetConfig(chainId, zeroAddress);
+      const chain = defineChain({
+        id: +chainId,
+        name: '',
+        rpcUrls: { default: { http: this.config.chains[chainId].providers ?? [] } },
+        nativeCurrency: {
+          name: native?.symbol ?? 'Ether',
+          symbol: native?.symbol ?? 'ETH',
+          decimals: native?.decimals ?? 18,
+        },
+      });
+      const transport = http(this.config.chains[chainId].providers[0]);
+      const publicClient = createPublicClient({
+        transport,
+        chain,
+      });
+      const account = (writeTransaction.from ?? addresses[chainId]) as `0x${string}`;
+      this.logger.info('Viem accounts and providers created', {
+        chainId,
+        writeTransaction,
+        account,
+      });
+      const prepared = await publicClient.prepareTransactionRequest({
+        to: writeTransaction.to,
+        value: BigInt(writeTransaction.value),
+        data: writeTransaction.data,
+        chainId: +chainId,
+        chain,
+        account,
+        nonceManager,
+      });
+      this.logger.info('Transaction prepared with viem', {
+        chainId,
+        prepared,
+        writeTransaction,
+        account,
+      });
+
+      const signed = await this.signer.signTransaction({
+        to: prepared.to || undefined,
+        value: prepared.value?.toString(),
+        from: account,
+        nonce: prepared.nonce,
+        data: prepared.data,
+        gasLimit: prepared.gas,
+        chainId: +chainId,
+        type: prepared.type === 'eip1559' ? 2 : 0,
+        maxFeePerGas: prepared.maxFeePerGas?.toString(),
+        maxPriorityFeePerGas: prepared.maxPriorityFeePerGas?.toString(),
+        gasPrice: prepared.gasPrice?.toString(),
+      });
+      const sent = await publicClient.sendRawTransaction({ serializedTransaction: signed as `0x${string}` });
+      this.logger.info('Viem transaction signed', {
+        chainId,
+        prepared,
+        signed,
+        parsed: parseTransaction(signed as `0x${string}`),
+      });
+      this.logger.info('Transaction submitted with viem', {
+        chainId,
+        sent,
+      });
+
+      let tx = await publicClient.waitForTransactionReceipt({
+        hash: sent,
+        confirmations: 2,
+        onReplaced: (res) => {
+          this.logger.warn('Transaction replaced, detected with viem', {
+            chainId,
+            sent,
+            details: res,
+            writeTransaction,
+          });
+
+          tx = res.transactionReceipt;
+        },
+      });
+      if (!tx) {
+        throw new Error(`Could not assign transaction on waiting or replaced callback`);
+      }
+
+      // // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
+      // const tx = (await this.txService.sendTx(writeTransaction, context)) as unknown as TransactionReceipt;
 
       this.logger.info('Transaction mined', {
         chainId,
         txHash: tx.transactionHash,
       });
 
-      return tx;
+      return tx as unknown as TransactionReceipt;
     } catch (error) {
       this.logger.error('Failed to submit transaction', {
         chainId,

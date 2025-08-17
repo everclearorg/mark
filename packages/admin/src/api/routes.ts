@@ -21,6 +21,14 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
       };
     }
     switch (request) {
+      case HttpPaths.ClearRebalance:
+        context.logger.info('Clearing rebalance cache');
+        await context.rebalanceCache.clear();
+        break;
+      case HttpPaths.ClearPurchase:
+        context.logger.info('Clearing purchase cache');
+        await context.purchaseCache.clear();
+        break;
       case HttpPaths.PausePurchase:
         await pauseIfNeeded(context.purchaseCache, context);
         break;
@@ -73,22 +81,16 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
 
   const { path, pathParameters, httpMethod } = event;
 
-  if (httpMethod === 'POST' && path.endsWith(HttpPaths.PausePurchase)) {
-    return HttpPaths.PausePurchase;
+  if (httpMethod !== 'POST') {
+    logger.error('Unknown http method', { requestId, path, pathParameters, httpMethod });
+    return undefined;
   }
 
-  if (httpMethod === 'POST' && path.endsWith(HttpPaths.PauseRebalance)) {
-    return HttpPaths.PauseRebalance;
+  for (const httpPath of Object.values(HttpPaths)) {
+    if (path.endsWith(httpPath)) {
+      return httpPath as HttpPaths;
+    }
   }
-
-  if (httpMethod === 'POST' && path.endsWith(HttpPaths.UnpausePurchase)) {
-    return HttpPaths.UnpausePurchase;
-  }
-
-  if (httpMethod === 'POST' && path.endsWith(HttpPaths.UnpauseRebalance)) {
-    return HttpPaths.UnpauseRebalance;
-  }
-
   logger.error('Unknown path', { requestId, path, pathParameters, httpMethod });
   return undefined;
 };
