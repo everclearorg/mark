@@ -1,5 +1,10 @@
-@adminUrl = https://ggyiykcp0f.execute-api.ap-northeast-1.amazonaws.com/prod
+@adminUrl = https://admin-mason.everclear.ninja
 @adminToken = foobar
 
+## Ping 
+GET {{adminUrl}}/ping
+
+
+## Pause rebalancing
 POST {{adminUrl}}/pause/rebalance
 x-admin-token: {{adminToken}}
