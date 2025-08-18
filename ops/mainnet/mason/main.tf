@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    bucket = "mark-mainnet-prod3"
+    bucket = "mark-mainnet-prod3" # legacy name, this is okay
     key    = "state"
     region = "us-east-1"
   }
@@ -66,7 +66,7 @@ module "ecs" {
   stage                   = var.stage
   environment             = var.environment
   domain                  = var.domain
-  ecs_cluster_name_prefix = "mason-ecs"
+  ecs_cluster_name_prefix = "${var.bot_name}-ecs"
 }
 
 module "sgs" {
@@ -114,7 +114,7 @@ module "mark_web3signer" {
   task_subnets        = module.network.private_subnets
   efs_id              = module.efs.mark_efs_id
   docker_image        = "ghcr.io/connext/web3signer:latest"
-  container_family    = "mason-web3signer"
+  container_family    = "${var.bot_name}-web3signer"
   container_port      = 9000
   cpu                 = 256
   memory              = 512
@@ -140,9 +140,9 @@ module "mark_prometheus" {
   lb_subnets              = module.network.public_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/prometheus:latest"
-  container_family        = "mason-prometheus"
-  volume_name             = "mason-prometheus-data"
+  docker_image            = "prom/prometheus:v2.53.5"
+  container_family        = "${var.bot_name}-prometheus"
+  volume_name             = "${var.bot_name}-prometheus-data"
   volume_container_path   = "/prometheus"
   volume_efs_path         = "/"
   container_port          = 9090
@@ -202,9 +202,9 @@ module "mark_pushgateway" {
   lb_subnets              = module.network.private_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/pushgateway:latest"
-  container_family        = "mason-pushgateway"
-  volume_name             = "mason-pushgateway-data"
+  docker_image            = "prom/pushgateway:v1.11.1"
+  container_family        = "${var.bot_name}-pushgateway"
+  volume_name             = "${var.bot_name}-pushgateway-data"
   volume_container_path   = "/pushgateway"
   volume_efs_path         = "/"
   entrypoint = [
@@ -227,7 +227,7 @@ module "mark_poller" {
   source              = "../../modules/lambda"
   stage               = var.stage
   environment         = var.environment
-  container_family    = "mason-poller"
+  container_family    = "${var.bot_name}-poller"
   execution_role_arn  = module.iam.lambda_role_arn
   image_uri           = var.image_uri
   subnet_ids          = module.network.private_subnets
@@ -250,12 +250,16 @@ module "mark_admin_api" {
   source              = "../../modules/api-gateway"
   stage               = var.stage
   environment         = var.environment
+  domain              = var.domain
+  certificate_arn     = var.cert_arn
+  zone_id             = var.zone_id
+  bot_name            = var.bot_name
   execution_role_arn  = module.iam.lambda_role_arn
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
   image_uri           = var.admin_image_uri
   container_env_vars  = {
-    DD_SERVICE                      = "mason-admin"
+    DD_SERVICE                      = "${var.bot_name}-admin"
     DD_LAMBDA_HANDLER               = "index.handler"
     DD_LOGS_ENABLED                 = "true"
     DD_TRACES_ENABLED               = "true"

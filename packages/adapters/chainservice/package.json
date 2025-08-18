@@ -29,7 +29,7 @@
     "@mark/logger": "workspace:*",
     "@solana/addresses": "^2.1.1",
     "tronweb": "6.0.3",
-    "viem": "2.28.1"
+    "viem": "2.33.3"
   },
   "devDependencies": {
     "@types/node": "20.17.12",

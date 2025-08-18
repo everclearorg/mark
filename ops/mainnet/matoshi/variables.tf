@@ -16,6 +16,12 @@ variable "stage" {
   default     = "prod"
 }
 
+variable "bot_name" {
+  description = "Bot name for API gateway and other resource naming"
+  type        = string
+  default     = "matoshi"
+}
+
 variable "domain" {
   description = "Domain name"
   type        = string
@@ -89,7 +95,7 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:ap-southeast-1:679752396206:certificate/b7d237ce-cf7e-46e6-b91c-b1240c629b68"
+  default = "arn:aws:acm:ap-southeast-1:679752396206:certificate/329da04b-3b01-49a4-b8ef-1733ec264abb"
 }
 
 variable "admin_image_uri" {
