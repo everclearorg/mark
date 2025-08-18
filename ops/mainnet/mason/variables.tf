@@ -16,6 +16,12 @@ variable "stage" {
   default     = "staging"
 }
 
+variable "bot_name" {
+  description = "Bot name for API gateway and other resource naming"
+  type        = string
+  default     = "mason"
+}
+
 variable "domain" {
   description = "Domain name"
   type        = string

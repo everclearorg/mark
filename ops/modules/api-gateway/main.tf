@@ -219,8 +219,38 @@ resource "aws_api_gateway_deployment" "admin_api" {
   }
 }
 
+# Custom domain configuration for stable endpoint
+resource "aws_api_gateway_domain_name" "admin_api" {
+  domain_name              = "admin-${var.bot_name}.${var.domain}"
+  regional_certificate_arn = var.certificate_arn
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+}
+
 resource "aws_api_gateway_stage" "admin_api" {
   deployment_id = aws_api_gateway_deployment.admin_api.id
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
   stage_name    = var.stage
+}
+
+# Map custom domain to API Gateway stage
+resource "aws_api_gateway_base_path_mapping" "admin_api" {
+  api_id      = aws_api_gateway_rest_api.admin_api.id
+  stage_name  = aws_api_gateway_stage.admin_api.stage_name
+  domain_name = aws_api_gateway_domain_name.admin_api.domain_name
+}
+
+# Create Route 53 record for custom domain
+resource "aws_route53_record" "admin_api" {
+  name    = aws_api_gateway_domain_name.admin_api.domain_name
+  type    = "A"
+  zone_id = var.zone_id
+
+  alias {
+    evaluate_target_health = true
+    name                   = aws_api_gateway_domain_name.admin_api.regional_domain_name
+    zone_id                = aws_api_gateway_domain_name.admin_api.regional_zone_id
+  }
 } 
