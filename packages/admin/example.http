@@ -1,10 +1,11 @@
 @adminUrl = https://admin-mason.everclear.ninja
 @adminToken = foobar
 
-## Ping 
-GET {{adminUrl}}/ping
-
-
 ## Pause rebalancing
 POST {{adminUrl}}/pause/rebalance
 x-admin-token: {{adminToken}}
+Content-Type: application/json
+
+{
+    "adminToken": "{{adminToken}}"
+}
