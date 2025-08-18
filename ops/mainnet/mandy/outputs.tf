@@ -38,6 +38,11 @@ output "admin_api_endpoint" {
   value       = module.mark_admin_api.api_endpoint
 }
 
+output "admin_api_custom_domain" {
+  description = "Stable custom domain URL for the Admin API"
+  value       = module.mark_admin_api.custom_domain_url
+}
+
 output "admin_lambda_name" {
   description = "Name of the Admin API Lambda function"
   value       = module.mark_admin_api.admin_lambda_name
