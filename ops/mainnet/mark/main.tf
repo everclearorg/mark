@@ -207,6 +207,9 @@ module "mark_pushgateway" {
   volume_name             = "${var.bot_name}-pushgateway-data"
   volume_container_path   = "/pushgateway"
   volume_efs_path         = "/"
+  container_user          = "65534:65534"
+  init_container_enabled  = true
+  init_container_commands = ["sh", "-c", "mkdir -p /pushgateway && chown -R 65534:65534 /pushgateway && chmod -R 755 /pushgateway"]
   entrypoint = [
     "/bin/sh",
     "-c",
