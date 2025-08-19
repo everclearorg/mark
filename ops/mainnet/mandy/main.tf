@@ -140,7 +140,7 @@ module "mark_prometheus" {
   lb_subnets              = module.network.public_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/prometheus:v2.53.5"
+  docker_image            = "679752396206.dkr.ecr.eu-south-2.amazonaws.com/prometheus:v2.53.5"
   container_family        = "${var.bot_name}-prometheus"
   volume_name             = "${var.bot_name}-prometheus-data"
   volume_container_path   = "/prometheus"
@@ -202,7 +202,7 @@ module "mark_pushgateway" {
   lb_subnets              = module.network.private_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/pushgateway:v1.11.1"
+  docker_image            = "679752396206.dkr.ecr.eu-south-2.amazonaws.com/pushgateway:v1.11.1"
   container_family        = "${var.bot_name}-pushgateway"
   volume_name             = "${var.bot_name}-pushgateway-data"
   volume_container_path   = "/pushgateway"
