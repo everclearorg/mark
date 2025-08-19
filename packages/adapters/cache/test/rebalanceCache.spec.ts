@@ -33,6 +33,7 @@ const mockRedisSdkInstance = {
     keys: jest.fn(),
     exists: jest.fn(),
     del: jest.fn(),
+    disconnect: jest.fn().mockResolvedValue(undefined),
 };
 
 jest.mock('ioredis', () => {
@@ -595,6 +596,128 @@ describe('RebalanceCache', () => {
             const getError = new Error('Failed to get key');
             (mockRedisSdkInstance.get as jest.Mock).mockRejectedValueOnce(getError);
             await expect(rebalanceCache.isPaused()).rejects.toThrow(getError);
+        });
+    });
+
+    describe('addWithdrawId', () => {
+        const withdrawKey = 'rebalances:withdrawals';
+        const rebalanceId = 'rebalance-id-123';
+        const withdrawId = 'withdraw-id-456';
+
+        it('should store withdrawal ID for a rebalance', async () => {
+            (mockRedisSdkInstance.hset as jest.Mock).mockResolvedValueOnce(1);
+
+            await rebalanceCache.addWithdrawId(rebalanceId, withdrawId);
+
+            expect(mockRedisSdkInstance.hset).toHaveBeenCalledTimes(1);
+            expect(mockRedisSdkInstance.hset).toHaveBeenCalledWith(withdrawKey, rebalanceId, withdrawId);
+        });
+
+        it('should overwrite existing withdrawal ID for a rebalance', async () => {
+            const newWithdrawId = 'new-withdraw-id-789';
+            (mockRedisSdkInstance.hset as jest.Mock).mockResolvedValueOnce(0); // 0 indicates update
+
+            await rebalanceCache.addWithdrawId(rebalanceId, newWithdrawId);
+
+            expect(mockRedisSdkInstance.hset).toHaveBeenCalledTimes(1);
+            expect(mockRedisSdkInstance.hset).toHaveBeenCalledWith(withdrawKey, rebalanceId, newWithdrawId);
+        });
+
+        it('should propagate errors from store.hset', async () => {
+            const hsetError = new Error('Failed to set withdrawal ID');
+            (mockRedisSdkInstance.hset as jest.Mock).mockRejectedValueOnce(hsetError);
+
+            await expect(rebalanceCache.addWithdrawId(rebalanceId, withdrawId)).rejects.toThrow(hsetError);
+        });
+    });
+
+    describe('getWithdrawId', () => {
+        const withdrawKey = 'rebalances:withdrawals';
+        const rebalanceId = 'rebalance-id-123';
+        const withdrawId = 'withdraw-id-456';
+
+        it('should retrieve withdrawal ID for a rebalance', async () => {
+            (mockRedisSdkInstance.hget as jest.Mock).mockResolvedValueOnce(withdrawId);
+
+            const result = await rebalanceCache.getWithdrawId(rebalanceId);
+
+            expect(result).toBe(withdrawId);
+            expect(mockRedisSdkInstance.hget).toHaveBeenCalledTimes(1);
+            expect(mockRedisSdkInstance.hget).toHaveBeenCalledWith(withdrawKey, rebalanceId);
+        });
+
+        it('should return null if withdrawal ID does not exist', async () => {
+            (mockRedisSdkInstance.hget as jest.Mock).mockResolvedValueOnce(null);
+
+            const result = await rebalanceCache.getWithdrawId(rebalanceId);
+
+            expect(result).toBeNull();
+            expect(mockRedisSdkInstance.hget).toHaveBeenCalledTimes(1);
+            expect(mockRedisSdkInstance.hget).toHaveBeenCalledWith(withdrawKey, rebalanceId);
+        });
+
+        it('should propagate errors from store.hget', async () => {
+            const hgetError = new Error('Failed to get withdrawal ID');
+            (mockRedisSdkInstance.hget as jest.Mock).mockRejectedValueOnce(hgetError);
+
+            await expect(rebalanceCache.getWithdrawId(rebalanceId)).rejects.toThrow(hgetError);
+        });
+    });
+
+    describe('removeWithdrawId', () => {
+        const withdrawKey = 'rebalances:withdrawals';
+        const rebalanceId = 'rebalance-id-123';
+
+        it('should remove withdrawal ID and return true when successful', async () => {
+            (mockRedisSdkInstance.hdel as jest.Mock).mockResolvedValueOnce(1);
+
+            const result = await rebalanceCache.removeWithdrawId(rebalanceId);
+
+            expect(result).toBe(true);
+            expect(mockRedisSdkInstance.hdel).toHaveBeenCalledTimes(1);
+            expect(mockRedisSdkInstance.hdel).toHaveBeenCalledWith(withdrawKey, rebalanceId);
+        });
+
+        it('should return false if withdrawal ID does not exist', async () => {
+            (mockRedisSdkInstance.hdel as jest.Mock).mockResolvedValueOnce(0);
+
+            const result = await rebalanceCache.removeWithdrawId(rebalanceId);
+
+            expect(result).toBe(false);
+            expect(mockRedisSdkInstance.hdel).toHaveBeenCalledTimes(1);
+            expect(mockRedisSdkInstance.hdel).toHaveBeenCalledWith(withdrawKey, rebalanceId);
+        });
+
+        it('should propagate errors from store.hdel', async () => {
+            const hdelError = new Error('Failed to delete withdrawal ID');
+            (mockRedisSdkInstance.hdel as jest.Mock).mockRejectedValueOnce(hdelError);
+
+            await expect(rebalanceCache.removeWithdrawId(rebalanceId)).rejects.toThrow(hdelError);
+        });
+    });
+
+    describe('disconnect', () => {
+        it('should disconnect from Redis successfully', async () => {
+            (mockRedisSdkInstance.disconnect as jest.Mock).mockResolvedValueOnce(undefined);
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+
+            await rebalanceCache.disconnect();
+
+            expect(mockRedisSdkInstance.disconnect).toHaveBeenCalledTimes(1);
+            expect(consoleSpy).toHaveBeenCalledWith('RebalanceCache: Redis connection closed successfully');
+            
+            consoleSpy.mockRestore();
+        });
+
+        it('should handle disconnect errors', async () => {
+            const disconnectError = new Error('Failed to disconnect');
+            (mockRedisSdkInstance.disconnect as jest.Mock).mockRejectedValueOnce(disconnectError);
+            const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+            await expect(rebalanceCache.disconnect()).rejects.toThrow(disconnectError);
+            expect(consoleSpy).toHaveBeenCalledWith('RebalanceCache: Error closing Redis connection:', disconnectError);
+            
+            consoleSpy.mockRestore();
         });
     });
 });
