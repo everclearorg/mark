@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc --build ./tsconfig.json",
-    "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+    "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
     "dev": "yarn dev",
     "lint": "yarn lint:package && yarn lint:ts",
     "lint:fix": "yarn lint --fix",
@@ -23,12 +23,13 @@
     "test:unit": ""
   },
   "dependencies": {
-    "@chimera-monorepo/chainservice": "0.0.1-alpha.11",
+    "@chimera-monorepo/chainservice": "0.0.1-alpha.12",
     "@connext/nxtp-txservice": "2.5.0-alpha.6",
     "@mark/core": "workspace:*",
     "@mark/logger": "workspace:*",
     "@solana/addresses": "^2.1.1",
-    "ethers": "5.7.2"
+    "tronweb": "6.0.3",
+    "viem": "2.33.3"
   },
   "devDependencies": {
     "@types/node": "20.17.12",

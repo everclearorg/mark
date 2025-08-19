@@ -13,7 +13,7 @@ locals {
         honor_labels: true
         metrics_path: /metrics
         static_configs:
-          - targets: ['mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
+          - targets: ['mason-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
     EOT
 
   prometheus_env_vars = [
@@ -61,8 +61,8 @@ locals {
     ENVIRONMENT                   = var.environment
     STAGE                         = var.stage
     CHAIN_IDS                     = var.chain_ids
-    PUSH_GATEWAY_URL              = "http://mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
-    PROMETHEUS_URL                = "http://mark-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+    PUSH_GATEWAY_URL              = "http://mason-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL                = "http://mason-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
     PROMETHEUS_ENABLED            = true
     DD_LOGS_ENABLED               = true
     DD_ENV                        = "${var.environment}-${var.stage}"
@@ -72,7 +72,8 @@ locals {
     DD_PROFILING_ENABLED          = false
     DD_MERGE_XRAY_TRACES          = true
     DD_TRACE_OTEL_ENABLED         = false
-    MARK_CONFIG_SSM_PARAMETER     = "MARK_3_CONFIG_MAINNET"
+    MARK_CONFIG_SSM_PARAMETER     = "MASON_CONFIG_MAINNET"
+    EVERCLEAR_API_URL             = "https://api.staging.everclear.org"
 
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"

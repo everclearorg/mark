@@ -167,6 +167,17 @@ export class EverclearAdapter {
     }
   }
 
+  async tronCreateNewIntent(params: NewIntentParams | NewIntentWithPermit2Params): Promise<TransactionRequest> {
+    try {
+      const url = `${this.apiUrl}/tron/intents`;
+      // Tron API only supports single intents (for now - add batching via newOrder later)
+      const { data } = await axiosPost<TransactionRequest>(url, params);
+      return data;
+    } catch (err) {
+      throw new Error(`Failed to fetch create tron intent from API ${err}`);
+    }
+  }
+
   async getMinAmounts(intentId: string): Promise<MinAmountsResponse> {
     const url = `${this.apiUrl}/invoices/${intentId}/min-amounts`;
     const { data } = await axiosGet<MinAmountsResponse>(url);

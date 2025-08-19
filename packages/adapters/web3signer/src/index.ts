@@ -1,13 +1,12 @@
-import { Signer, providers, utils, Bytes, BigNumber, TypedDataDomain, TypedDataField } from 'ethers';
-import { getAddressFromPublicKey } from '@connext/nxtp-utils';
-import { ITransactionRequest } from '@chimera-monorepo/chainservice';
+import { Signer, providers, utils, Bytes, TypedDataDomain, TypedDataField } from 'ethers5';
 import { Web3SignerApi } from './api';
+import { publicKeyToAddress } from 'viem/accounts';
 
 export class Web3Signer extends Signer {
   private static MESSAGE_PREFIX = '\x19Ethereum Signed Message:\n';
 
   private static getAddressFromPublicKey(publicKey: string): string {
-    return getAddressFromPublicKey(publicKey);
+    return publicKeyToAddress(publicKey as `0x${string}`);
   }
 
   private static prepareEthereumSignedMessage(message: Bytes | string): Bytes {
@@ -60,7 +59,7 @@ export class Web3Signer extends Signer {
     const baseTx: utils.UnsignedTransaction = Object.assign(
       {
         to: tx.to || undefined,
-        nonce: tx.nonce ? BigNumber.from(tx.nonce).toNumber() : undefined,
+        nonce: tx.nonce ? +tx.nonce.toString() : undefined,
         gasLimit: tx.gasLimit || undefined,
         data: tx.data || undefined,
         value: tx.value || undefined,
@@ -110,8 +109,8 @@ export class Web3Signer extends Signer {
 
   public async sendTransaction(transaction: providers.TransactionRequest): Promise<providers.TransactionResponse> {
     // exclude funcSig
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { funcSig, ...tx } = transaction as unknown as ITransactionRequest;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+    const { funcSig, ...tx } = transaction as unknown as any;
     return await super.sendTransaction(tx);
   }
 }

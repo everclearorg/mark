@@ -23,6 +23,8 @@ export interface AdminContext extends AdminAdapter {
 }
 
 export enum HttpPaths {
+  ClearPurchase = '/clear/purchase',
+  ClearRebalance = '/clear/rebalance',
   PausePurchase = '/pause/purchase',
   PauseRebalance = '/pause/rebalance',
   UnpausePurchase = '/unpause/purchase',

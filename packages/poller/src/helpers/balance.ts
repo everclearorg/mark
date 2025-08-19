@@ -3,51 +3,79 @@ import {
   getTokenAddressFromConfig,
   MarkConfiguration,
   isSvmChain,
+  isTvmChain,
   SOLANA_NATIVE_ASSET_ID,
   AddressFormat,
+  GasType,
 } from '@mark/core';
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import { ChainService } from '@mark/chainservice';
+import { TronWeb } from 'tronweb';
 
 /**
  * Returns the gas balance of mark on all chains.
  * @param config Mark configuration
- * @returns Map of native asset balances on all configured chains
+ * @param chainService ChainService instance
+ * @param prometheus PrometheusAdapter instance
+ * @param tronWeb Optional TronWeb instance for Tron chain
+ * @returns Map of gas balances keyed by objects with chainId and gasType
  */
 export const getMarkGasBalances = async (
   config: MarkConfiguration,
   chainService: ChainService,
   prometheus: PrometheusAdapter,
-): Promise<Map<string, bigint>> => {
+  tronWeb?: TronWeb,
+): Promise<Map<{ chainId: string; gasType: GasType }, bigint>> => {
   const { chains, ownAddress, ownSolAddress } = config;
-  const gasBalances = new Map<string, bigint>();
+  const gasBalances = new Map<{ chainId: string; gasType: GasType }, bigint>();
 
   await Promise.all(
     Object.keys(chains).map(async (chain) => {
       try {
-        let balance: bigint;
-        if (isSvmChain(chain)) {
+        if (isTvmChain(chain)) {
+          // For Tron, get both bandwidth and energy
+          if (!tronWeb) throw new Error('TronWeb instance required for Tron chain');
+          const chainConfig = chains[chain];
+          const zodiacConfig = getValidatedZodiacConfig(chainConfig);
+          const addresses = await chainService.getAddress();
+          const actualOwner = getActualOwner(zodiacConfig, addresses[chain]);
+          const resources = await tronWeb.trx.getAccountResources(actualOwner);
+          // Bandwidth: freeNetLimit - freeNetUsed + NetLimit - NetUsed
+          const freeNet = (resources.freeNetLimit ?? 0) - (resources.freeNetUsed ?? 0);
+          const stakedNet = (resources.NetLimit ?? 0) - (resources.NetUsed ?? 0);
+          const bandwidth = BigInt(Math.max(0, freeNet + stakedNet));
+          gasBalances.set({ chainId: chain, gasType: GasType.Bandwidth }, bandwidth);
+          prometheus.updateGasBalance(`${chain}:bandwidth`, bandwidth);
+          // Energy: EnergyLimit - EnergyUsed
+          const energy = BigInt(Math.max(0, (resources.EnergyLimit ?? 0) - (resources.EnergyUsed ?? 0)));
+          gasBalances.set({ chainId: chain, gasType: GasType.Energy }, energy);
+          prometheus.updateGasBalance(`${chain}:energy`, energy);
+        } else if (isSvmChain(chain)) {
           const balanceStr = await chainService.getBalance(+chain, ownSolAddress, SOLANA_NATIVE_ASSET_ID);
-          balance = BigInt(balanceStr);
+          const balance = BigInt(balanceStr);
+          gasBalances.set({ chainId: chain, gasType: GasType.Gas }, balance);
+          prometheus.updateGasBalance(chain, balance);
         } else {
           // EVM chain with zodiac logic
-          // Get Zodiac configuration for this chain
           const chainConfig = chains[chain];
           const zodiacConfig = getValidatedZodiacConfig(chainConfig);
           const actualOwner = getActualOwner(zodiacConfig, ownAddress);
-
           const client = createClient(chain, config);
-          // NOTE: gas balances are always relevant for the sending EOA only
-          balance = await client.getBalance({ address: actualOwner as `0x${string}` });
+          const balance = await client.getBalance({ address: actualOwner as `0x${string}` });
+          gasBalances.set({ chainId: chain, gasType: GasType.Gas }, balance);
+          prometheus.updateGasBalance(chain, balance);
         }
-        gasBalances.set(chain, balance);
-        prometheus.updateGasBalance(chain, balance);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (e) {
-        gasBalances.set(chain, 0n);
+        if (isTvmChain(chain)) {
+          gasBalances.set({ chainId: chain, gasType: GasType.Bandwidth }, 0n);
+          gasBalances.set({ chainId: chain, gasType: GasType.Energy }, 0n);
+        } else {
+          gasBalances.set({ chainId: chain, gasType: GasType.Gas }, 0n);
+        }
       }
     }),
   );
@@ -75,6 +103,7 @@ export const getMarkBalances = async (
   for (const ticker of tickers) {
     for (const domain of Object.keys(chains)) {
       const isSvm = isSvmChain(domain);
+      const isTvm = isTvmChain(domain);
       const format = isSvm ? AddressFormat.Base58 : AddressFormat.Hex;
       const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
       const decimals = getDecimalsFromConfig(ticker, domain, config);
@@ -84,7 +113,9 @@ export const getMarkBalances = async (
       }
       const balancePromise = isSvm
         ? getSvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
-        : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
+        : isTvm
+          ? getTvmBalance(chainService, domain, tokenAddr, decimals, prometheus)
+          : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
 
       balancePromises.push({
         ticker,
@@ -123,6 +154,32 @@ const getSvmBalance = async (
   const { ownSolAddress } = config;
   try {
     const balanceStr = await chainService.getBalance(+domain, ownSolAddress, tokenAddr);
+    let balance = BigInt(balanceStr);
+
+    // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
+    if (decimals !== 18) {
+      const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
+      balance = balance * 10n ** DECIMALS_DIFFERENCE;
+    }
+
+    // Update tracker (this is async but we don't need to wait)
+    prometheus.updateChainBalance(domain, tokenAddr, balance);
+    return balance;
+  } catch {
+    return 0n; // Return 0 balance on error
+  }
+};
+
+const getTvmBalance = async (
+  chainService: ChainService,
+  domain: string,
+  tokenAddr: string,
+  decimals: number,
+  prometheus: PrometheusAdapter,
+): Promise<bigint> => {
+  try {
+    const addresses = await chainService.getAddress();
+    const balanceStr = await chainService.getBalance(+domain, addresses[domain], tokenAddr);
     let balance = BigInt(balanceStr);
 
     // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals

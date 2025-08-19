@@ -13,7 +13,13 @@ variable "environment" {
 variable "stage" {
   description = "Stage name"
   type        = string
-  default     = "prod2"
+  default     = "prod"
+}
+
+variable "bot_name" {
+  description = "Bot name for API gateway and other resource naming"
+  type        = string
+  default     = "mandy"
 }
 
 variable "domain" {
@@ -89,7 +95,7 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:eu-south-2:679752396206:certificate/3e7c48c9-52c4-4718-928d-897775e73c72"
+  default = "arn:aws:acm:eu-south-2:679752396206:certificate/c017b2d9-1dee-4a39-8b12-605fd18fe211"
 }
 
 variable "admin_image_uri" {
