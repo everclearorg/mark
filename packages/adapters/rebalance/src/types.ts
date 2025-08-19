@@ -8,10 +8,14 @@ export enum RebalanceTransactionMemo {
   Unwrap = 'Unwrap',
   Mint = 'Mint',
 }
+
 export interface MemoizedTransactionRequest {
-  transaction: TransactionRequestBase;
+  transaction: TransactionRequestBase & {
+    funcSig?: string; // Function signature for Tron support
+  };
   memo: RebalanceTransactionMemo;
 }
+
 export interface BridgeAdapter {
   type(): SupportedBridge;
   getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string>;

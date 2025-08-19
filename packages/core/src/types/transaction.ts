@@ -20,6 +20,7 @@ export interface TransactionRequest {
     [key: string]: unknown;
   } | null;
   ccipReadEnabled?: boolean | null;
+  funcSig: string;
 }
 
 export enum TransactionSubmissionType {

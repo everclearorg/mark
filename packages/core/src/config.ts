@@ -15,6 +15,7 @@ import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
 import { existsSync, readFileSync } from 'fs';
 import { hexToBase58 } from './solana';
+import { isTvmChain } from './tron';
 
 config();
 
@@ -125,7 +126,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x4200000000000000000000000000000000000006',
         maximum: '25000000000000000000',
         reserve: '20000000000000000000',
-        slippages: [-1000, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
       // blast ethereum WETH    7000000000000000000 160
@@ -242,7 +243,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
         maximum: '65000000000000000000000',
         reserve: '60000000000000000000000',
-        slippages: [-1000, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
       // arbitrum ethereum    USDC
@@ -589,6 +590,10 @@ export const parseChainConfigurations = async (
       gnosisSafeAddress,
       squadsAddress,
       privateKey,
+      ...(isTvmChain(chainId) && {
+        bandwidthThreshold: configJson?.chains?.[chainId]?.bandwidthThreshold,
+        energyThreshold: configJson?.chains?.[chainId]?.energyThreshold,
+      }),
     };
   }
 

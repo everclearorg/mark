@@ -212,3 +212,33 @@ variable "volume_efs_path" {
   type        = string
   default     = ""
 }
+
+variable "container_user" {
+  description = "The user to run the container as (e.g., '65534:65534')"
+  type        = string
+  default     = null
+}
+
+variable "init_container_enabled" {
+  description = "Whether to enable an init container for permission setup"
+  type        = bool
+  default     = false
+}
+
+variable "init_container_commands" {
+  description = "Commands to run in the init container"
+  type        = list(string)
+  default     = []
+}
+
+variable "deployment_configuration" {
+  description = "Deployment configuration for the ECS service"
+  type = object({
+    maximum_percent         = number
+    minimum_healthy_percent = number
+  })
+  default = {
+    maximum_percent         = 200
+    minimum_healthy_percent = 100
+  }
+}

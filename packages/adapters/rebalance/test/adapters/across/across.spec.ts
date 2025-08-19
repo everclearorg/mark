@@ -204,10 +204,10 @@ describe('AcrossBridgeAdapter', () => {
       const originChainConfig = mockChains[(origin as number).toString()];
       const destinationChainConfig = mockChains[(destination as number).toString()];
       if (!originChainConfig || !destinationChainConfig) return undefined;
-      
+
       const originAsset = originChainConfig.assets.find((a: any) => a.address.toLowerCase() === (asset as string).toLowerCase());
       if (!originAsset) return undefined;
-      
+
       return destinationChainConfig.assets.find((a: any) => a.tickerHash === originAsset.tickerHash);
     });
 
@@ -584,16 +584,17 @@ describe('AcrossBridgeAdapter', () => {
       // Execute
       const result = await adapter.destinationCallback(route, mockReceipt as TransactionReceipt);
 
-      // Assert
-      expect(result).toEqual({
-        transaction: {
-          to: mockAssets['WETH'].address,
-          data: '0xd0e30db0',
-          value: BigInt('1000000000000000000'),
-        },
-        memo: RebalanceTransactionMemo.Wrap,
-      });
-    });
+            // Assert
+            expect(result).toEqual({
+                transaction: {
+                    to: mockAssets['WETH'].address,
+                    data: '0xd0e30db0',
+                    value: BigInt('1000000000000000000'),
+                    funcSig: 'deposit()',
+                },
+                memo: RebalanceTransactionMemo.Wrap,
+            });
+        });
 
     it('should return void if no callback is needed', async () => {
       // Mock route

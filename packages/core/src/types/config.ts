@@ -35,6 +35,8 @@ export interface ChainConfiguration {
   gnosisSafeAddress?: string;
   squadsAddress?: string;
   privateKey?: string;
+  bandwidthThreshold?: string;
+  energyThreshold?: string;
 }
 
 export interface HubConfig {
@@ -60,6 +62,12 @@ export enum SupportedBridge {
   CCTPV2 = 'cctpv2',
   Kraken = 'kraken',
   Near = 'near',
+}
+
+export enum GasType {
+  Gas = 'gas',
+  Bandwidth = 'bandwidth',
+  Energy = 'energy',
 }
 
 export interface RebalanceRoute {

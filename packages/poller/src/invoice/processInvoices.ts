@@ -22,6 +22,7 @@ import {
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { PurchaseAction } from '@mark/cache';
+import { TronWeb } from 'tronweb';
 
 export const MAX_DESTINATIONS = 10; // enforced onchain at 10
 export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
@@ -528,11 +529,25 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Query all of Mark's gas balances across chains
   logger.info('Getting mark gas balances', { requestId, chains: Object.keys(config.chains) });
   start = getTimeSeconds();
-  const gasBalances = await getMarkGasBalances(config, chainService, prometheus);
+  let tronWeb: TronWeb | undefined = undefined;
+  const tronChainId = Object.keys(config.chains).find((id) => id === '728126428');
+  if (tronChainId) {
+    tronWeb = new TronWeb({
+      fullHost: config.chains[tronChainId].providers[0],
+    });
+  }
+  const gasBalances = await getMarkGasBalances(config, chainService, prometheus, tronWeb);
   logGasThresholds(gasBalances, config, logger);
   logger.debug('Retrieved gas balances', {
     requestId,
-    gasBalances: jsonifyMap(gasBalances),
+    gasBalances: jsonifyMap(
+      new Map(
+        [...gasBalances.entries()].map(([key, value]) => [
+          key.gasType === 'gas' ? key.chainId : `${key.chainId}:${key.gasType}`,
+          value,
+        ]),
+      ),
+    ),
     duration: getTimeSeconds() - start,
   });
 

@@ -9,11 +9,11 @@ locals {
         static_configs:
           - targets: ['localhost:9090']
 
-      - job_name: 'mark-poller'
+      - job_name: 'mark2-poller'
         honor_labels: true
         metrics_path: /metrics
         static_configs:
-          - targets: ['mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
+          - targets: ['mandy-pushgateway-${var.environment}-${var.stage}.mark.internal:9091']
     EOT
 
   prometheus_env_vars = [
@@ -61,30 +61,26 @@ locals {
     ENVIRONMENT                   = var.environment
     STAGE                         = var.stage
     CHAIN_IDS                     = var.chain_ids
-    PUSH_GATEWAY_URL              = "http://mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
-    PROMETHEUS_URL                = "http://mark-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+    PUSH_GATEWAY_URL              = "http://mandy-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL                = "http://mandy-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
     PROMETHEUS_ENABLED            = true
     DD_LOGS_ENABLED               = true
     DD_ENV                        = "${var.environment}-${var.stage}"
     DD_API_KEY                    = local.mark_config.dd_api_key
-    DD_LAMBDA_HANDLER             = "index.handler"
-    DD_TRACE_ENABLED              = true
-    DD_PROFILING_ENABLED          = false
-    DD_MERGE_XRAY_TRACES          = true
-    DD_TRACE_OTEL_ENABLED         = false
-    MARK_CONFIG_SSM_PARAMETER     = "MARK_4_CONFIG_MAINNET"
-
+    DD_LAMBDA_HANDLER             = "packages/poller/dist/index.handler"
+    MARK_CONFIG_SSM_PARAMETER     = "MANDY_CONFIG_MAINNET"
+    
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"
     USDT_1_THRESHOLD              = "2000000000"
-
+    
     WETH_10_THRESHOLD             = "1600000000000000000"
     USDC_10_THRESHOLD             = "4000000000"
     USDT_10_THRESHOLD             = "400000000"
-
+    
     USDC_56_THRESHOLD             = "2000000000000000000000"
     USDT_56_THRESHOLD             = "4000000000000000000000"
-
+    
 
     WETH_8453_THRESHOLD           = "1600000000000000000"
     USDC_8453_THRESHOLD           = "4000000000"

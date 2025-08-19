@@ -1,9 +1,7 @@
-import { providers } from 'ethers';
-import { ChainService } from '@mark/chainservice';
-import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig } from '@mark/core';
+import { ChainService, TransactionReceipt } from '@mark/chainservice';
+import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig, isEvmChain } from '@mark/core';
 import { wrapTransactionWithZodiac } from './zodiac';
 import { Logger } from '@mark/logger';
-
 export interface TransactionSubmissionParams {
   chainService: ChainService;
   logger: Logger;
@@ -16,7 +14,7 @@ export interface TransactionSubmissionParams {
 export interface TransactionSubmissionResult {
   submissionType: TransactionSubmissionType;
   hash: string; // unique identifier for the transaction, could be safe hash or transaction hash
-  receipt?: providers.TransactionReceipt; // The actual receipt type from chainService
+  receipt?: TransactionReceipt; // The actual receipt type from chainService
 }
 
 /**
@@ -28,7 +26,9 @@ export async function submitTransactionWithLogging(
   const { chainService, logger, chainId, txRequest, zodiacConfig, context = {} } = params;
 
   // Prepare the transaction (wrap with Zodiac if needed)
-  const preparedTx = await wrapTransactionWithZodiac({ ...txRequest, chainId: +params.chainId }, zodiacConfig);
+  const preparedTx = isEvmChain(chainId)
+    ? await wrapTransactionWithZodiac({ ...txRequest, chainId: +params.chainId }, zodiacConfig)
+    : txRequest;
 
   logger.info('Submitting transaction', {
     ...context,
@@ -37,6 +37,7 @@ export async function submitTransactionWithLogging(
     walletType: zodiacConfig.walletType,
     originalTo: txRequest.to,
     value: preparedTx.value?.toString() || '0',
+    funcSig: preparedTx.funcSig,
   });
 
   try {
