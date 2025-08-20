@@ -44,4 +44,24 @@ variable "container_env_vars" {
 variable "image_uri" {
   description = "Full URI of the container image"
   type        = string
+}
+
+variable "domain" {
+  description = "Base domain name for the custom domain"
+  type        = string
+}
+
+variable "certificate_arn" {
+  description = "ARN of the ACM certificate for the custom domain"
+  type        = string
+}
+
+variable "zone_id" {
+  description = "Route 53 hosted zone ID for DNS record creation"
+  type        = string
+}
+
+variable "bot_name" {
+  description = "Bot name for API gateway domain naming"
+  type        = string
 } 

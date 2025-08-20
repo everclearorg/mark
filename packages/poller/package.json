@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc --build ./tsconfig.json && tsc-alias -p tsconfig.json",
-    "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+    "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
     "dev": "ts-node-dev -r tsconfig-paths/register --respawn src/dev.ts",
     "lint": "eslint src",
     "lint:fix": "yarn lint --fix",
@@ -32,7 +32,8 @@
     "aws-lambda": "1.0.7",
     "datadog-lambda-js": "10.123.0",
     "dd-trace": "5.42.0",
-    "viem": "2.28.1"
+    "tronweb": "6.0.3",
+    "viem": "2.33.3"
   },
   "devDependencies": {
     "@types/aws-lambda": "8.10.147",

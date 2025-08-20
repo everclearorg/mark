@@ -1,7 +1,7 @@
 variable "region" {
   description = "AWS region"
   type        = string
-  default     = "sa-east-1"
+  default     = "ap-southeast-1"
 }
 
 variable "environment" {
@@ -13,7 +13,13 @@ variable "environment" {
 variable "stage" {
   description = "Stage name"
   type        = string
-  default     = "prod3"
+  default     = "prod"
+}
+
+variable "bot_name" {
+  description = "Bot name for API gateway and other resource naming"
+  type        = string
+  default     = "matoshi"
 }
 
 variable "domain" {
@@ -62,13 +68,13 @@ variable "relayer_api_key" {
 variable "supported_settlement_domains" {
   description = "Comma-separated list of supported settlement domains"
   type        = string
-  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,33139,2020,80094,100,5000,146,57073,1399811149"
+  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,33139,2020,80094,100,5000,146,57073,1399811149,728126428"
 }
 
 variable "supported_asset_symbols" {
   description = "Comma-separated list of supported asset symbols"
   type        = string
-  default     = "WETH,USDC,USDT,WBTC,cbBTC"
+  default     = "WETH,USDC,USDT"
 }
 
 variable "log_level" {
@@ -80,7 +86,7 @@ variable "log_level" {
 variable "chain_ids" {
   description = "Comma-separated list of chain IDs"
   type        = string
-  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,33139,2020,80094,100,5000,146,57073,1399811149"
+  default     = "1,42161,10,8453,56,130,137,43114,48900,59144,81457,167000,534352,34443,324,33139,2020,80094,100,5000,146,57073,1399811149,728126428"
 }
 variable "zone_id" {
   description = "Route 53 hosted zone ID for the everclear.ninja domain"
@@ -89,41 +95,10 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:sa-east-1:679752396206:certificate/cdd94d82-1d6d-47ab-a9ef-daef93734916"
+  default = "arn:aws:acm:ap-southeast-1:679752396206:certificate/329da04b-3b01-49a4-b8ef-1733ec264abb"
 }
 
 variable "admin_image_uri" {
   description = "The ECR image URI for the admin API Lambda function."
   type        = string
-}
-
-# Database variables
-variable "db_instance_class" {
-  description = "The instance class for the RDS database"
-  type        = string
-  default     = "db.t3.micro"
-}
-
-variable "db_allocated_storage" {
-  description = "The allocated storage in gibibytes"
-  type        = string
-  default     = "20"
-}
-
-variable "db_name" {
-  description = "The name of the database"
-  type        = string
-  default     = "markdb"
-}
-
-variable "db_username" {
-  description = "The master username for the database"
-  type        = string
-  default     = "markadmin"
-}
-
-variable "db_port" {
-  description = "The port on which the database accepts connections"
-  type        = string
-  default     = "5432"
 }

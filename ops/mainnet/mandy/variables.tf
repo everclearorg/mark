@@ -1,7 +1,7 @@
 variable "region" {
   description = "AWS region"
   type        = string
-  default     = "ap-southeast-1"
+  default     = "eu-south-2"
 }
 
 variable "environment" {
@@ -13,7 +13,13 @@ variable "environment" {
 variable "stage" {
   description = "Stage name"
   type        = string
-  default     = "prod4"
+  default     = "prod"
+}
+
+variable "bot_name" {
+  description = "Bot name for API gateway and other resource naming"
+  type        = string
+  default     = "mandy"
 }
 
 variable "domain" {
@@ -43,7 +49,7 @@ variable "invoice_age" {
 variable "everclear_api_url" {
   description = "URL of the Everclear API"
   type        = string
-  default     = "https://api.everclear.org"
+  default     = "https://api.staging.everclear.org"
 }
 
 variable "relayer_url" {
@@ -68,7 +74,7 @@ variable "supported_settlement_domains" {
 variable "supported_asset_symbols" {
   description = "Comma-separated list of supported asset symbols"
   type        = string
-  default     = "WBTC,cbBTC"
+  default     = "USDC,USDT"
 }
 
 variable "log_level" {
@@ -89,7 +95,7 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:ap-southeast-1:679752396206:certificate/b7d237ce-cf7e-46e6-b91c-b1240c629b68"
+  default = "arn:aws:acm:eu-south-2:679752396206:certificate/c017b2d9-1dee-4a39-8b12-605fd18fe211"
 }
 
 variable "admin_image_uri" {

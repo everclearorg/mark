@@ -1,5 +1,12 @@
-import { getTokenAddressFromConfig, MarkConfiguration, base58ToHex, isSvmChain, isAddress } from '@mark/core';
 import { padBytes, hexToBytes, keccak256, encodeAbiParameters, bytesToHex, formatUnits, parseUnits } from 'viem';
+import {
+  getTokenAddressFromConfig,
+  MarkConfiguration,
+  base58ToHex,
+  isSvmChain,
+  isAddress,
+  isTvmChain,
+} from '@mark/core';
 import { getHubStorageContract } from './contracts';
 import { safeStringToBigInt } from './balance';
 
@@ -110,7 +117,7 @@ export const isXerc20Supported = async (
   config: MarkConfiguration,
 ): Promise<boolean> => {
   for (const domain of domains) {
-    if (isSvmChain(domain)) {
+    if (isSvmChain(domain) || isTvmChain(domain)) {
       continue;
     }
     // Get the asset hash

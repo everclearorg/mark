@@ -516,7 +516,9 @@ describe('Invoice Processing', () => {
       // Mock balances - Mark has enough balance on domain2 to purchase the invoice
       getMarkBalancesStub.resolves(new Map([[ticker, new Map([[domain2, BigInt('5000000000000000000')]])]]));
       // Mark has enough gas balance on domain2
-      getMarkGasBalancesStub.resolves(new Map([[ticker, new Map([[domain2, BigInt('1000000000000000000')]])]]));
+      getMarkGasBalancesStub.resolves(new Map([
+        [{ chainId: domain2, gasType: GasType.Gas }, BigInt('1000000000000000000')]
+      ]));
 
       // Mock custodied balances - domain1 has insufficient custodied assets
       // for Mark to settle out if not including pending intents

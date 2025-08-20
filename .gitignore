@@ -132,8 +132,11 @@ dist
 .pnp.*
 
 # terraform
-.terraform
 tfvars.json
+tf_vars.json
+tf-vars.json
+*.hcl
+.terraform
 
 # Misc
 .DS_Store

@@ -1,10 +1,10 @@
-import { encodeFunctionData, erc20Abi } from 'viem';
-import { getERC20Contract } from './contracts';
-import { MarkConfiguration, LoggingContext, WalletConfig } from '@mark/core';
+import { encodeFunctionData, erc20Abi, decodeAbiParameters } from 'viem';
+import { MarkConfiguration, LoggingContext, WalletConfig, isTvmChain } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { TransactionReason } from '@mark/prometheus';
 import { PrometheusAdapter } from '@mark/prometheus';
+import { TronWeb } from 'tronweb';
 import { submitTransactionWithLogging } from './transactions';
 
 export interface ApprovalParams {
@@ -32,15 +32,32 @@ export interface ApprovalResult {
  * Checks current allowance for a token
  */
 export async function checkTokenAllowance(
-  config: MarkConfiguration,
+  chainService: ChainService,
   chainId: string,
   tokenAddress: string,
   owner: string,
   spender: string,
 ): Promise<bigint> {
-  const tokenContract = await getERC20Contract(config, chainId, tokenAddress as `0x${string}`);
-  const allowance = await tokenContract.read.allowance([owner as `0x${string}`, spender as `0x${string}`]);
-  return allowance as bigint;
+  const encodedAllowance = await chainService.readTx({
+    to: tokenAddress,
+    data: encodeFunctionData({
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [
+        isTvmChain(chainId) ? `0x${TronWeb.address.toHex(owner).slice(2)}` : (owner as `0x${string}`),
+        isTvmChain(chainId) ? `0x${TronWeb.address.toHex(spender).slice(2)}` : (spender as `0x${string}`),
+      ],
+    }),
+    domain: +chainId,
+    funcSig: 'allowance(address,address)',
+  });
+
+  const [allowance] = decodeAbiParameters(
+    [{ type: 'uint256', name: 'allowance' }],
+    encodedAllowance as `0x${string}`,
+  ) as [bigint];
+
+  return allowance;
 }
 
 /**
@@ -74,7 +91,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
   const result: ApprovalResult = { wasRequired: false };
 
   // Check current allowance
-  const currentAllowance = await checkTokenAllowance(config, chainId, tokenAddress, owner, spenderAddress);
+  const currentAllowance = await checkTokenAllowance(chainService, chainId, tokenAddress, owner, spenderAddress);
 
   logger.info('Current token allowance', {
     ...context,
@@ -118,22 +135,32 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
         data: encodeFunctionData({
           abi: erc20Abi,
           functionName: 'approve',
-          args: [spenderAddress as `0x${string}`, 0n],
+          args: [
+            isTvmChain(chainId)
+              ? `0x${TronWeb.address.toHex(spenderAddress).slice(2)}`
+              : (spenderAddress as `0x${string}`),
+            0n,
+          ],
         }),
         value: '0',
         from: config.ownAddress,
+        funcSig: 'approve(address,uint256)',
       },
       zodiacConfig,
       context: { ...context, transactionType: 'zero-approval', asset: tokenAddress },
     });
 
-    if (prometheus && zeroApprovalResult.receipt) {
+    if (
+      prometheus &&
+      zeroApprovalResult.receipt &&
+      zeroApprovalResult.receipt.cumulativeGasUsed &&
+      zeroApprovalResult.receipt.effectiveGasPrice
+    ) {
       prometheus.updateGasSpent(
         chainId,
         TransactionReason.Approval,
-        BigInt(
-          zeroApprovalResult.receipt.cumulativeGasUsed.mul(zeroApprovalResult.receipt.effectiveGasPrice).toString(),
-        ),
+        BigInt(zeroApprovalResult.receipt.cumulativeGasUsed.toString()) *
+          BigInt(zeroApprovalResult.receipt.effectiveGasPrice.toString()),
       );
     }
 
@@ -166,10 +193,16 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       data: encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
-        args: [spenderAddress as `0x${string}`, amount],
+        args: [
+          isTvmChain(chainId)
+            ? `0x${TronWeb.address.toHex(spenderAddress).slice(2)}`
+            : (spenderAddress as `0x${string}`),
+          amount,
+        ],
       }),
       value: '0',
       from: config.ownAddress,
+      funcSig: 'approve(address,uint256)',
     },
     zodiacConfig,
     context: { ...context, transactionType: 'approval', asset: tokenAddress },
@@ -179,7 +212,8 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
     prometheus.updateGasSpent(
       chainId,
       TransactionReason.Approval,
-      BigInt(approvalResult.receipt.cumulativeGasUsed.mul(approvalResult.receipt.effectiveGasPrice).toString()),
+      BigInt(approvalResult.receipt.cumulativeGasUsed.toString()) *
+        BigInt(approvalResult.receipt.effectiveGasPrice.toString()),
     );
   }
 

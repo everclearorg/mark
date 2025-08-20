@@ -5,19 +5,20 @@ import {
   cleanupHttpConnections,
   logFileDescriptorUsage,
   shouldExitForFileDescriptors,
+  TRON_CHAINID,
 } from '@mark/core';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService, EthWallet } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
-import { Signer, Wallet } from 'ethers';
+import { Wallet } from 'ethers';
 import { pollAndProcessInvoices } from './invoice';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { hexlify, randomBytes } from 'ethers/lib/utils';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
 import * as database from '@mark/database';
+import { bytesToHex } from 'viem';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
@@ -56,6 +57,15 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     ? new Web3Signer(config.web3SignerUrl)
     : new EthWallet(config.web3SignerUrl);
 
+  // TODO: update chainservice to automatically get Tron private key from config.
+  const tronPrivateKey = config.chains[TRON_CHAINID]?.privateKey;
+  if (tronPrivateKey) {
+    logger.info('Using Tron signer key from configuration');
+    process.env.TRON_PRIVATE_KEY = tronPrivateKey;
+  } else {
+    logger.warn('Tron signer key is not in configuration');
+  }
+
   const chainService = new ChainService(
     {
       chains: config.chains,
@@ -63,7 +73,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
       retryDelay: 15000,
       logLevel: config.logLevel,
     },
-    web3Signer as unknown as Signer,
+    web3Signer as EthWallet,
     logger,
   );
 
@@ -81,7 +91,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
   return {
     logger,
     chainService,
-    web3Signer,
+    web3Signer: web3Signer as Web3Signer,
     everclear,
     purchaseCache,
     rebalanceCache,
@@ -129,7 +139,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     const context: ProcessingContext = {
       ...adapters,
       config,
-      requestId: hexlify(randomBytes(32)),
+      requestId: bytesToHex(crypto.getRandomValues(new Uint8Array(32))),
       startTime: Math.floor(Date.now() / 1000),
     };
 
@@ -145,7 +155,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         requestId: context.requestId,
       });
     } else {
-      logger.info('Successfully completed ${rebalanceOperations.length} rebalancing operations', {
+      logger.info('Successfully completed rebalancing operations', {
         requestId: context.requestId,
         numOperations: rebalanceOperations.length,
         operations: rebalanceOperations,

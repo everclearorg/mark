@@ -1,7 +1,7 @@
 variable "region" {
   description = "AWS region"
   type        = string
-  default     = "eu-south-2"
+  default     = "sa-east-1"
 }
 
 variable "environment" {
@@ -13,7 +13,13 @@ variable "environment" {
 variable "stage" {
   description = "Stage name"
   type        = string
-  default     = "prod2"
+  default     = "staging"
+}
+
+variable "bot_name" {
+  description = "Bot name for API gateway and other resource naming"
+  type        = string
+  default     = "mason"
 }
 
 variable "domain" {
@@ -43,7 +49,7 @@ variable "invoice_age" {
 variable "everclear_api_url" {
   description = "URL of the Everclear API"
   type        = string
-  default     = "https://api.staging.everclear.org"
+  default     = "https://api.everclear.org"
 }
 
 variable "relayer_url" {
@@ -68,7 +74,7 @@ variable "supported_settlement_domains" {
 variable "supported_asset_symbols" {
   description = "Comma-separated list of supported asset symbols"
   type        = string
-  default     = "USDC,USDT"
+  default     = "WETH,USDC,USDT,WBTC,cbBTC"
 }
 
 variable "log_level" {
@@ -89,10 +95,41 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:eu-south-2:679752396206:certificate/3e7c48c9-52c4-4718-928d-897775e73c72"
+  default = "arn:aws:acm:sa-east-1:679752396206:certificate/1307051f-4df4-4233-aa42-a08a5d15e3e3"
 }
 
 variable "admin_image_uri" {
   description = "The ECR image URI for the admin API Lambda function."
   type        = string
+}
+
+# Database variables
+variable "db_instance_class" {
+  description = "The instance class for the RDS database"
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "The allocated storage in gibibytes"
+  type        = string
+  default     = "20"
+}
+
+variable "db_name" {
+  description = "The name of the database"
+  type        = string
+  default     = "markdb"
+}
+
+variable "db_username" {
+  description = "The master username for the database"
+  type        = string
+  default     = "markadmin"
+}
+
+variable "db_port" {
+  description = "The port on which the database accepts connections"
+  type        = string
+  default     = "5432"
 }

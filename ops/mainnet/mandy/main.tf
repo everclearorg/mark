@@ -4,6 +4,13 @@ terraform {
     key    = "state"
     region = "us-east-1"
   }
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.83"
+    }
+  }
 }
 
 provider "aws" {
@@ -22,7 +29,7 @@ data "aws_region" "current" {}
 
 # Read the MARK_CONFIG_MAINNET parameter from SSM
 data "aws_ssm_parameter" "mark_config_mainnet" {
-  name            = "MARK_2_CONFIG_MAINNET"
+  name            = "MANDY_CONFIG_MAINNET"
   with_decryption = true
 }
 
@@ -59,7 +66,7 @@ module "ecs" {
   stage                   = var.stage
   environment             = var.environment
   domain                  = var.domain
-  ecs_cluster_name_prefix = "mark-ecs"
+  ecs_cluster_name_prefix = "${var.bot_name}-ecs"
 }
 
 module "sgs" {
@@ -107,7 +114,7 @@ module "mark_web3signer" {
   task_subnets        = module.network.private_subnets
   efs_id              = module.efs.mark_efs_id
   docker_image        = "ghcr.io/connext/web3signer:latest"
-  container_family    = "mark2-web3signer"
+  container_family    = "${var.bot_name}-web3signer"
   container_port      = 9000
   cpu                 = 256
   memory              = 512
@@ -133,16 +140,23 @@ module "mark_prometheus" {
   lb_subnets              = module.network.public_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/prometheus:latest"
-  container_family        = "mark2-prometheus"
-  volume_name             = "mark2-prometheus-data"
+  docker_image            = "679752396206.dkr.ecr.eu-south-2.amazonaws.com/prometheus:v2.53.5"
+  container_family        = "${var.bot_name}-prometheus"
+  volume_name             = "${var.bot_name}-prometheus-data"
   volume_container_path   = "/prometheus"
   volume_efs_path         = "/"
   container_port          = 9090
   cpu                     = 512
   memory                  = 1024
   instance_count          = 1
+  deployment_configuration = {
+    maximum_percent         = 100
+    minimum_healthy_percent = 0
+  }
   service_security_groups = [module.sgs.prometheus_sg_id]
+  container_user          = "65534:65534"
+  init_container_enabled  = true
+  init_container_commands = ["sh", "-c", "rm -rf /prometheus/lock /prometheus/wal.tmp && mkdir -p /prometheus && chown -R 65534:65534 /prometheus && chmod -R 755 /prometheus"]
   container_env_vars      = concat(
     local.prometheus_env_vars,
     [
@@ -155,7 +169,7 @@ module "mark_prometheus" {
   entrypoint = [
     "/bin/sh",
     "-c",
-    "mkdir -p /etc/prometheus && echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && chmod 644 /etc/prometheus/prometheus.yml && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
+    "set -e; echo 'Setting up Prometheus...'; mkdir -p /etc/prometheus && echo 'Created config directory'; echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && echo 'Created config file'; chmod 644 /etc/prometheus/prometheus.yml && echo 'Set config permissions'; echo 'Starting Prometheus...'; exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
   ]
   cert_arn                = var.cert_arn
   ingress_cdir_blocks     = ["0.0.0.0/0"]
@@ -188,11 +202,14 @@ module "mark_pushgateway" {
   lb_subnets              = module.network.private_subnets
   task_subnets            = module.network.private_subnets
   efs_id                  = module.efs.mark_efs_id
-  docker_image            = "prom/pushgateway:latest"
-  container_family        = "mark2-pushgateway"
-  volume_name             = "mark2-pushgateway-data"
+  docker_image            = "679752396206.dkr.ecr.eu-south-2.amazonaws.com/pushgateway:v1.11.1"
+  container_family        = "${var.bot_name}-pushgateway"
+  volume_name             = "${var.bot_name}-pushgateway-data"
   volume_container_path   = "/pushgateway"
   volume_efs_path         = "/"
+  container_user          = "65534:65534"
+  init_container_enabled  = true
+  init_container_commands = ["sh", "-c", "mkdir -p /pushgateway && chown -R 65534:65534 /pushgateway && chmod -R 755 /pushgateway"]
   entrypoint = [
     "/bin/sh",
     "-c",
@@ -213,7 +230,7 @@ module "mark_poller" {
   source              = "../../modules/lambda"
   stage               = var.stage
   environment         = var.environment
-  container_family    = "mark2-poller"
+  container_family    = "${var.bot_name}-poller"
   execution_role_arn  = module.iam.lambda_role_arn
   image_uri           = var.image_uri
   subnet_ids          = module.network.private_subnets
@@ -234,14 +251,18 @@ module "ecr" {
 
 module "mark_admin_api" {
   source              = "../../modules/api-gateway"
-  stage               = var.stage       # Should be "prod2"
-  environment         = var.environment # Should be "mainnet"
+  stage               = var.stage
+  environment         = var.environment
+  domain              = var.domain
+  certificate_arn     = var.cert_arn
+  zone_id             = var.zone_id
+  bot_name            = var.bot_name
   execution_role_arn  = module.iam.lambda_role_arn
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
-  image_uri           = var.admin_image_uri # Using the variable we added
+  image_uri           = var.admin_image_uri
   container_env_vars  = {
-    DD_SERVICE                      = "mark2-admin" # Or "mark2-admin" if you want to differentiate in Datadog
+    DD_SERVICE                      = "${var.bot_name}-admin"
     DD_LAMBDA_HANDLER               = "index.handler"
     DD_LOGS_ENABLED                 = "true"
     DD_TRACES_ENABLED               = "true"

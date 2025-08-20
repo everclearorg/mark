@@ -47,7 +47,7 @@
     "eslint-plugin-import": "2.31.0",
     "eslint-plugin-node": "11.1.0",
     "eslint-plugin-prettier": "5.2.1",
-    "ethers": "5.7.2",
+    "ethers": "6.13.5",
     "husky": "9.1.7",
     "nyc": "17.1.0",
     "prettier": "3.4.2",

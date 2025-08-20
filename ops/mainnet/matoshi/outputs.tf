@@ -38,6 +38,11 @@ output "admin_api_endpoint" {
   value       = module.mark_admin_api.api_endpoint
 }
 
+output "admin_api_custom_domain" {
+  description = "Stable custom domain URL for the Admin API"
+  value       = module.mark_admin_api.custom_domain_url
+}
+
 output "admin_lambda_name" {
   description = "Name of the Admin API Lambda function"
   value       = module.mark_admin_api.admin_lambda_name
@@ -46,19 +51,4 @@ output "admin_lambda_name" {
 output "lambda_static_ips" {
   description = "Static IP addresses for Lambda outbound traffic (for API whitelisting)"
   value       = module.network.nat_gateway_ips
-}
-
-output "db_endpoint" {
-  description = "The database endpoint"
-  value       = module.db.db_instance_endpoint
-}
-
-output "db_instance_id" {
-  description = "The database instance ID"
-  value       = module.db.db_instance_id
-}
-
-output "db_name" {
-  description = "The database name"
-  value       = module.db.db_instance_name
 }

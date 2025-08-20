@@ -1,6 +1,6 @@
 import { SinonStubbedInstance, createStubInstance } from 'sinon';
 import { Logger } from '@mark/logger';
-import { MarkConfiguration } from '@mark/core';
+import { MarkConfiguration, GasType } from '@mark/core';
 import { logBalanceThresholds, logGasThresholds } from '../../src/helpers/monitor';
 
 describe('Monitor Helpers', () => {

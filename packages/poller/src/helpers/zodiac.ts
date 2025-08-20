@@ -115,6 +115,7 @@ export async function wrapTransactionWithZodiac(
     value: '0', // Mark doesn't send native value to Zodiac module
     from: txRequest.from,
     chainId: txRequest.chainId,
+    funcSig: 'execTransactionWithRole(address,uint256,bytes,uint8,bytes32,bool)', // Zodiac RoleModule function
   };
 }
 

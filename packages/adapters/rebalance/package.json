@@ -6,7 +6,7 @@
     "types": "dist/index.d.ts",
     "scripts": {
         "build": "tsc --build ./tsconfig.json",
-        "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+        "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
         "dev": "npx tsx scripts/dev.ts",
         "lint": "yarn lint:package && yarn lint:ts",
         "lint:fix": "yarn lint --fix",
@@ -14,7 +14,7 @@
         "lint:ts": "eslint ./src",
         "test": "yarn test:unit",
         "test:all": "yarn test:unit && yarn test:integration",
-        "test:integration": "RUN_INTEGRATION_TESTS=true jest --coverage",
+        "test:integration": "jest --coverage --testPathPattern='.*\\.integration\\.spec\\.ts$'",
         "test:unit": "jest --coverage --testPathIgnorePatterns='.*\\.integration\\.spec\\.ts$'"
     },
     "dependencies": {
@@ -24,7 +24,7 @@
         "@mark/logger": "workspace:*",
         "axios": "1.9.0",
         "commander": "12.0.0",
-        "viem": "2.28.1"
+        "viem": "2.33.3"
     },
     "devDependencies": {
         "@types/jest": "29.5.12",

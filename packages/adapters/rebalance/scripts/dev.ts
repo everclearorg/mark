@@ -1,13 +1,13 @@
 import { config } from 'dotenv';
 import { Logger } from '@mark/logger';
-import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute } from '@mark/core';
+import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute, MarkConfiguration } from '@mark/core';
 import { BridgeAdapter, RebalanceTransactionMemo } from '../src/types';
-import { Account, Hash, parseUnits, TransactionReceipt, createWalletClient, http, createPublicClient } from 'viem';
+import { Account, Hash, parseUnits, TransactionReceipt, createWalletClient, http, createPublicClient, erc20Abi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { Command } from 'commander';
 import * as chains from 'viem/chains'
 import { RebalanceAdapter } from '../src';
-import { RebalanceCache } from '@mark/cache';
+import { RebalanceAction, RebalanceCache } from '@mark/cache';
 
 function getViemChain(id: number) {
     for (const chain of Object.values(chains)) {
@@ -73,7 +73,11 @@ program
         const parsed = await parseChainConfigurations(configs, ['WETH', 'USDC', 'USDT', 'ETH'], {});
 
         // Create appropriate adapter
-        const rebalancer = new RebalanceAdapter('mainnet', parsed, logger, cache);
+        const rebalancer = new RebalanceAdapter({
+            chains: parsed,
+            kraken: { apiSecret: process.env.KRAKEN_API_SECRET, apiKey: process.env.KRAKEN_API_KEY },
+            binance: { apiSecret: process.env.BINANCE_API_SECRET, apiKey: process.env.BINANCE_API_KEY }
+        } as unknown as MarkConfiguration, logger, cache);
         const adapter = rebalancer.getAdapter(type);
 
         // Test the adapter
@@ -159,8 +163,8 @@ async function pollForTransactionReady(
     logger.info('Starting to poll for transaction readiness...');
     let isReady = false;
     let attempts = 0;
-    const maxAttempts = 30; // 5 minutes with 10s intervals
-    const pollInterval = 10000; // 10 seconds
+    const maxAttempts = 5; // 5 minutes with 10s intervals
+    const pollInterval = 15_000; // 10 seconds
 
     while (!isReady && attempts < maxAttempts) {
         attempts++;
@@ -241,7 +245,6 @@ async function testBridgeAdapter(
         receivedAmount,
         route,
         assetDecimals: asset.decimals,
-        feePercentage: ((BigInt(amountInWei) - BigInt(receivedAmount)) * BigInt(100) / BigInt(amountInWei)).toString() + '%'
     });
 
     // Create wallet client for the origin chain
@@ -265,6 +268,15 @@ async function testBridgeAdapter(
         chain: getViemChain(route.origin),
         transport: http(originChain.providers[0])
     });
+
+
+    // Sanity check: sufficient balance
+    const balance = asset.isNative
+        ? await publicClient.getBalance({ address: account.address })
+        : await publicClient.readContract({ abi: erc20Abi, address: asset.address as `0x${string}`, functionName: 'balanceOf', args: [account.address] })
+    if (balance < BigInt(amountInWei)) {
+        throw new Error(`${account.address} has insufficient balance of ${asset.symbol} (${asset.address}) on ${route.origin} to send via adapter. need ${amountInWei}, have ${balance}.`);
+    }
 
     let toTrack: TransactionReceipt | undefined = undefined;
     for (const { transaction: txRequest, memo } of txRequests) {
@@ -302,6 +314,23 @@ async function testBridgeAdapter(
     if (!toTrack) {
         throw new Error(`No ${RebalanceTransactionMemo.Rebalance} receipt found in receipts.`)
     }
+
+    // Add to the rebalance cache
+    const rebalanceAction: RebalanceAction = {
+        bridge: adapter.type(),
+        amount: amountInWei.toString(),
+        origin: route.origin,
+        destination: route.destination,
+        asset: route.asset,
+        transaction: toTrack.transactionHash,
+        recipient: account.address,
+    };
+    logger.info('Adding rebalance action to cache', {
+        rebalanceAction,
+        route,
+        toTrack,
+    });
+    await cache.addRebalances([rebalanceAction]);
 
     // Poll for transaction readiness
     await pollForTransactionReady(adapter, amountInWei, route, toTrack);
@@ -356,7 +385,7 @@ program
 
         const publicClient = createPublicClient({
             chain: getViemChain(route.origin),
-            transport: http(originChain.providers[0])
+            transport: http(originChain.providers[0]) // TODO: use multiple providers if included
         });
 
         // Get transaction receipt
@@ -370,7 +399,11 @@ program
         });
 
         // Create adapter
-        const rebalancer = new RebalanceAdapter('mainnet', parsed, logger, cache);
+        const rebalancer = new RebalanceAdapter({
+            chains: parsed,
+            kraken: { apiSecret: process.env.KRAKEN_API_SECRET, apiKey: process.env.KRAKEN_API_KEY },
+            binance: { apiSecret: process.env.BINANCE_API_SECRET, apiKey: process.env.BINANCE_API_KEY }
+        } as unknown as MarkConfiguration, logger, cache);
         const adapter = rebalancer.getAdapter(type as SupportedBridge);
 
         // Find the asset to get decimals
@@ -392,6 +425,8 @@ program
             bridgeTxHash: options.hash,
             ...result
         });
+
+        await cache.removeWithdrawalRecord(options.hash);
     });
 
 // Parse command line arguments

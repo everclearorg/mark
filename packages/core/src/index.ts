@@ -4,3 +4,4 @@ export * from './constants';
 export * from './logging';
 export * from './types';
 export * from './solana';
+export * from './tron';

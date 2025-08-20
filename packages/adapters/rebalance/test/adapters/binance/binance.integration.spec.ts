@@ -45,7 +45,7 @@ describe('BinanceClient Integration Tests', () => {
     if (!apiKey || !apiSecret) {
       throw new Error(
         'Integration tests require BINANCE_API_KEY and BINANCE_SECRET_KEY environment variables. ' +
-          'Add them to packages/poller/.env or run yarn test (without integration tests).',
+        'Add them to packages/poller/.env or run yarn test (without integration tests).',
       );
     }
   });
@@ -177,7 +177,7 @@ describe('BinanceClient Integration Tests', () => {
     }, 30000);
 
     it('should validate dynamic asset config integration', async () => {
-      const dynamicConfig = new DynamicAssetConfig(client);
+      const dynamicConfig = new DynamicAssetConfig(client, {});
 
       try {
         // ETH on Ethereum
