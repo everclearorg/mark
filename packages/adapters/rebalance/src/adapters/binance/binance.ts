@@ -22,10 +22,10 @@ import {
   calculateNetAmount,
   validateAssetMapping,
   meetsMinimumWithdrawal,
-  generateWithdrawOrderId,
   checkWithdrawQuota,
 } from './utils';
 import { getDestinationAssetAddress, findAssetByAddress } from '../../shared/asset';
+import { generateWithdrawOrderId } from '../../shared/withdrawals';
 
 const wethAbi = [
   ...erc20Abi,

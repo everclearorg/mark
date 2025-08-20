@@ -36,6 +36,10 @@ export const mockConfig: MarkConfiguration = {
     apiKey: 'test-api-key',
     apiSecret: 'test-api-secret',
   },
+  kraken: {
+    apiKey: 'test-api-key',
+    apiSecret: 'test-api-secret',
+  },
   near: {
     jwtToken: 'test-jwt-token',
   },

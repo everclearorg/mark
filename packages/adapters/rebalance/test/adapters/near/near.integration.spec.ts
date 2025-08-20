@@ -144,7 +144,7 @@ describe('NearBridgeAdapter Integration', () => {
         adapter = new TestNearBridgeAdapter(
             mockChains as Record<string, ChainConfiguration>,
             process.env.NEAR_JWT_TOKEN || 'test-jwt-token',
-            process.env.NEAR_API_BASE_URL,
+            process.env.NEAR_API_BASE_URL || 'api.near.com',
             mockLogger,
         );
     });

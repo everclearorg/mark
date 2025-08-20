@@ -1,6 +1,7 @@
 import { BridgeAdapter } from '../types';
 import { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';
 import { BinanceBridgeAdapter, BINANCE_BASE_URL } from './binance';
+import { KrakenBridgeAdapter, KRAKEN_BASE_URL } from './kraken';
 import { NearBridgeAdapter, NEAR_BASE_URL } from './near';
 import { SupportedBridge, MarkConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
@@ -33,6 +34,21 @@ export class RebalanceAdapter {
           this.config.binance.apiKey,
           this.config.binance.apiSecret,
           process.env.BINANCE_BASE_URL || BINANCE_BASE_URL,
+          this.config,
+          this.logger,
+          this.rebalanceCache,
+        );
+      case SupportedBridge.Kraken:
+        if (!this.rebalanceCache) {
+          throw new Error('RebalanceCache is required for Kraken adapter');
+        }
+        if (!this.config.kraken?.apiKey || !this.config.kraken?.apiSecret) {
+          throw new Error(`Kraken adapter requires API key and secret`);
+        }
+        return new KrakenBridgeAdapter(
+          this.config.kraken.apiKey,
+          this.config.kraken.apiSecret,
+          process.env.KRAKEN_BASE_URL || KRAKEN_BASE_URL,
           this.config,
           this.logger,
           this.rebalanceCache,
