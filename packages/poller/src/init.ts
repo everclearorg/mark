@@ -147,7 +147,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         requestId: context.requestId,
       });
     } else {
-      logger.info('Successfully completed ${rebalanceOperations.length} rebalancing operations', {
+      logger.info('Successfully completed rebalancing operations', {
         requestId: context.requestId,
         numOperations: rebalanceOperations.length,
         operations: rebalanceOperations,
