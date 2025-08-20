@@ -143,6 +143,9 @@ export class KrakenClient {
     if (axios.isAxiosError(error)) {
       return error.response?.status === 429 || (error.response?.status ?? 0) >= 500;
     }
+    if (!(error as { message: string })?.message) {
+      return false;
+    }
     const err = error as Error;
     if (err.message.includes(`Rate limit exceeded`)) {
       return false;

@@ -307,7 +307,7 @@ describe('DynamicAssetConfig Unit Tests', () => {
 
       const mapping = await dynamicConfig.getAssetMapping(1, 'ETH');
 
-      expect(mapping.method).toBe('Ethereum');
+      expect(mapping.network).toBe('Ethereum');
       expect(mapping.chainId).toBe(1);
     });
 
@@ -325,7 +325,7 @@ describe('DynamicAssetConfig Unit Tests', () => {
 
       const mapping = await dynamicConfig.getAssetMapping(137, 'ETH');
 
-      expect(mapping.method).toBe('Polygon');
+      expect(mapping.network).toBe('Polygon');
       expect(mapping.chainId).toBe(137);
     });
 
@@ -352,7 +352,7 @@ describe('DynamicAssetConfig Unit Tests', () => {
 
       const mapping = await dynamicConfig.getAssetMapping(1, 'USDC');
 
-      expect(mapping.method).toBe('Ethereum (ERC20)');
+      expect(mapping.network).toBe('Ethereum (ERC20)');
       expect(mapping.chainId).toBe(1);
     });
 
@@ -380,7 +380,7 @@ describe('DynamicAssetConfig Unit Tests', () => {
 
       const mapping = await dynamicConfig.getAssetMapping(137, 'ETH');
 
-      expect(mapping.method).toBe('Polygon Network');
+      expect(mapping.network).toBe('Polygon Network');
       expect(mapping.chainId).toBe(137);
     });
 
@@ -398,7 +398,7 @@ describe('DynamicAssetConfig Unit Tests', () => {
 
       const mapping = await dynamicConfig.getAssetMapping(42161, 'ETH');
 
-      expect(mapping.method).toBe('Arbitrum One');
+      expect(mapping.network).toBe('Arbitrum One');
       expect(mapping.chainId).toBe(42161);
     });
 
@@ -416,7 +416,7 @@ describe('DynamicAssetConfig Unit Tests', () => {
 
       const mapping = await dynamicConfig.getAssetMapping(10, 'ETH');
 
-      expect(mapping.method).toBe('Optimism');
+      expect(mapping.network).toBe('Optimism');
       expect(mapping.chainId).toBe(10);
     });
 
@@ -434,7 +434,7 @@ describe('DynamicAssetConfig Unit Tests', () => {
 
       const mapping = await dynamicConfig.getAssetMapping(8453, 'ETH');
 
-      expect(mapping.method).toBe('Base Network');
+      expect(mapping.network).toBe('Base Network');
       expect(mapping.chainId).toBe(8453);
     });
   });
@@ -468,9 +468,9 @@ describe('DynamicAssetConfig Unit Tests', () => {
 
       const mapping = await dynamicConfig.getAssetMapping(1, 'ETH');
 
-      // Should convert to wei (18 decimals)
-      expect(mapping.minWithdrawalAmount).toBe('5000000000000000'); // 0.005 ETH in wei
-      expect(mapping.withdrawalFee).toBe('3500000000000000'); // 0.0035 ETH in wei
+      // Values are returned as decimal strings, not converted to wei
+      expect(mapping.withdrawMethod.minimum).toBe('0.005'); // 0.005 ETH as decimal
+      expect(mapping.withdrawMethod.fee.fee).toBe('0.0035'); // 0.0035 ETH as decimal
     });
   });
 

@@ -6,7 +6,6 @@ import {
   calculateNetAmount,
   validateAssetMapping,
   meetsMinimumWithdrawal,
-  generateWithdrawOrderId,
   convertAmountToUSD,
   checkWithdrawQuota,
   parseBinanceTimestamp,
@@ -222,13 +221,6 @@ describe('Binance Utils', () => {
     });
   });
 
-  describe('generateWithdrawOrderId', () => {
-    it('should generate deterministic order ID', () => {
-      const txHash = '0x1234567890abcdef';
-      const result = generateWithdrawOrderId(mockRoute, txHash);
-      expect(result).toBe('mark-12345678-999-1-Unknow');
-    });
-  });
 
   describe('convertAmountToUSD', () => {
     it('should return amount directly for USDT', async () => {

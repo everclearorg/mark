@@ -300,7 +300,6 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
       }
 
       const isReady = withdrawalStatus.status === 'completed' && withdrawalStatus.onChainConfirmed;
-
       return isReady;
     } catch (error) {
       this.logger.error('Failed to check if transaction is ready on destination', {
@@ -428,11 +427,6 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
         destinationAssetConfig,
         originAssetConfig,
       });
-      const provider = this.getProvider(route.destination);
-      if (!provider) {
-        this.logger.error('No provider for destination chain', { chainId: route.destination });
-        return;
-      }
 
       this.logger.info('Preparing WETH wrap callback', {
         recipient,
@@ -461,7 +455,12 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
         route,
         transactionHash: originTransaction.transactionHash,
       });
-      return;
+
+      this.handleError(error, 'prepare destination callback', {
+        error: jsonifyError(error),
+        route,
+        transactionHash: originTransaction.transactionHash,
+      });
     }
   }
 
@@ -504,7 +503,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
 
     // safety check: amount is above the deposit minimum
     const depositMin = parseUnits(originMapping.depositMethod.minimum, originAssetConfig.decimals);
-    if (depositMin < amount) {
+    if (depositMin > amount) {
       throw new Error(`Deposit amount ${amount} is below the minimum ${depositMin}`);
     }
 

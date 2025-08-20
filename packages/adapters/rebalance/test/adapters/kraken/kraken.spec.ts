@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it, jest, afterEach } from '@jest/globals
 import { SupportedBridge, RebalanceRoute, AssetConfiguration, MarkConfiguration, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
-import { TransactionReceipt, PublicClient, GetTransactionParameters, Transaction, GetTransactionReturnType } from 'viem';
+import { TransactionReceipt, PublicClient, GetTransactionParameters, parseUnits, formatUnits } from 'viem';
 import { KrakenBridgeAdapter } from '../../../src/adapters/kraken/kraken';
 import { KrakenClient } from '../../../src/adapters/kraken/client';
 import { DynamicAssetConfig } from '../../../src/adapters/kraken/dynamic-config';
 import { RebalanceTransactionMemo } from '../../../src/types';
-import { KrakenAssetMapping, KRAKEN_DEPOSIT_STATUS, KRAKEN_WITHDRAWAL_STATUS } from '../../../src/adapters/kraken/types';
+import { KrakenAssetMapping, KRAKEN_DEPOSIT_STATUS, KRAKEN_WITHDRAWAL_STATUS, KrakenWithdrawMethod } from '../../../src/adapters/kraken/types';
 
 // Mock the external dependencies
 jest.mock('../../../src/adapters/kraken/client');
@@ -25,28 +25,30 @@ class TestKrakenBridgeAdapter extends KrakenBridgeAdapter {
   }
 
   public getOrInitWithdrawal(
+    amount: string,
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
-    amount: string,
     recipient: string,
+    originMapping: KrakenAssetMapping,
+    destinationMapping: KrakenAssetMapping,
+    destinationAssetConfig: AssetConfiguration,
   ): Promise<any> {
-    return super.getOrInitWithdrawal(route, originTransaction, amount, recipient);
+    return super.getOrInitWithdrawal(amount, route, originTransaction, recipient, originMapping, destinationMapping, destinationAssetConfig);
   }
 
   public checkDepositConfirmed(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
     assetMapping: any,
-  ): Promise<{ confirmed: boolean }> {
+  ) {
     return super.checkDepositConfirmed(route, originTransaction, assetMapping);
   }
 
   public findExistingWithdrawal(
     route: RebalanceRoute,
-    originTransaction: TransactionReceipt,
-    assetMapping: any,
-  ): Promise<{ id: string } | undefined> {
-    return super.findExistingWithdrawal(route, originTransaction, assetMapping);
+    originTransaction: TransactionReceipt
+  ) {
+    return super.findExistingWithdrawal(route, originTransaction)
   }
 
   public initiateWithdrawal(
@@ -54,9 +56,10 @@ class TestKrakenBridgeAdapter extends KrakenBridgeAdapter {
     originTransaction: TransactionReceipt,
     amount: string,
     assetMapping: any,
+    assetConfig: AssetConfiguration,
     recipient: string,
-  ): Promise<{ id: string }> {
-    return super.initiateWithdrawal(route, originTransaction, amount, assetMapping, recipient);
+  ) {
+    return super.initiateWithdrawal(route, originTransaction, amount, assetMapping, assetConfig, recipient);
   }
 
   // Additional helper for provider error testing
@@ -82,6 +85,9 @@ const mockRebalanceCache = {
   setPause: jest.fn(),
   isPaused: jest.fn(),
   getRebalanceByTransaction: jest.fn(),
+  addWithdrawalRecord: jest.fn(),
+  getWithdrawalRecord: jest.fn(),
+  removeWithdrawalRecord: jest.fn(),
 } as unknown as jest.Mocked<RebalanceCache>;
 
 // Mock data for testing
@@ -213,33 +219,105 @@ const mockETHMainnetKrakenMapping: KrakenAssetMapping = {
   chainId: 1,
   krakenSymbol: 'ETH',
   krakenAsset: 'XETH',
-  method: 'ether',
   network: 'ethereum',
-  minWithdrawalAmount: '10000000000000000', // 0.01 ETH in wei
-  withdrawalFee: '4000000000000000', // 0.004 ETH in wei
+  depositMethod: {
+    method: 'ether',
+    minimum: '0.0001',
+    limit: false,
+    'gen-address': false,
+  },
+  withdrawMethod: {
+    asset: 'XETH',
+    minimum: '0.005',
+    fee: {
+      fee: '0.000001',
+      asset: 'XETH',
+      aclass: 'currency'
+    },
+    method: 'Ether',
+    limits: [{
+      limit_type: 'amount',
+      description: '',
+      limits: {
+        '86400': {
+          remaining: '100000',
+          used: '0',
+          maximum: '100000000000',
+        }
+      }
+    }]
+  } as unknown as KrakenWithdrawMethod,
 };
 
 const mockWETHArbitrumKrakenMapping: KrakenAssetMapping = {
   chainId: 42161,
   krakenSymbol: 'ETH',
   krakenAsset: 'XETH',
-  method: 'arbitrum',
   network: 'arbitrum',
-  minWithdrawalAmount: '10000000000000000', // 0.01 WETH in wei
-  withdrawalFee: '2000000000000000', // 0.002 WETH in wei
+  depositMethod: {
+    method: 'ether',
+    minimum: '0.0001',
+    limit: false,
+    'gen-address': false,
+  },
+  withdrawMethod: {
+    asset: 'XETH',
+    minimum: '0.005',
+    fee: {
+      fee: '0.000001',
+      asset: 'XETH',
+      aclass: 'currency'
+    },
+    method: 'Ether',
+    limits: [{
+      limit_type: 'amount',
+      description: '',
+      limits: {
+        '86400': {
+          remaining: '100000',
+          used: '0',
+          maximum: '100000000000',
+        }
+      }
+    }]
+  } as unknown as KrakenWithdrawMethod,
 };
 
 const mockUSDCMainnetKrakenMapping: KrakenAssetMapping = {
   chainId: 1,
   krakenSymbol: 'USDC',
   krakenAsset: 'USDC',
-  method: 'ether',
   network: 'ethereum',
-  minWithdrawalAmount: '1000000', // 1 USDC in smallest units (6 decimals)
-  withdrawalFee: '500000', // 0.5 USDC fee
+  depositMethod: {
+    method: 'ether (erc-20)',
+    minimum: '0.1',
+    limit: false,
+    'gen-address': false,
+  },
+  withdrawMethod: {
+    asset: 'USDC',
+    minimum: '0.05',
+    fee: {
+      fee: '0.01',
+      asset: 'XETH',
+      aclass: 'currency'
+    },
+    method: 'Ether (erc-20)',
+    limits: [{
+      limit_type: 'amount',
+      description: '',
+      limits: {
+        '86400': {
+          remaining: '100000',
+          used: '0',
+          maximum: '100000000000',
+        }
+      }
+    }]
+  } as unknown as KrakenWithdrawMethod,
 };
 
-describe('KrakenBridgeAdapter', () => {
+describe('KrakenBridgeAdapter Unit', () => {
   let adapter: TestKrakenBridgeAdapter;
 
   beforeEach(() => {
@@ -403,23 +481,35 @@ describe('KrakenBridgeAdapter', () => {
         }
         return Promise.reject(new Error(`Asset mapping not found for ${assetIdentifier} on chain ${chainId}`));
       });
+
+      // Mock asset info return
+      mockKrakenClient.isSystemOperational.mockResolvedValue(true);
+      mockKrakenClient.getAssetInfo.mockResolvedValue({
+        [mockWETHArbitrumKrakenMapping.krakenAsset]: {
+          aclass: 'currency',
+          altname: 'Eth',
+          decimals: 18,
+          display_decimals: 6,
+          status: 'enabled'
+        }
+      })
     });
 
     it('should calculate net amount after withdrawal fees', async () => {
       const amount = '100000000000000000'; // 0.1 ETH in wei
-      const expectedNetAmount = (BigInt(amount) - BigInt(mockWETHArbitrumKrakenMapping.withdrawalFee)).toString();
+      // Fee is 0.000001 ETH = 1000000000000 wei
+      const feeInWei = '1000000000000';
+      const expectedNetAmount = (BigInt(amount) - BigInt(feeInWei)).toString();
 
       const result = await adapter.getReceivedAmount(amount, sampleRoute);
 
       expect(result).toBe(expectedNetAmount);
       expect(mockLogger.debug).toHaveBeenCalledWith('Kraken withdrawal amount calculated after fees', {
-        originalAmount: amount,
-        withdrawalFee: mockWETHArbitrumKrakenMapping.withdrawalFee,
-        netAmount: expectedNetAmount,
-        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
-        method: mockWETHArbitrumKrakenMapping.method,
-        originChain: sampleRoute.origin,
-        destinationChain: sampleRoute.destination,
+        amount,
+        received: BigInt(expectedNetAmount),
+        route: sampleRoute,
+        depositMethod: mockWETHArbitrumKrakenMapping.depositMethod,
+        withdrawMethod: mockWETHArbitrumKrakenMapping.withdrawMethod,
       });
     });
 
@@ -427,7 +517,7 @@ describe('KrakenBridgeAdapter', () => {
       const amount = '1000000000000000'; // 0.001 ETH - below 0.01 ETH minimum
 
       await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(
-        'Failed to calculate received amount: Amount is too low for Kraken withdrawal',
+        'Failed to calculate received amount: Received amount is below the withdrawal minimum',
       );
     });
 
@@ -440,16 +530,24 @@ describe('KrakenBridgeAdapter', () => {
       const amount = '2000000'; // 2 USDC in smallest units
 
       // Reset mocks for USDC
-      mockDynamicConfig.getAssetMapping
-        .mockResolvedValueOnce(mockUSDCMainnetKrakenMapping) // origin mapping
-        .mockResolvedValueOnce(mockUSDCMainnetKrakenMapping); // destination mapping (same for origin/destination)
+      mockDynamicConfig.getAssetMapping.mockResolvedValue(mockUSDCMainnetKrakenMapping) // origin mapping
+      mockKrakenClient.getAssetInfo.mockResolvedValue({
+        [mockUSDCMainnetKrakenMapping.krakenAsset]: {
+          aclass: 'currency',
+          altname: 'USDC.e',
+          decimals: 6,
+          display_decimals: 6,
+          status: 'enabled'
+        }
+      })
 
-      const expectedNetAmount = (BigInt(amount) - BigInt(mockUSDCMainnetKrakenMapping.withdrawalFee)).toString();
+      // Fee is 0.01 USDC = 10000 in smallest units (6 decimals)
+      const feeInSmallestUnits = parseUnits(mockUSDCMainnetKrakenMapping.withdrawMethod.fee.fee, 6);
+      const expectedNetAmount = (BigInt(amount) - BigInt(feeInSmallestUnits)).toString();
 
       const result = await adapter.getReceivedAmount(amount, usdcRoute);
 
       expect(result).toBe(expectedNetAmount);
-      expect(result).toBe('1500000'); // 2 USDC - 0.5 USDC fee = 1.5 USDC
     });
 
     it('should handle validateAssetMapping errors', async () => {
@@ -476,12 +574,13 @@ describe('KrakenBridgeAdapter', () => {
     });
 
     it('should handle edge case where amount equals minimum withdrawal', async () => {
-      const amount = mockETHMainnetKrakenMapping.minWithdrawalAmount; // Exactly minimum
-      const expectedNetAmount = (BigInt(amount) - BigInt(mockWETHArbitrumKrakenMapping.withdrawalFee)).toString();
+      const min = parseUnits(mockWETHArbitrumKrakenMapping.withdrawMethod.minimum, 18); // Exactly minimum
+      const feeInWei = parseUnits(mockWETHArbitrumKrakenMapping.withdrawMethod.fee.fee, 18); // 0.000001 ETH fee in wei
+      const amount = min + feeInWei;
 
-      const result = await adapter.getReceivedAmount(amount, sampleRoute);
+      const result = await adapter.getReceivedAmount(amount.toString(), sampleRoute);
 
-      expect(result).toBe(expectedNetAmount);
+      expect(result).toBe(min.toString());
     });
   });
 
@@ -523,15 +622,6 @@ describe('KrakenBridgeAdapter', () => {
         }
       });
 
-      mockKrakenClient.getDepositMethods.mockResolvedValue([
-        {
-          method: mockETHMainnetKrakenMapping.method,
-          limit: false,
-          minimum: '0.001',
-          'gen-address': true
-        }
-      ]);
-
       mockKrakenClient.getDepositAddresses.mockResolvedValue([
         {
           address: '0x1234567890123456789012345678901234567890',
@@ -560,54 +650,26 @@ describe('KrakenBridgeAdapter', () => {
 
       // Verify all safety checks were performed
       expect(mockKrakenClient.isSystemOperational).toHaveBeenCalled();
+      expect(mockDynamicConfig.getAssetMapping).toHaveBeenCalled();
       expect(mockKrakenClient.getAssetInfo).toHaveBeenCalled();
-      expect(mockKrakenClient.getDepositMethods).toHaveBeenCalled();
-      expect(mockKrakenClient.getDepositAddresses).toHaveBeenCalled();
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Kraken deposit address obtained for transaction preparation',
-        expect.objectContaining({
-          asset: mockETHMainnetKrakenMapping.krakenAsset,
-          krakenSymbol: mockETHMainnetKrakenMapping.krakenSymbol,
-          method: mockETHMainnetKrakenMapping.method,
-          depositAddress: '0x1234567890123456789012345678901234567890',
-          recipient,
-        })
-      );
     });
 
     it('should prepare WETH unwrap + ETH send for ETH kraken symbol', async () => {
-      // Modify mapping to use ETH symbol (which triggers unwrap logic)
-      const ethMapping = {
-        ...mockETHMainnetKrakenMapping,
-        krakenSymbol: 'ETH',
-        krakenAsset: '0x0000000000000000000000000000000000000000', // Zero address for ETH
-      };
-
       mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number, assetIdentifier: string) => {
-        if (chainId === 1) return Promise.resolve(ethMapping);
+        if (chainId === 1) return Promise.resolve(mockETHMainnetKrakenMapping);
         if (chainId === 42161) return Promise.resolve(mockWETHArbitrumKrakenMapping);
         return Promise.reject(new Error(`Asset mapping not found`));
       });
 
       mockKrakenClient.getAssetInfo.mockResolvedValue({
-        [ethMapping.krakenAsset]: {
+        [mockETHMainnetKrakenMapping.krakenAsset]: {
           aclass: 'currency',
           altname: 'ETH',
-          decimals: 8,
+          decimals: 18,
           display_decimals: 4,
           status: 'enabled'
         }
       });
-
-      mockKrakenClient.getDepositMethods.mockResolvedValue([
-        {
-          method: ethMapping.method,
-          limit: false,
-          minimum: '0.001',
-          'gen-address': true
-        }
-      ]);
 
       const result = await adapter.send(sender, recipient, amount, sampleRoute);
 
@@ -624,49 +686,24 @@ describe('KrakenBridgeAdapter', () => {
       expect(result[1].transaction.to).toBe('0x1234567890123456789012345678901234567890'); // Deposit address
       expect(result[1].transaction.value).toBe(BigInt(amount)); // ETH value
       expect(result[1].transaction.data).toBe('0x');
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Preparing WETH unwrap before Kraken ETH deposit',
-        expect.objectContaining({
-          wethAddress: sampleRoute.asset,
-          krakenSymbol: 'ETH',
-          transactionSequence: ['unwrap_weth', 'send_eth_to_kraken'],
-        })
-      );
     });
 
     it('should handle WETH transfer to Kraken when krakenAsset does not match zero address', async () => {
-      // Test the else branch in line 268 where we transfer WETH token instead of native ETH
-      const wethMapping = {
-        ...mockETHMainnetKrakenMapping,
-        krakenSymbol: 'ETH',
-        krakenAsset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH address, not zero address
-      };
-
       mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number) => {
-        if (chainId === 1) return Promise.resolve(wethMapping);
+        if (chainId === 1) return Promise.resolve(mockETHMainnetKrakenMapping);
         if (chainId === 42161) return Promise.resolve(mockWETHArbitrumKrakenMapping);
         return Promise.reject(new Error(`Asset mapping not found`));
       });
 
       mockKrakenClient.getAssetInfo.mockResolvedValue({
-        [wethMapping.krakenAsset]: {
+        [mockETHMainnetKrakenMapping.krakenAsset]: {
           aclass: 'currency',
           altname: 'WETH',
-          decimals: 8,
+          decimals: 18,
           display_decimals: 4,
           status: 'enabled'
         }
       });
-
-      mockKrakenClient.getDepositMethods.mockResolvedValue([
-        {
-          method: wethMapping.method,
-          limit: false,
-          minimum: '0.001',
-          'gen-address': true
-        }
-      ]);
 
       const nativeETHRoute = { ...sampleRoute, asset: '0x0000000000000000000000000000000000000000' };
       const result = await adapter.send(sender, recipient, amount, nativeETHRoute);
@@ -682,7 +719,7 @@ describe('KrakenBridgeAdapter', () => {
       const invalidRoute = { ...sampleRoute, asset: '0xInvalidAsset123' };
 
       await expect(adapter.send(sender, recipient, amount, invalidRoute)).rejects.toThrow(
-        'No Kraken asset mapping found for route from chain 1'
+        'Unable to find origin asset config for asset 0xInvalidAsset123 on chain 1'
       );
     });
 
@@ -695,16 +732,15 @@ describe('KrakenBridgeAdapter', () => {
       };
 
       await expect(adapter.send(sender, recipient, amount, unknownAssetRoute)).rejects.toThrow(
-        'No Kraken asset mapping found for route from chain 999'
+        'Unable to find origin asset config for asset 0x9999999999999999999999999999999999999999 on chain 999'
       );
     });
 
     it('should throw error when withdrawal quota is exceeded', async () => {
-      // Use a very large amount to trigger quota exceeded error
-      const largeAmount = '100000000000000000000000'; // 100,000 ETH
+      const largeAmount = 2n * parseUnits(mockWETHArbitrumKrakenMapping.withdrawMethod.limits[0].limits['86400'].maximum, 18)
 
-      await expect(adapter.send(sender, recipient, largeAmount, sampleRoute)).rejects.toThrow(
-        'exceeds daily limit'
+      await expect(adapter.send(sender, recipient, largeAmount.toString(), sampleRoute)).rejects.toThrow(
+        'exceeds withdraw limits'
       );
     });
 
@@ -754,14 +790,6 @@ describe('KrakenBridgeAdapter', () => {
           status: 'enabled'
         }
       });
-      mockKrakenClient.getDepositMethods.mockResolvedValue([
-        {
-          method: mockUSDCMainnetKrakenMapping.method,
-          limit: false,
-          minimum: '1.0',
-          'gen-address': true
-        }
-      ]);
 
       const result = await adapter.send(sender, recipient, '10000000', usdcRoute); // 10 USDC
 
@@ -781,10 +809,10 @@ describe('KrakenBridgeAdapter', () => {
     });
 
     it('should throw error if amount is below minimum withdrawal', async () => {
-      const smallAmount = '1000000000000000'; // 0.001 ETH - below minimum
+      const amount = '1000000000000000'; // 0.001 ETH - below 0.01 ETH minimum
 
-      await expect(adapter.send(sender, recipient, smallAmount, sampleRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction: Amount 1000000000000000 does not meet minimum withdrawal requirement'
+      await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(
+        'Failed to calculate received amount: Received amount is below the withdrawal minimum',
       );
     });
 
@@ -792,7 +820,7 @@ describe('KrakenBridgeAdapter', () => {
       const unknownAssetRoute = { ...sampleRoute, asset: '0xUnknownAsset123' };
 
       await expect(adapter.send(sender, recipient, amount, unknownAssetRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction: No Kraken asset mapping found for route from chain 1'
+        'Failed to prepare Kraken deposit transaction: Unable to find origin asset config for asset 0xUnknownAsset123 on chain 1'
       );
     });
 
@@ -808,22 +836,7 @@ describe('KrakenBridgeAdapter', () => {
       });
 
       await expect(adapter.send(sender, recipient, amount, sampleRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction: Asset'
-      );
-    });
-
-    it('should throw error if deposit method not available', async () => {
-      mockKrakenClient.getDepositMethods.mockResolvedValue([
-        {
-          method: 'DifferentMethod',
-          limit: false,
-          minimum: '0.001',
-          'gen-address': true
-        }
-      ]);
-
-      await expect(adapter.send(sender, recipient, amount, sampleRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction: Deposit method'
+        'Failed to prepare Kraken deposit transaction: Origin asset is disabled on Kraken'
       );
     });
 
@@ -897,6 +910,16 @@ describe('KrakenBridgeAdapter', () => {
     beforeEach(() => {
       jest.clearAllMocks();
 
+      mockKrakenClient.isSystemOperational.mockResolvedValue(true);
+      mockKrakenClient.getAssetInfo.mockResolvedValue({
+        [mockETHMainnetKrakenMapping.krakenAsset]: {
+          aclass: 'currency',
+          altname: 'WETH',
+          decimals: 18,
+          display_decimals: 4,
+          status: 'enabled'
+        }
+      });
       // Mock the cache to return recipient by default
       mockRebalanceCache.getRebalanceByTransaction.mockResolvedValue({
         id: 'test-rebalance-id',
@@ -929,19 +952,13 @@ describe('KrakenBridgeAdapter', () => {
 
       expect(result).toBe(true);
       expect(adapter.getOrInitWithdrawal).toHaveBeenCalledWith(
+        amount,
         sampleRoute,
         mockOriginTransaction,
-        amount,
-        recipient
-      );
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Kraken withdrawal readiness determined',
-        expect.objectContaining({
-          isReady: true,
-          krakenStatus: 'completed',
-          onChainConfirmed: true,
-          withdrawalTxId: '0xwithdrawal123',
-        })
+        recipient,
+        mockETHMainnetKrakenMapping,
+        mockWETHArbitrumKrakenMapping,
+        mockChains[sampleRoute.destination].assets.find(a => a.symbol === 'WETH')
       );
     });
 
@@ -955,14 +972,6 @@ describe('KrakenBridgeAdapter', () => {
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
 
       expect(result).toBe(false);
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Kraken withdrawal readiness determined',
-        expect.objectContaining({
-          isReady: false,
-          krakenStatus: 'completed',
-          onChainConfirmed: false,
-        })
-      );
     });
 
     it('should return false when withdrawal is pending', async () => {
@@ -975,14 +984,6 @@ describe('KrakenBridgeAdapter', () => {
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
 
       expect(result).toBe(false);
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Kraken withdrawal readiness determined',
-        expect.objectContaining({
-          isReady: false,
-          krakenStatus: 'pending',
-          onChainConfirmed: false,
-        })
-      );
     });
 
     it('should return false when withdrawal status is undefined', async () => {
@@ -991,10 +992,6 @@ describe('KrakenBridgeAdapter', () => {
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
 
       expect(result).toBe(false);
-      expect(mockLogger.debug).not.toHaveBeenCalledWith(
-        'Kraken withdrawal readiness determined',
-        expect.any(Object)
-      );
     });
 
     it('should return false when recipient is not found in cache', async () => {
@@ -1003,13 +1000,6 @@ describe('KrakenBridgeAdapter', () => {
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
 
       expect(result).toBe(false);
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Cannot check withdrawal readiness - recipient missing from cache',
-        expect.objectContaining({
-          transactionHash: mockOriginTransaction.transactionHash,
-          requiredFor: 'kraken_withdrawal_initiation',
-        })
-      );
     });
 
     it('should return false when cache lookup throws error', async () => {
@@ -1018,51 +1008,14 @@ describe('KrakenBridgeAdapter', () => {
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
 
       expect(result).toBe(false);
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Cannot check withdrawal readiness - recipient missing from cache',
-        expect.objectContaining({
-          transactionHash: mockOriginTransaction.transactionHash,
-        })
-      );
     });
 
-    it('should return false and log error when getOrInitWithdrawal throws', async () => {
+    it('should return false when getOrInitWithdrawal throws', async () => {
       jest.spyOn(adapter, 'getOrInitWithdrawal').mockRejectedValue(new Error('Withdrawal init failed'));
 
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
 
       expect(result).toBe(false);
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Failed to check if transaction is ready on destination',
-        expect.objectContaining({
-          error: expect.objectContaining({
-            message: 'Withdrawal init failed'
-          }),
-          transactionHash: mockOriginTransaction.transactionHash,
-        })
-      );
-    });
-
-    it('should log debug info when checking readiness', async () => {
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'completed',
-        onChainConfirmed: true,
-        txId: '0xwithdrawal123',
-      });
-
-      await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Checking if Kraken withdrawal is ready on destination',
-        expect.objectContaining({
-          amount,
-          originChain: sampleRoute.origin,
-          destinationChain: sampleRoute.destination,
-          asset: sampleRoute.asset,
-          transactionHash: mockOriginTransaction.transactionHash,
-          blockNumber: mockOriginTransaction.blockNumber,
-        })
-      );
     });
   });
 
@@ -1189,7 +1142,7 @@ describe('KrakenBridgeAdapter', () => {
       expect(result.confirmed).toBe(true);
       expect(mockKrakenClient.getDepositStatus).toHaveBeenCalledWith(
         mockETHMainnetKrakenMapping.krakenAsset,
-        mockETHMainnetKrakenMapping.method
+        mockETHMainnetKrakenMapping.depositMethod.method
       );
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Deposit confirmation check',
@@ -1344,135 +1297,36 @@ describe('KrakenBridgeAdapter', () => {
     });
 
     it('should find existing withdrawal by refid', async () => {
-      const expectedOrderId = 'mark-1-42161-def45678';
-      mockKrakenClient.getWithdrawStatus.mockResolvedValue([
-        {
-          asset: 'XETH',
-          refid: expectedOrderId,
-          txid: '0xwithdrawaltx123',
-          info: 'ETH withdrawal',
-          amount: '0.1',
-          fee: '0.004',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
+      const refid = 'mark-1-42161-def45678';
+      const cached = {
+        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+        refid,
+      };
+      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue(cached)
 
       const result = await adapter.findExistingWithdrawal(
         sampleRoute,
         mockOriginTransaction,
-        mockWETHArbitrumKrakenMapping
       );
 
-      expect(result).toEqual({ id: expectedOrderId });
-      expect(mockKrakenClient.getWithdrawStatus).toHaveBeenCalledWith(
-        mockWETHArbitrumKrakenMapping.krakenAsset
-      );
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Found existing withdrawal',
-        expect.objectContaining({
-          withdrawalId: expectedOrderId,
-          customOrderId: expectedOrderId,
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        })
-      );
-    });
-
-    it('should find existing withdrawal by info field', async () => {
-      const expectedOrderId = 'mark-1-42161-def45678';
-      mockKrakenClient.getWithdrawStatus.mockResolvedValue([
-        {
-          asset: 'XETH',
-          refid: 'different-id',
-          txid: '0xwithdrawaltx123',
-          info: `Some info containing ${expectedOrderId} and other data`,
-          amount: '0.1',
-          fee: '0.004',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
-
-      const result = await adapter.findExistingWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
-        mockWETHArbitrumKrakenMapping
-      );
-
-      expect(result).toEqual({ id: 'different-id' });
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Found existing withdrawal',
-        expect.objectContaining({
-          withdrawalId: 'different-id',
-        })
+      expect(result).toEqual(cached);
+      expect(mockRebalanceCache.getWithdrawalRecord).toHaveBeenCalledWith(
+        mockOriginTransaction.transactionHash
       );
     });
 
     it('should return undefined when no existing withdrawal found', async () => {
-      mockKrakenClient.getWithdrawStatus.mockResolvedValue([
-        {
-          asset: 'XETH',
-          refid: 'unrelated-withdrawal',
-          txid: '0xwithdrawaltx123',
-          info: 'Unrelated withdrawal',
-          amount: '0.1',
-          fee: '0.004',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
+      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue(undefined)
 
       const result = await adapter.findExistingWithdrawal(
         sampleRoute,
         mockOriginTransaction,
-        mockWETHArbitrumKrakenMapping
       );
 
       expect(result).toBeUndefined();
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'No existing withdrawal found',
-        expect.objectContaining({
-          customOrderId: 'mark-1-42161-def45678',
-          asset: mockWETHArbitrumKrakenMapping.krakenAsset,
-        })
-      );
-    });
-
-    it('should return undefined when API call fails', async () => {
-      mockKrakenClient.getWithdrawStatus.mockRejectedValue(new Error('API error'));
-
-      const result = await adapter.findExistingWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
-        mockWETHArbitrumKrakenMapping
-      );
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Failed to find existing withdrawal',
-        expect.objectContaining({
-          error: expect.objectContaining({
-            message: 'API error',
-          }),
-          route: sampleRoute,
-          transactionHash: mockOriginTransaction.transactionHash,
-        })
-      );
-    });
-
-    it('should handle empty withdrawal list', async () => {
-      mockKrakenClient.getWithdrawStatus.mockResolvedValue([]);
-
-      const result = await adapter.findExistingWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
-        mockWETHArbitrumKrakenMapping
-      );
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'No existing withdrawal found',
-        expect.any(Object)
+      expect(mockRebalanceCache.getWithdrawalRecord).toHaveBeenCalledWith(
+        mockOriginTransaction.transactionHash
       );
     });
   });
@@ -1503,24 +1357,16 @@ describe('KrakenBridgeAdapter', () => {
 
     const amount = '100000000000000000'; // 0.1 ETH
     const recipient = '0x9876543210987654321098765432109876543210';
+    const refid = 'ajksdhfakdsjhfakdsj';
 
     beforeEach(() => {
       jest.clearAllMocks();
 
-      // Mock system operational
-      mockKrakenClient.isSystemOperational.mockResolvedValue(true);
+      // mock withdrawal response
+      mockKrakenClient.withdraw.mockResolvedValue({ refid })
 
-      // Mock withdrawal info and withdraw responses
-      mockKrakenClient.getWithdrawInfo.mockResolvedValue({
-        method: 'arbitrum',
-        limit: '10.0',
-        amount: '0.1',
-        fee: '0.002',
-      });
-
-      mockKrakenClient.withdraw.mockResolvedValue({
-        refid: 'withdrawal-ref-123',
-      });
+      // mock cache response
+      mockRebalanceCache.addWithdrawalRecord.mockResolvedValue();
     });
 
     it('should successfully initiate withdrawal', async () => {
@@ -1529,115 +1375,22 @@ describe('KrakenBridgeAdapter', () => {
         mockOriginTransaction,
         amount,
         mockWETHArbitrumKrakenMapping,
+        mockAssets['WETH'],
         recipient
       );
 
-      expect(result).toEqual({ id: 'withdrawal-ref-123' });
-      expect(mockKrakenClient.isSystemOperational).toHaveBeenCalled();
-      expect(mockKrakenClient.getWithdrawInfo).toHaveBeenCalledWith(
-        mockWETHArbitrumKrakenMapping.krakenAsset,
-        recipient,
-        '0.1'
-      );
+      expect(result).toEqual({ refid, asset: mockWETHArbitrumKrakenMapping.krakenAsset, method: mockWETHArbitrumKrakenMapping.withdrawMethod.method });
       expect(mockKrakenClient.withdraw).toHaveBeenCalledWith({
         asset: mockWETHArbitrumKrakenMapping.krakenAsset,
         key: recipient,
-        amount: '0.1',
+        amount: formatUnits(BigInt(amount), 18),
       });
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        'Kraken withdrawal initiated',
-        expect.objectContaining({
-          withdrawalId: 'withdrawal-ref-123',
-          withdrawOrderId: 'mark-1-42161-def45678',
-          asset: mockWETHArbitrumKrakenMapping.krakenAsset,
-          amount,
-          recipient,
-        })
-      );
-    });
-
-    it('should throw error when Kraken system is not operational', async () => {
-      mockKrakenClient.isSystemOperational.mockResolvedValue(false);
-
-      await expect(adapter.initiateWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
-        amount,
-        mockWETHArbitrumKrakenMapping,
-        recipient
-      )).rejects.toThrow('Kraken system is not operational - cannot initiate withdrawal');
-
-      expect(mockKrakenClient.isSystemOperational).toHaveBeenCalled();
-      expect(mockKrakenClient.getWithdrawInfo).not.toHaveBeenCalled();
-    });
-
-    it('should throw error when asset config is not found', async () => {
-      const invalidRoute: RebalanceRoute = {
-        ...sampleRoute,
-        asset: '0xInvalidAsset123',
-      };
-
-      await expect(adapter.initiateWithdrawal(
-        invalidRoute,
-        mockOriginTransaction,
-        amount,
-        mockWETHArbitrumKrakenMapping,
-        recipient
-      )).rejects.toThrow('Unable to find asset config for asset 0xInvalidAsset123 on chain 1');
-    });
-
-    it('should throw error when decimals are not found', async () => {
-      // Create route with invalid asset that won't be found in chains config
-      const invalidRoute: RebalanceRoute = {
-        ...sampleRoute,
-        asset: '0x9999999999999999999999999999999999999999',
-      };
-
-      await expect(adapter.initiateWithdrawal(
-        invalidRoute,
-        mockOriginTransaction,
-        amount,
-        mockWETHArbitrumKrakenMapping,
-        recipient
-      )).rejects.toThrow('Unable to find asset config for asset');
-    });
-
-    it('should throw error when withdrawal quota is exceeded', async () => {
-      // This will be caught by checkWithdrawQuota function
-      // Using a very large amount to exceed the simulated quota
-      const largeAmount = '100000000000000000000000'; // 100,000 ETH
-
-      await expect(adapter.initiateWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
-        largeAmount,
-        mockWETHArbitrumKrakenMapping,
-        recipient
-      )).rejects.toThrow('exceeds daily limit');
-    });
-
-    it('should throw error when getWithdrawInfo fails', async () => {
-      mockKrakenClient.getWithdrawInfo.mockRejectedValue(new Error('Withdraw info API error'));
-
-      await expect(adapter.initiateWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
-        amount,
-        mockWETHArbitrumKrakenMapping,
-        recipient
-      )).rejects.toThrow('Withdraw info API error');
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Failed to initiate withdrawal',
-        expect.objectContaining({
-          error: expect.objectContaining({
-            message: 'Withdraw info API error',
-          }),
-          route: sampleRoute,
-          transactionHash: mockOriginTransaction.transactionHash,
-          assetMapping: mockWETHArbitrumKrakenMapping,
-        })
-      );
+      expect(mockRebalanceCache.addWithdrawalRecord).toHaveBeenCalledWith(
+        mockOriginTransaction.transactionHash,
+        mockWETHArbitrumKrakenMapping.krakenAsset,
+        mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+        refid,
+      )
     });
 
     it('should throw error when withdraw call fails', async () => {
@@ -1648,46 +1401,22 @@ describe('KrakenBridgeAdapter', () => {
         mockOriginTransaction,
         amount,
         mockWETHArbitrumKrakenMapping,
+        mockAssets['WETH'],
         recipient
       )).rejects.toThrow('Withdrawal API error');
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Failed to initiate withdrawal',
-        expect.objectContaining({
-          error: expect.objectContaining({
-            message: 'Withdrawal API error',
-          }),
-        })
-      );
     });
 
-    it('should log debug information during withdrawal process', async () => {
-      await adapter.initiateWithdrawal(
+    it('should throw error when cache call fails', async () => {
+      mockRebalanceCache.addWithdrawalRecord.mockRejectedValue(new Error('Cache error'));
+
+      await expect(adapter.initiateWithdrawal(
         sampleRoute,
         mockOriginTransaction,
         amount,
         mockWETHArbitrumKrakenMapping,
+        mockAssets['WETH'],
         recipient
-      );
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Using recipient address',
-        expect.objectContaining({
-          recipient,
-          route: sampleRoute,
-        })
-      );
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Initiating Kraken withdrawal with id mark-1-42161-def45678',
-        expect.objectContaining({
-          asset: mockWETHArbitrumKrakenMapping.krakenAsset,
-          method: mockWETHArbitrumKrakenMapping.method,
-          address: recipient,
-          amount,
-          withdrawOrderId: 'mark-1-42161-def45678',
-        })
-      );
+      )).rejects.toThrow('Cache error');
     });
   });
 
@@ -1717,197 +1446,92 @@ describe('KrakenBridgeAdapter', () => {
 
     const amount = '100000000000000000';
     const recipient = '0x9876543210987654321098765432109876543210';
+    const refid = 'a3216adsfad2f1a';
+    const withdrawalTxId = '0xasdkjfhakue4';
 
     beforeEach(() => {
       jest.clearAllMocks();
 
-      // Default mock setup for asset mappings
-      mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number) => {
-        if (chainId === 1) return Promise.resolve(mockETHMainnetKrakenMapping);
-        if (chainId === 42161) return Promise.resolve(mockWETHArbitrumKrakenMapping);
-        return Promise.reject(new Error(`Asset mapping not found for chain ${chainId}`));
+      mockKrakenClient.getDepositStatus.mockResolvedValue([{
+        txid: mockOriginTransaction.transactionHash,
+        status: 'Success',
+      } as any]);
+
+      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue({
+        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+        refid
       });
 
-      // Default mock for system operational
-      mockKrakenClient.isSystemOperational.mockResolvedValue(true);
+      mockKrakenClient.getWithdrawStatus.mockResolvedValue({
+        status: 'Pending',
+        txid: withdrawalTxId,
+      } as any);
 
-      // Default mock for withdrawal APIs
-      mockKrakenClient.getWithdrawInfo.mockResolvedValue({
-        method: 'arbitrum',
-        limit: '10.0',
-        amount: '0.1',
-        fee: '0.002',
-      });
-      mockKrakenClient.withdraw.mockResolvedValue({
-        refid: 'withdrawal-ref-123',
-      });
-    });
-
-    it('should return undefined when deposit is not confirmed', async () => {
-      // Mock deposit not confirmed
-      mockKrakenClient.getDepositStatus.mockResolvedValue([
-        {
-          method: 'ether',
-          aclass: 'currency',
-          asset: 'XETH',
-          refid: 'deposit-ref-123',
-          txid: 'different-tx-hash',
-          info: 'ETH deposit',
-          amount: '100000000000000000',
-          fee: '0',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
-
-      const result = await adapter.getOrInitWithdrawal(sampleRoute, mockOriginTransaction, amount, recipient);
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.debug).toHaveBeenCalledWith('Deposit not yet confirmed', {
-        transactionHash: mockOriginTransaction.transactionHash,
-      });
-    });
-
-    it('should initiate new withdrawal when deposit is confirmed but no existing withdrawal', async () => {
-      // Mock deposit confirmed
-      mockKrakenClient.getDepositStatus.mockResolvedValue([
-        {
-          method: 'ether',
-          aclass: 'currency',
-          asset: 'XETH',
-          refid: 'deposit-ref-123',
-          txid: mockOriginTransaction.transactionHash,
-          info: 'ETH deposit',
-          amount: '100000000000000000',
-          fee: '0',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
-
-      // Mock no existing withdrawal
-      mockKrakenClient.getWithdrawStatus
-        .mockResolvedValueOnce([]) // For findExistingWithdrawal
-        .mockResolvedValueOnce([ // For checking withdrawal status after initiation
-          {
-            asset: 'XETH',
-            refid: 'withdrawal-ref-123',
-            txid: '0xwithdrawaltx123',
-            info: 'ETH withdrawal',
-            amount: '0.1',
-            fee: '0.004',
-            time: Math.floor(Date.now() / 1000),
-            status: KRAKEN_WITHDRAWAL_STATUS.INITIAL,
-          },
-        ]);
-
-      // Mock withdrawal initiation
-      mockKrakenClient.isSystemOperational.mockResolvedValue(true);
-      mockKrakenClient.getWithdrawInfo.mockResolvedValue({
-        method: 'arbitrum',
-        limit: '10.0',
-        amount: '0.1',
-        fee: '0.002',
-      });
-      mockKrakenClient.withdraw.mockResolvedValue({
-        refid: 'withdrawal-ref-123',
-      });
-
-      const result = await adapter.getOrInitWithdrawal(sampleRoute, mockOriginTransaction, amount, recipient);
-
-      expect(result).toEqual({
-        status: 'pending',
-        onChainConfirmed: false,
-        txId: '0xwithdrawaltx123',
-      });
-      expect(mockKrakenClient.withdraw).toHaveBeenCalled();
-    });
-
-    it('should return existing withdrawal status when withdrawal exists', async () => {
-      // Mock deposit confirmed
-      mockKrakenClient.getDepositStatus.mockResolvedValue([
-        {
-          method: 'ether',
-          aclass: 'currency',
-          asset: 'XETH',
-          refid: 'deposit-ref-123',
-          txid: mockOriginTransaction.transactionHash,
-          info: 'ETH deposit',
-          amount: '100000000000000000',
-          fee: '0',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
-
-      // Mock existing withdrawal found with refid match
-      const expectedOrderId = 'mark-1-42161-def45678';
-      const withdrawalRefId = expectedOrderId;
-      mockKrakenClient.getWithdrawStatus.mockResolvedValue([
-        {
-          asset: 'XETH',
-          refid: withdrawalRefId,
-          txid: '0xcompletedwithdrawaltx',
-          info: 'ETH withdrawal',
-          amount: '0.1',
-          fee: '0.004',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_WITHDRAWAL_STATUS.SUCCESS,
-        },
-      ]);
+      mockKrakenClient.withdraw.mockResolvedValue({ refid })
 
       // Mock on-chain confirmation
       const mockProvider = {
         getTransactionReceipt: (jest.fn() as any).mockResolvedValue({
           status: 'success',
-          transactionHash: '0xcompletedwithdrawaltx',
+          transactionHash: withdrawalTxId,
         }),
       };
       jest.spyOn(adapter, 'getProvider').mockReturnValue(mockProvider as PublicClient);
+    });
 
-      const result = await adapter.getOrInitWithdrawal(sampleRoute, mockOriginTransaction, amount, recipient);
+    it('should return undefined when deposit is not confirmed', async () => {
+      // Mock deposit not confirmed
+      mockKrakenClient.getDepositStatus.mockResolvedValue([{
+        txid: mockOriginTransaction.transactionHash,
+        status: 'Pending',
+      } as any]);
+
+      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should initiate new withdrawal when deposit is confirmed but no existing withdrawal', async () => {
+      // Mock no existing withdrawal
+      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue(undefined);
+
+      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
+
+      expect(result).toEqual({
+        status: 'pending',
+        onChainConfirmed: false,
+        txId: withdrawalTxId
+      });
+      expect(mockKrakenClient.withdraw).toHaveBeenCalledWith({
+        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+        key: recipient,
+        amount: formatUnits(BigInt(amount), 18)
+      });
+    });
+
+    it('should return existing withdrawal status when withdrawal exists', async () => {
+      mockKrakenClient.getWithdrawStatus.mockResolvedValue({
+        status: 'Success',
+        txid: withdrawalTxId,
+        refid,
+      } as any)
+      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
 
       expect(result).toEqual({
         status: 'completed',
         onChainConfirmed: true,
-        txId: '0xcompletedwithdrawaltx',
+        txId: withdrawalTxId,
       });
     });
 
     it('should return pending status when withdrawal exists but is not successful', async () => {
-      // Mock deposit confirmed
-      mockKrakenClient.getDepositStatus.mockResolvedValue([
-        {
-          method: 'ether',
-          aclass: 'currency',
-          asset: 'XETH',
-          refid: 'deposit-ref-123',
-          txid: mockOriginTransaction.transactionHash,
-          info: 'ETH deposit',
-          amount: '100000000000000000',
-          fee: '0',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
-
-      // Mock existing withdrawal in pending state with refid match
-      const expectedOrderId = 'mark-1-42161-def45678';
-      const withdrawalRefId = expectedOrderId;
-      mockKrakenClient.getWithdrawStatus.mockResolvedValue([
-        {
-          asset: 'XETH',
-          refid: withdrawalRefId,
-          txid: '',
-          info: 'ETH withdrawal',
-          amount: '0.1',
-          fee: '0.004',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_WITHDRAWAL_STATUS.PENDING,
-        },
-      ]);
-
-      const result = await adapter.getOrInitWithdrawal(sampleRoute, mockOriginTransaction, amount, recipient);
+      mockKrakenClient.getWithdrawStatus.mockResolvedValue({
+        status: 'Failed',
+        txid: undefined,
+        refid,
+      } as any)
+      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
 
       expect(result).toEqual({
         status: 'pending',
@@ -1916,116 +1540,35 @@ describe('KrakenBridgeAdapter', () => {
       });
     });
 
-    it('should return pending when withdrawal not found in status check', async () => {
-      // Mock deposit confirmed
-      mockKrakenClient.getDepositStatus.mockResolvedValue([
-        {
-          method: 'ether',
-          aclass: 'currency',
-          asset: 'XETH',
-          refid: 'deposit-ref-123',
-          txid: mockOriginTransaction.transactionHash,
-          info: 'ETH deposit',
-          amount: '100000000000000000',
-          fee: '0',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
-
-      // Mock existing withdrawal found initially
-      mockKrakenClient.getWithdrawStatus
-        .mockResolvedValueOnce([
-          {
-            asset: 'XETH',
-            refid: 'existing-withdrawal-123',
-            txid: '0xwithdrawaltx',
-            info: 'ETH withdrawal',
-            amount: '0.1',
-            fee: '0.004',
-            time: Math.floor(Date.now() / 1000),
-            status: KRAKEN_WITHDRAWAL_STATUS.SUCCESS,
-          },
-        ])
-        .mockResolvedValueOnce([]); // But not found in status check (different timing)
-
-      const result = await adapter.getOrInitWithdrawal(sampleRoute, mockOriginTransaction, amount, recipient);
-
-      expect(result).toEqual({
-        status: 'pending',
-        onChainConfirmed: false,
-      });
-    });
-
     it('should handle on-chain confirmation errors gracefully', async () => {
-      // Mock deposit confirmed and successful withdrawal
-      mockKrakenClient.getDepositStatus.mockResolvedValue([
-        {
-          method: 'ether',
-          aclass: 'currency',
-          asset: 'XETH',
-          refid: 'deposit-ref-123',
-          txid: mockOriginTransaction.transactionHash,
-          info: 'ETH deposit',
-          amount: '100000000000000000',
-          fee: '0',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        },
-      ]);
-
-      const withdrawalRefId = 'withdrawal-ref-123';
-      mockKrakenClient.getWithdrawStatus.mockResolvedValue([
-        {
-          asset: 'XETH',
-          refid: withdrawalRefId,
-          txid: '0xsuccessfulwithdrawaltx',
-          info: 'ETH withdrawal',
-          amount: '0.1',
-          fee: '0.004',
-          time: Math.floor(Date.now() / 1000),
-          status: KRAKEN_WITHDRAWAL_STATUS.SUCCESS,
-        },
-      ]);
-
       // Mock provider that throws error on getTransactionReceipt
       const mockProvider = {
         getTransactionReceipt: (jest.fn() as any).mockRejectedValue(new Error('RPC error')),
       };
       jest.spyOn(adapter, 'getProvider').mockReturnValue(mockProvider as PublicClient);
 
-      const result = await adapter.getOrInitWithdrawal(sampleRoute, mockOriginTransaction, amount, recipient);
+      mockKrakenClient.getWithdrawStatus.mockResolvedValue({
+        status: 'Success',
+        txid: withdrawalTxId,
+        refid,
+      } as any)
+
+      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
 
       // Should still return completed status, but onChainConfirmed should be false due to error
       expect(result).toEqual({
         status: 'completed',
         onChainConfirmed: false,
-        txId: '0xsuccessfulwithdrawaltx',
+        txId: withdrawalTxId,
       });
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Could not verify on-chain confirmation',
-        expect.objectContaining({
-          txId: '0xsuccessfulwithdrawaltx',
-          error: expect.objectContaining({ message: 'RPC error' }),
-        })
-      );
     });
 
     it('should throw error and log when getOrInitWithdrawal fails', async () => {
-      // Mock asset mapping to fail
-      mockDynamicConfig.getAssetMapping.mockRejectedValue(new Error('Asset mapping failed'));
+      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue(undefined);
+      mockKrakenClient.withdraw.mockRejectedValue(new Error('failed'))
 
-      await expect(adapter.getOrInitWithdrawal(sampleRoute, mockOriginTransaction, amount, recipient))
-        .rejects.toThrow('No Kraken asset mapping found for route');
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Failed to get withdrawal status',
-        expect.objectContaining({
-          error: expect.objectContaining({ message: 'No Kraken asset mapping found for route from chain 1: Asset mapping failed' }),
-          route: sampleRoute,
-          transactionHash: mockOriginTransaction.transactionHash,
-        })
-      );
+      await expect(adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']))
+        .rejects.toThrow('failed');
     });
   });
 
@@ -2054,6 +1597,9 @@ describe('KrakenBridgeAdapter', () => {
     };
 
     const recipient = '0x9876543210987654321098765432109876543210';
+    const refid = 'adsfjha8291';
+    const withdrawalTxId = '0xwithdrawal123456789abcdef123456789abcdef123456789abcdef123456789abc';
+    const amountWei = parseUnits('0.5', 18);
 
     beforeEach(() => {
       jest.clearAllMocks();
@@ -2068,162 +1614,47 @@ describe('KrakenBridgeAdapter', () => {
         origin: sampleRoute.origin,
         destination: sampleRoute.destination,
         asset: sampleRoute.asset,
+      })
+
+      // Mock cache to return withdrawal
+      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue({
+        refid,
+        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
       });
 
-      // Mock asset mappings
-      mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number) => {
-        if (chainId === 1) return Promise.resolve(mockETHMainnetKrakenMapping);
-        if (chainId === 42161) return Promise.resolve(mockWETHArbitrumKrakenMapping);
-        return Promise.reject(new Error(`Asset mapping not found for chain ${chainId}`));
-      });
+      // Mock withdraw status
+      mockKrakenClient.getWithdrawStatus.mockResolvedValue({
+        status: 'Success',
+        refid,
+        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+        amount: formatUnits(amountWei, 18),
+      } as any)
     });
 
     it('should return WETH wrap transaction when withdrawal has ETH value', async () => {
-      const withdrawalTxId = '0xwithdrawal123456789abcdef123456789abcdef123456789abcdef123456789abc';
-      const ethAmount = BigInt('50000000000000000'); // 0.05 ETH
-
-      // Mock completed withdrawal status
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'completed',
-        onChainConfirmed: true,
-        txId: withdrawalTxId,
-      });
-
-      // Mock provider and withdrawal transaction
-      const mockProvider: Partial<PublicClient> = {
-        getTransaction: jest.fn<(args: GetTransactionParameters) => Promise<any>>().mockResolvedValue({
-          hash: withdrawalTxId,
-          value: ethAmount,
-          to: recipient,
-          from: '0xkraken123',
-        }),
-      };
-      jest.spyOn(adapter, 'getProvider').mockReturnValue(mockProvider as PublicClient);
-
       const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
 
       expect(result).toBeDefined();
       expect(result?.memo).toBe(RebalanceTransactionMemo.Wrap);
       expect(result?.transaction.to).toBe('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'); // WETH on Arbitrum
-      expect(result?.transaction.value).toBe(ethAmount);
+      expect(result?.transaction.value).toBe(amountWei);
       expect(result?.transaction.data).toEqual(expect.any(String)); // deposit() encoded
-
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        'Preparing WETH wrap callback',
-        expect.objectContaining({
-          recipient,
-          ethAmount: ethAmount.toString(),
-          wethAddress: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-          destinationChain: sampleRoute.destination,
-        })
-      );
     });
 
-    it('should return void when withdrawal transaction has no ETH value', async () => {
-      const withdrawalTxId = '0xwithdrawal123456789abcdef123456789abcdef123456789abcdef123456789abc';
-
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'completed',
-        onChainConfirmed: true,
-        txId: withdrawalTxId,
-      });
-
-      const mockProvider: Partial<PublicClient> = {
-        getTransaction: jest.fn<(args: GetTransactionParameters) => Promise<any>>().mockResolvedValue({
-          hash: withdrawalTxId,
-          value: BigInt(0), // No ETH value
-          to: recipient,
-        }),
-      };
-      jest.spyOn(adapter, 'getProvider').mockReturnValue(mockProvider as PublicClient);
-
+    it('should return void when erc20', async () => {
+      mockKrakenClient.getWithdrawStatus.mockResolvedValue({
+        status: 'Success',
+        refid,
+        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method + ' (ERC-20)',
+        amount: formatUnits(amountWei, 18),
+      } as any)
       const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
 
       expect(result).toBeUndefined();
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'No ETH value in withdrawal transaction, skipping wrap',
-        { txId: withdrawalTxId }
-      );
     });
 
-    it('should return void when Kraken withdrawal asset matches destination asset', async () => {
-      const withdrawalTxId = '0xwithdrawal123456789abcdef123456789abcdef123456789abcdef123456789abc';
-      const ethAmount = BigInt('50000000000000000');
-
-      // Mock mapping where kraken asset matches destination asset (both WETH addresses)
-      const matchingMapping = {
-        ...mockWETHArbitrumKrakenMapping,
-        krakenAsset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', // Same as destination WETH
-      };
-
-      mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number) => {
-        if (chainId === 1) return Promise.resolve(mockETHMainnetKrakenMapping);
-        if (chainId === 42161) return Promise.resolve(matchingMapping);
-        return Promise.reject(new Error(`Asset mapping not found for chain ${chainId}`));
-      });
-
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'completed',
-        onChainConfirmed: true,
-        txId: withdrawalTxId,
-      });
-
-      const mockProvider = {
-        getTransaction: jest.fn<(args: GetTransactionParameters) => Promise<any>>().mockResolvedValue({
-          hash: withdrawalTxId,
-          value: ethAmount,
-          to: recipient,
-        }),
-      };
-      jest.spyOn(adapter, 'getProvider').mockReturnValue(mockProvider as any);
-
-      const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Kraken withdrawal asset matches destination asset, no wrapping needed',
-        expect.objectContaining({
-          destinationAsset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-          krakenAsset: matchingMapping.krakenAsset,
-        })
-      );
-    });
-
-    it('should return void when withdrawal is not completed', async () => {
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'pending',
-        onChainConfirmed: false,
-        txId: undefined,
-      });
-
-      const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Withdrawal not completed yet, skipping callback',
-        expect.objectContaining({
-          withdrawalStatus: expect.objectContaining({
-            status: 'pending'
-          })
-        })
-      );
-    });
-
-    it('should return void when withdrawal status is undefined', async () => {
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue(undefined);
-
-      const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'Withdrawal not completed yet, skipping callback',
-        expect.objectContaining({
-          withdrawalStatus: undefined
-        })
-      );
-    });
-
-    it('should return void when recipient is not found in cache', async () => {
+    it('should return void when cannot get recipient', async () => {
       mockRebalanceCache.getRebalanceByTransaction.mockResolvedValue(undefined);
 
       const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
@@ -2231,143 +1662,20 @@ describe('KrakenBridgeAdapter', () => {
       expect(result).toBeUndefined();
       expect(mockLogger.error).toHaveBeenCalledWith(
         'No recipient found in cache for callback',
-        expect.objectContaining({
-          transactionHash: mockOriginTransaction.transactionHash,
-        })
+        { transactionHash: mockOriginTransaction.transactionHash },
       );
     });
 
-    it('should return void when no provider available for destination chain', async () => {
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'completed',
-        onChainConfirmed: true,
-        txId: '0xwithdrawal123',
-      });
+    it('should throw when withdrawal is not retrieved', async () => {
+      mockKrakenClient.getWithdrawStatus.mockResolvedValue(undefined);
 
-      jest.spyOn(adapter, 'getProvider').mockReturnValue(undefined);
-
-      const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'No provider for destination chain',
-        { chainId: sampleRoute.destination }
-      );
+      await expect(adapter.destinationCallback(sampleRoute, mockOriginTransaction)).rejects.toThrow(`Failed to retrieve kraken withdrawal status`)
     });
 
-    it('should return void when withdrawal transaction cannot be fetched', async () => {
-      const withdrawalTxId = '0xwithdrawal123456789abcdef123456789abcdef123456789abcdef123456789abc';
+    it('should return void when withdrawal status is not successful', async () => {
+      mockKrakenClient.getWithdrawStatus.mockResolvedValue({ status: 'failed' } as any);
 
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'completed',
-        onChainConfirmed: true,
-        txId: withdrawalTxId,
-      });
-
-      const mockProvider = {
-        getTransaction: jest.fn<(args: GetTransactionParameters) => Promise<any>>().mockResolvedValue(null), // Transaction not found
-      };
-      jest.spyOn(adapter, 'getProvider').mockReturnValue(mockProvider as any);
-
-      const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Could not fetch withdrawal transaction',
-        { txId: withdrawalTxId }
-      );
-    });
-
-    it('should return void and log error when getDestinationAssetMapping throws', async () => {
-      const withdrawalTxId = '0xwithdrawal123456789abcdef123456789abcdef123456789abcdef123456789abc';
-      const ethAmount = BigInt('50000000000000000');
-
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'completed',
-        onChainConfirmed: true,
-        txId: withdrawalTxId,
-      });
-
-      const mockProvider = {
-        getTransaction: jest.fn<(args: GetTransactionParameters) => Promise<any>>().mockResolvedValue({
-          hash: withdrawalTxId,
-          value: ethAmount,
-          to: recipient,
-        }),
-      };
-      jest.spyOn(adapter, 'getProvider').mockReturnValue(mockProvider as any);
-
-      // Mock destination mapping to fail
-      mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number) => {
-        if (chainId === 1) return Promise.resolve(mockETHMainnetKrakenMapping);
-        if (chainId === 42161) return Promise.reject(new Error('Mapping failed'));
-        return Promise.reject(new Error(`Asset mapping not found for chain ${chainId}`));
-      });
-
-      const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Failed to prepare destination callback',
-        expect.objectContaining({
-          error: expect.objectContaining({
-            message: 'Mapping failed'
-          }),
-          transactionHash: mockOriginTransaction.transactionHash,
-        })
-      );
-    });
-
-    it('should return void when getDestinationAssetAddress returns null', async () => {
-      const withdrawalTxId = '0xwithdrawal123456789abcdef123456789abcdef123456789abcdef123456789abc';
-      const ethAmount = BigInt('50000000000000000');
-
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue({
-        status: 'completed',
-        onChainConfirmed: true,
-        txId: withdrawalTxId,
-      });
-
-      const mockProvider = {
-        getTransaction: (jest.fn() as any).mockResolvedValue({
-          hash: withdrawalTxId,
-          value: ethAmount,
-          to: recipient,
-        }),
-      };
-      jest.spyOn(adapter, 'getProvider').mockReturnValue(mockProvider as any);
-
-      // Create a route with an asset that won't have a destination address
-      const routeWithUnknownAsset: RebalanceRoute = {
-        ...sampleRoute,
-        asset: '0xUnknownAssetAddress123',
-      };
-
-      const result = await adapter.destinationCallback(routeWithUnknownAsset, mockOriginTransaction);
-
-      expect(result).toBeUndefined();
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Could not find destination asset address for ticker',
-        expect.objectContaining({
-          originAsset: '0xUnknownAssetAddress123',
-          originChain: routeWithUnknownAsset.origin,
-          destinationChain: routeWithUnknownAsset.destination,
-        })
-      );
-    });
-
-    it('should log debug info when callback is called', async () => {
-      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue(undefined);
-
-      await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
-
-      expect(mockLogger.debug).toHaveBeenCalledWith(
-        'destinationCallback called',
-        expect.objectContaining({
-          route: sampleRoute,
-          transactionHash: mockOriginTransaction.transactionHash,
-        })
-      );
+      await expect(adapter.destinationCallback(sampleRoute, mockOriginTransaction)).rejects.toThrow(`is not successful, status`)
     });
   });
 });

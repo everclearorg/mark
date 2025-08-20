@@ -611,48 +611,46 @@ describe('KrakenClient', () => {
         });
 
         describe('getWithdrawStatus', () => {
+            const refid = 'ABCDEF-123456';
+            const mockResponse = [
+                {
+                    asset: 'XXBT',
+                    refid,
+                    txid: 'tx456',
+                    info: 'withdrawal info',
+                    amount: '1.0',
+                    fee: '0.0005',
+                    time: 1234567890,
+                    status: 'Success'
+                }
+            ];
             it('should fetch all withdrawal records when no asset filter provided', async () => {
-                const mockResponse = [
-                    {
-                        asset: 'XXBT',
-                        refid: 'ABCDEF-123456',
-                        txid: 'tx456',
-                        info: 'withdrawal info',
-                        amount: '1.0',
-                        fee: '0.0005',
-                        time: 1234567890,
-                        status: 'Success'
-                    }
-                ];
-
                 mockAxiosInstance.post.mockResolvedValueOnce({
                     data: { result: mockResponse, error: [] },
                     status: 200,
                     headers: {},
                 });
 
-                const result = await client.getWithdrawStatus();
+                const result = await client.getWithdrawStatus('XETH', 'Ethereum', refid);
 
-                expect(result).toEqual(mockResponse);
+                expect(result).toEqual(mockResponse[0]);
                 expect(mockAxiosInstance.post).toHaveBeenCalledWith(
                     '/0/private/WithdrawStatus',
-                    expect.stringMatching(/nonce=\d+$/),
+                    expect.stringMatching(/nonce=\d+&asset=XETH&method=Ethereum&limit=50$/),
                     expect.any(Object)
                 );
             });
 
-            it('should filter by asset when provided', async () => {
-                const mockResponse: any[] = [];
-
+            it('should handle undefined', async () => {
                 mockAxiosInstance.post.mockResolvedValueOnce({
-                    data: { result: mockResponse, error: [] },
+                    data: { result: [], error: [] },
                     status: 200,
                     headers: {},
                 });
 
-                const result = await client.getWithdrawStatus('XXBT');
+                const result = await client.getWithdrawStatus('XXBT', 'Bitcoin', 'test-refid-2');
 
-                expect(result).toEqual(mockResponse as any[]);
+                expect(result).toBeUndefined();
                 expect(mockAxiosInstance.post).toHaveBeenCalledWith(
                     '/0/private/WithdrawStatus',
                     expect.stringMatching(/asset=XXBT/),
@@ -662,13 +660,13 @@ describe('KrakenClient', () => {
 
             it('should return empty array when result is not array', async () => {
                 mockAxiosInstance.post.mockResolvedValueOnce({
-                    data: { result: null, error: [] },
+                    data: { result: [], error: undefined },
                     status: 200,
                     headers: {},
                 });
 
-                const result = await client.getWithdrawStatus();
-                expect(result).toEqual([]);
+                const result = await client.getWithdrawStatus('XETH', 'Ethereum', 'test-refid-3');
+                expect(result).toEqual(undefined);
             });
         });
     });
@@ -823,13 +821,13 @@ describe('KrakenClient', () => {
                 headers: {},
             });
 
-            // Test with undefined asset parameter for getWithdrawStatus
-            const result = await client.getWithdrawStatus(undefined);
+            // Test with valid parameters for getWithdrawStatus
+            const result = await client.getWithdrawStatus('XETH', 'Ethereum', 'test-refid-4');
 
-            expect(result).toEqual([]);
+            expect(result).toEqual(undefined);
             expect(mockAxiosInstance.post).toHaveBeenCalledWith(
                 '/0/private/WithdrawStatus',
-                expect.stringMatching(/^nonce=\d+$/), // Only nonce, no asset param
+                expect.stringMatching(/nonce=\d+&asset=XETH&method=Ethereum&limit=50$/), // Only nonce, no asset param
                 expect.any(Object)
             );
         });
