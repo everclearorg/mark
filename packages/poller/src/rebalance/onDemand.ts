@@ -894,6 +894,7 @@ async function executeRebalanceTransactionWithBridge(
               value: (transaction.value || 0).toString(),
               chainId: route.origin,
               from: context.config.ownAddress,
+              funcSig: transaction.funcSig || '',
             },
             zodiacConfig,
             context: { requestId, bridgeType, transactionType: memo },

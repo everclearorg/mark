@@ -308,6 +308,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
                 functionName: 'transfer',
                 args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
               }),
+              funcSig: 'transfer(address,uint256)',
             },
           });
         }
