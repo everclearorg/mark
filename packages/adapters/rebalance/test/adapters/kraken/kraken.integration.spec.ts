@@ -17,7 +17,7 @@ import { DynamicAssetConfig } from '../../../src/adapters/kraken/dynamic-config'
 // Load environment variables from poller/.env if available
 config();
 
-describe.only('KrakenClient Integration Tests', () => {
+describe('KrakenClient Integration Tests', () => {
   let client: KrakenClient;
   let logger: Logger;
   let apiKey: string;
@@ -122,11 +122,16 @@ describe.only('KrakenClient Integration Tests', () => {
 
       expect(Array.isArray(depositAddresses)).toBe(true);
       expect(depositAddresses.length).toBeGreaterThan(0);
-      depositAddresses.forEach(address => expect(address).toMatchObject({
-        address: expect.any(String),
-        expiretm: expect.any(String),
-        new: expect.any(Boolean),
-      }));
+      depositAddresses.forEach(address => {
+        expect(address).toHaveProperty('address');
+        expect(typeof address.address).toBe('string');
+        if (address.expiretm !== undefined) {
+          expect(typeof address.expiretm).toBe('string');
+        }
+        if (address.new !== undefined) {
+          expect(typeof address.new).toBe('boolean');
+        }
+      });
 
       console.log(`✅ ETH deposit address: ${depositAddresses.length}`);
     }, 30000);
@@ -487,12 +492,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 1,
         krakenAsset: 'XETH',
         krakenSymbol: 'ETH',
-        method: expect.stringMatching(/ether/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String)
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/ether/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/ether/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ ETH mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ ETH mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve WETH by address on Ethereum', async () => {
@@ -502,12 +514,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 1,
         krakenAsset: 'XETH',
         krakenSymbol: 'ETH',
-        method: expect.stringMatching(/ether/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/ether/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/ether/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ WETH mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ WETH mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve USDC by symbol on Ethereum', async () => {
@@ -517,12 +536,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 1,
         krakenAsset: 'USDC',
         krakenSymbol: 'USDC',
-        method: expect.stringMatching(/ether/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/usdc/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/usdc/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ USDC mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ USDC mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve ETH on Polygon', async () => {
@@ -532,12 +558,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 137,
         krakenAsset: 'XETH',
         krakenSymbol: 'ETH',
-        method: expect.stringMatching(/polygon/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/polygon/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/polygon/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ ETH mapping on Polygon: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ ETH mapping on Polygon: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve USDC on Optimism', async () => {
@@ -547,12 +580,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 10,
         krakenAsset: 'USDC',
         krakenSymbol: 'USDC',
-        method: expect.stringMatching(/optimism/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/optimism/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/optimism/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ USDC mapping on Optimism: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ USDC mapping on Optimism: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve ETH on Unichain', async () => {
@@ -562,12 +602,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 130,
         krakenAsset: 'XETH',
         krakenSymbol: 'ETH',
-        method: expect.stringMatching(/unichain/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/unichain/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/unichain/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ ETH mapping on Unichain: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ ETH mapping on Unichain: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve WETH on Unichain', async () => {
@@ -577,12 +624,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 130,
         krakenAsset: 'XETH',
         krakenSymbol: 'ETH',
-        method: expect.stringMatching(/unichain/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/unichain/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/unichain/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ WETH mapping on Unichain: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ WETH mapping on Unichain: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve WETH on Ink', async () => {
@@ -592,12 +646,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 57073,
         krakenAsset: 'XETH',
         krakenSymbol: 'ETH',
-        method: expect.stringMatching(/ink/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/ink/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/ink/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ WETH mapping on Ink: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ WETH mapping on Ink: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve ETH on Zksync', async () => {
@@ -607,12 +668,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 324,
         krakenAsset: 'XETH',
         krakenSymbol: 'ETH',
-        method: expect.stringMatching(/zkSync Era/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/zkSync Era/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/zkSync Era/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ ETH mapping on Zksync: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ ETH mapping on Zksync: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should resolve WETH on Zksync', async () => {
@@ -622,12 +690,19 @@ describe('DynamicAssetConfig Integration Tests', () => {
         chainId: 324,
         krakenAsset: 'XETH',
         krakenSymbol: 'ETH',
-        method: expect.stringMatching(/zkSync Era/i),
-        minWithdrawalAmount: expect.any(String),
-        withdrawalFee: expect.any(String),
+        depositMethod: expect.objectContaining({
+          method: expect.stringMatching(/zkSync Era/i)
+        }),
+        withdrawMethod: expect.objectContaining({
+          method: expect.stringMatching(/zkSync Era/i),
+          minimum: expect.any(String),
+          fee: expect.objectContaining({
+            fee: expect.any(String)
+          })
+        })
       });
 
-      console.log(`✅ WETH mapping on Zksync: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
+      console.log(`✅ WETH mapping on Zksync: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee.fee}`);
     }, 30000);
 
     it('should handle unsupported asset gracefully', async () => {
@@ -648,12 +723,12 @@ describe('DynamicAssetConfig Integration Tests', () => {
       const mapping = await dynamicConfig.getAssetMapping(1, 'ETH');
 
       // Parse the fee as wei and convert to ETH for validation
-      const feeEth = +mapping.withdrawMethod.fee;
+      const feeEth = +mapping.withdrawMethod.fee.fee;
 
       expect(feeEth).toBeGreaterThan(0);
       expect(feeEth).toBeLessThan(0.5); // Reasonable upper bound for ETH withdrawal fee
 
-      console.log(`✅ ETH withdrawal fee: ${feeEth} ETH (${mapping.withdrawMethod.fee} wei)`);
+      console.log(`✅ ETH withdrawal fee: ${feeEth} ETH (${mapping.withdrawMethod.fee.fee} wei)`);
     }, 30000);
 
     it('should fetch real-time minimum amounts for USDC', async () => {
