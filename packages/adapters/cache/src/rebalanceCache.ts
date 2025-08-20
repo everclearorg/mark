@@ -207,6 +207,38 @@ export class RebalanceCache {
     return undefined;
   }
 
+  /** Store a withdrawal ID associated with a rebalance action ID */
+  public async addWithdrawalRecord(
+    depositTransaction: string,
+    asset: string,
+    method: string,
+    refid: string,
+  ): Promise<void> {
+    const withdrawKey = `${this.prefix}:withdrawals`;
+    await this.store.hset(withdrawKey, depositTransaction, JSON.stringify({ asset, method, refid }));
+  }
+
+  /** Get the withdrawal ID associated with a rebalance action ID */
+  public async getWithdrawalRecord(rebalanceId: string): Promise<
+    | {
+        asset: string;
+        method: string;
+        refid: string;
+      }
+    | undefined
+  > {
+    const withdrawKey = `${this.prefix}:withdrawals`;
+    const withdraw = await this.store.hget(withdrawKey, rebalanceId);
+    return withdraw ? JSON.parse(withdraw) : undefined;
+  }
+
+  /** Remove the withdrawal ID associated with a rebalance action ID */
+  public async removeWithdrawalRecord(rebalanceId: string): Promise<boolean> {
+    const withdrawKey = `${this.prefix}:withdrawals`;
+    const result = await this.store.hdel(withdrawKey, rebalanceId);
+    return result === 1;
+  }
+
   /** Disconnect from Redis to prevent file descriptor leaks */
   public async disconnect(): Promise<void> {
     try {

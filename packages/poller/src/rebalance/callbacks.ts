@@ -37,9 +37,9 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
     // check if it is ready on the destination
     try {
-      const required = await adapter.readyOnDestination(action.amount, route, receipt as unknown as TransactionReceipt);
-      if (!required) {
-        logger.info('Action is not ready to execute callback', { ...logContext, receipt, required });
+      const ready = await adapter.readyOnDestination(action.amount, route, receipt as unknown as TransactionReceipt);
+      if (!ready) {
+        logger.info('Action is not ready to execute callback', { ...logContext, receipt, ready });
         continue;
       }
 

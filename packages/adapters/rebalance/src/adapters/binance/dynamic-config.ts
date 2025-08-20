@@ -2,21 +2,7 @@ import { parseUnits } from 'viem';
 import { ChainConfiguration } from '@mark/core';
 import { BinanceClient } from './client';
 import { BinanceAssetMapping, CoinConfig, NetworkConfig } from './types';
-
-/**
- * Network mapping from Binance network identifiers to chain IDs
- */
-const BINANCE_NETWORK_TO_CHAIN_ID = {
-  ETH: 1,
-  ARBITRUM: 42161,
-  OPTIMISM: 10,
-  POLYGON: 137,
-  BSC: 56,
-  BASE: 8453,
-  SCROLL: 534352,
-  ZKSYNCERA: 324,
-} as const;
-
+import { BINANCE_NETWORK_TO_CHAIN_ID } from './constants';
 /**
  * Chain ID to network mapping
  */
