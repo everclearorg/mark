@@ -103,6 +103,11 @@ export class KrakenClient {
       );
 
       if (response.data.error && response.data.error.length > 0) {
+        this.logger.warn('Kraken API error:', {
+          error: jsonifyError(response.data.error),
+          endpoint: `/0/${isPrivate ? 'private' : 'public'}/${endpoint}`,
+          data: requestData,
+        });
         throw new Error(`Kraken API error: ${response.data.error.join(', ')}`);
       }
 
@@ -137,6 +142,13 @@ export class KrakenClient {
   private shouldRetry(error: unknown): boolean {
     if (axios.isAxiosError(error)) {
       return error.response?.status === 429 || (error.response?.status ?? 0) >= 500;
+    }
+    const err = error as Error;
+    if (err.message.includes(`Rate limit exceeded`)) {
+      return false;
+    }
+    if (err.message.includes(`Internal error`)) {
+      return false;
     }
     return false;
   }
@@ -207,18 +219,45 @@ export class KrakenClient {
   }
 
   async getWithdrawInfo(asset: string, key: string, amount: string): Promise<KrakenWithdrawInfo> {
-    return this.request<KrakenWithdrawInfo>('WithdrawInfo', { asset, key, amount }, true);
+    return this.request<KrakenWithdrawInfo>('WithdrawInfo', { asset, key: key.toLowerCase(), amount }, true);
   }
 
   async withdraw(params: { asset: string; key: string; amount: string }): Promise<KrakenWithdrawResponse> {
     return this.request<KrakenWithdrawResponse>('Withdraw', params, true);
   }
 
-  async getWithdrawStatus(asset?: string): Promise<KrakenWithdrawRecord[]> {
-    const params: Record<string, unknown> = {};
-    if (asset) params.asset = asset;
+  async getWithdrawStatus(asset: string, method: string, refid: string): Promise<KrakenWithdrawRecord | undefined> {
+    const MAX_PAGES = 10; // hard cap on pagination
+    const PAGE_LIMIT = 50; // server page size (newest→oldest)
+    const target = refid.toLowerCase();
 
-    const result = await this.request<KrakenWithdrawRecord[]>('WithdrawStatus', params, true);
-    return Array.isArray(result) ? result : [];
+    let cursor: string | undefined;
+    const params = { asset, method, limit: PAGE_LIMIT } as Record<string, string | number>;
+
+    for (let page = 0; page < MAX_PAGES; page++) {
+      if (cursor) {
+        params.cursor = cursor;
+      }
+      const raw = await this.request<KrakenWithdrawRecord[] | { withdrawals: KrakenWithdrawRecord[]; cursor?: string }>(
+        'WithdrawStatus',
+        params,
+        true,
+      );
+
+      // Normalize shape -> cursor returned when > 1page of withdrawals
+      const withdrawals = Array.isArray(raw) ? raw : (raw.withdrawals ?? []);
+      const nextCursor = Array.isArray(raw) ? undefined : raw.cursor;
+
+      // Look for the match on this page
+      const hit = withdrawals.find((w) => w.refid?.toLowerCase() === target);
+      if (hit) return hit;
+
+      // No more pages
+      if (!nextCursor || withdrawals.length === 0) break;
+
+      cursor = nextCursor; // advance to next (older) page
+    }
+
+    return undefined;
   }
 }
