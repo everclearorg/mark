@@ -208,20 +208,32 @@ export class RebalanceCache {
   }
 
   /** Store a withdrawal ID associated with a rebalance action ID */
-  public async addWithdrawId(rebalanceId: string, withdrawId: string): Promise<void> {
+  public async addWithdrawalRecord(
+    depositTransaction: string,
+    asset: string,
+    method: string,
+    refid: string,
+  ): Promise<void> {
     const withdrawKey = `${this.prefix}:withdrawals`;
-    await this.store.hset(withdrawKey, rebalanceId, withdrawId);
+    await this.store.hset(withdrawKey, depositTransaction, JSON.stringify({ asset, method, refid }));
   }
 
   /** Get the withdrawal ID associated with a rebalance action ID */
-  public async getWithdrawId(rebalanceId: string): Promise<string | null> {
+  public async getWithdrawalRecord(rebalanceId: string): Promise<
+    | {
+        asset: string;
+        method: string;
+        refid: string;
+      }
+    | undefined
+  > {
     const withdrawKey = `${this.prefix}:withdrawals`;
-    const withdrawId = await this.store.hget(withdrawKey, rebalanceId);
-    return withdrawId;
+    const withdraw = await this.store.hget(withdrawKey, rebalanceId);
+    return withdraw ? JSON.parse(withdraw) : undefined;
   }
 
   /** Remove the withdrawal ID associated with a rebalance action ID */
-  public async removeWithdrawId(rebalanceId: string): Promise<boolean> {
+  public async removeWithdrawalRecord(rebalanceId: string): Promise<boolean> {
     const withdrawKey = `${this.prefix}:withdrawals`;
     const result = await this.store.hdel(withdrawKey, rebalanceId);
     return result === 1;

@@ -303,10 +303,10 @@ describe('RebalanceCache', () => {
 
         it('should return action when transaction hash matches', async () => {
             const id = '2-1-eth-uuid1';
-            
+
             // Mock hkeys to return the ID
             (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([id]);
-            
+
             // Mock hmget to return the action data
             (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([
                 JSON.stringify(sampleAction),
@@ -321,9 +321,9 @@ describe('RebalanceCache', () => {
 
         it('should return undefined when no actions exist', async () => {
             (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([]);
-            
+
             const result = await rebalanceCache.getRebalanceByTransaction('0xtx1');
-            
+
             expect(result).toBeUndefined();
             expect(mockRedisSdkInstance.hmget).not.toHaveBeenCalled();
         });
@@ -331,7 +331,7 @@ describe('RebalanceCache', () => {
         it('should return undefined when transaction hash does not match', async () => {
             const id = '2-1-eth-uuid1';
             const differentAction = { ...sampleAction, transaction: '0xtx2' };
-            
+
             (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([id]);
             (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([
                 JSON.stringify(differentAction),
@@ -347,7 +347,7 @@ describe('RebalanceCache', () => {
             const id2 = '3-4-btc-uuid2';
             const action1 = { ...sampleAction, transaction: '0xtx1' };
             const action2 = { ...sampleAction, transaction: '0xtx2', origin: 3, destination: 4, asset: 'BTC' };
-            
+
             (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([id1, id2]);
             (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([
                 JSON.stringify(action1),
@@ -362,7 +362,7 @@ describe('RebalanceCache', () => {
         it('should handle null values in Redis response', async () => {
             const id1 = '2-1-eth-uuid1';
             const id2 = '3-4-btc-uuid2';
-            
+
             (mockRedisSdkInstance.hkeys as jest.Mock).mockResolvedValueOnce([id1, id2]);
             (mockRedisSdkInstance.hmget as jest.Mock).mockResolvedValueOnce([
                 null, // This ID has been deleted
@@ -599,59 +599,69 @@ describe('RebalanceCache', () => {
         });
     });
 
-    describe('addWithdrawId', () => {
+    describe('addWithdrawalRecord', () => {
         const withdrawKey = 'rebalances:withdrawals';
         const rebalanceId = 'rebalance-id-123';
         const withdrawId = 'withdraw-id-456';
+        const asset = 'XETH';
+        const method = 'Ether';
+        const record = { asset, method, refid: withdrawId };
 
         it('should store withdrawal ID for a rebalance', async () => {
             (mockRedisSdkInstance.hset as jest.Mock).mockResolvedValueOnce(1);
 
-            await rebalanceCache.addWithdrawId(rebalanceId, withdrawId);
+            await rebalanceCache.addWithdrawalRecord(rebalanceId, asset, method, withdrawId);
 
             expect(mockRedisSdkInstance.hset).toHaveBeenCalledTimes(1);
-            expect(mockRedisSdkInstance.hset).toHaveBeenCalledWith(withdrawKey, rebalanceId, withdrawId);
+            expect(mockRedisSdkInstance.hset).toHaveBeenCalledWith(withdrawKey, rebalanceId, JSON.stringify(record));
         });
 
         it('should overwrite existing withdrawal ID for a rebalance', async () => {
             const newWithdrawId = 'new-withdraw-id-789';
             (mockRedisSdkInstance.hset as jest.Mock).mockResolvedValueOnce(0); // 0 indicates update
 
-            await rebalanceCache.addWithdrawId(rebalanceId, newWithdrawId);
+            await rebalanceCache.addWithdrawalRecord(rebalanceId, asset, method, newWithdrawId);
 
             expect(mockRedisSdkInstance.hset).toHaveBeenCalledTimes(1);
-            expect(mockRedisSdkInstance.hset).toHaveBeenCalledWith(withdrawKey, rebalanceId, newWithdrawId);
+            expect(mockRedisSdkInstance.hset).toHaveBeenCalledWith(withdrawKey, rebalanceId, JSON.stringify({
+                asset,
+                method,
+                refid: newWithdrawId,
+            }));
         });
 
         it('should propagate errors from store.hset', async () => {
             const hsetError = new Error('Failed to set withdrawal ID');
             (mockRedisSdkInstance.hset as jest.Mock).mockRejectedValueOnce(hsetError);
 
-            await expect(rebalanceCache.addWithdrawId(rebalanceId, withdrawId)).rejects.toThrow(hsetError);
+            await expect(rebalanceCache.addWithdrawalRecord(rebalanceId, asset, method, withdrawId)).rejects.toThrow(hsetError);
         });
     });
 
-    describe('getWithdrawId', () => {
+    describe('getWithdrawalRecord', () => {
         const withdrawKey = 'rebalances:withdrawals';
         const rebalanceId = 'rebalance-id-123';
         const withdrawId = 'withdraw-id-456';
+        const asset = 'XETH';
+        const method = 'Ether';
+        const record = { asset, method, refid: withdrawId };
 
         it('should retrieve withdrawal ID for a rebalance', async () => {
-            (mockRedisSdkInstance.hget as jest.Mock).mockResolvedValueOnce(withdrawId);
+            (mockRedisSdkInstance.hget as jest.Mock).mockResolvedValueOnce(JSON.stringify(record));
 
-            const result = await rebalanceCache.getWithdrawId(rebalanceId);
+            const result = await rebalanceCache.getWithdrawalRecord(rebalanceId);
 
-            expect(result).toBe(withdrawId);
+            expect(result).toEqual(record);
             expect(mockRedisSdkInstance.hget).toHaveBeenCalledTimes(1);
             expect(mockRedisSdkInstance.hget).toHaveBeenCalledWith(withdrawKey, rebalanceId);
         });
 
         it('should return null if withdrawal ID does not exist', async () => {
-            (mockRedisSdkInstance.hget as jest.Mock).mockResolvedValueOnce(null);
+            (mockRedisSdkInstance.hget as jest.Mock).mockResolvedValueOnce(undefined);
 
-            const result = await rebalanceCache.getWithdrawId(rebalanceId);
+            const result = await rebalanceCache.getWithdrawalRecord(rebalanceId);
 
-            expect(result).toBeNull();
+            expect(result).toBeUndefined();
             expect(mockRedisSdkInstance.hget).toHaveBeenCalledTimes(1);
             expect(mockRedisSdkInstance.hget).toHaveBeenCalledWith(withdrawKey, rebalanceId);
         });
@@ -660,18 +670,18 @@ describe('RebalanceCache', () => {
             const hgetError = new Error('Failed to get withdrawal ID');
             (mockRedisSdkInstance.hget as jest.Mock).mockRejectedValueOnce(hgetError);
 
-            await expect(rebalanceCache.getWithdrawId(rebalanceId)).rejects.toThrow(hgetError);
+            await expect(rebalanceCache.getWithdrawalRecord(rebalanceId)).rejects.toThrow(hgetError);
         });
     });
 
-    describe('removeWithdrawId', () => {
+    describe('removeWithdrawalRecord', () => {
         const withdrawKey = 'rebalances:withdrawals';
         const rebalanceId = 'rebalance-id-123';
 
         it('should remove withdrawal ID and return true when successful', async () => {
             (mockRedisSdkInstance.hdel as jest.Mock).mockResolvedValueOnce(1);
 
-            const result = await rebalanceCache.removeWithdrawId(rebalanceId);
+            const result = await rebalanceCache.removeWithdrawalRecord(rebalanceId);
 
             expect(result).toBe(true);
             expect(mockRedisSdkInstance.hdel).toHaveBeenCalledTimes(1);
@@ -681,7 +691,7 @@ describe('RebalanceCache', () => {
         it('should return false if withdrawal ID does not exist', async () => {
             (mockRedisSdkInstance.hdel as jest.Mock).mockResolvedValueOnce(0);
 
-            const result = await rebalanceCache.removeWithdrawId(rebalanceId);
+            const result = await rebalanceCache.removeWithdrawalRecord(rebalanceId);
 
             expect(result).toBe(false);
             expect(mockRedisSdkInstance.hdel).toHaveBeenCalledTimes(1);
@@ -692,7 +702,7 @@ describe('RebalanceCache', () => {
             const hdelError = new Error('Failed to delete withdrawal ID');
             (mockRedisSdkInstance.hdel as jest.Mock).mockRejectedValueOnce(hdelError);
 
-            await expect(rebalanceCache.removeWithdrawId(rebalanceId)).rejects.toThrow(hdelError);
+            await expect(rebalanceCache.removeWithdrawalRecord(rebalanceId)).rejects.toThrow(hdelError);
         });
     });
 
@@ -705,7 +715,7 @@ describe('RebalanceCache', () => {
 
             expect(mockRedisSdkInstance.disconnect).toHaveBeenCalledTimes(1);
             expect(consoleSpy).toHaveBeenCalledWith('RebalanceCache: Redis connection closed successfully');
-            
+
             consoleSpy.mockRestore();
         });
 
@@ -716,7 +726,7 @@ describe('RebalanceCache', () => {
 
             await expect(rebalanceCache.disconnect()).rejects.toThrow(disconnectError);
             expect(consoleSpy).toHaveBeenCalledWith('RebalanceCache: Error closing Redis connection:', disconnectError);
-            
+
             consoleSpy.mockRestore();
         });
     });
