@@ -221,10 +221,10 @@ export class RebalanceCache {
   /** Get the withdrawal ID associated with a rebalance action ID */
   public async getWithdrawalRecord(rebalanceId: string): Promise<
     | {
-        asset: string;
-        method: string;
-        refid: string;
-      }
+      asset: string;
+      method: string;
+      refid: string;
+    }
     | undefined
   > {
     const withdrawKey = `${this.prefix}:withdrawals`;
@@ -242,7 +242,7 @@ export class RebalanceCache {
   /** Disconnect from Redis to prevent file descriptor leaks */
   public async disconnect(): Promise<void> {
     try {
-      this.store.disconnect();
+      await this.store.disconnect();
       console.log('RebalanceCache: Redis connection closed successfully');
     } catch (error) {
       console.warn('RebalanceCache: Error closing Redis connection:', error);
