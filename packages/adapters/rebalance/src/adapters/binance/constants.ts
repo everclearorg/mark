@@ -9,7 +9,6 @@ export const BINANCE_NETWORK_TO_CHAIN_ID = {
   ZKSYNCERA: 324,
 } as const;
 
-
 export const BINANCE_RATE_LIMITS = {
   SAPI_IP_WEIGHT_PER_MINUTE: 12000, // IP limited endpoints
   SAPI_IP_WARNING_THRESHOLD: 10000, // Warn at ~80% of limit

@@ -72,7 +72,7 @@ export class DynamicAssetConfig {
     private readonly client: KrakenClient,
     private readonly chains: Record<string, ChainConfiguration>,
     private readonly logger: Logger,
-  ) { }
+  ) {}
 
   /**
    * Get asset mapping for a specific chain and asset address or symbol
@@ -174,7 +174,7 @@ export class DynamicAssetConfig {
     if (!depositMethod) {
       throw new Error(
         `Kraken does not support deposits of ${externalSymbol} on chain ${chainId}. ` +
-        `Available methods: ${depositMethods.map((m) => m.method).join(', ')}`,
+          `Available methods: ${depositMethods.map((m) => m.method).join(', ')}`,
       );
     }
 
@@ -184,7 +184,7 @@ export class DynamicAssetConfig {
     if (!withdrawMethod) {
       throw new Error(
         `Kraken does not support withdrawals of ${externalSymbol} on chain ${chainId}. ` +
-        `Available methods: ${withdrawMethods.map((m) => m.method).join(', ')}`,
+          `Available methods: ${withdrawMethods.map((m) => m.method).join(', ')}`,
       );
     }
 

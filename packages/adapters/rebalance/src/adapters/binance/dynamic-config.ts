@@ -27,7 +27,7 @@ export class DynamicAssetConfig {
   constructor(
     private readonly client: BinanceClient,
     private readonly chains: Record<string, ChainConfiguration>,
-  ) { }
+  ) {}
 
   /**
    * Get asset mapping for a specific chain and asset address or symbol
@@ -109,7 +109,7 @@ export class DynamicAssetConfig {
     if (!network) {
       throw new Error(
         `Binance does not support ${externalSymbol} on chain ${chainId}. ` +
-        `Available networks: ${coin.networkList.map((n) => n.network).join(', ')}`,
+          `Available networks: ${coin.networkList.map((n) => n.network).join(', ')}`,
       );
     }
 
@@ -117,7 +117,7 @@ export class DynamicAssetConfig {
     if (!network.depositEnable || !network.withdrawEnable) {
       throw new Error(
         `${externalSymbol} on ${network.network} is currently disabled. ` +
-        `Deposit: ${network.depositEnable}, Withdraw: ${network.withdrawEnable}`,
+          `Deposit: ${network.depositEnable}, Withdraw: ${network.withdrawEnable}`,
       );
     }
 

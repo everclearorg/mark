@@ -221,10 +221,10 @@ export class RebalanceCache {
   /** Get the withdrawal ID associated with a rebalance action ID */
   public async getWithdrawalRecord(rebalanceId: string): Promise<
     | {
-      asset: string;
-      method: string;
-      refid: string;
-    }
+        asset: string;
+        method: string;
+        refid: string;
+      }
     | undefined
   > {
     const withdrawKey = `${this.prefix}:withdrawals`;
