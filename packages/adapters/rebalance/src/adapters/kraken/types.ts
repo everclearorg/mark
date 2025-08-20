@@ -35,7 +35,7 @@ export interface KrakenWithdrawMethod {
   network: string;
   minimum: string;
   limits: {
-    limit_type: string;
+    limit_type: 'equiv_amount' | 'amount';
     description: string;
     limits: Record<
       string,
@@ -64,7 +64,24 @@ export interface KrakenWithdrawResponse {
   refid: string;
 }
 
+// sample:
+// {
+//   method: 'Ether',
+//   aclass: 'currency',
+//   asset: 'XETH',
+//   refid: 'FTcKzfZ-dhGXkAnj7RIPePzuzei2LH',
+//   txid: '0x861bd84f59da66d935420e0638300076c404bfc9335c9278a069f2d7ca938b3d',
+//   info: '0xade09131c6f43fe22c2cbabb759636c43cfc181e',
+//   amount: '0.0048800000',
+//   fee: '0.0001200000',
+//   time: 1755637661,
+//   status: 'Success',
+//   key: '0xade09131C6f43fe22C2CbABb759636C43cFc181e',
+//   network: 'Ethereum'
+// }
 export interface KrakenWithdrawRecord {
+  method: string;
+  aclass: string;
   asset: string;
   refid: string;
   txid: string;
@@ -74,16 +91,15 @@ export interface KrakenWithdrawRecord {
   time: number;
   status: string; // "Initial", "Pending", "Settled", "Success", "Failure"
   'status-prop'?: string;
-  key?: string;
+  network: string;
 }
 
 export interface KrakenAssetMapping {
   chainId: number;
   krakenAsset: string;
   krakenSymbol: string;
-  method: string;
-  minWithdrawalAmount: string;
-  withdrawalFee: string;
+  depositMethod: KrakenDepositMethod;
+  withdrawMethod: KrakenWithdrawMethod;
   network: string;
 }
 

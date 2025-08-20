@@ -7,24 +7,17 @@ import {
   erc20Abi,
   PublicClient,
   formatUnits,
+  parseUnits,
 } from 'viem';
-import { SupportedBridge, RebalanceRoute, MarkConfiguration, getDecimalsFromConfig } from '@mark/core';
+import { SupportedBridge, RebalanceRoute, MarkConfiguration, AssetConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { KrakenClient } from './client';
 import { DynamicAssetConfig } from './dynamic-config';
 import { WithdrawalStatus, KrakenAssetMapping, KRAKEN_WITHDRAWAL_STATUS, KRAKEN_DEPOSIT_STATUS } from './types';
-import {
-  validateAssetMapping,
-  getDestinationAssetMapping,
-  calculateNetAmount,
-  meetsMinimumWithdrawal,
-  generateWithdrawOrderId,
-  checkWithdrawQuota,
-  findAssetByAddress,
-} from './utils';
-import { getDestinationAssetAddress } from '../../shared/asset';
+import { getValidAssetMapping, getDestinationAssetMapping } from './utils';
+import { findAssetByAddress, findMatchingDestinationAsset } from '../../shared/asset';
 
 const wethAbi = [
   ...erc20Abi,
@@ -107,26 +100,20 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
-      await validateAssetMapping(this.dynamicConfig, route, `route from chain ${route.origin}`);
-      const destinationMapping = await getDestinationAssetMapping(this.dynamicConfig, route);
-
-      if (!meetsMinimumWithdrawal(amount, destinationMapping)) {
-        throw new Error(`Amount is too low for Kraken withdrawal`);
-      }
-
-      const netAmount = calculateNetAmount(amount, destinationMapping.withdrawalFee);
+      const { received, originMapping, destinationMapping } = await this.validateRebalanceRequest(
+        BigInt(amount),
+        route,
+      );
 
       this.logger.debug('Kraken withdrawal amount calculated after fees', {
-        originalAmount: amount,
-        withdrawalFee: destinationMapping.withdrawalFee,
-        netAmount,
-        asset: destinationMapping.krakenAsset,
-        method: destinationMapping.method,
-        originChain: route.origin,
-        destinationChain: route.destination,
+        amount,
+        received,
+        route,
+        depositMethod: originMapping.depositMethod,
+        withdrawMethod: destinationMapping.withdrawMethod,
       });
 
-      return netAmount;
+      return received.toString();
     } catch (error) {
       this.handleError(error, 'calculate received amount', { amount, route });
     }
@@ -139,68 +126,29 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     route: RebalanceRoute,
   ): Promise<MemoizedTransactionRequest[]> {
     try {
-      // Safety Check 1: Kraken system status
-      const isOperational = await this.client.isSystemOperational();
-      if (!isOperational) {
-        throw new Error('Kraken system is not operational');
-      }
-      const originMapping = await validateAssetMapping(this.dynamicConfig, route, `route from chain ${route.origin}`);
-
-      // Safety Check 2: Minimum amount validation for withdrawal on dest
-      if (!meetsMinimumWithdrawal(amount, originMapping)) {
-        throw new Error(
-          `Amount ${amount} does not meet minimum withdrawal requirement of ${originMapping.minWithdrawalAmount}`,
-        );
-      }
-
-      // Safety Check 3: Ensure asset is configured properly
-      const originAssetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains);
-      if (!originAssetConfig) {
-        throw new Error(`Unable to find asset config for asset ${route.asset} on chain ${route.origin}`);
-      }
-      const ticker = originAssetConfig.tickerHash;
-      const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
-      if (!decimals) {
-        throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
-      }
-
-      // Safety Check 3: Withdrawal quota validation
-      const quota = await checkWithdrawQuota(amount, originMapping.krakenSymbol, decimals, this.client, this.logger);
-      if (!quota.allowed) {
-        throw new Error(quota.message || `Withdrawal amount exceeds limits`);
-      }
-
-      // Safety Check 4: Asset status validation
-      const assetInfo = await this.client.getAssetInfo([originMapping.krakenAsset]);
-      const krakenAsset = assetInfo[originMapping.krakenAsset];
-      if (!krakenAsset || krakenAsset.status === 'disabled') {
-        throw new Error(`Asset ${originMapping.krakenAsset} is not available on Kraken`);
-      }
-
-      // Safety Check 5: Deposit methods validation
-      const depositMethods = await this.client.getDepositMethods(originMapping.krakenAsset);
-      const validMethod = depositMethods.find((method) => method.method === originMapping.method);
-      if (!validMethod) {
-        throw new Error(`Deposit method ${originMapping.method} not available for ${originMapping.krakenAsset}`);
-      }
+      const { originMapping } = await this.validateRebalanceRequest(BigInt(amount), route);
 
       // Get deposit address
-      const depositAddresses = await this.client.getDepositAddresses(originMapping.krakenAsset, originMapping.method);
+      const depositAddresses = await this.client.getDepositAddresses(
+        originMapping.krakenAsset,
+        originMapping.depositMethod.method,
+      );
       if (!depositAddresses || depositAddresses.length === 0) {
-        throw new Error(`No deposit address available for ${originMapping.krakenAsset} on ${originMapping.method}`);
+        throw new Error(
+          `No deposit address available for ${originMapping.krakenAsset} on ${originMapping.depositMethod}`,
+        );
       }
       const depositAddress = depositAddresses[0].address;
 
       this.logger.debug('Kraken deposit address obtained for transaction preparation', {
         asset: originMapping.krakenAsset,
         krakenSymbol: originMapping.krakenSymbol,
-        method: originMapping.method,
+        depositMethod: originMapping.depositMethod,
         depositAddress,
         amount,
         recipient,
         originChain: route.origin,
         destinationChain: route.destination,
-        decimals,
       });
 
       const transactions: MemoizedTransactionRequest[] = [];
@@ -322,21 +270,36 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
         return false;
       }
 
-      const withdrawalStatus = await this.getOrInitWithdrawal(route, originTransaction, amount, recipient);
+      const originMapping = await getValidAssetMapping(this.dynamicConfig, route, `route from chain ${route.origin}`);
+      const { destinationAssetConfig, destinationMapping, received } = await this.validateDestinationWithdrawal(
+        BigInt(amount),
+        route,
+        originMapping,
+      );
+
+      const withdrawalStatus = await this.getOrInitWithdrawal(
+        amount,
+        route,
+        originTransaction,
+        recipient,
+        originMapping,
+        destinationMapping,
+        destinationAssetConfig,
+      );
+      this.logger.debug('Kraken withdrawal status retrieved', {
+        withdrawalStatus,
+        deposit: originTransaction.transactionHash,
+        route,
+        expectedReceived: received,
+        transactionHash: originTransaction.transactionHash,
+        recipient,
+      });
 
       if (!withdrawalStatus) {
         return false;
       }
 
       const isReady = withdrawalStatus.status === 'completed' && withdrawalStatus.onChainConfirmed;
-      this.logger.debug('Kraken withdrawal readiness determined', {
-        isReady,
-        krakenStatus: withdrawalStatus.status,
-        onChainConfirmed: withdrawalStatus.onChainConfirmed,
-        withdrawalTxId: withdrawalStatus.txId,
-        transactionHash: originTransaction.transactionHash,
-        recipient,
-      });
 
       return isReady;
     } catch (error) {
@@ -360,6 +323,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     });
 
     try {
+      // Get recipient
       const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
       if (!recipient) {
         this.logger.error('No recipient found in cache for callback', {
@@ -368,68 +332,112 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
         return;
       }
 
-      const withdrawalStatus = await this.getOrInitWithdrawal(route, originTransaction, '0', recipient);
-      if (!withdrawalStatus || withdrawalStatus.status !== 'completed' || !withdrawalStatus.txId) {
-        this.logger.debug('Withdrawal not completed yet, skipping callback', {
-          withdrawalStatus,
-        });
+      // Get withdrawal record
+      const withdrawalRef = await this.findExistingWithdrawal(route, originTransaction);
+      if (!withdrawalRef) {
+        this.logger.error('No withdrawal found to execute callbacks for', { route, originTransaction });
         return;
       }
-
-      const provider = this.getProvider(route.destination);
-      if (!provider) {
-        this.logger.error('No provider for destination chain', { chainId: route.destination });
-        return;
-      }
-
-      const withdrawalTx = await provider.getTransaction({
-        hash: withdrawalStatus.txId as `0x${string}`,
+      this.logger.debug('Retrieved existing withdrawal', {
+        withdrawalRef,
+        deposit: originTransaction.transactionHash,
+        route,
       });
 
-      if (!withdrawalTx) {
-        this.logger.error('Could not fetch withdrawal transaction', { txId: withdrawalStatus.txId });
-        return;
+      // Verify withdrawal status
+      const status = await this.client.getWithdrawStatus(
+        withdrawalRef.asset,
+        withdrawalRef.method,
+        withdrawalRef.refid,
+      );
+      if (!status) {
+        throw new Error(
+          `Failed to retrieve kraken withdrawal status for ${withdrawalRef} to ${recipient} on ${route.destination}`,
+        );
+      }
+      if (status.status.toLowerCase() !== 'success') {
+        throw new Error(`Withdrawal (${withdrawalRef}) is not successful, status: ${status.status}`);
       }
 
-      const ethAmount = withdrawalTx.value;
-      if (ethAmount === BigInt(0)) {
-        this.logger.debug('No ETH value in withdrawal transaction, skipping wrap', {
-          txId: withdrawalStatus.txId,
+      // The only destination callback is handling the wrapping of the native asset.
+      // You must wrap the native asset iff:
+      // - origin asset was weth by route, eth by kraken
+      // - withdrawal received eth
+      // - destination supports native eth
+
+      // if the method includes erc20 on the withdrawal, no wrapping needed
+      if (status.method.toLowerCase().includes('erc-20')) {
+        this.logger.info('Withdraw method was erc20, no need to wrap', {
+          status,
+          route,
         });
         return;
       }
 
-      const destinationMapping = await getDestinationAssetMapping(this.dynamicConfig, route);
-
-      const destinationAsset = getDestinationAssetAddress(
+      // get origin asset config
+      const originAssetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+      if (!originAssetConfig) {
+        throw new Error(
+          `No origin asset config detected for route(origin=${route.origin},destination=${route.destination},asset=${route.asset})`,
+        );
+      }
+      const destinationAssetConfig = findMatchingDestinationAsset(
         route.asset,
         route.origin,
         route.destination,
         this.config.chains,
         this.logger,
       );
-      if (!destinationAsset) {
-        this.logger.error('Could not find destination asset address for ticker', {
-          originAsset: route.asset,
-          originChain: route.origin,
-          destinationChain: route.destination,
+      if (!destinationAssetConfig) {
+        throw new Error(
+          `No destination asset config detected for route(origin=${route.origin},destination=${route.destination},asset=${route.asset})`,
+        );
+      }
+      if (originAssetConfig.symbol.toLowerCase() !== 'weth' && originAssetConfig.symbol.toLowerCase() !== 'eth') {
+        this.logger.debug('Origin asset is not weth, no callbacks needed on kraken', {
+          route,
+          withdrawalRef,
+          status,
+          originAssetConfig,
+          deposit: originTransaction.transactionHash,
         });
         return;
       }
 
-      // No wrapping needed if Kraken withdrawal asset matches the destination asset Mark should hold
-      if (destinationMapping.krakenAsset.toLowerCase() === destinationAsset.toLowerCase()) {
-        this.logger.debug('Kraken withdrawal asset matches destination asset, no wrapping needed', {
-          destinationAsset,
-          krakenAsset: destinationMapping.krakenAsset,
+      if (destinationAssetConfig.symbol.toLowerCase() !== 'weth') {
+        this.logger.debug('Destination asset is not weth, no callbacks needed on kraken', {
+          route,
+          withdrawalRef,
+          status,
+          originAssetConfig,
+          deposit: originTransaction.transactionHash,
         });
+        return;
+      }
+
+      // at this point:
+      // - origin asset is WETH or ETH
+      // - destination asset is WETH
+      // - kraken delivered without erc20
+      // --> we need to wrap
+      const toWrap = parseUnits(status.amount, 18);
+      this.logger.info('Wrapping native asset into weth', {
+        route,
+        originTransaction: originTransaction.transactionHash,
+        status,
+        destinationAssetConfig,
+        originAssetConfig,
+      });
+      const provider = this.getProvider(route.destination);
+      if (!provider) {
+        this.logger.error('No provider for destination chain', { chainId: route.destination });
         return;
       }
 
       this.logger.info('Preparing WETH wrap callback', {
         recipient,
-        ethAmount: ethAmount.toString(),
-        wethAddress: destinationAsset,
+        toWrap,
+        wethAddress: destinationAssetConfig.address,
         destinationChain: route.destination,
       });
 
@@ -437,13 +445,13 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
       const wrapTx = {
         memo: RebalanceTransactionMemo.Wrap,
         transaction: {
-          to: destinationAsset as `0x${string}`,
+          to: destinationAssetConfig.address as `0x${string}`,
           data: encodeFunctionData({
             abi: wethAbi,
             functionName: 'deposit',
             args: [],
           }) as `0x${string}`,
-          value: ethAmount,
+          value: toWrap,
         },
       };
       return wrapTx;
@@ -457,18 +465,144 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     }
   }
 
+  protected async validateRebalanceRequest(
+    amount: bigint,
+    route: RebalanceRoute,
+  ): Promise<{
+    originMapping: KrakenAssetMapping;
+    destinationMapping: KrakenAssetMapping;
+    received: bigint;
+    originAssetConfig: AssetConfiguration;
+    destinationAssetConfig: AssetConfiguration;
+  }> {
+    // safety check: kraken system status
+    const isOperational = await this.client.isSystemOperational();
+    if (!isOperational) {
+      throw new Error('Kraken system is not operational');
+    }
+
+    // safety check: ensure asset is configured properly
+    const originAssetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+    if (!originAssetConfig) {
+      throw new Error(`Unable to find origin asset config for asset ${route.asset} on chain ${route.origin}`);
+    }
+
+    // safety check: ensure asset is supported on Kraken
+    const originMapping = await getValidAssetMapping(this.dynamicConfig, route, `route from chain ${route.origin}`);
+    if (!originMapping) {
+      throw new Error(`Unable to find origin mappings for rebalance route`);
+    }
+
+    // safety check: oriigin asset is not disabled on kraken
+    const assetInfo = await this.client.getAssetInfo([originMapping.krakenAsset]);
+    if (!assetInfo[originMapping.krakenAsset]) {
+      throw new Error(`Unable to find kraken asset status for origin asset`);
+    }
+    if (assetInfo[originMapping.krakenAsset].status === 'disabled') {
+      throw new Error(`Origin asset is disabled on Kraken`);
+    }
+
+    // safety check: amount is above the deposit minimum
+    const depositMin = parseUnits(originMapping.depositMethod.minimum, originAssetConfig.decimals);
+    if (depositMin < amount) {
+      throw new Error(`Deposit amount ${amount} is below the minimum ${depositMin}`);
+    }
+
+    // safety check: deposit method limit
+    if (originMapping.depositMethod.limit) {
+      throw new Error(`Deposit method is limited`);
+    }
+
+    // safety check: withdrawals
+    const { received, destinationAssetConfig, destinationMapping } = await this.validateDestinationWithdrawal(
+      amount,
+      route,
+      originMapping,
+      isOperational,
+    );
+
+    return {
+      originAssetConfig: originAssetConfig!,
+      destinationAssetConfig,
+      originMapping,
+      destinationMapping,
+      received,
+    };
+  }
+
+  protected async validateDestinationWithdrawal(
+    amount: bigint,
+    route: RebalanceRoute,
+    originMapping: KrakenAssetMapping,
+    _isOperational?: boolean,
+  ): Promise<{ received: bigint; destinationAssetConfig: AssetConfiguration; destinationMapping: KrakenAssetMapping }> {
+    // safety check: kraken system status
+    const isOperational = _isOperational ?? (await this.client.isSystemOperational());
+    if (!isOperational) {
+      throw new Error('Kraken system is not operational');
+    }
+
+    // safety check: asset configured on destination
+    const destinationAssetConfig = findMatchingDestinationAsset(
+      route.asset,
+      route.origin,
+      route.destination,
+      this.config.chains,
+      this.logger,
+    );
+    if (!destinationAssetConfig) {
+      throw new Error(
+        `Unable to find destination asset config for asset (${route.asset}, ${route.origin}) on chain ${route.destination}`,
+      );
+    }
+
+    const destinationMapping = await getDestinationAssetMapping(this.dynamicConfig, route, originMapping);
+    if (!destinationMapping) {
+      throw new Error(`Unable to find destination mappings for rebalance route`);
+    }
+
+    // safety check: destination asset is not disabled on kraken
+    const assetInfo = await this.client.getAssetInfo([destinationMapping.krakenAsset]);
+    if (!assetInfo[destinationMapping.krakenAsset]) {
+      throw new Error(`Unable to find kraken asset status for destination asset`);
+    }
+    if (assetInfo[destinationMapping.krakenAsset].status === 'disabled') {
+      throw new Error(`Destination asset is disabled on Kraken`);
+    }
+
+    // safety check: amount less fees is above the withdraw minimum
+    const received = amount - parseUnits(destinationMapping.withdrawMethod.fee.fee, destinationAssetConfig.decimals);
+    const min = parseUnits(destinationMapping.withdrawMethod.minimum, destinationAssetConfig.decimals);
+    if (received < min) {
+      throw new Error(`Received amount is below the withdrawal minimum`);
+    }
+
+    // safety check: amount less fees is below the withdraw daily limits
+    const dailies = destinationMapping.withdrawMethod.limits.find((l) => l.limit_type === 'amount')!.limits['86400'];
+    const limit = parseUnits(dailies.remaining, destinationAssetConfig.decimals);
+    if (received > limit) {
+      throw new Error(`Received amount (${received}) exceeds withdraw limits (${limit})`);
+    }
+
+    return { received, destinationAssetConfig: destinationAssetConfig!, destinationMapping };
+  }
+
   protected async getOrInitWithdrawal(
+    amount: string,
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
-    amount: string,
     recipient: string,
+    originMapping: KrakenAssetMapping,
+    destinationMapping: KrakenAssetMapping,
+    destinationAssetConfig: AssetConfiguration,
   ): Promise<WithdrawalStatus | undefined> {
     try {
-      const originMapping = await validateAssetMapping(this.dynamicConfig, route, `route from chain ${route.origin}`);
-      const destinationMapping = await getDestinationAssetMapping(this.dynamicConfig, route);
-
       // Check if deposit is confirmed first
       const depositStatus = await this.checkDepositConfirmed(route, originTransaction, originMapping);
+      this.logger.debug('Got deposit status', {
+        transactionHash: originTransaction.transactionHash,
+        depositStatus,
+      });
       if (!depositStatus.confirmed) {
         this.logger.debug('Deposit not yet confirmed', {
           transactionHash: originTransaction.transactionHash,
@@ -477,14 +611,28 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
       }
 
       // Check if withdrawal exists, if not initiate it
-      let withdrawal = await this.findExistingWithdrawal(route, originTransaction, destinationMapping);
+      let withdrawal = await this.findExistingWithdrawal(route, originTransaction);
       if (!withdrawal) {
-        withdrawal = await this.initiateWithdrawal(route, originTransaction, amount, destinationMapping, recipient);
+        this.logger.debug('No withdrawal detected, submitting another', {
+          originTransaction,
+        });
+        withdrawal = await this.initiateWithdrawal(
+          route,
+          originTransaction,
+          amount,
+          destinationMapping,
+          destinationAssetConfig,
+          recipient,
+        );
+        this.logger.info('Initiated withdrawal', { originTransaction, withdrawal });
       }
 
       // Check withdrawal status
-      const withdrawals = await this.client.getWithdrawStatus(destinationMapping.krakenAsset);
-      const currentWithdrawal = withdrawals.find((w) => w.refid === withdrawal.id);
+      const currentWithdrawal = await this.client.getWithdrawStatus(
+        withdrawal.asset,
+        withdrawal.method,
+        withdrawal.refid,
+      );
 
       if (!currentWithdrawal) {
         return {
@@ -533,7 +681,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     assetMapping: KrakenAssetMapping,
   ): Promise<{ confirmed: boolean }> {
     try {
-      const deposits = await this.client.getDepositStatus(assetMapping.krakenAsset, assetMapping.method);
+      const deposits = await this.client.getDepositStatus(assetMapping.krakenAsset, assetMapping.depositMethod.method);
 
       const matchingDeposit = deposits.find(
         (d) => d.txid.toLowerCase() === originTransaction.transactionHash.toLowerCase(),
@@ -560,34 +708,22 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
   protected async findExistingWithdrawal(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
-    assetMapping: KrakenAssetMapping,
-  ): Promise<{ id: string } | undefined> {
+  ): Promise<{ refid: string; asset: string; method: string } | undefined> {
     try {
-      const expectedOrderId = generateWithdrawOrderId(route, originTransaction.transactionHash);
-
-      // Get all withdrawals for this asset and search for our custom ID
-      const withdrawals = await this.client.getWithdrawStatus(assetMapping.krakenAsset);
-
-      // Find withdrawal by checking the info field or reference ID patterns
-      const existingWithdrawal = withdrawals.find(
-        (w) => w.info?.includes(expectedOrderId) || w.refid === expectedOrderId,
-      );
-
-      if (existingWithdrawal) {
-        this.logger.debug('Found existing withdrawal', {
-          withdrawalId: existingWithdrawal.refid,
-          customOrderId: expectedOrderId,
-          status: existingWithdrawal.status,
+      const existingWithdrawal = await this.rebalanceCache.getWithdrawalRecord(originTransaction.transactionHash);
+      if (!existingWithdrawal) {
+        this.logger.debug('No existing withdrawal found', {
+          route,
+          deposit: originTransaction.transactionHash,
         });
-        return { id: existingWithdrawal.refid };
+        return undefined;
       }
-
-      this.logger.debug('No existing withdrawal found', {
-        customOrderId: expectedOrderId,
-        asset: assetMapping.krakenAsset,
+      this.logger.debug('Found existing withdrawal', {
+        route,
+        deposit: originTransaction.transactionHash,
+        existingWithdrawal,
       });
-
-      return undefined;
+      return existingWithdrawal;
     } catch (error) {
       this.logger.error('Failed to find existing withdrawal', {
         error: jsonifyError(error),
@@ -603,69 +739,46 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     originTransaction: TransactionReceipt,
     amount: string,
     assetMapping: KrakenAssetMapping,
+    assetConfig: AssetConfiguration,
     recipient: string,
-  ): Promise<{ id: string }> {
+  ): Promise<{ refid: string; asset: string; method: string }> {
     try {
-      // Safety check: Kraken system status before withdrawal
-      const isOperational = await this.client.isSystemOperational();
-      if (!isOperational) {
-        throw new Error('Kraken system is not operational - cannot initiate withdrawal');
-      }
-
-      this.logger.debug('Using recipient address', {
+      this.logger.debug(`Initiating Kraken withdrawal`, {
+        asset: assetMapping.krakenAsset,
+        method: assetMapping.withdrawMethod.method,
         recipient,
         route,
-      });
-
-      const withdrawOrderId = generateWithdrawOrderId(route, originTransaction.transactionHash);
-
-      const assetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains);
-      if (!assetConfig) {
-        throw new Error(`Unable to find asset config for asset ${route.asset} on chain ${route.origin}`);
-      }
-      const ticker = assetConfig.tickerHash;
-      const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
-      if (!decimals) {
-        throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
-      }
-
-      // Final quota check before withdrawal
-      const quota = await checkWithdrawQuota(amount, assetMapping.krakenSymbol, decimals, this.client, this.logger);
-      if (!quota.allowed) {
-        throw new Error(quota.message || `Withdrawal amount exceeds limits`);
-      }
-
-      // Get withdrawal info and validate
-      const withdrawInfo = await this.client.getWithdrawInfo(
-        assetMapping.krakenAsset,
-        recipient, // Using recipient as the withdrawal key
-        formatUnits(BigInt(amount), decimals),
-      );
-
-      this.logger.debug(`Initiating Kraken withdrawal with id ${withdrawOrderId}`, {
-        asset: assetMapping.krakenAsset,
-        method: assetMapping.method,
-        address: recipient,
         amount,
-        withdrawOrderId,
-        withdrawInfo,
       });
 
       const withdrawal = await this.client.withdraw({
         asset: assetMapping.krakenAsset,
         key: recipient,
-        amount: formatUnits(BigInt(amount), decimals),
+        amount: formatUnits(BigInt(amount), assetConfig.decimals),
       });
 
       this.logger.info('Kraken withdrawal initiated', {
-        withdrawalId: withdrawal.refid,
-        withdrawOrderId,
+        withdrawal,
         asset: assetMapping.krakenAsset,
         amount,
         recipient,
       });
 
-      return { id: withdrawal.refid };
+      await this.rebalanceCache.addWithdrawalRecord(
+        originTransaction.transactionHash,
+        assetMapping.krakenAsset,
+        assetMapping.withdrawMethod.method,
+        withdrawal.refid,
+      );
+
+      this.logger.debug('Kraken withdrawal saved to cache', {
+        withdrawal,
+        asset: assetMapping.krakenAsset,
+        amount,
+        recipient,
+      });
+
+      return { refid: withdrawal.refid, asset: assetMapping.krakenAsset, method: assetMapping.withdrawMethod.method };
     } catch (error) {
       this.logger.error('Failed to initiate withdrawal', {
         error: jsonifyError(error),

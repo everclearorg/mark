@@ -1,4 +1,4 @@
-import { Chain, parseUnits } from 'viem';
+import { Chain } from 'viem';
 import { AssetConfiguration, ChainConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
 import * as chains from 'viem/chains';
@@ -193,9 +193,8 @@ export class DynamicAssetConfig {
       chainId,
       krakenAsset,
       krakenSymbol,
-      method: depositMethod.method,
-      minWithdrawalAmount: parseUnits(withdrawMethod.minimum, assetInfo.decimals).toString(),
-      withdrawalFee: parseUnits(withdrawMethod.fee.fee, assetInfo.decimals).toString(),
+      depositMethod,
+      withdrawMethod,
     };
   }
 

@@ -1,53 +1,35 @@
+import { config } from 'dotenv';
 import { beforeEach, describe, expect, it } from '@jest/globals';
-import { KrakenClient } from '../../../src/adapters/kraken/client';
-import { DynamicAssetConfig } from '../../../src/adapters/kraken/dynamic-config';
 import { Logger } from '@mark/logger';
 import { ChainConfiguration } from '@mark/core';
-import * as fs from 'fs';
-import * as path from 'path';
+import { KrakenClient } from '../../../src/adapters/kraken/client';
+import { DynamicAssetConfig } from '../../../src/adapters/kraken/dynamic-config';
 
 /**
  * These tests use real Kraken API credentials and make actual API calls.
  * They are skipped by default to avoid unnecessary API calls during normal testing.
  *
  * To run these tests:
- * 1. Ensure KRAKEN_API_KEY and KRAKEN_SECRET_KEY are in packages/poller/.env
+ * 1. Ensure KRAKEN_API_KEY and KRAKEN_API_SECRET are in packages/poller/.env
  * 2. Run from monorepo root: yarn workspace @mark/rebalance test:integration
  */
 
 // Load environment variables from poller/.env if available
-function loadEnvFromPoller() {
-  const envPath = path.resolve(__dirname, '../../../../../poller/.env');
+config();
 
-  if (fs.existsSync(envPath)) {
-    const envContent = fs.readFileSync(envPath, 'utf8');
-
-    envContent.split('\n').forEach((line) => {
-      const trimmedLine = line.trim();
-      if (trimmedLine && !trimmedLine.startsWith('#') && trimmedLine.includes('=')) {
-        const [key, ...valueParts] = trimmedLine.split('=');
-        const value = valueParts.join('=').replace(/^["']|["']$/g, '');
-        process.env[key.trim()] = value.trim();
-      }
-    });
-  }
-}
-
-describe('KrakenClient Integration Tests', () => {
+describe.only('KrakenClient Integration Tests', () => {
   let client: KrakenClient;
   let logger: Logger;
   let apiKey: string;
   let apiSecret: string;
 
   beforeAll(() => {
-    loadEnvFromPoller();
-
     apiKey = process.env.KRAKEN_API_KEY!;
-    apiSecret = process.env.KRAKEN_SECRET_KEY!;
+    apiSecret = process.env.KRAKEN_API_SECRET!;
 
     if (!apiKey || !apiSecret) {
       throw new Error(
-        'Integration tests require KRAKEN_API_KEY and KRAKEN_SECRET_KEY environment variables. ' +
+        'Integration tests require KRAKEN_API_KEY and KRAKEN_API_SECRET environment variables. ' +
         'Add them to packages/poller/.env or run yarn test (without integration tests).',
       );
     }
@@ -303,37 +285,14 @@ describe('KrakenClient Integration Tests', () => {
   });
 
   describe('Withdrawal Status', () => {
-    it('should retrieve withdrawal status without errors', async () => {
-      const withdrawals = await client.getWithdrawStatus();
-
-      expect(Array.isArray(withdrawals)).toBe(true);
-
-      if (withdrawals.length > 0) {
-        withdrawals.forEach(withdrawal => expect(withdrawal).toMatchObject({
-          method: expect.any(String),
-          aclass: expect.any(String),
-          asset: expect.any(String),
-          refid: expect.any(String),
-          txid: expect.any(String),
-          info: expect.any(String),
-          amount: expect.any(String),
-          fee: expect.any(String),
-          time: expect.any(Number),
-          status: expect.any(String),
-        }));
-
-        console.log(`✅ Found ${withdrawals.length} withdrawal records`);
-      } else {
-        console.log('✅ No withdrawal history found (this is normal for new accounts)');
-      }
-    }, 30000);
-
-    it('should retrieve withdrawal status for specific asset', async () => {
-      const withdrawals = await client.getWithdrawStatus('XETH');
-
-      expect(Array.isArray(withdrawals)).toBe(true);
-      console.log(`✅ ETH-specific withdrawals: ${withdrawals.length} records`);
-    }, 30000);
+    it('should retrieve withdrawal statuses', async () => {
+      const sampleId = 'FTESi2H-FhRGd1RAmR57sFARwniv0u';
+      const asset = 'XETH';
+      const method = 'Ether';
+      const withdrawal = await client.getWithdrawStatus(asset, method, sampleId);
+      expect(withdrawal).toBeDefined();
+      expect(withdrawal?.status).toBe('Success');
+    }, 30000)
   });
 
   describe('Withdrawal Execution (Safe Tests)', () => {
@@ -422,14 +381,12 @@ describe('DynamicAssetConfig Integration Tests', () => {
   let mockChains: Record<string, ChainConfiguration>;
 
   beforeAll(() => {
-    loadEnvFromPoller();
-
     apiKey = process.env.KRAKEN_API_KEY!;
-    apiSecret = process.env.KRAKEN_SECRET_KEY!;
+    apiSecret = process.env.KRAKEN_API_SECRET!;
 
     if (!apiKey || !apiSecret) {
       throw new Error(
-        'Integration tests require KRAKEN_API_KEY and KRAKEN_SECRET_KEY environment variables. ' +
+        'Integration tests require KRAKEN_API_KEY and KRAKEN_API_SECRET environment variables. ' +
         'Add them to packages/poller/.env or run yarn test (without integration tests).',
       );
     }
@@ -535,7 +492,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String)
       });
 
-      console.log(`✅ ETH mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ ETH mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve WETH by address on Ethereum', async () => {
@@ -550,7 +507,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ WETH mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ WETH mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve USDC by symbol on Ethereum', async () => {
@@ -565,7 +522,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ USDC mapping on Ethereum: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ USDC mapping on Ethereum: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve ETH on Polygon', async () => {
@@ -580,7 +537,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ ETH mapping on Polygon: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ ETH mapping on Polygon: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve USDC on Optimism', async () => {
@@ -595,7 +552,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ USDC mapping on Optimism: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ USDC mapping on Optimism: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve ETH on Unichain', async () => {
@@ -610,7 +567,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ ETH mapping on Unichain: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ ETH mapping on Unichain: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve WETH on Unichain', async () => {
@@ -625,7 +582,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ WETH mapping on Unichain: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ WETH mapping on Unichain: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve WETH on Ink', async () => {
@@ -640,7 +597,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ WETH mapping on Ink: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ WETH mapping on Ink: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve ETH on Zksync', async () => {
@@ -655,7 +612,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ ETH mapping on Zksync: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ ETH mapping on Zksync: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should resolve WETH on Zksync', async () => {
@@ -670,7 +627,7 @@ describe('DynamicAssetConfig Integration Tests', () => {
         withdrawalFee: expect.any(String),
       });
 
-      console.log(`✅ WETH mapping on Zksync: method=${mapping.method}, fee=${mapping.withdrawalFee}`);
+      console.log(`✅ WETH mapping on Zksync: method=${mapping.depositMethod.method}, fee=${mapping.withdrawMethod.fee}`);
     }, 30000);
 
     it('should handle unsupported asset gracefully', async () => {
@@ -691,25 +648,24 @@ describe('DynamicAssetConfig Integration Tests', () => {
       const mapping = await dynamicConfig.getAssetMapping(1, 'ETH');
 
       // Parse the fee as wei and convert to ETH for validation
-      const feeWei = BigInt(mapping.withdrawalFee);
-      const feeEth = Number(feeWei) / 1e18;
+      const feeEth = +mapping.withdrawMethod.fee;
 
       expect(feeEth).toBeGreaterThan(0);
       expect(feeEth).toBeLessThan(0.5); // Reasonable upper bound for ETH withdrawal fee
 
-      console.log(`✅ ETH withdrawal fee: ${feeEth} ETH (${mapping.withdrawalFee} wei)`);
+      console.log(`✅ ETH withdrawal fee: ${feeEth} ETH (${mapping.withdrawMethod.fee} wei)`);
     }, 30000);
 
     it('should fetch real-time minimum amounts for USDC', async () => {
       const mapping = await dynamicConfig.getAssetMapping(1, 'USDC');
 
       // Parse the minimum as 6-decimal USDC
-      const minUsdc = Number(mapping.minWithdrawalAmount) / 1e6;
+      const minUsdc = Number(mapping.withdrawMethod.minimum);
 
       expect(minUsdc).toBeGreaterThan(0);
       expect(minUsdc).toBeLessThan(1000); // Reasonable upper bound
 
-      console.log(`✅ USDC minimum withdrawal: ${minUsdc} USDC (${mapping.minWithdrawalAmount} raw)`);
+      console.log(`✅ USDC minimum withdrawal: ${minUsdc} USDC (${mapping.withdrawMethod.minimum} raw)`);
     }, 30000);
   });
 
@@ -718,11 +674,11 @@ describe('DynamicAssetConfig Integration Tests', () => {
       const ethereumMapping = await dynamicConfig.getAssetMapping(1, 'ETH');
       const polygonMapping = await dynamicConfig.getAssetMapping(137, 'WETH');
 
-      expect(ethereumMapping.method.toLowerCase()).toMatch(/ether/);
-      expect(polygonMapping.method.toLowerCase()).toMatch(/polygon/);
+      expect(ethereumMapping.depositMethod.method.toLowerCase()).toMatch(/ether/);
+      expect(polygonMapping.depositMethod.method.toLowerCase()).toMatch(/polygon/);
 
-      console.log(`✅ Ethereum method: ${ethereumMapping.method}`);
-      console.log(`✅ Polygon method: ${polygonMapping.method}`);
+      console.log(`✅ Ethereum method: ${ethereumMapping.depositMethod.method}`);
+      console.log(`✅ Polygon method: ${polygonMapping.depositMethod.method}`);
     }, 30000);
 
     it('should handle chains with no available methods', async () => {
@@ -737,8 +693,8 @@ describe('DynamicAssetConfig Integration Tests', () => {
       // We can't easily mock this in an integration test, but we can verify it handles errors gracefully
       try {
         const mapping = await dynamicConfig.getAssetMapping(1, 'ETH');
-        expect(mapping.withdrawalFee).toBeDefined();
-        expect(mapping.minWithdrawalAmount).toBeDefined();
+        expect(mapping.withdrawMethod.fee).toBeDefined();
+        expect(mapping.withdrawMethod.minimum).toBeDefined();
         console.log(`✅ Fee retrieval succeeded or fell back gracefully`);
       } catch (error) {
         // If the entire call fails, that's also acceptable as long as error is descriptive
@@ -758,12 +714,12 @@ describe('DynamicAssetConfig Integration Tests', () => {
       expect(ethMapping.krakenSymbol).toBe(polygonMapping.krakenSymbol);
 
       // But should have different methods and potentially different fees
-      expect(ethMapping.method).not.toBe(polygonMapping.method);
+      expect(ethMapping.depositMethod.method).not.toBe(polygonMapping.depositMethod.method);
       expect(ethMapping.chainId).not.toBe(polygonMapping.chainId);
 
       console.log(`✅ USDC cross-chain consistency: ${ethMapping.krakenAsset} on both chains`);
-      console.log(`✅ Ethereum method: ${ethMapping.method}`);
-      console.log(`✅ Polygon method: ${polygonMapping.method}`);
+      console.log(`✅ Ethereum method: ${ethMapping.depositMethod.method}`);
+      console.log(`✅ Polygon method: ${polygonMapping.depositMethod.method}`);
     }, 30000);
   });
 });
