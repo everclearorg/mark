@@ -829,33 +829,33 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.created_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
-      created_at: Date | null;
+      created_at: Date;
       /**
       * **transactions.cumulative_gas_used**
       *
       * Total gas used by transaction (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      cumulative_gas_used: string | null;
+      cumulative_gas_used: string;
       /**
       * **transactions.effective_gas_price**
       *
       * Effective gas price paid (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      effective_gas_price: string | null;
+      effective_gas_price: string;
       /**
       * **transactions.from**
       *
       * Transaction sender address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      from: string | null;
+      from: string;
       /**
       * **transactions.id**
       * - `uuid` in database
@@ -875,9 +875,9 @@ declare module 'zapatos/schema' {
       *
       * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      reason: string | null;
+      reason: string;
       /**
       * **transactions.rebalance_operation_id**
       *
@@ -891,9 +891,9 @@ declare module 'zapatos/schema' {
       *
       * Transaction destination address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      to: string | null;
+      to: string;
       /**
       * **transactions.transaction_hash**
       *
@@ -905,9 +905,9 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.updated_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
-      updated_at: Date | null;
+      updated_at: Date;
     }
     export interface JSONSelectable {
       /**
@@ -921,33 +921,33 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.created_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
-      created_at: db.TimestampTzString | null;
+      created_at: db.TimestampTzString;
       /**
       * **transactions.cumulative_gas_used**
       *
       * Total gas used by transaction (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      cumulative_gas_used: string | null;
+      cumulative_gas_used: string;
       /**
       * **transactions.effective_gas_price**
       *
       * Effective gas price paid (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      effective_gas_price: string | null;
+      effective_gas_price: string;
       /**
       * **transactions.from**
       *
       * Transaction sender address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      from: string | null;
+      from: string;
       /**
       * **transactions.id**
       * - `uuid` in database
@@ -967,9 +967,9 @@ declare module 'zapatos/schema' {
       *
       * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      reason: string | null;
+      reason: string;
       /**
       * **transactions.rebalance_operation_id**
       *
@@ -983,9 +983,9 @@ declare module 'zapatos/schema' {
       *
       * Transaction destination address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      to: string | null;
+      to: string;
       /**
       * **transactions.transaction_hash**
       *
@@ -997,9 +997,9 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.updated_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
-      updated_at: db.TimestampTzString | null;
+      updated_at: db.TimestampTzString;
     }
     export interface Whereable {
       /**
@@ -1013,7 +1013,7 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.created_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
       created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
       /**
@@ -1021,7 +1021,7 @@ declare module 'zapatos/schema' {
       *
       * Total gas used by transaction (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
       cumulative_gas_used?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
@@ -1029,7 +1029,7 @@ declare module 'zapatos/schema' {
       *
       * Effective gas price paid (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
       effective_gas_price?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
@@ -1037,7 +1037,7 @@ declare module 'zapatos/schema' {
       *
       * Transaction sender address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
       from?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
@@ -1059,7 +1059,7 @@ declare module 'zapatos/schema' {
       *
       * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
       reason?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
@@ -1075,7 +1075,7 @@ declare module 'zapatos/schema' {
       *
       * Transaction destination address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
       to?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
@@ -1089,7 +1089,7 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.updated_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
       updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
     }
@@ -1105,33 +1105,33 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.created_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
-      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
       /**
       * **transactions.cumulative_gas_used**
       *
       * Total gas used by transaction (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      cumulative_gas_used?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      cumulative_gas_used: string | db.Parameter<string> | db.SQLFragment;
       /**
       * **transactions.effective_gas_price**
       *
       * Effective gas price paid (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      effective_gas_price?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      effective_gas_price: string | db.Parameter<string> | db.SQLFragment;
       /**
       * **transactions.from**
       *
       * Transaction sender address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      from?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      from: string | db.Parameter<string> | db.SQLFragment;
       /**
       * **transactions.id**
       * - `uuid` in database
@@ -1151,9 +1151,9 @@ declare module 'zapatos/schema' {
       *
       * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      reason?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      reason: string | db.Parameter<string> | db.SQLFragment;
       /**
       * **transactions.rebalance_operation_id**
       *
@@ -1167,9 +1167,9 @@ declare module 'zapatos/schema' {
       *
       * Transaction destination address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      to?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      to: string | db.Parameter<string> | db.SQLFragment;
       /**
       * **transactions.transaction_hash**
       *
@@ -1181,9 +1181,9 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.updated_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
-      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
     }
     export interface Updatable {
       /**
@@ -1197,33 +1197,33 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.created_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
-      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
       /**
       * **transactions.cumulative_gas_used**
       *
       * Total gas used by transaction (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      cumulative_gas_used?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      cumulative_gas_used?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
       * **transactions.effective_gas_price**
       *
       * Effective gas price paid (stored as text for precision)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      effective_gas_price?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      effective_gas_price?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
       * **transactions.from**
       *
       * Transaction sender address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      from?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      from?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
       * **transactions.id**
       * - `uuid` in database
@@ -1243,9 +1243,9 @@ declare module 'zapatos/schema' {
       *
       * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      reason?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      reason?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
       * **transactions.rebalance_operation_id**
       *
@@ -1259,9 +1259,9 @@ declare module 'zapatos/schema' {
       *
       * Transaction destination address
       * - `text` in database
-      * - Nullable, no default
+      * - `NOT NULL`, no default
       */
-      to?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      to?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
       * **transactions.transaction_hash**
       *
@@ -1273,9 +1273,9 @@ declare module 'zapatos/schema' {
       /**
       * **transactions.updated_at**
       * - `timestamptz` in database
-      * - Nullable, default: `now()`
+      * - `NOT NULL`, default: `now()`
       */
-      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
     }
     export type UniqueIndex = 'transactions_pkey' | 'unique_tx_chain';
     export type Column = keyof Selectable;

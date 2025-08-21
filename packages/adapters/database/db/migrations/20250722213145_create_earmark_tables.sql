@@ -71,14 +71,14 @@ CREATE TABLE transactions (
     rebalance_operation_id UUID REFERENCES rebalance_operations(id) ON DELETE SET NULL,
     transaction_hash TEXT NOT NULL,
     chain_id TEXT NOT NULL,
-    cumulative_gas_used TEXT,
-    effective_gas_price TEXT,
-    "from" TEXT,
-    "to" TEXT,
-    reason TEXT,
+    cumulative_gas_used TEXT NOT NULL,
+    effective_gas_price TEXT NOT NULL,
+    "from" TEXT NOT NULL,
+    "to" TEXT NOT NULL,
+    reason TEXT NOT NULL,
     metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     CONSTRAINT unique_tx_chain UNIQUE (transaction_hash, chain_id)
 );
 

@@ -1,4 +1,4 @@
-\restrict seSnvdFzlDsT0k7RRcIfbXDhb6dx8reb2Ke1uevYMAedNZNrbgCZhzwgPc0o3fG
+\restrict H1xeVb9DszUsmsIQ31WbSfPgTDsfXjsYZz6p4Sr2waQMOC8oc3MuWSrTVXgXflJ
 
 -- Dumped from database version 15.14
 -- Dumped by pg_dump version 15.14 (Homebrew)
@@ -199,14 +199,14 @@ CREATE TABLE public.transactions (
     rebalance_operation_id uuid,
     transaction_hash text NOT NULL,
     chain_id text NOT NULL,
-    cumulative_gas_used text,
-    effective_gas_price text,
-    "from" text,
-    "to" text,
-    reason text,
+    cumulative_gas_used text NOT NULL,
+    effective_gas_price text NOT NULL,
+    "from" text NOT NULL,
+    "to" text NOT NULL,
+    reason text NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb,
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -474,7 +474,7 @@ ALTER TABLE ONLY public.transactions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict seSnvdFzlDsT0k7RRcIfbXDhb6dx8reb2Ke1uevYMAedNZNrbgCZhzwgPc0o3fG
+\unrestrict H1xeVb9DszUsmsIQ31WbSfPgTDsfXjsYZz6p4Sr2waQMOC8oc3MuWSrTVXgXflJ
 
 
 --
