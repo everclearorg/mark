@@ -1,8 +1,8 @@
 // Shared Jest setup to suppress console logs during tests
 global.console = {
   ...console,
-  log: jest.fn(),
-  debug: jest.fn(),
+  log: console.log,
+  debug: console.debug,
   // Keep error and warn to see actual problems
   error: console.error,
   warn: console.warn,
