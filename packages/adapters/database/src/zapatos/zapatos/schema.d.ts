@@ -30,19 +30,19 @@ declare module 'zapatos/schema' {
     export type Table = 'earmarks';
     export interface Selectable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt: Date | null;
+      created_at: Date | null;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain: number;
+      designated_purchase_chain: number;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -50,21 +50,21 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId: string;
+      invoice_id: string;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount: string;
+      min_amount: string;
       /**
       * **earmarks.status**
       *
@@ -74,35 +74,35 @@ declare module 'zapatos/schema' {
       */
       status: string;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string;
+      ticker_hash: string;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt: Date | null;
+      updated_at: Date | null;
     }
     export interface JSONSelectable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt: db.TimestampTzString | null;
+      created_at: db.TimestampTzString | null;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain: number;
+      designated_purchase_chain: number;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -110,21 +110,21 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId: string;
+      invoice_id: string;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount: string;
+      min_amount: string;
       /**
       * **earmarks.status**
       *
@@ -134,35 +134,35 @@ declare module 'zapatos/schema' {
       */
       status: string;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string;
+      ticker_hash: string;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt: db.TimestampTzString | null;
+      updated_at: db.TimestampTzString | null;
     }
     export interface Whereable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
+      designated_purchase_chain?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -170,21 +170,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      invoice_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      min_amount?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
       * **earmarks.status**
       *
@@ -194,35 +194,35 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      ticker_hash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
     }
     export interface Insertable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain: number | db.Parameter<number> | db.SQLFragment;
+      designated_purchase_chain: number | db.Parameter<number> | db.SQLFragment;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -230,21 +230,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId: string | db.Parameter<string> | db.SQLFragment;
+      invoice_id: string | db.Parameter<string> | db.SQLFragment;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount: string | db.Parameter<string> | db.SQLFragment;
+      min_amount: string | db.Parameter<string> | db.SQLFragment;
       /**
       * **earmarks.status**
       *
@@ -254,35 +254,35 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string | db.Parameter<string> | db.SQLFragment;
+      ticker_hash: string | db.Parameter<string> | db.SQLFragment;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
     }
     export interface Updatable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
+      designated_purchase_chain?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -290,21 +290,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      invoice_id?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      min_amount?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
       * **earmarks.status**
       *
@@ -314,19 +314,19 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      ticker_hash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
     }
     export type UniqueIndex = 'earmarks_pkey' | 'unique_invoice_id';
     export type Column = keyof Selectable;
@@ -359,27 +359,27 @@ declare module 'zapatos/schema' {
       */
       bridge: string | null;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt: Date | null;
+      created_at: Date | null;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId: number;
+      destination_chain_id: number;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId: string | null;
+      earmark_id: string | null;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -387,13 +387,13 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId: number;
+      origin_chain_id: number;
       /**
       * **rebalance_operations.slippage**
       *
@@ -411,25 +411,17 @@ declare module 'zapatos/schema' {
       */
       status: string;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string;
+      ticker_hash: string;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes: db.JSONValue | null;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt: Date | null;
+      updated_at: Date | null;
     }
     export interface JSONSelectable {
       /**
@@ -449,27 +441,27 @@ declare module 'zapatos/schema' {
       */
       bridge: string | null;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt: db.TimestampTzString | null;
+      created_at: db.TimestampTzString | null;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId: number;
+      destination_chain_id: number;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId: string | null;
+      earmark_id: string | null;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -477,13 +469,13 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId: number;
+      origin_chain_id: number;
       /**
       * **rebalance_operations.slippage**
       *
@@ -501,25 +493,17 @@ declare module 'zapatos/schema' {
       */
       status: string;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string;
+      ticker_hash: string;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes: db.JSONValue | null;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt: db.TimestampTzString | null;
+      updated_at: db.TimestampTzString | null;
     }
     export interface Whereable {
       /**
@@ -539,27 +523,27 @@ declare module 'zapatos/schema' {
       */
       bridge?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
+      destination_chain_id?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      earmark_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -567,13 +551,13 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
+      origin_chain_id?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
       /**
       * **rebalance_operations.slippage**
       *
@@ -591,25 +575,17 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      ticker_hash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
     }
     export interface Insertable {
       /**
@@ -629,27 +605,27 @@ declare module 'zapatos/schema' {
       */
       bridge?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId: number | db.Parameter<number> | db.SQLFragment;
+      destination_chain_id: number | db.Parameter<number> | db.SQLFragment;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      earmark_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -657,13 +633,13 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId: number | db.Parameter<number> | db.SQLFragment;
+      origin_chain_id: number | db.Parameter<number> | db.SQLFragment;
       /**
       * **rebalance_operations.slippage**
       *
@@ -681,25 +657,17 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string | db.Parameter<string> | db.SQLFragment;
+      ticker_hash: string | db.Parameter<string> | db.SQLFragment;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes?: db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
     }
     export interface Updatable {
       /**
@@ -719,27 +687,27 @@ declare module 'zapatos/schema' {
       */
       bridge?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
+      destination_chain_id?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      earmark_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -747,13 +715,13 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
+      origin_chain_id?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
       /**
       * **rebalance_operations.slippage**
       *
@@ -771,25 +739,17 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      ticker_hash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes?: db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment>;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
     }
     export type UniqueIndex = 'rebalance_operations_pkey';
     export type Column = keyof Selectable;

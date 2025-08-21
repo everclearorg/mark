@@ -1,4 +1,4 @@
-\restrict KwPnGiyKX5vXPuHqy0GyYKfasryJZDONhYylXOM9wNInP1HEMzDEwOFKZigeW2Y
+\restrict bXLwgJT9f7zJPEM2eQ6ialoKKJe9IN2KuefZ9IMkv93F65rvoGDpnsCEbPeBQg2
 
 -- Dumped from database version 15.14
 -- Dumped by pg_dump version 15.14 (Homebrew)
@@ -36,7 +36,7 @@ CREATE FUNCTION public.update_updated_at_column() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    NEW."updatedAt" = NOW();
+    NEW.updated_at = NOW();
     RETURN NEW;
 END;
 $$;
@@ -52,13 +52,13 @@ SET default_table_access_method = heap;
 
 CREATE TABLE public.earmarks (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
-    "invoiceId" text NOT NULL,
-    "designatedPurchaseChain" integer NOT NULL,
-    "tickerHash" text NOT NULL,
-    "minAmount" text NOT NULL,
+    invoice_id text NOT NULL,
+    designated_purchase_chain integer NOT NULL,
+    ticker_hash text NOT NULL,
+    min_amount text NOT NULL,
     status text DEFAULT 'pending'::text NOT NULL,
-    "createdAt" timestamp with time zone DEFAULT now(),
-    "updatedAt" timestamp with time zone DEFAULT now(),
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
     CONSTRAINT earmark_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ready'::text, 'completed'::text, 'cancelled'::text])))
 );
 
@@ -71,31 +71,31 @@ COMMENT ON TABLE public.earmarks IS 'Primary storage for invoice earmarks waitin
 
 
 --
--- Name: COLUMN earmarks."invoiceId"; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN earmarks.invoice_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.earmarks."invoiceId" IS 'External invoice identifier from the invoice processing system';
-
-
---
--- Name: COLUMN earmarks."designatedPurchaseChain"; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.earmarks."designatedPurchaseChain" IS 'Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation';
+COMMENT ON COLUMN public.earmarks.invoice_id IS 'External invoice identifier from the invoice processing system';
 
 
 --
--- Name: COLUMN earmarks."tickerHash"; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN earmarks.designated_purchase_chain; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.earmarks."tickerHash" IS 'Token tickerHash (e.g., USDC, ETH) required for invoice payment';
+COMMENT ON COLUMN public.earmarks.designated_purchase_chain IS 'Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation';
 
 
 --
--- Name: COLUMN earmarks."minAmount"; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN earmarks.ticker_hash; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.earmarks."minAmount" IS 'Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)';
+COMMENT ON COLUMN public.earmarks.ticker_hash IS 'Token ticker_hash (e.g., USDC, ETH) required for invoice payment';
+
+
+--
+-- Name: COLUMN earmarks.min_amount; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.earmarks.min_amount IS 'Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)';
 
 
 --
@@ -111,17 +111,16 @@ COMMENT ON COLUMN public.earmarks.status IS 'Earmark status: pending, ready, com
 
 CREATE TABLE public.rebalance_operations (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
-    "earmarkId" uuid,
-    "originChainId" integer NOT NULL,
-    "destinationChainId" integer NOT NULL,
-    "tickerHash" text NOT NULL,
+    earmark_id uuid,
+    origin_chain_id integer NOT NULL,
+    destination_chain_id integer NOT NULL,
+    ticker_hash text NOT NULL,
     amount text NOT NULL,
     slippage integer NOT NULL,
     bridge text,
     status text DEFAULT 'pending'::text NOT NULL,
-    "txHashes" jsonb DEFAULT '{}'::jsonb,
-    "createdAt" timestamp with time zone DEFAULT now(),
-    "updatedAt" timestamp with time zone DEFAULT now(),
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
     CONSTRAINT rebalance_operation_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'awaiting_callback'::text, 'completed'::text, 'expired'::text])))
 );
 
@@ -134,24 +133,24 @@ COMMENT ON TABLE public.rebalance_operations IS 'Individual rebalancing operatio
 
 
 --
--- Name: COLUMN rebalance_operations."earmarkId"; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN rebalance_operations.earmark_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.rebalance_operations."earmarkId" IS 'Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)';
-
-
---
--- Name: COLUMN rebalance_operations."originChainId"; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.rebalance_operations."originChainId" IS 'Source chain ID where funds are being moved from';
+COMMENT ON COLUMN public.rebalance_operations.earmark_id IS 'Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)';
 
 
 --
--- Name: COLUMN rebalance_operations."destinationChainId"; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN rebalance_operations.origin_chain_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.rebalance_operations."destinationChainId" IS 'Target chain ID where funds are being moved to';
+COMMENT ON COLUMN public.rebalance_operations.origin_chain_id IS 'Source chain ID where funds are being moved from';
+
+
+--
+-- Name: COLUMN rebalance_operations.destination_chain_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.rebalance_operations.destination_chain_id IS 'Target chain ID where funds are being moved to';
 
 
 --
@@ -180,13 +179,6 @@ COMMENT ON COLUMN public.rebalance_operations.bridge IS 'Bridge adapter type use
 --
 
 COMMENT ON COLUMN public.rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
-
-
---
--- Name: COLUMN rebalance_operations."txHashes"; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.rebalance_operations."txHashes" IS 'Transaction hashes for cross-chain operations stored as JSON';
 
 
 --
@@ -317,7 +309,7 @@ ALTER TABLE ONLY public.transactions
 --
 
 ALTER TABLE ONLY public.earmarks
-    ADD CONSTRAINT unique_invoice_id UNIQUE ("invoiceId");
+    ADD CONSTRAINT unique_invoice_id UNIQUE (invoice_id);
 
 
 --
@@ -329,24 +321,24 @@ ALTER TABLE ONLY public.transactions
 
 
 --
--- Name: idx_earmarks_chain_tickerhash; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_earmarks_chain_ticker_hash; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_earmarks_chain_tickerhash ON public.earmarks USING btree ("designatedPurchaseChain", "tickerHash");
+CREATE INDEX idx_earmarks_chain_ticker_hash ON public.earmarks USING btree (designated_purchase_chain, ticker_hash);
 
 
 --
 -- Name: idx_earmarks_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_earmarks_created_at ON public.earmarks USING btree ("createdAt");
+CREATE INDEX idx_earmarks_created_at ON public.earmarks USING btree (created_at);
 
 
 --
--- Name: idx_earmarks_invoiceid; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_earmarks_invoice_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_earmarks_invoiceid ON public.earmarks USING btree ("invoiceId");
+CREATE INDEX idx_earmarks_invoice_id ON public.earmarks USING btree (invoice_id);
 
 
 --
@@ -360,28 +352,28 @@ CREATE INDEX idx_earmarks_status ON public.earmarks USING btree (status);
 -- Name: idx_earmarks_status_chain; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_earmarks_status_chain ON public.earmarks USING btree (status, "designatedPurchaseChain");
+CREATE INDEX idx_earmarks_status_chain ON public.earmarks USING btree (status, designated_purchase_chain);
 
 
 --
 -- Name: idx_rebalance_operations_destination_chain; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_rebalance_operations_destination_chain ON public.rebalance_operations USING btree ("destinationChainId");
+CREATE INDEX idx_rebalance_operations_destination_chain ON public.rebalance_operations USING btree (destination_chain_id);
 
 
 --
--- Name: idx_rebalance_operations_earmarkid; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_rebalance_operations_earmark_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_rebalance_operations_earmarkid ON public.rebalance_operations USING btree ("earmarkId");
+CREATE INDEX idx_rebalance_operations_earmark_id ON public.rebalance_operations USING btree (earmark_id);
 
 
 --
 -- Name: idx_rebalance_operations_origin_chain; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_rebalance_operations_origin_chain ON public.rebalance_operations USING btree ("originChainId");
+CREATE INDEX idx_rebalance_operations_origin_chain ON public.rebalance_operations USING btree (origin_chain_id);
 
 
 --
@@ -455,11 +447,11 @@ CREATE TRIGGER update_transactions_updated_at BEFORE UPDATE ON public.transactio
 
 
 --
--- Name: rebalance_operations rebalance_operations_earmarkId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: rebalance_operations rebalance_operations_earmark_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.rebalance_operations
-    ADD CONSTRAINT "rebalance_operations_earmarkId_fkey" FOREIGN KEY ("earmarkId") REFERENCES public.earmarks(id) ON DELETE CASCADE;
+    ADD CONSTRAINT rebalance_operations_earmark_id_fkey FOREIGN KEY (earmark_id) REFERENCES public.earmarks(id) ON DELETE CASCADE;
 
 
 --
@@ -474,7 +466,7 @@ ALTER TABLE ONLY public.transactions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict KwPnGiyKX5vXPuHqy0GyYKfasryJZDONhYylXOM9wNInP1HEMzDEwOFKZigeW2Y
+\unrestrict bXLwgJT9f7zJPEM2eQ6ialoKKJe9IN2KuefZ9IMkv93F65rvoGDpnsCEbPeBQg2
 
 
 --
