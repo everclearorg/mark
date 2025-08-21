@@ -148,25 +148,34 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         slippages: [30],
         preferences: [SupportedBridge.Across],
       },
-      // // unichain    ethereum    WETH    10000000000000000000    150
-      // {
-      //   origin: 130,
-      //   destination: 1,
-      //   asset: '0x4200000000000000000000000000000000000006',
-      //   maximum: '35000000000000000000',
-      //   reserve: '30000000000000000000',
-      //   slippages: [150],
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // // zksync    ethereum    WETH    10000000000000000000 20
-      // {
-      //   origin: 324,
-      //   destination: 1,
-      //   asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
-      //   maximum: '10000000000000000000',
-      //   slippages: [20],
-      //   preferences: [SupportedBridge.Across],
-      // },
+      // unichain    ethereum    WETH    10000000000000000000    150
+      {
+        origin: 130,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '10000000000000000',
+        // reserve: '100000000000000000',
+        slippages: [150],
+        preferences: [SupportedBridge.Kraken],
+      },
+      // zksync    ethereum    WETH    10000000000000000000 20
+      {
+        origin: 324,
+        destination: 1,
+        asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
+        maximum: '10000000000000000',
+        slippages: [20],
+        preferences: [SupportedBridge.Kraken],
+      },
+      // ink    ethereum    WETH    10000000000000000000 20
+      {
+        origin: 57073,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '10000000000000000',
+        slippages: [20],
+        preferences: [SupportedBridge.Kraken],
+      },
       // scroll    ethereum    WETH    10000000000000000000 20
       {
         origin: 324,
