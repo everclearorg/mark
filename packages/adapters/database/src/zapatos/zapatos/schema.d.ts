@@ -849,6 +849,14 @@ declare module 'zapatos/schema' {
       */
       effective_gas_price: string | null;
       /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - Nullable, no default
+      */
+      from: string | null;
+      /**
       * **transactions.id**
       * - `uuid` in database
       * - `NOT NULL`, default: `uuid_generate_v4()`
@@ -879,13 +887,13 @@ declare module 'zapatos/schema' {
       */
       rebalance_operation_id: string | null;
       /**
-      * **transactions.sender**
+      * **transactions.to**
       *
-      * Transaction sender address
+      * Transaction destination address
       * - `text` in database
       * - Nullable, no default
       */
-      sender: string | null;
+      to: string | null;
       /**
       * **transactions.transaction_hash**
       *
@@ -933,6 +941,14 @@ declare module 'zapatos/schema' {
       */
       effective_gas_price: string | null;
       /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - Nullable, no default
+      */
+      from: string | null;
+      /**
       * **transactions.id**
       * - `uuid` in database
       * - `NOT NULL`, default: `uuid_generate_v4()`
@@ -963,13 +979,13 @@ declare module 'zapatos/schema' {
       */
       rebalance_operation_id: string | null;
       /**
-      * **transactions.sender**
+      * **transactions.to**
       *
-      * Transaction sender address
+      * Transaction destination address
       * - `text` in database
       * - Nullable, no default
       */
-      sender: string | null;
+      to: string | null;
       /**
       * **transactions.transaction_hash**
       *
@@ -1017,6 +1033,14 @@ declare module 'zapatos/schema' {
       */
       effective_gas_price?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - Nullable, no default
+      */
+      from?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
       * **transactions.id**
       * - `uuid` in database
       * - `NOT NULL`, default: `uuid_generate_v4()`
@@ -1047,13 +1071,13 @@ declare module 'zapatos/schema' {
       */
       rebalance_operation_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **transactions.sender**
+      * **transactions.to**
       *
-      * Transaction sender address
+      * Transaction destination address
       * - `text` in database
       * - Nullable, no default
       */
-      sender?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      to?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
       * **transactions.transaction_hash**
       *
@@ -1101,6 +1125,14 @@ declare module 'zapatos/schema' {
       */
       effective_gas_price?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - Nullable, no default
+      */
+      from?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
       * **transactions.id**
       * - `uuid` in database
       * - `NOT NULL`, default: `uuid_generate_v4()`
@@ -1131,13 +1163,13 @@ declare module 'zapatos/schema' {
       */
       rebalance_operation_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
-      * **transactions.sender**
+      * **transactions.to**
       *
-      * Transaction sender address
+      * Transaction destination address
       * - `text` in database
       * - Nullable, no default
       */
-      sender?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      to?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
       * **transactions.transaction_hash**
       *
@@ -1185,6 +1217,14 @@ declare module 'zapatos/schema' {
       */
       effective_gas_price?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - Nullable, no default
+      */
+      from?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
       * **transactions.id**
       * - `uuid` in database
       * - `NOT NULL`, default: `uuid_generate_v4()`
@@ -1215,13 +1255,13 @@ declare module 'zapatos/schema' {
       */
       rebalance_operation_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
-      * **transactions.sender**
+      * **transactions.to**
       *
-      * Transaction sender address
+      * Transaction destination address
       * - `text` in database
       * - Nullable, no default
       */
-      sender?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      to?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
       * **transactions.transaction_hash**
       *

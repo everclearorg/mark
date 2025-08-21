@@ -73,7 +73,8 @@ CREATE TABLE transactions (
     chain_id TEXT NOT NULL,
     cumulative_gas_used TEXT,
     effective_gas_price TEXT,
-    sender TEXT,
+    "from" TEXT,
+    "to" TEXT,
     reason TEXT,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -117,7 +118,8 @@ COMMENT ON COLUMN transactions.transaction_hash IS 'On-chain transaction hash';
 COMMENT ON COLUMN transactions.chain_id IS 'Chain ID where transaction occurred (stored as text for large chain IDs)';
 COMMENT ON COLUMN transactions.cumulative_gas_used IS 'Total gas used by transaction (stored as text for precision)';
 COMMENT ON COLUMN transactions.effective_gas_price IS 'Effective gas price paid (stored as text for precision)';
-COMMENT ON COLUMN transactions.sender IS 'Transaction sender address';
+COMMENT ON COLUMN transactions.from IS 'Transaction sender address';
+COMMENT ON COLUMN transactions.to IS 'Transaction destination address';
 COMMENT ON COLUMN transactions.reason IS 'Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)';
 COMMENT ON COLUMN transactions.metadata IS 'Additional transaction-specific data stored as JSON';
 

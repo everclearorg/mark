@@ -1,4 +1,4 @@
-\restrict 8vANGZCeBrw3i4He0D3vx5bEfXgo014Ixm6d1OHzPxp7JjGeJPgr9279ajrAGc1
+\restrict seSnvdFzlDsT0k7RRcIfbXDhb6dx8reb2Ke1uevYMAedNZNrbgCZhzwgPc0o3fG
 
 -- Dumped from database version 15.14
 -- Dumped by pg_dump version 15.14 (Homebrew)
@@ -201,7 +201,8 @@ CREATE TABLE public.transactions (
     chain_id text NOT NULL,
     cumulative_gas_used text,
     effective_gas_price text,
-    sender text,
+    "from" text,
+    "to" text,
     reason text,
     metadata jsonb DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT now(),
@@ -252,10 +253,17 @@ COMMENT ON COLUMN public.transactions.effective_gas_price IS 'Effective gas pric
 
 
 --
--- Name: COLUMN transactions.sender; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN transactions."from"; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.transactions.sender IS 'Transaction sender address';
+COMMENT ON COLUMN public.transactions."from" IS 'Transaction sender address';
+
+
+--
+-- Name: COLUMN transactions."to"; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions."to" IS 'Transaction destination address';
 
 
 --
@@ -466,7 +474,7 @@ ALTER TABLE ONLY public.transactions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 8vANGZCeBrw3i4He0D3vx5bEfXgo014Ixm6d1OHzPxp7JjGeJPgr9279ajrAGc1
+\unrestrict seSnvdFzlDsT0k7RRcIfbXDhb6dx8reb2Ke1uevYMAedNZNrbgCZhzwgPc0o3fG
 
 
 --
