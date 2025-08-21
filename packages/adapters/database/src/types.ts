@@ -1,6 +1,6 @@
 // Database type definitions
 
-import { earmarks } from './db';
+import { earmarks, transactions } from './db';
 
 export interface DatabaseConfig {
   connectionString: string;
@@ -21,6 +21,8 @@ export interface TransactionReceipt {
   confirmations: number;
 }
 
+export type TransactionEntry = CamelCasedProperties<transactions>;
+
 export enum TransactionReasons {
   Rebalance = 'Rebalance',
 }
@@ -32,8 +34,8 @@ export enum TransactionReasons {
 // Utility type to convert camelCase -> snake_case
 type SnakeCase<S extends string> = S extends `${infer T}${infer U}`
   ? U extends Uncapitalize<U>
-  ? `${Lowercase<T>}${SnakeCase<U>}`
-  : `${Lowercase<T>}_${SnakeCase<Uncapitalize<U>>}`
+    ? `${Lowercase<T>}${SnakeCase<U>}`
+    : `${Lowercase<T>}_${SnakeCase<Uncapitalize<U>>}`
   : S;
 
 // Recursively map object keys to snake_case

@@ -1,7 +1,13 @@
 // Database connection and query utilities with zapatos integration
 
 import { Pool, PoolClient } from 'pg';
-import { CamelCasedProperties, DatabaseConfig, TransactionReasons, TransactionReceipt } from './types';
+import {
+  CamelCasedProperties,
+  DatabaseConfig,
+  TransactionEntry,
+  TransactionReasons,
+  TransactionReceipt,
+} from './types';
 import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
 
 // Import from the module declared in the schema file
@@ -267,7 +273,7 @@ export async function createRebalanceOperation(input: {
   status: RebalanceOperationStatus;
   bridge: string;
   transactions?: Record<string, TransactionReceipt>;
-}): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionReceipt> }> {
+}): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }> {
   const client = await getPool().connect();
 
   try {
@@ -355,7 +361,7 @@ export async function createRebalanceOperation(input: {
 export async function getTransactionsForRebalanceOperations(
   operationIds: string[],
   client?: PoolClient,
-): Promise<Record<string, Record<string, CamelCasedProperties<transactions>>>> {
+): Promise<Record<string, Record<string, TransactionEntry>>> {
   if (operationIds.length === 0) return {};
 
   const queryExecutor = client || getPool();
@@ -370,7 +376,7 @@ export async function getTransactionsForRebalanceOperations(
   const transactions = transactionsResult.rows.map(snakeToCamel);
 
   // Group transactions by rebalance operation ID, then by chain ID
-  const transactionsByOperation: Record<string, Record<string, CamelCasedProperties<transactions>>> = {};
+  const transactionsByOperation: Record<string, Record<string, TransactionEntry>> = {};
 
   for (const transaction of transactions) {
     const { rebalanceOperationId, chainId } = transaction;
@@ -391,7 +397,9 @@ export async function updateRebalanceOperation(
     status?: RebalanceOperationStatus;
     txHashes?: Record<string, TransactionReceipt>;
   },
-): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, CamelCasedProperties<transactions>> }> {
+): Promise<
+  CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }
+> {
   return withTransaction(async (client) => {
     // Update the rebalance operation status if provided
     const setClause: string[] = ['"updated_at" = NOW()'];
@@ -469,7 +477,9 @@ export async function updateRebalanceOperation(
 
 export async function getRebalanceOperationsByEarmark(
   earmarkId: string,
-): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, CamelCasedProperties<transactions>> })[]> {
+): Promise<
+  (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]
+> {
   const query = `
     SELECT * FROM rebalance_operations
     WHERE "earmark_id" = $1
@@ -482,10 +492,10 @@ export async function getRebalanceOperationsByEarmark(
   }
 
   // Fetch transactions for all operations
-  const operationIds = operations.map(op => op.id);
+  const operationIds = operations.map((op) => op.id);
   const transactionsByOperation = await getTransactionsForRebalanceOperations(operationIds);
 
-  return operations.map(op => {
+  return operations.map((op) => {
     const camelCasedOp = snakeToCamel(op);
     return {
       ...camelCasedOp,
@@ -498,7 +508,9 @@ export async function getRebalanceOperations(filter?: {
   status?: RebalanceOperationStatus | RebalanceOperationStatus[];
   chainId?: number;
   earmarkId?: string | null;
-}): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, CamelCasedProperties<transactions>> })[]> {
+}): Promise<
+  (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]
+> {
   let query = 'SELECT * FROM rebalance_operations';
   const values: unknown[] = [];
   const conditions: string[] = [];
