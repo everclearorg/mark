@@ -27,7 +27,6 @@ CREATE TABLE rebalance_operations (
     slippage INTEGER NOT NULL,
     bridge TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
-    "txHashes" JSONB DEFAULT '{}',
     "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT rebalance_operation_status_check CHECK (status IN ('pending', 'awaiting_callback', 'completed', 'expired'))
@@ -66,6 +65,35 @@ CREATE TRIGGER update_rebalance_operations_updated_at
     BEFORE UPDATE ON rebalance_operations
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Transactions table: General purpose transaction tracking
+CREATE TABLE transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rebalance_operation_id UUID REFERENCES rebalance_operations(id) ON DELETE SET NULL,
+    transaction_hash TEXT NOT NULL,
+    chain_id TEXT NOT NULL,
+    cumulative_gas_used TEXT,
+    effective_gas_price TEXT,
+    sender TEXT,
+    reason TEXT,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT unique_tx_chain UNIQUE (transaction_hash, chain_id)
+);
+
+-- Trigger for transactions updated_at
+CREATE TRIGGER update_transactions_updated_at
+    BEFORE UPDATE ON transactions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Indexes for transactions table (optimized for joins and common queries)
+CREATE INDEX idx_transactions_hash_chain ON transactions(transaction_hash, chain_id);
+CREATE INDEX idx_transactions_rebalance_op ON transactions(rebalance_operation_id) WHERE rebalance_operation_id IS NOT NULL;
+CREATE INDEX idx_transactions_chain ON transactions(chain_id);
+CREATE INDEX idx_transactions_reason ON transactions(reason) WHERE reason IS NOT NULL;
+CREATE INDEX idx_transactions_created_at ON transactions(created_at);
+CREATE INDEX idx_transactions_rebalance_created ON transactions(rebalance_operation_id, created_at) WHERE rebalance_operation_id IS NOT NULL;
+
 -- Comments for documentation
 COMMENT ON TABLE earmarks IS 'Primary storage for invoice earmarks waiting for rebalancing completion';
 COMMENT ON TABLE rebalance_operations IS 'Individual rebalancing operations that fulfill earmarks';
@@ -82,18 +110,29 @@ COMMENT ON COLUMN rebalance_operations.amount IS 'Amount of tokens being rebalan
 COMMENT ON COLUMN rebalance_operations.slippage IS 'Expected slippage in basis points (e.g., 30 = 0.3%)';
 COMMENT ON COLUMN rebalance_operations.bridge IS 'Bridge adapter type used for this operation (e.g., across, binance)';
 COMMENT ON COLUMN rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
-COMMENT ON COLUMN rebalance_operations."txHashes" IS 'Transaction hashes for cross-chain operations stored as JSON';
+
+COMMENT ON TABLE transactions IS 'General purpose transaction tracking for all on-chain activity';
+COMMENT ON COLUMN transactions.rebalance_operation_id IS 'Optional reference to associated rebalance operation (NULL for standalone transactions)';
+COMMENT ON COLUMN transactions.transaction_hash IS 'On-chain transaction hash';
+COMMENT ON COLUMN transactions.chain_id IS 'Chain ID where transaction occurred (stored as text for large chain IDs)';
+COMMENT ON COLUMN transactions.cumulative_gas_used IS 'Total gas used by transaction (stored as text for precision)';
+COMMENT ON COLUMN transactions.effective_gas_price IS 'Effective gas price paid (stored as text for precision)';
+COMMENT ON COLUMN transactions.sender IS 'Transaction sender address';
+COMMENT ON COLUMN transactions.reason IS 'Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)';
+COMMENT ON COLUMN transactions.metadata IS 'Additional transaction-specific data stored as JSON';
 
 -- migrate:down
 
 -- Drop triggers first
+DROP TRIGGER IF EXISTS update_transactions_updated_at ON transactions;
 DROP TRIGGER IF EXISTS update_rebalance_operations_updated_at ON rebalance_operations;
 DROP TRIGGER IF EXISTS update_earmarks_updated_at ON earmarks;
 
 -- Drop trigger function
 DROP FUNCTION IF EXISTS update_updated_at_column();
 
--- Drop tables in reverse dependency order
+-- Drop tables in reverse dependency order (transactions first due to FK reference)
+DROP TABLE IF EXISTS transactions;
 DROP TABLE IF EXISTS rebalance_operations;
 DROP TABLE IF EXISTS earmarks;
 
