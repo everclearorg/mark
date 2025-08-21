@@ -11,13 +11,19 @@ export interface DatabaseConfig {
 
 // TODO: improve type source, should be whats returned from `submitAndMonitor`
 export interface TransactionReceipt {
+  from: string;
+  to: string;
   cumulativeGasUsed: string;
   effectiveGasPrice: string;
   blockNumber: number;
   status?: number;
   transactionHash: string;
   confirmations: number;
-};
+}
+
+export enum TransactionReasons {
+  Rebalance = 'Rebalance',
+}
 
 ////////////////////////////////////////////
 ///// Camel / snake case helper types /////

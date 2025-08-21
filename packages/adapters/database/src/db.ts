@@ -1,7 +1,7 @@
 // Database connection and query utilities with zapatos integration
 
 import { Pool, PoolClient } from 'pg';
-import { CamelCasedProperties, DatabaseConfig, TransactionReceipt } from './types';
+import { CamelCasedProperties, DatabaseConfig, TransactionReasons, TransactionReceipt } from './types';
 import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
 
 // Import from the module declared in the schema file
@@ -16,9 +16,6 @@ type rebalance_operations_insert = schema.rebalance_operations.Insertable;
 type transactions_insert = schema.transactions.Insertable;
 type earmarks_update = schema.earmarks.Updatable;
 type rebalance_operations_update = schema.rebalance_operations.Updatable;
-
-// Custom types not provided by Zapatos
-type JSONObject = Record<string, unknown>;
 
 let pool: Pool | null = null;
 
@@ -270,7 +267,7 @@ export async function createRebalanceOperation(input: {
   status: RebalanceOperationStatus;
   bridge: string;
   transactions?: Record<string, TransactionReceipt>;
-}): Promise<CamelCasedProperties<rebalance_operations>> {
+}): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionReceipt> }> {
   const client = await getPool().connect();
 
   try {
@@ -297,37 +294,55 @@ export async function createRebalanceOperation(input: {
 
     const rebalanceResult = await client.query<rebalance_operations>(rebalanceQuery, rebalanceValues);
     const rebalanceOperation = rebalanceResult.rows[0];
+    const transactions = [];
     for (const [chainId, receipt] of Object.entries(input.transactions ?? {})) {
+      const { transactionHash, cumulativeGasUsed, effectiveGasPrice, from, to } = receipt;
       const transactionQuery = `
         INSERT INTO transactions (
           rebalance_operation_id,
           transaction_hash,
           chain_id,
+          "from",
+          "to",
           cumulative_gas_used,
           effective_gas_price,
+          reason,
           metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING *
       `;
 
       const transactionValues = [
         rebalanceOperation.id,
-        receipt.transactionHash,
+        transactionHash,
         chainId,
-        receipt.cumulativeGasUsed,
-        receipt.effectiveGasPrice,
+        from,
+        to,
+        cumulativeGasUsed,
+        effectiveGasPrice,
+        TransactionReasons.Rebalance,
         JSON.stringify({
-          blockNumber: receipt.blockNumber,
-          status: receipt.status,
-          confirmations: receipt.confirmations,
+          receipt,
         }),
       ];
 
-      await client.query(transactionQuery, transactionValues);
+      const response = await client.query(transactionQuery, transactionValues);
+      transactions.push(snakeToCamel(response.rows[0]));
     }
 
     await client.query('COMMIT');
-    return snakeToCamel(rebalanceOperation);
+    return {
+      ...snakeToCamel(rebalanceOperation),
+      transactions: transactions.length
+        ? Object.fromEntries(
+          transactions.map((t) => {
+            const { chainId, ...remainder } = t;
+            return [chainId, remainder];
+          }),
+        )
+        : undefined,
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -336,62 +351,154 @@ export async function createRebalanceOperation(input: {
   }
 }
 
+// Helper function to fetch transactions for rebalance operations
+export async function getTransactionsForRebalanceOperations(
+  operationIds: string[],
+  client?: PoolClient,
+): Promise<Record<string, Record<string, CamelCasedProperties<transactions>>>> {
+  if (operationIds.length === 0) return {};
+
+  const queryExecutor = client || getPool();
+  const placeholders = operationIds.map((_, i) => `$${i + 1}`).join(', ');
+  const transactionsQuery = `
+    SELECT * FROM transactions 
+    WHERE rebalance_operation_id IN (${placeholders})
+    ORDER BY created_at ASC
+  `;
+
+  const transactionsResult = await queryExecutor.query(transactionsQuery, operationIds);
+  const transactions = transactionsResult.rows.map(snakeToCamel);
+
+  // Group transactions by rebalance operation ID, then by chain ID
+  const transactionsByOperation: Record<string, Record<string, CamelCasedProperties<transactions>>> = {};
+
+  for (const transaction of transactions) {
+    const { rebalanceOperationId, chainId } = transaction;
+
+    if (!transactionsByOperation[rebalanceOperationId]) {
+      transactionsByOperation[rebalanceOperationId] = {};
+    }
+
+    transactionsByOperation[rebalanceOperationId][chainId] = transaction;
+  }
+
+  return transactionsByOperation;
+}
+
 export async function updateRebalanceOperation(
   operationId: string,
   updates: {
     status?: RebalanceOperationStatus;
-    txHashes?: JSONObject;
+    txHashes?: Record<string, TransactionReceipt>;
   },
-): Promise<rebalance_operations> {
-  const setClause: string[] = ['"updated_at" = NOW()'];
-  const values: unknown[] = [];
-  let paramCount = 1;
+): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, CamelCasedProperties<transactions>> }> {
+  return withTransaction(async (client) => {
+    // Update the rebalance operation status if provided
+    const setClause: string[] = ['"updated_at" = NOW()'];
+    const values: unknown[] = [];
+    let paramCount = 1;
 
-  if (updates.status !== undefined) {
-    setClause.push(`status = $${paramCount++}`);
-    values.push(updates.status);
-  }
+    if (updates.status !== undefined) {
+      setClause.push(`status = $${paramCount++}`);
+      values.push(updates.status);
+    }
 
-  if (updates.txHashes !== undefined) {
-    setClause.push(`"txHashes" = $${paramCount++}`);
-    values.push(updates.txHashes);
-  }
+    values.push(operationId);
 
-  values.push(operationId);
+    const query = `
+      UPDATE rebalance_operations
+      SET ${setClause.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING *
+    `;
 
-  const query = `
-    UPDATE rebalance_operations
-    SET ${setClause.join(', ')}
-    WHERE id = $${paramCount}
-    RETURNING *
-  `;
+    const result = await client.query<rebalance_operations>(query, values);
 
-  const result = await queryWithClient<rebalance_operations>(query, values);
+    if (result.rows.length === 0) {
+      throw new Error(`Rebalance operation with id ${operationId} not found`);
+    }
 
-  if (result.length === 0) {
-    throw new Error(`Rebalance operation with id ${operationId} not found`);
-  }
+    // Handle transaction updates if provided
+    if (updates.txHashes !== undefined) {
+      // Insert new transactions for this rebalance operation
+      for (const [chainId, receipt] of Object.entries(updates.txHashes)) {
+        const { transactionHash, cumulativeGasUsed, effectiveGasPrice, from, to } = receipt;
+        const transactionQuery = `
+          INSERT INTO transactions (
+            rebalance_operation_id,
+            transaction_hash,
+            chain_id,
+            "from",
+            "to",
+            cumulative_gas_used,
+            effective_gas_price,
+            reason,
+            metadata
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `;
 
-  return result[0];
+        const transactionValues = [
+          operationId,
+          transactionHash,
+          chainId,
+          from,
+          to,
+          cumulativeGasUsed,
+          effectiveGasPrice,
+          TransactionReasons.Rebalance,
+          JSON.stringify({
+            receipt,
+          }),
+        ];
+
+        await client.query(transactionQuery, transactionValues);
+      }
+    }
+
+    // Fetch transactions for this operation
+    const transactionsByOperation = await getTransactionsForRebalanceOperations([operationId], client);
+    const operation = snakeToCamel(result.rows[0]);
+
+    return {
+      ...operation,
+      transactions: transactionsByOperation[operationId] || undefined,
+    };
+  });
 }
 
 export async function getRebalanceOperationsByEarmark(
   earmarkId: string,
-): Promise<CamelCasedProperties<rebalance_operations>[]> {
+): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, CamelCasedProperties<transactions>> })[]> {
   const query = `
     SELECT * FROM rebalance_operations
     WHERE "earmark_id" = $1
     ORDER BY "created_at" ASC
   `;
-  const ret = await queryWithClient<rebalance_operations>(query, [earmarkId]);
-  return ret.map(snakeToCamel);
+  const operations = await queryWithClient<rebalance_operations>(query, [earmarkId]);
+
+  if (operations.length === 0) {
+    return [];
+  }
+
+  // Fetch transactions for all operations
+  const operationIds = operations.map(op => op.id);
+  const transactionsByOperation = await getTransactionsForRebalanceOperations(operationIds);
+
+  return operations.map(op => {
+    const camelCasedOp = snakeToCamel(op);
+    return {
+      ...camelCasedOp,
+      transactions: transactionsByOperation[op.id] || undefined,
+    };
+  });
 }
 
 export async function getRebalanceOperations(filter?: {
   status?: RebalanceOperationStatus | RebalanceOperationStatus[];
   chainId?: number;
   earmarkId?: string | null;
-}): Promise<rebalance_operations[]> {
+}): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, CamelCasedProperties<transactions>> })[]> {
   let query = 'SELECT * FROM rebalance_operations';
   const values: unknown[] = [];
   const conditions: string[] = [];
@@ -432,7 +539,23 @@ export async function getRebalanceOperations(filter?: {
 
   query += ' ORDER BY "created_at" ASC';
 
-  return queryWithClient<rebalance_operations>(query, values);
+  const operations = await queryWithClient<rebalance_operations>(query, values);
+
+  if (operations.length === 0) {
+    return [];
+  }
+
+  // Fetch transactions for all operations
+  const operationIds = operations.map((op) => op.id);
+  const transactionsByOperation = await getTransactionsForRebalanceOperations(operationIds);
+
+  return operations.map((op) => {
+    const camelCasedOp = snakeToCamel(op);
+    return {
+      ...camelCasedOp,
+      transactions: transactionsByOperation[op.id] || undefined,
+    };
+  });
 }
 
 // Re-export types for convenience
