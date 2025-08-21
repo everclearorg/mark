@@ -27,7 +27,7 @@ export const snakeToCamel = <T extends object>(input: T): CamelCasedProperties<T
       const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
       const value = (input as Record<string, unknown>)[key];
 
-      if (value !== null && typeof value === 'object') {
+      if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
         result[camelKey] = Array.isArray(value)
           ? value.map((item) => (typeof item === 'object' && item !== null ? snakeToCamel(item) : item))
           : snakeToCamel(value as object);
@@ -67,7 +67,7 @@ export const camelToSnake = <T extends object>(input: T): SnakeCasedProperties<T
       const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`).replace(/^_/, '');
       const value = (input as Record<string, unknown>)[key];
 
-      if (value !== null && typeof value === 'object') {
+      if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
         result[snakeKey] = Array.isArray(value)
           ? value.map((item) => (typeof item === 'object' && item !== null ? camelToSnake(item) : item))
           : camelToSnake(value as object);
