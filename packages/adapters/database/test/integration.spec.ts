@@ -65,7 +65,7 @@ describe('Database Adapter - Integration Tests', () => {
         };
 
         const earmark = await createEarmark(earmarkData);
-        
+
         // Create rebalance operations separately
         await createRebalanceOperation({
           earmarkId: earmark.id,
@@ -77,7 +77,7 @@ describe('Database Adapter - Integration Tests', () => {
           status: RebalanceOperationStatus.PENDING,
           bridge: 'test-bridge',
         });
-        
+
         await createRebalanceOperation({
           earmarkId: earmark.id,
           originChainId: 137,
@@ -88,7 +88,7 @@ describe('Database Adapter - Integration Tests', () => {
           status: RebalanceOperationStatus.PENDING,
           bridge: 'test-bridge',
         });
-        
+
         const operations = await getRebalanceOperationsByEarmark(earmark.id);
 
         expect(operations).toHaveLength(2);
@@ -371,7 +371,7 @@ describe('Database Adapter - Integration Tests', () => {
         status: RebalanceOperationStatus.PENDING,
         bridge: 'test-bridge',
       });
-      
+
       await createRebalanceOperation({
         earmarkId: earmark.id,
         originChainId: 137,

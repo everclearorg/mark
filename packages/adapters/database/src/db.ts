@@ -1,16 +1,19 @@
 // Database connection and query utilities with zapatos integration
 
 import { Pool, PoolClient } from 'pg';
-import { DatabaseConfig } from './types';
+import { CamelCasedProperties, DatabaseConfig, TransactionReceipt } from './types';
 import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
 
 // Import from the module declared in the schema file
 import type * as schema from 'zapatos/schema';
+import { camelToSnake, snakeToCamel } from './utils';
 
 type earmarks = schema.earmarks.Selectable;
 type rebalance_operations = schema.rebalance_operations.Selectable;
+type transactions = schema.transactions.Selectable;
 type earmarks_insert = schema.earmarks.Insertable;
 type rebalance_operations_insert = schema.rebalance_operations.Insertable;
+type transactions_insert = schema.transactions.Insertable;
 type earmarks_update = schema.earmarks.Updatable;
 type rebalance_operations_update = schema.rebalance_operations.Updatable;
 
@@ -93,38 +96,35 @@ export interface GetEarmarksFilter {
   createdBefore?: Date;
 }
 
-export async function createEarmark(input: CreateEarmarkInput): Promise<earmarks> {
+export async function createEarmark(input: CreateEarmarkInput): Promise<CamelCasedProperties<earmarks>> {
   return withTransaction(async (client) => {
     // Insert earmark
     const earmarkData: earmarks_insert = {
-      invoiceId: input.invoiceId,
-      designatedPurchaseChain: input.designatedPurchaseChain,
-      tickerHash: input.tickerHash,
-      minAmount: input.minAmount,
+      ...camelToSnake(input),
       status: EarmarkStatus.PENDING,
     };
 
     const insertQuery = `
-      INSERT INTO earmarks ("invoiceId", "designatedPurchaseChain", "tickerHash", "minAmount", status)
+      INSERT INTO earmarks ("invoice_id", "designated_purchase_chain", "ticker_hash", "min_amount", status)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
 
     const earmarkResult = await client.query(insertQuery, [
-      earmarkData.invoiceId,
-      earmarkData.designatedPurchaseChain,
+      earmarkData.invoice_id,
+      earmarkData.designated_purchase_chain,
       input.tickerHash,
-      earmarkData.minAmount,
+      earmarkData.min_amount,
       earmarkData.status,
     ]);
 
     const earmark = earmarkResult.rows[0] as earmarks;
 
-    return earmark;
+    return snakeToCamel(earmark);
   });
 }
 
-export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[]> {
+export async function getEarmarks(filter?: GetEarmarksFilter): Promise<CamelCasedProperties<earmarks>[]> {
   let query = 'SELECT * FROM earmarks';
   const values: unknown[] = [];
   const conditions: string[] = [];
@@ -145,10 +145,10 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[
     if (filter.designatedPurchaseChain) {
       if (Array.isArray(filter.designatedPurchaseChain)) {
         const placeholders = filter.designatedPurchaseChain.map(() => `$${paramCount++}`).join(', ');
-        conditions.push(`"designatedPurchaseChain" IN (${placeholders})`);
+        conditions.push(`"designated_purchase_chain" IN (${placeholders})`);
         values.push(...filter.designatedPurchaseChain);
       } else {
-        conditions.push(`"designatedPurchaseChain" = $${paramCount++}`);
+        conditions.push(`"designated_purchase_chain" = $${paramCount++}`);
         values.push(filter.designatedPurchaseChain);
       }
     }
@@ -156,26 +156,26 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[
     if (filter.tickerHash) {
       if (Array.isArray(filter.tickerHash)) {
         const placeholders = filter.tickerHash.map(() => `$${paramCount++}`).join(', ');
-        conditions.push(`"tickerHash" IN (${placeholders})`);
+        conditions.push(`"ticker_hash" IN (${placeholders})`);
         values.push(...filter.tickerHash);
       } else {
-        conditions.push(`"tickerHash" = $${paramCount++}`);
+        conditions.push(`"ticker_hash" = $${paramCount++}`);
         values.push(filter.tickerHash);
       }
     }
 
     if (filter.invoiceId) {
-      conditions.push(`"invoiceId" = $${paramCount++}`);
+      conditions.push(`"invoice_id" = $${paramCount++}`);
       values.push(filter.invoiceId);
     }
 
     if (filter.createdAfter) {
-      conditions.push(`"createdAt" >= $${paramCount++}`);
+      conditions.push(`"created_at" >= $${paramCount++}`);
       values.push(filter.createdAfter);
     }
 
     if (filter.createdBefore) {
-      conditions.push(`"createdAt" <= $${paramCount++}`);
+      conditions.push(`"created_at" <= $${paramCount++}`);
       values.push(filter.createdBefore);
     }
   }
@@ -184,13 +184,14 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<earmarks[
     query += ' WHERE ' + conditions.join(' AND ');
   }
 
-  query += ' ORDER BY "createdAt" DESC';
+  query += ' ORDER BY "created_at" DESC';
 
-  return queryWithClient<earmarks>(query, values);
+  const ret = await queryWithClient<earmarks>(query, values);
+  return ret.map(snakeToCamel);
 }
 
-export async function getEarmarkForInvoice(invoiceId: string): Promise<earmarks | null> {
-  const query = 'SELECT * FROM earmarks WHERE "invoiceId" = $1';
+export async function getEarmarkForInvoice(invoiceId: string): Promise<CamelCasedProperties<earmarks> | null> {
+  const query = 'SELECT * FROM earmarks WHERE "invoice_id" = $1';
   const result = await queryWithClient<earmarks>(query, [invoiceId]);
 
   if (result.length === 0) {
@@ -201,7 +202,7 @@ export async function getEarmarkForInvoice(invoiceId: string): Promise<earmarks 
     throw new Error(`Multiple earmarks found for invoice ${invoiceId}. Expected unique constraint violation.`);
   }
 
-  return result[0];
+  return snakeToCamel(result[0]);
 }
 
 export async function removeEarmark(earmarkId: string): Promise<void> {
@@ -215,7 +216,7 @@ export async function removeEarmark(earmarkId: string): Promise<void> {
     }
 
     // Delete rebalance operations (will cascade due to FK constraint)
-    const deleteOperationsQuery = 'DELETE FROM rebalance_operations WHERE "earmarkId" = $1';
+    const deleteOperationsQuery = 'DELETE FROM rebalance_operations WHERE "earmark_id" = $1';
     await client.query(deleteOperationsQuery, [earmarkId]);
 
     // Delete the earmark
@@ -226,7 +227,10 @@ export async function removeEarmark(earmarkId: string): Promise<void> {
 
 // Additional helper functions for on-demand rebalancing
 
-export async function updateEarmarkStatus(earmarkId: string, status: EarmarkStatus): Promise<earmarks> {
+export async function updateEarmarkStatus(
+  earmarkId: string,
+  status: EarmarkStatus,
+): Promise<CamelCasedProperties<earmarks>> {
   return withTransaction(async (client) => {
     // Get current earmark
     const currentQuery = 'SELECT * FROM earmarks WHERE id = $1';
@@ -237,22 +241,23 @@ export async function updateEarmarkStatus(earmarkId: string, status: EarmarkStat
     }
 
     // Update earmark status
-    const updateQuery = 'UPDATE earmarks SET status = $1, "updatedAt" = NOW() WHERE id = $2 RETURNING *';
+    const updateQuery = 'UPDATE earmarks SET status = $1, "updated_at" = NOW() WHERE id = $2 RETURNING *';
     const updateResult = await client.query(updateQuery, [status, earmarkId]);
     const updated = updateResult.rows[0] as earmarks;
 
-    return updated;
+    return snakeToCamel(updated);
   });
 }
 
-export async function getActiveEarmarksForChain(chainId: number): Promise<earmarks[]> {
+export async function getActiveEarmarksForChain(chainId: number): Promise<CamelCasedProperties<earmarks>[]> {
   const query = `
     SELECT * FROM earmarks
-    WHERE "designatedPurchaseChain" = $1
+    WHERE "designated_purchase_chain" = $1
     AND status = 'pending'
-    ORDER BY "createdAt" ASC
+    ORDER BY "created_at" ASC
   `;
-  return queryWithClient<earmarks>(query, [chainId]);
+  const ret = await queryWithClient<earmarks>(query, [chainId]);
+  return ret.map(snakeToCamel);
 }
 
 export async function createRebalanceOperation(input: {
@@ -264,31 +269,71 @@ export async function createRebalanceOperation(input: {
   slippage: number;
   status: RebalanceOperationStatus;
   bridge: string;
-  txHashes?: JSONObject;
-}): Promise<rebalance_operations> {
-  const query = `
-    INSERT INTO rebalance_operations (
-      "earmarkId", "originChainId", "destinationChainId",
-      "tickerHash", amount, slippage, status, bridge, "txHashes"
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    RETURNING *
-  `;
+  transactions?: Record<string, TransactionReceipt>;
+}): Promise<CamelCasedProperties<rebalance_operations>> {
+  const client = await getPool().connect();
 
-  const values = [
-    input.earmarkId,
-    input.originChainId,
-    input.destinationChainId,
-    input.tickerHash,
-    input.amount,
-    input.slippage,
-    input.status,
-    input.bridge,
-    input.txHashes || {},
-  ];
+  try {
+    await client.query('BEGIN');
+    const rebalanceQuery = `
+      INSERT INTO rebalance_operations (
+        "earmark_id", "origin_chain_id", "destination_chain_id",
+        "ticker_hash", amount, slippage, status, bridge
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `;
 
-  const result = await queryWithClient<rebalance_operations>(query, values);
-  return result[0];
+    const rebalanceValues = [
+      input.earmarkId,
+      input.originChainId,
+      input.destinationChainId,
+      input.tickerHash,
+      input.amount,
+      input.slippage,
+      input.status,
+      input.bridge,
+    ];
+
+    const rebalanceResult = await client.query<rebalance_operations>(rebalanceQuery, rebalanceValues);
+    const rebalanceOperation = rebalanceResult.rows[0];
+    for (const [chainId, receipt] of Object.entries(input.transactions ?? {})) {
+      const transactionQuery = `
+        INSERT INTO transactions (
+          rebalance_operation_id,
+          transaction_hash,
+          chain_id,
+          cumulative_gas_used,
+          effective_gas_price,
+          metadata
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `;
+
+      const transactionValues = [
+        rebalanceOperation.id,
+        receipt.transactionHash,
+        chainId,
+        receipt.cumulativeGasUsed,
+        receipt.effectiveGasPrice,
+        JSON.stringify({
+          blockNumber: receipt.blockNumber,
+          status: receipt.status,
+          confirmations: receipt.confirmations,
+        }),
+      ];
+
+      await client.query(transactionQuery, transactionValues);
+    }
+
+    await client.query('COMMIT');
+    return snakeToCamel(rebalanceOperation);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateRebalanceOperation(
@@ -298,7 +343,7 @@ export async function updateRebalanceOperation(
     txHashes?: JSONObject;
   },
 ): Promise<rebalance_operations> {
-  const setClause: string[] = ['"updatedAt" = NOW()'];
+  const setClause: string[] = ['"updated_at" = NOW()'];
   const values: unknown[] = [];
   let paramCount = 1;
 
@@ -330,13 +375,16 @@ export async function updateRebalanceOperation(
   return result[0];
 }
 
-export async function getRebalanceOperationsByEarmark(earmarkId: string): Promise<rebalance_operations[]> {
+export async function getRebalanceOperationsByEarmark(
+  earmarkId: string,
+): Promise<CamelCasedProperties<rebalance_operations>[]> {
   const query = `
     SELECT * FROM rebalance_operations
-    WHERE "earmarkId" = $1
-    ORDER BY "createdAt" ASC
+    WHERE "earmark_id" = $1
+    ORDER BY "created_at" ASC
   `;
-  return queryWithClient<rebalance_operations>(query, [earmarkId]);
+  const ret = await queryWithClient<rebalance_operations>(query, [earmarkId]);
+  return ret.map(snakeToCamel);
 }
 
 export async function getRebalanceOperations(filter?: {
@@ -362,16 +410,16 @@ export async function getRebalanceOperations(filter?: {
     }
 
     if (filter.chainId !== undefined) {
-      conditions.push(`"originChainId" = $${paramCount}`);
+      conditions.push(`"origin_chain_id" = $${paramCount}`);
       values.push(filter.chainId);
       paramCount++;
     }
 
     if (filter.earmarkId !== undefined) {
       if (filter.earmarkId === null) {
-        conditions.push('"earmarkId" IS NULL');
+        conditions.push('"earmark_id" IS NULL');
       } else {
-        conditions.push(`"earmarkId" = $${paramCount}`);
+        conditions.push(`"earmark_id" = $${paramCount}`);
         values.push(filter.earmarkId);
         paramCount++;
       }
@@ -382,7 +430,7 @@ export async function getRebalanceOperations(filter?: {
     query += ' WHERE ' + conditions.join(' AND ');
   }
 
-  query += ' ORDER BY "createdAt" ASC';
+  query += ' ORDER BY "created_at" ASC';
 
   return queryWithClient<rebalance_operations>(query, values);
 }
@@ -391,8 +439,10 @@ export async function getRebalanceOperations(filter?: {
 export type {
   earmarks,
   rebalance_operations,
+  transactions,
   earmarks_insert,
   rebalance_operations_insert,
+  transactions_insert,
   earmarks_update,
   rebalance_operations_update,
 };

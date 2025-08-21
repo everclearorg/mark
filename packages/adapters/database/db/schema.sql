@@ -1,4 +1,4 @@
-\restrict bXLwgJT9f7zJPEM2eQ6ialoKKJe9IN2KuefZ9IMkv93F65rvoGDpnsCEbPeBQg2
+\restrict 8vANGZCeBrw3i4He0D3vx5bEfXgo014Ixm6d1OHzPxp7JjGeJPgr9279ajrAGc1
 
 -- Dumped from database version 15.14
 -- Dumped by pg_dump version 15.14 (Homebrew)
@@ -466,7 +466,7 @@ ALTER TABLE ONLY public.transactions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict bXLwgJT9f7zJPEM2eQ6ialoKKJe9IN2KuefZ9IMkv93F65rvoGDpnsCEbPeBQg2
+\unrestrict 8vANGZCeBrw3i4He0D3vx5bEfXgo014Ixm6d1OHzPxp7JjGeJPgr9279ajrAGc1
 
 
 --
