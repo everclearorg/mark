@@ -6,52 +6,52 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Earmarks table: Primary storage for earmark data
 CREATE TABLE earmarks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    "invoiceId" TEXT NOT NULL,
-    "designatedPurchaseChain" INTEGER NOT NULL,
-    "tickerHash" TEXT NOT NULL,
-    "minAmount" TEXT NOT NULL,
+    invoice_id TEXT NOT NULL,
+    designated_purchase_chain INTEGER NOT NULL,
+    ticker_hash TEXT NOT NULL,
+    min_amount TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
-    "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT earmark_status_check CHECK (status IN ('pending', 'ready', 'completed', 'cancelled'))
 );
 
 -- Rebalance operations table: Individual rebalancing operations linked to earmarks
 CREATE TABLE rebalance_operations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    "earmarkId" UUID REFERENCES earmarks(id) ON DELETE CASCADE,
-    "originChainId" INTEGER NOT NULL,
-    "destinationChainId" INTEGER NOT NULL,
-    "tickerHash" TEXT NOT NULL,
+    earmark_id UUID REFERENCES earmarks(id) ON DELETE CASCADE,
+    origin_chain_id INTEGER NOT NULL,
+    destination_chain_id INTEGER NOT NULL,
+    ticker_hash TEXT NOT NULL,
     amount TEXT NOT NULL,
     slippage INTEGER NOT NULL,
     bridge TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
-    "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT rebalance_operation_status_check CHECK (status IN ('pending', 'awaiting_callback', 'completed', 'expired'))
 );
 
--- Unique constraint for invoiceId
-ALTER TABLE earmarks ADD CONSTRAINT unique_invoice_id UNIQUE ("invoiceId");
+-- Unique constraint for invoice_id
+ALTER TABLE earmarks ADD CONSTRAINT unique_invoice_id UNIQUE (invoice_id);
 
 -- Indexes for performance optimization
-CREATE INDEX idx_earmarks_invoiceId ON earmarks("invoiceId");
-CREATE INDEX idx_earmarks_chain_tickerHash ON earmarks("designatedPurchaseChain", "tickerHash");
+CREATE INDEX idx_earmarks_invoice_id ON earmarks(invoice_id);
+CREATE INDEX idx_earmarks_chain_ticker_hash ON earmarks(designated_purchase_chain, ticker_hash);
 CREATE INDEX idx_earmarks_status ON earmarks(status);
-CREATE INDEX idx_earmarks_status_chain ON earmarks(status, "designatedPurchaseChain");
-CREATE INDEX idx_earmarks_created_at ON earmarks("createdAt");
+CREATE INDEX idx_earmarks_status_chain ON earmarks(status, designated_purchase_chain);
+CREATE INDEX idx_earmarks_created_at ON earmarks(created_at);
 
-CREATE INDEX idx_rebalance_operations_earmarkId ON rebalance_operations("earmarkId");
+CREATE INDEX idx_rebalance_operations_earmark_id ON rebalance_operations(earmark_id);
 CREATE INDEX idx_rebalance_operations_status ON rebalance_operations(status);
-CREATE INDEX idx_rebalance_operations_origin_chain ON rebalance_operations("originChainId");
-CREATE INDEX idx_rebalance_operations_destination_chain ON rebalance_operations("destinationChainId");
+CREATE INDEX idx_rebalance_operations_origin_chain ON rebalance_operations(origin_chain_id);
+CREATE INDEX idx_rebalance_operations_destination_chain ON rebalance_operations(destination_chain_id);
 
 -- Updated at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW."updatedAt" = NOW();
+    NEW.updated_at = NOW();
     RETURN NEW;
 END;
 $$ language 'plpgsql';
@@ -97,15 +97,15 @@ CREATE INDEX idx_transactions_rebalance_created ON transactions(rebalance_operat
 -- Comments for documentation
 COMMENT ON TABLE earmarks IS 'Primary storage for invoice earmarks waiting for rebalancing completion';
 COMMENT ON TABLE rebalance_operations IS 'Individual rebalancing operations that fulfill earmarks';
-COMMENT ON COLUMN earmarks."invoiceId" IS 'External invoice identifier from the invoice processing system';
-COMMENT ON COLUMN earmarks."designatedPurchaseChain" IS 'Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation';
-COMMENT ON COLUMN earmarks."tickerHash" IS 'Token tickerHash (e.g., USDC, ETH) required for invoice payment';
-COMMENT ON COLUMN earmarks."minAmount" IS 'Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)';
+COMMENT ON COLUMN earmarks.invoice_id IS 'External invoice identifier from the invoice processing system';
+COMMENT ON COLUMN earmarks.designated_purchase_chain IS 'Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation';
+COMMENT ON COLUMN earmarks.ticker_hash IS 'Token ticker_hash (e.g., USDC, ETH) required for invoice payment';
+COMMENT ON COLUMN earmarks.min_amount IS 'Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)';
 COMMENT ON COLUMN earmarks.status IS 'Earmark status: pending, ready, completed, cancelled (enforced by CHECK constraint)';
 
-COMMENT ON COLUMN rebalance_operations."earmarkId" IS 'Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)';
-COMMENT ON COLUMN rebalance_operations."originChainId" IS 'Source chain ID where funds are being moved from';
-COMMENT ON COLUMN rebalance_operations."destinationChainId" IS 'Target chain ID where funds are being moved to';
+COMMENT ON COLUMN rebalance_operations.earmark_id IS 'Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)';
+COMMENT ON COLUMN rebalance_operations.origin_chain_id IS 'Source chain ID where funds are being moved from';
+COMMENT ON COLUMN rebalance_operations.destination_chain_id IS 'Target chain ID where funds are being moved to';
 COMMENT ON COLUMN rebalance_operations.amount IS 'Amount of tokens being rebalanced (stored as string to preserve precision)';
 COMMENT ON COLUMN rebalance_operations.slippage IS 'Expected slippage in basis points (e.g., 30 = 0.3%)';
 COMMENT ON COLUMN rebalance_operations.bridge IS 'Bridge adapter type used for this operation (e.g., across, binance)';
