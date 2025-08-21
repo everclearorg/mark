@@ -2182,12 +2182,12 @@ __metadata:
   linkType: hard
 
 "@defuse-protocol/one-click-sdk-typescript@npm:^0.1.5":
-  version: 0.1.9
-  resolution: "@defuse-protocol/one-click-sdk-typescript@npm:0.1.9"
+  version: 0.1.10
+  resolution: "@defuse-protocol/one-click-sdk-typescript@npm:0.1.10"
   dependencies:
     axios: ^1.6.8
     form-data: ^4.0.0
-  checksum: 2b3fb4f3a29e3de35af66ff002442352e12276234a1503f10098d35211674b5bbe13fef02397d7ad41807e8ccbe286a15a98460c8529acefe83593921daa1353
+  checksum: 909a0ec262f9fcb46b81b7f2e2504adfd2052e2f550a17f3342007e86304b30ccdddffbfa088b1c4ca7e791b06d1a7896643267597b9fa5ac98343023a8941d3
   languageName: node
   linkType: hard
 
@@ -8424,9 +8424,9 @@ __metadata:
   linkType: hard
 
 "caniuse-lite@npm:^1.0.30001735":
-  version: 1.0.30001735
-  resolution: "caniuse-lite@npm:1.0.30001735"
-  checksum: 41ee174f41b876a76d9f9a164d84a43a2d7d4cfba9076b459f165370fd5e0778327262ec3cd676c05f8e8cdeb4f6362d31714fecdcdc584034ae91e987b5bf84
+  version: 1.0.30001736
+  resolution: "caniuse-lite@npm:1.0.30001736"
+  checksum: 1d664e9bbb4ecb9d2b410c06eedb036f151e2e3c7ca43d2405e5082fb5e394f8a802eb342987e7b5b01aa5b5b84633f679fc19bc12369405bc2f06c3e3374d54
   languageName: node
   linkType: hard
 
@@ -9560,9 +9560,9 @@ __metadata:
   linkType: hard
 
 "electron-to-chromium@npm:^1.5.204":
-  version: 1.5.207
-  resolution: "electron-to-chromium@npm:1.5.207"
-  checksum: 1a80f7ae83197d7afe124cfa5ba605c2911f9ff8f1d553cc87d2dcb827f66c2318c7169c26e55301ce627e385c6884784c17528b6014201eab485d62c5f6f933
+  version: 1.5.208
+  resolution: "electron-to-chromium@npm:1.5.208"
+  checksum: 3b206597b3f11b9db304ea9fccb7dfc3fac0a078a0b5f294315cdde7b826870639ab48c053b5085f839175a143a7ab73396449cdb797cbb7c265a190f90843fb
   languageName: node
   linkType: hard
 
@@ -19029,9 +19029,9 @@ __metadata:
   linkType: hard
 
 "yoctocolors-cjs@npm:^2.1.2":
-  version: 2.1.2
-  resolution: "yoctocolors-cjs@npm:2.1.2"
-  checksum: 1c474d4b30a8c130e679279c5c2c33a0d48eba9684ffa0252cc64846c121fb56c3f25457fef902edbe1e2d7a7872130073a9fc8e795299d75e13fa3f5f548f1b
+  version: 2.1.3
+  resolution: "yoctocolors-cjs@npm:2.1.3"
+  checksum: 207df586996c3b604fa85903f81cc54676f1f372613a0c7247f0d24b1ca781905685075d06955211c4d5d4f629d7d5628464f8af0a42d286b7a8ff88e9dadcb8
   languageName: node
   linkType: hard
 
