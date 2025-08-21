@@ -1,7 +1,11 @@
+\restrict KwPnGiyKX5vXPuHqy0GyYKfasryJZDONhYylXOM9wNInP1HEMzDEwOFKZigeW2Y
+
+-- Dumped from database version 15.14
+-- Dumped by pg_dump version 15.14 (Homebrew)
+
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -161,7 +165,7 @@ COMMENT ON COLUMN public.rebalance_operations.amount IS 'Amount of tokens being 
 -- Name: COLUMN rebalance_operations.slippage; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.rebalance_operations.slippage IS 'Expected slippage in decibasis points (e.g., 30 = 0.03%)';
+COMMENT ON COLUMN public.rebalance_operations.slippage IS 'Expected slippage in basis points (e.g., 30 = 0.3%)';
 
 
 --
@@ -195,6 +199,88 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: transactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.transactions (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    rebalance_operation_id uuid,
+    transaction_hash text NOT NULL,
+    chain_id text NOT NULL,
+    cumulative_gas_used text,
+    effective_gas_price text,
+    sender text,
+    reason text,
+    metadata jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE transactions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.transactions IS 'General purpose transaction tracking for all on-chain activity';
+
+
+--
+-- Name: COLUMN transactions.rebalance_operation_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions.rebalance_operation_id IS 'Optional reference to associated rebalance operation (NULL for standalone transactions)';
+
+
+--
+-- Name: COLUMN transactions.transaction_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions.transaction_hash IS 'On-chain transaction hash';
+
+
+--
+-- Name: COLUMN transactions.chain_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions.chain_id IS 'Chain ID where transaction occurred (stored as text for large chain IDs)';
+
+
+--
+-- Name: COLUMN transactions.cumulative_gas_used; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions.cumulative_gas_used IS 'Total gas used by transaction (stored as text for precision)';
+
+
+--
+-- Name: COLUMN transactions.effective_gas_price; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions.effective_gas_price IS 'Effective gas price paid (stored as text for precision)';
+
+
+--
+-- Name: COLUMN transactions.sender; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions.sender IS 'Transaction sender address';
+
+
+--
+-- Name: COLUMN transactions.reason; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions.reason IS 'Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)';
+
+
+--
+-- Name: COLUMN transactions.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.transactions.metadata IS 'Additional transaction-specific data stored as JSON';
+
+
+--
 -- Name: earmarks earmarks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -219,11 +305,27 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: transactions transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.transactions
+    ADD CONSTRAINT transactions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: earmarks unique_invoice_id; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.earmarks
     ADD CONSTRAINT unique_invoice_id UNIQUE ("invoiceId");
+
+
+--
+-- Name: transactions unique_tx_chain; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.transactions
+    ADD CONSTRAINT unique_tx_chain UNIQUE (transaction_hash, chain_id);
 
 
 --
@@ -290,6 +392,48 @@ CREATE INDEX idx_rebalance_operations_status ON public.rebalance_operations USIN
 
 
 --
+-- Name: idx_transactions_chain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_transactions_chain ON public.transactions USING btree (chain_id);
+
+
+--
+-- Name: idx_transactions_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_transactions_created_at ON public.transactions USING btree (created_at);
+
+
+--
+-- Name: idx_transactions_hash_chain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_transactions_hash_chain ON public.transactions USING btree (transaction_hash, chain_id);
+
+
+--
+-- Name: idx_transactions_reason; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_transactions_reason ON public.transactions USING btree (reason) WHERE (reason IS NOT NULL);
+
+
+--
+-- Name: idx_transactions_rebalance_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_transactions_rebalance_created ON public.transactions USING btree (rebalance_operation_id, created_at) WHERE (rebalance_operation_id IS NOT NULL);
+
+
+--
+-- Name: idx_transactions_rebalance_op; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_transactions_rebalance_op ON public.transactions USING btree (rebalance_operation_id) WHERE (rebalance_operation_id IS NOT NULL);
+
+
+--
 -- Name: earmarks update_earmarks_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -304,6 +448,13 @@ CREATE TRIGGER update_rebalance_operations_updated_at BEFORE UPDATE ON public.re
 
 
 --
+-- Name: transactions update_transactions_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_transactions_updated_at BEFORE UPDATE ON public.transactions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
 -- Name: rebalance_operations rebalance_operations_earmarkId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -312,8 +463,18 @@ ALTER TABLE ONLY public.rebalance_operations
 
 
 --
+-- Name: transactions transactions_rebalance_operation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.transactions
+    ADD CONSTRAINT transactions_rebalance_operation_id_fkey FOREIGN KEY (rebalance_operation_id) REFERENCES public.rebalance_operations(id) ON DELETE SET NULL;
+
+
+--
 -- PostgreSQL database dump complete
 --
+
+\unrestrict KwPnGiyKX5vXPuHqy0GyYKfasryJZDONhYylXOM9wNInP1HEMzDEwOFKZigeW2Y
 
 
 --
