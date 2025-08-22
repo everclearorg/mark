@@ -26,7 +26,7 @@ export class KrakenClient {
     private readonly baseUrl: string = KRAKEN_BASE_URL,
     private readonly numRetries = 3,
   ) {
-    this.nonce = Date.now();
+    this.nonce = performance.now() * 100_000;
     this.axios = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000,
@@ -46,8 +46,8 @@ export class KrakenClient {
   }
 
   private generateNonce(): string {
-    this.nonce = Math.max(this.nonce + 1, Date.now());
-    return this.nonce.toString();
+    this.nonce = Math.max(this.nonce + 1, performance.now() * 100_000);
+    return this.nonce.toString().split('.')[0];
   }
 
   private sign(path: string, postData: string): string {
