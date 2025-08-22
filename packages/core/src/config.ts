@@ -249,7 +249,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff',
         maximum: '10000000000000000000000', // 10,000
         slippages: [140],
-        preferences: [SupportedBridge.CCTP],
+        preferences: [SupportedBridge.CCTPV2],
       },
 
       // Ink → Ethereum — USDC
