@@ -90,248 +90,291 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
 export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
   return {
     routes: [
-      // bnb    ethereum    WETH    5000000000000000000 30
+      // BNB → Ethereum — WETH
       {
         origin: 56,
         destination: 1,
         asset: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
-        maximum: '5000000000000000000',
-        slippagesDbps: [30],
+        maximum: '5000000000000000000', // 5
+        slippages: [30],
         preferences: [SupportedBridge.Binance],
       },
-      // optimism    ethereum    WETH
+
+      // Optimism → Ethereum — WETH
       {
         origin: 10,
         destination: 1,
         asset: '0x4200000000000000000000000000000000000006',
-        maximum: '55000000000000000000',
-        reserve: '50000000000000000000',
-        slippagesDbps: [30],
+        maximum: '55000000000000000000', // 55
+        reserve: '50000000000000000000', // 50
+        slippages: [30],
         preferences: [SupportedBridge.Binance],
       },
-      // arbitrum    ethereum    WETH
+
+      // Arbitrum → Ethereum — WETH
       {
         origin: 42161,
         destination: 1,
         asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-        maximum: '105000000000000000000',
-        reserve: '100000000000000000000',
-        slippagesDbps: [-1000, 30],
+        maximum: '105000000000000000000', // 105
+        reserve: '100000000000000000000', // 100
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // base    ethereum    WETH    20000000000000000000 30
+
+      // Base → Ethereum — WETH
       {
         origin: 8453,
         destination: 1,
         asset: '0x4200000000000000000000000000000000000006',
-        maximum: '25000000000000000000',
-        reserve: '20000000000000000000',
-        slippagesDbps: [30, 30],
+        maximum: '25000000000000000000', // 25
+        reserve: '20000000000000000000', // 20
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // blast ethereum WETH    7000000000000000000 160
-      // {
-      //   origin: 81457,
-      //   destination: 1,
-      //   asset: '0x4300000000000000000000000000000000000004',
-      //   maximum: '7000000000000000000',
-      //   slippagesDbps: [160],
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // linea ethereum WETH    7000000000000000000 30
-      {
-        origin: 59144,
-        destination: 1,
-        asset: '0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f',
-        maximum: '21000000000000000000',
-        reserve: '20000000000000000000',
-        slippagesDbps: [30],
-        preferences: [SupportedBridge.Across],
-      },
-      // // unichain    ethereum    WETH    10000000000000000000    150
-      // {
-      //   origin: 130,
-      //   destination: 1,
-      //   asset: '0x4200000000000000000000000000000000000006',
-      //   maximum: '35000000000000000000',
-      //   reserve: '30000000000000000000',
-      //   slippagesDbps: [150],
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // // zksync    ethereum    WETH    10000000000000000000 20
-      // {
-      //   origin: 324,
-      //   destination: 1,
-      //   asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
-      //   maximum: '10000000000000000000',
-      //   slippagesDbps: [20],
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // scroll    ethereum    WETH    10000000000000000000 20
+
+      // zkSync → Ethereum — WETH
       {
         origin: 324,
         destination: 1,
-        asset: '0x5300000000000000000000000000000000000004',
-        maximum: '10000000000000000000',
-        reserve: '5000000000000000000',
-        slippagesDbps: [20],
-        preferences: [SupportedBridge.Binance],
+        asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
+        maximum: '10000000000000000000', // 10
+        reserve: '5000000000000000000', // 5
+        slippages: [20],
+        preferences: [SupportedBridge.Kraken],
       },
-      // polygon ethereum USDC
+
+      // Polygon → Ethereum — USDC
       {
         origin: 137,
         destination: 1,
         asset: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-        maximum: '55000000000000000000000',
-        reserve: '50000000000000000000000',
-        slippagesDbps: [-1000],
-        preferences: [SupportedBridge.Near],
+        maximum: '25000000000000000000000', // 25,000
+        reserve: '20000000000000000000000', // 20,000
+        slippages: [30, 30],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // polygon ethereum USDT
+
+      // Polygon → Ethereum — USDT
       {
         origin: 137,
         destination: 1,
         asset: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
-        maximum: '55000000000000000000000',
-        reserve: '50000000000000000000000',
-        slippagesDbps: [-1000],
-        preferences: [SupportedBridge.Near],
+        maximum: '25000000000000000000000', // 25,000
+        reserve: '20000000000000000000000', // 20,000
+        slippages: [30, 30],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // optimism ethereum USDC
+
+      // Optimism → Ethereum — USDC
       {
         origin: 10,
         destination: 1,
         asset: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-        maximum: '65000000000000000000000',
-        reserve: '60000000000000000000000',
-        slippagesDbps: [30],
-        preferences: [SupportedBridge.Binance],
+        maximum: '25000000000000000000000', // 25,000
+        reserve: '20000000000000000000000', // 20,000
+        slippages: [-1000, 30],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // optimism ethereum    USDT    5000000000000000000000 140
+
+      // Optimism → Ethereum — USDT
       {
         origin: 10,
         destination: 1,
         asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
-        maximum: '5000000000000000000000',
-        slippagesDbps: [30],
-        preferences: [SupportedBridge.Binance],
+        maximum: '5000000000000000000000', // 5,000
+        slippages: [-1000, 30],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // bnb ethereum    USDC    5000000000000000000000 140
+
+      // BNB → Ethereum — USDC
       {
         origin: 56,
         destination: 1,
         asset: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-        maximum: '5500000000000000000000',
-        reserve: '5000000000000000000000',
-        slippagesDbps: [-1000, 30],
+        maximum: '5500000000000000000000', // 5,500
+        reserve: '5000000000000000000000', // 5,000
+        slippages: [-1000, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // bnb ethereum    USDT    10000000000000000000000 140
+
+      // BNB → Ethereum — USDT
       {
         origin: 56,
         destination: 1,
         asset: '0x55d398326f99059fF775485246999027B3197955',
-        maximum: '5500000000000000000000',
-        reserve: '5000000000000000000000',
-        slippagesDbps: [-1000, 30],
+        maximum: '5500000000000000000000', // 5,500
+        reserve: '5000000000000000000000', // 5,000
+        slippages: [-1000, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // base ethereum    USDC    10000000000000000000000 140
+
+      // Base → Ethereum — USDC
       {
         origin: 8453,
         destination: 1,
         asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-        maximum: '65000000000000000000000',
-        reserve: '60000000000000000000000',
-        slippagesDbps: [30, 30],
+        maximum: '25000000000000000000000', // 25,000
+        reserve: '20000000000000000000000', // 20,000
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // arbitrum ethereum    USDC
+
+      // Arbitrum → Ethereum — USDC
       {
         origin: 42161,
         destination: 1,
         asset: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-        maximum: '65000000000000000000000',
-        reserve: '60000000000000000000000',
-        slippagesDbps: [-1000, 30],
+        maximum: '25000000000000000000000', // 25,000
+        reserve: '20000000000000000000000', // 20,000
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // arbitrum ethereum    USDT
+
+      // Arbitrum → Ethereum — USDT
       {
         origin: 42161,
         destination: 1,
         asset: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
-        maximum: '55000000000000000000000',
-        reserve: '50000000000000000000000',
-        slippagesDbps: [-1000, 30],
+        maximum: '25000000000000000000000', // 25,000
+        reserve: '20000000000000000000000', // 20,000
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // linea ethereum    USDC    10000000000000000000000 140
+
+      // Linea → Ethereum — USDC (via CCTP; WETH route removed)
       {
         origin: 59144,
         destination: 1,
         asset: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff',
-        maximum: '10000000000000000000000',
-        slippagesDbps: [140],
-        preferences: [SupportedBridge.Across],
+        maximum: '10000000000000000000000', // 10,000
+        slippages: [-1000],
+        preferences: [SupportedBridge.CCTPV2],
       },
-      // // unichain    ethereum    USDC    20000000000000000000000 30
-      // {
-      //   origin: 130,
-      //   destination: 1,
-      //   asset: '0x078D782b760474a361dDA0AF3839290b0EF57AD6',
-      //   maximum: '20000000000000000000000',
-      //   slippagesDbps: [30],
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // // zksync    ethereum    USDC    10000000000000000000000 30
-      // {
-      //   origin: 324,
-      //   destination: 1,
-      //   asset: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4',
-      //   maximum: '10000000000000000000000',
-      //   slippagesDbps: [30],
-      //   preferences: [SupportedBridge.Across],
-      // },
-      // ink    ethereum    USDC    70000000000000000000000 20
+
+      // Ink → Ethereum — USDC
       {
         origin: 57073,
         destination: 1,
         asset: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
-        maximum: '70000000000000000000000',
-        reserve: '65000000000000000000000',
-        slippagesDbps: [20],
+        maximum: '10000000000000000000000', // 10,000
+        slippages: [20],
         preferences: [SupportedBridge.Across],
       },
-      // solana ethereum USDC
+
+      // Solana → Ethereum — USDC
       {
         origin: 1399811149,
         destination: 1,
         asset: '0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61',
-        maximum: '75000000000000000000000',
-        reserve: '70000000000000000000000',
-        slippagesDbps: [-1000],
-        preferences: [SupportedBridge.Near],
+        maximum: '50000000000000000000000', // 50,000
+        reserve: '30000000000000000000000', // 30,000
+        slippages: [-1000, 30],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // solana ethereum USDT
+
+      // Solana → Ethereum — USDT
       {
         origin: 1399811149,
         destination: 1,
         asset: '0xce010e60afedb22717bd63192f54145a3f965a33bb82d2c7029eb2ce1e208264',
-        maximum: '75000000000000000000000',
-        reserve: '70000000000000000000000',
-        slippagesDbps: [-1000],
-        preferences: [SupportedBridge.Near],
+        maximum: '50000000000000000000000', // 50,000
+        reserve: '30000000000000000000000', // 30,000
+        slippages: [-1000, 30],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
-      // base ethereum    cbBTC    10000000000000000000000 140
+
+      // Unichain → Ethereum — WETH
       {
-        origin: 8453,
+        origin: 130,
         destination: 1,
-        asset: '0x0555E30da8f98308EdB960aa94C0Db47230d2B9c',
-        maximum: '65000000000000000000000',
-        reserve: '60000000000000000000000',
-        slippagesDbps: [-1000],
-        preferences: [SupportedBridge.Near],
+        asset: '0x4200000000000000000000000000000000000006', // typical L2 WETH
+        maximum: '30000000000000000000', // 30
+        reserve: '20000000000000000000', // 20
+        slippages: [30],
+        preferences: [SupportedBridge.Kraken],
+      },
+
+      // Ink → Ethereum — WETH
+      {
+        origin: 57073,
+        destination: 1,
+        asset: '0x4200000000000000000000000000000000000006',
+        maximum: '10000000000000000000', // 10
+        reserve: '5000000000000000000', // 5
+        slippages: [30],
+        preferences: [SupportedBridge.Kraken],
+      },
+
+      // Ink → Ethereum — USDT
+      {
+        origin: 57073,
+        destination: 1,
+        asset: '0x0200C29006150606B650577BBE7B6248F58470c1',
+        maximum: '5000000000000000000000', // 5,000
+        slippages: [30],
+        preferences: [SupportedBridge.Kraken],
+      },
+
+      // Scroll → Ethereum — WETH
+      {
+        origin: 534352,
+        destination: 1,
+        asset: '0x5300000000000000000000000000000000000004',
+        maximum: '10000000000000000000', // 10
+        reserve: '5000000000000000000', // 5
+        slippages: [30],
+        preferences: [SupportedBridge.Binance],
+      },
+
+      // Scroll → Ethereum — USDT
+      {
+        origin: 534352,
+        destination: 1,
+        asset: '0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df',
+        maximum: '5000000000000000000000', // 5,000
+        slippages: [30],
+        preferences: [SupportedBridge.Binance],
+      },
+
+      // Avalanche → Ethereum — USDT
+      {
+        origin: 43114,
+        destination: 1,
+        asset: '0x9702230A8Ea53601f5cD2dc00fDbc13d4d4A73A',
+        maximum: '5000000000000000000000', // 5,000
+        slippages: [30, 30],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+      },
+
+      // Avalanche → Ethereum — USDC
+      {
+        origin: 43114,
+        destination: 1,
+        asset: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+        maximum: '5000000000000000000000', // 5,000
+        slippages: [30, 30],
+        preferences: [SupportedBridge.Near, SupportedBridge.Binance],
+      },
+
+      // Sonic → Ethereum — USDC
+      {
+        origin: 146,
+        destination: 1,
+        asset: '0x29219dd400f2Bf60E5a23d13Be72B486D4038894',
+        maximum: '5000000000000000000000', // 5,000
+        slippages: [30],
+        preferences: [SupportedBridge.Binance],
+      },
+
+      // zkSync → Ethereum — USDC
+      {
+        origin: 324,
+        destination: 1,
+        asset: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4',
+        maximum: '5000000000000000000000', // 5,000
+        slippages: [30],
+        preferences: [SupportedBridge.Binance],
       },
     ],
   };
