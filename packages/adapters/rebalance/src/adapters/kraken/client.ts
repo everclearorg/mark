@@ -105,6 +105,9 @@ export class KrakenClient {
       if (response.data.error && response.data.error.length > 0) {
         this.logger.warn('Kraken API error:', {
           error: jsonifyError(response.data.error),
+          response: response.data,
+          baseUrl: this.baseUrl,
+          method: "POST",
           endpoint: `/0/${isPrivate ? 'private' : 'public'}/${endpoint}`,
           data: requestData,
         });
