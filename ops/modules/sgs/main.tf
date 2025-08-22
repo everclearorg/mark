@@ -120,3 +120,43 @@ resource "aws_security_group" "efs" {
     Domain      = var.domain
   }
 }
+
+# Security group for RDS database
+resource "aws_security_group" "db" {
+  name        = "mark-db-${var.environment}-${var.stage}"
+  description = "Security group for RDS database - allows PostgreSQL traffic from Lambda and services"
+  vpc_id      = var.vpc_id
+
+  # Allow inbound PostgreSQL traffic from Lambda security group
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lambda.id]
+    description     = "Allow PostgreSQL traffic from Lambda"
+  }
+
+  # Allow inbound PostgreSQL traffic from Web3Signer security group
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.web3signer.id]
+    description     = "Allow PostgreSQL traffic from Web3Signer"
+  }
+
+  # Allow all outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "mark-db-${var.environment}-${var.stage}"
+    Environment = var.environment
+    Stage       = var.stage
+    Domain      = var.domain
+  }
+}

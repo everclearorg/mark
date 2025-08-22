@@ -179,6 +179,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
               args: [BigInt(amount)],
             }) as `0x${string}`,
             value: BigInt(0),
+            funcSig: 'withdraw(uint256)',
           },
         };
 
@@ -217,6 +218,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
                 functionName: 'transfer',
                 args: [depositAddress as `0x${string}`, BigInt(amount)],
               }),
+              funcSig: 'transfer(address,uint256)',
             },
           });
         }
@@ -232,6 +234,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
               functionName: 'transfer',
               args: [depositAddress as `0x${string}`, BigInt(amount)],
             }),
+            funcSig: 'transfer(address,uint256)',
           },
         });
       }
@@ -446,6 +449,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
             args: [],
           }) as `0x${string}`,
           value: toWrap,
+          funcSig: 'deposit()',
         },
       };
       return wrapTx;

@@ -141,3 +141,4 @@ tf-vars.json
 # Misc
 .DS_Store
 .idea
+*.local.json

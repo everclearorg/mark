@@ -9,7 +9,7 @@ import {
   GasType,
 } from '@mark/core';
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
-import { getAssetHash, getTickers } from './asset';
+import { getAssetHash, getTickers, convertTo18Decimals } from './asset';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import { ChainService } from '@mark/chainservice';
@@ -156,10 +156,9 @@ const getSvmBalance = async (
     const balanceStr = await chainService.getBalance(+domain, ownSolAddress, tokenAddr);
     let balance = BigInt(balanceStr);
 
-    // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
+    // Convert balance to standardized 18 decimals
     if (decimals !== 18) {
-      const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
-      balance = balance * 10n ** DECIMALS_DIFFERENCE;
+      balance = convertTo18Decimals(balance, decimals);
     }
 
     // Update tracker (this is async but we don't need to wait)
@@ -214,10 +213,9 @@ const getEvmBalance = async (
     const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
     let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
 
-    // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
+    // Convert balance to standardized 18 decimals
     if (decimals !== 18) {
-      const DECIMALS_DIFFERENCE = BigInt(18 - decimals); // Difference between 18 and 6 decimals
-      balance = BigInt(balance) * 10n ** DECIMALS_DIFFERENCE;
+      balance = convertTo18Decimals(balance, decimals);
     }
 
     // Update tracker (this is async but we don't need to wait)

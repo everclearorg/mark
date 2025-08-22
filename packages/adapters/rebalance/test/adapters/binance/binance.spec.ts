@@ -161,6 +161,9 @@ const mockConfig: MarkConfiguration = {
   pushGatewayUrl: 'http://localhost:9091',
   web3SignerUrl: 'http://localhost:8545',
   everclearApiUrl: 'http://localhost:3000',
+  database: {
+    connectionString: 'postgresql://test:test@localhost:5432/test_db'
+  },
   relayer: {
     url: 'http://localhost:8080',
   },

@@ -17,7 +17,7 @@ import { PrometheusAdapter } from '@mark/prometheus';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
-import * as process from 'node:process';
+import * as database from '@mark/database';
 import { bytesToHex } from 'viem';
 
 export interface MarkAdapters {
@@ -29,6 +29,7 @@ export interface MarkAdapters {
   logger: Logger;
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;
+  database: typeof database;
 }
 export interface ProcessingContext extends MarkAdapters {
   config: MarkConfiguration;
@@ -38,7 +39,11 @@ export interface ProcessingContext extends MarkAdapters {
 
 async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
   try {
-    await Promise.all([adapters.purchaseCache.disconnect(), adapters.rebalanceCache.disconnect()]);
+    await Promise.all([
+      adapters.purchaseCache.disconnect(),
+      adapters.rebalanceCache.disconnect(),
+      database.closeDatabase(),
+    ]);
     cleanupHttpConnections();
     cleanupViemClients();
   } catch (error) {
@@ -81,6 +86,8 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
 
   const rebalance = new RebalanceAdapter(config, logger, rebalanceCache);
 
+  database.initializeDatabase(config.database);
+
   return {
     logger,
     chainService,
@@ -90,6 +97,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     rebalanceCache,
     prometheus,
     rebalance,
+    database,
   };
 }
 

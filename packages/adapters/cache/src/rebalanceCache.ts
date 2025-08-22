@@ -24,6 +24,9 @@ export interface RebalanceAction {
   recipient: string;
 }
 
+/**
+ * @deprecated This is deprecated.
+ */
 export class RebalanceCache {
   private readonly prefix = 'rebalances';
   private readonly dataKey = `${this.prefix}:data`;
