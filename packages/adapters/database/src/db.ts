@@ -397,9 +397,7 @@ export async function updateRebalanceOperation(
     status?: RebalanceOperationStatus;
     txHashes?: Record<string, TransactionReceipt>;
   },
-): Promise<
-  CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }
-> {
+): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }> {
   return withTransaction(async (client) => {
     // Update the rebalance operation status if provided
     const setClause: string[] = ['"updated_at" = NOW()'];
@@ -477,9 +475,7 @@ export async function updateRebalanceOperation(
 
 export async function getRebalanceOperationsByEarmark(
   earmarkId: string,
-): Promise<
-  (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]
-> {
+): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]> {
   const query = `
     SELECT * FROM rebalance_operations
     WHERE "earmark_id" = $1
@@ -508,9 +504,7 @@ export async function getRebalanceOperations(filter?: {
   status?: RebalanceOperationStatus | RebalanceOperationStatus[];
   chainId?: number;
   earmarkId?: string | null;
-}): Promise<
-  (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]
-> {
+}): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]> {
   let query = 'SELECT * FROM rebalance_operations';
   const values: unknown[] = [];
   const conditions: string[] = [];
@@ -568,6 +562,50 @@ export async function getRebalanceOperations(filter?: {
       transactions: transactionsByOperation[op.id] || undefined,
     };
   });
+}
+
+export async function getRebalanceOperationByTransactionHash(
+  hash: string,
+  chainId: number,
+): Promise<
+  (CamelCasedProperties<rebalance_operations> & { transactions: Record<string, TransactionEntry> }) | undefined
+> {
+  // Find the transaction with the given hash (case-insensitive) and chain ID
+  const txQuery = `
+    SELECT * FROM transactions
+    WHERE LOWER(transaction_hash) = LOWER($1) AND chain_id = $2
+    LIMIT 1
+  `;
+
+  const txResult = await queryWithClient<transactions>(txQuery, [hash, String(chainId)]);
+
+  if (txResult.length === 0) {
+    return undefined;
+  }
+
+  const tx = txResult[0];
+
+  // If the transaction isn't associated with a rebalance operation, nothing to return
+  if (!tx.rebalance_operation_id) {
+    return undefined;
+  }
+
+  // Fetch the rebalance operation
+  const opQuery = `SELECT * FROM rebalance_operations WHERE id = $1 LIMIT 1`;
+  const opResult = await queryWithClient<rebalance_operations>(opQuery, [tx.rebalance_operation_id]);
+
+  if (opResult.length === 0) {
+    return undefined;
+  }
+
+  // Fetch all transactions associated with this operation
+  const transactionsByOperation = await getTransactionsForRebalanceOperations([tx.rebalance_operation_id]);
+  const camelOp = snakeToCamel(opResult[0]);
+
+  return {
+    ...camelOp,
+    transactions: transactionsByOperation[tx.rebalance_operation_id] || {},
+  };
 }
 
 // Re-export types for convenience

@@ -11,6 +11,7 @@ import {
   createRebalanceOperation,
   updateRebalanceOperation,
   getRebalanceOperations,
+  getRebalanceOperationByTransactionHash,
 } from '../src/db';
 import { setupTestDatabase, teardownTestDatabase, cleanupTestDatabase } from './setup';
 
@@ -293,6 +294,108 @@ describe('Database Adapter - Integration Tests', () => {
   });
 
   describe('Rebalance Operations', () => {
+    describe('getRebalanceOperationByTransactionHash', () => {
+      it('should return operation and all associated transactions for matching hash/chain', async () => {
+        const earmark = await createEarmark({
+          invoiceId: 'invoice-by-hash-001',
+          designatedPurchaseChain: 10,
+          tickerHash: '0xabcabcabcabcabcabcabcabcabcabcabcabcabca',
+          minAmount: '100000000000',
+        });
+
+        const txReceipts = {
+          '1': {
+            from: '0xsender',
+            to: '0xbridge',
+            transactionHash: '0xhashlower',
+            cumulativeGasUsed: '21000',
+            effectiveGasPrice: '20000000000',
+            blockNumber: 100,
+            status: 1,
+            confirmations: 1,
+          },
+          '10': {
+            from: '0xsender',
+            to: '0xbridge',
+            transactionHash: '0xotherhash',
+            cumulativeGasUsed: '31000',
+            effectiveGasPrice: '22000000000',
+            blockNumber: 200,
+            status: 1,
+            confirmations: 1,
+          },
+        };
+
+        const op = await createRebalanceOperation({
+          earmarkId: earmark.id,
+          originChainId: 1,
+          destinationChainId: 10,
+          tickerHash: earmark.tickerHash,
+          amount: '50000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'test-bridge',
+          transactions: txReceipts,
+        });
+
+        // Query using uppercase hash to verify case-insensitive match
+        const byHash = await getRebalanceOperationByTransactionHash('0xHASHLOWER'.toUpperCase(), 1);
+
+        expect(byHash).toBeDefined();
+        expect(byHash!.id).toBe(op.id);
+        expect(byHash!.transactions).toBeDefined();
+        expect(Object.keys(byHash!.transactions)).toEqual(expect.arrayContaining(['1', '10']));
+        expect(byHash!.transactions['1'].transactionHash).toBe('0xhashlower');
+        expect(byHash!.transactions['10'].transactionHash).toBe('0xotherhash');
+      });
+
+      it('should return undefined when chainId does not match', async () => {
+        const txReceipts = {
+          '1': {
+            from: '0xsender',
+            to: '0xbridge',
+            transactionHash: '0xnomatch',
+            cumulativeGasUsed: '21000',
+            effectiveGasPrice: '20000000000',
+            blockNumber: 100,
+            status: 1,
+            confirmations: 1,
+          },
+        };
+
+        const op = await createRebalanceOperation({
+          earmarkId: null,
+          originChainId: 1,
+          destinationChainId: 10,
+          tickerHash: '0x123',
+          amount: '1',
+          slippage: 1,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'bridge',
+          transactions: txReceipts,
+        });
+
+        const notFound = await getRebalanceOperationByTransactionHash('0xnomatch', 10);
+        expect(notFound).toBeUndefined();
+        expect(op).toBeDefined();
+      });
+
+      it('should return undefined when no associated rebalance operation', async () => {
+        // Insert a standalone transaction not tied to an operation
+        // Use direct SQL insert via pool
+        const { getPool } = await import('../src/db');
+        const db = getPool();
+        const txHash = '0xstandalone';
+        await db.query(
+          `INSERT INTO transactions (rebalance_operation_id, transaction_hash, chain_id, "from", "to", cumulative_gas_used, effective_gas_price, reason, metadata)
+           VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)`,
+          [txHash, '1', '0xfrom', '0xto', '1', '1', 'Rebalance', JSON.stringify({})]
+        );
+
+        const result = await getRebalanceOperationByTransactionHash(txHash, 1);
+        expect(result).toBeUndefined();
+      });
+    });
     describe('createRebalanceOperation', () => {
       it('should create a new rebalance operation with earmark', async () => {
         const earmark = await createEarmark({
