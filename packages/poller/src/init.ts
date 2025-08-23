@@ -12,7 +12,7 @@ import { ChainService, EthWallet } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
 import { Wallet } from 'ethers';
 import { pollAndProcessInvoices } from './invoice';
-import { PurchaseCache, RebalanceCache } from '@mark/cache';
+import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
@@ -22,7 +22,6 @@ import { bytesToHex } from 'viem';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
-  rebalanceCache: RebalanceCache;
   chainService: ChainService;
   everclear: EverclearAdapter;
   web3Signer: Web3Signer | Wallet;
@@ -39,11 +38,7 @@ export interface ProcessingContext extends MarkAdapters {
 
 async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
   try {
-    await Promise.all([
-      adapters.purchaseCache.disconnect(),
-      adapters.rebalanceCache.disconnect(),
-      database.closeDatabase(),
-    ]);
+    await Promise.all([adapters.purchaseCache.disconnect(), database.closeDatabase()]);
     cleanupHttpConnections();
     cleanupViemClients();
   } catch (error) {
@@ -80,11 +75,10 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
   const purchaseCache = new PurchaseCache(config.redis.host, config.redis.port);
-  const rebalanceCache = new RebalanceCache(config.redis.host, config.redis.port);
 
   const prometheus = new PrometheusAdapter(logger, 'mark-poller', config.pushGatewayUrl);
 
-  const rebalance = new RebalanceAdapter(config, logger, rebalanceCache);
+  const rebalance = new RebalanceAdapter(config, logger, database);
 
   database.initializeDatabase(config.database);
 
@@ -94,7 +88,6 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     web3Signer: web3Signer as Web3Signer,
     everclear,
     purchaseCache,
-    rebalanceCache,
     prometheus,
     rebalance,
     database,
