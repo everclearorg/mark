@@ -7,6 +7,7 @@ import { SupportedBridge, MarkConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { RebalanceCache } from '@mark/cache';
 import { CctpBridgeAdapter } from './cctp/cctp';
+import { ZKSyncNativeBridgeAdapter } from './zksync/zksync';
 
 export class RebalanceAdapter {
   constructor(
@@ -64,6 +65,8 @@ export class RebalanceAdapter {
           process.env.NEAR_BASE_URL || NEAR_BASE_URL,
           this.logger,
         );
+      case SupportedBridge.Zksync:
+        return new ZKSyncNativeBridgeAdapter(this.config.chains, this.logger);
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }

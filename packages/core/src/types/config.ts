@@ -62,6 +62,7 @@ export enum SupportedBridge {
   CCTPV2 = 'cctpv2',
   Kraken = 'kraken',
   Near = 'near',
+  Zksync = 'zksync',
 }
 
 export enum GasType {
