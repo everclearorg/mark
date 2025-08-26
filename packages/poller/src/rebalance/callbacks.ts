@@ -1,16 +1,10 @@
-import { TransactionReceipt } from 'viem';
+import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
 import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceOperationStatus, SupportedBridge, getTokenAddressFromConfig } from '@mark/core';
-
-// Type for the txHashes JSON field that matches database schema
-interface TxHashes {
-  originTxHash?: string;
-  destinationTxHash?: string;
-  [key: string]: string | undefined;
-}
+import { TransactionEntry, TransactionReceipt } from '@mark/database';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, chainService, database: db } = context;
@@ -43,24 +37,19 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     const adapter = rebalance.getAdapter(operation.bridge as SupportedBridge);
 
     // Get origin transaction hash from JSON field
-    const txHashes = operation.txHashes as TxHashes | null;
-    const originTxHash = txHashes?.originTxHash;
-    if (!originTxHash) {
-      logger.warn('Operation missing origin transaction hash', logContext);
+    const txHashes = operation.transactions;
+    const originTx = txHashes?.[operation.originChainId] as
+      | TransactionEntry<{ receipt: TransactionReceipt }>
+      | undefined;
+    if (!originTx) {
+      logger.warn('Operation missing origin transaction', { ...logContext, operation });
       continue;
     }
 
     // Get the transaction receipt from origin chain
-    let receipt;
-    try {
-      receipt = await chainService.getTransactionReceipt(operation.originChainId, originTxHash);
-    } catch (e) {
-      logger.error('Failed to get transaction receipt', { ...logContext, error: jsonifyError(e) });
-      continue;
-    }
-
+    const receipt = originTx?.metadata?.receipt;
     if (!receipt) {
-      logger.info('Origin transaction receipt not found for operation', logContext);
+      logger.info('Origin transaction receipt not found for operation', { ...logContext, operation });
       continue;
     }
 
@@ -87,7 +76,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         const ready = await adapter.readyOnDestination(
           operation.amount,
           route,
-          receipt as unknown as TransactionReceipt,
+          receipt as unknown as ViemTransactionReceipt,
         );
         if (ready) {
           // Update status to awaiting callback
@@ -114,7 +103,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     if (operation.status === RebalanceOperationStatus.AWAITING_CALLBACK) {
       let callback;
       try {
-        callback = await adapter.destinationCallback(route, receipt as unknown as TransactionReceipt);
+        callback = await adapter.destinationCallback(route, receipt as unknown as ViemTransactionReceipt);
       } catch (e: unknown) {
         logger.error('Failed to retrieve destination callback', { ...logContext, error: jsonifyError(e) });
         continue;
@@ -165,10 +154,20 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         });
 
         // Update operation as completed with destination tx hash
-        const currentTxHashes = (operation.txHashes as TxHashes) || {};
+        const currentTxHashes = operation.transactions;
+        const destinationTx = currentTxHashes?.[route.destination] as
+          | TransactionEntry<{ receipt: TransactionReceipt }>
+          | undefined;
+        if (!destinationTx || !destinationTx.metadata || !destinationTx.metadata.receipt) {
+          logger.info('Origin transaction receipt not found for operation', { ...logContext, operation });
+          continue;
+        }
         await db.updateRebalanceOperation(operation.id, {
           status: RebalanceOperationStatus.COMPLETED,
-          txHashes: { ...currentTxHashes, destinationTxHash: tx.hash },
+          txHashes: {
+            ...currentTxHashes,
+            destinationTxHash: destinationTx.metadata.receipt as unknown as TransactionReceipt,
+          },
         });
       } catch (e) {
         logger.error('Failed to execute destination callback', {

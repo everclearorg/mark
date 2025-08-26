@@ -1,20 +1,25 @@
 import { getMarkBalances, getTickerForAsset, convertToNativeUnits } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
-import { getDecimalsFromConfig, WalletType, RebalanceOperationStatus, DBPS_MULTIPLIER } from '@mark/core';
+import {
+  getDecimalsFromConfig,
+  WalletType,
+  RebalanceOperationStatus,
+  DBPS_MULTIPLIER,
+  RebalanceAction,
+} from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { RebalanceAction } from '@mark/cache';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getAvailableBalanceLessEarmarks } from './onDemand';
-import { createRebalanceOperation } from '@mark/database';
+import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<RebalanceAction[]> {
-  const { logger, requestId, rebalanceCache, purchaseCache, config, chainService, rebalance } = context;
+  const { logger, requestId, purchaseCache, config, chainService, rebalance } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
-  const isPaused = await rebalanceCache.isPaused();
+  const isPaused = await rebalance.isPaused();
   if (isPaused) {
     logger.warn('Rebalance loop is paused', { requestId });
     return rebalanceOperations;
@@ -237,7 +242,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
       // TODO: Use multisend for zodiac-enabled origin transactions
       let idx = -1;
       try {
-        let transactionHash: string = '';
+        let receipt: TransactionReceipt | undefined = undefined;
         for (const { transaction, memo } of bridgeTxRequests) {
           idx++;
           logger.info('Submitting bridge transaction', {
@@ -282,7 +287,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           if (memo !== RebalanceTransactionMemo.Rebalance) {
             continue;
           }
-          transactionHash = result.hash;
+          receipt = result.receipt! as unknown as TransactionReceipt;
         }
 
         // Step 5: Create database record
@@ -296,14 +301,14 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             slippage: route.slippagesDbps[bridgeIndex],
             status: RebalanceOperationStatus.PENDING,
             bridge: bridgeType,
-            txHashes: { originTxHash: transactionHash },
+            transactions: receipt ? { [route.origin]: receipt } : undefined,
           });
 
           logger.info('Successfully created rebalance operation in database', {
             requestId,
             route,
             bridgeType,
-            originTxHash: transactionHash,
+            originTxHash: receipt?.transactionHash,
             amountToBridge: amountToBridge,
             receiveAmount: receivedAmount,
           });
@@ -315,7 +320,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             origin: route.origin,
             destination: route.destination,
             asset: route.asset,
-            transaction: transactionHash,
+            transaction: receipt!.transactionHash,
             recipient,
           };
           rebalanceOperations.push(rebalanceAction);
@@ -328,7 +333,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             requestId,
             route,
             bridgeType,
-            transactionHash,
+            transactionHash: receipt?.transactionHash,
             amountToBridge: amountToBridge,
             receiveAmount: receivedAmount,
             error: jsonifyError(error),
