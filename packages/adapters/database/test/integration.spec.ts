@@ -1,5 +1,5 @@
 import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
-import { TransactionReasons } from '../src';
+import { TransactionReasons, TransactionReceipt } from '../src';
 import {
   createEarmark,
   getEarmarks,
@@ -303,27 +303,21 @@ describe('Database Adapter - Integration Tests', () => {
           minAmount: '100000000000',
         });
 
-        const txReceipts = {
+        const txReceipts: Record<string, TransactionReceipt> = {
           '1': {
             from: '0xsender',
             to: '0xbridge',
             transactionHash: '0xhashlower',
             cumulativeGasUsed: '21000',
             effectiveGasPrice: '20000000000',
-            blockNumber: 100,
-            status: 1,
-            confirmations: 1,
-          },
+          } as TransactionReceipt,
           '10': {
             from: '0xsender',
             to: '0xbridge',
             transactionHash: '0xotherhash',
             cumulativeGasUsed: '31000',
             effectiveGasPrice: '22000000000',
-            blockNumber: 200,
-            status: 1,
-            confirmations: 1,
-          },
+          } as TransactionReceipt,
         };
 
         const op = await createRebalanceOperation({
@@ -350,7 +344,7 @@ describe('Database Adapter - Integration Tests', () => {
       });
 
       it('should return undefined when chainId does not match', async () => {
-        const txReceipts = {
+        const txReceipts: Record<string, TransactionReceipt> = {
           '1': {
             from: '0xsender',
             to: '0xbridge',
@@ -360,7 +354,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 100,
             status: 1,
             confirmations: 1,
-          },
+          } as TransactionReceipt,
         };
 
         const op = await createRebalanceOperation({
@@ -464,7 +458,7 @@ describe('Database Adapter - Integration Tests', () => {
           minAmount: '200000000000',
         });
 
-        const transactionReceipts = {
+        const transactionReceipts: Record<string, TransactionReceipt> = {
           '1': {
             from: '0xsender',
             to: '0xbridge',
@@ -474,7 +468,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 12345678,
             status: 1,
             confirmations: 12,
-          },
+          } as TransactionReceipt,
           '10': {
             from: '0xsender',
             to: '0xbridge',
@@ -484,7 +478,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 87654321,
             status: 1,
             confirmations: 8,
-          },
+          } as TransactionReceipt,
         };
 
         const operationData = {
@@ -603,7 +597,7 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'polygon-bridge',
         });
 
-        const txHashes = {
+        const txHashes: Record<string, TransactionReceipt> = {
           '137': {
             from: '0xsender',
             to: '0xreceiver',
@@ -613,7 +607,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 12345,
             status: 1,
             confirmations: 5,
-          },
+          } as TransactionReceipt,
           '1': {
             from: '0xsender2',
             to: '0xreceiver2',
@@ -623,7 +617,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 12350,
             status: 1,
             confirmations: 3,
-          },
+          } as TransactionReceipt,
         };
 
         const originalStatus = operation.status;
@@ -672,7 +666,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 15000,
             status: 1,
             confirmations: 10,
-          },
+          } as TransactionReceipt,
           '1': {
             from: '0xfinalize',
             to: '0xfinal',
@@ -682,7 +676,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 15005,
             status: 1,
             confirmations: 8,
-          },
+          } as TransactionReceipt,
         };
 
         const updated = await updateRebalanceOperation(operation.id, {
@@ -940,7 +934,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 12345678,
             status: 1,
             confirmations: 12,
-          },
+          } as TransactionReceipt,
           '10': {
             from: '0xsender',
             to: '0xbridge',
@@ -950,7 +944,7 @@ describe('Database Adapter - Integration Tests', () => {
             blockNumber: 87654321,
             status: 1,
             confirmations: 8,
-          },
+          } as TransactionReceipt,
         };
 
         await createRebalanceOperation({

@@ -65,6 +65,21 @@ CREATE TRIGGER update_rebalance_operations_updated_at
     BEFORE UPDATE ON rebalance_operations
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Admin actions table: Administrative toggles and notes
+CREATE TABLE admin_actions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    description TEXT,
+    rebalance_paused BOOLEAN DEFAULT FALSE,
+    purchase_paused BOOLEAN DEFAULT FALSE
+);
+
+-- Trigger to automatically update updated_at column for admin_actions
+CREATE TRIGGER update_admin_actions_updated_at
+    BEFORE UPDATE ON admin_actions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Transactions table: General purpose transaction tracking
 CREATE TABLE transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -139,6 +154,7 @@ COMMENT ON COLUMN transactions.metadata IS 'Additional transaction-specific data
 DROP TRIGGER IF EXISTS update_transactions_updated_at ON transactions;
 DROP TRIGGER IF EXISTS update_rebalance_operations_updated_at ON rebalance_operations;
 DROP TRIGGER IF EXISTS update_earmarks_updated_at ON earmarks;
+DROP TRIGGER IF EXISTS update_admin_actions_updated_at ON admin_actions;
 
 -- Drop trigger function
 DROP FUNCTION IF EXISTS update_updated_at_column();
@@ -148,5 +164,6 @@ DROP TABLE IF EXISTS transactions;
 DROP TABLE IF EXISTS cex_withdrawals;
 DROP TABLE IF EXISTS rebalance_operations;
 DROP TABLE IF EXISTS earmarks;
+DROP TABLE IF EXISTS admin_actions;
 
 -- Note: We don't drop the uuid-ossp extension as it might be used by other parts of the database

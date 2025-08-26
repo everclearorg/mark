@@ -302,7 +302,7 @@ export async function createRebalanceOperation(input: {
 
     const rebalanceResult = await client.query<rebalance_operations>(rebalanceQuery, rebalanceValues);
     const rebalanceOperation = rebalanceResult.rows[0];
-    const transactions = [];
+    const transactions: CamelCasedProperties<transactions>[] = [];
     for (const [chainId, receipt] of Object.entries(input.transactions ?? {})) {
       const { transactionHash, cumulativeGasUsed, effectiveGasPrice, from, to } = receipt;
       const transactionQuery = `
@@ -336,19 +336,17 @@ export async function createRebalanceOperation(input: {
       ];
 
       const response = await client.query(transactionQuery, transactionValues);
-      transactions.push(snakeToCamel({ ...response.rows[0], metadata: JSON.parse(response.rows[0].metadata) }));
+      const raw = response.rows[0] as any;
+      const meta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata) : (raw.metadata ?? {});
+      const converted = snakeToCamel({ ...raw, metadata: meta }) as CamelCasedProperties<transactions>;
+      transactions.push(converted);
     }
 
     await client.query('COMMIT');
     return {
       ...snakeToCamel(rebalanceOperation),
       transactions: transactions.length
-        ? Object.fromEntries(
-          transactions.map((t) => {
-            const { chainId, ...remainder } = t;
-            return [chainId, remainder];
-          }),
-        )
+        ? (Object.fromEntries(transactions.map((t) => [t.chainId, t])) as Record<string, TransactionEntry>)
         : undefined,
     };
   } catch (error) {
@@ -375,7 +373,10 @@ export async function getTransactionsForRebalanceOperations(
   `;
 
   const transactionsResult = await queryExecutor.query(transactionsQuery, operationIds);
-  const transactions = transactionsResult.rows.map(snakeToCamel) as CamelCasedProperties<transactions>[];
+  const transactions = transactionsResult.rows.map((row: any) => {
+    const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata ?? {});
+    return snakeToCamel({ ...row, metadata: meta }) as CamelCasedProperties<transactions>;
+  });
 
   // Group transactions by rebalance operation ID, then by chain ID
   const transactionsByOperation: Record<string, Record<string, TransactionEntry>> = {};
@@ -476,7 +477,7 @@ export async function updateRebalanceOperation(
       await client.query(transactionQuery, transactionValues);
     }
 
-    // Fetch transactions for this operation
+    // Fetch transactions for this operation (normalize metadata inside helper)
     const transactionsByOperation = await getTransactionsForRebalanceOperations([operationId], client);
 
     return {
@@ -666,17 +667,52 @@ export async function getCexWithdrawalRecord<T extends object = JSONObject>(inpu
 
 // Admin functions
 export async function setPause(type: 'rebalance' | 'purchase', input: boolean): Promise<void> {
-  if (type === 'purchase') {
-    throw new Error(`setPause() not implemented at db for purchase -- use cache`);
-  }
-  throw new Error(`not implemented - db.setPause: ${type} ${input}`);
+  // Read the latest admin_actions row and insert a new snapshot with the updated pause flag
+  return withTransaction(async (client) => {
+    const latestQuery = `
+      SELECT rebalance_paused, purchase_paused
+      FROM admin_actions
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const latest = await client.query(latestQuery);
+
+    // Defaults when no prior admin_actions exist
+    let rebalancePaused = false;
+    let purchasePaused = false;
+
+    if (latest.rows.length > 0) {
+      rebalancePaused = Boolean(latest.rows[0].rebalance_paused);
+      purchasePaused = Boolean(latest.rows[0].purchase_paused);
+    }
+
+    if (type === 'rebalance') {
+      rebalancePaused = input;
+    } else {
+      purchasePaused = input;
+    }
+
+    const insertQuery = `
+      INSERT INTO admin_actions (rebalance_paused, purchase_paused, description)
+      VALUES ($1, $2, $3)
+    `;
+    await client.query(insertQuery, [rebalancePaused, purchasePaused, null]);
+  });
 }
 
 export async function isPaused(type: 'rebalance' | 'purchase'): Promise<boolean> {
-  if (type === 'purchase') {
-    throw new Error(`isPaused() not implemented at db for purchase -- use cache`);
+  const column = type === 'rebalance' ? 'rebalance_paused' : 'purchase_paused';
+  const query = `
+    SELECT ${column} AS paused
+    FROM admin_actions
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  const rows = await queryWithClient<{ paused: boolean }>(query);
+  if (rows.length === 0) {
+    return false;
   }
-  throw new Error(`not implemented - db.isPaused`);
+  return Boolean((rows[0] as unknown as { paused: unknown }).paused);
 }
 
 // Re-export types for convenience

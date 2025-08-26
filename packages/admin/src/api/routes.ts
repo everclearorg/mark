@@ -1,7 +1,10 @@
 import { jsonifyError } from '@mark/logger';
 import { AdminContext, HttpPaths } from '../types';
 import { verifyAdminToken } from './auth';
-import { PurchaseCache, RebalanceCache } from '@mark/cache';
+import * as database from '@mark/database';
+import { PurchaseCache } from '@mark/cache';
+
+type Database = typeof database;
 
 export const handleApiRequest = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
   const { requestId, logger, event } = context;
@@ -22,24 +25,22 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
     }
     switch (request) {
       case HttpPaths.ClearRebalance:
-        context.logger.info('Clearing rebalance cache');
-        await context.rebalanceCache.clear();
-        break;
+        throw new Error(`Fix rebalance clearing with db`);
       case HttpPaths.ClearPurchase:
         context.logger.info('Clearing purchase cache');
         await context.purchaseCache.clear();
         break;
       case HttpPaths.PausePurchase:
-        await pauseIfNeeded(context.purchaseCache, context);
+        await pauseIfNeeded('purchase', context.purchaseCache, context);
         break;
       case HttpPaths.PauseRebalance:
-        await pauseIfNeeded(context.rebalanceCache, context);
+        await pauseIfNeeded('rebalance', context.database, context);
         break;
       case HttpPaths.UnpausePurchase:
-        await unpauseIfNeeded(context.purchaseCache, context);
+        await unpauseIfNeeded('purchase', context.purchaseCache, context);
         break;
       case HttpPaths.UnpauseRebalance:
-        await unpauseIfNeeded(context.rebalanceCache, context);
+        await unpauseIfNeeded('rebalance', context.database, context);
         break;
       default:
         throw new Error(`Unknown request: ${request}`);
@@ -57,22 +58,38 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
   }
 };
 
-const unpauseIfNeeded = async (cache: RebalanceCache | PurchaseCache, context: AdminContext) => {
+const unpauseIfNeeded = async (
+  type: 'rebalance' | 'purchase',
+  _store: Database | PurchaseCache,
+  context: AdminContext,
+) => {
+  if (type === 'rebalance') {
+    throw new Error(`Fix rebalance pausing on db`);
+  }
+  const store = _store as PurchaseCache;
   const { requestId, logger } = context;
   logger.debug('Unpausing cache', { requestId });
-  if (!(await cache.isPaused())) {
+  if (!(await store.isPaused())) {
     throw new Error(`Cache is not paused`);
   }
-  return cache.setPause(false);
+  return store.setPause(false);
 };
 
-const pauseIfNeeded = async (cache: RebalanceCache | PurchaseCache, context: AdminContext) => {
+const pauseIfNeeded = async (
+  type: 'rebalance' | 'purchase',
+  _store: Database | PurchaseCache,
+  context: AdminContext,
+) => {
+  if (type === 'rebalance') {
+    throw new Error(`Fix rebalance pausing on db`);
+  }
+  const store = _store as PurchaseCache;
   const { requestId, logger } = context;
   logger.debug('Pausing cache', { requestId });
-  if (await cache.isPaused()) {
+  if (await store.isPaused()) {
     throw new Error(`Cache is already paused`);
   }
-  return cache.setPause(true);
+  return store.setPause(true);
 };
 
 export const extractRequest = (context: AdminContext): HttpPaths | undefined => {

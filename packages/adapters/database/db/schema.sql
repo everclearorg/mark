@@ -1,4 +1,4 @@
-\restrict jAfJ7NJ3TeacZdOR3BAYgnBAuqoPa4NmVhWtV1UMgW7HxinY7sCoZDTqeRdr9rn
+\restrict kVjaSqHuPR2id3SzKaxNKH1DgoLckck94h1RvgFlOg2GSEwYAyCIWdf2Cx1pEKR
 
 -- Dumped from database version 15.14
 -- Dumped by pg_dump version 15.14 (Homebrew)
@@ -45,6 +45,20 @@ $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: admin_actions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_actions (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    description text,
+    rebalance_paused boolean DEFAULT false,
+    purchase_paused boolean DEFAULT false
+);
+
 
 --
 -- Name: cex_withdrawals; Type: TABLE; Schema: public; Owner: -
@@ -295,6 +309,14 @@ COMMENT ON COLUMN public.transactions.metadata IS 'Additional transaction-specif
 
 
 --
+-- Name: admin_actions admin_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_actions
+    ADD CONSTRAINT admin_actions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cex_withdrawals cex_withdrawals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -456,6 +478,13 @@ CREATE INDEX idx_transactions_rebalance_op ON public.transactions USING btree (r
 
 
 --
+-- Name: admin_actions update_admin_actions_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_admin_actions_updated_at BEFORE UPDATE ON public.admin_actions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
 -- Name: earmarks update_earmarks_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -504,7 +533,7 @@ ALTER TABLE ONLY public.transactions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jAfJ7NJ3TeacZdOR3BAYgnBAuqoPa4NmVhWtV1UMgW7HxinY7sCoZDTqeRdr9rn
+\unrestrict kVjaSqHuPR2id3SzKaxNKH1DgoLckck94h1RvgFlOg2GSEwYAyCIWdf2Cx1pEKR
 
 
 --
