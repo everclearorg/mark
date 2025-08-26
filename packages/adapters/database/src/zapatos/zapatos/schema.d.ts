@@ -23,6 +23,209 @@ declare module 'zapatos/schema' {
   /* --- tables --- */
 
   /**
+   * **cex_withdrawals**
+   * - Table in database
+   */
+  export namespace cex_withdrawals {
+    export type Table = 'cex_withdrawals';
+    export interface Selectable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at: Date;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata: db.JSONValue;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id: string | null;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at: Date;
+    }
+    export interface JSONSelectable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at: db.TimestampTzString;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata: db.JSONValue;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id: string | null;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at: db.TimestampTzString;
+    }
+    export interface Whereable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+    }
+    export interface Insertable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
+    }
+    export interface Updatable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
+    }
+    export type UniqueIndex = 'cex_withdrawals_pkey';
+    export type Column = keyof Selectable;
+    export type OnlyCols<T extends readonly Column[]> = Pick<Selectable, T[number]>;
+    export type SQLExpression = Table | db.ColumnNames<Updatable | (keyof Updatable)[]> | db.ColumnValues<Updatable> | Whereable | Column | db.ParentColumn | db.GenericSQLExpression;
+    export type SQL = SQLExpression | SQLExpression[];
+  }
+
+  /**
    * **earmarks**
    * - Table in database
    */
@@ -1287,20 +1490,20 @@ declare module 'zapatos/schema' {
   /* --- aggregate types --- */
 
   export namespace public {  
-    export type Table = earmarks.Table | rebalance_operations.Table | schema_migrations.Table | transactions.Table;
-    export type Selectable = earmarks.Selectable | rebalance_operations.Selectable | schema_migrations.Selectable | transactions.Selectable;
-    export type JSONSelectable = earmarks.JSONSelectable | rebalance_operations.JSONSelectable | schema_migrations.JSONSelectable | transactions.JSONSelectable;
-    export type Whereable = earmarks.Whereable | rebalance_operations.Whereable | schema_migrations.Whereable | transactions.Whereable;
-    export type Insertable = earmarks.Insertable | rebalance_operations.Insertable | schema_migrations.Insertable | transactions.Insertable;
-    export type Updatable = earmarks.Updatable | rebalance_operations.Updatable | schema_migrations.Updatable | transactions.Updatable;
-    export type UniqueIndex = earmarks.UniqueIndex | rebalance_operations.UniqueIndex | schema_migrations.UniqueIndex | transactions.UniqueIndex;
-    export type Column = earmarks.Column | rebalance_operations.Column | schema_migrations.Column | transactions.Column;
+    export type Table = cex_withdrawals.Table | earmarks.Table | rebalance_operations.Table | schema_migrations.Table | transactions.Table;
+    export type Selectable = cex_withdrawals.Selectable | earmarks.Selectable | rebalance_operations.Selectable | schema_migrations.Selectable | transactions.Selectable;
+    export type JSONSelectable = cex_withdrawals.JSONSelectable | earmarks.JSONSelectable | rebalance_operations.JSONSelectable | schema_migrations.JSONSelectable | transactions.JSONSelectable;
+    export type Whereable = cex_withdrawals.Whereable | earmarks.Whereable | rebalance_operations.Whereable | schema_migrations.Whereable | transactions.Whereable;
+    export type Insertable = cex_withdrawals.Insertable | earmarks.Insertable | rebalance_operations.Insertable | schema_migrations.Insertable | transactions.Insertable;
+    export type Updatable = cex_withdrawals.Updatable | earmarks.Updatable | rebalance_operations.Updatable | schema_migrations.Updatable | transactions.Updatable;
+    export type UniqueIndex = cex_withdrawals.UniqueIndex | earmarks.UniqueIndex | rebalance_operations.UniqueIndex | schema_migrations.UniqueIndex | transactions.UniqueIndex;
+    export type Column = cex_withdrawals.Column | earmarks.Column | rebalance_operations.Column | schema_migrations.Column | transactions.Column;
   
-    export type AllBaseTables = [earmarks.Table, rebalance_operations.Table, schema_migrations.Table, transactions.Table];
+    export type AllBaseTables = [cex_withdrawals.Table, earmarks.Table, rebalance_operations.Table, schema_migrations.Table, transactions.Table];
     export type AllForeignTables = [];
     export type AllViews = [];
     export type AllMaterializedViews = [];
-    export type AllTablesAndViews = [earmarks.Table, rebalance_operations.Table, schema_migrations.Table, transactions.Table];
+    export type AllTablesAndViews = [cex_withdrawals.Table, earmarks.Table, rebalance_operations.Table, schema_migrations.Table, transactions.Table];
   }
 
 
@@ -1328,6 +1531,7 @@ declare module 'zapatos/schema' {
   /* === lookups === */
 
   export type SelectableForTable<T extends Table> = {
+    "cex_withdrawals": cex_withdrawals.Selectable;
     "earmarks": earmarks.Selectable;
     "rebalance_operations": rebalance_operations.Selectable;
     "schema_migrations": schema_migrations.Selectable;
@@ -1335,6 +1539,7 @@ declare module 'zapatos/schema' {
   }[T];
 
   export type JSONSelectableForTable<T extends Table> = {
+    "cex_withdrawals": cex_withdrawals.JSONSelectable;
     "earmarks": earmarks.JSONSelectable;
     "rebalance_operations": rebalance_operations.JSONSelectable;
     "schema_migrations": schema_migrations.JSONSelectable;
@@ -1342,6 +1547,7 @@ declare module 'zapatos/schema' {
   }[T];
 
   export type WhereableForTable<T extends Table> = {
+    "cex_withdrawals": cex_withdrawals.Whereable;
     "earmarks": earmarks.Whereable;
     "rebalance_operations": rebalance_operations.Whereable;
     "schema_migrations": schema_migrations.Whereable;
@@ -1349,6 +1555,7 @@ declare module 'zapatos/schema' {
   }[T];
 
   export type InsertableForTable<T extends Table> = {
+    "cex_withdrawals": cex_withdrawals.Insertable;
     "earmarks": earmarks.Insertable;
     "rebalance_operations": rebalance_operations.Insertable;
     "schema_migrations": schema_migrations.Insertable;
@@ -1356,6 +1563,7 @@ declare module 'zapatos/schema' {
   }[T];
 
   export type UpdatableForTable<T extends Table> = {
+    "cex_withdrawals": cex_withdrawals.Updatable;
     "earmarks": earmarks.Updatable;
     "rebalance_operations": rebalance_operations.Updatable;
     "schema_migrations": schema_migrations.Updatable;
@@ -1363,6 +1571,7 @@ declare module 'zapatos/schema' {
   }[T];
 
   export type UniqueIndexForTable<T extends Table> = {
+    "cex_withdrawals": cex_withdrawals.UniqueIndex;
     "earmarks": earmarks.UniqueIndex;
     "rebalance_operations": rebalance_operations.UniqueIndex;
     "schema_migrations": schema_migrations.UniqueIndex;
@@ -1370,6 +1579,7 @@ declare module 'zapatos/schema' {
   }[T];
 
   export type ColumnForTable<T extends Table> = {
+    "cex_withdrawals": cex_withdrawals.Column;
     "earmarks": earmarks.Column;
     "rebalance_operations": rebalance_operations.Column;
     "schema_migrations": schema_migrations.Column;
@@ -1377,6 +1587,7 @@ declare module 'zapatos/schema' {
   }[T];
 
   export type SQLForTable<T extends Table> = {
+    "cex_withdrawals": cex_withdrawals.SQL;
     "earmarks": earmarks.SQL;
     "rebalance_operations": rebalance_operations.SQL;
     "schema_migrations": schema_migrations.SQL;

@@ -95,6 +95,16 @@ CREATE INDEX idx_transactions_reason ON transactions(reason) WHERE reason IS NOT
 CREATE INDEX idx_transactions_created_at ON transactions(created_at);
 CREATE INDEX idx_transactions_rebalance_created ON transactions(rebalance_operation_id, created_at) WHERE rebalance_operation_id IS NOT NULL;
 
+-- Transactions table: General purpose transaction tracking
+CREATE TABLE cex_withdrawals (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rebalance_operation_id UUID REFERENCES rebalance_operations(id) ON DELETE CASCADE,
+    platform TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
 -- Comments for documentation
 COMMENT ON TABLE earmarks IS 'Primary storage for invoice earmarks waiting for rebalancing completion';
 COMMENT ON TABLE rebalance_operations IS 'Individual rebalancing operations that fulfill earmarks';
@@ -135,6 +145,7 @@ DROP FUNCTION IF EXISTS update_updated_at_column();
 
 -- Drop tables in reverse dependency order (transactions first due to FK reference)
 DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS cex_withdrawals;
 DROP TABLE IF EXISTS rebalance_operations;
 DROP TABLE IF EXISTS earmarks;
 

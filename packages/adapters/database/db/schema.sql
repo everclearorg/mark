@@ -1,4 +1,4 @@
-\restrict H1xeVb9DszUsmsIQ31WbSfPgTDsfXjsYZz6p4Sr2waQMOC8oc3MuWSrTVXgXflJ
+\restrict jAfJ7NJ3TeacZdOR3BAYgnBAuqoPa4NmVhWtV1UMgW7HxinY7sCoZDTqeRdr9rn
 
 -- Dumped from database version 15.14
 -- Dumped by pg_dump version 15.14 (Homebrew)
@@ -45,6 +45,20 @@ $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: cex_withdrawals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cex_withdrawals (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    rebalance_operation_id uuid,
+    platform text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 
 --
 -- Name: earmarks; Type: TABLE; Schema: public; Owner: -
@@ -281,6 +295,14 @@ COMMENT ON COLUMN public.transactions.metadata IS 'Additional transaction-specif
 
 
 --
+-- Name: cex_withdrawals cex_withdrawals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cex_withdrawals
+    ADD CONSTRAINT cex_withdrawals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: earmarks earmarks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -455,6 +477,14 @@ CREATE TRIGGER update_transactions_updated_at BEFORE UPDATE ON public.transactio
 
 
 --
+-- Name: cex_withdrawals cex_withdrawals_rebalance_operation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cex_withdrawals
+    ADD CONSTRAINT cex_withdrawals_rebalance_operation_id_fkey FOREIGN KEY (rebalance_operation_id) REFERENCES public.rebalance_operations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: rebalance_operations rebalance_operations_earmark_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -474,7 +504,7 @@ ALTER TABLE ONLY public.transactions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict H1xeVb9DszUsmsIQ31WbSfPgTDsfXjsYZz6p4Sr2waQMOC8oc3MuWSrTVXgXflJ
+\unrestrict jAfJ7NJ3TeacZdOR3BAYgnBAuqoPa4NmVhWtV1UMgW7HxinY7sCoZDTqeRdr9rn
 
 
 --

@@ -22,6 +22,10 @@ export {
   getRebalanceOperations,
   getTransactionsForRebalanceOperations,
   getRebalanceOperationByTransactionHash,
+  createCexWithdrawalRecord,
+  getCexWithdrawalRecord,
+  setPause,
+  isPaused,
   type CreateEarmarkInput,
   type GetEarmarksFilter,
 } from './db';

@@ -13,6 +13,7 @@ import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
 // Import from the module declared in the schema file
 import type * as schema from 'zapatos/schema';
 import { camelToSnake, snakeToCamel } from './utils';
+import { JSONObject } from 'zapatos/db';
 
 type earmarks = schema.earmarks.Selectable;
 type rebalance_operations = schema.rebalance_operations.Selectable;
@@ -22,6 +23,7 @@ type rebalance_operations_insert = schema.rebalance_operations.Insertable;
 type transactions_insert = schema.transactions.Insertable;
 type earmarks_update = schema.earmarks.Updatable;
 type rebalance_operations_update = schema.rebalance_operations.Updatable;
+type cex_withdrawals = schema.cex_withdrawals.Selectable;
 
 let pool: Pool | null = null;
 
@@ -334,7 +336,7 @@ export async function createRebalanceOperation(input: {
       ];
 
       const response = await client.query(transactionQuery, transactionValues);
-      transactions.push(snakeToCamel(response.rows[0]));
+      transactions.push(snakeToCamel({ ...response.rows[0], metadata: JSON.parse(response.rows[0].metadata) }));
     }
 
     await client.query('COMMIT');
@@ -373,19 +375,25 @@ export async function getTransactionsForRebalanceOperations(
   `;
 
   const transactionsResult = await queryExecutor.query(transactionsQuery, operationIds);
-  const transactions = transactionsResult.rows.map(snakeToCamel);
+  const transactions = transactionsResult.rows.map(snakeToCamel) as CamelCasedProperties<transactions>[];
 
   // Group transactions by rebalance operation ID, then by chain ID
   const transactionsByOperation: Record<string, Record<string, TransactionEntry>> = {};
 
   for (const transaction of transactions) {
-    const { rebalanceOperationId, chainId } = transaction;
+    const { rebalanceOperationId, chainId, metadata } = transaction;
+    if (!rebalanceOperationId) {
+      continue;
+    }
 
     if (!transactionsByOperation[rebalanceOperationId]) {
       transactionsByOperation[rebalanceOperationId] = {};
     }
 
-    transactionsByOperation[rebalanceOperationId][chainId] = transaction;
+    transactionsByOperation[rebalanceOperationId][chainId] = {
+      ...transaction,
+      metadata: JSON.parse(JSON.stringify(metadata)),
+    };
   }
 
   return transactionsByOperation;
@@ -424,12 +432,19 @@ export async function updateRebalanceOperation(
       throw new Error(`Rebalance operation with id ${operationId} not found`);
     }
 
-    // Handle transaction updates if provided
-    if (updates.txHashes !== undefined) {
-      // Insert new transactions for this rebalance operation
-      for (const [chainId, receipt] of Object.entries(updates.txHashes)) {
-        const { transactionHash, cumulativeGasUsed, effectiveGasPrice, from, to } = receipt;
-        const transactionQuery = `
+    const operation = snakeToCamel(result.rows[0]);
+
+    if (!updates.txHashes) {
+      return {
+        ...operation,
+        transactions: undefined,
+      };
+    }
+
+    // Insert new transactions for this rebalance operation
+    for (const [chainId, receipt] of Object.entries(updates.txHashes)) {
+      const { transactionHash, cumulativeGasUsed, effectiveGasPrice, from, to } = receipt;
+      const transactionQuery = `
           INSERT INTO transactions (
             rebalance_operation_id,
             transaction_hash,
@@ -444,27 +459,25 @@ export async function updateRebalanceOperation(
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         `;
 
-        const transactionValues = [
-          operationId,
-          transactionHash,
-          chainId,
-          from,
-          to,
-          cumulativeGasUsed,
-          effectiveGasPrice,
-          TransactionReasons.Rebalance,
-          JSON.stringify({
-            receipt,
-          }),
-        ];
+      const transactionValues = [
+        operationId,
+        transactionHash,
+        chainId,
+        from,
+        to,
+        cumulativeGasUsed,
+        effectiveGasPrice,
+        TransactionReasons.Rebalance,
+        JSON.stringify({
+          receipt,
+        }),
+      ];
 
-        await client.query(transactionQuery, transactionValues);
-      }
+      await client.query(transactionQuery, transactionValues);
     }
 
     // Fetch transactions for this operation
     const transactionsByOperation = await getTransactionsForRebalanceOperations([operationId], client);
-    const operation = snakeToCamel(result.rows[0]);
 
     return {
       ...operation,
@@ -608,8 +621,67 @@ export async function getRebalanceOperationByTransactionHash(
   };
 }
 
+export type CexWithdrawalRecord<T extends object> = Omit<CamelCasedProperties<cex_withdrawals>, 'metadata'> & {
+  metadata: T;
+};
+export async function createCexWithdrawalRecord<T extends object = JSONObject>(input: {
+  rebalanceOperationId: string;
+  platform: string;
+  metadata: T;
+}): Promise<CexWithdrawalRecord<T>> {
+  return withTransaction(async (client) => {
+    const query = `
+      INSERT INTO cex_withdrawals (rebalance_operation_id, platform, metadata)
+      VALUES ($1, $2, $3)
+      RETURNING id, rebalance_operation_id, platform, metadata, created_at, updated_at
+    `;
+    const insertResult = await client.query(query, [
+      input.rebalanceOperationId,
+      input.platform,
+      JSON.stringify(input.metadata),
+    ]);
+    const withdrawal = insertResult.rows[0] as cex_withdrawals;
+    return { ...snakeToCamel(withdrawal), metadata: JSON.parse(JSON.stringify(withdrawal.metadata ?? {})) };
+  });
+}
+
+export async function getCexWithdrawalRecord<T extends object = JSONObject>(input: {
+  rebalanceOperationId: string;
+  platform: string;
+}): Promise<CexWithdrawalRecord<T> | undefined> {
+  const query = `
+    SELECT id, rebalance_operation_id, platform, metadata, created_at, updated_at
+    FROM cex_withdrawals
+    WHERE rebalance_operation_id = $1 AND platform = $2
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  const rows = await queryWithClient<cex_withdrawals>(query, [input.rebalanceOperationId, input.platform]);
+  if (rows.length === 0) {
+    return undefined;
+  }
+  const row = rows[0];
+  return { ...snakeToCamel(row), metadata: JSON.parse(JSON.stringify(row.metadata ?? {})) };
+}
+
+// Admin functions
+export async function setPause(type: 'rebalance' | 'purchase', input: boolean): Promise<void> {
+  if (type === 'purchase') {
+    throw new Error(`setPause() not implemented at db for purchase -- use cache`);
+  }
+  throw new Error(`not implemented - db.setPause: ${type} ${input}`);
+}
+
+export async function isPaused(type: 'rebalance' | 'purchase'): Promise<boolean> {
+  if (type === 'purchase') {
+    throw new Error(`isPaused() not implemented at db for purchase -- use cache`);
+  }
+  throw new Error(`not implemented - db.isPaused`);
+}
+
 // Re-export types for convenience
 export type {
+  cex_withdrawals,
   earmarks,
   rebalance_operations,
   transactions,
