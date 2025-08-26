@@ -4339,7 +4339,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@mark/database@workspace:packages/adapters/database":
+"@mark/database@workspace:*, @mark/database@workspace:packages/adapters/database":
   version: 0.0.0-use.local
   resolution: "@mark/database@workspace:packages/adapters/database"
   dependencies:
@@ -4448,8 +4448,8 @@ __metadata:
   resolution: "@mark/rebalance@workspace:packages/adapters/rebalance"
   dependencies:
     "@defuse-protocol/one-click-sdk-typescript": ^0.1.5
-    "@mark/cache": "workspace:*"
     "@mark/core": "workspace:*"
+    "@mark/database": "workspace:*"
     "@mark/logger": "workspace:*"
     "@types/jest": 29.5.12
     "@types/node": 20.17.12
