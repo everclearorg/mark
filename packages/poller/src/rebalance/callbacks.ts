@@ -154,19 +154,14 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         });
 
         // Update operation as completed with destination tx hash
-        const currentTxHashes = operation.transactions;
-        const destinationTx = currentTxHashes?.[route.destination] as
-          | TransactionEntry<{ receipt: TransactionReceipt }>
-          | undefined;
-        if (!destinationTx || !destinationTx.metadata || !destinationTx.metadata.receipt) {
-          logger.info('Origin transaction receipt not found for operation', { ...logContext, operation });
+        if (!tx || !tx.receipt) {
+          logger.error('Destination transaction receipt not found', { ...logContext, tx });
           continue;
         }
         await db.updateRebalanceOperation(operation.id, {
           status: RebalanceOperationStatus.COMPLETED,
           txHashes: {
-            ...currentTxHashes,
-            destinationTxHash: destinationTx.metadata.receipt as unknown as TransactionReceipt,
+            [route.destination.toString()]: tx.receipt as TransactionReceipt,
           },
         });
       } catch (e) {
