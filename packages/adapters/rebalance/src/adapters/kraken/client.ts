@@ -26,7 +26,8 @@ export class KrakenClient {
     private readonly baseUrl: string = KRAKEN_BASE_URL,
     private readonly numRetries = 3,
   ) {
-    this.nonce = Date.now();
+    // Seed nonce using epoch-based microseconds to ensure global monotonicity across restarts
+    this.nonce = Date.now() * 1_000;
     this.axios = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000,
@@ -46,7 +47,9 @@ export class KrakenClient {
   }
 
   private generateNonce(): string {
-    this.nonce = Math.max(this.nonce + 1, Date.now());
+    // Use epoch-based microseconds and guard monotonicity
+    const nowMs = Date.now() * 1_000;
+    this.nonce = Math.max(this.nonce + 1, nowMs);
     return this.nonce.toString();
   }
 
@@ -104,7 +107,10 @@ export class KrakenClient {
 
       if (response.data.error && response.data.error.length > 0) {
         this.logger.warn('Kraken API error:', {
-          error: jsonifyError(response.data.error),
+          error: response.data.error.length ? jsonifyError(new Error(response.data.error.join('. '))) : jsonifyError(response.data.error),
+          response: response.data,
+          baseUrl: this.baseUrl,
+          method: "POST",
           endpoint: `/0/${isPrivate ? 'private' : 'public'}/${endpoint}`,
           data: requestData,
         });
