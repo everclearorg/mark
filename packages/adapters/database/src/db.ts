@@ -369,7 +369,7 @@ export async function getTransactionsForRebalanceOperations(
   const queryExecutor = client || getPool();
   const placeholders = operationIds.map((_, i) => `$${i + 1}`).join(', ');
   const transactionsQuery = `
-    SELECT * FROM transactions 
+    SELECT * FROM transactions
     WHERE rebalance_operation_id IN (${placeholders})
     ORDER BY created_at ASC
   `;

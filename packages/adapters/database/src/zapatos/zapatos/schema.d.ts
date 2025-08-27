@@ -23,6 +23,412 @@ declare module 'zapatos/schema' {
   /* --- tables --- */
 
   /**
+   * **admin_actions**
+   * - Table in database
+   */
+  export namespace admin_actions {
+    export type Table = 'admin_actions';
+    export interface Selectable {
+      /**
+      * **admin_actions.created_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      created_at: Date | null;
+      /**
+      * **admin_actions.description**
+      * - `text` in database
+      * - Nullable, no default
+      */
+      description: string | null;
+      /**
+      * **admin_actions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **admin_actions.purchase_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      purchase_paused: boolean | null;
+      /**
+      * **admin_actions.rebalance_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      rebalance_paused: boolean | null;
+      /**
+      * **admin_actions.updated_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      updated_at: Date | null;
+    }
+    export interface JSONSelectable {
+      /**
+      * **admin_actions.created_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      created_at: db.TimestampTzString | null;
+      /**
+      * **admin_actions.description**
+      * - `text` in database
+      * - Nullable, no default
+      */
+      description: string | null;
+      /**
+      * **admin_actions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **admin_actions.purchase_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      purchase_paused: boolean | null;
+      /**
+      * **admin_actions.rebalance_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      rebalance_paused: boolean | null;
+      /**
+      * **admin_actions.updated_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      updated_at: db.TimestampTzString | null;
+    }
+    export interface Whereable {
+      /**
+      * **admin_actions.created_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **admin_actions.description**
+      * - `text` in database
+      * - Nullable, no default
+      */
+      description?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **admin_actions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **admin_actions.purchase_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      purchase_paused?: boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **admin_actions.rebalance_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      rebalance_paused?: boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **admin_actions.updated_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+    }
+    export interface Insertable {
+      /**
+      * **admin_actions.created_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **admin_actions.description**
+      * - `text` in database
+      * - Nullable, no default
+      */
+      description?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **admin_actions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
+      /**
+      * **admin_actions.purchase_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      purchase_paused?: boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **admin_actions.rebalance_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      rebalance_paused?: boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **admin_actions.updated_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+    }
+    export interface Updatable {
+      /**
+      * **admin_actions.created_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **admin_actions.description**
+      * - `text` in database
+      * - Nullable, no default
+      */
+      description?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **admin_actions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **admin_actions.purchase_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      purchase_paused?: boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **admin_actions.rebalance_paused**
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      rebalance_paused?: boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **admin_actions.updated_at**
+      * - `timestamptz` in database
+      * - Nullable, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+    }
+    export type UniqueIndex = 'admin_actions_pkey';
+    export type Column = keyof Selectable;
+    export type OnlyCols<T extends readonly Column[]> = Pick<Selectable, T[number]>;
+    export type SQLExpression = Table | db.ColumnNames<Updatable | (keyof Updatable)[]> | db.ColumnValues<Updatable> | Whereable | Column | db.ParentColumn | db.GenericSQLExpression;
+    export type SQL = SQLExpression | SQLExpression[];
+  }
+
+  /**
+   * **cex_withdrawals**
+   * - Table in database
+   */
+  export namespace cex_withdrawals {
+    export type Table = 'cex_withdrawals';
+    export interface Selectable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at: Date;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata: db.JSONValue;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id: string | null;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at: Date;
+    }
+    export interface JSONSelectable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at: db.TimestampTzString;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata: db.JSONValue;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id: string | null;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at: db.TimestampTzString;
+    }
+    export interface Whereable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+    }
+    export interface Insertable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
+    }
+    export interface Updatable {
+      /**
+      * **cex_withdrawals.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.metadata**
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.platform**
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.rebalance_operation_id**
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **cex_withdrawals.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
+    }
+    export type UniqueIndex = 'cex_withdrawals_pkey';
+    export type Column = keyof Selectable;
+    export type OnlyCols<T extends readonly Column[]> = Pick<Selectable, T[number]>;
+    export type SQLExpression = Table | db.ColumnNames<Updatable | (keyof Updatable)[]> | db.ColumnValues<Updatable> | Whereable | Column | db.ParentColumn | db.GenericSQLExpression;
+    export type SQL = SQLExpression | SQLExpression[];
+  }
+
+  /**
    * **earmarks**
    * - Table in database
    */
@@ -30,19 +436,19 @@ declare module 'zapatos/schema' {
     export type Table = 'earmarks';
     export interface Selectable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt: Date | null;
+      created_at: Date | null;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain: number;
+      designated_purchase_chain: number;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -50,21 +456,21 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId: string;
+      invoice_id: string;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount: string;
+      min_amount: string;
       /**
       * **earmarks.status**
       *
@@ -74,35 +480,35 @@ declare module 'zapatos/schema' {
       */
       status: string;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string;
+      ticker_hash: string;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt: Date | null;
+      updated_at: Date | null;
     }
     export interface JSONSelectable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt: db.TimestampTzString | null;
+      created_at: db.TimestampTzString | null;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain: number;
+      designated_purchase_chain: number;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -110,21 +516,21 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId: string;
+      invoice_id: string;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount: string;
+      min_amount: string;
       /**
       * **earmarks.status**
       *
@@ -134,35 +540,35 @@ declare module 'zapatos/schema' {
       */
       status: string;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string;
+      ticker_hash: string;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt: db.TimestampTzString | null;
+      updated_at: db.TimestampTzString | null;
     }
     export interface Whereable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
+      designated_purchase_chain?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -170,21 +576,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      invoice_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      min_amount?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
       * **earmarks.status**
       *
@@ -194,35 +600,35 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      ticker_hash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
     }
     export interface Insertable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain: number | db.Parameter<number> | db.SQLFragment;
+      designated_purchase_chain: number | db.Parameter<number> | db.SQLFragment;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -230,21 +636,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId: string | db.Parameter<string> | db.SQLFragment;
+      invoice_id: string | db.Parameter<string> | db.SQLFragment;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount: string | db.Parameter<string> | db.SQLFragment;
+      min_amount: string | db.Parameter<string> | db.SQLFragment;
       /**
       * **earmarks.status**
       *
@@ -254,35 +660,35 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string | db.Parameter<string> | db.SQLFragment;
+      ticker_hash: string | db.Parameter<string> | db.SQLFragment;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
     }
     export interface Updatable {
       /**
-      * **earmarks.createdAt**
+      * **earmarks.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
       /**
-      * **earmarks.designatedPurchaseChain**
+      * **earmarks.designated_purchase_chain**
       *
       * Designated chain ID for purchasing this invoice - the invoice destination chain that Mark has identified as the target for fund aggregation
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      designatedPurchaseChain?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
+      designated_purchase_chain?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
       /**
       * **earmarks.id**
       * - `uuid` in database
@@ -290,21 +696,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
-      * **earmarks.invoiceId**
+      * **earmarks.invoice_id**
       *
       * External invoice identifier from the invoice processing system
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      invoiceId?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      invoice_id?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
-      * **earmarks.minAmount**
+      * **earmarks.min_amount**
       *
       * Minimum amount of tokens required for invoice payment on the designated chain (stored as string to preserve precision)
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      minAmount?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      min_amount?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
       * **earmarks.status**
       *
@@ -314,19 +720,19 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
-      * **earmarks.tickerHash**
+      * **earmarks.ticker_hash**
       *
-      * Token tickerHash (e.g., USDC, ETH) required for invoice payment
+      * Token ticker_hash (e.g., USDC, ETH) required for invoice payment
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      ticker_hash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
-      * **earmarks.updatedAt**
+      * **earmarks.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
     }
     export type UniqueIndex = 'earmarks_pkey' | 'unique_invoice_id';
     export type Column = keyof Selectable;
@@ -359,27 +765,27 @@ declare module 'zapatos/schema' {
       */
       bridge: string | null;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt: Date | null;
+      created_at: Date | null;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId: number;
+      destination_chain_id: number;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId: string | null;
+      earmark_id: string | null;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -387,13 +793,21 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId: number;
+      origin_chain_id: number;
+      /**
+      * **rebalance_operations.recipient**
+      *
+      * Recipient address for the rebalance operation (destination address on target chain)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      recipient: string | null;
       /**
       * **rebalance_operations.slippage**
       *
@@ -411,25 +825,17 @@ declare module 'zapatos/schema' {
       */
       status: string;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string;
+      ticker_hash: string;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes: db.JSONValue | null;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt: Date | null;
+      updated_at: Date | null;
     }
     export interface JSONSelectable {
       /**
@@ -449,27 +855,27 @@ declare module 'zapatos/schema' {
       */
       bridge: string | null;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt: db.TimestampTzString | null;
+      created_at: db.TimestampTzString | null;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId: number;
+      destination_chain_id: number;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId: string | null;
+      earmark_id: string | null;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -477,13 +883,21 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId: number;
+      origin_chain_id: number;
+      /**
+      * **rebalance_operations.recipient**
+      *
+      * Recipient address for the rebalance operation (destination address on target chain)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      recipient: string | null;
       /**
       * **rebalance_operations.slippage**
       *
@@ -501,25 +915,17 @@ declare module 'zapatos/schema' {
       */
       status: string;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string;
+      ticker_hash: string;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes: db.JSONValue | null;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt: db.TimestampTzString | null;
+      updated_at: db.TimestampTzString | null;
     }
     export interface Whereable {
       /**
@@ -539,27 +945,27 @@ declare module 'zapatos/schema' {
       */
       bridge?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
+      destination_chain_id?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      earmark_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -567,13 +973,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
+      origin_chain_id?: number | db.Parameter<number> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **rebalance_operations.recipient**
+      *
+      * Recipient address for the rebalance operation (destination address on target chain)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      recipient?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
       * **rebalance_operations.slippage**
       *
@@ -591,25 +1005,17 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      ticker_hash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
     }
     export interface Insertable {
       /**
@@ -629,27 +1035,27 @@ declare module 'zapatos/schema' {
       */
       bridge?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId: number | db.Parameter<number> | db.SQLFragment;
+      destination_chain_id: number | db.Parameter<number> | db.SQLFragment;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      earmark_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -657,13 +1063,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId: number | db.Parameter<number> | db.SQLFragment;
+      origin_chain_id: number | db.Parameter<number> | db.SQLFragment;
+      /**
+      * **rebalance_operations.recipient**
+      *
+      * Recipient address for the rebalance operation (destination address on target chain)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      recipient?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
       * **rebalance_operations.slippage**
       *
@@ -681,25 +1095,17 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash: string | db.Parameter<string> | db.SQLFragment;
+      ticker_hash: string | db.Parameter<string> | db.SQLFragment;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes?: db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment;
     }
     export interface Updatable {
       /**
@@ -719,27 +1125,27 @@ declare module 'zapatos/schema' {
       */
       bridge?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.createdAt**
+      * **rebalance_operations.created_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      createdAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.destinationChainId**
+      * **rebalance_operations.destination_chain_id**
       *
       * Target chain ID where funds are being moved to
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      destinationChainId?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
+      destination_chain_id?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
       /**
-      * **rebalance_operations.earmarkId**
+      * **rebalance_operations.earmark_id**
       *
       * Foreign key to the earmark this operation fulfills (NULL for regular rebalancing)
       * - `uuid` in database
       * - Nullable, no default
       */
-      earmarkId?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      earmark_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
       * **rebalance_operations.id**
       * - `uuid` in database
@@ -747,13 +1153,21 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.originChainId**
+      * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
       * - `int4` in database
       * - `NOT NULL`, no default
       */
-      originChainId?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
+      origin_chain_id?: number | db.Parameter<number> | db.SQLFragment | db.SQLFragment<any, number | db.Parameter<number> | db.SQLFragment>;
+      /**
+      * **rebalance_operations.recipient**
+      *
+      * Recipient address for the rebalance operation (destination address on target chain)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      recipient?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
       * **rebalance_operations.slippage**
       *
@@ -771,25 +1185,17 @@ declare module 'zapatos/schema' {
       */
       status?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.tickerHash**
+      * **rebalance_operations.ticker_hash**
       * - `text` in database
       * - `NOT NULL`, no default
       */
-      tickerHash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      ticker_hash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
       /**
-      * **rebalance_operations.txHashes**
-      *
-      * Transaction hashes for cross-chain operations stored as JSON
-      * - `jsonb` in database
-      * - Nullable, default: `'{}'::jsonb`
-      */
-      txHashes?: db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment>;
-      /**
-      * **rebalance_operations.updatedAt**
+      * **rebalance_operations.updated_at**
       * - `timestamptz` in database
       * - Nullable, default: `now()`
       */
-      updatedAt?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
     }
     export type UniqueIndex = 'rebalance_operations_pkey';
     export type Column = keyof Selectable;
@@ -851,23 +1257,496 @@ declare module 'zapatos/schema' {
     export type SQL = SQLExpression | SQLExpression[];
   }
 
+  /**
+   * **transactions**
+   * - Table in database
+   */
+  export namespace transactions {
+    export type Table = 'transactions';
+    export interface Selectable {
+      /**
+      * **transactions.chain_id**
+      *
+      * Chain ID where transaction occurred (stored as text for large chain IDs)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      chain_id: string;
+      /**
+      * **transactions.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at: Date;
+      /**
+      * **transactions.cumulative_gas_used**
+      *
+      * Total gas used by transaction (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      cumulative_gas_used: string;
+      /**
+      * **transactions.effective_gas_price**
+      *
+      * Effective gas price paid (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      effective_gas_price: string;
+      /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from: string;
+      /**
+      * **transactions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **transactions.metadata**
+      *
+      * Additional transaction-specific data stored as JSON
+      * - `jsonb` in database
+      * - Nullable, default: `'{}'::jsonb`
+      */
+      metadata: db.JSONValue | null;
+      /**
+      * **transactions.reason**
+      *
+      * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      reason: string;
+      /**
+      * **transactions.rebalance_operation_id**
+      *
+      * Optional reference to associated rebalance operation (NULL for standalone transactions)
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id: string | null;
+      /**
+      * **transactions.to**
+      *
+      * Transaction destination address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to: string;
+      /**
+      * **transactions.transaction_hash**
+      *
+      * On-chain transaction hash
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      transaction_hash: string;
+      /**
+      * **transactions.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at: Date;
+    }
+    export interface JSONSelectable {
+      /**
+      * **transactions.chain_id**
+      *
+      * Chain ID where transaction occurred (stored as text for large chain IDs)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      chain_id: string;
+      /**
+      * **transactions.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at: db.TimestampTzString;
+      /**
+      * **transactions.cumulative_gas_used**
+      *
+      * Total gas used by transaction (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      cumulative_gas_used: string;
+      /**
+      * **transactions.effective_gas_price**
+      *
+      * Effective gas price paid (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      effective_gas_price: string;
+      /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from: string;
+      /**
+      * **transactions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **transactions.metadata**
+      *
+      * Additional transaction-specific data stored as JSON
+      * - `jsonb` in database
+      * - Nullable, default: `'{}'::jsonb`
+      */
+      metadata: db.JSONValue | null;
+      /**
+      * **transactions.reason**
+      *
+      * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      reason: string;
+      /**
+      * **transactions.rebalance_operation_id**
+      *
+      * Optional reference to associated rebalance operation (NULL for standalone transactions)
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id: string | null;
+      /**
+      * **transactions.to**
+      *
+      * Transaction destination address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to: string;
+      /**
+      * **transactions.transaction_hash**
+      *
+      * On-chain transaction hash
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      transaction_hash: string;
+      /**
+      * **transactions.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at: db.TimestampTzString;
+    }
+    export interface Whereable {
+      /**
+      * **transactions.chain_id**
+      *
+      * Chain ID where transaction occurred (stored as text for large chain IDs)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      chain_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.cumulative_gas_used**
+      *
+      * Total gas used by transaction (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      cumulative_gas_used?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.effective_gas_price**
+      *
+      * Effective gas price paid (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      effective_gas_price?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.metadata**
+      *
+      * Additional transaction-specific data stored as JSON
+      * - `jsonb` in database
+      * - Nullable, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.reason**
+      *
+      * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      reason?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.rebalance_operation_id**
+      *
+      * Optional reference to associated rebalance operation (NULL for standalone transactions)
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.to**
+      *
+      * Transaction destination address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.transaction_hash**
+      *
+      * On-chain transaction hash
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      transaction_hash?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **transactions.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+    }
+    export interface Insertable {
+      /**
+      * **transactions.chain_id**
+      *
+      * Chain ID where transaction occurred (stored as text for large chain IDs)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      chain_id: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **transactions.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
+      /**
+      * **transactions.cumulative_gas_used**
+      *
+      * Total gas used by transaction (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      cumulative_gas_used: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **transactions.effective_gas_price**
+      *
+      * Effective gas price paid (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      effective_gas_price: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **transactions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
+      /**
+      * **transactions.metadata**
+      *
+      * Additional transaction-specific data stored as JSON
+      * - `jsonb` in database
+      * - Nullable, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **transactions.reason**
+      *
+      * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      reason: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **transactions.rebalance_operation_id**
+      *
+      * Optional reference to associated rebalance operation (NULL for standalone transactions)
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **transactions.to**
+      *
+      * Transaction destination address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **transactions.transaction_hash**
+      *
+      * On-chain transaction hash
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      transaction_hash: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **transactions.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
+    }
+    export interface Updatable {
+      /**
+      * **transactions.chain_id**
+      *
+      * Chain ID where transaction occurred (stored as text for large chain IDs)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      chain_id?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **transactions.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **transactions.cumulative_gas_used**
+      *
+      * Total gas used by transaction (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      cumulative_gas_used?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **transactions.effective_gas_price**
+      *
+      * Effective gas price paid (stored as text for precision)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      effective_gas_price?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **transactions.from**
+      *
+      * Transaction sender address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **transactions.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **transactions.metadata**
+      *
+      * Additional transaction-specific data stored as JSON
+      * - `jsonb` in database
+      * - Nullable, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **transactions.reason**
+      *
+      * Transaction purpose/category (e.g., deposit, withdrawal, bridge, etc.)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      reason?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **transactions.rebalance_operation_id**
+      *
+      * Optional reference to associated rebalance operation (NULL for standalone transactions)
+      * - `uuid` in database
+      * - Nullable, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **transactions.to**
+      *
+      * Transaction destination address
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **transactions.transaction_hash**
+      *
+      * On-chain transaction hash
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      transaction_hash?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **transactions.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
+    }
+    export type UniqueIndex = 'transactions_pkey' | 'unique_tx_chain';
+    export type Column = keyof Selectable;
+    export type OnlyCols<T extends readonly Column[]> = Pick<Selectable, T[number]>;
+    export type SQLExpression = Table | db.ColumnNames<Updatable | (keyof Updatable)[]> | db.ColumnValues<Updatable> | Whereable | Column | db.ParentColumn | db.GenericSQLExpression;
+    export type SQL = SQLExpression | SQLExpression[];
+  }
+
   /* --- aggregate types --- */
 
   export namespace public {  
-    export type Table = earmarks.Table | rebalance_operations.Table | schema_migrations.Table;
-    export type Selectable = earmarks.Selectable | rebalance_operations.Selectable | schema_migrations.Selectable;
-    export type JSONSelectable = earmarks.JSONSelectable | rebalance_operations.JSONSelectable | schema_migrations.JSONSelectable;
-    export type Whereable = earmarks.Whereable | rebalance_operations.Whereable | schema_migrations.Whereable;
-    export type Insertable = earmarks.Insertable | rebalance_operations.Insertable | schema_migrations.Insertable;
-    export type Updatable = earmarks.Updatable | rebalance_operations.Updatable | schema_migrations.Updatable;
-    export type UniqueIndex = earmarks.UniqueIndex | rebalance_operations.UniqueIndex | schema_migrations.UniqueIndex;
-    export type Column = earmarks.Column | rebalance_operations.Column | schema_migrations.Column;
+    export type Table = admin_actions.Table | cex_withdrawals.Table | earmarks.Table | rebalance_operations.Table | schema_migrations.Table | transactions.Table;
+    export type Selectable = admin_actions.Selectable | cex_withdrawals.Selectable | earmarks.Selectable | rebalance_operations.Selectable | schema_migrations.Selectable | transactions.Selectable;
+    export type JSONSelectable = admin_actions.JSONSelectable | cex_withdrawals.JSONSelectable | earmarks.JSONSelectable | rebalance_operations.JSONSelectable | schema_migrations.JSONSelectable | transactions.JSONSelectable;
+    export type Whereable = admin_actions.Whereable | cex_withdrawals.Whereable | earmarks.Whereable | rebalance_operations.Whereable | schema_migrations.Whereable | transactions.Whereable;
+    export type Insertable = admin_actions.Insertable | cex_withdrawals.Insertable | earmarks.Insertable | rebalance_operations.Insertable | schema_migrations.Insertable | transactions.Insertable;
+    export type Updatable = admin_actions.Updatable | cex_withdrawals.Updatable | earmarks.Updatable | rebalance_operations.Updatable | schema_migrations.Updatable | transactions.Updatable;
+    export type UniqueIndex = admin_actions.UniqueIndex | cex_withdrawals.UniqueIndex | earmarks.UniqueIndex | rebalance_operations.UniqueIndex | schema_migrations.UniqueIndex | transactions.UniqueIndex;
+    export type Column = admin_actions.Column | cex_withdrawals.Column | earmarks.Column | rebalance_operations.Column | schema_migrations.Column | transactions.Column;
   
-    export type AllBaseTables = [earmarks.Table, rebalance_operations.Table, schema_migrations.Table];
+    export type AllBaseTables = [admin_actions.Table, cex_withdrawals.Table, earmarks.Table, rebalance_operations.Table, schema_migrations.Table, transactions.Table];
     export type AllForeignTables = [];
     export type AllViews = [];
     export type AllMaterializedViews = [];
-    export type AllTablesAndViews = [earmarks.Table, rebalance_operations.Table, schema_migrations.Table];
+    export type AllTablesAndViews = [admin_actions.Table, cex_withdrawals.Table, earmarks.Table, rebalance_operations.Table, schema_migrations.Table, transactions.Table];
   }
 
 
@@ -895,51 +1774,75 @@ declare module 'zapatos/schema' {
   /* === lookups === */
 
   export type SelectableForTable<T extends Table> = {
+    "admin_actions": admin_actions.Selectable;
+    "cex_withdrawals": cex_withdrawals.Selectable;
     "earmarks": earmarks.Selectable;
     "rebalance_operations": rebalance_operations.Selectable;
     "schema_migrations": schema_migrations.Selectable;
+    "transactions": transactions.Selectable;
   }[T];
 
   export type JSONSelectableForTable<T extends Table> = {
+    "admin_actions": admin_actions.JSONSelectable;
+    "cex_withdrawals": cex_withdrawals.JSONSelectable;
     "earmarks": earmarks.JSONSelectable;
     "rebalance_operations": rebalance_operations.JSONSelectable;
     "schema_migrations": schema_migrations.JSONSelectable;
+    "transactions": transactions.JSONSelectable;
   }[T];
 
   export type WhereableForTable<T extends Table> = {
+    "admin_actions": admin_actions.Whereable;
+    "cex_withdrawals": cex_withdrawals.Whereable;
     "earmarks": earmarks.Whereable;
     "rebalance_operations": rebalance_operations.Whereable;
     "schema_migrations": schema_migrations.Whereable;
+    "transactions": transactions.Whereable;
   }[T];
 
   export type InsertableForTable<T extends Table> = {
+    "admin_actions": admin_actions.Insertable;
+    "cex_withdrawals": cex_withdrawals.Insertable;
     "earmarks": earmarks.Insertable;
     "rebalance_operations": rebalance_operations.Insertable;
     "schema_migrations": schema_migrations.Insertable;
+    "transactions": transactions.Insertable;
   }[T];
 
   export type UpdatableForTable<T extends Table> = {
+    "admin_actions": admin_actions.Updatable;
+    "cex_withdrawals": cex_withdrawals.Updatable;
     "earmarks": earmarks.Updatable;
     "rebalance_operations": rebalance_operations.Updatable;
     "schema_migrations": schema_migrations.Updatable;
+    "transactions": transactions.Updatable;
   }[T];
 
   export type UniqueIndexForTable<T extends Table> = {
+    "admin_actions": admin_actions.UniqueIndex;
+    "cex_withdrawals": cex_withdrawals.UniqueIndex;
     "earmarks": earmarks.UniqueIndex;
     "rebalance_operations": rebalance_operations.UniqueIndex;
     "schema_migrations": schema_migrations.UniqueIndex;
+    "transactions": transactions.UniqueIndex;
   }[T];
 
   export type ColumnForTable<T extends Table> = {
+    "admin_actions": admin_actions.Column;
+    "cex_withdrawals": cex_withdrawals.Column;
     "earmarks": earmarks.Column;
     "rebalance_operations": rebalance_operations.Column;
     "schema_migrations": schema_migrations.Column;
+    "transactions": transactions.Column;
   }[T];
 
   export type SQLForTable<T extends Table> = {
+    "admin_actions": admin_actions.SQL;
+    "cex_withdrawals": cex_withdrawals.SQL;
     "earmarks": earmarks.SQL;
     "rebalance_operations": rebalance_operations.SQL;
     "schema_migrations": schema_migrations.SQL;
+    "transactions": transactions.SQL;
   }[T];
 
 }
