@@ -27,6 +27,7 @@ CREATE TABLE rebalance_operations (
     slippage INTEGER NOT NULL,
     bridge TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
+    recipient TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT rebalance_operation_status_check CHECK (status IN ('pending', 'awaiting_callback', 'completed', 'expired'))
@@ -46,6 +47,7 @@ CREATE INDEX idx_rebalance_operations_earmark_id ON rebalance_operations(earmark
 CREATE INDEX idx_rebalance_operations_status ON rebalance_operations(status);
 CREATE INDEX idx_rebalance_operations_origin_chain ON rebalance_operations(origin_chain_id);
 CREATE INDEX idx_rebalance_operations_destination_chain ON rebalance_operations(destination_chain_id);
+CREATE INDEX idx_rebalance_operations_recipient ON rebalance_operations(recipient) WHERE recipient IS NOT NULL;
 
 -- Updated at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -136,6 +138,7 @@ COMMENT ON COLUMN rebalance_operations.amount IS 'Amount of tokens being rebalan
 COMMENT ON COLUMN rebalance_operations.slippage IS 'Expected slippage in basis points (e.g., 30 = 0.3%)';
 COMMENT ON COLUMN rebalance_operations.bridge IS 'Bridge adapter type used for this operation (e.g., across, binance)';
 COMMENT ON COLUMN rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
+COMMENT ON COLUMN rebalance_operations.recipient IS 'Recipient address for the rebalance operation (destination address on target chain)';
 
 COMMENT ON TABLE transactions IS 'General purpose transaction tracking for all on-chain activity';
 COMMENT ON COLUMN transactions.rebalance_operation_id IS 'Optional reference to associated rebalance operation (NULL for standalone transactions)';

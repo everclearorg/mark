@@ -274,6 +274,7 @@ export async function createRebalanceOperation(input: {
   slippage: number;
   status: RebalanceOperationStatus;
   bridge: string;
+  recipient?: string;
   transactions?: Record<string, TransactionReceipt>;
 }): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }> {
   const client = await getPool().connect();
@@ -283,9 +284,9 @@ export async function createRebalanceOperation(input: {
     const rebalanceQuery = `
       INSERT INTO rebalance_operations (
         "earmark_id", "origin_chain_id", "destination_chain_id",
-        "ticker_hash", amount, slippage, status, bridge
+        "ticker_hash", amount, slippage, status, bridge, recipient
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `;
 
@@ -298,6 +299,7 @@ export async function createRebalanceOperation(input: {
       input.slippage,
       input.status,
       input.bridge,
+      input.recipient || null,
     ];
 
     const rebalanceResult = await client.query<rebalance_operations>(rebalanceQuery, rebalanceValues);
