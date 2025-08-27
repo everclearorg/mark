@@ -227,7 +227,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippages: [30, 30],
+        slippages: [-1000, -1000],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -238,7 +238,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippages: [30, 30],
+        slippages: [-1000, -1000],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
