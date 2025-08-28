@@ -69,6 +69,7 @@ export async function cleanupTestDatabase(): Promise<void> {
     await db.query('DELETE FROM transactions');
     await db.query('DELETE FROM rebalance_operations');
     await db.query('DELETE FROM earmarks');
+    await db.query('DELETE FROM admin_actions');
   }
 }
 

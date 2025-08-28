@@ -4339,7 +4339,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@mark/database@workspace:packages/adapters/database":
+"@mark/database@workspace:*, @mark/database@workspace:packages/adapters/database":
   version: 0.0.0-use.local
   resolution: "@mark/database@workspace:packages/adapters/database"
   dependencies:
@@ -4448,8 +4448,8 @@ __metadata:
   resolution: "@mark/rebalance@workspace:packages/adapters/rebalance"
   dependencies:
     "@defuse-protocol/one-click-sdk-typescript": ^0.1.5
-    "@mark/cache": "workspace:*"
     "@mark/core": "workspace:*"
+    "@mark/database": "workspace:*"
     "@mark/logger": "workspace:*"
     "@types/jest": 29.5.12
     "@types/node": 20.17.12
@@ -8424,9 +8424,9 @@ __metadata:
   linkType: hard
 
 "caniuse-lite@npm:^1.0.30001735":
-  version: 1.0.30001736
-  resolution: "caniuse-lite@npm:1.0.30001736"
-  checksum: 1d664e9bbb4ecb9d2b410c06eedb036f151e2e3c7ca43d2405e5082fb5e394f8a802eb342987e7b5b01aa5b5b84633f679fc19bc12369405bc2f06c3e3374d54
+  version: 1.0.30001737
+  resolution: "caniuse-lite@npm:1.0.30001737"
+  checksum: 347ad0dccd76d04d86163fdd59ec89894660cced949252ff05c65aea4a35ffeba5814a60733c0b44ee1b56c083ae9aba4ab715b783ab72b69d8a653ef3ab6c9e
   languageName: node
   linkType: hard
 
@@ -17792,9 +17792,9 @@ __metadata:
   linkType: hard
 
 "undici-types@npm:^7.11.0":
-  version: 7.14.0
-  resolution: "undici-types@npm:7.14.0"
-  checksum: bd28cb36b33a51359f02c27b84bfe8563cdad57bdab0aa6ac605ce64d51aff49fd0aa4cb2d3b043caaa93c3ec42e96b5757df5d2d9bcc06a5f3e71899c765035
+  version: 7.15.0
+  resolution: "undici-types@npm:7.15.0"
+  checksum: 4986bf74bfc034737cdea2aa3b67ddfcd460b4462ebb68b86e6a6203b05c2cc11cce756217d9c3f737f9073aa83075aca4e2e85b1557d3547808d9e47c0c3e34
   languageName: node
   linkType: hard
 

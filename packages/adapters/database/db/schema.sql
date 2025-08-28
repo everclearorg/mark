@@ -1,11 +1,7 @@
-\restrict H1xeVb9DszUsmsIQ31WbSfPgTDsfXjsYZz6p4Sr2waQMOC8oc3MuWSrTVXgXflJ
-
--- Dumped from database version 15.14
--- Dumped by pg_dump version 15.14 (Homebrew)
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -45,6 +41,34 @@ $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: admin_actions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_actions (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    description text,
+    rebalance_paused boolean DEFAULT false,
+    purchase_paused boolean DEFAULT false
+);
+
+
+--
+-- Name: cex_withdrawals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cex_withdrawals (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    rebalance_operation_id uuid,
+    platform text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 
 --
 -- Name: earmarks; Type: TABLE; Schema: public; Owner: -
@@ -119,6 +143,7 @@ CREATE TABLE public.rebalance_operations (
     slippage integer NOT NULL,
     bridge text,
     status text DEFAULT 'pending'::text NOT NULL,
+    recipient text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     CONSTRAINT rebalance_operation_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'awaiting_callback'::text, 'completed'::text, 'expired'::text])))
@@ -179,6 +204,13 @@ COMMENT ON COLUMN public.rebalance_operations.bridge IS 'Bridge adapter type use
 --
 
 COMMENT ON COLUMN public.rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
+
+
+--
+-- Name: COLUMN rebalance_operations.recipient; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.rebalance_operations.recipient IS 'Recipient address for the rebalance operation (destination address on target chain)';
 
 
 --
@@ -278,6 +310,22 @@ COMMENT ON COLUMN public.transactions.reason IS 'Transaction purpose/category (e
 --
 
 COMMENT ON COLUMN public.transactions.metadata IS 'Additional transaction-specific data stored as JSON';
+
+
+--
+-- Name: admin_actions admin_actions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_actions
+    ADD CONSTRAINT admin_actions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cex_withdrawals cex_withdrawals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cex_withdrawals
+    ADD CONSTRAINT cex_withdrawals_pkey PRIMARY KEY (id);
 
 
 --
@@ -385,6 +433,13 @@ CREATE INDEX idx_rebalance_operations_origin_chain ON public.rebalance_operation
 
 
 --
+-- Name: idx_rebalance_operations_recipient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rebalance_operations_recipient ON public.rebalance_operations USING btree (recipient) WHERE (recipient IS NOT NULL);
+
+
+--
 -- Name: idx_rebalance_operations_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -434,6 +489,13 @@ CREATE INDEX idx_transactions_rebalance_op ON public.transactions USING btree (r
 
 
 --
+-- Name: admin_actions update_admin_actions_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_admin_actions_updated_at BEFORE UPDATE ON public.admin_actions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
 -- Name: earmarks update_earmarks_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -455,6 +517,14 @@ CREATE TRIGGER update_transactions_updated_at BEFORE UPDATE ON public.transactio
 
 
 --
+-- Name: cex_withdrawals cex_withdrawals_rebalance_operation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cex_withdrawals
+    ADD CONSTRAINT cex_withdrawals_rebalance_operation_id_fkey FOREIGN KEY (rebalance_operation_id) REFERENCES public.rebalance_operations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: rebalance_operations rebalance_operations_earmark_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -473,8 +543,6 @@ ALTER TABLE ONLY public.transactions
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict H1xeVb9DszUsmsIQ31WbSfPgTDsfXjsYZz6p4Sr2waQMOC8oc3MuWSrTVXgXflJ
 
 
 --

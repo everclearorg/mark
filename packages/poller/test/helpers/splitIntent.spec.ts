@@ -6,7 +6,7 @@ import * as sinon from 'sinon';
 import { ProcessingContext } from '../../src/init';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
-import { PurchaseCache, RebalanceCache } from '@mark/cache';
+import { PurchaseCache } from '@mark/cache';
 import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { mockConfig } from '../mocks';
@@ -21,7 +21,6 @@ describe('Split Intent Helper Functions', () => {
     everclear: SinonStubbedInstance<EverclearAdapter>;
     chainService: SinonStubbedInstance<ChainService>;
     purchaseCache: SinonStubbedInstance<PurchaseCache>;
-    rebalanceCache: SinonStubbedInstance<RebalanceCache>;
     rebalance: SinonStubbedInstance<RebalanceAdapter>;
     web3Signer: SinonStubbedInstance<Wallet>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
@@ -35,7 +34,6 @@ describe('Split Intent Helper Functions', () => {
       everclear: createStubInstance(EverclearAdapter),
       chainService: createStubInstance(ChainService),
       purchaseCache: createStubInstance(PurchaseCache),
-      rebalanceCache: createStubInstance(RebalanceCache),
       rebalance: createStubInstance(RebalanceAdapter),
       web3Signer: createStubInstance(Wallet),
       prometheus: createStubInstance(PrometheusAdapter),

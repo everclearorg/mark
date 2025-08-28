@@ -21,6 +21,11 @@ export {
   getRebalanceOperationsByEarmark,
   getRebalanceOperations,
   getTransactionsForRebalanceOperations,
+  getRebalanceOperationByTransactionHash,
+  createCexWithdrawalRecord,
+  getCexWithdrawalRecord,
+  setPause,
+  isPaused,
   type CreateEarmarkInput,
   type GetEarmarksFilter,
 } from './db';
@@ -95,13 +100,16 @@ export async function connectWithRetry(
 
 export async function gracefulShutdown(timeoutMs: number = 5000): Promise<void> {
   const shutdownPromise = closeDatabase();
+  let timeoutId: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Database shutdown timeout')), timeoutMs);
+    timeoutId = setTimeout(() => reject(new Error('Database shutdown timeout')), timeoutMs);
   });
 
   try {
     await Promise.race([shutdownPromise, timeoutPromise]);
+    if (timeoutId) clearTimeout(timeoutId);
   } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
     if (error instanceof Error && error.message === 'Database shutdown timeout') {
       console.warn('Database shutdown timed out, forcing close');
       // Force close if graceful shutdown times out

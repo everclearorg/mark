@@ -18,10 +18,13 @@ export interface TransactionReceipt {
   blockNumber: number;
   status?: number;
   transactionHash: string;
-  confirmations: number;
+  logs: unknown[];
+  confirmations: number | undefined;
 }
 
-export type TransactionEntry = CamelCasedProperties<transactions>;
+export type TransactionEntry<T = object> = Omit<CamelCasedProperties<transactions>, 'metadata'> & {
+  metadata: T;
+};
 
 export enum TransactionReasons {
   Rebalance = 'Rebalance',

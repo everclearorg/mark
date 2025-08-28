@@ -11,7 +11,7 @@ import {
 } from 'viem';
 import { SupportedBridge, RebalanceRoute, MarkConfiguration, AssetConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import { RebalanceCache } from '@mark/cache';
+import * as database from '@mark/database';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { KrakenClient } from './client';
 import { DynamicAssetConfig } from './dynamic-config';
@@ -47,7 +47,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     baseUrl: string,
     protected readonly config: MarkConfiguration,
     protected readonly logger: Logger,
-    private readonly rebalanceCache: RebalanceCache,
+    private readonly db: typeof database,
   ) {
     this.client = new KrakenClient(config.kraken.apiKey!, config.kraken.apiSecret!, logger, baseUrl);
     if (!this.client.isConfigured()) {
@@ -68,9 +68,9 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     return SupportedBridge.Kraken;
   }
 
-  private async getRecipientFromCache(transactionHash: string): Promise<string | undefined> {
+  private async getRecipientFromCache(transactionHash: string, chain: number): Promise<string | undefined> {
     try {
-      const action = await this.rebalanceCache.getRebalanceByTransaction(transactionHash);
+      const action = await this.db.getRebalanceOperationByTransactionHash(transactionHash, chain);
 
       if (action?.recipient) {
         this.logger.debug('Recipient found in rebalance cache', {
@@ -260,7 +260,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     });
 
     try {
-      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
+      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash, route.origin);
       if (!recipient) {
         this.logger.error('Cannot check withdrawal readiness - recipient missing from cache', {
           transactionHash: originTransaction.transactionHash,
@@ -326,7 +326,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
 
     try {
       // Get recipient
-      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
+      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash, route.origin);
       if (!recipient) {
         this.logger.error('No recipient found in cache for callback', {
           transactionHash: originTransaction.transactionHash,
@@ -713,20 +713,45 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     originTransaction: TransactionReceipt,
   ): Promise<{ refid: string; asset: string; method: string } | undefined> {
     try {
-      const existingWithdrawal = await this.rebalanceCache.getWithdrawalRecord(originTransaction.transactionHash);
-      if (!existingWithdrawal) {
+      // Lookup the rebalance operation via the origin deposit tx hash
+      const op = await this.db.getRebalanceOperationByTransactionHash(originTransaction.transactionHash, route.origin);
+      if (!op) {
+        this.logger.debug('No rebalance operation found for deposit', {
+          route,
+          deposit: originTransaction.transactionHash,
+        });
+        return undefined;
+      }
+
+      const record = await this.db.getCexWithdrawalRecord({
+        rebalanceOperationId: op.id,
+        platform: 'kraken',
+      });
+
+      if (!record) {
         this.logger.debug('No existing withdrawal found', {
           route,
           deposit: originTransaction.transactionHash,
         });
         return undefined;
       }
+
+      const metadata = record.metadata as { refid?: string; asset?: string; method?: string };
+      if (!metadata?.refid || !metadata?.asset || !metadata?.method) {
+        this.logger.warn('Existing CEX withdrawal record missing expected Kraken fields', {
+          route,
+          deposit: originTransaction.transactionHash,
+          record,
+        });
+        return undefined;
+      }
+
       this.logger.debug('Found existing withdrawal', {
         route,
         deposit: originTransaction.transactionHash,
-        existingWithdrawal,
+        record,
       });
-      return existingWithdrawal;
+      return { refid: metadata.refid, asset: metadata.asset, method: metadata.method };
     } catch (error) {
       this.logger.error('Failed to find existing withdrawal', {
         error: jsonifyError(error),
@@ -767,14 +792,26 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
         recipient,
       });
 
-      await this.rebalanceCache.addWithdrawalRecord(
-        originTransaction.transactionHash,
-        assetMapping.krakenAsset,
-        assetMapping.withdrawMethod.method,
-        withdrawal.refid,
-      );
+      // Persist withdrawal details in DB
+      const op = await this.db.getRebalanceOperationByTransactionHash(originTransaction.transactionHash, route.origin);
+      if (!op) {
+        throw new Error(
+          `Unable to locate rebalance operation for deposit ${originTransaction.transactionHash} on chain ${route.origin}`,
+        );
+      }
+      await this.db.createCexWithdrawalRecord({
+        rebalanceOperationId: op.id,
+        platform: 'kraken',
+        metadata: {
+          asset: assetMapping.krakenAsset,
+          method: assetMapping.withdrawMethod.method,
+          refid: withdrawal.refid,
+          depositTransactionHash: originTransaction.transactionHash,
+          destinationChainId: route.destination,
+        },
+      });
 
-      this.logger.debug('Kraken withdrawal saved to cache', {
+      this.logger.debug('Kraken withdrawal saved to database', {
         withdrawal,
         asset: assetMapping.krakenAsset,
         amount,

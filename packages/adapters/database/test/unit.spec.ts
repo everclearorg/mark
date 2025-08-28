@@ -9,6 +9,7 @@ import {
   DatabaseConfig,
   HealthCheckResult,
 } from '../src';
+import { getRebalanceOperationByTransactionHash } from '../src/db';
 import { RebalanceOperationStatus } from '@mark/core';
 import { createMockPool, MOCK_DATABASE_CONFIG } from './setup';
 
@@ -206,6 +207,83 @@ describe('Database Adapter - Unit Tests', () => {
 
       expect(typeChecks.DatabaseConfig).toBeDefined();
       expect(typeChecks.HealthCheckResult).toBeDefined();
+    });
+  });
+
+  describe('getRebalanceOperationByTransactionHash (unit)', () => {
+    beforeEach(() => {
+      initializeDatabase(MOCK_DATABASE_CONFIG);
+    });
+
+    it('returns undefined when no matching transaction', async () => {
+      // First query returns no transaction rows
+      mockPoolInstance.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+      const result = await getRebalanceOperationByTransactionHash('0xabc', 1);
+
+      // Ensure first query matches our expected SQL shape
+      expect(mockPoolInstance.query).toHaveBeenCalledWith(
+        expect.stringContaining('LOWER(transaction_hash) = LOWER($1) AND chain_id = $2'),
+        ['0xabc', '1']
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it('returns operation and associated transactions when found', async () => {
+      const operationId = '11111111-1111-1111-1111-111111111111';
+      const txRow = {
+        id: '22222222-2222-2222-2222-222222222222',
+        rebalance_operation_id: operationId,
+        transaction_hash: '0xdeadbeef',
+        chain_id: '1',
+        cumulative_gas_used: '21000',
+        effective_gas_price: '10000000000',
+        from: '0xfrom',
+        to: '0xto',
+        reason: 'Rebalance',
+        metadata: {},
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      const opRow = {
+        id: operationId,
+        earmark_id: null,
+        origin_chain_id: 1,
+        destination_chain_id: 10,
+        ticker_hash: '0xasset',
+        amount: '100',
+        slippage: 100,
+        bridge: 'test-bridge',
+        status: 'pending',
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      // 1) Find transaction
+      mockPoolInstance.query.mockResolvedValueOnce({ rows: [txRow], rowCount: 1 });
+      // 2) Load operation
+      mockPoolInstance.query.mockResolvedValueOnce({ rows: [opRow], rowCount: 1 });
+      // 3) Load all transactions for operation
+      const opTxRow2 = {
+        ...txRow,
+        id: '33333333-3333-3333-3333-333333333333',
+        transaction_hash: '0xfeedface',
+        chain_id: '10',
+      };
+      mockPoolInstance.query.mockResolvedValueOnce({ rows: [txRow, opTxRow2], rowCount: 2 });
+
+      const result = await getRebalanceOperationByTransactionHash('0xDEADBEEF', 1);
+
+      expect(result).toBeDefined();
+      expect(result!.id).toBe(operationId);
+      expect(result!.originChainId).toBe(1);
+      expect(result!.destinationChainId).toBe(10);
+      expect(result!.transactions).toBeDefined();
+      // Should be keyed by chainId as strings
+      expect(Object.keys(result!.transactions)).toEqual(expect.arrayContaining(['1', '10']));
+      expect(result!.transactions['1'].transactionHash).toBe('0xdeadbeef');
+      expect(result!.transactions['10'].transactionHash).toBe('0xfeedface');
     });
   });
 });

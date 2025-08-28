@@ -8,16 +8,17 @@ import {
   RebalanceRoute,
 } from '@mark/core';
 import { Logger } from '@mark/logger';
+import { executeDestinationCallbacks } from '../../src/rebalance/callbacks';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
-import { RebalanceCache, RebalanceAction } from '@mark/cache';
+import { RebalanceAction } from '@mark/core';
 import * as submitTransactionModule from '../../src/helpers/transactions';
 import { RebalanceAdapter } from '@mark/rebalance';
-import { executeDestinationCallbacks } from '../../src/rebalance/callbacks';
+
 import { TransactionReceipt } from 'viem';
 import * as DatabaseModule from '@mark/database';
 import { ITransactionReceipt } from '@chimera-monorepo/chainservice/dist/shared/types';
-import { providers, BigNumber } from 'ethers';
+import { TransactionReceipt as ChainServiceReceipt } from '@mark/chainservice';
 
 // Define the interface for the specific adapter methods needed
 interface MockBridgeAdapter {
@@ -34,8 +35,8 @@ interface MockBridgeAdapter {
   >;
 }
 
-// Helper to create ITransactionReceipt for ChainService mocks
-const toChainServiceReceipt = (viemReceipt: TransactionReceipt): ITransactionReceipt => ({
+// Helper to create ITransactionReceipt for ChainService.getTransactionReceipt mocks
+const toITransactionReceipt = (viemReceipt: TransactionReceipt): ITransactionReceipt => ({
   blockNumber: Number(viemReceipt.blockNumber),
   status: viemReceipt.status === 'success' ? 1 : 0,
   transactionHash: viemReceipt.transactionHash,
@@ -53,10 +54,16 @@ const toChainServiceReceipt = (viemReceipt: TransactionReceipt): ITransactionRec
   })),
 });
 
+// Helper to create ChainServiceReceipt for ChainService.submitAndMonitor mocks
+const toChainServiceReceipt = (viemReceipt: TransactionReceipt): ChainServiceReceipt => ({
+  ...toITransactionReceipt(viemReceipt),
+  cumulativeGasUsed: viemReceipt.cumulativeGasUsed.toString(),
+  effectiveGasPrice: viemReceipt.effectiveGasPrice.toString(),
+});
+
 describe('executeDestinationCallbacks', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
   let mockLogger: SinonStubbedInstance<Logger>;
-  let mockRebalanceCache: SinonStubbedInstance<RebalanceCache>;
   let mockChainService: SinonStubbedInstance<ChainService>;
   let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
   let mockSpecificBridgeAdapter: MockBridgeAdapter;
@@ -66,7 +73,7 @@ describe('executeDestinationCallbacks', () => {
   let mockConfig: MarkConfiguration;
 
   // Helper to create database operation from action
-  const createDbOperation = (action: RebalanceAction, id: string) => ({
+  const createDbOperation = (action: RebalanceAction, id: string, includeReceipt = false) => ({
     id,
     earmarkId: null,
     originChainId: action.origin,
@@ -74,7 +81,20 @@ describe('executeDestinationCallbacks', () => {
     tickerHash: action.asset,
     amount: action.amount,
     bridge: action.bridge,
-    txHashes: { originTxHash: action.transaction },
+    transactions: includeReceipt
+      ? {
+          [action.origin]: {
+            hash: action.transaction,
+            metadata: {
+              receipt: mockReceipt1,
+            },
+          },
+        }
+      : {
+          [action.origin]: {
+            hash: action.transaction,
+          },
+        },
     status: RebalanceOperationStatus.PENDING,
     slippage: 100,
     createdAt: new Date(),
@@ -140,29 +160,19 @@ describe('executeDestinationCallbacks', () => {
     type: 'legacy',
   } as TransactionReceipt;
 
-  // Create ethers receipt for submitTransactionWithLogging
-  const mockEthersReceipt: providers.TransactionReceipt = {
+  // Create ChainServiceReceipt for submitTransactionWithLogging
+  const mockChainServiceReceipt: ChainServiceReceipt = {
     transactionHash: mockSubmitSuccessReceipt.transactionHash,
-    blockHash: mockSubmitSuccessReceipt.blockHash,
     blockNumber: Number(mockSubmitSuccessReceipt.blockNumber),
     confirmations: 1,
-    from: mockSubmitSuccessReceipt.from,
-    to: mockSubmitSuccessReceipt.to || '',
-    contractAddress: mockSubmitSuccessReceipt.contractAddress || '',
-    transactionIndex: mockSubmitSuccessReceipt.transactionIndex,
-    gasUsed: BigNumber.from(mockSubmitSuccessReceipt.gasUsed),
-    cumulativeGasUsed: BigNumber.from(mockSubmitSuccessReceipt.cumulativeGasUsed),
-    effectiveGasPrice: BigNumber.from(mockSubmitSuccessReceipt.effectiveGasPrice),
-    logs: [],
-    logsBloom: mockSubmitSuccessReceipt.logsBloom,
-    byzantium: true,
-    type: 0,
     status: 1,
+    logs: [],
+    cumulativeGasUsed: mockSubmitSuccessReceipt.cumulativeGasUsed.toString(),
+    effectiveGasPrice: mockSubmitSuccessReceipt.effectiveGasPrice.toString(),
   };
 
   beforeEach(() => {
     mockLogger = createStubInstance(Logger);
-    mockRebalanceCache = createStubInstance(RebalanceCache);
     mockChainService = createStubInstance(ChainService);
     mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
     mockSpecificBridgeAdapter = {
@@ -239,7 +249,6 @@ describe('executeDestinationCallbacks', () => {
       requestId: MOCK_REQUEST_ID,
       startTime: MOCK_START_TIME,
       logger: mockLogger,
-      rebalanceCache: mockRebalanceCache,
       chainService: mockChainService,
       rebalance: mockRebalanceAdapter,
       database: mockDatabase,
@@ -249,7 +258,6 @@ describe('executeDestinationCallbacks', () => {
       prometheus: undefined,
     } as unknown as SinonStubbedInstance<ProcessingContext>;
 
-    mockRebalanceCache.getRebalances.resolves([]);
     mockRebalanceAdapter.getAdapter.callsFake(() => {
       // Return the same mock adapter for all bridges
       return mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>;
@@ -257,12 +265,10 @@ describe('executeDestinationCallbacks', () => {
     mockChainService.getTransactionReceipt.resolves(undefined);
     mockSpecificBridgeAdapter.readyOnDestination.resolves(false);
     mockSpecificBridgeAdapter.destinationCallback.resolves(undefined);
-    mockChainService.submitAndMonitor.resolves(
-      toChainServiceReceipt(mockSubmitSuccessReceipt) as unknown as providers.TransactionReceipt,
-    );
+    mockChainService.submitAndMonitor.resolves(toChainServiceReceipt(mockSubmitSuccessReceipt));
     submitTransactionStub = stub(submitTransactionModule, 'submitTransactionWithLogging').resolves({
       hash: mockSubmitSuccessReceipt.transactionHash,
-      receipt: mockEthersReceipt,
+      receipt: mockChainServiceReceipt,
       submissionType: TransactionSubmissionType.Onchain,
     });
   });
@@ -285,23 +291,8 @@ describe('executeDestinationCallbacks', () => {
   });
 
   it('should log and continue if transaction receipt is not found for an action', async () => {
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([
-      {
-        id: mockAction1Id,
-        earmarkId: null,
-        originChainId: mockAction1.origin,
-        destinationChainId: mockAction1.destination,
-        tickerHash: mockAction1.asset,
-        amount: mockAction1.amount,
-        bridge: mockAction1.bridge,
-        txHashes: { originTxHash: mockAction1.transaction },
-        status: RebalanceOperationStatus.PENDING,
-        slippage: 100,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ]);
-    mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(undefined);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, false); // No receipt in metadata
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
 
     await executeDestinationCallbacks(mockContext);
 
@@ -315,32 +306,38 @@ describe('executeDestinationCallbacks', () => {
     expect(mockSpecificBridgeAdapter.readyOnDestination.called).toBe(false);
   });
 
-  it('should log error and continue if getTransactionReceipt fails', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+  it('should log warning and continue if transaction entry is missing', async () => {
+    const dbOperation = {
+      id: mockAction1Id,
+      earmarkId: null,
+      originChainId: mockAction1.origin,
+      destinationChainId: mockAction1.destination,
+      tickerHash: mockAction1.asset,
+      amount: mockAction1.amount,
+      bridge: mockAction1.bridge,
+      transactions: {}, // Empty transactions
+      status: RebalanceOperationStatus.PENDING,
+      slippage: 100,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-
-    const error = new Error('RPC error');
-    mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).rejects(error);
 
     await executeDestinationCallbacks(mockContext);
 
-    const errorCallWithMessage = mockLogger.error
+    const warnCallWithMessage = mockLogger.warn
       .getCalls()
-      .find((call) => call.args[0] === 'Failed to get transaction receipt');
-    expect(errorCallWithMessage).toBeDefined();
-    if (errorCallWithMessage && errorCallWithMessage.args[1]) {
-      expect(errorCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-      expect(errorCallWithMessage.args[1].error).toBeDefined();
+      .find((call) => call.args[0] === 'Operation missing origin transaction');
+    expect(warnCallWithMessage).toBeDefined();
+    if (warnCallWithMessage && warnCallWithMessage.args[1]) {
+      expect(warnCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
     }
     expect(mockSpecificBridgeAdapter.readyOnDestination.called).toBe(false);
   });
 
   it('should log info if readyOnDestination returns false', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction1.origin, mockAction1.transaction)
-      .resolves(toChainServiceReceipt(mockReceipt1));
     mockSpecificBridgeAdapter.readyOnDestination.resolves(false);
 
     await executeDestinationCallbacks(mockContext);
@@ -356,11 +353,8 @@ describe('executeDestinationCallbacks', () => {
   });
 
   it('should log error and continue if readyOnDestination fails', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction1.origin, mockAction1.transaction)
-      .resolves(toChainServiceReceipt(mockReceipt1));
 
     const error = new Error('Bridge error');
     mockSpecificBridgeAdapter.readyOnDestination.rejects(error);
@@ -379,12 +373,9 @@ describe('executeDestinationCallbacks', () => {
   });
 
   it('should mark as completed if destinationCallback returns no transaction', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction1.origin, mockAction1.transaction)
-      .resolves(toChainServiceReceipt(mockReceipt1));
     mockSpecificBridgeAdapter.destinationCallback.resolves(undefined);
 
     await executeDestinationCallbacks(mockContext);
@@ -404,12 +395,9 @@ describe('executeDestinationCallbacks', () => {
   });
 
   it('should log error and continue if destinationCallback fails', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction1.origin, mockAction1.transaction)
-      .resolves(toChainServiceReceipt(mockReceipt1));
 
     const error = new Error('Callback error');
     mockSpecificBridgeAdapter.destinationCallback.rejects(error);
@@ -428,12 +416,9 @@ describe('executeDestinationCallbacks', () => {
   });
 
   it('should successfully execute destination callback and mark as completed', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction1.origin, mockAction1.transaction)
-      .resolves(toChainServiceReceipt(mockReceipt1));
     mockSpecificBridgeAdapter.destinationCallback.resolves(mockCallbackTx);
 
     await executeDestinationCallbacks(mockContext);
@@ -459,12 +444,9 @@ describe('executeDestinationCallbacks', () => {
   });
 
   it('should log error and continue if submitAndMonitor fails', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction1.origin, mockAction1.transaction)
-      .resolves(toChainServiceReceipt(mockReceipt1));
     mockSpecificBridgeAdapter.destinationCallback.resolves(mockCallbackTx);
 
     const error = new Error('Submit failed');
@@ -506,8 +488,8 @@ describe('executeDestinationCallbacks', () => {
       transactionHash: mockAction2.transaction as `0x${string}`,
     };
 
-    const dbOperation1 = createDbOperation(mockAction1, mockAction1Id);
-    const dbOperation2 = createDbOperation(mockAction2, mockAction2Id);
+    const dbOperation1 = createDbOperation(mockAction1, mockAction1Id, false); // No receipt for first
+    const dbOperation2 = createDbOperation(mockAction2, mockAction2Id, true); // Has receipt for second
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation1, dbOperation2]);
 
     // First action fails to get receipt
@@ -518,7 +500,7 @@ describe('executeDestinationCallbacks', () => {
     // Second action succeeds
     mockChainService.getTransactionReceipt
       .withArgs(mockAction2.origin, mockAction2.transaction)
-      .resolves(toChainServiceReceipt(mockReceipt2));
+      .resolves(toITransactionReceipt(mockReceipt2));
 
     // Reset the stubs to ensure clean state
     mockSpecificBridgeAdapter.readyOnDestination.reset();
@@ -530,9 +512,12 @@ describe('executeDestinationCallbacks', () => {
 
     await executeDestinationCallbacks(mockContext);
 
-    // Should have logged error for first action
+    // Should have logged info for first action (no receipt in database)
     expect(
-      mockLogger.error.calledWith('Failed to get transaction receipt', sinon.match({ operationId: mockAction1Id })),
+      mockLogger.info.calledWith(
+        'Origin transaction receipt not found for operation',
+        sinon.match({ operationId: mockAction1Id }),
+      ),
     ).toBe(true);
 
     // Check that readyOnDestination was called for the second action
@@ -553,11 +538,11 @@ describe('executeDestinationCallbacks', () => {
   });
 
   it('should update operation to awaiting callback when ready', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true); // Include receipt
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
     mockChainService.getTransactionReceipt
       .withArgs(mockAction1.origin, mockAction1.transaction)
-      .resolves(toChainServiceReceipt(mockReceipt1));
+      .resolves(toITransactionReceipt(mockReceipt1));
     mockSpecificBridgeAdapter.readyOnDestination.resolves(true);
 
     await executeDestinationCallbacks(mockContext);
@@ -607,14 +592,14 @@ describe('executeDestinationCallbacks', () => {
 
   it('should skip operation with missing origin transaction hash', async () => {
     const dbOperationNoTxHash = createDbOperation(mockAction1, mockAction1Id);
-    dbOperationNoTxHash.txHashes = { originTxHash: null as unknown as string };
+    dbOperationNoTxHash.transactions = {}; // Empty transactions object
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperationNoTxHash]);
 
     await executeDestinationCallbacks(mockContext);
 
     const warnCallWithMessage = mockLogger.warn
       .getCalls()
-      .find((call) => call.args[0] === 'Operation missing origin transaction hash');
+      .find((call) => call.args[0] === 'Operation missing origin transaction');
     expect(warnCallWithMessage).toBeDefined();
     if (warnCallWithMessage && warnCallWithMessage.args[1]) {
       expect(warnCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
@@ -649,10 +634,10 @@ describe('executeDestinationCallbacks', () => {
       memo: 'Callback',
     };
 
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id);
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true); // Include receipt
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
     (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt.resolves(toChainServiceReceipt(mockReceipt1));
+    mockChainService.getTransactionReceipt.resolves(toITransactionReceipt(mockReceipt1));
     mockRebalanceAdapter.getAdapter.callsFake(() => {
       // Return the same mock adapter for all bridges
       return mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>;
@@ -662,7 +647,7 @@ describe('executeDestinationCallbacks', () => {
     submitTransactionStub.resolves({
       hash: mockSubmitSuccessReceipt.transactionHash,
       submissionType: TransactionSubmissionType.Onchain,
-      receipt: mockEthersReceipt,
+      receipt: mockChainServiceReceipt,
     });
 
     await executeDestinationCallbacks(mockContext);

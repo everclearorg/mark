@@ -27,6 +27,7 @@ CREATE TABLE rebalance_operations (
     slippage INTEGER NOT NULL,
     bridge TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
+    recipient TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     CONSTRAINT rebalance_operation_status_check CHECK (status IN ('pending', 'awaiting_callback', 'completed', 'expired'))
@@ -46,6 +47,7 @@ CREATE INDEX idx_rebalance_operations_earmark_id ON rebalance_operations(earmark
 CREATE INDEX idx_rebalance_operations_status ON rebalance_operations(status);
 CREATE INDEX idx_rebalance_operations_origin_chain ON rebalance_operations(origin_chain_id);
 CREATE INDEX idx_rebalance_operations_destination_chain ON rebalance_operations(destination_chain_id);
+CREATE INDEX idx_rebalance_operations_recipient ON rebalance_operations(recipient) WHERE recipient IS NOT NULL;
 
 -- Updated at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -63,6 +65,21 @@ CREATE TRIGGER update_earmarks_updated_at
 
 CREATE TRIGGER update_rebalance_operations_updated_at
     BEFORE UPDATE ON rebalance_operations
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Admin actions table: Administrative toggles and notes
+CREATE TABLE admin_actions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    description TEXT,
+    rebalance_paused BOOLEAN DEFAULT FALSE,
+    purchase_paused BOOLEAN DEFAULT FALSE
+);
+
+-- Trigger to automatically update updated_at column for admin_actions
+CREATE TRIGGER update_admin_actions_updated_at
+    BEFORE UPDATE ON admin_actions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Transactions table: General purpose transaction tracking
@@ -95,6 +112,16 @@ CREATE INDEX idx_transactions_reason ON transactions(reason) WHERE reason IS NOT
 CREATE INDEX idx_transactions_created_at ON transactions(created_at);
 CREATE INDEX idx_transactions_rebalance_created ON transactions(rebalance_operation_id, created_at) WHERE rebalance_operation_id IS NOT NULL;
 
+-- Transactions table: General purpose transaction tracking
+CREATE TABLE cex_withdrawals (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    rebalance_operation_id UUID REFERENCES rebalance_operations(id) ON DELETE CASCADE,
+    platform TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
 -- Comments for documentation
 COMMENT ON TABLE earmarks IS 'Primary storage for invoice earmarks waiting for rebalancing completion';
 COMMENT ON TABLE rebalance_operations IS 'Individual rebalancing operations that fulfill earmarks';
@@ -111,6 +138,7 @@ COMMENT ON COLUMN rebalance_operations.amount IS 'Amount of tokens being rebalan
 COMMENT ON COLUMN rebalance_operations.slippage IS 'Expected slippage in basis points (e.g., 30 = 0.3%)';
 COMMENT ON COLUMN rebalance_operations.bridge IS 'Bridge adapter type used for this operation (e.g., across, binance)';
 COMMENT ON COLUMN rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
+COMMENT ON COLUMN rebalance_operations.recipient IS 'Recipient address for the rebalance operation (destination address on target chain)';
 
 COMMENT ON TABLE transactions IS 'General purpose transaction tracking for all on-chain activity';
 COMMENT ON COLUMN transactions.rebalance_operation_id IS 'Optional reference to associated rebalance operation (NULL for standalone transactions)';
@@ -129,13 +157,16 @@ COMMENT ON COLUMN transactions.metadata IS 'Additional transaction-specific data
 DROP TRIGGER IF EXISTS update_transactions_updated_at ON transactions;
 DROP TRIGGER IF EXISTS update_rebalance_operations_updated_at ON rebalance_operations;
 DROP TRIGGER IF EXISTS update_earmarks_updated_at ON earmarks;
+DROP TRIGGER IF EXISTS update_admin_actions_updated_at ON admin_actions;
 
 -- Drop trigger function
 DROP FUNCTION IF EXISTS update_updated_at_column();
 
 -- Drop tables in reverse dependency order (transactions first due to FK reference)
 DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS cex_withdrawals;
 DROP TABLE IF EXISTS rebalance_operations;
 DROP TABLE IF EXISTS earmarks;
+DROP TABLE IF EXISTS admin_actions;
 
 -- Note: We don't drop the uuid-ossp extension as it might be used by other parts of the database

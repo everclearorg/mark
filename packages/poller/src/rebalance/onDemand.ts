@@ -220,7 +220,10 @@ function getAvailableBalance(
   return available > 0n ? available : 0n;
 }
 
-function calculateEarmarkedFunds(earmarks: earmarks[], config: ProcessingContext['config']): EarmarkedFunds[] {
+function calculateEarmarkedFunds(
+  earmarks: database.CamelCasedProperties<earmarks>[],
+  config: ProcessingContext['config'],
+): EarmarkedFunds[] {
   const fundsMap = new Map<string, EarmarkedFunds>();
 
   for (const earmark of earmarks) {
@@ -460,7 +463,7 @@ export async function executeOnDemandRebalancing(
     amount: string;
     slippage: number;
     bridge: string;
-    txHash: string;
+    receipt: database.TransactionReceipt;
   }> = [];
 
   try {
@@ -494,7 +497,7 @@ export async function executeOnDemandRebalancing(
         if (result) {
           logger.info('On-demand rebalance transaction confirmed', {
             requestId,
-            transactionHash: result.txHash,
+            transactionHash: result.transactionHash,
             bridgeType: operation.bridge,
             originChain: operation.originChain,
             amount: operation.amount,
@@ -506,7 +509,7 @@ export async function executeOnDemandRebalancing(
             amount: operation.amount,
             slippage: operation.slippage,
             bridge: operation.bridge,
-            txHash: result.txHash,
+            receipt: result,
           });
         } else {
           logger.warn('Failed to execute rebalancing operation, no transaction returned', {
@@ -567,14 +570,14 @@ export async function executeOnDemandRebalancing(
           slippage: op.slippage,
           status: RebalanceOperationStatus.PENDING,
           bridge: op.bridge,
-          txHashes: { originTxHash: op.txHash },
+          transactions: { [op.originChainId]: op.receipt },
         });
 
         logger.info('Created rebalance operation record', {
           requestId,
           earmarkId: earmark.id,
           originChain: op.originChainId,
-          txHash: op.txHash,
+          txHash: op.receipt.transactionHash,
           bridge: op.bridge,
         });
       } catch (error) {
@@ -634,7 +637,7 @@ async function checkAllOperationsComplete(earmarkId: string): Promise<boolean> {
  * Handle the case when minAmount has increased for an earmarked invoice
  */
 async function handleMinAmountIncrease(
-  earmark: earmarks,
+  earmark: database.CamelCasedProperties<earmarks>,
   invoice: Invoice,
   currentMinAmount: string,
   context: ProcessingContext,
@@ -720,7 +723,7 @@ async function handleMinAmountIncrease(
     amount: string;
     slippage: number;
     bridge: string;
-    txHash: string;
+    receipt: database.TransactionReceipt;
   }> = [];
 
   // Execute additional rebalancing operations
@@ -751,7 +754,7 @@ async function handleMinAmountIncrease(
       if (result) {
         logger.info('Additional rebalance transaction confirmed', {
           requestId,
-          transactionHash: result.txHash,
+          transactionHash: result.transactionHash,
           bridgeType: operation.bridge,
           originChain: operation.originChain,
           amount: operation.amount,
@@ -763,7 +766,7 @@ async function handleMinAmountIncrease(
           amount: operation.amount,
           slippage: operation.slippage,
           bridge: operation.bridge,
-          txHash: result.txHash,
+          receipt: result,
         });
       }
     } catch (error) {
@@ -794,14 +797,14 @@ async function handleMinAmountIncrease(
           slippage: op.slippage,
           status: RebalanceOperationStatus.PENDING,
           bridge: op.bridge,
-          txHashes: { originTxHash: op.txHash },
+          transactions: { [op.originChainId]: op.receipt },
         });
 
         logger.info('Created additional rebalance operation record', {
           requestId,
           earmarkId: earmark.id,
           originChain: op.originChainId,
-          txHash: op.txHash,
+          txHash: op.receipt.transactionHash,
           bridge: op.bridge,
         });
       } catch (error) {
@@ -842,7 +845,7 @@ async function executeRebalanceTransactionWithBridge(
   recipient: string,
   bridgeType: SupportedBridge,
   context: ProcessingContext,
-): Promise<{ txHash: string } | null> {
+): Promise<database.TransactionReceipt | undefined> {
   const { logger, rebalance, requestId, config } = context;
 
   try {
@@ -856,7 +859,7 @@ async function executeRebalanceTransactionWithBridge(
         requestId,
         bridgeType,
       });
-      return null;
+      return undefined;
     }
 
     logger.info('Executing on-demand rebalance with pre-determined bridge', {
@@ -872,7 +875,7 @@ async function executeRebalanceTransactionWithBridge(
     const bridgeTxRequests = await adapter.send(sender, recipient, amount, route);
 
     if (bridgeTxRequests && bridgeTxRequests.length > 0) {
-      let transactionHash: string | null = null;
+      let receipt: database.TransactionReceipt | undefined = undefined;
 
       for (const { transaction, memo } of bridgeTxRequests) {
         logger.info('Submitting on-demand rebalance transaction', {
@@ -909,7 +912,7 @@ async function executeRebalanceTransactionWithBridge(
           });
 
           if (memo === RebalanceTransactionMemo.Rebalance) {
-            transactionHash = result.hash;
+            receipt = result.receipt as unknown as database.TransactionReceipt;
           }
         } catch (txError) {
           logger.error('Failed to submit on-demand rebalance transaction', {
@@ -922,27 +925,27 @@ async function executeRebalanceTransactionWithBridge(
         }
       }
 
-      if (transactionHash) {
+      if (receipt) {
         logger.info('Successfully completed on-demand rebalance transaction', {
           requestId,
           bridgeType,
           amount,
           route,
-          transactionHash,
+          transactionHash: receipt.transactionHash,
           transactionCount: bridgeTxRequests.length,
         });
-        return { txHash: transactionHash };
+        return receipt;
       }
     }
 
-    return null;
+    return undefined;
   } catch (error) {
     logger.error('Failed to execute rebalance transaction with bridge', {
       requestId,
       bridgeType,
       error: jsonifyError(error),
     });
-    return null;
+    return undefined;
   }
 }
 

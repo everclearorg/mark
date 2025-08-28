@@ -92,7 +92,6 @@ export interface RebalanceConfig {
   routes: RouteRebalancingConfig[];
   onDemandRoutes?: OnDemandRouteConfig[];
 }
-
 export interface RedisConfig {
   host: string;
   port: number;

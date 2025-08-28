@@ -1,5 +1,5 @@
 import { stub, restore, createStubInstance, SinonStubbedInstance } from 'sinon';
-import { Wallet, providers, BigNumber } from 'ethers';
+import { Wallet } from 'ethers';
 import { Web3Signer } from '@mark/web3signer';
 import { Address, encodeFunctionData, erc20Abi } from 'viem';
 import {
@@ -98,22 +98,13 @@ describe('Permit2 Helper Functions', () => {
       // Set up the submitAndMonitor stub with a proper TransactionReceipt mock
       const mockReceipt = {
         transactionHash: '0xapproval_tx_hash',
-        to: '0xTOKEN_ADDRESS',
-        from: '0xSENDER_ADDRESS',
-        contractAddress: null,
-        transactionIndex: 1,
-        gasUsed: BigNumber.from(50000),
-        logsBloom: '0x',
-        blockHash: '0xBLOCK_HASH',
         blockNumber: 12345678,
-        logs: [],
-        cumulativeGasUsed: BigNumber.from(100000),
-        effectiveGasPrice: BigNumber.from(20),
-        byzantium: true,
-        type: 0,
-        confirmations: 1,
         status: 1,
-      } as unknown as providers.TransactionReceipt;
+        cumulativeGasUsed: '100000',
+        effectiveGasPrice: '1000000000',
+        confirmations: 1,
+        logs: [],
+      };
 
       chainService.submitAndMonitor.resolves(mockReceipt);
     });
@@ -201,7 +192,7 @@ describe('Permit2 Helper Functions', () => {
       // Create a test Wallet with a stubbed _signTypedData method
       const privateKey = '0x1234567890123456789012345678901234567890123456789012345678901234';
       const realWallet = new Wallet(privateKey);
-      const signTypedDataStub = stub(realWallet, '_signTypedData').resolves(
+      const signTypedDataStub = stub(realWallet, 'signTypedData').resolves(
         '0xmocksignature123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456',
       );
 
@@ -228,7 +219,7 @@ describe('Permit2 Helper Functions', () => {
       expect(typeof signature).toBe('string');
       expect(signature.startsWith('0x')).toBe(true);
 
-      // Verify _signTypedData was called with the correct parameters
+      // Verify signTypedData was called with the correct parameters
       expect(signTypedDataStub.calledOnce).toBe(true);
 
       const [calledDomain, calledTypes, calledValue] = signTypedDataStub.firstCall.args;
