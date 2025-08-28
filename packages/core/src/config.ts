@@ -173,7 +173,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippages: [-1000, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -183,7 +183,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
         maximum: '5000000000000000000000', // 5,000
-        slippages: [-1000, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -194,7 +194,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
         maximum: '5500000000000000000000', // 5,500
         reserve: '5000000000000000000000', // 5,000
-        slippages: [-1000, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -205,7 +205,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x55d398326f99059fF775485246999027B3197955',
         maximum: '5500000000000000000000', // 5,500
         reserve: '5000000000000000000000', // 5,000
-        slippages: [-1000, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -248,7 +248,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff',
         maximum: '10000000000000000000000', // 10,000
-        slippages: [-1000],
+        slippages: [50],
         preferences: [SupportedBridge.CCTPV2],
       },
 
@@ -269,7 +269,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61',
         maximum: '50000000000000000000000', // 50,000
         reserve: '30000000000000000000000', // 30,000
-        slippages: [-1000, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -280,7 +280,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xce010e60afedb22717bd63192f54145a3f965a33bb82d2c7029eb2ce1e208264',
         maximum: '50000000000000000000000', // 50,000
         reserve: '30000000000000000000000', // 30,000
-        slippages: [-1000, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
