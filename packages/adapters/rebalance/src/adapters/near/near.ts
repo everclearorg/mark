@@ -602,9 +602,12 @@ export class NearBridgeAdapter implements BridgeAdapter {
       throw new Error('Could not find matching input asset');
     }
 
+    // For WETH, we need to use ETH identifier since we unwrap WETH to ETH before bridging
+    const inputSymbol = originAsset.symbol === 'WETH' ? 'ETH' : originAsset.symbol;
+
     // Use the symbol to look up the Near identifier
     const inputAssetIdentifier =
-      NEAR_IDENTIFIER_MAP[originAsset.symbol as keyof typeof NEAR_IDENTIFIER_MAP]?.[
+      NEAR_IDENTIFIER_MAP[inputSymbol as keyof typeof NEAR_IDENTIFIER_MAP]?.[
         route.origin as keyof (typeof NEAR_IDENTIFIER_MAP)[keyof typeof NEAR_IDENTIFIER_MAP]
       ];
     if (!inputAssetIdentifier) {
@@ -616,8 +619,11 @@ export class NearBridgeAdapter implements BridgeAdapter {
       throw new Error(`Could not find matching output asset: ${route.asset} for ${route.destination}`);
     }
 
+    // For WETH routes, we bridge as ETH and wrap on destination if needed
+    const outputSymbol = outputAsset.symbol === 'WETH' ? 'ETH' : outputAsset.symbol;
+
     const outputAssetIdentifier =
-      NEAR_IDENTIFIER_MAP[outputAsset.symbol as keyof typeof NEAR_IDENTIFIER_MAP]?.[
+      NEAR_IDENTIFIER_MAP[outputSymbol as keyof typeof NEAR_IDENTIFIER_MAP]?.[
         route.destination as keyof (typeof NEAR_IDENTIFIER_MAP)[keyof typeof NEAR_IDENTIFIER_MAP]
       ];
     if (!outputAssetIdentifier) {
