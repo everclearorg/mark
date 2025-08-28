@@ -337,8 +337,8 @@ export async function createRebalanceOperation(input: {
         }),
       ];
 
-      const response = await client.query(transactionQuery, transactionValues);
-      const raw = response.rows[0] as any;
+      const response = await client.query<transactions>(transactionQuery, transactionValues);
+      const raw = response.rows[0];
       const meta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata) : (raw.metadata ?? {});
       const converted = snakeToCamel({ ...raw, metadata: meta }) as CamelCasedProperties<transactions>;
       transactions.push(converted);
@@ -374,8 +374,8 @@ export async function getTransactionsForRebalanceOperations(
     ORDER BY created_at ASC
   `;
 
-  const transactionsResult = await queryExecutor.query(transactionsQuery, operationIds);
-  const transactions = transactionsResult.rows.map((row: any) => {
+  const transactionsResult = await queryExecutor.query<transactions>(transactionsQuery, operationIds);
+  const transactions = transactionsResult.rows.map((row) => {
     const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata ?? {});
     return snakeToCamel({ ...row, metadata: meta }) as CamelCasedProperties<transactions>;
   });
