@@ -16,12 +16,15 @@ import {
 import { setupTestDatabase, teardownTestDatabase, cleanupTestDatabase } from './setup';
 
 describe('Database Adapter - Integration Tests', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await setupTestDatabase();
+  });
+
+  beforeEach(async () => {
     await cleanupTestDatabase();
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await teardownTestDatabase();
   });
 
@@ -383,7 +386,7 @@ describe('Database Adapter - Integration Tests', () => {
         await db.query(
           `INSERT INTO transactions (rebalance_operation_id, transaction_hash, chain_id, "from", "to", cumulative_gas_used, effective_gas_price, reason, metadata)
            VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)`,
-          [txHash, '1', '0xfrom', '0xto', '1', '1', 'Rebalance', JSON.stringify({})]
+          [txHash, '1', '0xfrom', '0xto', '1', '1', 'Rebalance', JSON.stringify({})],
         );
 
         const result = await getRebalanceOperationByTransactionHash(txHash, 1);
@@ -499,15 +502,20 @@ describe('Database Adapter - Integration Tests', () => {
         expect(operation.earmarkId).toBe(earmark.id);
         expect(operation.status).toBe(RebalanceOperationStatus.AWAITING_CALLBACK);
         expect(operation.bridge).toBe('cross-chain-bridge');
-        const expected = Object.fromEntries(Object.entries(transactionReceipts).map(([chain, receipt]) => {
-          const { confirmations, blockNumber, status, ...ret } = receipt;
-          return [chain, {
-            ...ret,
-            rebalanceOperationId: operation.id,
-            reason: TransactionReasons.Rebalance,
-            metadata: { receipt }
-          }];
-        }));
+        const expected = Object.fromEntries(
+          Object.entries(transactionReceipts).map(([chain, receipt]) => {
+            const { confirmations, blockNumber, status, ...ret } = receipt;
+            return [
+              chain,
+              {
+                ...ret,
+                rebalanceOperationId: operation.id,
+                reason: TransactionReasons.Rebalance,
+                metadata: { receipt },
+              },
+            ];
+          }),
+        );
         expect(operation.transactions).toMatchObject(expected);
       });
 
@@ -573,7 +581,7 @@ describe('Database Adapter - Integration Tests', () => {
         const originalUpdatedAt = operation.updatedAt;
 
         // Wait a small amount to ensure timestamp difference
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
         const updated = await updateRebalanceOperation(operation.id, {
           status: RebalanceOperationStatus.COMPLETED,
@@ -702,7 +710,7 @@ describe('Database Adapter - Integration Tests', () => {
         await expect(
           updateRebalanceOperation(nonExistentId, {
             status: RebalanceOperationStatus.COMPLETED,
-          })
+          }),
         ).rejects.toThrow(`Rebalance operation with id ${nonExistentId} not found`);
       });
 
@@ -721,7 +729,7 @@ describe('Database Adapter - Integration Tests', () => {
         const originalUpdatedAt = operation.updatedAt;
 
         // Wait to ensure timestamp difference
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
         const updated = await updateRebalanceOperation(operation.id, {
           status: RebalanceOperationStatus.AWAITING_CALLBACK,
@@ -752,7 +760,7 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'bridge-1',
         });
 
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
         const operation2 = await createRebalanceOperation({
           earmarkId: earmark.id,
@@ -765,7 +773,7 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'bridge-2',
         });
 
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
         const operation3 = await createRebalanceOperation({
           earmarkId: earmark.id,
@@ -787,19 +795,19 @@ describe('Database Adapter - Integration Tests', () => {
 
         // Verify ordering by created_at ASC
         expect(new Date(operations[0].createdAt!).getTime()).toBeLessThanOrEqual(
-          new Date(operations[1].createdAt!).getTime()
+          new Date(operations[1].createdAt!).getTime(),
         );
         expect(new Date(operations[1].createdAt!).getTime()).toBeLessThanOrEqual(
-          new Date(operations[2].createdAt!).getTime()
+          new Date(operations[2].createdAt!).getTime(),
         );
 
         // Verify all operations belong to the same earmark
-        operations.forEach(op => {
+        operations.forEach((op) => {
           expect(op.earmarkId).toBe(earmark.id);
         });
 
         // Verify that operations without transactions have undefined transactions
-        operations.forEach(op => {
+        operations.forEach((op) => {
           expect(op.transactions).toBeUndefined();
         });
       });
@@ -834,7 +842,7 @@ describe('Database Adapter - Integration Tests', () => {
           minAmount: '150000000000',
         });
 
-        const operation = await createRebalanceOperation({
+        await createRebalanceOperation({
           earmarkId: earmark.id,
           originChainId: 1,
           destinationChainId: 137,
@@ -1028,7 +1036,7 @@ describe('Database Adapter - Integration Tests', () => {
         // Check that operations are ordered by created_at ASC
         for (let i = 1; i < allOperations.length; i++) {
           expect(new Date(allOperations[i - 1].createdAt!).getTime()).toBeLessThanOrEqual(
-            new Date(allOperations[i].createdAt!).getTime()
+            new Date(allOperations[i].createdAt!).getTime(),
           );
         }
       });
@@ -1084,18 +1092,18 @@ describe('Database Adapter - Integration Tests', () => {
         });
 
         // Check that filtering works
-        const pendingFromEarmark = pendingOperations.filter(op => op.earmarkId === earmark.id);
-        const completedFromEarmark = completedOperations.filter(op => op.earmarkId === earmark.id);
+        const pendingFromEarmark = pendingOperations.filter((op) => op.earmarkId === earmark.id);
+        const completedFromEarmark = completedOperations.filter((op) => op.earmarkId === earmark.id);
 
         expect(pendingFromEarmark.length).toBeGreaterThanOrEqual(1);
         expect(completedFromEarmark.length).toBeGreaterThanOrEqual(1);
 
         // Verify all returned operations have the correct status
-        pendingFromEarmark.forEach(op => {
+        pendingFromEarmark.forEach((op) => {
           expect(op.status).toBe(RebalanceOperationStatus.PENDING);
         });
 
-        completedFromEarmark.forEach(op => {
+        completedFromEarmark.forEach((op) => {
           expect(op.status).toBe(RebalanceOperationStatus.COMPLETED);
         });
       });
@@ -1162,18 +1170,18 @@ describe('Database Adapter - Integration Tests', () => {
         });
 
         // Filter by earmark to check our specific operations
-        const activeFromEarmark = activeOperations.filter(op => op.earmarkId === earmark.id);
-        const finalFromEarmark = finalOperations.filter(op => op.earmarkId === earmark.id);
+        const activeFromEarmark = activeOperations.filter((op) => op.earmarkId === earmark.id);
+        const finalFromEarmark = finalOperations.filter((op) => op.earmarkId === earmark.id);
 
         expect(activeFromEarmark.length).toBe(2);
         expect(finalFromEarmark.length).toBe(2);
 
         // Verify statuses
-        activeFromEarmark.forEach(op => {
+        activeFromEarmark.forEach((op) => {
           expect([RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK]).toContain(op.status);
         });
 
-        finalFromEarmark.forEach(op => {
+        finalFromEarmark.forEach((op) => {
           expect([RebalanceOperationStatus.COMPLETED, RebalanceOperationStatus.EXPIRED]).toContain(op.status);
         });
       });
@@ -1229,18 +1237,18 @@ describe('Database Adapter - Integration Tests', () => {
         });
 
         // Filter by earmark to check our specific operations
-        const ethFromEarmark = ethereumOperations.filter(op => op.earmarkId === earmark.id);
-        const polygonFromEarmark = polygonOperations.filter(op => op.earmarkId === earmark.id);
+        const ethFromEarmark = ethereumOperations.filter((op) => op.earmarkId === earmark.id);
+        const polygonFromEarmark = polygonOperations.filter((op) => op.earmarkId === earmark.id);
 
         expect(ethFromEarmark.length).toBe(2);
         expect(polygonFromEarmark.length).toBe(1);
 
         // Verify origin chain IDs
-        ethFromEarmark.forEach(op => {
+        ethFromEarmark.forEach((op) => {
           expect(op.originChainId).toBe(1);
         });
 
-        polygonFromEarmark.forEach(op => {
+        polygonFromEarmark.forEach((op) => {
           expect(op.originChainId).toBe(137);
         });
       });
@@ -1315,7 +1323,7 @@ describe('Database Adapter - Integration Tests', () => {
         expect(earmark2Operations[0].earmarkId).toBe(earmark2.id);
 
         // Check that at least one standalone operation exists
-        const hasNullEarmark = standaloneOperations.some(op => op.earmarkId === null);
+        const hasNullEarmark = standaloneOperations.some((op) => op.earmarkId === null);
         expect(hasNullEarmark).toBe(true);
       });
 
@@ -1395,7 +1403,7 @@ describe('Database Adapter - Integration Tests', () => {
         });
 
         // Create operations with delays to ensure different timestamps
-        const operation1 = await createRebalanceOperation({
+        await createRebalanceOperation({
           earmarkId: earmark.id,
           originChainId: 10,
           destinationChainId: 1,
@@ -1406,9 +1414,9 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'first-bridge',
         });
 
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
-        const operation2 = await createRebalanceOperation({
+        await createRebalanceOperation({
           earmarkId: earmark.id,
           originChainId: 137,
           destinationChainId: 1,
@@ -1419,9 +1427,9 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'second-bridge',
         });
 
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await new Promise((resolve) => setTimeout(resolve, 10));
 
-        const operation3 = await createRebalanceOperation({
+        await createRebalanceOperation({
           earmarkId: earmark.id,
           originChainId: 42161,
           destinationChainId: 1,
@@ -1440,9 +1448,9 @@ describe('Database Adapter - Integration Tests', () => {
         expect(operations.length).toBeGreaterThanOrEqual(3);
 
         // Find our specific operations in the results
-        const op1 = operations.find(op => op.bridge === 'first-bridge');
-        const op2 = operations.find(op => op.bridge === 'second-bridge');
-        const op3 = operations.find(op => op.bridge === 'third-bridge');
+        const op1 = operations.find((op) => op.bridge === 'first-bridge');
+        const op2 = operations.find((op) => op.bridge === 'second-bridge');
+        const op3 = operations.find((op) => op.bridge === 'third-bridge');
 
         expect(op1).toBeDefined();
         expect(op2).toBeDefined();

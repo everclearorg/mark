@@ -714,10 +714,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
   ): Promise<{ refid: string; asset: string; method: string } | undefined> {
     try {
       // Lookup the rebalance operation via the origin deposit tx hash
-      const op = await this.db.getRebalanceOperationByTransactionHash(
-        originTransaction.transactionHash,
-        route.origin,
-      );
+      const op = await this.db.getRebalanceOperationByTransactionHash(originTransaction.transactionHash, route.origin);
       if (!op) {
         this.logger.debug('No rebalance operation found for deposit', {
           route,
@@ -796,10 +793,7 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
       });
 
       // Persist withdrawal details in DB
-      const op = await this.db.getRebalanceOperationByTransactionHash(
-        originTransaction.transactionHash,
-        route.origin,
-      );
+      const op = await this.db.getRebalanceOperationByTransactionHash(originTransaction.transactionHash, route.origin);
       if (!op) {
         throw new Error(
           `Unable to locate rebalance operation for deposit ${originTransaction.transactionHash} on chain ${route.origin}`,

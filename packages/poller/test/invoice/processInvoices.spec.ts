@@ -9,8 +9,8 @@ import {
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as assetHelpers from '../../src/helpers/asset';
 import { IntentStatus } from '@mark/everclear';
-import { PurchaseCache, RebalanceCache } from '@mark/cache';
-import { SupportedBridge, InvalidPurchaseReasons, TransactionSubmissionType } from '@mark/core';
+import { PurchaseCache } from '@mark/cache';
+import { SupportedBridge, InvalidPurchaseReasons, TransactionSubmissionType, GasType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
@@ -49,7 +49,6 @@ describe('Invoice Processing', () => {
     everclear: SinonStubbedInstance<EverclearAdapter>;
     chainService: SinonStubbedInstance<ChainService>;
     purchaseCache: SinonStubbedInstance<PurchaseCache>;
-    rebalanceCache: SinonStubbedInstance<RebalanceCache>;
     rebalance: SinonStubbedInstance<RebalanceAdapter>;
     web3Signer: SinonStubbedInstance<Wallet>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
@@ -86,7 +85,6 @@ describe('Invoice Processing', () => {
       everclear: createStubInstance(EverclearAdapter),
       chainService: createStubInstance(ChainService),
       purchaseCache: createStubInstance(PurchaseCache),
-      rebalanceCache: createStubInstance(RebalanceCache),
       rebalance: createStubInstance(RebalanceAdapter),
       web3Signer: createStubInstance(Wallet),
       prometheus: createStubInstance(PrometheusAdapter),
@@ -516,9 +514,9 @@ describe('Invoice Processing', () => {
       // Mock balances - Mark has enough balance on domain2 to purchase the invoice
       getMarkBalancesStub.resolves(new Map([[ticker, new Map([[domain2, BigInt('5000000000000000000')]])]]));
       // Mark has enough gas balance on domain2
-      getMarkGasBalancesStub.resolves(new Map([
-        [{ chainId: domain2, gasType: GasType.Gas }, BigInt('1000000000000000000')]
-      ]));
+      getMarkGasBalancesStub.resolves(
+        new Map([[{ chainId: domain2, gasType: GasType.Gas }, BigInt('1000000000000000000')]]),
+      );
 
       // Mock custodied balances - domain1 has insufficient custodied assets
       // for Mark to settle out if not including pending intents

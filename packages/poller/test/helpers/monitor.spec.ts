@@ -138,9 +138,9 @@ describe('Monitor Helpers', () => {
     });
 
     it('should log error when gas balance is below threshold', () => {
-      const gas = new Map([
-        ['domain1', BigInt(4000)], // Below threshold
-        ['domain2', BigInt(4000)], // Above threshold
+      const gas = new Map<{ chainId: string; gasType: GasType }, bigint>([
+        [{ chainId: 'domain1', gasType: GasType.Gas }, BigInt(4000)], // Below threshold
+        [{ chainId: 'domain2', gasType: GasType.Gas }, BigInt(4000)], // Above threshold
       ]);
 
       logGasThresholds(gas, config, logger);
@@ -151,9 +151,9 @@ describe('Monitor Helpers', () => {
     });
 
     it('should not log when gas balance is above threshold', () => {
-      const gas = new Map([
-        ['domain1', BigInt(6000)], // Above threshold
-        ['domain2', BigInt(4000)], // Above threshold
+      const gas = new Map<{ chainId: string; gasType: GasType }, bigint>([
+        [{ chainId: 'domain1', gasType: GasType.Gas }, BigInt(6000)], // Above threshold
+        [{ chainId: 'domain2', gasType: GasType.Gas }, BigInt(4000)], // Above threshold
       ]);
 
       logGasThresholds(gas, config, logger);
@@ -174,7 +174,9 @@ describe('Monitor Helpers', () => {
         },
       } as unknown as MarkConfiguration;
 
-      const gas = new Map([['domain3', BigInt(5000)]]);
+      const gas = new Map<{ chainId: string; gasType: GasType }, bigint>([
+        [{ chainId: 'domain3', gasType: GasType.Gas }, BigInt(5000)],
+      ]);
 
       logGasThresholds(gas, configWithoutThreshold, logger);
 
@@ -195,8 +197,8 @@ describe('Monitor Helpers', () => {
         },
       } as unknown as MarkConfiguration;
 
-      const gas = new Map([
-        ['domain3', BigInt(0)], // Set to 0 to trigger the error condition
+      const gas = new Map<{ chainId: string; gasType: GasType }, bigint>([
+        [{ chainId: 'domain3', gasType: GasType.Gas }, BigInt(0)], // Set to 0 to trigger the error condition
       ]);
 
       // Reset logger before this test
@@ -222,7 +224,9 @@ describe('Monitor Helpers', () => {
         },
       } as unknown as MarkConfiguration;
 
-      const gas = new Map([['domain3', BigInt(100)]]);
+      const gas = new Map<{ chainId: string; gasType: GasType }, bigint>([
+        [{ chainId: 'domain3', gasType: GasType.Gas }, BigInt(100)],
+      ]);
 
       // Reset logger before this test
       logger = createStubInstance(Logger);
@@ -246,8 +250,8 @@ describe('Monitor Helpers', () => {
         },
       } as unknown as MarkConfiguration;
 
-      const gas = new Map([
-        ['domain3', BigInt(5000)], // Exactly equal to threshold
+      const gas = new Map<{ chainId: string; gasType: GasType }, bigint>([
+        [{ chainId: 'domain3', gasType: GasType.Gas }, BigInt(5000)], // Exactly equal to threshold
       ]);
 
       logGasThresholds(gas, configWithExactThreshold, logger);

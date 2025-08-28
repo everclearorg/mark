@@ -2,12 +2,15 @@ import { setupTestDatabase, teardownTestDatabase, cleanupTestDatabase } from './
 import { isPaused, setPause } from '../src/db';
 
 describe('Admin Actions - Pause Flags (integration)', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await setupTestDatabase();
+  });
+
+  beforeEach(async () => {
     await cleanupTestDatabase();
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await teardownTestDatabase();
   });
 
@@ -62,4 +65,3 @@ describe('Admin Actions - Pause Flags (integration)', () => {
     expect(await isPaused('purchase')).toBe(true);
   });
 });
-

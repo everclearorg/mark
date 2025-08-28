@@ -6,12 +6,10 @@ import * as zodiacModule from '../../src/helpers/zodiac';
 import { AssetConfiguration, MarkConfiguration, WalletType, GasType } from '@mark/core';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { ChainService } from '@mark/chainservice';
+import { PublicClient } from 'viem';
+import { TronWeb } from 'tronweb';
 
 // Mock interfaces for proper typing
-interface MockClient {
-  getBalance: sinon.SinonStub;
-}
-
 interface MockERC20Contract {
   read: {
     balanceOf: sinon.SinonStub;
@@ -51,7 +49,8 @@ describe('Wallet Balance Utilities', () => {
         providers: ['https://mainnet.infura.io/v3/test'],
         assets: [mockAssetConfig],
       },
-      '728126428': { // Tron chain
+      '728126428': {
+        // Tron chain
         providers: ['https://api.trongrid.io'],
         assets: [mockAssetConfig],
       },
@@ -98,7 +97,7 @@ describe('Wallet Balance Utilities', () => {
     it('should return gas balances for all chains', async () => {
       const mockClient = {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
-      } as any;
+      } as unknown as PublicClient;
       stub(contractModule, 'createClient').returns(mockClient);
 
       const balances = await getMarkGasBalances(mockConfig, chainService, prometheus);
@@ -106,7 +105,7 @@ describe('Wallet Balance Utilities', () => {
       expect(balances.size).toBe(Object.keys(mockConfig.chains).length);
       for (const chain of Object.keys(mockConfig.chains)) {
         const balance = findMapKey(balances, chain, GasType.Gas);
-        expect(balance?.toString()).to.equal('1000000000000000000');
+        expect(balance?.toString()).toBe('1000000000000000000');
       }
     });
 
@@ -114,32 +113,34 @@ describe('Wallet Balance Utilities', () => {
       // First chain succeeds, second fails
       const mockClient1 = {
         getBalance: stub().resolves(BigInt('1000000000000000000')),
-      } as any;
+      } as unknown as PublicClient;
       const mockClient2 = {
         getBalance: stub().rejects(new Error('RPC error')),
-      } as any;
+      } as unknown as PublicClient;
 
       stub(contractModule, 'createClient')
-        .withArgs('1', mockConfig).returns(mockClient1)
-        .withArgs('2', mockConfig).returns(mockClient2);
+        .withArgs('1', mockConfig)
+        .returns(mockClient1)
+        .withArgs('2', mockConfig)
+        .returns(mockClient2);
 
       const balances = await getMarkGasBalances(mockConfig, chainService, prometheus);
       const balance1 = findMapKey(balances, '1', GasType.Gas);
       const balance2 = findMapKey(balances, '2', GasType.Gas);
-      expect(balance1?.toString()).to.equal('1000000000000000000');
-      expect(balance2?.toString()).to.equal('0'); // Should return 0 for failed chain
+      expect(balance1?.toString()).toBe('1000000000000000000');
+      expect(balance2?.toString()).toBe('0'); // Should return 0 for failed chain
     });
 
     it('should return bandwidth and energy for Tron chains', async () => {
       const mockClient = {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
-      } as any;
+      } as unknown as PublicClient;
       stub(contractModule, 'createClient').returns(mockClient);
 
       // Mock chainService.getAddress() to return addresses for all chains
       chainService.getAddress.resolves({
         '1': '0xOwnAddress',
-        '728126428': '0xTronAddress'
+        '728126428': '0xTronAddress',
       });
 
       // Mock zodiac functions
@@ -158,48 +159,53 @@ describe('Wallet Balance Utilities', () => {
             EnergyUsed: 500,
           }),
         },
-      } as any;
+      };
 
-      const balances = await getMarkGasBalances(mockConfigWithTron, chainService, prometheus, mockTronWeb);
+      const balances = await getMarkGasBalances(
+        mockConfigWithTron,
+        chainService,
+        prometheus,
+        mockTronWeb as unknown as TronWeb,
+      );
 
       // Should have 3 entries: 1 for regular gas, 2 for Tron (bandwidth + energy)
-      expect(balances.size).to.equal(3);
+      expect(balances.size).toBe(3);
 
       // Check regular gas balance
       const gasBalance = findMapKey(balances, '1', GasType.Gas);
-      expect(gasBalance?.toString()).to.equal('1000000000000000000');
+      expect(gasBalance?.toString()).toBe('1000000000000000000');
 
       // Check Tron bandwidth: (1000 - 100) + (2000 - 200) = 2700
       const bandwidthBalance = findMapKey(balances, '728126428', GasType.Bandwidth);
-      expect(bandwidthBalance?.toString()).to.equal('2700');
+      expect(bandwidthBalance?.toString()).toBe('2700');
 
       // Check Tron energy: 5000 - 500 = 4500
       const energyBalance = findMapKey(balances, '728126428', GasType.Energy);
-      expect(energyBalance?.toString()).to.equal('4500');
+      expect(energyBalance?.toString()).toBe('4500');
     });
 
     it('should handle Tron chain without TronWeb by setting balances to zero', async () => {
       const mockClient = {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
-      } as any;
+      } as unknown as PublicClient;
       stub(contractModule, 'createClient').returns(mockClient);
 
       const balances = await getMarkGasBalances(mockConfigWithTron, chainService, prometheus);
 
       // Should have 3 entries: 1 for regular gas, 2 for Tron (bandwidth + energy) set to 0
-      expect(balances.size).to.equal(3);
+      expect(balances.size).toBe(3);
 
       // Check regular gas balance (should work)
       const gasBalance = findMapKey(balances, '1', GasType.Gas);
-      expect(gasBalance?.toString()).to.equal('1000000000000000000');
+      expect(gasBalance?.toString()).toBe('1000000000000000000');
 
       // Check Tron bandwidth (should be 0 due to missing TronWeb)
       const bandwidthBalance = findMapKey(balances, '728126428', GasType.Bandwidth);
-      expect(bandwidthBalance?.toString()).to.equal('0');
+      expect(bandwidthBalance?.toString()).toBe('0');
 
       // Check Tron energy (should be 0 due to missing TronWeb)
       const energyBalance = findMapKey(balances, '728126428', GasType.Energy);
-      expect(energyBalance?.toString()).to.equal('0');
+      expect(energyBalance?.toString()).toBe('0');
     });
   });
 
@@ -346,8 +352,8 @@ describe('Wallet Balance Utilities', () => {
       );
 
       const balances = await getMarkBalances(configWithoutAddress, chainService, prometheus);
-      expect(balances.get(mockAssetConfig.tickerHash)?.get('1')).to.be.undefined;
-      expect(prometheus.updateChainBalance.calledOnce).to.be.false;
+      expect(balances.get(mockAssetConfig.tickerHash)?.get('1')).toBeUndefined();
+      expect(prometheus.updateChainBalance.calledOnce).toBe(false);
     });
 
     it('should handle contract errors gracefully', async () => {

@@ -63,16 +63,23 @@ const unpauseIfNeeded = async (
   _store: Database | PurchaseCache,
   context: AdminContext,
 ) => {
-  if (type === 'rebalance') {
-    throw new Error(`Fix rebalance pausing on db`);
-  }
-  const store = _store as PurchaseCache;
   const { requestId, logger } = context;
-  logger.debug('Unpausing cache', { requestId });
-  if (!(await store.isPaused())) {
-    throw new Error(`Cache is not paused`);
+
+  if (type === 'rebalance') {
+    const db = _store as Database;
+    logger.debug('Unpausing rebalance', { requestId });
+    if (!(await db.isPaused('rebalance'))) {
+      throw new Error(`Rebalance is not paused`);
+    }
+    return db.setPause('rebalance', false);
+  } else {
+    const store = _store as PurchaseCache;
+    logger.debug('Unpausing purchase cache', { requestId });
+    if (!(await store.isPaused())) {
+      throw new Error(`Purchase cache is not paused`);
+    }
+    return store.setPause(false);
   }
-  return store.setPause(false);
 };
 
 const pauseIfNeeded = async (
@@ -80,16 +87,23 @@ const pauseIfNeeded = async (
   _store: Database | PurchaseCache,
   context: AdminContext,
 ) => {
-  if (type === 'rebalance') {
-    throw new Error(`Fix rebalance pausing on db`);
-  }
-  const store = _store as PurchaseCache;
   const { requestId, logger } = context;
-  logger.debug('Pausing cache', { requestId });
-  if (await store.isPaused()) {
-    throw new Error(`Cache is already paused`);
+
+  if (type === 'rebalance') {
+    const db = _store as Database;
+    logger.debug('Pausing rebalance', { requestId });
+    if (await db.isPaused('rebalance')) {
+      throw new Error(`Rebalance is already paused`);
+    }
+    return db.setPause('rebalance', true);
+  } else {
+    const store = _store as PurchaseCache;
+    logger.debug('Pausing purchase cache', { requestId });
+    if (await store.isPaused()) {
+      throw new Error(`Purchase cache is already paused`);
+    }
+    return store.setPause(true);
   }
-  return store.setPause(true);
 };
 
 export const extractRequest = (context: AdminContext): HttpPaths | undefined => {
