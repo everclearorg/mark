@@ -11,7 +11,7 @@ import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { PrometheusAdapter, TransactionReason } from '@mark/prometheus';
 import * as transactionsModule from '../../src/helpers/transactions';
-import { providers } from 'ethers';
+import { TransactionReceipt } from 'viem';
 
 describe('ERC20 Helper Functions', () => {
     let mockConfig: MarkConfiguration;
@@ -34,9 +34,9 @@ describe('ERC20 Helper Functions', () => {
         transactionHash: '0xtxhash123',
         blockNumber: 123,
         status: 1,
-        cumulativeGasUsed: { mul: (price: any) => ({ toString: () => '420000000000000' }) },
-        effectiveGasPrice: { toString: () => '20000000000' },
-    } as providers.TransactionReceipt;
+        cumulativeGasUsed: 420000000000000n,
+        effectiveGasPrice: 20000000000n,
+    } as unknown as TransactionReceipt;
 
     beforeEach(() => {
         mockConfig = {
@@ -89,10 +89,10 @@ describe('ERC20 Helper Functions', () => {
     describe('checkTokenAllowance', () => {
         it('should return current allowance from token contract', async () => {
             const expectedAllowance = 1000n;
-            
+
             // Mock the encoded allowance data that will decode to 1000n
             const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000003e8'; // 1000n in hex
-            
+
             mockChainService.readTx.resolves(encodedAllowance);
 
             const result = await checkTokenAllowance(
@@ -232,7 +232,7 @@ describe('ERC20 Helper Functions', () => {
                 expect(mockPrometheus.updateGasSpent.calledWith(
                     CHAIN_ID,
                     TransactionReason.Approval,
-                    420000000000000n
+                    mockReceipt.cumulativeGasUsed * mockReceipt.effectiveGasPrice
                 )).to.be.true;
             });
 
@@ -306,7 +306,7 @@ describe('ERC20 Helper Functions', () => {
                 expect(mockPrometheus.updateGasSpent.alwaysCalledWith(
                     CHAIN_ID,
                     TransactionReason.Approval,
-                    420000000000000n
+                    mockReceipt.cumulativeGasUsed * mockReceipt.effectiveGasPrice
                 )).to.be.true;
             });
 

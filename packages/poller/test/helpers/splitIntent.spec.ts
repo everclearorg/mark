@@ -8,10 +8,10 @@ import { ProcessingContext } from '../../src/init';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
-import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { mockConfig } from '../mocks';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { Web3Signer } from '@mark/web3signer';
 
 describe('Split Intent Helper Functions', () => {
   let mockContext: ProcessingContext;
@@ -23,7 +23,7 @@ describe('Split Intent Helper Functions', () => {
     purchaseCache: SinonStubbedInstance<PurchaseCache>;
     rebalanceCache: SinonStubbedInstance<RebalanceCache>;
     rebalance: SinonStubbedInstance<RebalanceAdapter>;
-    web3Signer: SinonStubbedInstance<Wallet>;
+    web3Signer: SinonStubbedInstance<Web3Signer>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
   };
 
@@ -36,7 +36,7 @@ describe('Split Intent Helper Functions', () => {
       purchaseCache: createStubInstance(PurchaseCache),
       rebalanceCache: createStubInstance(RebalanceCache),
       rebalance: createStubInstance(RebalanceAdapter),
-      web3Signer: createStubInstance(Wallet),
+      web3Signer: createStubInstance(Web3Signer),
       prometheus: createStubInstance(PrometheusAdapter),
     };
 
@@ -1849,7 +1849,7 @@ describe('Split Intent Helper Functions', () => {
 
       expect(result.intents.length).to.equal(1);
       const intent = result.intents[0];
-      
+
       // Intent.to should use destination chain (42161) Zodiac config = Safe address
       expect(intent.to).to.equal('0x9876543210987654321098765432109876543210'); // Safe address from destination chain config
     });
@@ -1895,7 +1895,7 @@ describe('Split Intent Helper Functions', () => {
 
       expect(result.intents.length).to.equal(1);
       const intent = result.intents[0];
-      
+
       // Intent.to should use destination chain (1) EOA config = own address
       expect(intent.to).to.equal('0x1111111111111111111111111111111111111111'); // EOA address from config
     });
@@ -1957,7 +1957,7 @@ describe('Split Intent Helper Functions', () => {
       );
 
       expect(result.intents.length).to.equal(2);
-      
+
       // Both intents should use EOA address since both destinations don't have Zodiac
       result.intents.forEach(intent => {
         expect(intent.to).to.equal('0x1111111111111111111111111111111111111111'); // EOA address for both destinations
@@ -2004,12 +2004,12 @@ describe('Split Intent Helper Functions', () => {
       );
 
       expect(result.intents.length).to.equal(2);
-      
+
       // Both intents should use destination chain (42161) Zodiac config = Safe address
       result.intents.forEach(intent => {
         expect(intent.to).to.equal('0x9876543210987654321098765432109876543210'); // Safe address from destination chain config
       });
-      
+
       // Total amount should match the required amount  
       const totalAmount = result.intents.reduce((sum, intent) => sum + BigInt(intent.amount), BigInt(0));
       expect(totalAmount.toString()).to.equal('100000000000000000000'); // Full 100 WETH

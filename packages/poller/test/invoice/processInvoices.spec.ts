@@ -11,7 +11,6 @@ import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { PurchaseCache } from '@mark/cache';
-import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import * as intentHelpers from '../../src/helpers/intent';
 import * as splitIntentHelpers from '../../src/helpers/splitIntent';
@@ -19,6 +18,7 @@ import { mockConfig, createMockInvoice } from '../mocks';
 
 import { RebalanceAdapter } from '@mark/rebalance';
 import * as monitorHelpers from '../../src/helpers/monitor';
+import { Web3Signer } from '@mark/web3signer';
 
 
 describe('Invoice Processing', () => {
@@ -39,7 +39,7 @@ describe('Invoice Processing', () => {
     purchaseCache: SinonStubbedInstance<PurchaseCache>;
     rebalanceCache: SinonStubbedInstance<RebalanceCache>;
     rebalance: SinonStubbedInstance<RebalanceAdapter>;
-    web3Signer: SinonStubbedInstance<Wallet>;
+    web3Signer: SinonStubbedInstance<Web3Signer>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
   };
 
@@ -60,7 +60,7 @@ describe('Invoice Processing', () => {
       purchaseCache: createStubInstance(PurchaseCache),
       rebalanceCache: createStubInstance(RebalanceCache),
       rebalance: createStubInstance(RebalanceAdapter),
-      web3Signer: createStubInstance(Wallet),
+      web3Signer: createStubInstance(Web3Signer),
       prometheus: createStubInstance(PrometheusAdapter),
     };
 
@@ -231,6 +231,47 @@ describe('Invoice Processing', () => {
       );
     });
 
+    it('should evict expired cached purchases by TTL', async () => {
+      // Configure a very small TTL
+      (mockContext.config as any).purchaseCacheTtlSeconds = 1;
+
+      getMarkBalancesStub.resolves(new Map());
+      getMarkGasBalancesStub.resolves(new Map());
+      getCustodiedBalancesStub.resolves(new Map());
+      isXerc20SupportedStub.resolves(false);
+
+      // Do not remove by intent status; only TTL should trigger
+      mockDeps.everclear.intentStatuses.resolves(new Map());
+
+      const invoices = [createMockInvoice()];
+
+      // Mock a cached purchase with an old cachedAt
+      mockDeps.purchaseCache.getAllPurchases.resolves([
+        {
+          target: invoices[0],
+          purchase: {
+            intentId: invoices[0].intent_id,
+            params: {
+              amount: '1000000000000000000',
+              origin: '1',
+              destinations: ['1'],
+              to: '0x123',
+              inputAsset: '0x123',
+              callData: '',
+              maxFee: 0,
+            },
+          },
+          transactionHash: '0xabc',
+          transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: (mockContext.startTime as number) - 10,
+        },
+      ]);
+
+      await processInvoices(mockContext, invoices);
+
+      expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).to.be.true;
+    });
+
     it('should correctly store a purchase in the cache', async () => {
       getMarkBalancesStub.resolves(new Map());
       getMarkGasBalancesStub.resolves(new Map());
@@ -290,9 +331,12 @@ describe('Invoice Processing', () => {
         }
       };
 
-      // Verify the correct purchase was stored in cache
+      // Verify the correct purchase was stored in cache, with a cachedAt timestamp
       expect(mockDeps.purchaseCache.addPurchases.calledOnce).to.be.true;
-      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).to.deep.equal([expectedPurchase]);
+      const purchasesArg = mockDeps.purchaseCache.addPurchases.firstCall.args[0];
+      expect(purchasesArg).to.have.length(1);
+      expect(purchasesArg[0]).to.deep.include(expectedPurchase);
+      expect(purchasesArg[0]).to.have.property('cachedAt');
 
       expect(mockDeps.prometheus.recordSuccessfulPurchase.calledOnce).to.be.true;
       expect(mockDeps.prometheus.recordSuccessfulPurchase.firstCall.args[0]).to.deep.equal({
@@ -797,7 +841,7 @@ describe('Invoice Processing', () => {
         discountBps: '0',
         custodiedAmounts: {}
       });
-      
+
       mockDeps.everclear.getMinAmounts.onSecondCall().resolves({
         minAmounts: { '8453': '1000000000000000000' }, // Second invoice: 1 WETH independent
         invoiceAmount: '1000000000000000000',
@@ -1778,7 +1822,13 @@ describe('Invoice Processing', () => {
 
       // Verify the correct purchases were stored in cache with proper invoice mapping
       expect(mockDeps.purchaseCache.addPurchases.calledOnce).to.be.true;
-      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).to.deep.equal(expectedPurchases);
+      
+      // Check purchases excluding the dynamic cachedAt field
+      const actualPurchases = mockDeps.purchaseCache.addPurchases.firstCall.args[0].map((p: any) => {
+        const { cachedAt, ...purchaseWithoutTimestamp } = p;
+        return purchaseWithoutTimestamp;
+      });
+      expect(actualPurchases).to.deep.equal(expectedPurchases);
     });
 
     it('should handle different intent statuses for pending purchases correctly', async () => {

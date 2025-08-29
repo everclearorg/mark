@@ -8,9 +8,9 @@ import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
-import { Wallet } from 'ethers';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { Web3Signer } from '@mark/web3signer';
 
 describe('pollAndProcessInvoices', () => {
     let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -51,7 +51,7 @@ describe('pollAndProcessInvoices', () => {
             purchaseCache: createStubInstance(PurchaseCache),
             rebalanceCache: createStubInstance(RebalanceCache),
             rebalance: createStubInstance(RebalanceAdapter),
-            web3Signer: createStubInstance(Wallet),
+            web3Signer: createStubInstance(Web3Signer),
             prometheus: createStubInstance(PrometheusAdapter),
         };
 

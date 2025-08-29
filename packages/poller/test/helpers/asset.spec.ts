@@ -179,17 +179,17 @@ describe('Asset Helper Functions', () => {
       },
     };
 
-    enum SettlementStrategy {
-      DEFAULT,
-      XERC20,
-    }
+    const SettlementStrategy = {
+      DEFAULT: 0,
+      XERC20: 1,
+    } as const;
 
     interface MockAssetConfig {
       tickerHash: string;
       adopted: string;
       domain: string;
       approval: boolean;
-      strategy: SettlementStrategy;
+      strategy: typeof SettlementStrategy[keyof typeof SettlementStrategy];
     }
 
     it('should return true if any domain supports XERC20', async () => {

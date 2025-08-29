@@ -1,4 +1,6 @@
 import { Invoice, MarkConfiguration } from '@mark/core';
+import { Address } from 'viem';
+import { stub, SinonStub } from 'sinon';
 
 // Default single-dest mock invoice, optional override fields
 export function createMockInvoice(overrides?: Partial<Invoice>): Invoice {
@@ -133,3 +135,54 @@ export const mockConfig: MarkConfiguration = {
   },
   routes: [],
 };
+
+export interface MockWalletClient {
+  account: {
+    address: Address;
+  };
+  signTypedData: SinonStub;
+  sendTransaction: SinonStub;
+  signMessage: SinonStub;
+  getAddresses: SinonStub;
+  requestAddresses: SinonStub;
+}
+
+/**
+ * Creates a mock WalletClient for use in tests
+ * @param address - The address to use for the wallet (defaults to a test address)
+ * @returns A mocked WalletClient with stubbed methods
+ */
+export function createMockWalletClient(
+  address: Address = '0x1234567890123456789012345678901234567890'
+): MockWalletClient {
+  return {
+    account: {
+      address,
+    },
+    signTypedData: stub().resolves('0xmocked_signature'),
+    sendTransaction: stub().resolves('0xmocked_transaction_hash'),
+    signMessage: stub().resolves('0xmocked_message_signature'),
+    getAddresses: stub().resolves([address]),
+    requestAddresses: stub().resolves([address]),
+  };
+}
+
+/**
+ * Creates a mock WalletClient that will fail with specific errors
+ * Useful for testing error handling
+ */
+export function createFailingMockWalletClient(
+  address: Address = '0x1234567890123456789012345678901234567890',
+  error: Error = new Error('Mock wallet error')
+): MockWalletClient {
+  return {
+    account: {
+      address,
+    },
+    signTypedData: stub().rejects(error),
+    sendTransaction: stub().rejects(error),
+    signMessage: stub().rejects(error),
+    getAddresses: stub().resolves([address]),
+    requestAddresses: stub().resolves([address]),
+  };
+}

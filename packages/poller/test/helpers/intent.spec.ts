@@ -8,37 +8,37 @@ import { MarkConfiguration, NewIntentParams, TransactionSubmissionType } from '@
 import { Logger } from '@mark/logger';
 import * as contractHelpers from '../../src/helpers/contracts';
 import * as permit2Helpers from '../../src/helpers/permit2';
-import { GetContractReturnType, zeroAddress } from 'viem';
+import { GetContractReturnType, Log, TransactionReceipt, zeroAddress } from 'viem';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { expect } from '../globalTestHook';
 import { MarkAdapters } from '../../src/init';
-import { BigNumber, Wallet } from 'ethers';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { Web3Signer } from '@mark/web3signer';
 
 // Common test constants for transaction logs
 const INTENT_ADDED_TOPIC = '0x5c5c7ce44a0165f76ea4e0a89f0f7ac5cce7b2c1d1b91d0f49c1f219656b7d8c';
 const INTENT_ADDED_LOG_DATA = '0x000000000000000000000000000000000000000000000000000000000000074d000000000000000000000000000000000000000000000000000000000000004000000000000000000000000015a7ca97d1ed168fb34a4055cefa2e2f9bdb6c75000000000000000000000000b60d0c2e8309518373b40f8eaa2cad0d1de3decb000000000000000000000000fde4c96c8593536e31f229ea8f37b2ada2699bb2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002105000000000000000000000000000000000000000000000000000000000000074d0000000000000000000000000000000000000000000000000000000067f1620f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e8d4a51000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000002400000000000000000000000000000000000000000000000000000000000000005000000000000000000000000000000000000000000000000000000000000a86a0000000000000000000000000000000000000000000000000000000000000089000000000000000000000000000000000000000000000000000000000000a4b1000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000';
 
-const createMockTransactionReceipt = (transactionHash: string, intentId: string, eventType: 'intent' | 'order' = 'intent') => ({
-    transactionHash,
-    cumulativeGasUsed: BigNumber.from('100'),
-    effectiveGasPrice: BigNumber.from('1'),
+const createMockTransactionReceipt = (transactionHash: string, intentId: string, eventType: 'intent' | 'order' = 'intent'): TransactionReceipt => ({
+    transactionHash: transactionHash as `0x${string}`,
+    cumulativeGasUsed: 100n,
+    effectiveGasPrice: 1n,
     logs: [{
         topics: eventType === 'intent' ? [
-            INTENT_ADDED_TOPIC,
-            intentId,
+            INTENT_ADDED_TOPIC as `0x${string}`,
+            intentId as `0x${string}`,
             '0x0000000000000000000000000000000000000000000000000000000000000002'
         ] : [
-            INTENT_ADDED_TOPIC0,
-            intentId,
+            INTENT_ADDED_TOPIC0 as `0x${string}`,
+            intentId as `0x${string}`,
             '0x0000000000000000000000000000000000000000000000000000000000000002'
         ],
         data: INTENT_ADDED_LOG_DATA
-    }]
-});
+    }] as unknown as Log<bigint, number, false>[]
+} as unknown as TransactionReceipt);
 
 describe('sendIntents', () => {
     let mockDeps: SinonStubbedInstance<MarkAdapters>;
@@ -73,8 +73,8 @@ describe('sendIntents', () => {
                 readTx: stub(),
             }),
             logger: createStubInstance(Logger),
-            web3Signer: createStubInstance(Wallet, {
-                _signTypedData: stub()
+            web3Signer: createStubInstance(Web3Signer, {
+                signTypedData: stub()
             }),
             purchaseCache: createStubInstance(PurchaseCache),
             rebalanceCache: createStubInstance(RebalanceCache),
@@ -750,8 +750,8 @@ describe('sendIntentsMulticall', () => {
                 submitAndMonitor: stub()
             }),
             logger: createStubInstance(Logger),
-            web3Signer: createStubInstance(Wallet, {
-                _signTypedData: stub()
+            web3Signer: createStubInstance(Web3Signer, {
+                signTypedData: stub()
             }),
             cache: createStubInstance(PurchaseCache),
             prometheus: createStubInstance(PrometheusAdapter),
@@ -940,8 +940,8 @@ describe('sendIntentsMulticall', () => {
         // Mock chainService to return a successful receipt
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
             transactionHash: '0xmulticallTx',
-            cumulativeGasUsed: BigNumber.from('200000'),
-            effectiveGasPrice: BigNumber.from('5'),
+            cumulativeGasUsed: 200000n,
+            effectiveGasPrice: 5n,
             logs: [
                 {
                     topics: [
@@ -982,8 +982,8 @@ describe('sendIntentsMulticall', () => {
         // Mock chainService to return a successful receipt with intent IDs in logs
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
             transactionHash: '0xmulticallTx',
-            cumulativeGasUsed: BigNumber.from('200000'),
-            effectiveGasPrice: BigNumber.from('5'),
+            cumulativeGasUsed: 200000n,
+            effectiveGasPrice: 5n,
             logs: [
                 createMockTransactionReceipt('0xmulticallTx', '0x0000000000000000000000000000000000000000000000000000000000000001').logs[0],
                 createMockTransactionReceipt('0xmulticallTx', '0x0000000000000000000000000000000000000000000000000000000000000002').logs[0]
@@ -1045,8 +1045,8 @@ describe('sendIntentsMulticall', () => {
         // Mock successful transaction submission
         (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
             transactionHash: '0xmulticallTx',
-            cumulativeGasUsed: BigNumber.from('200000'),
-            effectiveGasPrice: BigNumber.from('5'),
+            cumulativeGasUsed: 200000n,
+            effectiveGasPrice: 5n,
             logs: []
         });
 

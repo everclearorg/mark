@@ -1,11 +1,11 @@
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
-import { BigNumber, providers } from 'ethers';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { LoggingContext, TransactionSubmissionType, WalletType, TransactionRequest, WalletConfig } from '@mark/core';
 import { submitTransactionWithLogging } from '../../src/helpers/transactions';
 import * as zodiacHelpers from '../../src/helpers/zodiac';
 import { expect } from '../globalTestHook';
+import { TransactionReceipt } from 'viem';
 
 describe('submitTransactionWithLogging', () => {
   let mockDeps: {
@@ -27,15 +27,15 @@ describe('submitTransactionWithLogging', () => {
       logger: createStubInstance(Logger),
     };
 
-        // Initialize common test data
-        mockTxRequest = {
-            to: '0xabc4567890123456789012345678901234567890',
-            data: '0x',
-            value: '0',
-            chainId: MOCK_CHAIN_ID,
-            from: '0x1234567890123456789012345678901234567890',
-            funcSig: 'transfer(address,uint256)',
-        };
+    // Initialize common test data
+    mockTxRequest = {
+      to: '0xabc4567890123456789012345678901234567890',
+      data: '0x',
+      value: '0',
+      chainId: MOCK_CHAIN_ID,
+      from: '0x1234567890123456789012345678901234567890',
+      funcSig: 'transfer(address,uint256)',
+    };
 
     mockZodiacConfig = {
       walletType: WalletType.EOA,
@@ -59,9 +59,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: BigNumber.from('100000'),
+        gasUsed: 100000n,
         status: 1,
-      } as providers.TransactionReceipt;
+      } as unknown as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -114,23 +114,23 @@ describe('submitTransactionWithLogging', () => {
         roleKey: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' as `0x${string}`,
       };
 
-            wrapTransactionWithZodiacStub.resolves({
-                to: mockZodiacConfig.moduleAddress,
-                data: '0xabc123',
-                value: '0',
-                from: mockTxRequest.from,
-                chainId: mockTxRequest.chainId,
-                funcSig: 'execute(bytes)',
-            });
-        });
+      wrapTransactionWithZodiacStub.resolves({
+        to: mockZodiacConfig.moduleAddress,
+        data: '0xabc123',
+        value: '0',
+        from: mockTxRequest.from,
+        chainId: mockTxRequest.chainId,
+        funcSig: 'execute(bytes)',
+      });
+    });
 
     it('should successfully submit a zodiac transaction', async () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: BigNumber.from('100000'),
+        gasUsed: 100000n,
         status: 1,
-      } as providers.TransactionReceipt;
+      } as unknown as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -182,9 +182,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: BigNumber.from('100000'),
+        gasUsed: 100000n,
         status: 1,
-      } as providers.TransactionReceipt;
+      } as unknown as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -226,9 +226,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: BigNumber.from('100000'),
+        gasUsed: 100000n,
         status: 1,
-      } as providers.TransactionReceipt;
+      } as unknown as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -256,9 +256,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: BigNumber.from('100000'),
+        gasUsed: 100000n,
         status: 1,
-      } as providers.TransactionReceipt;
+      } as unknown as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -289,9 +289,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: BigNumber.from('100000'),
+        gasUsed: 100000n,
         status: 1,
-      } as providers.TransactionReceipt;
+      } as unknown as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -322,9 +322,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: BigNumber.from('100000'),
+        gasUsed: 100000n,
         status: 1,
-      } as providers.TransactionReceipt;
+      } as unknown as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -357,9 +357,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: BigNumber.from('100000'),
+        gasUsed: 100000n,
         status: 1,
-      } as providers.TransactionReceipt;
+      } as unknown as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 

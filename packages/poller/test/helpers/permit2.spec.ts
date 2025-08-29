@@ -1,8 +1,8 @@
 import { expect } from 'chai';
 import { stub, SinonStub, restore } from 'sinon';
-import { Wallet } from 'ethers';
 import { Web3Signer } from '@mark/web3signer';
-import { Address, encodeFunctionData, erc20Abi } from 'viem';
+import { Address, createWalletClient, encodeFunctionData, erc20Abi, http } from 'viem';
+import { createMockWalletClient } from '../mocks';
 import {
   approvePermit2,
   getPermit2Signature,
@@ -30,18 +30,18 @@ describe('Permit2 Helper Functions', () => {
       // Generate multiple nonces and ensure they're different
       const now = Date.now();
       const dateNowStub = stub(Date, 'now');
-      
+
       // First call
       dateNowStub.returns(now);
       const nonce1 = generatePermit2Nonce();
-      
+
       // Second call with a different timestamp
       dateNowStub.returns(now + 100);
       const nonce2 = generatePermit2Nonce();
-      
+
       // Restore the stub
       dateNowStub.restore();
-      
+
       expect(nonce1).to.not.equal(nonce2);
     });
   });
@@ -100,39 +100,39 @@ describe('Permit2 Helper Functions', () => {
 
     it('should create an approval transaction with proper transaction data', async () => {
       const tokenAddress = '0xTOKEN_ADDRESS' as Address;
-      
+
       const txHash = await approvePermit2(tokenAddress, chainService as ChainService, mockConfig);
-      
+
       // Verify submitAndMonitor was called with the expected arguments
       expect(submitStub.calledOnce).to.be.true;
-      
+
       const submitArgs = submitStub.firstCall.args;
       expect(submitArgs[0]).to.equal('1'); // chainId
-      
+
       const txData = submitArgs[1];
       expect(txData.to).to.equal(tokenAddress);
       expect(txData.value).to.equal('0x0');
-      
+
       // Validate the transaction data format
       expect(txData.data).to.be.a('string');
       expect(txData.data.startsWith('0x095ea7b3')).to.be.true; // ERC20 approve function selector
-      
+
       // Check if the Permit2 address and maxUint256 are properly encoded
       const expectedData = encodeFunctionData({
         abi: erc20Abi,
         functionName: 'approve',
         args: [TEST_PERMIT2_ADDRESS as Address, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')]
       });
-      
+
       expect(txData.data).to.equal(expectedData);
-      
+
       // Check the return value
       expect(txHash).to.equal('0xapproval_tx_hash');
     });
 
     it('should throw an error if token not found in configuration', async () => {
       const unknownTokenAddress = '0xUNKNOWN_TOKEN' as Address;
-      
+
       try {
         await approvePermit2(unknownTokenAddress, chainService as ChainService, mockConfig);
         expect.fail('Should have thrown an error');
@@ -156,13 +156,13 @@ describe('Permit2 Helper Functions', () => {
         }
       }
     } as unknown as MarkConfiguration;
-    
+
     it('should throw an error if signer type is not supported', async () => {
       const invalidSigner = {} as any;
-      
+
       // Stub console.error to prevent the error message from being logged
       const consoleErrorStub = stub(console, 'error');
-      
+
       try {
         await getPermit2Signature(
           invalidSigner,
@@ -186,16 +186,16 @@ describe('Permit2 Helper Functions', () => {
     it('should generate a valid signature using ethers Wallet', async () => {
       // Create a test Wallet with a stubbed _signTypedData method
       const privateKey = '0x1234567890123456789012345678901234567890123456789012345678901234';
-      const realWallet = new Wallet(privateKey);
-      const signTypedDataStub = stub(realWallet, '_signTypedData').resolves('0xmocksignature123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456');
-      
+      const realWallet = createWalletClient({ account: privateKey, transport: http('http://infura.io') });
+      const signTypedDataStub = stub(realWallet, 'signTypedData').resolves('0xmocksignature123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456');
+
       const chainId = 1;
       const token = '0x1234567890123456789012345678901234567890';
       const spender = '0x0987654321098765432109876543210987654321';
       const amount = '1000000000000000000';
       const nonce = '123456';
       const deadline = Math.floor(Date.now() / 1000) + 3600;
-      
+
       // Generate the signature
       const signature = await getPermit2Signature(
         realWallet,
@@ -207,31 +207,31 @@ describe('Permit2 Helper Functions', () => {
         deadline,
         mockConfig
       );
-      
+
       // Verify the signature should be a hex string starting with 0x
       expect(signature).to.be.a('string');
       expect(signature.startsWith('0x')).to.be.true;
-      
+
       // Verify _signTypedData was called with the correct parameters
       expect(signTypedDataStub.calledOnce).to.be.true;
-      
-      const [calledDomain, calledTypes, calledValue] = signTypedDataStub.firstCall.args;
-      
-      expect(calledDomain.name).to.equal('Permit2');
-      expect(calledDomain.chainId).to.equal(chainId);
-      expect(calledDomain.verifyingContract).to.equal(TEST_PERMIT2_ADDRESS);
-      
+
+      const { domain: calledDomain, types: calledTypes, message: calledValue } = signTypedDataStub.firstCall.args[0];
+
+      expect(calledDomain!.name).to.equal('Permit2');
+      expect(calledDomain!.chainId).to.equal(chainId);
+      expect(calledDomain!.verifyingContract).to.equal(TEST_PERMIT2_ADDRESS);
+
       // Update the test to check for PermitTransferFrom types instead of PermitSingle
       expect(calledTypes.PermitTransferFrom).to.exist;
       expect(calledTypes.TokenPermissions).to.exist;
-      
+
       // Update the test to check for the new value structure
-      expect(calledValue.permitted.token).to.equal(token);
-      expect(calledValue.permitted.amount).to.equal(amount);
+      expect((calledValue as any).permitted.token).to.equal(token);
+      expect((calledValue as any).permitted.amount).to.equal(amount);
       expect(calledValue.spender).to.equal(spender);
       expect(calledValue.nonce).to.exist;
       expect(calledValue.deadline).to.equal(deadline);
-      
+
       signTypedDataStub.restore();
     });
 
@@ -239,19 +239,18 @@ describe('Permit2 Helper Functions', () => {
     // the correct parameters. Test this in an integration test later.
     it('should call signTypedData with correct parameters when using Web3Signer', async () => {
       const mockSignTypedData = stub().resolves('0xmock_signature');
-      
-      // Create a mock that will pass the 'signTypedData' in signer check
-      const mockWeb3Signer = {
-        signTypedData: mockSignTypedData,
-      } as unknown as Web3Signer;
-      
+
+      // Create a proper Web3Signer instance mock
+      const mockWeb3Signer = Object.create(Web3Signer.prototype);
+      mockWeb3Signer.signTypedData = mockSignTypedData;
+
       const chainId = 1;
       const token = '0x1234567890123456789012345678901234567890';
       const spender = '0x0987654321098765432109876543210987654321';
       const amount = '1000000000000000000';
       const nonce = '123456';
       const deadline = Math.floor(Date.now() / 1000) + 3600;
-      
+
       await getPermit2Signature(
         mockWeb3Signer,
         chainId,
@@ -262,27 +261,63 @@ describe('Permit2 Helper Functions', () => {
         deadline,
         mockConfig
       );
-      
+
       expect(mockSignTypedData.calledOnce).to.be.true;
-      
+
       // Verify the arguments passed to signTypedData
       const args = mockSignTypedData.firstCall.args;
       const [domain, types, value] = args;
-      
+
       expect(domain.name).to.equal('Permit2');
       expect(domain.chainId).to.equal(chainId);
       expect(domain.verifyingContract).to.equal(TEST_PERMIT2_ADDRESS);
-      
+
       // Update the test to check for PermitTransferFrom types instead of PermitSingle
       expect(types.PermitTransferFrom).to.exist;
       expect(types.TokenPermissions).to.exist;
-      
+
       // Update the test to check for the new value structure
       expect(value.permitted.token).to.equal(token);
       expect(value.permitted.amount).to.equal(amount);
       expect(value.spender).to.equal(spender);
       expect(value.nonce).to.exist;
       expect(value.deadline).to.equal(deadline);
+    });
+
+    it('should call signTypedData with correct parameters when using WalletClient', async () => {
+      // Create a mock WalletClient using our helper
+      const mockWalletClient = createMockWalletClient('0x1234567890123456789012345678901234567890' as Address);
+
+      const chainId = 1;
+      const token = '0x1234567890123456789012345678901234567890';
+      const spender = '0x0987654321098765432109876543210987654321';
+      const amount = '1000000000000000000';
+      const nonce = '123456';
+      const deadline = Math.floor(Date.now() / 1000) + 3600;
+
+      await getPermit2Signature(
+        mockWalletClient as any,
+        chainId,
+        token,
+        spender,
+        amount,
+        nonce,
+        deadline,
+        mockConfig
+      );
+
+      expect(mockWalletClient.signTypedData.calledOnce).to.be.true;
+
+      // Verify the arguments passed to signTypedData
+      const args = mockWalletClient.signTypedData.firstCall.args[0];
+      expect(args.domain.name).to.equal('Permit2');
+      expect(args.domain.chainId).to.equal(chainId);
+      expect(args.primaryType).to.equal('PermitTransferFrom');
+      expect(args.message.permitted.token).to.equal(token);
+      expect(args.message.permitted.amount).to.equal(amount);
+      expect(args.message.spender).to.equal(spender);
+      expect(args.message.deadline).to.equal(deadline);
+      expect(args.account).to.equal(mockWalletClient.account.address);
     });
   });
 }); 

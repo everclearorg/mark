@@ -1,5 +1,5 @@
 import { expect } from '../globalTestHook';
-import sinon, { stub, createStubInstance, SinonStubbedInstance, SinonStub, match, restore } from 'sinon';
+import { stub, createStubInstance, SinonStubbedInstance, SinonStub, match, restore } from 'sinon';
 import { rebalanceInventory } from '../../src/rebalance/rebalance';
 import * as balanceHelpers from '../../src/helpers/balance';
 import * as contractHelpers from '../../src/helpers/contracts';
@@ -14,13 +14,12 @@ import {
   TransactionSubmissionType,
 } from '@mark/core';
 import { Logger } from '@mark/logger';
-import { ChainService } from '@mark/chainservice';
+import { ChainService, ChainServiceTransactionReceipt } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
 import { RebalanceCache, RebalanceAction } from '@mark/cache';
 import { RebalanceAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { TransactionRequest as ViemTransactionRequest, zeroAddress, Hex, erc20Abi } from 'viem'; // For adapter.send return type
-import { providers } from 'ethers';
+import { zeroAddress, Hex, erc20Abi, TransactionReceipt } from 'viem'; // For adapter.send return type
 
 interface MockBridgeAdapterInterface {
   getReceivedAmount: SinonStub<[string, RebalanceRoute], Promise<string>>;
@@ -28,6 +27,16 @@ interface MockBridgeAdapterInterface {
   type: SinonStub<[], SupportedBridge>;
   // Add other methods if they are called by the SUT
 }
+
+const mockReceipt: ChainServiceTransactionReceipt = {
+  transactionHash: '0xBridgeTxHash',
+  blockNumber: 121,
+  status: 1,
+  confirmations: 10,
+  effectiveGasPrice: '10',
+  cumulativeGasUsed: '100',
+  logs: [],
+};
 
 describe('rebalanceInventory', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -85,7 +94,7 @@ describe('rebalanceInventory', () => {
     submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
       submissionType: TransactionSubmissionType.Onchain,
       hash: '0xBridgeTxHash',
-      receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
+      receipt: mockReceipt,
     });
 
     const mockERC20RouteValues: RouteRebalancingConfig = {
@@ -630,7 +639,7 @@ describe('Zodiac Address Validation', () => {
     submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
       hash: '0xBridgeTxHash',
       submissionType: TransactionSubmissionType.Onchain,
-      receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
+      receipt: mockReceipt
     });
 
     // Default configuration with two chains - one with Zodiac, one without
@@ -931,7 +940,7 @@ describe('Reserve Amount Functionality', () => {
     submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
       hash: '0xBridgeTxHash',
       submissionType: TransactionSubmissionType.Onchain,
-      receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
+      receipt: mockReceipt,
     });
 
     mockContext = {
@@ -1200,19 +1209,19 @@ describe('Decimal Handling', () => {
     // Setup for 6-decimal USDC testing
     const MOCK_USDC_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as `0x${string}`;
     const MOCK_USDC_TICKER_HASH = '0xusdctickerhashtest' as `0x${string}`;
-    
+
     const mockSpecificBridgeAdapter = {
       getReceivedAmount: stub<[string, RebalanceRoute], Promise<string>>(),
       send: stub<[string, string, string, RebalanceRoute], Promise<MemoizedTransactionRequest[]>>(),
       type: stub<[], SupportedBridge>().returns(SupportedBridge.Binance),
     };
 
-    const executeDestinationCallbacksStub = stub(callbacks, 'executeDestinationCallbacks').resolves();
+    stub(callbacks, 'executeDestinationCallbacks').resolves();
     const getMarkBalancesStub = stub(balanceHelpers, 'getMarkBalances');
-    const submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
+    stub(transactionHelper, 'submitTransactionWithLogging').resolves({
       hash: '0xBridgeTxHash',
       submissionType: TransactionSubmissionType.Onchain,
-      receipt: { transactionHash: '0xBridgeTxHash', blockNumber: 121, status: 1 } as providers.TransactionReceipt,
+      receipt: mockReceipt,
     });
 
     const mockLogger = createStubInstance(Logger);
@@ -1265,7 +1274,7 @@ describe('Decimal Handling', () => {
 
     // Expected: 48796999 - 47000000 = 1796999 (in 6-decimal USDC format)
     const expectedAmountToBridge = '1796999';
-    
+
     mockSpecificBridgeAdapter.getReceivedAmount.resolves('1790000');
     mockSpecificBridgeAdapter.send.resolves([{
       transaction: { to: '0xBridgeAddress' as `0x${string}`, data: '0xbridgeData' as Hex, value: 0n },
@@ -1289,7 +1298,7 @@ describe('Decimal Handling', () => {
   it('should skip USDC route when balance is at maximum', async () => {
     const MOCK_USDC_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as `0x${string}`;
     const MOCK_USDC_TICKER_HASH = '0xusdctickerhashtest' as `0x${string}`;
-    
+
     const mockSpecificBridgeAdapter = {
       getReceivedAmount: stub<[string, RebalanceRoute], Promise<string>>(),
       send: stub<[string, string, string, RebalanceRoute], Promise<MemoizedTransactionRequest[]>>(),
@@ -1298,7 +1307,7 @@ describe('Decimal Handling', () => {
 
     const executeDestinationCallbacksStub = stub(callbacks, 'executeDestinationCallbacks').resolves();
     const getMarkBalancesStub = stub(balanceHelpers, 'getMarkBalances');
-    
+
     const mockLogger = createStubInstance(Logger);
     const mockRebalanceCache = createStubInstance(RebalanceCache);
     const mockRebalanceAdapter = createStubInstance(RebalanceAdapter);

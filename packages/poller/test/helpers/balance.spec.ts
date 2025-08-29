@@ -79,11 +79,17 @@ describe('Wallet Balance Utilities', () => {
       return undefined;
     };
 
+    let createClientStub: any;
+
+    beforeEach(() => {
+      createClientStub = stub(contractModule, 'createClient');
+    });
+
     it('should return gas balances for all chains', async () => {
       const mockClient = {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
       } as any;
-      stub(contractModule, 'createClient').returns(mockClient);
+      createClientStub.returns(mockClient);
 
       const balances = await getMarkGasBalances(mockConfig, chainService, prometheus);
 
@@ -103,7 +109,7 @@ describe('Wallet Balance Utilities', () => {
         getBalance: stub().rejects(new Error('RPC error')),
       } as any;
 
-      stub(contractModule, 'createClient')
+      createClientStub
         .withArgs('1', mockConfig).returns(mockClient1)
         .withArgs('2', mockConfig).returns(mockClient2);
 
@@ -118,7 +124,7 @@ describe('Wallet Balance Utilities', () => {
       const mockClient = {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
       } as any;
-      stub(contractModule, 'createClient').returns(mockClient);
+      createClientStub.returns(mockClient);
 
       // Mock chainService.getAddress() to return addresses for all chains
       chainService.getAddress.resolves({
@@ -166,7 +172,7 @@ describe('Wallet Balance Utilities', () => {
       const mockClient = {
         getBalance: stub().resolves(BigInt('1000000000000000000')), // 1 ETH
       } as any;
-      stub(contractModule, 'createClient').returns(mockClient);
+      createClientStub.returns(mockClient);
 
       const balances = await getMarkGasBalances(mockConfigWithTron, chainService, prometheus);
 
