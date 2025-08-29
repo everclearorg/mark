@@ -990,6 +990,7 @@ describe('Invoice Processing', () => {
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).to.equal(BigInt('0'));
     });
 
+
     it('should process multiple invoices in a ticker group correctly', async () => {
       isXerc20SupportedStub.resolves(false);
       // Mock cumulative API responses for multiple invoices
@@ -2401,5 +2402,6 @@ describe('Invoice Processing', () => {
       const remainingCustodied = result.remainingCustodied.get('0xticker1');
       expect(remainingCustodied?.get('8453')).to.equal(BigInt('0'));
     });
+
   });
 });

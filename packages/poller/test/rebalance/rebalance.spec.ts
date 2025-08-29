@@ -208,6 +208,16 @@ describe('rebalanceInventory', () => {
     submitTransactionWithLoggingStub?.reset();
   });
 
+  it('should return early when rebalance is paused', async () => {
+    mockRebalanceCache.isPaused.resolves(true);
+    
+    const result = await rebalanceInventory(mockContext);
+    
+    expect(result).to.be.empty;
+    expect(mockLogger.warn.calledWith('Rebalance loop is paused')).to.be.true;
+    expect(executeDestinationCallbacksStub.called).to.be.false;
+  });
+
   it('should execute callbacks first', async () => {
     await rebalanceInventory(mockContext);
     expect(executeDestinationCallbacksStub.calledOnceWith(mockContext)).to.be.true;
@@ -1352,4 +1362,5 @@ describe('Decimal Handling', () => {
     // Cleanup
     restore();
   });
+
 });

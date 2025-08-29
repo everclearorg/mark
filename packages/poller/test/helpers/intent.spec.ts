@@ -1366,4 +1366,6 @@ describe('Destination Validation for SVM Chains', () => {
         await expect(sendIntents(invoiceId, [evmToSvmIntent], mockDeps, mockConfig, requestId))
             .to.be.rejectedWith('intent.destination must be length 1 for intents towards SVM');
     });
+
 });
+

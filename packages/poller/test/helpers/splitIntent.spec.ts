@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { createStubInstance, SinonStubbedInstance, restore as sinonRestore, match } from 'sinon';
+import { createStubInstance, SinonStubbedInstance, restore as sinonRestore, match, SinonStub } from 'sinon';
 import { Logger } from '@mark/logger';
 import { Invoice, MarkConfiguration } from '@mark/core';
 import { calculateSplitIntents } from '../../src/helpers/splitIntent';
@@ -26,6 +26,192 @@ describe('Split Intent Helper Functions', () => {
     web3Signer: SinonStubbedInstance<Web3Signer>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
   };
+
+  describe('evaluateDomainForOrigin', () => {
+    // Import the private function using rewire or test it indirectly
+    it('should allocate from multiple domains until required amount is met', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-test',
+        origin: '1',
+        destinations: ['10'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '100000000000000000000', // 100 WETH
+      };
+
+      // Mark has balance on origin
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')], // 100 WETH on Ethereum
+          ['10', BigInt('0')],
+          ['8453', BigInt('0')],
+          ['42161', BigInt('0')],
+        ])],
+      ]);
+
+      // Set up custodied assets to test allocation logic
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('0')], // Origin has no custodied assets
+        ['10', BigInt('40000000000000000000')],    // 40 WETH on Optimism
+        ['8453', BigInt('35000000000000000000')],  // 35 WETH on Base
+        ['42161', BigInt('30000000000000000000')], // 30 WETH on Arbitrum
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        mockContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      // Should allocate from multiple domains
+      expect(result.originDomain).to.equal('1');
+      expect(result.totalAllocated).to.equal(BigInt('100000000000000000000'));
+      
+      // Should have created 3 intents (40 from 10, 35 from 8453, 25 from 42161)
+      expect(result.intents.length).to.be.at.least(3);
+      
+      // Verify allocations
+      const intentFor10 = result.intents.find(i => i.destinations[0] === '10');
+      const intentFor8453 = result.intents.find(i => i.destinations[0] === '8453');
+      const intentFor42161 = result.intents.find(i => i.destinations[0] === '42161');
+      
+      expect(intentFor10?.amount).to.equal('40000000000000000000');
+      expect(intentFor8453?.amount).to.equal('35000000000000000000');
+      expect(intentFor42161?.amount).to.equal('25000000000000000000'); // Only 25 needed to reach 100
+    });
+
+    it('should stop allocating once required amount is reached', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-test',
+        origin: '1',
+        destinations: ['10'],
+        amount: '50000000000000000000', // 50 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '50000000000000000000', // 50 WETH
+      };
+
+      // Mark has balance on origin
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('50000000000000000000')], // 50 WETH on Ethereum
+          ['10', BigInt('0')],
+          ['8453', BigInt('0')],
+          ['42161', BigInt('0')],
+        ])],
+      ]);
+
+      // Set up custodied assets with more than enough
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('0')], // Origin has no custodied assets
+        ['10', BigInt('40000000000000000000')],    // 40 WETH on Optimism
+        ['8453', BigInt('35000000000000000000')],  // 35 WETH on Base
+        ['42161', BigInt('30000000000000000000')], // 30 WETH on Arbitrum
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        mockContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      // Should only allocate what's needed
+      expect(result.originDomain).to.equal('1');
+      expect(result.totalAllocated).to.equal(BigInt('50000000000000000000'));
+      
+      // Should have created 2 intents (40 from 10, 10 from 8453)
+      expect(result.intents.length).to.equal(2);
+      
+      const intentFor10 = result.intents.find(i => i.destinations[0] === '10');
+      const intentFor8453 = result.intents.find(i => i.destinations[0] === '8453');
+      
+      expect(intentFor10?.amount).to.equal('40000000000000000000');
+      expect(intentFor8453?.amount).to.equal('10000000000000000000'); // Only 10 needed to reach 50
+      
+      // Should not have allocated from 42161 since we already have enough
+      const intentFor42161 = result.intents.find(i => i.destinations[0] === '42161');
+      expect(intentFor42161).to.be.undefined;
+    });
+
+    it('should skip domains with zero custodied assets', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-test',
+        origin: '1',
+        destinations: ['10'],
+        amount: '50000000000000000000', // 50 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '50000000000000000000', // 50 WETH
+      };
+
+      // Mark has balance on origin
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('50000000000000000000')], // 50 WETH on Ethereum
+          ['10', BigInt('0')],
+          ['8453', BigInt('0')],
+          ['42161', BigInt('0')],
+        ])],
+      ]);
+
+      // Set up custodied assets with some domains having zero
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('0')], // Origin has no custodied assets
+        ['10', BigInt('0')],                       // 0 WETH on Optimism (should be skipped)
+        ['8453', BigInt('30000000000000000000')],  // 30 WETH on Base
+        ['42161', BigInt('25000000000000000000')], // 25 WETH on Arbitrum
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        mockContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      // Should skip domains with zero balance
+      expect(result.originDomain).to.equal('1');
+      expect(result.totalAllocated).to.equal(BigInt('50000000000000000000'));
+      
+      // Should not have created intent for domain 10 (zero balance)
+      const intentFor10 = result.intents.find(i => i.destinations[0] === '10');
+      expect(intentFor10).to.be.undefined;
+      
+      // Should have created intents for domains with balance
+      const intentFor8453 = result.intents.find(i => i.destinations[0] === '8453');
+      const intentFor42161 = result.intents.find(i => i.destinations[0] === '42161');
+      
+      expect(intentFor8453?.amount).to.equal('30000000000000000000');
+      expect(intentFor42161?.amount).to.equal('20000000000000000000'); // Only 20 needed to reach 50
+    });
+  });
 
   beforeEach(() => {
     logger = createStubInstance(Logger);
@@ -364,6 +550,266 @@ describe('Split Intent Helper Functions', () => {
       expect(intentFor8453?.amount).to.equal('10000000000000000000');
     });
 
+    it('should handle missing input asset gracefully', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-a',
+        origin: '1',
+        destinations: ['10', '8453'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'MISSING_TICKER',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '10': '100000000000000000000', // 100 WETH
+      };
+
+      // Mark has balance for unknown ticker
+      const balances = new Map([
+        ['MISSING_TICKER', new Map([
+          ['1', BigInt('0')],
+          ['10', BigInt('100000000000000000000')], // 100 on Optimism (will be origin)
+        ])],
+      ]);
+
+      // No custodied balances for missing ticker
+      const custodiedBalances = new Map<string, Map<string, bigint>>();
+
+      try {
+        await calculateSplitIntents(
+          mockContext,
+          invoice,
+          minAmounts,
+          balances,
+          custodiedBalances
+        );
+        expect.fail('Should have thrown error for missing input asset');
+      } catch (error: any) {
+        expect(error.message).to.equal('No input asset found');
+      }
+    });
+
+    it('should handle TVM address not found error', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-a',
+        origin: '1',
+        destinations: ['728126428'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '100000000000000000000', // 100 WETH on Ethereum
+      };
+
+      // Add Tron chain to config without Zodiac
+      const tvmContext = {
+        ...mockContext,
+        config: {
+          ...mockContext.config,
+          supportedSettlementDomains: [1, 728126428],
+          chains: {
+            ...mockContext.config.chains,
+            '728126428': { // Tron chain without Zodiac
+              providers: ['https://api.trongrid.io'],
+              assets: [{
+                tickerHash: 'WETH',
+                address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                decimals: 6,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }],
+              invoiceAge: 0,
+              gasThreshold: '0',
+              deployments: {
+                everclear: '0x1234567890123456789012345678901234567890',
+                permit2: '0x1234567890123456789012345678901234567890',
+                multicall3: '0x1234567890123456789012345678901234567890'
+              },
+              // No Zodiac config
+            },
+          },
+        } as unknown as MarkConfiguration,
+      };
+
+      // Mark has balance on Ethereum
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')], // 100 WETH on Ethereum
+          ['728126428', BigInt('0')],
+        ])],
+      ]);
+
+      // Tron has custodied assets
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('0')],
+        ['728126428', BigInt('100000000000000000000')], // 100 WETH on Tron
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      // Mock chainService.getAddress to not return the TVM address
+      (tvmContext.chainService.getAddress as SinonStub).resolves({
+        // Missing '728126428' address
+      });
+
+      try {
+        await calculateSplitIntents(
+          tvmContext,
+          invoice,
+          minAmounts,
+          balances,
+          custodiedBalances
+        );
+        expect.fail('Should have thrown error for missing TVM address');
+      } catch (error: any) {
+        expect(error.message).to.equal('TVM address not found for domain 728126428');
+      }
+    });
+
+    it('should handle empty result when no valid allocations found', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-a',
+        origin: '1',
+        destinations: ['10', '8453'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      // No minAmounts provided for any chain - should return empty result
+      const minAmounts = {};
+      const balances = new Map([['WETH', new Map()]]);
+      const custodiedBalances = new Map([['WETH', new Map()]]);
+
+      const result = await calculateSplitIntents(
+        mockContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      // Should return empty result when no origins have sufficient balance
+      expect(result.intents.length).to.equal(0);
+      expect(result.originDomain).to.equal('');
+      expect(result.totalAllocated.toString()).to.equal('0');
+    });
+
+    it('should exclude SVM and TVM domains when top custodied domain is EVM', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-a',
+        origin: '1',
+        destinations: ['10', '8453'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '100000000000000000000', // 100 WETH
+        '10': '100000000000000000000', // 100 WETH
+      };
+
+      // Add SVM and TVM chains to config
+      const mixedContext = {
+        ...mockContext,
+        config: {
+          ...mockContext.config,
+          ownSolAddress: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
+          supportedSettlementDomains: [1, 10, 8453, 1399811149, 728126428],
+          chains: {
+            ...mockContext.config.chains,
+            '1399811149': { // Solana chain
+              providers: ['https://api.mainnet-beta.solana.com'],
+              assets: [{
+                tickerHash: 'WETH',
+                address: '0xA0b86a33E6cC3b21c1b27b66b1b242b5a0b1c23e1234567890abcdef',
+                decimals: 9,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }],
+              invoiceAge: 0,
+              gasThreshold: '0',
+              deployments: {
+                everclear: '0x1234567890123456789012345678901234567890',
+                permit2: '0x1234567890123456789012345678901234567890',
+                multicall3: '0x1234567890123456789012345678901234567890'
+              }
+            },
+            '728126428': { // Tron chain
+              providers: ['https://api.trongrid.io'],
+              assets: [{
+                tickerHash: 'WETH',
+                address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                decimals: 6,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }],
+              invoiceAge: 0,
+              gasThreshold: '0',
+              deployments: {
+                everclear: '0x1234567890123456789012345678901234567890',
+                permit2: '0x1234567890123456789012345678901234567890',
+                multicall3: '0x1234567890123456789012345678901234567890'
+              }
+            },
+          },
+        } as unknown as MarkConfiguration,
+      };
+
+      // Mark has balance on all chains
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')], // 100 WETH on Ethereum
+          ['10', BigInt('100000000000000000000')], // 100 WETH on Optimism
+          ['8453', BigInt('0')],
+          ['1399811149', BigInt('100000000000000000000')], // 100 WETH on Solana
+          ['728126428', BigInt('100000000000000000000')], // 100 WETH on Tron
+        ])],
+      ]);
+
+      // Ethereum has the most custodied assets (EVM chain)
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('90000000000000000000')],       // 90 WETH on Ethereum (highest, EVM)
+        ['10', BigInt('10000000000000000000')],      // 10 WETH on Optimism (EVM)
+        ['8453', BigInt('5000000000000000000')],     // 5 WETH on Base (EVM)
+        ['1399811149', BigInt('30000000000000000000')], // 30 WETH on Solana (SVM)
+        ['728126428', BigInt('25000000000000000000')], // 25 WETH on Tron (TVM)
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      const result = await calculateSplitIntents(
+        mixedContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      // Since Ethereum (EVM) has the most custodied assets, only EVM domains should be used
+      expect(result.intents.length).to.be.greaterThan(0);
+      
+      // All destinations should be EVM chains (not SVM or TVM)
+      result.intents.forEach(intent => {
+        intent.destinations.forEach(dest => {
+          expect(dest).to.not.equal('1399811149'); // Not Solana
+          expect(dest).to.not.equal('728126428'); // Not Tron
+        });
+      });
+    });
+
     it('should prioritize fewer allocations over total amount', async () => {
       const invoice = {
         intent_id: '0xinvoice-a',
@@ -442,6 +888,178 @@ describe('Split Intent Helper Functions', () => {
       expect(result2.originDomain).to.not.be.empty;
       expect(result2.totalAllocated > BigInt(0)).to.be.true;
       expect(result2.intents.length).to.be.greaterThan(0);
+    });
+
+    it('should handle TVM address resolution in intent creation', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-a',
+        origin: '1',
+        destinations: ['728126428'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '100000000000000000000', // 100 WETH on Ethereum
+      };
+
+      // Add Tron chain to config with Zodiac (Safe) setup
+      const tvmContext = {
+        ...mockContext,
+        config: {
+          ...mockContext.config,
+          supportedSettlementDomains: [1, 728126428],
+          chains: {
+            ...mockContext.config.chains,
+            '728126428': { // Tron chain with Zodiac
+              providers: ['https://api.trongrid.io'],
+              assets: [{
+                tickerHash: 'WETH',
+                address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                decimals: 6,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }],
+              invoiceAge: 0,
+              gasThreshold: '0',
+              deployments: {
+                everclear: '0x1234567890123456789012345678901234567890',
+                permit2: '0x1234567890123456789012345678901234567890',
+                multicall3: '0x1234567890123456789012345678901234567890'
+              },
+              zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+              zodiacRoleKey: '0x0000000000000000000000000000000000000000000000000000000000000001',
+              gnosisSafeAddress: '0x1234567890123456789012345678901234567890',
+            },
+          },
+        } as unknown as MarkConfiguration,
+      };
+
+      // Mark has balance on Ethereum
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')], // 100 WETH on Ethereum
+          ['728126428', BigInt('0')],
+        ])],
+      ]);
+
+      // Tron has custodied assets
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('0')],
+        ['728126428', BigInt('100000000000000000000')], // 100 WETH on Tron
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      // Mock chainService.getAddress for TVM addresses
+      (tvmContext.chainService.getAddress as SinonStub).resolves({
+        '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+      });
+
+      const result = await calculateSplitIntents(
+        tvmContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      expect(result.originDomain).to.equal('1');
+      expect(result.intents.length).to.equal(1);
+      
+      // Verify TVM address is correctly set (should use Safe address due to Zodiac)
+      const intent = result.intents[0];
+      expect(intent.destinations).to.deep.equal(['728126428']);
+      expect(intent.to).to.equal('0x1234567890123456789012345678901234567890'); // Should use Safe address from Zodiac config
+    });
+
+    it('should use EOA address for TVM chains without Zodiac', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-a',
+        origin: '1',
+        destinations: ['728126428'],
+        amount: '100000000000000000000', // 100 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '100000000000000000000', // 100 WETH on Ethereum
+      };
+
+      // Add Tron chain to config without Zodiac
+      const tvmContext = {
+        ...mockContext,
+        config: {
+          ...mockContext.config,
+          supportedSettlementDomains: [1, 728126428],
+          chains: {
+            ...mockContext.config.chains,
+            '728126428': { // Tron chain without Zodiac
+              providers: ['https://api.trongrid.io'],
+              assets: [{
+                tickerHash: 'WETH',
+                address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                decimals: 6,
+                symbol: 'WETH',
+                isNative: false,
+                balanceThreshold: '0',
+              }],
+              invoiceAge: 0,
+              gasThreshold: '0',
+              deployments: {
+                everclear: '0x1234567890123456789012345678901234567890',
+                permit2: '0x1234567890123456789012345678901234567890',
+                multicall3: '0x1234567890123456789012345678901234567890'
+              },
+              // No Zodiac config
+            },
+          },
+        } as unknown as MarkConfiguration,
+      };
+
+      // Mark has balance on Ethereum
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')], // 100 WETH on Ethereum
+          ['728126428', BigInt('0')],
+        ])],
+      ]);
+
+      // Tron has custodied assets
+      const custodiedWETHBalances = new Map<string, bigint>([
+        ['1', BigInt('0')],
+        ['728126428', BigInt('100000000000000000000')], // 100 WETH on Tron
+      ]);
+      const custodiedBalances = new Map<string, Map<string, bigint>>([
+        ['WETH', custodiedWETHBalances]
+      ]);
+
+      // Mock chainService.getAddress for TVM addresses
+      (tvmContext.chainService.getAddress as SinonStub).resolves({
+        '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+      });
+
+      const result = await calculateSplitIntents(
+        tvmContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      expect(result.originDomain).to.equal('1');
+      expect(result.intents.length).to.equal(1);
+      
+      // Verify TVM address is correctly set (should use EOA address)
+      const intent = result.intents[0];
+      expect(intent.destinations).to.deep.equal(['728126428']);
+      expect(intent.to).to.equal('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'); // Should use EOA address from chainService
     });
 
     it('should prioritize top-N chains when allocation count is equal', async () => {
