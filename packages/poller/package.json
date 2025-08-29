@@ -24,6 +24,7 @@
     "@mark/cache": "workspace:*",
     "@mark/chainservice": "workspace:*",
     "@mark/core": "workspace:*",
+    "@mark/database": "workspace:*",
     "@mark/everclear": "workspace:*",
     "@mark/logger": "workspace:*",
     "@mark/prometheus": "workspace:*",
