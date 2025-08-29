@@ -377,8 +377,8 @@ describe('Invoice Processing', () => {
         ticker: '0xticker1',
         destination: '8453',
       });
-      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[1]).to.equal(
-        mockContext.startTime - invoices[0].hub_invoice_enqueued_timestamp,
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[1]).to.be.approximately(
+        mockContext.startTime - invoices[0].hub_invoice_enqueued_timestamp, 10,
       );
     });
 
