@@ -30,7 +30,7 @@ import {
   hexToBase58,
 } from '@mark/core';
 import { LookupTableNotFoundError } from '@mark/everclear';
-import { TransactionReceipt } from '@mark/chainservice';
+import { ChainServiceTransactionReceipt } from '@mark/chainservice';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -126,7 +126,7 @@ const intentAddedAbi = [
 ] as const;
 
 export const getAddedIntentIdsFromReceipt = async (
-  receipt: TransactionReceipt,
+  receipt: ChainServiceTransactionReceipt,
   chainId: string,
   logger: Logger,
   context?: { requestId: string; invoiceId: string },
@@ -370,7 +370,7 @@ export const sendEvmIntents = async (
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
     });
 
-    const purchaseTx: TransactionReceipt = purchaseResult.receipt!;
+    const purchaseTx: ChainServiceTransactionReceipt = purchaseResult.receipt!;
 
     const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intents[0].origin, logger, {
       invoiceId,

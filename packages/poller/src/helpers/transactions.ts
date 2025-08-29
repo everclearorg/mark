@@ -1,4 +1,4 @@
-import { ChainService, TransactionReceipt } from '@mark/chainservice';
+import { ChainService, ChainServiceTransactionReceipt } from '@mark/chainservice';
 import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig, isEvmChain } from '@mark/core';
 import { wrapTransactionWithZodiac } from './zodiac';
 import { Logger } from '@mark/logger';
@@ -14,7 +14,7 @@ export interface TransactionSubmissionParams {
 export interface TransactionSubmissionResult {
   submissionType: TransactionSubmissionType;
   hash: string; // unique identifier for the transaction, could be safe hash or transaction hash
-  receipt?: TransactionReceipt; // The actual receipt type from chainService
+  receipt?: ChainServiceTransactionReceipt; // The actual receipt type from chainService
 }
 
 /**

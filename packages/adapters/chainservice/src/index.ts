@@ -17,7 +17,7 @@ import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from 
 
 export { EthWallet } from '@chimera-monorepo/chainservice';
 
-export type TransactionReceipt = Awaited<ReturnType<typeof ChimeraChainService.prototype.sendTx>> & {
+export type ChainServiceTransactionReceipt = Awaited<ReturnType<typeof ChimeraChainService.prototype.sendTx>> & {
   cumulativeGasUsed: string;
   effectiveGasPrice: string;
 };
@@ -92,7 +92,7 @@ export class ChainService {
     return tronWeb;
   }
 
-  async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<TransactionReceipt> {
+  async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<ChainServiceTransactionReceipt> {
     const { requestContext } = createLoggingContext('submitAndMonitor');
     const context = { ...requestContext, origin: 'chainservice' };
 
@@ -174,12 +174,15 @@ export class ChainService {
           })),
           cumulativeGasUsed: info.receipt.energy_usage_total.toString(),
           effectiveGasPrice: info.receipt.energy_fee.toString(),
-        } as unknown as TransactionReceipt;
+        } as unknown as ChainServiceTransactionReceipt;
       }
 
       if (isSvmChain(chainId)) {
         // TODO: once mark supports solana, need a new way to track gas here / update the type of receipt.
-        const tx = (await this.txService.sendTx(writeTransaction, context)) as unknown as TransactionReceipt;
+        const tx = (await this.txService.sendTx(
+          writeTransaction,
+          context,
+        )) as unknown as ChainServiceTransactionReceipt;
 
         this.logger.info('Transaction mined', {
           chainId,
@@ -289,7 +292,7 @@ export class ChainService {
         txHash: tx.transactionHash,
       });
 
-      return tx as unknown as TransactionReceipt;
+      return tx as unknown as ChainServiceTransactionReceipt;
     } catch (error) {
       this.logger.error('Failed to submit transaction', {
         chainId,
