@@ -3,8 +3,7 @@ import { SinonStubbedInstance, SinonStub, stub, createStubInstance } from 'sinon
 import * as contractModule from '../../src/helpers/contracts';
 import { getMarkBalances, getMarkGasBalances, getCustodiedBalances } from '../../src/helpers/balance';
 import * as assetModule from '../../src/helpers/asset';
-import * as zodiacModule from '../../src/helpers/zodiac';
-import { AssetConfiguration, MarkConfiguration, WalletType, GasType } from '@mark/core';
+import { AssetConfiguration, MarkConfiguration, GasType } from '@mark/core';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { ChainService } from '@mark/chainservice';
 
@@ -38,24 +37,6 @@ describe('Wallet Balance Utilities', () => {
       '728126428': { // Tron chain
         providers: ['https://api.trongrid.io'],
         assets: [mockAssetConfig],
-      },
-    },
-  } as unknown as MarkConfiguration;
-
-  const mockConfigWithZodiac = {
-    ownAddress: '0xOwnAddress',
-    chains: {
-      '1': {
-        providers: ['https://mainnet.infura.io/v3/test'],
-        assets: [mockAssetConfig],
-        zodiacRoleModuleAddress: '0xZodiacModule',
-        zodiacRoleKey: '0x1234567890abcdef',
-        gnosisSafeAddress: '0xGnosisSafe',
-      },
-      '2': {
-        providers: ['https://other.infura.io/v3/test'],
-        assets: [mockAssetConfig],
-        // Chain 2 has no Zodiac config
       },
     },
   } as unknown as MarkConfiguration;
@@ -131,11 +112,6 @@ describe('Wallet Balance Utilities', () => {
         '1': '0xOwnAddress',
         '728126428': '0xTronAddress'
       });
-
-      // Mock zodiac functions
-      const mockZodiacConfig = { walletType: WalletType.EOA };
-      stub(zodiacModule, 'getValidatedZodiacConfig').returns(mockZodiacConfig);
-      stub(zodiacModule, 'getActualOwner').returns('0xTronAddress');
 
       const mockTronWeb = {
         trx: {
@@ -275,7 +251,7 @@ describe('Wallet Balance Utilities', () => {
     it('should skip chains that are not configured', async () => {
       // Mock getTickers to return a ticker that's not supported on all chains
       stub(assetModule, 'getTickers').returns(mockTickers);
-      
+
       // Create config where chain 2 doesn't have the ticker
       const configMismatch = {
         ...mockConfig,
@@ -285,7 +261,7 @@ describe('Wallet Balance Utilities', () => {
             assets: [mockAssetConfig], // Has the ticker
           },
           '2': {
-            providers: ['https://other.infura.io/v3/test'], 
+            providers: ['https://other.infura.io/v3/test'],
             assets: [], // No assets - ticker not supported
           },
         },
@@ -299,7 +275,7 @@ describe('Wallet Balance Utilities', () => {
 
       const balances = await getMarkBalances(configMismatch, chainService, prometheus);
       const domainBalances = balances.get(mockTickers[0]);
-      
+
       // Should have balance for chain 1 but not chain 2
       expect(domainBalances?.get('1')?.toString()).to.equal('1000');
       expect(domainBalances?.has('2')).to.be.false; // No balance entry created for unsupported asset
@@ -322,7 +298,7 @@ describe('Wallet Balance Utilities', () => {
       } as unknown as MarkConfiguration;
 
       stub(assetModule, 'getTickers').returns(mockTickers);
-      
+
       // Mock TVM address and balance
       chainService.getAddress.resolves({
         '728126428': 'TronAddressExample123456789'
@@ -353,7 +329,7 @@ describe('Wallet Balance Utilities', () => {
       } as unknown as MarkConfiguration;
 
       stub(assetModule, 'getTickers').returns(mockTickers);
-      
+
       // Mock TVM address but balance error
       chainService.getAddress.resolves({
         '728126428': 'TronAddressExample123456789'
@@ -387,7 +363,7 @@ describe('Wallet Balance Utilities', () => {
       } as unknown as MarkConfiguration;
 
       stub(assetModule, 'getTickers').returns(['SOL']);
-      
+
       // Mock SVM balance error
       chainService.getBalance.rejects(new Error('Solana RPC error'));
 
@@ -398,118 +374,6 @@ describe('Wallet Balance Utilities', () => {
     });
 
 
-    it('should handle zodiac validation errors in EVM chains', async () => {
-      const configWithInvalidZodiac = {
-        ownAddress: '0x1234567890123456789012345678901234567890',
-        chains: {
-          '1': {
-            providers: ['https://mainnet.infura.io/v3/test'],
-            assets: [mockAssetConfig],
-            zodiac: {
-              safeAddress: 'invalid-address', // Invalid address format
-              moduleAddress: '0x1234567890123456789012345678901234567890',
-              roleKey: '0x123456',
-            },
-          },
-        },
-      } as unknown as MarkConfiguration;
-
-      stub(assetModule, 'getTickers').returns(mockTickers);
-      
-      // This should trigger zodiac validation error
-      const balances = await getMarkBalances(configWithInvalidZodiac, chainService, prometheus);
-      
-      // Should return 0 balance due to validation error
-      const domainBalances = balances.get(mockTickers[0]);
-      expect(domainBalances?.get('1')?.toString()).to.equal('0');
-    });
-
-    it('should handle invalid zodiac module address error', async () => {
-      const configWithInvalidModule = {
-        ownAddress: '0x1234567890123456789012345678901234567890',
-        chains: {
-          '1': {
-            providers: ['https://mainnet.infura.io/v3/test'],
-            assets: [mockAssetConfig],
-            zodiac: {
-              safeAddress: '0x1234567890123456789012345678901234567890',
-              moduleAddress: 'invalid-module-address', // Invalid module address
-              roleKey: '0x123456',
-            },
-          },
-        },
-      } as unknown as MarkConfiguration;
-
-      stub(assetModule, 'getTickers').returns(mockTickers);
-      
-      const balances = await getMarkBalances(configWithInvalidModule, chainService, prometheus);
-      
-      // Should return 0 balance due to module validation error
-      const domainBalances = balances.get(mockTickers[0]);
-      expect(domainBalances?.get('1')?.toString()).to.equal('0');
-    });
-
-    it('should handle invalid zodiac role key format error', async () => {
-      const configWithInvalidRoleKey = {
-        ownAddress: '0x1234567890123456789012345678901234567890',
-        chains: {
-          '1': {
-            providers: ['https://mainnet.infura.io/v3/test'],
-            assets: [mockAssetConfig],
-            zodiac: {
-              safeAddress: '0x1234567890123456789012345678901234567890',
-              moduleAddress: '0x1234567890123456789012345678901234567890',
-              roleKey: '123456', // Missing 0x prefix
-            },
-          },
-        },
-      } as unknown as MarkConfiguration;
-
-      stub(assetModule, 'getTickers').returns(mockTickers);
-      
-      const balances = await getMarkBalances(configWithInvalidRoleKey, chainService, prometheus);
-      
-      // Should return 0 balance due to role key validation error
-      const domainBalances = balances.get(mockTickers[0]);
-      expect(domainBalances?.get('1')?.toString()).to.equal('0');
-    });
-
-    it('should use Gnosis Safe address when Zodiac is enabled', async () => {
-      // Mock zodiac functions
-      const mockZodiacConfigEnabled = { walletType: WalletType.Zodiac, safeAddress: '0xGnosisSafe' as `0x${string}` };
-      const mockZodiacConfigDisabled = { walletType: WalletType.EOA };
-
-      stub(zodiacModule, 'getValidatedZodiacConfig')
-        .withArgs(mockConfigWithZodiac.chains['1']).returns(mockZodiacConfigEnabled)
-        .withArgs(mockConfigWithZodiac.chains['2']).returns(mockZodiacConfigDisabled);
-
-      stub(zodiacModule, 'getActualOwner')
-        .withArgs(mockZodiacConfigEnabled, mockConfigWithZodiac.ownAddress).returns('0xGnosisSafe')
-        .withArgs(mockZodiacConfigDisabled, mockConfigWithZodiac.ownAddress).returns(mockConfigWithZodiac.ownAddress);
-
-      stub(assetModule, 'getTickers').returns(mockTickers);
-
-      // Mock ERC20 contracts to track which addresses are used
-      const mockBalanceOf1 = stub().resolves('5000');
-      const mockBalanceOf2 = stub().resolves('6000');
-
-      const mockContract1 = { read: { balanceOf: mockBalanceOf1 } };
-      const mockContract2 = { read: { balanceOf: mockBalanceOf2 } };
-
-      stub(contractModule, 'getERC20Contract')
-        .withArgs(mockConfigWithZodiac, '1', '0xtest').resolves(mockContract1 as any)
-        .withArgs(mockConfigWithZodiac, '2', '0xtest').resolves(mockContract2 as any);
-
-      const balances = await getMarkBalances(mockConfigWithZodiac, chainService, prometheus);
-
-      // Verify correct addresses were used for balance checks
-      expect(mockBalanceOf1.calledWith(['0xGnosisSafe'])).to.be.true;
-      expect(mockBalanceOf2.calledWith(['0xOwnAddress'])).to.be.true;
-
-      const ticker1Balances = balances.get(mockTickers[0]);
-      expect(ticker1Balances?.get('1')?.toString()).to.equal('5000');
-      expect(ticker1Balances?.get('2')?.toString()).to.equal('6000');
-    });
 
     it('should normalize balance for non-18 decimal assets', async () => {
       // Create a 6 decimal asset config
@@ -687,7 +551,7 @@ describe('Wallet Balance Utilities', () => {
     it('should handle different scale factors', () => {
       const result6Decimals = safeStringToBigInt('100.5', 1000000n);
       expect(result6Decimals.toString()).to.equal('100500000');
-      
+
       const result8Decimals = safeStringToBigInt('100.5', 100000000n);
       expect(result8Decimals.toString()).to.equal('10050000000');
     });

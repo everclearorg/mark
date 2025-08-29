@@ -11,7 +11,6 @@ import {
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers } from './asset';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import { ChainService } from '@mark/chainservice';
 import { TronWeb } from 'tronweb';
 
@@ -38,11 +37,8 @@ export const getMarkGasBalances = async (
         if (isTvmChain(chain)) {
           // For Tron, get both bandwidth and energy
           if (!tronWeb) throw new Error('TronWeb instance required for Tron chain');
-          const chainConfig = chains[chain];
-          const zodiacConfig = getValidatedZodiacConfig(chainConfig);
           const addresses = await chainService.getAddress();
-          const actualOwner = getActualOwner(zodiacConfig, addresses[chain]);
-          const resources = await tronWeb.trx.getAccountResources(actualOwner);
+          const resources = await tronWeb.trx.getAccountResources(addresses[chain] ?? ownAddress);
           // Bandwidth: freeNetLimit - freeNetUsed + NetLimit - NetUsed
           const freeNet = (resources.freeNetLimit ?? 0) - (resources.freeNetUsed ?? 0);
           const stakedNet = (resources.NetLimit ?? 0) - (resources.NetUsed ?? 0);
@@ -59,12 +55,9 @@ export const getMarkGasBalances = async (
           gasBalances.set({ chainId: chain, gasType: GasType.Gas }, balance);
           prometheus.updateGasBalance(chain, balance);
         } else {
-          // EVM chain with zodiac logic
-          const chainConfig = chains[chain];
-          const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-          const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+          // EVM chain
           const client = createClient(chain, config);
-          const balance = await client.getBalance({ address: actualOwner as `0x${string}` });
+          const balance = await client.getBalance({ address: ownAddress as `0x${string}` });
           gasBalances.set({ chainId: chain, gasType: GasType.Gas }, balance);
           prometheus.updateGasBalance(chain, balance);
         }
@@ -204,15 +197,10 @@ const getEvmBalance = async (
   decimals: number,
   prometheus: PrometheusAdapter,
 ): Promise<bigint> => {
-  const { chains, ownAddress } = config;
-  const chainConfig = chains[domain];
+  const { ownAddress } = config;
   try {
-    // Get Zodiac configuration for this chain
-    const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-    const actualOwner = getActualOwner(zodiacConfig, ownAddress);
-
     const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
-    let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
+    let balance = (await tokenContract.read.balanceOf([ownAddress as `0x${string}`])) as bigint;
 
     // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
     if (decimals !== 18) {

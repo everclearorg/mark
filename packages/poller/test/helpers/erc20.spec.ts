@@ -6,7 +6,7 @@ import {
     checkAndApproveERC20,
     ApprovalParams,
 } from '../../src/helpers/erc20';
-import { MarkConfiguration, WalletConfig, WalletType } from '@mark/core';
+import { MarkConfiguration } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { PrometheusAdapter, TransactionReason } from '@mark/prometheus';
@@ -25,10 +25,6 @@ describe('ERC20 Helper Functions', () => {
     const SPENDER_ADDRESS = '0x9876543210987654321098765432109876543210';
     const OWNER_ADDRESS = '0x1111111111111111111111111111111111111111';
     const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
-
-    const mockZodiacConfig: WalletConfig = {
-        walletType: WalletType.EOA,
-    };
 
     const mockReceipt = {
         transactionHash: '0xtxhash123',
@@ -161,7 +157,6 @@ describe('ERC20 Helper Functions', () => {
                 spenderAddress: SPENDER_ADDRESS,
                 amount: 1000n,
                 owner: OWNER_ADDRESS,
-                zodiacConfig: mockZodiacConfig,
             };
         });
 

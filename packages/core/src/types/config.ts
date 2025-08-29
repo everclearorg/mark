@@ -30,13 +30,11 @@ export interface ChainConfiguration {
     permit2: string;
     multicall3: string;
   };
-  zodiacRoleModuleAddress?: string;
-  zodiacRoleKey?: string;
-  gnosisSafeAddress?: string;
-  squadsAddress?: string;
   privateKey?: string;
   bandwidthThreshold?: string;
   energyThreshold?: string;
+  gnosisSafeAddress?: string;
+  walletType?: string;
 }
 
 export interface HubConfig {

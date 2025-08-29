@@ -607,20 +607,6 @@ export const parseChainConfigurations = async (
       UTILITY_CONTRACTS_OVERRIDE[chainId]?.multicall3 ||
       UTILITY_CONTRACTS_DEFAULT.multicall3;
 
-    // Parse Zodiac configuration for this chain
-    const zodiacRoleModuleAddress =
-      configJson?.chains?.[chainId]?.zodiacRoleModuleAddress ??
-      (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_MODULE_ADDRESS`));
-
-    const zodiacRoleKey =
-      configJson?.chains?.[chainId]?.zodiacRoleKey ?? (await fromEnv(`CHAIN_${chainId}_ZODIAC_ROLE_KEY`));
-
-    const gnosisSafeAddress =
-      configJson?.chains?.[chainId]?.gnosisSafeAddress ?? (await fromEnv(`CHAIN_${chainId}_GNOSIS_SAFE_ADDRESS`));
-
-    const squadsAddress =
-      configJson?.chains?.[chainId]?.squadsAddress ?? (await fromEnv(`CHAIN_${chainId}_SQUADS_ADDRESS`));
-
     const privateKey = configJson?.chains?.[chainId]?.privateKey ?? (await fromEnv(`CHAIN_${chainId}_PRIVATE_KEY`));
 
     chains[chainId] = {
@@ -633,10 +619,6 @@ export const parseChainConfigurations = async (
         permit2,
         multicall3,
       },
-      zodiacRoleModuleAddress,
-      zodiacRoleKey,
-      gnosisSafeAddress,
-      squadsAddress,
       privateKey,
       ...(isTvmChain(chainId) && {
         bandwidthThreshold: configJson?.chains?.[chainId]?.bandwidthThreshold,

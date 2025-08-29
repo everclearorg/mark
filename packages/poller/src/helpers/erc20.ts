@@ -1,5 +1,5 @@
 import { encodeFunctionData, erc20Abi, decodeAbiParameters } from 'viem';
-import { MarkConfiguration, LoggingContext, WalletConfig, isTvmChain } from '@mark/core';
+import { MarkConfiguration, LoggingContext, isTvmChain } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { TransactionReason } from '@mark/prometheus';
@@ -17,7 +17,6 @@ export interface ApprovalParams {
   spenderAddress: string;
   amount: bigint;
   owner: string;
-  zodiacConfig: WalletConfig;
   context?: LoggingContext; // For logging context (requestId, invoiceId, etc.)
 }
 
@@ -84,7 +83,6 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
     spenderAddress,
     amount,
     owner,
-    zodiacConfig,
     context = {},
   } = params;
 
@@ -146,7 +144,6 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
         from: config.ownAddress,
         funcSig: 'approve(address,uint256)',
       },
-      zodiacConfig,
       context: { ...context, transactionType: 'zero-approval', asset: tokenAddress },
     });
 
@@ -160,7 +157,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
         chainId,
         TransactionReason.Approval,
         BigInt(zeroApprovalResult.receipt.cumulativeGasUsed.toString()) *
-          BigInt(zeroApprovalResult.receipt.effectiveGasPrice.toString()),
+        BigInt(zeroApprovalResult.receipt.effectiveGasPrice.toString()),
       );
     }
 
@@ -204,7 +201,6 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       from: config.ownAddress,
       funcSig: 'approve(address,uint256)',
     },
-    zodiacConfig,
     context: { ...context, transactionType: 'approval', asset: tokenAddress },
   });
 
@@ -213,7 +209,7 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       chainId,
       TransactionReason.Approval,
       BigInt(approvalResult.receipt.cumulativeGasUsed.toString()) *
-        BigInt(approvalResult.receipt.effectiveGasPrice.toString()),
+      BigInt(approvalResult.receipt.effectiveGasPrice.toString()),
     );
   }
 

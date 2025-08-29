@@ -3,7 +3,7 @@ import { isSvmChain } from './solana';
 export const TRON_CHAINID = '728126428';
 
 export function isTvmChain(chainId: string): boolean {
-  if (chainId === TRON_CHAINID) {
+  if (chainId === TRON_CHAINID || chainId === '195') {
     return true;
   }
   return false;
