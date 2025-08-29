@@ -347,6 +347,25 @@ describe('ERC20 Helper Functions', () => {
 
                 await expect(checkAndApproveERC20(baseParams)).to.be.rejectedWith('Contract creation failed');
             });
+
+            it('should handle TVM spender address conversion in zero approval', async () => {
+                const tvmParams = {
+                    ...baseParams,
+                    chainId: '728126428', // TVM chain
+                    spenderAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                    tokenAddress: '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT to trigger zero approval
+                    amount: BigInt('1000'),
+                };
+
+                // Mock current allowance (sufficient to not need approval)
+                mockChainService.readTx.resolves('0x00000000000000000000000000000000000000000000000000000000000003e8'); // 1000 allowance
+
+                const result = await checkAndApproveERC20(tvmParams);
+
+                // Should not need approval
+                expect(result.wasRequired).to.be.false;
+                expect(mockChainService.submitAndMonitor.callCount).to.equal(0);
+            });
         });
     });
 }); 

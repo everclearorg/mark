@@ -405,5 +405,40 @@ describe('submitTransactionWithLogging', () => {
         walletType: WalletType.EOA,
       });
     });
+
+    it('should handle transaction with bigint value', async () => {
+      const txWithBigIntValue = {
+        ...mockTxRequest,
+        value: BigInt('1000000000000000000'), // 1 ETH as bigint
+      };
+
+      const mockReceipt = {
+        transactionHash: MOCK_TX_HASH,
+        blockNumber: 12345,
+        gasUsed: 100000n,
+        status: 1,
+      } as unknown as TransactionReceipt;
+
+      (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
+
+      wrapTransactionWithZodiacStub.resolves({
+        ...txWithBigIntValue,
+        value: BigInt('1000000000000000000'),
+      });
+
+      await submitTransactionWithLogging({
+        chainService: mockDeps.chainService,
+        logger: mockDeps.logger,
+        chainId: MOCK_CHAIN_ID.toString(),
+        txRequest: txWithBigIntValue as any,
+        zodiacConfig: mockZodiacConfig,
+        context: mockContext,
+      });
+
+      // Verify value is converted to string in logs
+      const submitCall = mockDeps.logger.info.getCall(0);
+      expect(submitCall).to.exist;
+      expect(submitCall?.args[1]?.value).to.equal('1000000000000000000');
+    });
   });
 });
