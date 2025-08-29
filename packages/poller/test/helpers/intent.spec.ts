@@ -4,6 +4,7 @@ import {
     sendIntents,
     sendIntentsMulticall
 } from '../../src/helpers/intent';
+import { LookupTableNotFoundError } from '@mark/everclear';
 import { MarkConfiguration, NewIntentParams, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
 import * as contractHelpers from '../../src/helpers/contracts';
@@ -1102,5 +1103,722 @@ describe('sendIntentsMulticall', () => {
 
         // Verify the error was logged
         expect((mockDeps.logger.error as SinonStub).calledWith('Failed to submit multicall transaction')).to.be.true;
+    });
+});
+
+describe('SVM Chain Handling', () => {
+    let mockDeps: SinonStubbedInstance<MarkAdapters>;
+    let mockConfig: MarkConfiguration;
+    const invoiceId = '0xmockinvoice';
+    const requestId = 'test-request-id';
+
+    beforeEach(() => {
+        mockDeps = {
+            everclear: createStubInstance(EverclearAdapter, {
+                solanaCreateNewIntent: stub(),
+                solanaCreateLookupTable: stub(),
+                getMinAmounts: stub(),
+            }),
+            chainService: createStubInstance(ChainService, {
+                submitAndMonitor: stub(),
+                deriveProgramAddress: stub(),
+            }),
+            logger: createStubInstance(Logger),
+            web3Signer: createStubInstance(Web3Signer),
+            purchaseCache: createStubInstance(PurchaseCache),
+            rebalanceCache: createStubInstance(RebalanceCache),
+            rebalance: createStubInstance(RebalanceAdapter),
+            prometheus: createStubInstance(PrometheusAdapter),
+        };
+
+        mockConfig = {
+            ownSolAddress: 'SolanaAddressExample123456789012345678901234',
+            chains: {
+                '1399811149': { // SVM chain ID (Solana)
+                    providers: ['solana-provider'],
+                    deployments: {
+                        everclear: '0x1234567890123456789012345678901234567890123456789012345678901234',
+                    },
+                },
+            },
+        } as unknown as MarkConfiguration;
+    });
+
+    afterEach(() => {
+        sinonRestore();
+    });
+
+    it('should handle SVM intents successfully', async () => {
+        const svmIntent: NewIntentParams = {
+            origin: '1399811149', // SVM chain
+            destinations: ['1'],
+            to: mockConfig.ownSolAddress,
+            inputAsset: 'SolanaTokenAddress123456789012345678901234',
+            amount: '1000000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        (mockDeps.everclear.solanaCreateNewIntent as SinonStub).resolves({
+            to: 'SolanaContractAddress',
+            data: 'solana-tx-data',
+            value: '0',
+        });
+
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '1399811149': '500000' }
+        });
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xsolanatxhash',
+        });
+
+        const result = await sendIntents(invoiceId, [svmIntent], mockDeps, mockConfig, requestId);
+
+        expect(result).to.have.length(1);
+        expect(result[0].transactionHash).to.equal('0xsolanatxhash');
+        expect(result[0].chainId).to.equal('1399811149');
+        expect((mockDeps.everclear.solanaCreateNewIntent as SinonStub).called).to.be.true;
+    });
+
+    it('should handle lookup table creation for SVM intents when LookupTableNotFoundError occurs', async () => {
+        const svmIntent: NewIntentParams = {
+            origin: '1399811149',
+            destinations: ['1'],
+            to: mockConfig.ownSolAddress,
+            inputAsset: 'SolanaTokenAddress123456789012345678901234',
+            amount: '1000000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        // First call fails with LookupTableNotFoundError, then succeeds
+        (mockDeps.everclear.solanaCreateNewIntent as SinonStub)
+            .onFirstCall().rejects(new LookupTableNotFoundError('Lookup table not found'))
+            .onSecondCall().resolves({
+                to: 'SolanaContractAddress',
+                data: 'solana-tx-data',
+                value: '0',
+            });
+
+        (mockDeps.everclear.solanaCreateLookupTable as SinonStub).resolves({
+            to: 'LookupTableContract',
+            data: 'lookup-table-data',
+            value: '0',
+        });
+
+        (mockDeps.chainService.deriveProgramAddress as SinonStub)
+            .onFirstCall().resolves(['userTokenAccount'])
+            .onSecondCall().resolves(['programVault'])
+            .onThirdCall().resolves(['programVaultAccount']);
+
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '1399811149': '500000' }
+        });
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub)
+            .onFirstCall().resolves({ transactionHash: '0xlookuptablehash' }) // Lookup table creation
+            .onSecondCall().resolves({ transactionHash: '0xsolanatxhash' }); // Intent creation
+
+        const result = await sendIntents(invoiceId, [svmIntent], mockDeps, mockConfig, requestId);
+
+        expect(result).to.have.length(1);
+        expect((mockDeps.everclear.solanaCreateLookupTable as SinonStub).called).to.be.true;
+        expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(2);
+    });
+
+    it('should handle SVM intents with different input assets error', async () => {
+        const svmIntents: NewIntentParams[] = [
+            {
+                origin: '1399811149',
+                destinations: ['1'],
+                to: mockConfig.ownSolAddress,
+                inputAsset: 'SolanaToken1',
+                amount: '1000000',
+                callData: '0x',
+                maxFee: '0',
+            },
+            {
+                origin: '1399811149',
+                destinations: ['1'],
+                to: mockConfig.ownSolAddress,
+                inputAsset: 'SolanaToken2', // Different input asset
+                amount: '1000000',
+                callData: '0x',
+                maxFee: '0',
+            }
+        ];
+
+        await expect(sendIntents(invoiceId, svmIntents, mockDeps, mockConfig, requestId))
+            .to.be.rejectedWith('Cannot process multiple intents with different input assets');
+    });
+
+    it('should handle SVM intent min amount warning', async () => {
+        const svmIntent: NewIntentParams = {
+            origin: '1399811149',
+            destinations: ['1'],
+            to: mockConfig.ownSolAddress,
+            inputAsset: 'SolanaTokenAddress123456789012345678901234',
+            amount: '1000000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        (mockDeps.everclear.solanaCreateNewIntent as SinonStub).resolves({
+            to: 'SolanaContractAddress',
+            data: 'solana-tx-data',
+            value: '0',
+        });
+
+        // Min amount is smaller than intent amount (reversed condition to trigger warning)
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '1399811149': '500000' } // smaller than 1000000
+        });
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xsolanatxhash',
+        });
+
+        const result = await sendIntents(invoiceId, [svmIntent], mockDeps, mockConfig, requestId);
+
+        expect(result).to.have.length(1);
+        expect((mockDeps.logger.warn as SinonStub).called).to.be.true;
+    });
+
+    it('should rethrow non-LookupTableNotFoundError from SVM intent creation', async () => {
+        const svmIntent: NewIntentParams = {
+            origin: '1399811149',
+            destinations: ['1'],
+            to: mockConfig.ownSolAddress,
+            inputAsset: 'SolanaTokenAddress123456789012345678901234',
+            amount: '1000000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        const apiError = new Error('API connection failed');
+        (mockDeps.everclear.solanaCreateNewIntent as SinonStub).rejects(apiError);
+
+        await expect(sendIntents(invoiceId, [svmIntent], mockDeps, mockConfig, requestId))
+            .to.be.rejectedWith('API connection failed');
+    });
+});
+
+describe('TVM Chain Handling', () => {
+    let mockDeps: SinonStubbedInstance<MarkAdapters>;
+    let mockConfig: MarkConfiguration;
+    const invoiceId = '0xmockinvoice';
+    const requestId = 'test-request-id';
+
+    beforeEach(() => {
+        mockDeps = {
+            everclear: createStubInstance(EverclearAdapter, {
+                tronCreateNewIntent: stub(),
+                getMinAmounts: stub(),
+            }),
+            chainService: createStubInstance(ChainService, {
+                submitAndMonitor: stub(),
+                readTx: stub(),
+                getAddress: stub(),
+            }),
+            logger: createStubInstance(Logger),
+            web3Signer: createStubInstance(Web3Signer),
+            purchaseCache: createStubInstance(PurchaseCache),
+            rebalanceCache: createStubInstance(RebalanceCache),
+            rebalance: createStubInstance(RebalanceAdapter),
+            prometheus: createStubInstance(PrometheusAdapter),
+        };
+
+        mockConfig = {
+            ownAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            chains: {
+                '728126428': { // TVM chain ID for Tron
+                    providers: ['tron-provider'],
+                    deployments: {
+                        everclear: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                    },
+                },
+            },
+        } as unknown as MarkConfiguration;
+    });
+
+    afterEach(() => {
+        sinonRestore();
+    });
+
+    it('should handle TVM intents successfully', async () => {
+        const tvmIntent: NewIntentParams = {
+            origin: '728126428', // TVM chain
+            destinations: ['1'],
+            to: mockConfig.ownAddress,
+            inputAsset: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', // USDT on Tron
+            amount: '1000000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        (mockDeps.chainService.getAddress as SinonStub).resolves({
+            '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+        });
+
+        (mockDeps.everclear.tronCreateNewIntent as SinonStub).resolves({
+            to: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            data: 'tron-tx-data',
+            value: '0',
+        });
+
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '728126428': BigInt(tvmIntent.amount).toString() }
+        });
+
+        // Mock successful allowance check (sufficient allowance)
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000f4240'; // 1000000n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xtrontxhash',
+            cumulativeGasUsed: '100000',
+            effectiveGasPrice: '10000000000',
+            logs: [{
+                topics: [
+                    INTENT_ADDED_TOPIC0 as `0x${string}`,
+                    '0x0000000000000000000000000000000000000000000000000000000000000001',
+                    '0x0000000000000000000000000000000000000000000000000000000000000002'
+                ],
+                data: '0x000000000000000000000000000000000000000000000000000000000000074d000000000000000000000000000000000000000000000000000000000000004000000000000000000000000015a7ca97d1ed168fb34a4055cefa2e2f9bdb6c75000000000000000000000000b60d0c2e8309518373b40f8eaa2cad0d1de3decb000000000000000000000000fde4c96c8593536e31f229ea8f37b2ada2699bb2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002105000000000000000000000000000000000000000000000000000000000000074d0000000000000000000000000000000000000000000000000000000067f1620f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e8d4a51000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000002400000000000000000000000000000000000000000000000000000000000000005000000000000000000000000000000000000000000000000000000000000a86a0000000000000000000000000000000000000000000000000000000000000089000000000000000000000000000000000000000000000000000000000000a4b1000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000'
+            }]
+        });
+
+        const result = await sendIntents(invoiceId, [tvmIntent], mockDeps, mockConfig, requestId);
+
+        expect(result).to.have.length(1);
+        expect(result[0].transactionHash).to.equal('0xtrontxhash');
+        expect(result[0].chainId).to.equal('728126428');
+        expect((mockDeps.everclear.tronCreateNewIntent as SinonStub).called).to.be.true;
+    });
+
+    it('should handle TVM intents with different input assets error', async () => {
+        const tvmIntents: NewIntentParams[] = [
+            {
+                origin: '728126428',
+                destinations: ['1'],
+                to: mockConfig.ownAddress,
+                inputAsset: 'TronToken1',
+                amount: '1000000',
+                callData: '0x',
+                maxFee: '0',
+            },
+            {
+                origin: '728126428',
+                destinations: ['1'],
+                to: mockConfig.ownAddress,
+                inputAsset: 'TronToken2', // Different input asset
+                amount: '1000000',
+                callData: '0x',
+                maxFee: '0',
+            }
+        ];
+
+        await expect(sendIntents(invoiceId, tvmIntents, mockDeps, mockConfig, requestId))
+            .to.be.rejectedWith('Cannot process multiple intents with different input assets');
+    });
+
+    it('should handle TVM intents with Zodiac destination validation', async () => {
+        const safeAddress = '0x9876543210987654321098765432109876543210';
+        const configWithZodiac = {
+            ...mockConfig,
+            chains: {
+                ...mockConfig.chains,
+                '1': {
+                    providers: ['provider1'],
+                    assets: [],
+                    invoiceAge: 3600,
+                    gasThreshold: '1000000000000000000',
+                    deployments: {
+                        everclear: '0x1234567890123456789012345678901234567890',
+                    },
+                    zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
+                    zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
+                    gnosisSafeAddress: safeAddress,
+                },
+            },
+        } as unknown as MarkConfiguration;
+
+        const tvmIntent: NewIntentParams = {
+            origin: '728126428',
+            destinations: ['1'], // Zodiac destination
+            to: safeAddress, // Must match safe address for Zodiac destination
+            inputAsset: 'TronToken1',
+            amount: '1000000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        (mockDeps.chainService.getAddress as SinonStub).resolves({
+            '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+        });
+
+        (mockDeps.everclear.tronCreateNewIntent as SinonStub).resolves({
+            to: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            data: 'tron-tx-data',
+            value: '0',
+        });
+
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '728126428': BigInt(tvmIntent.amount).toString() }
+        });
+
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000f4240';
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xtrontxhash',
+            cumulativeGasUsed: '100000',
+            effectiveGasPrice: '10000000000',
+            logs: [{
+                topics: [
+                    INTENT_ADDED_TOPIC0 as `0x${string}`,
+                    '0x0000000000000000000000000000000000000000000000000000000000000001'
+                ],
+                data: '0x000000000000000000000000000000000000000000000000000000000000074d000000000000000000000000000000000000000000000000000000000000004000000000000000000000000015a7ca97d1ed168fb34a4055cefa2e2f9bdb6c75000000000000000000000000b60d0c2e8309518373b40f8eaa2cad0d1de3decb000000000000000000000000fde4c96c8593536e31f229ea8f37b2ada2699bb2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002105000000000000000000000000000000000000000000000000000000000000074d0000000000000000000000000000000000000000000000000000000067f1620f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e8d4a51000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000002400000000000000000000000000000000000000000000000000000000000000005000000000000000000000000000000000000000000000000000000000000a86a0000000000000000000000000000000000000000000000000000000000000089000000000000000000000000000000000000000000000000000000000000a4b1000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000'
+            }]
+        });
+
+        const result = await sendIntents(invoiceId, [tvmIntent], mockDeps, configWithZodiac, requestId);
+        expect(result).to.have.length(1);
+    });
+
+    it('should handle TVM intents with approval error', async () => {
+        const tvmIntent: NewIntentParams = {
+            origin: '728126428',
+            destinations: ['1'],
+            to: mockConfig.ownAddress,
+            inputAsset: 'TronToken1',
+            amount: '1000000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        (mockDeps.chainService.getAddress as SinonStub).resolves({
+            '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+        });
+
+        (mockDeps.everclear.tronCreateNewIntent as SinonStub).resolves({
+            to: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            data: 'tron-tx-data',
+            value: '0',
+        });
+
+        // Mock insufficient allowance
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000001f4'; // 500n in hex
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
+
+        // Mock approval failure
+        (mockDeps.chainService.submitAndMonitor as SinonStub).rejects(new Error('TRC20 approval failed'));
+
+        await expect(sendIntents(invoiceId, [tvmIntent], mockDeps, mockConfig, requestId))
+            .to.be.rejectedWith('TRC20 approval failed');
+
+        expect((mockDeps.logger.error as SinonStub).calledWith('Failed to approve TRC20 on Tron')).to.be.true;
+    });
+
+    it('should handle TVM intents with multiple intents warning (only processes first)', async () => {
+        const tvmIntents: NewIntentParams[] = [
+            {
+                origin: '728126428',
+                destinations: ['1'],
+                to: mockConfig.ownAddress,
+                inputAsset: 'TronToken1',
+                amount: '1000000',
+                callData: '0x',
+                maxFee: '0',
+            },
+            {
+                origin: '728126428',
+                destinations: ['2'],
+                to: mockConfig.ownAddress,
+                inputAsset: 'TronToken1', // Same token
+                amount: '2000000',
+                callData: '0x',
+                maxFee: '0',
+            }
+        ];
+
+        (mockDeps.chainService.getAddress as SinonStub).resolves({
+            '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+        });
+
+        (mockDeps.everclear.tronCreateNewIntent as SinonStub).resolves({
+            to: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            data: 'tron-tx-data',
+            value: '0',
+        });
+
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '728126428': tvmIntents[0].amount }
+        });
+
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000003635c9adc5dea00000'; // Large allowance
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xtrontxhash',
+            cumulativeGasUsed: '100000',
+            effectiveGasPrice: '10000000000',
+            logs: [{
+                topics: [
+                    INTENT_ADDED_TOPIC0 as `0x${string}`,
+                    '0x0000000000000000000000000000000000000000000000000000000000000001'
+                ],
+                data: '0x000000000000000000000000000000000000000000000000000000000000074d000000000000000000000000000000000000000000000000000000000000004000000000000000000000000015a7ca97d1ed168fb34a4055cefa2e2f9bdb6c75000000000000000000000000b60d0c2e8309518373b40f8eaa2cad0d1de3decb000000000000000000000000fde4c96c8593536e31f229ea8f37b2ada2699bb2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002105000000000000000000000000000000000000000000000000000000000000074d0000000000000000000000000000000000000000000000000000000067f1620f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e8d4a51000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000002400000000000000000000000000000000000000000000000000000000000000005000000000000000000000000000000000000000000000000000000000000a86a0000000000000000000000000000000000000000000000000000000000000089000000000000000000000000000000000000000000000000000000000000a4b1000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000'
+            }]
+        });
+
+        const result = await sendIntents(invoiceId, tvmIntents, mockDeps, mockConfig, requestId);
+
+        expect(result).to.have.length(1); // Only first intent processed
+        expect((mockDeps.logger.warn as SinonStub).calledWith('Tron API currently only supports single intents, processing first intent only')).to.be.true;
+    });
+
+    it('should handle TVM intents with gas metrics update failure', async () => {
+        const tvmIntent: NewIntentParams = {
+            origin: '728126428',
+            destinations: ['1'],
+            to: mockConfig.ownAddress,
+            inputAsset: 'TronToken1',
+            amount: '1000000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        (mockDeps.chainService.getAddress as SinonStub).resolves({
+            '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+        });
+
+        (mockDeps.everclear.tronCreateNewIntent as SinonStub).resolves({
+            to: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            data: 'tron-tx-data',
+            value: '0',
+        });
+
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '728126428': tvmIntent.amount }
+        });
+
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000f4240';
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xtrontxhash',
+            cumulativeGasUsed: '100000',
+            effectiveGasPrice: '10000000000',
+            logs: [{
+                topics: [
+                    INTENT_ADDED_TOPIC0 as `0x${string}`,
+                    '0x0000000000000000000000000000000000000000000000000000000000000001'
+                ],
+                data: '0x000000000000000000000000000000000000000000000000000000000000074d000000000000000000000000000000000000000000000000000000000000004000000000000000000000000015a7ca97d1ed168fb34a4055cefa2e2f9bdb6c75000000000000000000000000b60d0c2e8309518373b40f8eaa2cad0d1de3decb000000000000000000000000fde4c96c8593536e31f229ea8f37b2ada2699bb2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002105000000000000000000000000000000000000000000000000000000000000074d0000000000000000000000000000000000000000000000000000000067f1620f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e8d4a51000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000002400000000000000000000000000000000000000000000000000000000000000005000000000000000000000000000000000000000000000000000000000000a86a0000000000000000000000000000000000000000000000000000000000000089000000000000000000000000000000000000000000000000000000000000a4b1000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000'
+            }]
+        });
+
+        // Mock prometheus to throw an error
+        (mockDeps.prometheus.updateGasSpent as SinonStub).throws(new Error('Prometheus update failed'));
+
+        const result = await sendIntents(invoiceId, [tvmIntent], mockDeps, mockConfig, requestId);
+
+        expect(result).to.have.length(1);
+        expect((mockDeps.logger.warn as SinonStub).calledWith('Failed to update gas spent')).to.be.true;
+    });
+});
+
+describe('Destination Validation for SVM Chains', () => {
+    let mockDeps: SinonStubbedInstance<MarkAdapters>;
+    let mockConfig: MarkConfiguration;
+    const invoiceId = '0xmockinvoice';
+    const requestId = 'test-request-id';
+
+    beforeEach(() => {
+        mockDeps = {
+            everclear: createStubInstance(EverclearAdapter, {
+                createNewIntent: stub(),
+                getMinAmounts: stub(),
+            }),
+            chainService: createStubInstance(ChainService, {
+                submitAndMonitor: stub(),
+                readTx: stub(),
+            }),
+            logger: createStubInstance(Logger),
+            web3Signer: createStubInstance(Web3Signer),
+            purchaseCache: createStubInstance(PurchaseCache),
+            rebalanceCache: createStubInstance(RebalanceCache),
+            rebalance: createStubInstance(RebalanceAdapter),
+            prometheus: createStubInstance(PrometheusAdapter),
+        };
+
+        mockConfig = {
+            ownAddress: '0xdeadbeef1234567890deadbeef1234567890dead',
+            ownSolAddress: 'SolanaAddressExample123456789012345678901234',
+            chains: {
+                '1': {
+                    providers: ['eth-provider'],
+                },
+                '1399811149': { // SVM destination
+                    providers: ['solana-provider'],
+                },
+            },
+        } as unknown as MarkConfiguration;
+    });
+
+    afterEach(() => {
+        sinonRestore();
+    });
+
+    it('should validate intent.to matches ownSolAddress for SVM destination', async () => {
+        const evmToSvmIntent: NewIntentParams = {
+            origin: '1', // EVM origin
+            destinations: ['1399811149'], // SVM destination
+            to: mockConfig.ownSolAddress, // Should be ownSolAddress for SVM destination
+            inputAsset: '0xtoken1',
+            amount: '1000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        (mockDeps.everclear.createNewIntent as SinonStub).resolves({
+            to: '0x1234567890123456789012345678901234567890',
+            data: '0xdata',
+            value: '0',
+        });
+
+        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
+            minAmounts: { '1': '500' }
+        });
+
+        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000007d0';
+        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
+
+        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
+            transactionHash: '0xevmtxhash',
+            cumulativeGasUsed: 100n,
+            effectiveGasPrice: 1n,
+            logs: [{
+                topics: [
+                    INTENT_ADDED_TOPIC0 as `0x${string}`,
+                    '0x0000000000000000000000000000000000000000000000000000000000000001'
+                ],
+                data: '0x000000000000000000000000000000000000000000000000000000000000074d000000000000000000000000000000000000000000000000000000000000004000000000000000000000000015a7ca97d1ed168fb34a4055cefa2e2f9bdb6c75000000000000000000000000b60d0c2e8309518373b40f8eaa2cad0d1de3decb000000000000000000000000fde4c96c8593536e31f229ea8f37b2ada2699bb2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002105000000000000000000000000000000000000000000000000000000000000074d0000000000000000000000000000000000000000000000000000000067f1620f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e8d4a51000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000002400000000000000000000000000000000000000000000000000000000000000005000000000000000000000000000000000000000000000000000000000000a86a0000000000000000000000000000000000000000000000000000000000000089000000000000000000000000000000000000000000000000000000000000a4b1000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000'
+            }]
+        });
+
+        const result = await sendIntents(invoiceId, [evmToSvmIntent], mockDeps, mockConfig, requestId);
+        expect(result).to.have.length(1);
+    });
+
+    it('should throw error when intent.to does not match ownSolAddress for SVM destination', async () => {
+        const evmToSvmIntent: NewIntentParams = {
+            origin: '1', // EVM origin
+            destinations: ['1399811149'], // SVM destination
+            to: 'WrongSolanaAddress123456789012345678901', // Wrong address for SVM destination
+            inputAsset: '0xtoken1',
+            amount: '1000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        await expect(sendIntents(invoiceId, [evmToSvmIntent], mockDeps, mockConfig, requestId))
+            .to.be.rejectedWith(`intent.to (WrongSolanaAddress123456789012345678901) must be ownSolAddress (${mockConfig.ownSolAddress}) for destination 1399811149`);
+    });
+
+    it('should validate intent destinations length for SVM destination', async () => {
+        const evmToSvmIntent: NewIntentParams = {
+            origin: '1', // EVM origin
+            destinations: ['1399811149', '42161'], // Multiple destinations including SVM - should fail
+            to: mockConfig.ownSolAddress,
+            inputAsset: '0xtoken1',
+            amount: '1000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        await expect(sendIntents(invoiceId, [evmToSvmIntent], mockDeps, mockConfig, requestId))
+            .to.be.rejectedWith('intent.destination must be length 1 for intents towards SVM');
+    });
+});
+
+describe('Additional Multicall Error Cases', () => {
+    let mockDeps: any;
+    let mockConfig: MarkConfiguration;
+
+    beforeEach(() => {
+        mockDeps = {
+            everclear: createStubInstance(EverclearAdapter, {
+                createNewIntent: stub()
+            }),
+            chainService: createStubInstance(ChainService, {
+                submitAndMonitor: stub()
+            }),
+            logger: createStubInstance(Logger),
+            web3Signer: createStubInstance(Web3Signer),
+            prometheus: createStubInstance(PrometheusAdapter),
+        };
+
+        mockConfig = {
+            ownAddress: '0xdeadbeef1234567890deadbeef1234567890dead',
+            chains: {
+                '1': {
+                    providers: ['provider1'],
+                    deployments: {
+                        everclear: '0xspoke',
+                        multicall3: '0xmulticall3',
+                        permit2: '0xpermit2address'
+                    }
+                },
+            },
+        } as unknown as MarkConfiguration;
+    });
+
+    afterEach(() => {
+        sinonRestore();
+    });
+
+    it('should handle missing everclear deployment address error', async () => {
+        const configWithoutEverclear = {
+            ...mockConfig,
+            chains: {
+                '1': {
+                    providers: ['provider1'],
+                    assets: [],
+                    invoiceAge: 3600,
+                    gasThreshold: '1000000000000000000',
+                    deployments: {
+                        // everclear missing
+                        multicall3: '0xmulticall3',
+                        permit2: '0xpermit2address'
+                    }
+                },
+            },
+        } as unknown as MarkConfiguration;
+
+        const mockIntent = {
+            origin: '1',
+            destinations: ['8453'],
+            to: '0xdest',
+            inputAsset: '0xtoken',
+            amount: '1000',
+            callData: '0x',
+            maxFee: '0',
+        };
+
+        // Mock token contract
+        const tokenContract = {
+            address: '0xtoken',
+            read: {
+                allowance: stub().resolves(BigInt('1000000000000000000')),
+            },
+        };
+        stub(contractHelpers, 'getERC20Contract').resolves(tokenContract as any);
+
+        await expect(sendIntentsMulticall([mockIntent], mockDeps, configWithoutEverclear))
+            .to.be.rejectedWith('Everclear contract address not found for chain ID: 1');
     });
 });
