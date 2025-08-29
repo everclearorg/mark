@@ -2,8 +2,7 @@
 import { beforeEach, describe, expect, it, jest, afterEach, afterAll } from '@jest/globals';
 import { AssetConfiguration, ChainConfiguration, RebalanceRoute, cleanupHttpConnections, axiosGet } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import { Transaction } from 'ethers';
-import { createPublicClient, decodeEventLog, TransactionReceipt, encodeFunctionData, zeroAddress, padHex } from 'viem';
+import { createPublicClient, decodeEventLog, TransactionReceipt, encodeFunctionData, zeroAddress, padHex, Transaction } from 'viem';
 import { AcrossBridgeAdapter } from '../../../src/adapters/across/across';
 import {
   DepositStatusResponse,
@@ -584,17 +583,17 @@ describe('AcrossBridgeAdapter', () => {
       // Execute
       const result = await adapter.destinationCallback(route, mockReceipt as TransactionReceipt);
 
-            // Assert
-            expect(result).toEqual({
-                transaction: {
-                    to: mockAssets['WETH'].address,
-                    data: '0xd0e30db0',
-                    value: BigInt('1000000000000000000'),
-                    funcSig: 'deposit()',
-                },
-                memo: RebalanceTransactionMemo.Wrap,
-            });
-        });
+      // Assert
+      expect(result).toEqual({
+        transaction: {
+          to: mockAssets['WETH'].address,
+          data: '0xd0e30db0',
+          value: BigInt('1000000000000000000'),
+          funcSig: 'deposit()',
+        },
+        memo: RebalanceTransactionMemo.Wrap,
+      });
+    });
 
     it('should return void if no callback is needed', async () => {
       // Mock route
