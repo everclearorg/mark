@@ -240,11 +240,15 @@ export async function processTickerGroup(
     let filteredMinAmounts = Object.fromEntries(
       Object.entries(minAmounts).filter(([destination]) => {
         if (existingDestinations.has(destination)) {
+          const action = pendingPurchases.filter(
+            (p) => p.target.ticker_hash === invoice.ticker_hash && p.purchase.params.origin === destination,
+          );
           logger.info('Action exists for destination-ticker combo, removing from consideration', {
             requestId,
             invoiceId,
             destination,
             duration: getTimeSeconds() - start,
+            action,
           });
           prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, { ...labels, destination });
           return false;
