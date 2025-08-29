@@ -40,6 +40,7 @@ COPY packages/adapters/everclear/package.json /tmp/build/packages/adapters/everc
 COPY packages/adapters/web3signer/package.json /tmp/build/packages/adapters/web3signer/
 COPY packages/adapters/cache/package.json /tmp/build/packages/adapters/cache/
 COPY packages/adapters/prometheus/package.json /tmp/build/packages/adapters/prometheus/
+COPY packages/adapters/database/package.json /tmp/build/packages/adapters/database/
 COPY yarn.lock /tmp/build/
 
 # Install dependencies including devDependencies
@@ -57,6 +58,7 @@ COPY packages/adapters/everclear /tmp/build/packages/adapters/everclear
 COPY packages/adapters/web3signer /tmp/build/packages/adapters/web3signer
 COPY packages/adapters/cache /tmp/build/packages/adapters/cache
 COPY packages/adapters/prometheus /tmp/build/packages/adapters/prometheus
+COPY packages/adapters/database /tmp/build/packages/adapters/database
 COPY tsconfig.json /tmp/build/
 
 # Build packages
