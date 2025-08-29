@@ -1,6 +1,6 @@
 // Database connection and query utilities with zapatos integration
 
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, PoolConfig } from 'pg';
 import {
   CamelCasedProperties,
   DatabaseConfig,
@@ -32,12 +32,25 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
     return pool;
   }
 
-  pool = new Pool({
+  // Parse connection string to check for SSL mode
+  const isSSLRequired = config.connectionString.includes('sslmode=require');
+
+  const poolConfig: PoolConfig = {
     connectionString: config.connectionString,
     max: config.maxConnections || 20,
     idleTimeoutMillis: config.idleTimeoutMillis || 30000,
     connectionTimeoutMillis: config.connectionTimeoutMillis || 2000,
-  });
+  };
+
+  // If SSL is required, configure to accept self-signed certificates
+  if (isSSLRequired) {
+    poolConfig.ssl = {
+      rejectUnauthorized: false,
+    };
+    console.log('Database connection configured with SSL (accepting self-signed certificates)');
+  }
+
+  pool = new Pool(poolConfig);
 
   // Handle pool errors
   pool.on('error', (err) => {
