@@ -19,8 +19,8 @@
     },
     "dependencies": {
         "@defuse-protocol/one-click-sdk-typescript": "^0.1.5",
+        "@mark/cache": "workspace:*",
         "@mark/core": "workspace:*",
-        "@mark/database": "workspace:*",
         "@mark/logger": "workspace:*",
         "axios": "1.9.0",
         "commander": "12.0.0",

@@ -96,7 +96,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
         maximum: '5000000000000000000', // 5
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Binance],
       },
 
@@ -107,7 +107,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x4200000000000000000000000000000000000006',
         maximum: '55000000000000000000', // 55
         reserve: '50000000000000000000', // 50
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Binance],
       },
 
@@ -118,7 +118,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
         maximum: '105000000000000000000', // 105
         reserve: '100000000000000000000', // 100
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -129,7 +129,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x4200000000000000000000000000000000000006',
         maximum: '25000000000000000000', // 25
         reserve: '20000000000000000000', // 20
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -140,7 +140,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91',
         maximum: '10000000000000000000', // 10
         reserve: '5000000000000000000', // 5
-        slippagesDbps: [20],
+        slippages: [20],
         preferences: [SupportedBridge.Kraken],
       },
 
@@ -151,7 +151,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -162,7 +162,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -173,7 +173,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -183,7 +183,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
         maximum: '5000000000000000000000', // 5,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -194,7 +194,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
         maximum: '5500000000000000000000', // 5,500
         reserve: '5000000000000000000000', // 5,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -205,7 +205,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x55d398326f99059fF775485246999027B3197955',
         maximum: '5500000000000000000000', // 5,500
         reserve: '5000000000000000000000', // 5,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -216,7 +216,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -227,7 +227,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -238,7 +238,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
         maximum: '25000000000000000000000', // 25,000
         reserve: '20000000000000000000000', // 20,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -248,7 +248,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff',
         maximum: '10000000000000000000000', // 10,000
-        slippagesDbps: [50],
+        slippages: [50],
         preferences: [SupportedBridge.CCTPV2],
       },
 
@@ -258,7 +258,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0xF1815bd50389c46847f0Bda824eC8da914045D14',
         maximum: '10000000000000000000000', // 10,000
-        slippagesDbps: [20],
+        slippages: [20],
         preferences: [SupportedBridge.Across],
       },
 
@@ -269,7 +269,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xc6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61',
         maximum: '50000000000000000000000', // 50,000
         reserve: '30000000000000000000000', // 30,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -280,7 +280,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0xce010e60afedb22717bd63192f54145a3f965a33bb82d2c7029eb2ce1e208264',
         maximum: '50000000000000000000000', // 50,000
         reserve: '30000000000000000000000', // 30,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -291,7 +291,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x4200000000000000000000000000000000000006', // typical L2 WETH
         maximum: '30000000000000000000', // 30
         reserve: '20000000000000000000', // 20
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Kraken],
       },
 
@@ -302,7 +302,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x4200000000000000000000000000000000000006',
         maximum: '10000000000000000000', // 10
         reserve: '5000000000000000000', // 5
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Kraken],
       },
 
@@ -312,7 +312,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x0200C29006150606B650577BBE7B6248F58470c1',
         maximum: '5000000000000000000000', // 5,000
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Kraken],
       },
 
@@ -323,7 +323,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         asset: '0x5300000000000000000000000000000000000004',
         maximum: '10000000000000000000', // 10
         reserve: '5000000000000000000', // 5
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Binance],
       },
 
@@ -333,7 +333,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df',
         maximum: '5000000000000000000000', // 5,000
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Binance],
       },
 
@@ -343,7 +343,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x9702230A8Ea53601f5cD2dc00fDbc13d4d4A73A',
         maximum: '5000000000000000000000', // 5,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -353,7 +353,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
         maximum: '5000000000000000000000', // 5,000
-        slippagesDbps: [30, 30],
+        slippages: [30, 30],
         preferences: [SupportedBridge.Near, SupportedBridge.Binance],
       },
 
@@ -363,7 +363,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x29219dd400f2Bf60E5a23d13Be72B486D4038894',
         maximum: '5000000000000000000000', // 5,000
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Binance],
       },
 
@@ -373,7 +373,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         destination: 1,
         asset: '0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4',
         maximum: '5000000000000000000000', // 5,000
-        slippagesDbps: [30],
+        slippages: [30],
         preferences: [SupportedBridge.Binance],
       },
     ],
@@ -397,30 +397,11 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const supportedAssets =
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
 
-    const { routes, onDemandRoutes } = await loadRebalanceRoutes();
+    const { routes } = await loadRebalanceRoutes();
 
     // Filter routes to include those with assets specified in the config
     const filteredRoutes = routes.filter((route) => {
       const originChainConfig = hostedConfig?.chains?.[route.origin.toString()];
-      if (!originChainConfig) {
-        return false;
-      }
-
-      const assetConfig = Object.values(originChainConfig.assets ?? {}).find(
-        (asset) => asset.address.toLowerCase() === route.asset.toLowerCase(),
-      );
-
-      if (!assetConfig) {
-        return false;
-      }
-
-      const isSupported = supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
-      return isSupported;
-    });
-
-    const filteredOnDemandRoutes = onDemandRoutes?.filter((route) => {
-      const originChainConfig = hostedConfig?.chains?.[route.origin.toString()];
-
       if (!originChainConfig) {
         return false;
       }
@@ -460,9 +441,6 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
-      database: configJson.database ?? {
-        connectionString: await requireEnv('DATABASE_URL'),
-      },
       ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
       ownSolAddress: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
       supportedSettlementDomains:
@@ -475,7 +453,6 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
       routes: filteredRoutes,
-      onDemandRoutes: filteredOnDemandRoutes,
     };
 
     validateConfiguration(config);
@@ -512,9 +489,9 @@ function validateConfiguration(config: MarkConfiguration): void {
 
   // Validate route configurations
   for (const route of config.routes) {
-    if (route.slippagesDbps.length !== route.preferences.length) {
+    if (route.slippages.length !== route.preferences.length) {
       throw new ConfigurationError(
-        `Route ${route.origin}->${route.destination} for ${route.asset}: slippagesDbpsDbps array length (${route.slippagesDbps.length}) must match preferences array length (${route.preferences.length})`,
+        `Route ${route.origin}->${route.destination} for ${route.asset}: slippages array length (${route.slippages.length}) must match preferences array length (${route.preferences.length})`,
       );
     }
   }

@@ -7,7 +7,7 @@ const typescriptPlugin = require('@typescript-eslint/eslint-plugin');
 module.exports = [
     // 1) Basic ignore settings
     {
-        ignores: ['dist', 'node_modules', '**/zapatos/zapatos/**'],
+        ignores: ['dist', 'node_modules'],
     },
 
     // 2) Settings for all TypeScript files

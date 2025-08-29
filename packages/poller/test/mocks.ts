@@ -132,7 +132,4 @@ export const mockConfig: MarkConfiguration = {
     ],
   },
   routes: [],
-  database: {
-    connectionString: 'postgresql://test:test@localhost:5432/test',
-  },
 };

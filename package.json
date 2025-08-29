@@ -13,7 +13,6 @@
     "packages/adapters/logger",
     "packages/adapters/cache",
     "packages/adapters/chainservice",
-    "packages/adapters/database",
     "packages/adapters/everclear",
     "packages/adapters/web3signer",
     "packages/adapters/prometheus",

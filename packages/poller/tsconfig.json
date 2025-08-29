@@ -4,21 +4,18 @@
     "outDir": "./dist",
     "baseUrl": ".",
     "paths": {
-      "#/*": ["./src/*", "./test/*"],
-      "zapatos/schema": ["../adapters/database/src/zapatos/zapatos/schema"],
-      "zapatos/db": ["../adapters/database/node_modules/zapatos/dist/db"]
+      "#/*": ["./src/*", "./test/*"]
     },
     "composite": true,
     "moduleResolution": "node",
     "module": "commonjs",
-    "types": ["node", "jest"]
+    "types": ["node", "mocha", "chai"]
   },
   "include": ["src/**/*", "test/**/*"],
-  "exclude": ["dist", "node_modules", "**/*.spec.ts", "**/globalTestHook.ts", "**/jest.setup.ts", "jest.config.js"],
+  "exclude": ["dist", "node_modules", "**/*.spec.ts", "**/globalTestHook.ts"],
   "references": [
     { "path": "../core" },
     { "path": "../adapters/logger" },
-    { "path": "../adapters/database" },
     { "path": "../adapters/chainservice" },
     { "path": "../adapters/everclear" },
     { "path": "../adapters/prometheus" },

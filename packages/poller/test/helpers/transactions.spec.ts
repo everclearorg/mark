@@ -1,9 +1,11 @@
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
-import { ChainService, TransactionReceipt } from '@mark/chainservice';
+import { BigNumber, providers } from 'ethers';
+import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { LoggingContext, TransactionSubmissionType, WalletType, TransactionRequest, WalletConfig } from '@mark/core';
 import { submitTransactionWithLogging } from '../../src/helpers/transactions';
 import * as zodiacHelpers from '../../src/helpers/zodiac';
+import { expect } from '../globalTestHook';
 
 describe('submitTransactionWithLogging', () => {
   let mockDeps: {
@@ -25,15 +27,15 @@ describe('submitTransactionWithLogging', () => {
       logger: createStubInstance(Logger),
     };
 
-    // Initialize common test data
-    mockTxRequest = {
-      to: '0xabc4567890123456789012345678901234567890',
-      data: '0x',
-      value: '0',
-      chainId: MOCK_CHAIN_ID,
-      from: '0x1234567890123456789012345678901234567890',
-      funcSig: 'transfer(address,uint256)',
-    };
+        // Initialize common test data
+        mockTxRequest = {
+            to: '0xabc4567890123456789012345678901234567890',
+            data: '0x',
+            value: '0',
+            chainId: MOCK_CHAIN_ID,
+            from: '0x1234567890123456789012345678901234567890',
+            funcSig: 'transfer(address,uint256)',
+        };
 
     mockZodiacConfig = {
       walletType: WalletType.EOA,
@@ -57,13 +59,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: '100000',
+        gasUsed: BigNumber.from('100000'),
         status: 1,
-        cumulativeGasUsed: '100000',
-        effectiveGasPrice: '1000000000',
-        confirmations: 1,
-        logs: [],
-      } as TransactionReceipt;
+      } as providers.TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -76,15 +74,15 @@ describe('submitTransactionWithLogging', () => {
         context: mockContext,
       });
 
-      expect(result).toEqual({
+      expect(result).to.deep.equal({
         submissionType: TransactionSubmissionType.Onchain,
         hash: MOCK_TX_HASH,
         receipt: mockReceipt,
       });
 
       // Verify logging
-      expect(mockDeps.logger.info.calledWith('Submitting transaction')).toBe(true);
-      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).toBe(true);
+      expect(mockDeps.logger.info.calledWith('Submitting transaction')).to.be.true;
+      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).to.be.true;
     });
 
     it('should handle EOA transaction failure', async () => {
@@ -100,10 +98,10 @@ describe('submitTransactionWithLogging', () => {
           zodiacConfig: mockZodiacConfig,
           context: mockContext,
         }),
-      ).rejects.toThrow(error);
+      ).to.be.rejectedWith(error);
 
       // Verify error logging
-      expect(mockDeps.logger.error.calledWith('Transaction submission failed')).toBe(true);
+      expect(mockDeps.logger.error.calledWith('Transaction submission failed')).to.be.true;
     });
   });
 
@@ -116,27 +114,23 @@ describe('submitTransactionWithLogging', () => {
         roleKey: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' as `0x${string}`,
       };
 
-      wrapTransactionWithZodiacStub.resolves({
-        to: mockZodiacConfig.moduleAddress,
-        data: '0xabc123',
-        value: '0',
-        from: mockTxRequest.from,
-        chainId: mockTxRequest.chainId,
-        funcSig: 'execute(bytes)',
-      });
-    });
+            wrapTransactionWithZodiacStub.resolves({
+                to: mockZodiacConfig.moduleAddress,
+                data: '0xabc123',
+                value: '0',
+                from: mockTxRequest.from,
+                chainId: mockTxRequest.chainId,
+                funcSig: 'execute(bytes)',
+            });
+        });
 
     it('should successfully submit a zodiac transaction', async () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: '100000',
+        gasUsed: BigNumber.from('100000'),
         status: 1,
-        cumulativeGasUsed: '100000',
-        effectiveGasPrice: '1000000000',
-        confirmations: 1,
-        logs: [],
-      } as TransactionReceipt;
+      } as providers.TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -149,21 +143,20 @@ describe('submitTransactionWithLogging', () => {
         context: mockContext,
       });
 
-      expect(result).toEqual({
+      expect(result).to.deep.equal({
         submissionType: TransactionSubmissionType.Onchain,
         hash: MOCK_TX_HASH,
         receipt: mockReceipt,
       });
 
       // Verify logging
-      expect(mockDeps.logger.info.calledWith('Submitting transaction')).toBe(true);
-      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).toBe(true);
+      expect(mockDeps.logger.info.calledWith('Submitting transaction')).to.be.true;
+      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).to.be.true;
 
       // Verify that the transaction was wrapped with Zodiac
-      expect(wrapTransactionWithZodiacStub.calledOnce).toBe(true);
-      expect(
-        wrapTransactionWithZodiacStub.calledWith({ ...mockTxRequest, chainId: MOCK_CHAIN_ID }, mockZodiacConfig),
-      ).toBe(true);
+      expect(wrapTransactionWithZodiacStub.calledOnce).to.be.true;
+      expect(wrapTransactionWithZodiacStub.calledWith({ ...mockTxRequest, chainId: MOCK_CHAIN_ID }, mockZodiacConfig))
+        .to.be.true;
     });
 
     it('should handle zodiac transaction failure', async () => {
@@ -179,23 +172,19 @@ describe('submitTransactionWithLogging', () => {
           zodiacConfig: mockZodiacConfig,
           context: mockContext,
         }),
-      ).rejects.toThrow(error);
+      ).to.be.rejectedWith(error);
 
       // Verify error logging
-      expect(mockDeps.logger.error.calledWith('Transaction submission failed')).toBe(true);
+      expect(mockDeps.logger.error.calledWith('Transaction submission failed')).to.be.true;
     });
 
     it('should include zodiac-specific fields in logs', async () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: '100000',
+        gasUsed: BigNumber.from('100000'),
         status: 1,
-        cumulativeGasUsed: '100000',
-        effectiveGasPrice: '1000000000',
-        confirmations: 1,
-        logs: [],
-      } as TransactionReceipt;
+      } as providers.TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -210,16 +199,16 @@ describe('submitTransactionWithLogging', () => {
 
       // Check that logging includes zodiac information
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).toBeDefined();
-      expect(submitCall?.args[1]).toMatchObject({
+      expect(submitCall).to.exist;
+      expect(submitCall?.args[1]).to.deep.include({
         chainId: MOCK_CHAIN_ID.toString(),
         walletType: WalletType.Zodiac,
         originalTo: mockTxRequest.to,
       });
 
       const successCall = mockDeps.logger.info.getCall(1);
-      expect(successCall).toBeDefined();
-      expect(successCall?.args[1]).toMatchObject({
+      expect(successCall).to.exist;
+      expect(successCall?.args[1]).to.deep.include({
         chainId: MOCK_CHAIN_ID.toString(),
         transactionHash: MOCK_TX_HASH,
         walletType: WalletType.Zodiac,
@@ -237,13 +226,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: '100000',
+        gasUsed: BigNumber.from('100000'),
         status: 1,
-        cumulativeGasUsed: '100000',
-        effectiveGasPrice: '1000000000',
-        confirmations: 1,
-        logs: [],
-      } as TransactionReceipt;
+      } as providers.TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -258,8 +243,8 @@ describe('submitTransactionWithLogging', () => {
 
       // Verify value is logged as '0'
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).toBeDefined();
-      expect(submitCall?.args[1]?.value).toBe('0');
+      expect(submitCall).to.exist;
+      expect(submitCall?.args[1]?.value).to.equal('0');
     });
 
     it('should handle transactions with string value', async () => {
@@ -271,13 +256,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: '100000',
+        gasUsed: BigNumber.from('100000'),
         status: 1,
-        cumulativeGasUsed: '100000',
-        effectiveGasPrice: '1000000000',
-        confirmations: 1,
-        logs: [],
-      } as TransactionReceipt;
+      } as providers.TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -295,8 +276,8 @@ describe('submitTransactionWithLogging', () => {
 
       // Verify value is logged correctly
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).toBeDefined();
-      expect(submitCall?.args[1]?.value).toBe('1000000000000000000');
+      expect(submitCall).to.exist;
+      expect(submitCall?.args[1]?.value).to.equal('1000000000000000000');
     });
 
     it('should handle transactions with bigint value', async () => {
@@ -308,13 +289,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: '100000',
+        gasUsed: BigNumber.from('100000'),
         status: 1,
-        cumulativeGasUsed: '100000',
-        effectiveGasPrice: '1000000000',
-        confirmations: 1,
-        logs: [],
-      } as TransactionReceipt;
+      } as providers.TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -335,8 +312,8 @@ describe('submitTransactionWithLogging', () => {
 
       // Verify value is logged as string
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).toBeDefined();
-      expect(submitCall?.args[1]?.value).toBe('2000000000000000000');
+      expect(submitCall).to.exist;
+      expect(submitCall?.args[1]?.value).to.equal('2000000000000000000');
     });
   });
 
@@ -345,13 +322,9 @@ describe('submitTransactionWithLogging', () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: '100000',
+        gasUsed: BigNumber.from('100000'),
         status: 1,
-        cumulativeGasUsed: '100000',
-        effectiveGasPrice: '1000000000',
-        confirmations: 1,
-        logs: [],
-      } as TransactionReceipt;
+      } as providers.TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -372,25 +345,21 @@ describe('submitTransactionWithLogging', () => {
 
       // Verify context is included in logs
       const submitCall = mockDeps.logger.info.getCall(0);
-      expect(submitCall).toBeDefined();
-      expect(submitCall?.args[1]).toMatchObject(customContext);
+      expect(submitCall).to.exist;
+      expect(submitCall?.args[1]).to.include(customContext);
 
       const successCall = mockDeps.logger.info.getCall(1);
-      expect(successCall).toBeDefined();
-      expect(successCall?.args[1]).toMatchObject(customContext);
+      expect(successCall).to.exist;
+      expect(successCall?.args[1]).to.include(customContext);
     });
 
     it('should handle empty context', async () => {
       const mockReceipt = {
         transactionHash: MOCK_TX_HASH,
         blockNumber: 12345,
-        gasUsed: '100000',
+        gasUsed: BigNumber.from('100000'),
         status: 1,
-        cumulativeGasUsed: '100000',
-        effectiveGasPrice: '1000000000',
-        confirmations: 1,
-        logs: [],
-      } as TransactionReceipt;
+      } as providers.TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
@@ -404,8 +373,8 @@ describe('submitTransactionWithLogging', () => {
       });
 
       // Should not throw and should still log
-      expect(mockDeps.logger.info.calledWith('Submitting transaction')).toBe(true);
-      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).toBe(true);
+      expect(mockDeps.logger.info.calledWith('Submitting transaction')).to.be.true;
+      expect(mockDeps.logger.info.calledWith('Transaction submitted successfully')).to.be.true;
     });
   });
 
@@ -423,13 +392,13 @@ describe('submitTransactionWithLogging', () => {
           zodiacConfig: mockZodiacConfig,
           context: mockContext,
         }),
-      ).rejects.toThrow(error);
+      ).to.be.rejectedWith(error);
 
       // Verify error logging
       const errorCall = mockDeps.logger.error.getCall(0);
-      expect(errorCall).toBeDefined();
-      expect(errorCall?.args[0]).toBe('Transaction submission failed');
-      expect(errorCall?.args[1]).toMatchObject({
+      expect(errorCall).to.exist;
+      expect(errorCall?.args[0]).to.equal('Transaction submission failed');
+      expect(errorCall?.args[1]).to.include({
         ...mockContext,
         chainId: MOCK_CHAIN_ID.toString(),
         error,

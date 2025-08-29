@@ -1,668 +1,324 @@
-import { stub, createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
-import * as sinon from 'sinon';
-import {
-  MarkConfiguration,
-  SupportedBridge,
-  TransactionSubmissionType,
-  RebalanceOperationStatus,
-  RebalanceRoute,
-} from '@mark/core';
-import { Logger } from '@mark/logger';
+import { expect } from '../globalTestHook';
+import { stub, createStubInstance, SinonStubbedInstance, SinonStub, match } from 'sinon';
 import { executeDestinationCallbacks } from '../../src/rebalance/callbacks';
+import { MarkConfiguration, SupportedBridge, TransactionSubmissionType } from '@mark/core';
+import { Logger, jsonifyError } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
-import { RebalanceAction } from '@mark/core';
+import { RebalanceCache, RebalanceAction } from '@mark/cache';
 import * as submitTransactionModule from '../../src/helpers/transactions';
 import { RebalanceAdapter } from '@mark/rebalance';
 
-import { TransactionReceipt } from 'viem';
-import * as DatabaseModule from '@mark/database';
-import { ITransactionReceipt } from '@chimera-monorepo/chainservice/dist/shared/types';
-import { TransactionReceipt as ChainServiceReceipt } from '@mark/chainservice';
-
 // Define the interface for the specific adapter methods needed
 interface MockBridgeAdapter {
-  readyOnDestination: SinonStub<[string, RebalanceRoute, TransactionReceipt], Promise<boolean>>;
-  destinationCallback: SinonStub<
-    [RebalanceRoute, TransactionReceipt],
-    Promise<{ transaction: { to: string; data: string; value?: string }; memo: string } | void>
-  >;
-  type: SinonStub<[], SupportedBridge>;
-  getReceivedAmount: SinonStub<[string, RebalanceRoute], Promise<string>>;
-  send: SinonStub<
-    [string, string, string, RebalanceRoute],
-    Promise<Array<{ transaction: { to: string; data: string; value?: string }; memo: string }>>
-  >;
+    readyOnDestination: SinonStub<[string, Route, any /* ITransactionReceipt */], Promise<boolean>>;
+    destinationCallback: SinonStub<[Route, any /* ITransactionReceipt */], Promise<any>>;
 }
 
-// Helper to create ITransactionReceipt for ChainService.getTransactionReceipt mocks
-const toITransactionReceipt = (viemReceipt: TransactionReceipt): ITransactionReceipt => ({
-  blockNumber: Number(viemReceipt.blockNumber),
-  status: viemReceipt.status === 'success' ? 1 : 0,
-  transactionHash: viemReceipt.transactionHash,
-  confirmations: 1,
-  logs: viemReceipt.logs.map((log, index) => ({
-    address: log.address,
-    topics: [],
-    data: log.data,
-    blockNumber: Number(log.blockNumber),
-    transactionHash: log.transactionHash,
-    transactionIndex: log.transactionIndex,
-    blockHash: log.blockHash,
-    logIndex: index,
-    removed: false,
-  })),
-});
-
-// Helper to create ChainServiceReceipt for ChainService.submitAndMonitor mocks
-const toChainServiceReceipt = (viemReceipt: TransactionReceipt): ChainServiceReceipt => ({
-  ...toITransactionReceipt(viemReceipt),
-  cumulativeGasUsed: viemReceipt.cumulativeGasUsed.toString(),
-  effectiveGasPrice: viemReceipt.effectiveGasPrice.toString(),
-});
+interface Route {
+    asset: string;
+    origin: number; // Changed to number
+    destination: number; // Changed to number
+}
 
 describe('executeDestinationCallbacks', () => {
-  let mockContext: SinonStubbedInstance<ProcessingContext>;
-  let mockLogger: SinonStubbedInstance<Logger>;
-  let mockChainService: SinonStubbedInstance<ChainService>;
-  let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
-  let mockSpecificBridgeAdapter: MockBridgeAdapter;
-  let submitTransactionStub: SinonStub;
-  let mockDatabase: typeof DatabaseModule;
+    let mockContext: SinonStubbedInstance<ProcessingContext>;
+    let mockLogger: SinonStubbedInstance<Logger>;
+    let mockRebalanceCache: SinonStubbedInstance<RebalanceCache>;
+    let mockChainService: SinonStubbedInstance<ChainService>;
+    let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
+    let mockSpecificBridgeAdapter: MockBridgeAdapter;
+    let submitTransactionStub: SinonStub;
 
-  let mockConfig: MarkConfiguration;
+    let mockConfig: MarkConfiguration;
 
-  // Helper to create database operation from action
-  const createDbOperation = (action: RebalanceAction, id: string, includeReceipt = false) => ({
-    id,
-    earmarkId: null,
-    originChainId: action.origin,
-    destinationChainId: action.destination,
-    tickerHash: action.asset,
-    amount: action.amount,
-    bridge: action.bridge,
-    transactions: includeReceipt
-      ? {
-          [action.origin]: {
-            hash: action.transaction,
-            metadata: {
-              receipt: mockReceipt1,
+    const MOCK_REQUEST_ID = 'test-request-id';
+    const MOCK_START_TIME = Date.now();
+
+    const mockAction1Id = 'action-1';
+    const mockAction1: RebalanceAction = {
+        asset: 'ETH',
+        origin: 1, // Changed to number
+        destination: 10, // Changed to number
+        bridge: 'Across' as SupportedBridge, // Cast to SupportedBridge
+        transaction: '0xtxhash1',
+        amount: '1000',
+        recipient: '0x1234567890123456789012345678901234567890',
+    };
+
+    const mockRoute1: Route = {
+        asset: mockAction1.asset,
+        origin: mockAction1.origin,
+        destination: mockAction1.destination,
+    };
+
+    // Using any for mockReceipt1 to simplify type issues for now
+    const mockReceipt1: any = {
+        to: '0xcontract',
+        from: '0xsender',
+        contractAddress: null,
+        transactionIndex: 1,
+        gasUsed: '21000',
+        blockHash: '0xblockhash1',
+        transactionHash: mockAction1.transaction,
+        logs: [],
+        blockNumber: 123,
+        status: 1,
+    };
+
+    const mockCallbackTx = {
+        transaction: {
+            to: '0xDestinationContract',
+            data: '0xcallbackdata',
+            value: '0',
+        },
+        memo: 'Callback'
+    };
+
+    // submitAndMonitor should resolve with a receipt-like object
+    const mockSubmitSuccessReceipt: any = {
+        transactionHash: '0xDestTxHashSuccess',
+        status: 1, // Common field in receipts
+        blockNumber: 234
+    };
+
+    beforeEach(() => {
+        mockLogger = createStubInstance(Logger);
+        mockRebalanceCache = createStubInstance(RebalanceCache);
+        mockChainService = createStubInstance(ChainService);
+        mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
+        mockSpecificBridgeAdapter = {
+            readyOnDestination: stub<[string, Route, any /* ITransactionReceipt */], Promise<boolean>>(),
+            destinationCallback: stub<[Route, any /* ITransactionReceipt */], Promise<any>>(),
+        };
+
+        mockConfig = {
+            routes: [{ asset: 'ETH', origin: 1, destination: 10 }], // origin/destination as numbers
+            pushGatewayUrl: 'http://localhost:9091',
+            web3SignerUrl: 'http://localhost:8545',
+            everclearApiUrl: 'http://localhost:3000',
+            relayer: '0xRelayerAddress',
+            ownAddress: '0xOwnAddress',
+            invoiceAge: 3600,
+            logLevel: 'info',
+            pollingInterval: 60000,
+            maxRetries: 3,
+            retryDelay: 1000,
+            chains: {
+                '1': { providers: ['http://mainnetprovider'] },
+                '10': { providers: ['http://optimismprovider'] }
             },
-          },
-        }
-      : {
-          [action.origin]: {
-            hash: action.transaction,
-          },
-        },
-    status: RebalanceOperationStatus.PENDING,
-    slippage: 100,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-
-  const MOCK_REQUEST_ID = 'test-request-id';
-  const MOCK_START_TIME = Date.now();
-
-  const mockAction1Id = 'action-1';
-  const mockAction1: RebalanceAction = {
-    asset: 'ETH',
-    origin: 1,
-    destination: 10,
-    bridge: 'Across' as SupportedBridge,
-    transaction: '0xtxhash1',
-    amount: '1000',
-    recipient: '0x1234567890123456789012345678901234567890',
-  };
-
-  // Mock transaction receipt
-  const mockReceipt1 = {
-    blockHash: '0xblockhash1' as `0x${string}`,
-    blockNumber: BigInt(123),
-    contractAddress: null,
-    cumulativeGasUsed: BigInt(100000),
-    effectiveGasPrice: BigInt(20),
-    from: '0xsender' as `0x${string}`,
-    gasUsed: BigInt(21000),
-    logs: [],
-    logsBloom: '0x' as `0x${string}`,
-    status: 'success',
-    to: '0xcontract' as `0x${string}`,
-    transactionHash: mockAction1.transaction as `0x${string}`,
-    transactionIndex: 1,
-    type: 'legacy',
-  } as TransactionReceipt;
-
-  const mockCallbackTx = {
-    transaction: {
-      to: '0xDestinationContract',
-      data: '0xcallbackdata',
-      value: '0',
-    },
-    memo: 'Callback',
-  };
-
-  // submitAndMonitor should resolve with a receipt-like object
-  const mockSubmitSuccessReceipt = {
-    blockHash: '0xblockhash2' as `0x${string}`,
-    blockNumber: BigInt(234),
-    contractAddress: null,
-    cumulativeGasUsed: BigInt(100000),
-    effectiveGasPrice: BigInt(20),
-    from: '0xsender' as `0x${string}`,
-    gasUsed: BigInt(21000),
-    logs: [],
-    logsBloom: '0x' as `0x${string}`,
-    status: 'success',
-    to: '0xcontract' as `0x${string}`,
-    transactionHash: '0xDestTxHashSuccess' as `0x${string}`,
-    transactionIndex: 1,
-    type: 'legacy',
-  } as TransactionReceipt;
-
-  // Create ChainServiceReceipt for submitTransactionWithLogging
-  const mockChainServiceReceipt: ChainServiceReceipt = {
-    transactionHash: mockSubmitSuccessReceipt.transactionHash,
-    blockNumber: Number(mockSubmitSuccessReceipt.blockNumber),
-    confirmations: 1,
-    status: 1,
-    logs: [],
-    cumulativeGasUsed: mockSubmitSuccessReceipt.cumulativeGasUsed.toString(),
-    effectiveGasPrice: mockSubmitSuccessReceipt.effectiveGasPrice.toString(),
-  };
-
-  beforeEach(() => {
-    mockLogger = createStubInstance(Logger);
-    mockChainService = createStubInstance(ChainService);
-    mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
-    mockSpecificBridgeAdapter = {
-      readyOnDestination: stub<[string, RebalanceRoute, TransactionReceipt], Promise<boolean>>(),
-      destinationCallback: stub<
-        [RebalanceRoute, TransactionReceipt],
-        Promise<{ transaction: { to: string; data: string; value?: string }; memo: string } | void>
-      >(),
-      type: stub<[], SupportedBridge>(),
-      getReceivedAmount: stub<[string, RebalanceRoute], Promise<string>>(),
-      send: stub<
-        [string, string, string, RebalanceRoute],
-        Promise<Array<{ transaction: { to: string; data: string; value?: string }; memo: string }>>
-      >(),
-    };
-
-    // Create mock database module with all required exports
-    mockDatabase = {
-      getRebalanceOperations: stub().resolves([]),
-      updateRebalanceOperation: stub().resolves(),
-      queryWithClient: stub().resolves(),
-      initializeDatabase: stub(),
-      closeDatabase: stub(),
-      checkDatabaseHealth: stub().resolves({ healthy: true, timestamp: new Date() }),
-      connectWithRetry: stub().resolves({}),
-      gracefulShutdown: stub().resolves(),
-      createEarmark: stub().resolves(),
-      getEarmarks: stub().resolves([]),
-      getEarmarkForInvoice: stub().resolves(null),
-      removeEarmark: stub().resolves(),
-      updateEarmarkStatus: stub().resolves(),
-      getActiveEarmarksForChain: stub().resolves([]),
-      createRebalanceOperation: stub().resolves(),
-      getRebalanceOperationsByEarmark: stub().resolves([]),
-      withTransaction: stub().resolves(),
-      DatabaseError: class DatabaseError extends Error {},
-      ConnectionError: class ConnectionError extends Error {},
-    } as unknown as typeof DatabaseModule;
-
-    mockConfig = {
-      routes: [{ asset: 'ETH', origin: 1, destination: 10 }],
-      pushGatewayUrl: 'http://localhost:9091',
-      web3SignerUrl: 'http://localhost:8545',
-      everclearApiUrl: 'http://localhost:3000',
-      relayer: '0xRelayerAddress',
-      ownAddress: '0xOwnAddress',
-      invoiceAge: 3600,
-      logLevel: 'info',
-      pollingInterval: 60000,
-      maxRetries: 3,
-      retryDelay: 1000,
-      chains: {
-        '1': {
-          providers: ['http://mainnetprovider'],
-          assets: [
-            { tickerHash: 'ETH', address: '0xEthAddress1' },
-            { tickerHash: 'USDC', address: '0xUsdcAddress1' },
-          ],
-        },
-        '10': {
-          providers: ['http://optimismprovider'],
-          assets: [{ tickerHash: 'ETH', address: '0xEthAddress10' }],
-        },
-        '137': {
-          providers: ['http://polygonprovider'],
-          assets: [{ tickerHash: 'USDC', address: '0xUsdcAddress137' }],
-        },
-      },
-      supportedSettlementDomains: [1, 10],
-    } as unknown as MarkConfiguration;
-
-    mockContext = {
-      config: mockConfig,
-      requestId: MOCK_REQUEST_ID,
-      startTime: MOCK_START_TIME,
-      logger: mockLogger,
-      chainService: mockChainService,
-      rebalance: mockRebalanceAdapter,
-      database: mockDatabase,
-      everclear: undefined,
-      purchaseCache: undefined,
-      web3Signer: undefined,
-      prometheus: undefined,
-    } as unknown as SinonStubbedInstance<ProcessingContext>;
-
-    mockRebalanceAdapter.getAdapter.callsFake(() => {
-      // Return the same mock adapter for all bridges
-      return mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>;
-    });
-    mockChainService.getTransactionReceipt.resolves(undefined);
-    mockSpecificBridgeAdapter.readyOnDestination.resolves(false);
-    mockSpecificBridgeAdapter.destinationCallback.resolves(undefined);
-    mockChainService.submitAndMonitor.resolves(toChainServiceReceipt(mockSubmitSuccessReceipt));
-    submitTransactionStub = stub(submitTransactionModule, 'submitTransactionWithLogging').resolves({
-      hash: mockSubmitSuccessReceipt.transactionHash,
-      receipt: mockChainServiceReceipt,
-      submissionType: TransactionSubmissionType.Onchain,
-    });
-  });
-
-  afterEach(() => {
-    if (submitTransactionStub) {
-      submitTransactionStub.restore();
-    }
-  });
-
-  it('should do nothing if no operations are found in database', async () => {
-    await executeDestinationCallbacks(mockContext);
-    expect(mockLogger.info.calledWith('Executing destination callbacks', { requestId: MOCK_REQUEST_ID })).toBe(true);
-    expect(
-      (mockDatabase.getRebalanceOperations as SinonStub).calledWith({
-        status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
-      }),
-    ).toBe(true);
-    expect(mockChainService.getTransactionReceipt.called).toBe(false);
-  });
-
-  it('should log and continue if transaction receipt is not found for an action', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, false); // No receipt in metadata
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const infoCallWithMessage = mockLogger.info
-      .getCalls()
-      .find((call) => call.args[0] === 'Origin transaction receipt not found for operation');
-    expect(infoCallWithMessage).toBeDefined();
-    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
-      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-    }
-    expect(mockSpecificBridgeAdapter.readyOnDestination.called).toBe(false);
-  });
-
-  it('should log warning and continue if transaction entry is missing', async () => {
-    const dbOperation = {
-      id: mockAction1Id,
-      earmarkId: null,
-      originChainId: mockAction1.origin,
-      destinationChainId: mockAction1.destination,
-      tickerHash: mockAction1.asset,
-      amount: mockAction1.amount,
-      bridge: mockAction1.bridge,
-      transactions: {}, // Empty transactions
-      status: RebalanceOperationStatus.PENDING,
-      slippage: 100,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const warnCallWithMessage = mockLogger.warn
-      .getCalls()
-      .find((call) => call.args[0] === 'Operation missing origin transaction');
-    expect(warnCallWithMessage).toBeDefined();
-    if (warnCallWithMessage && warnCallWithMessage.args[1]) {
-      expect(warnCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-    }
-    expect(mockSpecificBridgeAdapter.readyOnDestination.called).toBe(false);
-  });
-
-  it('should log info if readyOnDestination returns false', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockSpecificBridgeAdapter.readyOnDestination.resolves(false);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const infoCallWithMessage = mockLogger.info
-      .getCalls()
-      .find((call) => call.args[0] === 'Action not ready for destination callback');
-    expect(infoCallWithMessage).toBeDefined();
-    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
-      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-    }
-    expect((mockDatabase.updateRebalanceOperation as SinonStub).called).toBe(false);
-  });
-
-  it('should log error and continue if readyOnDestination fails', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-
-    const error = new Error('Bridge error');
-    mockSpecificBridgeAdapter.readyOnDestination.rejects(error);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const errorCallWithMessage = mockLogger.error
-      .getCalls()
-      .find((call) => call.args[0] === 'Failed to check if ready on destination');
-    expect(errorCallWithMessage).toBeDefined();
-    if (errorCallWithMessage && errorCallWithMessage.args[1]) {
-      expect(errorCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-      expect(errorCallWithMessage.args[1].error).toBeDefined();
-    }
-    expect(mockSpecificBridgeAdapter.destinationCallback.called).toBe(false);
-  });
-
-  it('should mark as completed if destinationCallback returns no transaction', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
-    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockSpecificBridgeAdapter.destinationCallback.resolves(undefined);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const infoCallWithMessage = mockLogger.info
-      .getCalls()
-      .find((call) => call.args[0] === 'No destination callback required, marking as completed');
-    expect(infoCallWithMessage).toBeDefined();
-    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
-      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-    }
-    expect(
-      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, {
-        status: RebalanceOperationStatus.COMPLETED,
-      }),
-    ).toBe(true);
-  });
-
-  it('should log error and continue if destinationCallback fails', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
-    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-
-    const error = new Error('Callback error');
-    mockSpecificBridgeAdapter.destinationCallback.rejects(error);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const errorCallWithMessage = mockLogger.error
-      .getCalls()
-      .find((call) => call.args[0] === 'Failed to retrieve destination callback');
-    expect(errorCallWithMessage).toBeDefined();
-    if (errorCallWithMessage && errorCallWithMessage.args[1]) {
-      expect(errorCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-      expect(errorCallWithMessage.args[1].error).toBeDefined();
-    }
-    expect(submitTransactionStub.called).toBe(false);
-  });
-
-  it('should successfully execute destination callback and mark as completed', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
-    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockSpecificBridgeAdapter.destinationCallback.resolves(mockCallbackTx);
-
-    await executeDestinationCallbacks(mockContext);
-
-    expect(submitTransactionStub.calledOnce).toBe(true);
-    const infoCallWithMessage = mockLogger.info
-      .getCalls()
-      .find((call) => call.args[0] === 'Successfully submitted destination callback');
-    expect(infoCallWithMessage).toBeDefined();
-    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
-      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-      expect(infoCallWithMessage.args[1].destinationTx).toBe(mockSubmitSuccessReceipt.transactionHash);
-    }
-    expect(
-      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
-        mockAction1Id,
-        sinon.match({
-          status: RebalanceOperationStatus.COMPLETED,
-          txHashes: sinon.match.object,
-        }),
-      ),
-    ).toBe(true);
-  });
-
-  it('should log error and continue if submitAndMonitor fails', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
-    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockSpecificBridgeAdapter.destinationCallback.resolves(mockCallbackTx);
-
-    const error = new Error('Submit failed');
-    submitTransactionStub.rejects(error);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const errorCallWithMessage = mockLogger.error
-      .getCalls()
-      .find((call) => call.args[0] === 'Failed to execute destination callback');
-    expect(errorCallWithMessage).toBeDefined();
-    if (errorCallWithMessage && errorCallWithMessage.args[1]) {
-      expect(errorCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-      expect(errorCallWithMessage.args[1].error).toBeDefined();
-    }
-    expect(
-      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
-        mockAction1Id,
-        sinon.match({
-          status: RebalanceOperationStatus.COMPLETED,
-        }),
-      ),
-    ).toBe(false);
-  });
-
-  it('should process multiple actions, continuing on individual errors', async () => {
-    const mockAction2Id = 'action-2';
-    const mockAction2: RebalanceAction = {
-      asset: 'USDC',
-      origin: 1,
-      destination: 137,
-      bridge: 'Connext' as SupportedBridge,
-      transaction: '0xtxhash2',
-      amount: '2000',
-      recipient: '0x2345678901234567890123456789012345678901',
-    };
-    const mockReceipt2: TransactionReceipt = {
-      ...mockReceipt1,
-      transactionHash: mockAction2.transaction as `0x${string}`,
-    };
-
-    const dbOperation1 = createDbOperation(mockAction1, mockAction1Id, false); // No receipt for first
-    const dbOperation2 = createDbOperation(mockAction2, mockAction2Id, true); // Has receipt for second
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation1, dbOperation2]);
-
-    // First action fails to get receipt
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction1.origin, mockAction1.transaction)
-      .rejects(new Error('RPC error'));
-
-    // Second action succeeds
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction2.origin, mockAction2.transaction)
-      .resolves(toITransactionReceipt(mockReceipt2));
-
-    // Reset the stubs to ensure clean state
-    mockSpecificBridgeAdapter.readyOnDestination.reset();
-    mockSpecificBridgeAdapter.destinationCallback.reset();
-
-    // Set up the adapter behavior for any calls
-    mockSpecificBridgeAdapter.readyOnDestination.resolves(true);
-    mockSpecificBridgeAdapter.destinationCallback.resolves(undefined);
-
-    await executeDestinationCallbacks(mockContext);
-
-    // Should have logged info for first action (no receipt in database)
-    expect(
-      mockLogger.info.calledWith(
-        'Origin transaction receipt not found for operation',
-        sinon.match({ operationId: mockAction1Id }),
-      ),
-    ).toBe(true);
-
-    // Check that readyOnDestination was called for the second action
-    expect(mockSpecificBridgeAdapter.readyOnDestination.called).toBe(true);
-
-    // Second action should be processed and marked as completed
-    // First it gets updated to AWAITING_CALLBACK, then to COMPLETED
-    expect(
-      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction2Id, {
-        status: RebalanceOperationStatus.AWAITING_CALLBACK,
-      }),
-    ).toBe(true);
-    expect(
-      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction2Id, {
-        status: RebalanceOperationStatus.COMPLETED,
-      }),
-    ).toBe(true);
-  });
-
-  it('should update operation to awaiting callback when ready', async () => {
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true); // Include receipt
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt
-      .withArgs(mockAction1.origin, mockAction1.transaction)
-      .resolves(toITransactionReceipt(mockReceipt1));
-    mockSpecificBridgeAdapter.readyOnDestination.resolves(true);
-
-    await executeDestinationCallbacks(mockContext);
-
-    expect(
-      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, {
-        status: RebalanceOperationStatus.AWAITING_CALLBACK,
-      }),
-    ).toBe(true);
-    const infoCallWithMessage = mockLogger.info
-      .getCalls()
-      .find((call) => call.args[0] === 'Operation ready for callback, updated status');
-    expect(infoCallWithMessage).toBeDefined();
-    if (infoCallWithMessage && infoCallWithMessage.args[1]) {
-      expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-      expect(infoCallWithMessage.args[1].status).toBe(RebalanceOperationStatus.AWAITING_CALLBACK);
-    }
-  });
-
-  it('should query to expire old operations', async () => {
-    await executeDestinationCallbacks(mockContext);
-
-    expect((mockDatabase.queryWithClient as SinonStub).calledOnce).toBe(true);
-    const [query, params] = (mockDatabase.queryWithClient as SinonStub).firstCall.args;
-    expect(query).toContain('UPDATE rebalance_operations');
-    expect(query).toContain("INTERVAL '24 hours'");
-    expect(params![0]).toBe(RebalanceOperationStatus.EXPIRED);
-    expect(params![1]).toEqual([RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK]);
-  });
-
-  it('should skip operation with missing bridge type', async () => {
-    const dbOperationNoBridge = createDbOperation(mockAction1, mockAction1Id);
-    dbOperationNoBridge.bridge = null as unknown as SupportedBridge;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperationNoBridge]);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const warnCallWithMessage = mockLogger.warn
-      .getCalls()
-      .find((call) => call.args[0] === 'Operation missing bridge type');
-    expect(warnCallWithMessage).toBeDefined();
-    if (warnCallWithMessage && warnCallWithMessage.args[1]) {
-      expect(warnCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-    }
-    expect(mockChainService.getTransactionReceipt.called).toBe(false);
-  });
-
-  it('should skip operation with missing origin transaction hash', async () => {
-    const dbOperationNoTxHash = createDbOperation(mockAction1, mockAction1Id);
-    dbOperationNoTxHash.transactions = {}; // Empty transactions object
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperationNoTxHash]);
-
-    await executeDestinationCallbacks(mockContext);
-
-    const warnCallWithMessage = mockLogger.warn
-      .getCalls()
-      .find((call) => call.args[0] === 'Operation missing origin transaction');
-    expect(warnCallWithMessage).toBeDefined();
-    if (warnCallWithMessage && warnCallWithMessage.args[1]) {
-      expect(warnCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
-    }
-    expect(mockChainService.getTransactionReceipt.called).toBe(false);
-  });
-
-  it('should handle error when expiring old operations', async () => {
-    const error = new Error('Database error');
-    (mockDatabase.queryWithClient as SinonStub).rejects(error);
-
-    await executeDestinationCallbacks(mockContext);
-
-    expect(
-      mockLogger.error.calledWith(
-        'Failed to expire old operations',
-        sinon.match({
-          requestId: MOCK_REQUEST_ID,
-          error: sinon.match.any,
-        }),
-      ),
-    ).toBe(true);
-  });
-
-  it('should handle callback transaction with undefined value', async () => {
-    const callbackWithUndefinedValue = {
-      transaction: {
-        to: '0xDestinationContract',
-        data: '0xcallbackdata',
-        // value is undefined
-      },
-      memo: 'Callback',
-    };
-
-    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true); // Include receipt
-    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
-    mockChainService.getTransactionReceipt.resolves(toITransactionReceipt(mockReceipt1));
-    mockRebalanceAdapter.getAdapter.callsFake(() => {
-      // Return the same mock adapter for all bridges
-      return mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>;
-    });
-    // Note: readyOnDestination is not called for AWAITING_CALLBACK status
-    mockSpecificBridgeAdapter.destinationCallback.resolves(callbackWithUndefinedValue);
-    submitTransactionStub.resolves({
-      hash: mockSubmitSuccessReceipt.transactionHash,
-      submissionType: TransactionSubmissionType.Onchain,
-      receipt: mockChainServiceReceipt,
+            supportedSettlementDomains: [1, 10],
+        } as unknown as MarkConfiguration;
+
+        mockContext = {
+            config: mockConfig,
+            requestId: MOCK_REQUEST_ID,
+            startTime: MOCK_START_TIME,
+            logger: mockLogger,
+            rebalanceCache: mockRebalanceCache,
+            chainService: mockChainService,
+            rebalance: mockRebalanceAdapter,
+            everclear: undefined,
+            purchaseCache: undefined,
+            web3Signer: undefined,
+            prometheus: undefined,
+        } as unknown as SinonStubbedInstance<ProcessingContext>;
+
+        mockRebalanceCache.getRebalances.resolves([]);
+        mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
+        mockChainService.getTransactionReceipt.resolves(undefined);
+        mockSpecificBridgeAdapter.readyOnDestination.resolves(false);
+        mockSpecificBridgeAdapter.destinationCallback.resolves(null);
+        mockChainService.submitAndMonitor.resolves(mockSubmitSuccessReceipt);
+        submitTransactionStub = stub(submitTransactionModule, 'submitTransactionWithLogging').resolves({
+            hash: mockSubmitSuccessReceipt.transactionHash,
+            receipt: mockSubmitSuccessReceipt,
+            submissionType: TransactionSubmissionType.Onchain,
+        });
     });
 
-    await executeDestinationCallbacks(mockContext);
+    afterEach(() => {
+        submitTransactionStub.restore();
+    });
 
-    // Verify the transaction was called with value defaulting to '0'
-    expect(submitTransactionStub.calledOnce).toBe(true);
-    const callArgs = submitTransactionStub.firstCall.args[0];
-    expect(callArgs.txRequest.value).toBe('0');
-    expect(
-      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
-        mockAction1Id,
-        sinon.match({
-          status: RebalanceOperationStatus.COMPLETED,
-        }),
-      ),
-    ).toBe(true);
-  });
+    it('should do nothing if no actions are found in cache', async () => {
+        mockRebalanceCache.getRebalances.resolves([]);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.info.calledWith('Executing destination callbacks', { requestId: MOCK_REQUEST_ID })).to.be.true;
+        expect(mockRebalanceCache.getRebalances.calledOnceWith({ routes: mockConfig.routes as any })).to.be.true; // Cast routes if type is complex
+        expect(mockChainService.getTransactionReceipt.called).to.be.false;
+    });
+
+    // Cast mockAction1 to RebalanceAction in resolves/matchers if TestRebalanceAction is not perfectly substitutable
+    it('should log and continue if transaction receipt is not found for an action', async () => {
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(undefined);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.info.calledWith('Origin transaction receipt not found for action', match({ requestId: MOCK_REQUEST_ID, action: mockAction1 as RebalanceAction }))).to.be.true;
+        expect(mockSpecificBridgeAdapter.readyOnDestination.called).to.be.false;
+        expect(mockRebalanceCache.removeRebalances.called).to.be.false;
+    });
+
+    it('should log error and continue if getTransactionReceipt fails', async () => {
+        const error = new Error('GetReceiptFailed');
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).rejects(error);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.error.calledWith('Failed to determine if destination action required', match({ requestId: MOCK_REQUEST_ID, action: mockAction1 as RebalanceAction, error: jsonifyError(error) }))).to.be.true;
+        expect(mockSpecificBridgeAdapter.readyOnDestination.called).to.be.false;
+    });
+
+    it('should remove action if readyOnDestination returns false', async () => {
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
+        mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(false);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.info.calledWith('Action is not ready to execute callback', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction1, id: mockAction1Id }, receipt: mockReceipt1, required: false }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction1Id])).to.be.false;
+        expect(mockSpecificBridgeAdapter.destinationCallback.called).to.be.false;
+    });
+
+    it('should log error and continue if readyOnDestination fails', async () => {
+        const error = new Error('ReadyCheckFailed');
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
+        mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).rejects(error);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.error.calledWith('Failed to determine if destination action required', match({ action: mockAction1 as RebalanceAction, error: jsonifyError(error) }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.called).to.be.false;
+    });
+
+    it('should remove action if destinationCallback returns no transaction', async () => {
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
+        mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(true);
+        mockSpecificBridgeAdapter.destinationCallback.withArgs(match(mockRoute1), mockReceipt1).resolves(null);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.info.calledWith('No destination callback transaction returned', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction1, id: mockAction1Id } }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.calledOnceWith([mockAction1Id])).to.be.true;
+        expect(submitTransactionStub.called).to.be.false;
+    });
+
+    it('should log error and continue if destinationCallback fails', async () => {
+        const error = new Error('CallbackRetrievalFailed');
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
+        mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(true);
+        mockSpecificBridgeAdapter.destinationCallback.withArgs(match(mockRoute1), mockReceipt1).rejects(error);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.error.calledWith('Failed to retrieve destination action required', match({ action: mockAction1 as RebalanceAction, error: jsonifyError(error) }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.called).to.be.false;
+    });
+
+    it('should successfully execute destination callback and remove action', async () => {
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
+        mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(true);
+        mockSpecificBridgeAdapter.destinationCallback.withArgs(match(mockRoute1), mockReceipt1).resolves(mockCallbackTx);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.info.calledWith('Retrieved destination callback', match({ action: mockAction1 as RebalanceAction, callback: mockCallbackTx }))).to.be.true;
+        expect(submitTransactionStub.calledOnce).to.be.true;
+        expect(mockLogger.info.calledWith('Successfully submitted destination callback', match({ action: mockAction1 as RebalanceAction, destinationTx: mockSubmitSuccessReceipt.transactionHash }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.calledOnceWith([mockAction1Id])).to.be.true;
+    });
+
+    it('should log error and continue if submitAndMonitor fails', async () => {
+        const error = new Error('SubmitFailed');
+        submitTransactionStub.reset();
+        submitTransactionStub.rejects(error);
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
+        mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(true);
+        mockSpecificBridgeAdapter.destinationCallback.withArgs(match(mockRoute1), mockReceipt1).resolves(mockCallbackTx);
+        await executeDestinationCallbacks(mockContext);
+        expect(mockLogger.error.calledWith('Failed to execute destination action', match({ action: mockAction1 as RebalanceAction, error: jsonifyError(error) }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.called).to.be.false;
+    });
+
+    it('should process multiple actions, continuing on individual errors', async () => {
+        const mockAction2: RebalanceAction = { ...mockAction1, transaction: '0xtxhash2', origin: 2, destination: 20, bridge: 'Stargate' as SupportedBridge, recipient: '0x2222222222222222222222222222222222222222' };
+        const mockAction2Id = 'mock-action-2';
+        const mockAction3: RebalanceAction = { ...mockAction1, transaction: '0xtxhash3', origin: 3, destination: 30, bridge: 'Hop' as SupportedBridge, recipient: '0x3333333333333333333333333333333333333333' };
+        const mockAction3Id = 'mock-action-3';
+
+        const mockRoute2: Route = { asset: mockAction2.asset, origin: mockAction2.origin, destination: mockAction2.destination };
+        const mockRoute3: Route = { asset: mockAction3.asset, origin: mockAction3.origin, destination: mockAction3.destination };
+
+        const mockReceipt2: any = { ...mockReceipt1, transactionHash: mockAction2.transaction };
+        const mockReceipt3: any = { ...mockReceipt1, transactionHash: mockAction3.transaction };
+
+        const mockSpecificBridgeAdapterB: MockBridgeAdapter = {
+            readyOnDestination: stub<[string, Route, any], Promise<boolean>>(),
+            destinationCallback: stub<[Route, any], Promise<any>>(),
+        };
+        const mockSpecificBridgeAdapterC: MockBridgeAdapter = {
+            readyOnDestination: stub<[string, Route, any], Promise<boolean>>(),
+            destinationCallback: stub<[Route, any], Promise<any>>(),
+        };
+
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }, { ...mockAction2, id: mockAction2Id }, { ...mockAction3, id: mockAction3Id }]);
+
+        // Action 1 (mockAction1): Success
+        mockRebalanceAdapter.getAdapter.withArgs(mockAction1.bridge).returns(mockSpecificBridgeAdapter as any);
+        mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
+        mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(true);
+        mockSpecificBridgeAdapter.destinationCallback.withArgs(match(mockRoute1), mockReceipt1).resolves(mockCallbackTx);
+
+        // Action 2 (mockAction2): Fails at readyOnDestination (returns false)
+        mockRebalanceAdapter.getAdapter.withArgs(mockAction2.bridge).returns(mockSpecificBridgeAdapterB as any);
+        mockChainService.getTransactionReceipt.withArgs(mockAction2.origin, mockAction2.transaction).resolves(mockReceipt2);
+        mockSpecificBridgeAdapterB.readyOnDestination.withArgs(mockAction2.amount, match(mockRoute2), mockReceipt2).resolves(false);
+
+        // Action 3 (mockAction3): Fails at submitAndMonitor (throws error)
+        const submitError = new Error('SubmitAction3Failed');
+        mockRebalanceAdapter.getAdapter.withArgs(mockAction3.bridge).returns(mockSpecificBridgeAdapterC as any);
+        mockChainService.getTransactionReceipt.withArgs(mockAction3.origin, mockAction3.transaction).resolves(mockReceipt3);
+        mockSpecificBridgeAdapterC.readyOnDestination.withArgs(mockAction3.amount, match(mockRoute3), mockReceipt3).resolves(true);
+        mockSpecificBridgeAdapterC.destinationCallback.withArgs(match(mockRoute3), mockReceipt3).resolves(mockCallbackTx);
+
+        submitTransactionStub.reset();
+        submitTransactionStub.onFirstCall().resolves({
+            transactionHash: mockSubmitSuccessReceipt.transactionHash,
+            receipt: mockSubmitSuccessReceipt,
+        }).onSecondCall().rejects(submitError);
+
+        await executeDestinationCallbacks(mockContext);
+
+        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction1Id])).to.be.true;
+        expect(mockLogger.info.calledWith('Action is not ready to execute callback', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction2, id: mockAction2Id }, receipt: mockReceipt2, required: false }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction2Id])).to.be.false;
+        expect(mockLogger.error.calledWith('Failed to execute destination action', match({ action: { ...mockAction3, id: mockAction3Id }, error: jsonifyError(submitError) }))).to.be.true;
+        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction3Id])).to.be.false;
+        expect(mockRebalanceCache.removeRebalances.callCount).to.equal(1);
+    });
+
+    it('should handle callback transaction with undefined value', async () => {
+        const callbackWithUndefinedValue = {
+            transaction: {
+                to: '0xDestinationContract',
+                data: '0xcallbackdata',
+                // value is undefined
+            },
+            memo: 'Callback'
+        };
+
+        mockRebalanceCache.getRebalances.resolves([{ ...mockAction1, id: mockAction1Id }]);
+        mockChainService.getTransactionReceipt.resolves(mockReceipt1);
+        mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
+        mockSpecificBridgeAdapter.readyOnDestination.resolves(true);
+        mockSpecificBridgeAdapter.destinationCallback.resolves(callbackWithUndefinedValue);
+        submitTransactionStub.resolves({
+            transactionHash: mockSubmitSuccessReceipt.transactionHash,
+            receipt: mockSubmitSuccessReceipt,
+        });
+
+        await executeDestinationCallbacks(mockContext);
+
+        // Verify the transaction was called with value defaulting to '0'
+        expect(submitTransactionStub.calledOnce).to.be.true;
+        const callArgs = submitTransactionStub.firstCall.args[0];
+        expect(callArgs.txRequest.value).to.equal('0');
+        expect(mockRebalanceCache.removeRebalances.calledWith([mockAction1Id])).to.be.true;
+    });
 });

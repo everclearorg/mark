@@ -1,5 +1,7 @@
+import { expect } from 'chai';
 import sinon from 'sinon';
 import * as contractModule from '../../src/helpers/contracts';
+import * as ViemFns from 'viem';
 import { MarkConfiguration } from '@mark/core';
 
 // Test types
@@ -16,11 +18,6 @@ interface MockContractConfig {
     providers: string[];
   };
   environment?: string;
-}
-
-interface MockClient {
-  // Prevent arbitrary properties to improve type safety
-  [key: string]: never;
 }
 
 describe('Contracts Module', () => {
@@ -47,11 +44,11 @@ describe('Contracts Module', () => {
   describe('getMulticallAddress', () => {
     it('should return multicall address for valid chainId', () => {
       const address = contractModule.getMulticallAddress('1', mockConfig as MarkConfiguration);
-      expect(address).toBe('0xMulticallAddress');
+      expect(address).to.equal('0xMulticallAddress');
     });
 
     it('should throw error for invalid chainId', () => {
-      expect(() => contractModule.getMulticallAddress('999', mockConfig as MarkConfiguration)).toThrow(
+      expect(() => contractModule.getMulticallAddress('999', mockConfig as MarkConfiguration)).to.throw(
         'Chain configuration not found for chain ID: 999',
       );
     });
@@ -60,29 +57,29 @@ describe('Contracts Module', () => {
   describe('getProviderUrl', () => {
     it('should return the provider URL for a valid chainId', () => {
       const url = contractModule.getProviderUrl('1', mockConfig as MarkConfiguration);
-      expect(url).toBe('https://mainnet.infura.io/v3/test');
+      expect(url).to.equal('https://mainnet.infura.io/v3/test');
     });
 
     it('should return undefined for an invalid chainId', () => {
       const url = contractModule.getProviderUrl('999', mockConfig as MarkConfiguration);
-      expect(url).toBeUndefined();
+      expect(url).to.be.undefined;
     });
   });
 
   describe('createClient', () => {
     it('should create a public client with a valid chainId', () => {
       const client = contractModule.createClient('1', mockConfig as MarkConfiguration);
-      expect(typeof client).toBe('object');
+      expect(client).to.be.an('object');
     });
 
     it('should return the same client instance on subsequent calls (caching)', () => {
       const client1 = contractModule.createClient('1', mockConfig as MarkConfiguration);
       const client2 = contractModule.createClient('1', mockConfig as MarkConfiguration);
-      expect(client1).toBe(client2);
+      expect(client1).to.equal(client2);
     });
 
     it('should throw an error for an invalid chainId', () => {
-      expect(() => contractModule.createClient('999', mockConfig as MarkConfiguration)).toThrow(
+      expect(() => contractModule.createClient('999', mockConfig as MarkConfiguration)).to.throw(
         'No RPC configured for given domain: 999',
       );
     });
@@ -90,57 +87,73 @@ describe('Contracts Module', () => {
 
   describe('getHubStorageContract', () => {
     it('should return a contract instance for the hub chain', async () => {
+      interface MockClient {}
+      interface MockContract {
+        address: string;
+      }
+
       const mockClient: MockClient = {};
-      const clientStub = sinon
-        .stub(contractModule, 'createClient')
-        .returns(mockClient as unknown as ReturnType<typeof contractModule.createClient>);
+      const clientStub = sinon.stub(contractModule, 'createClient').returns(mockClient as any);
 
-      const contract = contractModule.getHubStorageContract(mockConfig as MarkConfiguration);
+      const mockContract: MockContract = { address: HUB_TESTNET_ADDR };
+      const contractStub = sinon.stub(ViemFns, 'getContract').returns(mockContract as any);
 
-      expect(clientStub.calledOnce).toBe(true);
-      expect(clientStub.firstCall.args[0]).toBe('hub_domain');
-      expect(clientStub.firstCall.args[1]).toEqual(mockConfig);
+      const contract = await contractModule.getHubStorageContract(mockConfig as MarkConfiguration);
 
-      expect(typeof contract).toBe('object');
-      expect(contract.address).toBe(HUB_TESTNET_ADDR);
+      expect(clientStub.calledOnce).to.be.true;
+      expect(clientStub.firstCall.args[0]).to.equal('hub_domain');
+      expect(clientStub.firstCall.args[1]).to.deep.equal(mockConfig);
+
+      expect(contract).to.be.an('object');
+      expect(contract.address).to.be.eq(HUB_TESTNET_ADDR);
     });
 
     it('should return a contract instance for the hub mainnet chain', async () => {
+      interface MockClient {}
+      interface MockContract {
+        address: string;
+      }
+
       const mockClient: MockClient = {};
-      const clientStub = sinon
-        .stub(contractModule, 'createClient')
-        .returns(mockClient as unknown as ReturnType<typeof contractModule.createClient>);
+      const clientStub = sinon.stub(contractModule, 'createClient').returns(mockClient as any);
+
+      const mockContract: MockContract = { address: HUB_MAINNET_ADDR };
+      const contractStub = sinon.stub(ViemFns, 'getContract').returns(mockContract as any);
 
       const mainnetConfig: MockContractConfig = { ...mockConfig, environment: 'mainnet' };
-      const contract = contractModule.getHubStorageContract(mainnetConfig as MarkConfiguration);
+      const contract = await contractModule.getHubStorageContract(mainnetConfig as MarkConfiguration);
 
-      expect(clientStub.calledOnce).toBe(true);
-      expect(clientStub.firstCall.args[0]).toBe('hub_domain');
-      expect(clientStub.firstCall.args[1]).toEqual(mainnetConfig);
+      expect(clientStub.calledOnce).to.be.true;
+      expect(clientStub.firstCall.args[0]).to.equal('hub_domain');
+      expect(clientStub.firstCall.args[1]).to.deep.equal(mainnetConfig);
 
-      expect(typeof contract).toBe('object');
-      expect(contract.address).toBe(HUB_MAINNET_ADDR);
+      expect(contract).to.be.an('object');
+      expect(contract.address).to.be.eq(HUB_MAINNET_ADDR);
     });
   });
 
   describe('getERC20Contract', () => {
     it('should return a contract instance for a given chain and address', async () => {
+      interface MockClient {}
+      interface MockContract {}
+
       const mockClient: MockClient = {};
-      const clientStub = sinon
-        .stub(contractModule, 'createClient')
-        .returns(mockClient as unknown as ReturnType<typeof contractModule.createClient>);
+      const clientStub = sinon.stub(contractModule, 'createClient').returns(mockClient as any);
+
+      const mockContract: MockContract = {};
+      const contractStub = sinon.stub(ViemFns, 'getContract').returns(mockContract as any);
 
       const contract = await contractModule.getERC20Contract(mockConfig as MarkConfiguration, '1', '0x121344');
 
-      expect(clientStub.calledOnce).toBe(true);
-      expect(typeof contract).toBe('object');
+      expect(clientStub.calledOnce).to.be.true;
+      expect(contract).to.be.an('object');
     });
 
     it('should throw an error if the chainId is invalid', async () => {
       try {
         await contractModule.getERC20Contract(mockConfig as MarkConfiguration, '999', '0x121344');
-      } catch (error: unknown) {
-        expect((error as Error).message).toBe('No RPC configured for given domain: 999');
+      } catch (error: any) {
+        expect(error.message).to.equal('No RPC configured for given domain: 999');
       }
     });
   });

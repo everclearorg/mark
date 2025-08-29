@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, jest, afterEach } from '@jest/globals';
 import { SupportedBridge, RebalanceRoute, AssetConfiguration, MarkConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import * as database from '@mark/database';
+import { RebalanceCache } from '@mark/cache';
 import { TransactionReceipt } from 'viem';
 import { BinanceBridgeAdapter } from '../../../src/adapters/binance/binance';
 import { BinanceClient } from '../../../src/adapters/binance/client';
@@ -39,17 +39,16 @@ const mockLogger = {
   error: jest.fn(),
 } as unknown as jest.Mocked<Logger>;
 
-// Mock the database
-const mockDatabase = {
-  initializeDatabase: jest.fn(),
+// Mock the cache
+const mockRebalanceCache = {
+  getRebalances: jest.fn(),
+  addRebalances: jest.fn(),
+  removeRebalances: jest.fn(),
+  hasRebalance: jest.fn(),
   setPause: jest.fn(),
   isPaused: jest.fn(),
-  getRebalanceOperationByTransactionHash: jest.fn(),
-  createRebalanceOperation: jest.fn(),
-  updateRebalanceOperation: jest.fn(),
-  createCexWithdrawalRecord: jest.fn(),
-  getCexWithdrawalRecord: jest.fn(),
-} as unknown as jest.Mocked<typeof database>;
+  getRebalanceByTransaction: jest.fn(),
+} as unknown as jest.Mocked<RebalanceCache>;
 
 // Mock data for testing
 const mockAssets: Record<string, AssetConfiguration> = {
@@ -162,9 +161,6 @@ const mockConfig: MarkConfiguration = {
   pushGatewayUrl: 'http://localhost:9091',
   web3SignerUrl: 'http://localhost:8545',
   everclearApiUrl: 'http://localhost:3000',
-  database: {
-    connectionString: 'postgresql://test:test@localhost:5432/test_db',
-  },
   relayer: {
     url: 'http://localhost:8080',
   },
@@ -266,26 +262,6 @@ const mockDynamicAssetConfig = {
   getAssetMapping: jest.fn<(chainId: number, assetIdentifier: string) => Promise<BinanceAssetMapping>>(),
 };
 
-// Helper function to create a complete mock rebalance operation
-function createMockRebalanceOperation(overrides: Partial<any> = {}) {
-  return {
-    id: 'test-id',
-    earmarkId: 'test-earmark-id',
-    originChainId: 1,
-    destinationChainId: 42161,
-    tickerHash: '0xtickerHash',
-    amount: '1000000000000000000',
-    slippage: 100,
-    status: 'pending',
-    bridge: SupportedBridge.Binance,
-    recipient: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    transactions: {},
-    ...overrides,
-  };
-}
-
 describe('BinanceBridgeAdapter', () => {
   let adapter: TestBinanceBridgeAdapter;
 
@@ -386,7 +362,7 @@ describe('BinanceBridgeAdapter', () => {
       'https://api.binance.com',
       mockConfig,
       mockLogger,
-      mockDatabase,
+      mockRebalanceCache,
     );
   });
 
@@ -426,7 +402,7 @@ describe('BinanceBridgeAdapter', () => {
           'https://api.binance.com',
           mockConfig,
           mockLogger,
-          mockDatabase,
+          mockRebalanceCache,
         );
       }).toThrow('Binance adapter requires API key and secret');
     });
@@ -453,7 +429,7 @@ describe('BinanceBridgeAdapter', () => {
           'https://api.binance.com',
           mockConfig,
           mockLogger,
-          mockDatabase,
+          mockRebalanceCache,
         );
       }).toThrow('Binance adapter requires API key and secret');
     });
@@ -775,7 +751,7 @@ describe('BinanceBridgeAdapter', () => {
       const amount = '1000000000000000000';
 
       // Mock cache to return no recipient (simulating cache miss)
-      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValueOnce(undefined);
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce(undefined);
 
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockTransaction);
       expect(result).toBe(false);
@@ -792,15 +768,16 @@ describe('BinanceBridgeAdapter', () => {
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
 
       // Mock cache to return recipient
-      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValueOnce(
-        createMockRebalanceOperation({
-          amount,
-          originChainId: sampleRoute.origin,
-          destinationChainId: sampleRoute.destination,
-          tickerHash: sampleRoute.asset,
-          recipient,
-        }),
-      );
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount,
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
 
       // Mock getOrInitWithdrawal to return a status that's not completed
       jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
@@ -818,15 +795,16 @@ describe('BinanceBridgeAdapter', () => {
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
 
       // Mock cache to return recipient
-      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValueOnce(
-        createMockRebalanceOperation({
-          amount,
-          originChainId: sampleRoute.origin,
-          destinationChainId: sampleRoute.destination,
-          tickerHash: sampleRoute.asset,
-          recipient,
-        }),
-      );
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount,
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
 
       // Mock getOrInitWithdrawal to return completed status
       jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
@@ -863,7 +841,7 @@ describe('BinanceBridgeAdapter', () => {
     });
 
     it('should return undefined when no recipient found in cache', async () => {
-      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValueOnce(undefined);
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce(undefined);
 
       const result = await adapter.destinationCallback(sampleRoute, mockTransaction);
       expect(result).toBeUndefined();
@@ -896,15 +874,16 @@ describe('BinanceBridgeAdapter', () => {
       const recipient = '0x000000000000000000000000ffffffffffffffff';
 
       // Mock cache to return recipient
-      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValueOnce(
-        createMockRebalanceOperation({
-          amount: '1000000000000000000',
-          originChainId: bnbRoute.origin,
-          destinationChainId: bnbRoute.destination,
-          tickerHash: bnbRoute.asset,
-          recipient,
-        }),
-      );
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount: '1000000000000000000',
+        origin: bnbRoute.origin,
+        destination: bnbRoute.destination,
+        asset: bnbRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
 
       // Mock withdrawal status as completed
       const getOrInitWithdrawalSpy = jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
@@ -982,15 +961,16 @@ describe('BinanceBridgeAdapter', () => {
       const ethAmount = BigInt('1000000000000000000'); // 1 ETH
 
       // Mock cache to return recipient
-      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValueOnce(
-        createMockRebalanceOperation({
-          amount: ethAmount.toString(),
-          originChainId: sampleRoute.origin,
-          destinationChainId: sampleRoute.destination,
-          tickerHash: sampleRoute.asset,
-          recipient,
-        }),
-      );
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount: ethAmount.toString(),
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
 
       // Mock withdrawal status as completed
       jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
@@ -1027,15 +1007,16 @@ describe('BinanceBridgeAdapter', () => {
       const recipient = '0x' + 'recipient'.padEnd(40, '0');
 
       // Mock cache to return recipient
-      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValueOnce(
-        createMockRebalanceOperation({
-          amount: '1000000000000000000',
-          originChainId: sampleRoute.origin,
-          destinationChainId: sampleRoute.destination,
-          tickerHash: sampleRoute.asset,
-          recipient,
-        }),
-      );
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount: '1000000000000000000',
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
 
       // Mock withdrawal status as pending
       jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
@@ -1116,15 +1097,16 @@ describe('BinanceBridgeAdapter', () => {
           type: 'legacy' as const,
         };
 
-        mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValueOnce(
-          createMockRebalanceOperation({
-            amount: '1000000000000000000',
-            originChainId: sampleRoute.origin,
-            destinationChainId: sampleRoute.destination,
-            tickerHash: sampleRoute.asset,
-            recipient: '0xrecipient',
-          }),
-        );
+        mockRebalanceCache.getRebalanceByTransaction.mockResolvedValueOnce({
+          id: 'test-id',
+          bridge: SupportedBridge.Binance,
+          amount: '1000000000000000000',
+          origin: sampleRoute.origin,
+          destination: sampleRoute.destination,
+          asset: sampleRoute.asset,
+          transaction: mockTransaction.transactionHash,
+          recipient: '0xrecipient',
+        });
 
         jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce(undefined);
 
@@ -1419,15 +1401,16 @@ describe('BinanceBridgeAdapter', () => {
 
       // 2. Check readyOnDestination (should not be ready initially)
       // Mock cache to return recipient for both calls
-      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
-        createMockRebalanceOperation({
-          amount,
-          originChainId: sampleRoute.origin,
-          destinationChainId: sampleRoute.destination,
-          tickerHash: sampleRoute.asset,
-          recipient,
-        }),
-      );
+      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValue({
+        id: 'test-id',
+        bridge: SupportedBridge.Binance,
+        amount,
+        origin: sampleRoute.origin,
+        destination: sampleRoute.destination,
+        asset: sampleRoute.asset,
+        transaction: mockTransaction.transactionHash,
+        recipient,
+      });
 
       jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValueOnce({
         status: 'pending',
@@ -1451,20 +1434,20 @@ describe('BinanceBridgeAdapter', () => {
       const mockLogger = { debug: jest.fn() } as unknown as Logger;
 
       const configWithoutBinance = { ...mockConfig, binance: { apiKey: undefined, apiSecret: undefined } };
-      const rebalanceAdapter = new RebalanceAdapter(configWithoutBinance, mockLogger, mockDatabase);
+      const rebalanceAdapter = new RebalanceAdapter(configWithoutBinance, mockLogger);
 
       // Should throw specific error about missing rebalanceCache
       expect(() => {
         rebalanceAdapter.getAdapter(SupportedBridge.Binance);
-      }).toThrow();
+      }).toThrow('RebalanceCache is required for Binance adapter');
     });
 
     it('should be properly exported from main adapter with rebalanceCache', () => {
       const mockLogger = { debug: jest.fn() } as unknown as Logger;
-      // RebalanceCache was removed from the codebase
+      const mockRebalanceCache = {} as RebalanceCache;
 
       const configWithoutBinance = { ...mockConfig, binance: { apiKey: undefined, apiSecret: undefined } };
-      const rebalanceAdapter = new RebalanceAdapter(configWithoutBinance, mockLogger, mockDatabase);
+      const rebalanceAdapter = new RebalanceAdapter(configWithoutBinance, mockLogger, mockRebalanceCache);
 
       // With rebalanceCache provided, should fail due to missing API credentials, not missing cache
       expect(() => {

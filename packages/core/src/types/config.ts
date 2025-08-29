@@ -77,28 +77,17 @@ export interface RebalanceRoute {
 }
 export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum
-  slippagesDbps: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
+  slippages: number[]; // If quoted to receive less than this, skip. using DBPS. Array indices match preferences
   preferences: SupportedBridge[]; // Priority ordered platforms
   reserve?: string; // Amount to keep on origin chain during rebalancing
 }
-
-export interface OnDemandRouteConfig extends RebalanceRoute {
-  slippagesDbps: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
-  preferences: SupportedBridge[]; // Priority ordered platforms
-  reserve?: string; // Amount to keep on origin chain during rebalancing
-}
-
 export interface RebalanceConfig {
   routes: RouteRebalancingConfig[];
-  onDemandRoutes?: OnDemandRouteConfig[];
 }
+
 export interface RedisConfig {
   host: string;
   port: number;
-}
-
-export interface DatabaseConfig {
-  connectionString: string;
 }
 
 export interface MarkConfiguration extends RebalanceConfig {
@@ -121,7 +110,6 @@ export interface MarkConfiguration extends RebalanceConfig {
     jwtToken?: string;
   };
   redis: RedisConfig;
-  database: DatabaseConfig;
   ownAddress: string;
   ownSolAddress: string;
   stage: Stage;
