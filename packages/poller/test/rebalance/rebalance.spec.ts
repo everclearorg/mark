@@ -586,7 +586,81 @@ describe('rebalanceInventory', () => {
     expect(mockRebalanceCache.addRebalances.calledOnce).to.be.true;
   });
 
-  // Add more tests: Native success, other errors...
+  // Error scenario tests to cover uncovered branches
+  it('should skip route when ticker is not found in config', async () => {
+    const routeWithBadAsset: RouteRebalancingConfig = {
+      origin: 1,
+      destination: 10,
+      asset: '0xUnknownAsset' as `0x${string}`,
+      maximum: '10000000000000000000',
+      slippages: [0.01],
+      preferences: [MOCK_BRIDGE_TYPE_A],
+    };
+
+    const balances = new Map<string, Map<string, bigint>>();
+    balances.set('unknownticker', new Map([['1', BigInt('20000000000000000000')]]));
+    getMarkBalancesStub.callsFake(async () => balances);
+
+    await rebalanceInventory({
+      ...mockContext,
+      config: { ...mockContext.config, routes: [routeWithBadAsset] },
+    });
+
+    expect(mockLogger.error.calledWith('Ticker not found for asset, check config')).to.be.true;
+    expect(mockRebalanceAdapter.getAdapter.called).to.be.false;
+  });
+
+  it('should fail when adapter returns empty bridge transaction requests', async () => {
+    const routeToTest = mockContext.config.routes[0];
+    const balances = new Map<string, Map<string, bigint>>();
+    const currentBalance = BigInt(routeToTest.maximum) + 100n;
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
+    getMarkBalancesStub.callsFake(async () => balances);
+
+    mockSpecificBridgeAdapter.getReceivedAmount.resolves(currentBalance.toString());
+    mockSpecificBridgeAdapter.send.resolves([]); // Empty array
+
+    mockContext.config.routes = [routeToTest];
+    await rebalanceInventory(mockContext);
+
+    expect(mockLogger.error.calledWith(
+      match(/Failed to get bridge transaction request from adapter/),
+      match.hasNested('error.message', 'Failed to retrieve any bridge transaction requests')
+    )).to.be.true;
+    expect(mockRebalanceCache.addRebalances.called).to.be.false;
+  });
+
+  it('should handle cache failure after successful transaction', async () => {
+    const routeToTest = mockContext.config.routes[0];
+    const balances = new Map<string, Map<string, bigint>>();
+    const currentBalance = BigInt(routeToTest.maximum) + 100n;
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
+    getMarkBalancesStub.callsFake(async () => balances);
+
+    const mockTxRequest: MemoizedTransactionRequest = {
+      transaction: {
+        to: '0xBridgeAddress' as `0x${string}`,
+        data: '0xbridgeData' as Hex,
+        value: 0n,
+      },
+      memo: RebalanceTransactionMemo.Rebalance,
+    };
+
+    mockSpecificBridgeAdapter.getReceivedAmount.resolves(currentBalance.toString());
+    mockSpecificBridgeAdapter.send.resolves([mockTxRequest]);
+    mockRebalanceCache.addRebalances.rejects(new Error('Cache storage failed'));
+
+    mockContext.config.routes = [routeToTest];
+    const result = await rebalanceInventory(mockContext);
+
+    expect(mockLogger.error.calledWith(
+      'Failed to add rebalance action to cache. Transaction was sent, but caching failed.'
+    )).to.be.true;
+    expect(submitTransactionWithLoggingStub.calledOnce).to.be.true;
+    // Should still return the action for tracking even if caching failed
+    expect(result).to.have.length(1);
+    expect(result[0].amount).to.equal(currentBalance.toString());
+  });
 });
 
 describe('Reserve Amount Functionality', () => {

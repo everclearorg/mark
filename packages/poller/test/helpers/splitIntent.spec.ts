@@ -2365,4 +2365,280 @@ describe('Split Intent Helper Functions', () => {
       ).to.be.rejectedWith('No input asset found');
     });
   });
+
+  describe('SVM Chain Support', () => {
+    it('should filter to only SVM domains when top custodied domain is SVM', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-svm',
+        origin: '1',
+        destinations: ['1399811149'], // SVM chain (Solana)
+        amount: '50000000000000000000', // 50 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '1000000000000000000', // 1 WETH minimum
+      };
+
+      // Mark has balance on Ethereum
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')], // 100 WETH on Ethereum
+        ])],
+      ]);
+
+      // High custodied balance on SVM chain to make it top domain
+      const custodiedBalances = new Map([
+        ['WETH', new Map([
+          ['1399811149', BigInt('200000000000000000000')], // 200 WETH on Solana (highest)
+          ['42161', BigInt('10000000000000000000')], // 10 WETH on Arbitrum (lower)
+        ])],
+      ]);
+
+      const svmContext = {
+        ...mockContext,
+        config: {
+          ...mockContext.config,
+          supportedSettlementDomains: [1, 1399811149, 42161],
+          ownSolAddress: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
+          chains: {
+            ...mockContext.config.chains,
+            '1399811149': {
+              providers: ['solana-provider'],
+              assets: [{
+                tickerHash: 'WETH',
+                address: 'So11111111111111111111111111111111111111112',
+                decimals: 9,
+                symbol: 'SOL',
+                isNative: true,
+                balanceThreshold: '0',
+              }],
+              invoiceAge: 0,
+              gasThreshold: '0',
+              deployments: {
+                everclear: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
+                permit2: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
+                multicall3: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
+              },
+            },
+          },
+        } as unknown as MarkConfiguration,
+      };
+
+      const result = await calculateSplitIntents(
+        svmContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      // Verify SVM filtering logic was used
+      expect(result.originDomain).to.equal('1');
+      expect(result.intents.length).to.be.greaterThan(0);
+      
+      // Verify intent uses SVM address
+      const intent = result.intents[0];
+      expect(intent.destinations).to.deep.equal(['1399811149']);
+      expect(intent.to).to.equal('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM');
+    });
+
+    it('should handle SVM domains in remainder splitting logic', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-svm-remainder',
+        origin: '1',
+        destinations: ['1399811149'],
+        amount: '150000000000000000000', // 150 WETH (requires remainder handling)
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '1000000000000000000', // 1 WETH minimum
+      };
+
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('200000000000000000000')], // 200 WETH on Ethereum
+        ])],
+      ]);
+
+      // Configure multiple SVM domains with smaller amounts to trigger remainder logic
+      const custodiedBalances = new Map([
+        ['WETH', new Map([
+          ['1399811149', BigInt('80000000000000000000')], // 80 WETH on Solana
+          ['1399811150', BigInt('60000000000000000000')], // 60 WETH on another SVM chain
+        ])],
+      ]);
+
+      const svmContext = {
+        ...mockContext,
+        config: {
+          ...mockContext.config,
+          supportedSettlementDomains: [1, 1399811149, 1399811150],
+          ownSolAddress: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
+          chains: {
+            ...mockContext.config.chains,
+            '1399811149': {
+              providers: ['solana-provider'],
+              assets: [{ tickerHash: 'WETH', address: 'So11111111111111111111111111111111111111112', decimals: 9, symbol: 'SOL', isNative: true, balanceThreshold: '0' }],
+              invoiceAge: 0, gasThreshold: '0',
+              deployments: { everclear: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM', permit2: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM', multicall3: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM' },
+            },
+            '1399811150': {
+              providers: ['solana-provider2'],
+              assets: [{ tickerHash: 'WETH', address: 'So11111111111111111111111111111111111111112', decimals: 9, symbol: 'SOL', isNative: true, balanceThreshold: '0' }],
+              invoiceAge: 0, gasThreshold: '0',
+              deployments: { everclear: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM', permit2: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM', multicall3: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM' },
+            },
+          },
+        } as unknown as MarkConfiguration,
+      };
+
+      const result = await calculateSplitIntents(
+        svmContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      // Should use SVM filtering and address resolution in remainder logic
+      expect(result.intents.length).to.be.greaterThan(0);
+      expect(result.intents.every(intent => intent.to === '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM')).to.be.true;
+    });
+  });
+
+  describe('TVM Chain Support', () => {
+    it('should filter to only TVM domains when top custodied domain is TVM', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-tvm',
+        origin: '1',
+        destinations: ['728126428'], // TVM chain (Tron)
+        amount: '50000000000000000000', // 50 WETH
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const minAmounts = {
+        '1': '1000000000000000000', // 1 WETH minimum
+      };
+
+      const balances = new Map([
+        ['WETH', new Map([
+          ['1', BigInt('100000000000000000000')], // 100 WETH on Ethereum
+        ])],
+      ]);
+
+      // High custodied balance on TVM chain to make it top domain
+      const custodiedBalances = new Map([
+        ['WETH', new Map([
+          ['728126428', BigInt('200000000000000000000')], // 200 WETH on Tron (highest)
+          ['195', BigInt('150000000000000000000')], // 150 WETH on another TVM chain
+          ['42161', BigInt('10000000000000000000')], // 10 WETH on Arbitrum (lower, EVM)
+        ])],
+      ]);
+
+      const tvmContext = {
+        ...mockContext,
+        config: {
+          ...mockContext.config,
+          supportedSettlementDomains: [1, 728126428, 195, 42161],
+          chains: {
+            ...mockContext.config.chains,
+            '728126428': {
+              providers: ['tron-provider'],
+              assets: [{ tickerHash: 'WETH', address: 'TronToken1', decimals: 6, symbol: 'WETH', isNative: false, balanceThreshold: '0' }],
+              invoiceAge: 0, gasThreshold: '0',
+              deployments: { everclear: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', permit2: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', multicall3: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' },
+              gnosisSafeAddress: 'TRSafeAddress1234567890123456789012345678',
+              walletType: 'SAFE',
+            },
+            '195': {
+              providers: ['tvm-provider2'],
+              assets: [{ tickerHash: 'WETH', address: 'TronToken2', decimals: 6, symbol: 'WETH', isNative: false, balanceThreshold: '0' }],
+              invoiceAge: 0, gasThreshold: '0',
+              deployments: { everclear: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', permit2: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', multicall3: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' },
+            },
+          },
+        } as unknown as MarkConfiguration,
+      };
+
+      (tvmContext.chainService.getAddress as SinonStub).resolves({
+        '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+        '195': 'TR9876543210987654321098765432109876543210'
+      });
+
+      const result = await calculateSplitIntents(
+        tvmContext,
+        invoice,
+        minAmounts,
+        balances,
+        custodiedBalances
+      );
+
+      // Verify TVM filtering logic was used and Safe address resolution
+      expect(result.originDomain).to.equal('1');
+      expect(result.intents.length).to.be.greaterThan(0);
+      
+      // Should use Safe address for TVM chain with SAFE wallet type
+      const intent = result.intents[0];
+      expect(intent.destinations).to.deep.equal(['728126428']);
+      expect(intent.to).to.equal('TRSafeAddress1234567890123456789012345678');
+    });
+
+    it('should handle TVM address resolution error when address not found', async () => {
+      const invoice = {
+        intent_id: '0xinvoice-tvm-error',
+        origin: '1',
+        destinations: ['728126428'],
+        amount: '50000000000000000000',
+        ticker_hash: 'WETH',
+        owner: '0xowner',
+        hub_invoice_enqueued_timestamp: 1234567890,
+      } as Invoice;
+
+      const balances = new Map([
+        ['WETH', new Map([['1', BigInt('100000000000000000000')]])],
+      ]);
+
+      const custodiedBalances = new Map([
+        ['WETH', new Map([['728126428', BigInt('60000000000000000000')]])],
+      ]);
+
+      const tvmContext = {
+        ...mockContext,
+        config: {
+          ...mockContext.config,
+          supportedSettlementDomains: [1, 728126428],
+          chains: {
+            ...mockContext.config.chains,
+            '728126428': {
+              providers: ['tron-provider'],
+              assets: [{ tickerHash: 'WETH', address: 'TronToken1', decimals: 6, symbol: 'WETH', isNative: false, balanceThreshold: '0' }],
+              invoiceAge: 0, gasThreshold: '0',
+              deployments: { everclear: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', permit2: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', multicall3: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' },
+            },
+          },
+        } as unknown as MarkConfiguration,
+      };
+
+      // Mock getAddress to return empty/undefined for TVM chain
+      (tvmContext.chainService.getAddress as SinonStub).resolves({});
+
+      await expect(
+        calculateSplitIntents(
+          tvmContext,
+          invoice,
+          { '1': '1000000000000000000' },
+          balances,
+          custodiedBalances
+        )
+      ).to.be.rejectedWith('TVM address not found for domain 728126428');
+    });
+  });
 });
