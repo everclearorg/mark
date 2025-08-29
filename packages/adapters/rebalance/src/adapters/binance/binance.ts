@@ -10,10 +10,11 @@ import {
   parseUnits,
 } from 'viem';
 import { SupportedBridge, RebalanceRoute, MarkConfiguration, getDecimalsFromConfig } from '@mark/core';
-import * as database from '@mark/database';
 import { jsonifyError, Logger } from '@mark/logger';
+import { RebalanceCache } from '@mark/cache';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { BinanceClient } from './client';
+import { DynamicAssetConfig } from './dynamic-config';
 import { WithdrawalStatus, BinanceAssetMapping } from './types';
 import { WITHDRAWAL_STATUS, DEPOSIT_STATUS, WITHDRAWAL_PRECISION_MAP } from './constants';
 import {
@@ -46,6 +47,7 @@ const wethAbi = [
 
 export class BinanceBridgeAdapter implements BridgeAdapter {
   private readonly client: BinanceClient;
+  private readonly dynamicConfig: DynamicAssetConfig;
 
   constructor(
     apiKey: string,
@@ -53,9 +55,10 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     baseUrl: string,
     protected readonly config: MarkConfiguration,
     protected readonly logger: Logger,
-    private readonly db: typeof database,
+    private readonly rebalanceCache: RebalanceCache,
   ) {
     this.client = new BinanceClient(apiKey, apiSecret, baseUrl, logger);
+    this.dynamicConfig = new DynamicAssetConfig(this.client, this.config.chains);
 
     this.logger.debug('Initializing BinanceBridgeAdapter', {
       baseUrl,
@@ -119,9 +122,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
   /**
    * Look up recipient address from the rebalance cache by transaction hash
    */
-  private async getRecipientFromCache(transactionHash: string, chain: number): Promise<string | undefined> {
+  private async getRecipientFromCache(transactionHash: string): Promise<string | undefined> {
     try {
-      const action = await this.db.getRebalanceOperationByTransactionHash(transactionHash, chain);
+      const action = await this.rebalanceCache.getRebalanceByTransaction(transactionHash);
 
       if (action?.recipient) {
         this.logger.debug('Found recipient in cache', {
@@ -305,7 +308,6 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
                 functionName: 'transfer',
                 args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
               }),
-              funcSig: 'transfer(address,uint256)',
             },
           });
         }
@@ -344,7 +346,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     });
 
     try {
-      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash, route.origin);
+      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
       if (!recipient) {
         this.logger.error('No recipient found in cache for withdrawal', {
           transactionHash: originTransaction.transactionHash,
@@ -388,7 +390,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
     try {
       // Look up recipient from cache
-      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash, route.origin);
+      const recipient = await this.getRecipientFromCache(originTransaction.transactionHash);
       if (!recipient) {
         this.logger.error('No recipient found in cache for callback', {
           transactionHash: originTransaction.transactionHash,

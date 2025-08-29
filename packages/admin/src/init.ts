@@ -1,24 +1,22 @@
-import { PurchaseCache } from '@mark/cache';
+import { RebalanceCache, PurchaseCache } from '@mark/cache';
 import { ConfigurationError, fromEnv, LogLevel, requireEnv, cleanupHttpConnections } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { AdminConfig, AdminAdapter, AdminContext } from './types';
-import * as database from '@mark/database';
 import { APIGatewayProxyEvent } from 'aws-lambda';
 import { handleApiRequest } from './api';
 import { bytesToHex } from 'viem';
 import { getRandomValues } from 'crypto';
 
 function initializeAdapters(config: AdminConfig): AdminAdapter {
-  database.initializeDatabase(config.database);
   return {
-    database,
+    rebalanceCache: new RebalanceCache(config.redis.host, config.redis.port),
     purchaseCache: new PurchaseCache(config.redis.host, config.redis.port),
   };
 }
 
 async function cleanupAdapters(adapters: AdminAdapter): Promise<void> {
   try {
-    await Promise.all([adapters.purchaseCache.disconnect(), database.closeDatabase()]);
+    await Promise.all([adapters.purchaseCache.disconnect(), adapters.rebalanceCache.disconnect()]);
     cleanupHttpConnections();
   } catch (error) {
     console.warn('Error during adapter cleanup:', error);
@@ -34,7 +32,6 @@ async function loadConfiguration(): Promise<AdminConfig> {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
-      database: { connectionString: await requireEnv('DATABASE_URL') },
     };
     return config;
   } catch (e) {

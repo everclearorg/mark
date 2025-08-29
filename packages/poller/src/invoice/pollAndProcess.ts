@@ -1,5 +1,4 @@
 import { processInvoices } from './processInvoices';
-import { executeDestinationCallbacks } from '../rebalance/callbacks';
 import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 
@@ -12,9 +11,6 @@ export async function pollAndProcessInvoices(context: ProcessingContext): Promis
       logger.warn('Purchase loop is paused');
       return;
     }
-
-    await executeDestinationCallbacks(context);
-
     const invoices = await everclear.fetchInvoices(config.chains);
 
     if (invoices.length === 0) {

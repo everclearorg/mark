@@ -11,7 +11,7 @@ git clone https://github.com/everclearorg/mark.git
 cd mark
 ```
 
-2. Use yarn 3.3.1 and node v20
+2. Use yarn 3.3.1 and node v18
 
 ```
 yarn --version
@@ -20,7 +20,7 @@ yarn --version
 
 ```
 node --version
-v20.18.0
+v18.17.0
 ```
 
 2. Install dependencies:
@@ -56,7 +56,7 @@ cp packages/poller/.env.example packages/poller/.env
 yarn workspace @mark/poller dev
 ```
 
-4. (recommended) Start monitoring services
+4. (optional) Start monitoring services
 
 ```sh
 yarn monitoring:up

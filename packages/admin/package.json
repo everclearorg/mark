@@ -21,7 +21,6 @@
     "dependencies": {
         "@mark/cache": "workspace:*",
         "@mark/core": "workspace:*",
-        "@mark/database": "workspace:*",
         "@mark/logger": "workspace:*",
         "aws-lambda": "1.0.7",
         "datadog-lambda-js": "10.123.0",
