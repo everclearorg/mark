@@ -118,11 +118,30 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const supportedAssets =
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
 
-    const { routes } = await loadRebalanceRoutes();
+    const { routes, onDemandRoutes } = await loadRebalanceRoutes();
 
     // Filter routes to include those with assets specified in the config
     const filteredRoutes = routes.filter((route) => {
       const originChainConfig = hostedConfig?.chains?.[route.origin.toString()];
+      if (!originChainConfig) {
+        return false;
+      }
+
+      const assetConfig = Object.values(originChainConfig.assets ?? {}).find(
+        (asset) => asset.address.toLowerCase() === route.asset.toLowerCase(),
+      );
+
+      if (!assetConfig) {
+        return false;
+      }
+
+      const isSupported = supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
+      return isSupported;
+    });
+
+    const filteredOnDemandRoutes = onDemandRoutes?.filter((route) => {
+      const originChainConfig = hostedConfig?.chains?.[route.origin.toString()];
+
       if (!originChainConfig) {
         return false;
       }
@@ -162,6 +181,9 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),
       },
+      database: configJson.database ?? {
+        connectionString: await requireEnv('DATABASE_URL'),
+      },
       ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
       ownSolAddress: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
       supportedSettlementDomains:
@@ -174,6 +196,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
       routes: filteredRoutes,
+      onDemandRoutes: filteredOnDemandRoutes,
     };
 
     validateConfiguration(config);
@@ -210,9 +233,9 @@ function validateConfiguration(config: MarkConfiguration): void {
 
   // Validate route configurations
   for (const route of config.routes) {
-    if (route.slippages.length !== route.preferences.length) {
+    if (route.slippagesDbps.length !== route.preferences.length) {
       throw new ConfigurationError(
-        `Route ${route.origin}->${route.destination} for ${route.asset}: slippages array length (${route.slippages.length}) must match preferences array length (${route.preferences.length})`,
+        `Route ${route.origin}->${route.destination} for ${route.asset}: slippagesDbpsDbps array length (${route.slippagesDbps.length}) must match preferences array length (${route.preferences.length})`,
       );
     }
   }
