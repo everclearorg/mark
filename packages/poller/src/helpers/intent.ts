@@ -501,6 +501,13 @@ export const sendSvmIntents = async (
             txHash: lookupTableTx.transactionHash,
             chainId: intents[0].origin,
           });
+
+          // Regenerate the fee adapter data after lookup table created
+          feeAdapterTxData = await everclear.solanaCreateNewIntent({
+            ...intent,
+            user: sourceAddress,
+          });
+          feeAdapterTxDatas.push(feeAdapterTxData);
         } else {
           throw err;
         }
