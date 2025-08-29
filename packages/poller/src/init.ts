@@ -10,7 +10,6 @@ import {
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService, EthWallet } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
-import { Wallet } from 'ethers';
 import { pollAndProcessInvoices } from './invoice';
 import { PurchaseCache, RebalanceCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
@@ -18,14 +17,14 @@ import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
 import * as process from 'node:process';
-import { bytesToHex } from 'viem';
+import { bytesToHex, WalletClient } from 'viem';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
   rebalanceCache: RebalanceCache;
   chainService: ChainService;
   everclear: EverclearAdapter;
-  web3Signer: Web3Signer | Wallet;
+  web3Signer: Web3Signer | WalletClient;
   logger: Logger;
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;

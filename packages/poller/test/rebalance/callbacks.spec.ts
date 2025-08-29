@@ -174,7 +174,7 @@ describe('executeDestinationCallbacks', () => {
         mockChainService.getTransactionReceipt.withArgs(mockAction1.origin, mockAction1.transaction).resolves(mockReceipt1);
         mockSpecificBridgeAdapter.readyOnDestination.withArgs(mockAction1.amount, match(mockRoute1), mockReceipt1).resolves(false);
         await executeDestinationCallbacks(mockContext);
-        expect(mockLogger.info.calledWith('Action is not ready to execute callback', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction1, id: mockAction1Id }, receipt: mockReceipt1, required: false }))).to.be.true;
+        expect(mockLogger.info.calledWith('Action is not ready to execute callback', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction1, id: mockAction1Id }, receipt: mockReceipt1, ready: false }))).to.be.true;
         expect(mockRebalanceCache.removeRebalances.calledWith([mockAction1Id])).to.be.false;
         expect(mockSpecificBridgeAdapter.destinationCallback.called).to.be.false;
     });
@@ -286,7 +286,7 @@ describe('executeDestinationCallbacks', () => {
         await executeDestinationCallbacks(mockContext);
 
         expect(mockRebalanceCache.removeRebalances.calledWith([mockAction1Id])).to.be.true;
-        expect(mockLogger.info.calledWith('Action is not ready to execute callback', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction2, id: mockAction2Id }, receipt: mockReceipt2, required: false }))).to.be.true;
+        expect(mockLogger.info.calledWith('Action is not ready to execute callback', match({ requestId: MOCK_REQUEST_ID, action: { ...mockAction2, id: mockAction2Id }, receipt: mockReceipt2, ready: false }))).to.be.true;
         expect(mockRebalanceCache.removeRebalances.calledWith([mockAction2Id])).to.be.false;
         expect(mockLogger.error.calledWith('Failed to execute destination action', match({ action: { ...mockAction3, id: mockAction3Id }, error: jsonifyError(submitError) }))).to.be.true;
         expect(mockRebalanceCache.removeRebalances.calledWith([mockAction3Id])).to.be.false;

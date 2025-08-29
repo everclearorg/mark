@@ -289,5 +289,167 @@ describe('Monitor Helpers', () => {
             );
             expect(errorCall).to.not.be.undefined;
         });
+
+        it('should handle Bandwidth gas type with bandwidthThreshold', () => {
+            const configWithBandwidth = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        assets: [],
+                        bandwidthThreshold: '1000'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                [{ chainId: 'domain1', gasType: GasType.Bandwidth }, BigInt(500)] // Below threshold
+            ]);
+
+            logGasThresholds(gas, configWithBandwidth, logger);
+
+            expect(logger.error.called).to.be.true;
+            const errorCall = logger.error.getCalls().find(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCall).to.not.be.undefined;
+            // @ts-ignore - we already asserted it's not undefined
+            expect(errorCall.args[1].gasType).to.equal(GasType.Bandwidth);
+        });
+
+        it('should handle Energy gas type with energyThreshold', () => {
+            const configWithEnergy = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        assets: [],
+                        energyThreshold: '2000'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                [{ chainId: 'domain1', gasType: GasType.Energy }, BigInt(1500)] // Below threshold
+            ]);
+
+            logGasThresholds(gas, configWithEnergy, logger);
+
+            expect(logger.error.called).to.be.true;
+            const errorCall = logger.error.getCalls().find(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCall).to.not.be.undefined;
+            // @ts-ignore - we already asserted it's not undefined
+            expect(errorCall.args[1].gasType).to.equal(GasType.Energy);
+        });
+
+        it('should handle unknown gas type', () => {
+            const gas = new Map([
+                [{ chainId: 'domain1', gasType: 'UnknownType' as GasType }, BigInt(1000)]
+            ]);
+
+            logGasThresholds(gas, config, logger);
+
+            expect(logger.error.called).to.be.true;
+            const errorCall = logger.error.getCalls().find(
+                call => call.args[0] === 'Unknown gas type'
+            );
+            expect(errorCall).to.not.be.undefined;
+            // @ts-ignore - we already asserted it's not undefined
+            expect(errorCall.args[1].gasType).to.equal('UnknownType');
+        });
+
+        it('should not log error when Bandwidth balance is above threshold', () => {
+            const configWithBandwidth = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        assets: [],
+                        bandwidthThreshold: '1000'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                [{ chainId: 'domain1', gasType: GasType.Bandwidth }, BigInt(2000)] // Above threshold
+            ]);
+
+            logGasThresholds(gas, configWithBandwidth, logger);
+
+            const errorCalls = logger.error.getCalls().filter(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCalls.length).to.equal(0);
+        });
+
+        it('should not log error when Energy balance is above threshold', () => {
+            const configWithEnergy = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        assets: [],
+                        energyThreshold: '2000'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                [{ chainId: 'domain1', gasType: GasType.Energy }, BigInt(3000)] // Above threshold
+            ]);
+
+            logGasThresholds(gas, configWithEnergy, logger);
+
+            const errorCalls = logger.error.getCalls().filter(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCalls.length).to.equal(0);
+        });
+
+        it('should handle Bandwidth gas type with undefined threshold (fallback to 0)', () => {
+            const configWithoutBandwidthThreshold = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        assets: [],
+                        // bandwidthThreshold is undefined, should fallback to '0'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                [{ chainId: 'domain1', gasType: GasType.Bandwidth }, BigInt(100)] // Above 0 threshold
+            ]);
+
+            logGasThresholds(gas, configWithoutBandwidthThreshold, logger);
+
+            // Should not log error since balance (100) > threshold (0)
+            const errorCalls = logger.error.getCalls().filter(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCalls.length).to.equal(0);
+        });
+
+        it('should handle Energy gas type with undefined threshold (fallback to 0)', () => {
+            const configWithoutEnergyThreshold = {
+                ...config,
+                chains: {
+                    'domain1': {
+                        assets: [],
+                        // energyThreshold is undefined, should fallback to '0'
+                    }
+                }
+            } as unknown as MarkConfiguration;
+
+            const gas = new Map([
+                [{ chainId: 'domain1', gasType: GasType.Energy }, BigInt(50)] // Above 0 threshold
+            ]);
+
+            logGasThresholds(gas, configWithoutEnergyThreshold, logger);
+
+            // Should not log error since balance (50) > threshold (0)
+            const errorCalls = logger.error.getCalls().filter(
+                call => call.args[0] === 'Gas balance is below threshold'
+            );
+            expect(errorCalls.length).to.equal(0);
+        });
     });
 });

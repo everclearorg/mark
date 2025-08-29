@@ -38,6 +38,7 @@ describe('PurchaseCache', () => {
             }
         },
         transactionHash: '0x123',
+        cachedAt: Math.floor(Date.now() / 1000)
     };
 
     beforeEach(() => {
