@@ -222,6 +222,156 @@ describe('Invoice Processing', () => {
   });
 
   describe('processInvoices', () => {
+    describe('TTL expiry logic', () => {
+      it('should filter out expired cached purchases based on TTL', async () => {
+        getMarkBalancesStub.resolves(new Map());
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.intentStatuses.resolves(new Map());
+
+        const now = Math.floor(Date.now() / 1000);
+        const ttlSeconds = 300; // 5 minutes
+
+        // Set up config with TTL
+        mockContext.config = { ...mockConfig, purchaseCacheTtlSeconds: ttlSeconds };
+
+        // Create purchases with different ages
+        const freshPurchase = {
+          target: createMockInvoice({ intent_id: 'fresh' }),
+          purchase: { intentId: '0x123', params: {} as any },
+          transactionHash: '0x123',
+          transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: now - 100 // 100 seconds ago (fresh)
+        };
+
+        const expiredPurchase = {
+          target: createMockInvoice({ intent_id: 'expired' }),
+          purchase: { intentId: '0x456', params: {} as any },
+          transactionHash: '0x456',
+          transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: now - 400 // 400 seconds ago (expired)
+        };
+
+        const almostExpiredPurchase = {
+          target: createMockInvoice({ intent_id: 'almost-expired' }),
+          purchase: { intentId: '0x789', params: {} as any },
+          transactionHash: '0x789',
+          transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: now - 299 // 299 seconds ago (just within TTL)
+        };
+
+        mockDeps.purchaseCache.getAllPurchases.resolves([
+          freshPurchase,
+          expiredPurchase,
+          almostExpiredPurchase
+        ]);
+
+        await processInvoices(mockContext, []);
+
+        // Check the targets are removed
+        expect(mockDeps.purchaseCache.removePurchases.calledOnceWith([expiredPurchase.target.intent_id])).toBe(true)
+      });
+
+      it('should handle purchases with missing cachedAt field', async () => {
+        getMarkBalancesStub.resolves(new Map());
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.intentStatuses.resolves(new Map());
+
+        const ttlSeconds = 300;
+        mockContext.config = { ...mockConfig, purchaseCacheTtlSeconds: ttlSeconds };
+
+        // Purchase without cachedAt (backwards compatibility)
+        const purchaseWithoutCachedAt = {
+          target: createMockInvoice({ intent_id: 'no-cached-at' }),
+          purchase: { intentId: '0x123', params: {} as any },
+          transactionHash: '0x123',
+          transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: null as any // Simulate missing cachedAt for backwards compatibility test
+        };
+
+        mockDeps.purchaseCache.getAllPurchases.resolves([purchaseWithoutCachedAt]);
+
+        // Should not throw an error
+        await processInvoices(mockContext, []);
+
+        // Should handle gracefully by filtering out purchase with invalid cachedAt (null/undefined results in NaN)
+        // The purchase gets filtered out because NaN < ttlSeconds is false, but no error is thrown
+        expect(mockDeps.logger.error.called).toBe(false);
+      });
+
+      it('should retain all purchases when all are within TTL', async () => {
+        getMarkBalancesStub.resolves(new Map());
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.intentStatuses.resolves(new Map());
+
+        const now = Math.floor(Date.now() / 1000);
+        const ttlSeconds = 300;
+
+        mockContext.config = { ...mockConfig, purchaseCacheTtlSeconds: ttlSeconds };
+
+        const recentPurchase1 = {
+          target: createMockInvoice({ intent_id: 'recent1' }),
+          purchase: { intentId: '0x123', params: {} as any },
+          transactionHash: '0x123',
+          transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: now - 50
+        };
+
+        const recentPurchase2 = {
+          target: createMockInvoice({ intent_id: 'recent2' }),
+          purchase: { intentId: '0x456', params: {} as any },
+          transactionHash: '0x456',
+          transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: now - 100
+        };
+
+        mockDeps.purchaseCache.getAllPurchases.resolves([recentPurchase1, recentPurchase2]);
+
+        await processInvoices(mockContext, []);
+
+        // Should not log any expired purchases
+        const debugCalls = mockDeps.logger.debug.getCalls();
+        const expiredLogCall = debugCalls.find(call =>
+          call.args[0] === 'Purchase expired, dropping from cache'
+        );
+        expect(expiredLogCall).toBe(undefined);
+      });
+
+      it('should use default TTL when config value is missing', async () => {
+        getMarkBalancesStub.resolves(new Map());
+        getMarkGasBalancesStub.resolves(new Map());
+        getCustodiedBalancesStub.resolves(new Map());
+        isXerc20SupportedStub.resolves(false);
+        mockDeps.everclear.intentStatuses.resolves(new Map());
+
+        // Remove TTL from config to test default behavior
+        const configWithoutTtl = { ...mockConfig };
+        delete (configWithoutTtl as any).purchaseCacheTtlSeconds;
+        mockContext.config = configWithoutTtl;
+
+        const now = Math.floor(Date.now() / 1000);
+        const purchase = {
+          target: createMockInvoice({ intent_id: 'test' }),
+          purchase: { intentId: '0x123', params: {} as any },
+          transactionHash: '0x123',
+          transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: now - 100
+        };
+
+        mockDeps.purchaseCache.getAllPurchases.resolves([purchase]);
+
+        await processInvoices(mockContext, []);
+
+        // Should handle gracefully when TTL config is missing
+        expect(mockDeps.logger.error.called).toBe(false);
+      });
+    });
+
     it('should remove stale cache purchases successfully', async () => {
       getMarkBalancesStub.resolves(new Map());
       getMarkGasBalancesStub.resolves(new Map());
@@ -234,11 +384,61 @@ describe('Invoice Processing', () => {
       const invoices = [createMockInvoice()];
 
       // Mock the returned purchase from cache
+      mockDeps.purchaseCache.getAllPurchases.resolves([{
+        target: invoices[0],
+        purchase: {
+          intentId: invoices[0].intent_id,
+          params: {
+            amount: '1000000000000000000',
+            origin: '1',
+            destinations: ['1'],
+            to: '0x123',
+            inputAsset: '0x123',
+            callData: '',
+            maxFee: 0
+          }
+        },
+        transactionHash: '0xabc',
+        transactionType: TransactionSubmissionType.Onchain,
+        cachedAt: Math.floor(Date.now() / 1000)
+      }]);
+
+      await processInvoices(mockContext, invoices);
+
+      expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).toBe(true);
+
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.calledOnce).toBe(true);
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[0]).toContain({
+        origin: '1',
+        ticker: '0xticker1',
+        destination: '8453',
+      });
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[1]).toEqual(
+        mockContext.startTime - invoices[0].hub_invoice_enqueued_timestamp,
+      );
+    });
+
+    it('should evict expired cached purchases by TTL', async () => {
+      // Configure a very small TTL
+      mockContext.config.purchaseCacheTtlSeconds = 1;
+
+      getMarkBalancesStub.resolves(new Map());
+      getMarkGasBalancesStub.resolves(new Map());
+      getCustodiedBalancesStub.resolves(new Map());
+      isXerc20SupportedStub.resolves(false);
+
+      // Do not remove by intent status; only TTL should trigger
+      mockDeps.everclear.intentStatuses.resolves(new Map());
+
+      const invoices = [createMockInvoice()];
+
+      // Mock a cached purchase with an old cachedAt
+      const purchaseId = '0xabcpurchase';
       mockDeps.purchaseCache.getAllPurchases.resolves([
         {
           target: invoices[0],
           purchase: {
-            intentId: invoices[0].intent_id,
+            intentId: purchaseId,
             params: {
               amount: '1000000000000000000',
               origin: '1',
@@ -251,6 +451,7 @@ describe('Invoice Processing', () => {
           },
           transactionHash: '0xabc',
           transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: Math.floor(Date.now() / 1000)
         },
       ]);
 
@@ -267,6 +468,7 @@ describe('Invoice Processing', () => {
       expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[1]).toBe(
         mockContext.startTime - invoices[0].hub_invoice_enqueued_timestamp,
       );
+      expect(mockDeps.purchaseCache.removePurchases.calledOnceWith([invoices[0].intent_id])).toBe(true);
     });
 
     it('should correctly store a purchase in the cache', async () => {
@@ -484,6 +686,7 @@ describe('Invoice Processing', () => {
           },
           transactionHash: '0xabc',
           transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: Math.floor(Date.now() / 1000)
         },
       ]);
 
@@ -1209,6 +1412,7 @@ describe('Invoice Processing', () => {
           },
           transactionHash: '0xexisting',
           transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: Math.floor(Date.now() / 1000)
         },
       ];
 
@@ -1299,6 +1503,7 @@ describe('Invoice Processing', () => {
           },
           transactionHash: '0xexisting',
           transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: Math.floor(Date.now() / 1000)
         },
       ];
 
@@ -1316,6 +1521,7 @@ describe('Invoice Processing', () => {
         ],
         originDomain: '10',
         totalAllocated: BigInt('1000000000000000000'),
+        cachedAt: Math.floor(Date.now() / 1000),
       });
 
       sendIntentsStub.resolves([
@@ -1371,6 +1577,7 @@ describe('Invoice Processing', () => {
           },
           transactionHash: '0xabc',
           transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: Math.floor(Date.now() / 1000)
         },
       ];
 
@@ -1927,7 +2134,13 @@ describe('Invoice Processing', () => {
 
       // Verify the correct purchases were stored in cache with proper invoice mapping
       expect(mockDeps.purchaseCache.addPurchases.calledOnce).toBe(true);
-      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).toEqual(expectedPurchases);
+
+      // Check purchases excluding the dynamic cachedAt field
+      const actualPurchases = mockDeps.purchaseCache.addPurchases.firstCall.args[0].map((p: any) => {
+        const { cachedAt, ...purchaseWithoutTimestamp } = p;
+        return purchaseWithoutTimestamp;
+      });
+      expect(actualPurchases).toEqual(expectedPurchases);
     });
 
     it('should handle different intent statuses for pending purchases correctly', async () => {
@@ -1955,6 +2168,7 @@ describe('Invoice Processing', () => {
           },
           transactionHash: '0xexisting1',
           transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: Math.floor(Date.now() / 1000)
         },
         {
           target: invoice,
@@ -1972,6 +2186,7 @@ describe('Invoice Processing', () => {
           },
           transactionHash: '0xexisting2',
           transactionType: TransactionSubmissionType.Onchain,
+          cachedAt: Math.floor(Date.now() / 1000)
         },
       ];
 

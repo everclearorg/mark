@@ -197,6 +197,11 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
       routes: filteredRoutes,
       onDemandRoutes: filteredOnDemandRoutes,
+      purchaseCacheTtlSeconds: +(
+        configJson.purchaseCacheTtlSeconds ??
+        (await fromEnv('PURCHASE_CACHE_TTL_SECONDS')) ??
+        '5400' // default to 90min
+      ),
     };
 
     validateConfiguration(config);
