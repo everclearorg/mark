@@ -1,5 +1,4 @@
-import { Address, maxUint256, encodeFunctionData, erc20Abi } from 'viem';
-import { Wallet } from 'ethers';
+import { Address, maxUint256, encodeFunctionData, erc20Abi, WalletClient } from 'viem';
 import { Web3Signer } from '@mark/web3signer';
 import { ChainService } from '@mark/chainservice';
 import { ChainConfiguration, MarkConfiguration } from '@mark/core';
@@ -104,7 +103,7 @@ export async function approvePermit2(
  * @returns The signature
  */
 export async function getPermit2Signature(
-  signer: Web3Signer | Wallet,
+  signer: Web3Signer | WalletClient,
   chainId: number,
   token: string,
   spender: string,
@@ -155,14 +154,20 @@ export async function getPermit2Signature(
   };
 
   try {
-    // Check if signer is Web3Signer (has signTypedData method)
-    if ('signTypedData' in signer && typeof signer.signTypedData === 'function') {
+    // Check if signer is Web3signer
+    if (signer instanceof Web3Signer) {
       // Use Web3Signer's signTypedData method
       return await signer.signTypedData(domain, types, value);
-    } else if (signer instanceof Wallet) {
-      // Use ethers Wallet's _signTypedData method - allows for local using private key
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return await (signer as unknown as any)._signTypedData(domain, types, value);
+      // Check if signer is has signTypedData function (i.e. is a WalletClient)
+    } else if ('signTypedData' in signer && typeof signer.signTypedData === 'function') {
+      // Use wallet client
+      return await signer.signTypedData({
+        domain,
+        types,
+        primaryType: 'PermitTransferFrom',
+        message: value,
+        account: signer.account!.address,
+      });
     } else {
       throw new Error('Signer does not support signTypedData method');
     }
