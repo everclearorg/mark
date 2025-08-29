@@ -396,6 +396,80 @@ describe('NearBridgeAdapter', () => {
         'Failed to get received amount from Near:',
       );
     });
+
+    describe('asset capping', () => {
+      it('should cap WETH amounts exceeding the maximum', async () => {
+        // Mock route for WETH
+        const route: RebalanceRoute = {
+          asset: mockAssets['WETH'].address,
+          origin: 1,
+          destination: 42161,
+        };
+
+        // Mock OneClickService.getQuote
+        (OneClickService.getQuote as jest.MockedFunction<any>).mockResolvedValueOnce(mockQuoteResponse);
+
+        // Execute with amount exceeding cap (10 WETH)
+        const largeAmount = '10000000000000000000'; // 10 WETH
+        const result = await adapter.getReceivedAmount(largeAmount, route);
+
+        // Verify the quote was called with capped amount (8 WETH)
+        expect(OneClickService.getQuote).toHaveBeenCalledWith(
+          expect.objectContaining({
+            amount: '8000000000000000000', // 8 WETH cap
+          }),
+        );
+        expect(result).toBe(mockQuoteResponse.quote.amountOut);
+      });
+
+      it('should not cap WETH amounts below the maximum', async () => {
+        // Mock route for WETH
+        const route: RebalanceRoute = {
+          asset: mockAssets['WETH'].address,
+          origin: 1,
+          destination: 42161,
+        };
+
+        // Mock OneClickService.getQuote
+        (OneClickService.getQuote as jest.MockedFunction<any>).mockResolvedValueOnce(mockQuoteResponse);
+
+        // Execute with amount below cap (5 WETH)
+        const smallAmount = '5000000000000000000'; // 5 WETH
+        const result = await adapter.getReceivedAmount(smallAmount, route);
+
+        // Verify the quote was called with original amount
+        expect(OneClickService.getQuote).toHaveBeenCalledWith(
+          expect.objectContaining({
+            amount: '5000000000000000000', // Original 5 WETH
+          }),
+        );
+        expect(result).toBe(mockQuoteResponse.quote.amountOut);
+      });
+
+      it('should not cap assets without defined limits', async () => {
+        // Mock route for ETH (no cap defined)
+        const route: RebalanceRoute = {
+          asset: mockAssets['ETH'].address,
+          origin: 1,
+          destination: 42161,
+        };
+
+        // Mock OneClickService.getQuote
+        (OneClickService.getQuote as jest.MockedFunction<any>).mockResolvedValueOnce(mockQuoteResponse);
+
+        // Execute with large amount
+        const largeAmount = '1000000000000000000000'; // 1000 ETH
+        const result = await adapter.getReceivedAmount(largeAmount, route);
+
+        // Verify the quote was called with original amount (no capping)
+        expect(OneClickService.getQuote).toHaveBeenCalledWith(
+          expect.objectContaining({
+            amount: '1000000000000000000000', // Original amount
+          }),
+        );
+        expect(result).toBe(mockQuoteResponse.quote.amountOut);
+      });
+    });
   });
 
   describe('send', () => {
@@ -493,6 +567,60 @@ describe('NearBridgeAdapter', () => {
       expect(result[1].transaction.to).toBe(mockQuoteResponse.quote.depositAddress);
       expect(result[1].transaction.value).toBe(BigInt(mockQuoteResponse.quote.amountIn));
       expect(result[1].transaction.data).toBe('0x');
+    });
+
+    it('should cap WETH amount in send when exceeding maximum', async () => {
+      // Mock route for WETH
+      const route: RebalanceRoute = {
+        asset: mockAssets['WETH'].address,
+        origin: 1,
+        destination: 42161,
+      };
+
+      // Mock OneClickService.getQuote
+      const cappedQuoteResponse = {
+        ...mockQuoteResponse,
+        quote: {
+          ...mockQuoteResponse.quote,
+          amountIn: '8000000000000000000', // 8 WETH capped
+        },
+      };
+      (OneClickService.getQuote as jest.Mock).mockResolvedValueOnce(cappedQuoteResponse as never);
+      (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xwithdraw_capped');
+
+      // Execute with amount exceeding cap (10 WETH)
+      const largeAmount = '10000000000000000000'; // 10 WETH
+      const senderAddress = '0x' + 'sender'.padStart(40, '0');
+      const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
+      const result = await adapter.send(senderAddress, recipientAddress, largeAmount, route);
+
+      // Verify quote was called with capped amount
+      expect(OneClickService.getQuote).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: '8000000000000000000', // 8 WETH cap
+        }),
+      );
+
+      // Should return 2 transactions: unwrap + deposit
+      expect(result.length).toBe(2);
+
+      // First: Unwrap capped amount of WETH
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Unwrap);
+      expect(result[0].transaction.to).toBe(mockAssets['WETH'].address);
+      expect(encodeFunctionData).toHaveBeenCalledWith({
+        abi: expect.arrayContaining([
+          expect.objectContaining({
+            name: 'withdraw',
+            type: 'function',
+          }),
+        ]),
+        functionName: 'withdraw',
+        args: [BigInt('8000000000000000000')], // Capped to 8 WETH
+      });
+
+      // Second: Deposit capped amount of ETH
+      expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[1].transaction.value).toBe(BigInt('8000000000000000000'));
     });
   });
 
