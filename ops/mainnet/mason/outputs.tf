@@ -52,3 +52,18 @@ output "lambda_static_ips" {
   description = "Static IP addresses for Lambda outbound traffic (for API whitelisting)"
   value       = module.network.nat_gateway_ips
 }
+
+output "db_endpoint" {
+  description = "The database endpoint"
+  value       = module.db.db_instance_endpoint
+}
+
+output "db_instance_id" {
+  description = "The database instance ID"
+  value       = module.db.db_instance_id
+}
+
+output "db_name" {
+  description = "The database name"
+  value       = module.db.db_instance_name
+}

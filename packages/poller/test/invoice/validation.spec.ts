@@ -1,4 +1,3 @@
-import { expect } from 'chai';
 import { isValidInvoice } from '../../src/invoice';
 import { MarkConfiguration, Invoice, InvalidPurchaseReasons, WalletType } from '@mark/core';
 import * as assetHelpers from '../../src/helpers/asset';
@@ -27,14 +26,16 @@ describe('isValidInvoice', () => {
       '8453': {
         invoiceAge: 3600, // 1 hour in seconds
         providers: ['provider'],
-        assets: [{
-          tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
-          address: '0xtoken',
-          decimals: 18,
-          symbol: 'TEST'
-        }]
-      }
-    }
+        assets: [
+          {
+            tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
+            address: '0xtoken',
+            decimals: 18,
+            symbol: 'TEST',
+          },
+        ],
+      },
+    },
   } as unknown as MarkConfiguration;
 
   beforeEach(() => {
@@ -51,50 +52,54 @@ describe('isValidInvoice', () => {
   it('should return undefined for a valid invoice', () => {
     sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
     const result = isValidInvoice(validInvoice, validConfig, Math.floor(Date.now() / 1000));
-    expect(result).to.be.undefined;
+    expect(result).toBeUndefined();
   });
 
   describe('Format validation', () => {
     it('should return error string if invoice is null or undefined', () => {
-      const nullResult = isValidInvoice(null as any, validConfig, Math.floor(Date.now() / 1000));
-      const undefinedResult = isValidInvoice(undefined as any, validConfig, Math.floor(Date.now() / 1000));
+      const nullResult = isValidInvoice(null as unknown as Invoice, validConfig, Math.floor(Date.now() / 1000));
+      const undefinedResult = isValidInvoice(
+        undefined as unknown as Invoice,
+        validConfig,
+        Math.floor(Date.now() / 1000),
+      );
 
-      expect(nullResult).to.equal(InvalidPurchaseReasons.InvalidFormat);
-      expect(undefinedResult).to.equal(InvalidPurchaseReasons.InvalidFormat);
+      expect(nullResult).toBe(InvalidPurchaseReasons.InvalidFormat);
+      expect(undefinedResult).toBe(InvalidPurchaseReasons.InvalidFormat);
     });
 
     it('should return error string if intent_id is not a string', () => {
       const invalidInvoice = {
         ...validInvoice,
-        intent_id: 123 as any
+        intent_id: 123 as unknown as string,
       };
-      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidFormat
+      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidFormat,
       );
     });
 
     it('should return error string if amount is not a valid BigInt string', () => {
       const invalidInvoice1 = {
         ...validInvoice,
-        amount: 'not a number'
+        amount: 'not a number',
       };
       const invalidInvoice2 = {
         ...validInvoice,
-        amount: '0'
+        amount: '0',
       };
       const invalidInvoice3 = {
         ...validInvoice,
-        amount: '-100'
+        amount: '-100',
       };
 
-      expect(isValidInvoice(invalidInvoice1, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidAmount
+      expect(isValidInvoice(invalidInvoice1, validConfig, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidAmount,
       );
-      expect(isValidInvoice(invalidInvoice2, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidFormat
+      expect(isValidInvoice(invalidInvoice2, validConfig, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidFormat,
       );
-      expect(isValidInvoice(invalidInvoice3, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidFormat
+      expect(isValidInvoice(invalidInvoice3, validConfig, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidFormat,
       );
     });
   });
@@ -103,20 +108,20 @@ describe('isValidInvoice', () => {
     it('should return error string if owner matches web3SignerUrl', () => {
       const invalidInvoice = {
         ...validInvoice,
-        owner: validConfig.ownAddress
+        owner: validConfig.ownAddress,
       };
-      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidOwner
+      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidOwner,
       );
     });
 
     it('should return error string if owner matches web3SignerUrl in different case', () => {
       const invalidInvoice = {
         ...validInvoice,
-        owner: validConfig.ownAddress.toUpperCase()
+        owner: validConfig.ownAddress.toUpperCase(),
       };
-      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidOwner
+      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidOwner,
       );
     });
 
@@ -128,13 +133,14 @@ describe('isValidInvoice', () => {
         ...validConfig,
         chains: {
           ...validConfig.chains,
-          '1': { // origin chain
+          '1': {
+            // origin chain
             ...validConfig.chains['8453'],
             zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
             zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
-            gnosisSafeAddress: safeAddress
-          }
-        }
+            gnosisSafeAddress: safeAddress,
+          },
+        },
       };
 
       // Mock zodiac functions
@@ -142,7 +148,7 @@ describe('isValidInvoice', () => {
         walletType: WalletType.Zodiac,
         moduleAddress: '0x1234567890123456789012345678901234567890' as `0x${string}`,
         roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234' as `0x${string}`,
-        safeAddress
+        safeAddress,
       };
 
       sinon.stub(zodiacHelpers, 'getValidatedZodiacConfig').returns(mockZodiacConfig);
@@ -151,11 +157,11 @@ describe('isValidInvoice', () => {
 
       const invalidInvoice = {
         ...validInvoice,
-        owner: safeAddress // owner matches the Safe address
+        owner: safeAddress, // owner matches the Safe address
       };
 
-      expect(isValidInvoice(invalidInvoice, configWithZodiac, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidOwner
+      expect(isValidInvoice(invalidInvoice, configWithZodiac, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidOwner,
       );
     });
 
@@ -167,13 +173,14 @@ describe('isValidInvoice', () => {
         ...validConfig,
         chains: {
           ...validConfig.chains,
-          '1': { // origin chain
+          '1': {
+            // origin chain
             ...validConfig.chains['8453'],
             zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
             zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
-            gnosisSafeAddress: safeAddress
-          }
-        }
+            gnosisSafeAddress: safeAddress,
+          },
+        },
       };
 
       // Mock zodiac functions
@@ -181,7 +188,7 @@ describe('isValidInvoice', () => {
         walletType: WalletType.Zodiac,
         moduleAddress: '0x1234567890123456789012345678901234567890' as `0x${string}`,
         roleKey: '0x1234567890123456789012345678901234567890123456789012345678901234' as `0x${string}`,
-        safeAddress
+        safeAddress,
       };
 
       sinon.stub(zodiacHelpers, 'getValidatedZodiacConfig').returns(mockZodiacConfig);
@@ -190,10 +197,12 @@ describe('isValidInvoice', () => {
 
       const validInvoiceWithDifferentOwner = {
         ...validInvoice,
-        owner: '0x1111111111111111111111111111111111111111' // different from Safe address
+        owner: '0x1111111111111111111111111111111111111111', // different from Safe address
       };
 
-      expect(isValidInvoice(validInvoiceWithDifferentOwner, configWithZodiac, Math.floor(Date.now() / 1000))).to.be.undefined;
+      expect(
+        isValidInvoice(validInvoiceWithDifferentOwner, configWithZodiac, Math.floor(Date.now() / 1000)),
+      ).toBeUndefined();
     });
   });
 
@@ -201,10 +210,10 @@ describe('isValidInvoice', () => {
     it('should return error string if no destinations match supported domains', () => {
       const invalidInvoice = {
         ...validInvoice,
-        destinations: ['999999'] // Unsupported domain
+        destinations: ['999999'], // Unsupported domain
       };
-      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidDestinations
+      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidDestinations,
       );
     });
 
@@ -212,9 +221,9 @@ describe('isValidInvoice', () => {
       sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
       const validInvoiceMultiDest = {
         ...validInvoice,
-        destinations: ['999999', '8453'] // One supported, one unsupported
+        destinations: ['999999', '8453'], // One supported, one unsupported
       };
-      expect(isValidInvoice(validInvoiceMultiDest, validConfig, Math.floor(Date.now() / 1000))).to.be.undefined;
+      expect(isValidInvoice(validInvoiceMultiDest, validConfig, Math.floor(Date.now() / 1000))).toBeUndefined();
     });
   });
 
@@ -225,16 +234,16 @@ describe('isValidInvoice', () => {
       sinon.stub(assetHelpers, 'getTickers').returns([supportedTicker]);
       const invalidInvoice = {
         ...validInvoice,
-        ticker_hash: unsupportedTicker
+        ticker_hash: unsupportedTicker,
       };
-      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).to.equal(
-        InvalidPurchaseReasons.InvalidTickers
+      expect(isValidInvoice(invalidInvoice, validConfig, Math.floor(Date.now() / 1000))).toBe(
+        InvalidPurchaseReasons.InvalidTickers,
       );
     });
 
     it('should return undefined if ticker is supported', () => {
       sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
-      expect(isValidInvoice(validInvoice, validConfig, Math.floor(Date.now() / 1000))).to.be.undefined;
+      expect(isValidInvoice(validInvoice, validConfig, Math.floor(Date.now() / 1000))).toBeUndefined();
     });
   });
 });

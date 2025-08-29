@@ -51,6 +51,7 @@ locals {
   ]
 
   poller_env_vars = {
+    DATABASE_URL                  = module.db.database_url
     SIGNER_URL                    = "http://${module.mark_web3signer.service_url}:9000"
     SIGNER_ADDRESS                = local.mark_config.signerAddress
     REDIS_HOST                    = module.cache.redis_instance_address
