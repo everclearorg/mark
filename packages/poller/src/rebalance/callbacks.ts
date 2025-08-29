@@ -1,7 +1,6 @@
 import { TransactionReceipt } from 'viem';
 import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
-import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
@@ -68,13 +67,6 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     }
     logger.info('Retrieved destination callback', { ...logContext, callback, receipt });
 
-    // Check for Zodiac configuration on destination chain
-    const destinationChainConfig = config.chains[route.destination];
-    const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, {
-      ...logContext,
-      destination: route.destination,
-    });
-
     // Try to execute the destination callback
     try {
       const tx = await submitTransactionWithLogging({
@@ -89,7 +81,6 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
           from: config.ownAddress,
           funcSig: callback.transaction.funcSig || '',
         },
-        zodiacConfig,
         context: { ...logContext, callbackType: `destination: ${callback.memo}` },
       });
 
@@ -98,7 +89,6 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         callback,
         receipt,
         destinationTx: tx.hash,
-        walletType: zodiacConfig.walletType,
       });
 
       await rebalanceCache.removeRebalances([action.id]);

@@ -4,7 +4,6 @@ import {
   NewIntentWithPermit2Params,
   TransactionSubmissionType,
   TransactionRequest,
-  WalletType,
 } from '@mark/core';
 import { decodeEventLog, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
@@ -12,7 +11,6 @@ import { MarkAdapters } from '../init';
 import { checkAndApproveERC20 } from './erc20';
 import { submitTransactionWithLogging } from './transactions';
 import { jsonifyError, Logger } from '@mark/logger';
-import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import {
   isSvmChain,
   isTvmChain,
@@ -163,12 +161,13 @@ export const sendIntents = async (
     logger.info('No intents to process', { invoiceId });
     return [];
   }
-
+  
   // Verify all intents have the same origin
   const origins = new Set(intents.map((intent) => intent.origin));
   if (origins.size !== 1) {
     throw new Error('Cannot process multiple intents with different origin domains');
   }
+
   const originChainId = intents[0].origin;
   if (isSvmChain(originChainId)) {
     return sendSvmIntents(invoiceId, intents, adapters, config, requestId);
@@ -189,8 +188,6 @@ export const sendEvmIntents = async (
 ): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, prometheus, logger } = adapters;
   const originChainId = intents[0].origin;
-  const chainConfig = config.chains[originChainId];
-  const originWalletConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset.toLowerCase()));
@@ -200,10 +197,6 @@ export const sendEvmIntents = async (
 
   // Sanity check intent constraints
   intents.forEach((intent) => {
-    // Ensure all intents have the same origin
-    if (intent.origin !== originChainId) {
-      throw new Error(`intent.origin (${intent.origin}) must be ${originChainId}`);
-    }
 
     // Ensure there is no solver entrypoint
     if (BigInt(intent.maxFee.toString()) !== BigInt(0)) {
@@ -217,36 +210,60 @@ export const sendEvmIntents = async (
 
     // Ensure each of the configured destinations uses the proper `to`.
     intent.destinations.forEach((destination) => {
-      const walletConfig = getValidatedZodiacConfig(config.chains[destination], logger, { invoiceId, requestId });
-      switch (walletConfig.walletType) {
-        case WalletType.EOA:
-          // Sanity checks for intents towards SVM
-          if (isSvmChain(destination)) {
-            if (intent.to !== config.ownSolAddress) {
-              throw new Error(
-                `intent.to (${intent.to}) must be ownSolAddress (${config.ownSolAddress}) for destination ${destination}`,
-              );
-            }
-            if (intent.destinations.length !== 1) {
-              throw new Error(`intent.destination must be length 1 for intents towards SVM`);
-            }
-            break;
+      const chainConfig = config.chains[destination];
+      
+      // Validate wallet type if specified
+      if (chainConfig?.walletType && !['EOA', 'SAFE'].includes(chainConfig.walletType)) {
+        throw new Error(`Unrecognized destination wallet type configured: ${chainConfig.walletType}`);
+      }
+      
+      // Sanity checks for intents towards SVM
+      if (isSvmChain(destination)) {
+        if (intent.to !== config.ownSolAddress) {
+          throw new Error(
+            `intent.to (${intent.to}) must be ownSolAddress (${config.ownSolAddress}) for destination ${destination}`,
+          );
+        }
+        if (intent.destinations.length !== 1) {
+          throw new Error(`intent.destination must be length 1 for intents towards SVM`);
+        }
+      } else if (!isTvmChain(destination)) {
+        // For EVM destinations only, check appropriate address based on configuration
+        let isGnosisSafe = false;
+        let expectedAddress = config.ownAddress;
+        
+        if (chainConfig?.walletType === 'SAFE') {
+          isGnosisSafe = true;
+          expectedAddress = chainConfig.gnosisSafeAddress ?? config.ownAddress;
+        } else if (chainConfig?.walletType === 'EOA') {
+          isGnosisSafe = false;
+          expectedAddress = config.ownAddress;
+        } else {
+          // walletType not explicitly set, infer from intent.to and available addresses
+          if (chainConfig?.gnosisSafeAddress && intent.to.toLowerCase() === chainConfig.gnosisSafeAddress.toLowerCase()) {
+            isGnosisSafe = true;
+            expectedAddress = chainConfig.gnosisSafeAddress;
+          } else if (intent.to.toLowerCase() === config.ownAddress.toLowerCase()) {
+            isGnosisSafe = false;
+            expectedAddress = config.ownAddress;
+          } else if (chainConfig?.gnosisSafeAddress) {
+            // Has safe address but intent.to doesn't match it, should expect safe address
+            isGnosisSafe = true;
+            expectedAddress = chainConfig.gnosisSafeAddress;
+          } else {
+            // No safe address configured, default to EOA
+            isGnosisSafe = false;
+            expectedAddress = config.ownAddress;
           }
-          if (intent.to.toLowerCase() !== config.ownAddress.toLowerCase()) {
-            throw new Error(
-              `intent.to (${intent.to}) must be ownAddress (${config.ownAddress}) for destination ${destination}`,
-            );
+        }
+        
+        if (intent.to.toLowerCase() !== expectedAddress?.toLowerCase()) {
+          if (isGnosisSafe) {
+            throw new Error(`intent.to (${intent.to}) must be safeAddress (${expectedAddress}) for destination ${destination}`);
+          } else {
+            throw new Error(`intent.to (${intent.to}) must be ownAddress (${expectedAddress}) for destination ${destination}`);
           }
-          break;
-        case WalletType.Zodiac:
-          if (intent.to.toLowerCase() !== walletConfig.safeAddress!.toLowerCase()) {
-            throw new Error(
-              `intent.to (${intent.to}) must be safeAddress (${walletConfig.safeAddress}) for destination ${destination}`,
-            );
-          }
-          break;
-        default:
-          throw new Error(`Unrecognized destination wallet type configured: ${walletConfig.walletType}`);
+        }
       }
     });
   });
@@ -265,7 +282,6 @@ export const sendEvmIntents = async (
     }, BigInt(0));
 
     const spenderForAllowance = feeAdapterTxData.to as `0x${string}`;
-    const ownerForAllowance = getActualOwner(originWalletConfig, config.ownAddress);
 
     logger.info('Total amount for approvals', {
       requestId,
@@ -273,9 +289,8 @@ export const sendEvmIntents = async (
       totalAmount: totalAmount.toString(),
       intentCount: intents.length,
       chainId: originChainId,
-      owner: ownerForAllowance,
+      owner: config.ownAddress,
       spender: spenderForAllowance,
-      walletType: originWalletConfig.walletType,
     });
 
     // Handle ERC20 approval using the general purpose helper
@@ -288,8 +303,7 @@ export const sendEvmIntents = async (
       tokenAddress: firstIntent.inputAsset,
       spenderAddress: spenderForAllowance,
       amount: totalAmount,
-      owner: ownerForAllowance,
-      zodiacConfig: originWalletConfig,
+      owner: config.ownAddress,
       context: { requestId, invoiceId },
     });
 
@@ -357,7 +371,6 @@ export const sendEvmIntents = async (
         from: config.ownAddress,
         funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))', // FeeAdapter newIntent function
       },
-      zodiacConfig: originWalletConfig,
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
     });
 
@@ -601,8 +614,6 @@ export const sendTvmIntents = async (
 ): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, prometheus, logger } = adapters;
   const originChainId = intents[0].origin;
-  const chainConfig = config.chains[originChainId];
-  const originWalletConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset.toLowerCase()));
@@ -612,32 +623,39 @@ export const sendTvmIntents = async (
 
   const addresses = await chainService.getAddress();
 
+  // Verify all intents have the same origin
+  const origins = new Set(intents.map((intent) => intent.origin));
+  if (origins.size !== 1) {
+    throw new Error('Cannot process multiple intents with different origin domains');
+  }
+
   // Sanity check intent constraints
   intents.forEach((intent) => {
-    // Ensure all intents have the same origin
-    if (intent.origin !== originChainId) {
-      throw new Error(`intent.origin (${intent.origin}) must be ${originChainId}`);
-    }
-
     // Ensure each of the configured destinations uses the proper `to`.
     intent.destinations.forEach((destination) => {
-      const walletConfig = getValidatedZodiacConfig(config.chains[destination], logger, { invoiceId, requestId });
-      switch (walletConfig.walletType) {
-        case WalletType.EOA:
-          const expectedAddress = isTvmChain(destination) ? addresses[destination] : config.ownAddress;
-          if (intent.to.toLowerCase() !== expectedAddress.toLowerCase()) {
+      if (isTvmChain(destination)) {
+        const chainConfig = config.chains[destination];
+        
+        // Validate wallet type if specified
+        if (chainConfig?.walletType && !['EOA', 'SAFE'].includes(chainConfig.walletType)) {
+          throw new Error(`Unrecognized destination wallet type configured: ${chainConfig.walletType}`);
+        }
+        
+        const expectedAddress = chainConfig?.gnosisSafeAddress || addresses[destination];
+        if (intent.to.toLowerCase() !== expectedAddress.toLowerCase()) {
+          if (chainConfig?.gnosisSafeAddress) {
+            throw new Error(
+              `intent.to (${intent.to}) must be safeAddress (${expectedAddress}) for destination ${destination}`,
+            );
+          } else {
             throw new Error(`intent.to (${intent.to}) must be ${expectedAddress} for destination ${destination}`);
           }
-          break;
-        case WalletType.Zodiac:
-          if (intent.to.toLowerCase() !== walletConfig.safeAddress!.toLowerCase()) {
-            throw new Error(
-              `intent.to (${intent.to}) must be safeAddress (${walletConfig.safeAddress}) for destination ${destination}`,
-            );
-          }
-          break;
-        default:
-          throw new Error(`Unrecognized destination wallet type configured: ${walletConfig.walletType}`);
+        }
+      } else {
+        const expectedAddress = config.ownAddress;
+        if (intent.to.toLowerCase() !== expectedAddress.toLowerCase()) {
+          throw new Error(`intent.to (${intent.to}) must be ${expectedAddress} for destination ${destination}`);
+        }
       }
     });
   });
@@ -673,7 +691,6 @@ export const sendTvmIntents = async (
       chainId: originChainId,
       owner: tronAddress,
       spender: feeAdapterTxData.to,
-      walletType: originWalletConfig.walletType,
     });
 
     try {
@@ -688,7 +705,6 @@ export const sendTvmIntents = async (
         spenderAddress: feeAdapterTxData.to!,
         amount: totalAmount,
         owner: tronAddress,
-        zodiacConfig: originWalletConfig,
         context: { requestId, invoiceId },
       });
 
@@ -730,19 +746,41 @@ export const sendTvmIntents = async (
     const results: { transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[] =
       [];
 
-    // Only process first intent for now
-    if (intents.length > 1) {
+    // Filter intents based on min amounts first
+    const { minAmounts } = await everclear.getMinAmounts(invoiceId);
+    const validIntents = [];
+    
+    for (const intent of intents) {
+      if (BigInt(intent.amount) >= BigInt(minAmounts[intent.origin] ?? '0')) {
+        validIntents.push(intent);
+      } else {
+        logger.warn('Intent amount below minimum, skipping', {
+          intentAmount: intent.amount,
+          minAmount: minAmounts[intent.origin] ?? '0',
+          intent,
+          invoiceId,
+          requestId,
+        });
+      }
+    }
+    
+    if (validIntents.length === 0) {
+      logger.warn('No valid intents after min amount filtering', { invoiceId, requestId });
+      return [];
+    }
+    
+    // Only process first valid intent for now
+    if (validIntents.length > 1) {
       logger.warn('Tron API currently only supports single intents, processing first intent only', {
-        totalIntents: intents.length,
+        totalIntents: validIntents.length,
         processingOnly: 1,
         invoiceId,
         requestId,
       });
     }
-    const intentsToProcess = intents.slice(0, 1);
+    const intentsToProcess = validIntents.slice(0, 1);
     for (const intent of intentsToProcess) {
-      // Sanity check -- minAmounts < intent.amount
-      const { minAmounts } = await everclear.getMinAmounts(invoiceId);
+      // Sanity check -- minAmounts < intent.amount (warn if min amount is smaller than intent)
       if (BigInt(minAmounts[intent.origin] ?? '0') < BigInt(intent.amount)) {
         logger.warn('Latest min amount for origin is smaller than intent size', {
           minAmount: minAmounts[intent.origin] ?? '0',
@@ -750,10 +788,6 @@ export const sendTvmIntents = async (
           invoiceId,
           requestId,
         });
-        continue;
-        // NOTE: continue instead of exit in case other intents are still below the min amount,
-        // then you would still be contributing to invoice to settlement. The invoice will be handled
-        // again on the next polling cycle.
       }
 
       // API call to get txdata for this single intent
@@ -785,7 +819,6 @@ export const sendTvmIntents = async (
           from: tronAddress,
           funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))',
         },
-        zodiacConfig: originWalletConfig,
         context: { requestId, invoiceId, transactionType: 'create-intent' },
       });
 

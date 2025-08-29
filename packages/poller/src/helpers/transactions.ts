@@ -1,13 +1,11 @@
 import { ChainService, ChainServiceTransactionReceipt } from '@mark/chainservice';
-import { LoggingContext, TransactionSubmissionType, TransactionRequest, WalletConfig, isEvmChain } from '@mark/core';
-import { wrapTransactionWithZodiac } from './zodiac';
+import { LoggingContext, TransactionSubmissionType, TransactionRequest } from '@mark/core';
 import { Logger } from '@mark/logger';
 export interface TransactionSubmissionParams {
   chainService: ChainService;
   logger: Logger;
   chainId: string;
   txRequest: TransactionRequest;
-  zodiacConfig: WalletConfig;
   context?: LoggingContext; // For logging context
 }
 
@@ -23,19 +21,12 @@ export interface TransactionSubmissionResult {
 export async function submitTransactionWithLogging(
   params: TransactionSubmissionParams,
 ): Promise<TransactionSubmissionResult> {
-  const { chainService, logger, chainId, txRequest, zodiacConfig, context = {} } = params;
-
-  // Prepare the transaction (wrap with Zodiac if needed)
-  const preparedTx = isEvmChain(chainId)
-    ? await wrapTransactionWithZodiac({ ...txRequest, chainId: +params.chainId }, zodiacConfig)
-    : txRequest;
+  const { chainService, logger, chainId, txRequest: preparedTx, context = {} } = params;
 
   logger.info('Submitting transaction', {
     ...context,
     chainId,
-    to: preparedTx.to,
-    walletType: zodiacConfig.walletType,
-    originalTo: txRequest.to,
+    tx: preparedTx,
     value: preparedTx.value?.toString() || '0',
     funcSig: preparedTx.funcSig,
   });
@@ -47,7 +38,6 @@ export async function submitTransactionWithLogging(
       ...context,
       chainId,
       transactionHash: receipt.transactionHash,
-      walletType: zodiacConfig.walletType,
     });
 
     return {
@@ -61,7 +51,6 @@ export async function submitTransactionWithLogging(
       chainId,
       error,
       txRequest: preparedTx,
-      walletType: zodiacConfig.walletType,
     });
     throw error;
   }

@@ -19,7 +19,7 @@ import { ProcessingContext } from '../../src/init';
 import { RebalanceCache, RebalanceAction } from '@mark/cache';
 import { RebalanceAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { zeroAddress, Hex, erc20Abi, TransactionReceipt } from 'viem'; // For adapter.send return type
+import { zeroAddress, Hex, erc20Abi } from 'viem'; // For adapter.send return type
 
 interface MockBridgeAdapterInterface {
   getReceivedAmount: SinonStub<[string, RebalanceRoute], Promise<string>>;
@@ -589,328 +589,6 @@ describe('rebalanceInventory', () => {
   // Add more tests: Native success, other errors...
 });
 
-describe('Zodiac Address Validation', () => {
-  let mockContext: SinonStubbedInstance<ProcessingContext>;
-  let mockLogger: SinonStubbedInstance<Logger>;
-  let mockRebalanceCache: SinonStubbedInstance<RebalanceCache>;
-  let mockChainService: SinonStubbedInstance<ChainService>;
-  let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
-  let mockPrometheus: SinonStubbedInstance<PrometheusAdapter>;
-  let mockSpecificBridgeAdapter: MockBridgeAdapterInterface;
-
-  // Stubs for module functions
-  let executeDestinationCallbacksStub: SinonStub;
-  let getMarkBalancesStub: SinonStub;
-  let getERC20ContractStub: SinonStub;
-  let checkAndApproveERC20Stub: SinonStub;
-  let submitTransactionWithLoggingStub: SinonStub;
-
-  const MOCK_REQUEST_ID = 'zodiac-rebalance-request-id';
-  const MOCK_OWN_ADDRESS = '0x1111111111111111111111111111111111111111' as `0x${string}`;
-  const MOCK_SAFE_ADDRESS = '0x9876543210987654321098765432109876543210' as `0x${string}`;
-  const MOCK_ASSET_ERC20 = '0xErc20AssetAddress' as `0x${string}`;
-  const MOCK_BRIDGE_TYPE = SupportedBridge.Across;
-  const MOCK_ERC20_TICKER_HASH = '0xerc20tickerhashtest' as `0x${string}`;
-
-  const mockZodiacConfig = {
-    zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
-    zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
-    gnosisSafeAddress: MOCK_SAFE_ADDRESS,
-  };
-
-  const mockEOAConfig = {
-    zodiacRoleModuleAddress: undefined,
-    zodiacRoleKey: undefined,
-    gnosisSafeAddress: undefined,
-  };
-
-  beforeEach(() => {
-    mockLogger = createStubInstance(Logger);
-    mockRebalanceCache = createStubInstance(RebalanceCache);
-    mockChainService = createStubInstance(ChainService);
-    mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
-    mockPrometheus = createStubInstance(PrometheusAdapter);
-
-    mockSpecificBridgeAdapter = {
-      getReceivedAmount: stub<[string, RebalanceRoute], Promise<string>>(),
-      send: stub<[string, string, string, RebalanceRoute], Promise<MemoizedTransactionRequest[]>>(),
-      type: stub<[], SupportedBridge>(),
-    };
-
-    // Stub helper functions
-    executeDestinationCallbacksStub = stub(callbacks, 'executeDestinationCallbacks').resolves();
-    getMarkBalancesStub = stub(balanceHelpers, 'getMarkBalances').callsFake(async () => new Map());
-    getERC20ContractStub = stub(contractHelpers, 'getERC20Contract');
-    checkAndApproveERC20Stub = stub(erc20Helper, 'checkAndApproveERC20').resolves({
-      wasRequired: false,
-      transactionHash: undefined,
-      hadZeroApproval: false,
-    });
-    submitTransactionWithLoggingStub = stub(transactionHelper, 'submitTransactionWithLogging').resolves({
-      hash: '0xBridgeTxHash',
-      submissionType: TransactionSubmissionType.Onchain,
-      receipt: mockReceipt
-    });
-
-    // Default configuration with two chains - one with Zodiac, one without
-    const mockConfig: MarkConfiguration = {
-      routes: [
-        {
-          origin: 42161, // Arbitrum (with Zodiac)
-          destination: 1, // Ethereum (without Zodiac)
-          asset: MOCK_ASSET_ERC20,
-          maximum: '10000000000000000000', // 10 tokens
-          slippages: [0.01],
-          preferences: [MOCK_BRIDGE_TYPE],
-        },
-      ],
-      ownAddress: MOCK_OWN_ADDRESS,
-      pushGatewayUrl: 'http://localhost:9091',
-      web3SignerUrl: 'http://localhost:8545',
-      everclearApiUrl: 'http://localhost:3000',
-      relayer: '0xRelayerAddress' as `0x${string}`,
-      invoiceAge: 3600,
-      logLevel: 'info',
-      pollingInterval: 60000,
-      maxRetries: 3,
-      retryDelay: 1000,
-      chains: {
-        '42161': {
-          // Arbitrum with Zodiac
-          providers: ['http://arbitrumprovider'],
-          assets: [
-            {
-              address: MOCK_ASSET_ERC20,
-              tickerHash: MOCK_ERC20_TICKER_HASH,
-              symbol: 'MOCKERC20',
-              decimals: 18,
-              isNative: false,
-              balanceThreshold: '0',
-            },
-          ],
-          invoiceAge: 0,
-          gasThreshold: '0',
-          deployments: {
-            everclear: '0x1234567890123456789012345678901234567890',
-            permit2: '0x1234567890123456789012345678901234567890',
-            multicall3: '0x1234567890123456789012345678901234567890',
-          },
-          ...mockZodiacConfig,
-        },
-        '1': {
-          // Ethereum without Zodiac
-          providers: ['http://mainnetprovider'],
-          assets: [
-            {
-              address: MOCK_ASSET_ERC20,
-              tickerHash: MOCK_ERC20_TICKER_HASH,
-              symbol: 'MOCKERC20',
-              decimals: 18,
-              isNative: false,
-              balanceThreshold: '0',
-            },
-          ],
-          invoiceAge: 0,
-          gasThreshold: '0',
-          deployments: {
-            everclear: '0x1234567890123456789012345678901234567890',
-            permit2: '0x1234567890123456789012345678901234567890',
-            multicall3: '0x1234567890123456789012345678901234567890',
-          },
-          ...mockEOAConfig,
-        },
-      },
-      supportedSettlementDomains: [1, 42161],
-    } as unknown as MarkConfiguration;
-
-    mockContext = {
-      config: mockConfig,
-      requestId: MOCK_REQUEST_ID,
-      startTime: Date.now(),
-      logger: mockLogger,
-      rebalanceCache: mockRebalanceCache,
-      chainService: mockChainService,
-      rebalance: mockRebalanceAdapter,
-      prometheus: mockPrometheus,
-      everclear: undefined,
-      purchaseCache: undefined,
-      web3Signer: undefined,
-    } as unknown as SinonStubbedInstance<ProcessingContext>;
-
-    // Default stubs
-    mockRebalanceCache.isPaused.resolves(false); // Critical: allow rebalancing to proceed
-    mockRebalanceCache.addRebalances.resolves(); // Mock the cache addition
-    mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
-    mockSpecificBridgeAdapter.type.returns(MOCK_BRIDGE_TYPE);
-    mockSpecificBridgeAdapter.getReceivedAmount.resolves('19980000000000000001'); // Good quote for 20 tokens (just above minimum slippage)
-    mockSpecificBridgeAdapter.send.resolves([
-      {
-        transaction: { to: '0xBridgeSpender', data: '0xbridgeData' as Hex, value: 0n },
-        memo: RebalanceTransactionMemo.Rebalance,
-      },
-    ]);
-
-    // Mock successful transaction
-    mockChainService.submitAndMonitor.resolves({
-      transactionHash: '0xMockTxHash',
-      blockNumber: 123,
-      status: 1,
-    } as any);
-  });
-
-  afterEach(() => {
-    restore();
-  });
-
-  it('should use Safe address as sender for Zodiac-enabled origin chain', async () => {
-    // Uses default route: Arbitrum (Zodiac) -> Ethereum (EOA)
-    const currentBalance = BigInt('20000000000000000000'); // 20 tokens, above maximum
-    const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
-    getMarkBalancesStub.callsFake(async () => balances);
-
-    await rebalanceInventory(mockContext);
-
-    // Verify adapter.send was called with Safe address as sender (first parameter)
-    expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-    const sendCall = mockSpecificBridgeAdapter.send.firstCall;
-    expect(sendCall.args[0]).to.equal(MOCK_SAFE_ADDRESS); // sender = Safe address from origin chain (42161)
-    expect(sendCall.args[1]).to.equal(MOCK_OWN_ADDRESS); // recipient = EOA address for destination chain (1)
-  });
-
-  it('should use EOA address as sender for non-Zodiac origin chain', async () => {
-    // Configure route: Ethereum (EOA) -> Arbitrum (Zodiac)
-    mockContext.config.routes = [
-      {
-        origin: 1, // Ethereum (without Zodiac)
-        destination: 42161, // Arbitrum (with Zodiac)
-        asset: MOCK_ASSET_ERC20,
-        maximum: '10000000000000000000',
-        slippages: [0.01],
-        preferences: [MOCK_BRIDGE_TYPE],
-      },
-    ];
-
-    const currentBalance = BigInt('20000000000000000000'); // 20 tokens, above maximum
-    const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
-    getMarkBalancesStub.callsFake(async () => balances);
-
-    await rebalanceInventory(mockContext);
-
-    // Verify adapter.send was called with EOA address as sender and Safe address as recipient
-    expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-    const sendCall = mockSpecificBridgeAdapter.send.firstCall;
-    expect(sendCall.args[0]).to.equal(MOCK_OWN_ADDRESS); // sender = EOA address from origin chain (1)
-    expect(sendCall.args[1]).to.equal(MOCK_SAFE_ADDRESS); // recipient = Safe address for destination chain (42161)
-  });
-
-  it('should use Safe addresses for both sender and recipient when both chains have Zodiac', async () => {
-    // Add second Zodiac-enabled chain
-    const mockSafeAddress2 = '0x2222222222222222222222222222222222222222' as `0x${string}`;
-    mockContext.config.chains['10'] = {
-      providers: ['http://optimismprovider'],
-      assets: [
-        {
-          address: MOCK_ASSET_ERC20,
-          tickerHash: MOCK_ERC20_TICKER_HASH,
-          symbol: 'MOCKERC20',
-          decimals: 18,
-          isNative: false,
-          balanceThreshold: '0',
-        },
-      ],
-      invoiceAge: 0,
-      gasThreshold: '0',
-      deployments: {
-        everclear: '0x1234567890123456789012345678901234567890',
-        permit2: '0x1234567890123456789012345678901234567890',
-        multicall3: '0x1234567890123456789012345678901234567890',
-      },
-      zodiacRoleModuleAddress: '0x2345678901234567890123456789012345678901',
-      zodiacRoleKey: '0x2345678901234567890123456789012345678901234567890123456789012345',
-      gnosisSafeAddress: mockSafeAddress2,
-    };
-    mockContext.config.supportedSettlementDomains = [1, 10, 42161];
-
-    // Configure route: Arbitrum (Zodiac) -> Optimism (Zodiac)
-    mockContext.config.routes = [
-      {
-        origin: 42161, // Arbitrum (with Zodiac)
-        destination: 10, // Optimism (with Zodiac)
-        asset: MOCK_ASSET_ERC20,
-        maximum: '10000000000000000000',
-        slippages: [0.01],
-        preferences: [MOCK_BRIDGE_TYPE],
-      },
-    ];
-
-    const currentBalance = BigInt('20000000000000000000'); // 20 tokens, above maximum
-    const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
-    getMarkBalancesStub.callsFake(async () => balances);
-
-    await rebalanceInventory(mockContext);
-
-    // Verify adapter.send was called with Safe addresses for both sender and recipient
-    expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-    const sendCall = mockSpecificBridgeAdapter.send.firstCall;
-    expect(sendCall.args[0]).to.equal(MOCK_SAFE_ADDRESS); // sender = Safe address from origin chain (42161)
-    expect(sendCall.args[1]).to.equal(mockSafeAddress2); // recipient = Safe address for destination chain (10)
-  });
-
-  it('should use EOA addresses for both sender and recipient when neither chain has Zodiac', async () => {
-    // Add second EOA-only chain
-    mockContext.config.chains['10'] = {
-      providers: ['http://optimismprovider'],
-      assets: [
-        {
-          address: MOCK_ASSET_ERC20,
-          tickerHash: MOCK_ERC20_TICKER_HASH,
-          symbol: 'MOCKERC20',
-          decimals: 18,
-          isNative: false,
-          balanceThreshold: '0',
-        },
-      ],
-      invoiceAge: 0,
-      gasThreshold: '0',
-      deployments: {
-        everclear: '0x1234567890123456789012345678901234567890',
-        permit2: '0x1234567890123456789012345678901234567890',
-        multicall3: '0x1234567890123456789012345678901234567890',
-      },
-      ...mockEOAConfig,
-    };
-    mockContext.config.supportedSettlementDomains = [1, 10, 42161];
-
-    // Configure route: Ethereum (EOA) -> Optimism (EOA)
-    mockContext.config.routes = [
-      {
-        origin: 1, // Ethereum (without Zodiac)
-        destination: 10, // Optimism (without Zodiac)
-        asset: MOCK_ASSET_ERC20,
-        maximum: '10000000000000000000',
-        slippages: [0.01],
-        preferences: [MOCK_BRIDGE_TYPE],
-      },
-    ];
-
-    const currentBalance = BigInt('20000000000000000000'); // 20 tokens, above maximum
-    const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
-    getMarkBalancesStub.callsFake(async () => balances);
-
-    await rebalanceInventory(mockContext);
-
-    // Verify adapter.send was called with EOA addresses for both sender and recipient
-    expect(mockSpecificBridgeAdapter.send.calledOnce).to.be.true;
-    const sendCall = mockSpecificBridgeAdapter.send.firstCall;
-    expect(sendCall.args[0]).to.equal(MOCK_OWN_ADDRESS); // sender = EOA address from origin chain (1)
-    expect(sendCall.args[1]).to.equal(MOCK_OWN_ADDRESS); // recipient = EOA address for destination chain (10)
-  });
-});
-
 describe('Reserve Amount Functionality', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
   let mockLogger: SinonStubbedInstance<Logger>;
@@ -1236,10 +914,15 @@ describe('Decimal Handling', () => {
 
     const mockLogger = createStubInstance(Logger);
     const mockRebalanceCache = createStubInstance(RebalanceCache);
+    const mockChainService = createStubInstance(ChainService);
     const mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
 
     mockRebalanceCache.isPaused.resolves(false);
     mockRebalanceCache.addRebalances.resolves();
+    mockChainService.getAddress.resolves({
+      '42161': '0x1111111111111111111111111111111111111111',
+      '10': '0x1111111111111111111111111111111111111111'
+    });
     mockRebalanceAdapter.getAdapter.returns(mockSpecificBridgeAdapter as any);
 
     const route: RouteRebalancingConfig = {
@@ -1274,6 +957,7 @@ describe('Decimal Handling', () => {
           },
         },
       },
+      chainService: mockChainService,
       rebalance: mockRebalanceAdapter,
     } as any;
 

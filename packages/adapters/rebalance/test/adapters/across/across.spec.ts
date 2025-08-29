@@ -368,11 +368,11 @@ describe('AcrossBridgeAdapter', () => {
           BigInt(amount), // inputAmount
           mockFeesResponse.outputAmount, // outputAmount
           BigInt(route.destination), // destinationChainId
-          zeroAddress, // exclusiveRelayer - must be zeroAddress per Zodiac permissions
+          zeroAddress, // exclusiveRelayer - must be zeroAddres
           mockFeesResponse.timestamp, // quoteTimestamp
           mockFeesResponse.fillDeadline, // fillDeadline
-          BigInt(0), // exclusivityDeadline - must be 0 per Zodiac permissions
-          '0x', // message - must be "0x" per Zodiac permissions
+          BigInt(0), // exclusivityDeadline - must be 0
+          '0x', // message - must be "0x"
         ],
       });
     });

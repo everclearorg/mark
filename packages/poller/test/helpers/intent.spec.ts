@@ -537,7 +537,7 @@ describe('sendIntents', () => {
                 ...mockConfig,
                 chains: {
                     '1': { providers: ['provider1'] },
-                    '8453': { providers: ['provider2'] }, // EOA destination (no Zodiac config)
+                    '8453': { providers: ['provider2'] }, // EOA destination
                 },
             } as unknown as MarkConfiguration;
 
@@ -555,36 +555,7 @@ describe('sendIntents', () => {
                 .to.be.rejectedWith(`intent.to (0xwrongaddress) must be ownAddress (${mockConfig.ownAddress}) for destination 8453`);
         });
 
-        it('should throw an error when intent.to does not match safeAddress for Zodiac destination', async () => {
-            const safeAddress = '0x9876543210987654321098765432109876543210';
-            const configWithZodiacDestination = {
-                ...mockConfig,
-                chains: {
-                    '1': { providers: ['provider1'] },
-                    '8453': {
-                        providers: ['provider2'],
-                        zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
-                        zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
-                        gnosisSafeAddress: safeAddress,
-                    },
-                },
-            } as unknown as MarkConfiguration;
-
-            const wrongToAddressIntent = {
-                origin: '1',
-                destinations: ['8453'],
-                to: '0xwrongaddress', // Should be safeAddress for Zodiac
-                inputAsset: '0xtoken1',
-                amount: '1000',
-                callData: '0x',
-                maxFee: '0',
-            };
-
-            await expect(sendIntents(invoiceId, [wrongToAddressIntent], mockDeps, configWithZodiacDestination))
-                .to.be.rejectedWith(`intent.to (0xwrongaddress) must be safeAddress (${safeAddress}) for destination 8453`);
-        });
-
-        it('should treat chain with only gnosisSafeAddress as EOA (not Zodiac)', async () => {
+        it('should treat chain with only gnosisSafeAddress as EOA', async () => {
             const safeAddress = '0x9876543210987654321098765432109876543210';
             const configWithOnlySafeAddress = {
                 ...mockConfig,
@@ -593,7 +564,6 @@ describe('sendIntents', () => {
                     '8453': {
                         providers: ['provider2'],
                         gnosisSafeAddress: safeAddress,
-                        // No zodiacRoleModuleAddress or zodiacRoleKey - should be treated as EOA
                     },
                 },
             } as unknown as MarkConfiguration;
@@ -636,35 +606,6 @@ describe('sendIntents', () => {
             expect(result).to.have.length(1);
         });
 
-        it('should pass validation when intent.to matches safeAddress for Zodiac destination', async () => {
-            const safeAddress = '0x9876543210987654321098765432109876543210';
-            const configWithZodiacDestination = {
-                ...mockConfig,
-                chains: {
-                    '1': { providers: ['provider1'] },
-                    '8453': {
-                        providers: ['provider2'],
-                        zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
-                        zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
-                        gnosisSafeAddress: safeAddress,
-                    },
-                },
-            } as unknown as MarkConfiguration;
-
-            const validZodiacIntent = {
-                origin: '1',
-                destinations: ['8453'],
-                to: safeAddress, // Correct for Zodiac
-                inputAsset: '0xtoken1',
-                amount: '1000',
-                callData: '0x',
-                maxFee: '0',
-            };
-
-            const result = await sendIntents(invoiceId, [validZodiacIntent], mockDeps, configWithZodiacDestination);
-            expect(result).to.have.length(1);
-        });
-
         it('should handle case-insensitive token address comparison', async () => {
             const sameTokenDifferentCaseIntents = [
                 {
@@ -702,14 +643,10 @@ describe('sendIntents', () => {
                     '1': { providers: ['provider1'] },
                     '8453': {
                         providers: ['provider2'],
-                        zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
-                        zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
                         gnosisSafeAddress: safeAddress1,
                     },
                     '42161': {
                         providers: ['provider3'],
-                        zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
-                        zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
                         gnosisSafeAddress: safeAddress2,
                     },
                 },
@@ -785,7 +722,7 @@ describe('sendIntents', () => {
             });
 
             await expect(sendIntents(invoiceId, mixedOriginIntents, mockDeps, mockConfig))
-                .to.be.rejectedWith('intent.origin (137) must be 1');
+                .to.be.rejectedWith('Cannot process multiple intents with different origin domains');
         });
     });
 });
@@ -1107,71 +1044,6 @@ describe('TVM Chain Handling', () => {
             .to.be.rejectedWith('Cannot process multiple intents with different input assets');
     });
 
-    it('should handle TVM intents with Zodiac destination validation', async () => {
-        const safeAddress = '0x9876543210987654321098765432109876543210';
-        const configWithZodiac = {
-            ...mockConfig,
-            chains: {
-                ...mockConfig.chains,
-                '1': {
-                    providers: ['provider1'],
-                    assets: [],
-                    invoiceAge: 3600,
-                    gasThreshold: '1000000000000000000',
-                    deployments: {
-                        everclear: '0x1234567890123456789012345678901234567890',
-                    },
-                    zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
-                    zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
-                    gnosisSafeAddress: safeAddress,
-                },
-            },
-        } as unknown as MarkConfiguration;
-
-        const tvmIntent: NewIntentParams = {
-            origin: '728126428',
-            destinations: ['1'], // Zodiac destination
-            to: safeAddress, // Must match safe address for Zodiac destination
-            inputAsset: 'TronToken1',
-            amount: '1000000',
-            callData: '0x',
-            maxFee: '0',
-        };
-
-        (mockDeps.chainService.getAddress as SinonStub).resolves({
-            '728126428': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
-        });
-
-        (mockDeps.everclear.tronCreateNewIntent as SinonStub).resolves({
-            to: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-            data: 'tron-tx-data',
-            value: '0',
-        });
-
-        (mockDeps.everclear.getMinAmounts as SinonStub).resolves({
-            minAmounts: { '728126428': BigInt(tvmIntent.amount).toString() }
-        });
-
-        const encodedAllowance = '0x00000000000000000000000000000000000000000000000000000000000f4240';
-        (mockDeps.chainService.readTx as SinonStub).resolves(encodedAllowance);
-
-        (mockDeps.chainService.submitAndMonitor as SinonStub).resolves({
-            transactionHash: '0xtrontxhash',
-            cumulativeGasUsed: '100000',
-            effectiveGasPrice: '10000000000',
-            logs: [{
-                topics: [
-                    INTENT_ADDED_TOPIC0 as `0x${string}`,
-                    '0x0000000000000000000000000000000000000000000000000000000000000001'
-                ],
-                data: '0x000000000000000000000000000000000000000000000000000000000000074d000000000000000000000000000000000000000000000000000000000000004000000000000000000000000015a7ca97d1ed168fb34a4055cefa2e2f9bdb6c75000000000000000000000000b60d0c2e8309518373b40f8eaa2cad0d1de3decb000000000000000000000000fde4c96c8593536e31f229ea8f37b2ada2699bb2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002105000000000000000000000000000000000000000000000000000000000000074d0000000000000000000000000000000000000000000000000000000067f1620f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e8d4a51000000000000000000000000000000000000000000000000000000000000000018000000000000000000000000000000000000000000000000000000000000002400000000000000000000000000000000000000000000000000000000000000005000000000000000000000000000000000000000000000000000000000000a86a0000000000000000000000000000000000000000000000000000000000000089000000000000000000000000000000000000000000000000000000000000a4b1000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000'
-            }]
-        });
-
-        const result = await sendIntents(invoiceId, [tvmIntent], mockDeps, configWithZodiac, requestId);
-        expect(result).to.have.length(1);
-    });
-
     it('should handle TVM intents with approval error', async () => {
         const tvmIntent: NewIntentParams = {
             origin: '728126428',
@@ -1374,16 +1246,14 @@ describe('TVM Chain Handling', () => {
             .to.be.rejectedWith('intent.to (WrongTronAddress) must be TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t for destination 195');
     });
 
-    it('should handle TVM intent with wrong address for TVM Zodiac destination', async () => {
+    it('should handle TVM intent with wrong address for TVM destination', async () => {
         const safeAddress = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-        const configWithTvmZodiac = {
+        const configWithTvm = {
             ...mockConfig,
             chains: {
                 '728126428': { providers: ['tron-provider'] },
                 '195': {
                     providers: ['tvm-provider'],
-                    zodiacRoleModuleAddress: '0x1234567890123456789012345678901234567890',
-                    zodiacRoleKey: '0x1234567890123456789012345678901234567890123456789012345678901234',
                     gnosisSafeAddress: safeAddress,
                 },
             },
@@ -1391,7 +1261,7 @@ describe('TVM Chain Handling', () => {
 
         const tvmIntent: NewIntentParams = {
             origin: '728126428',
-            destinations: ['195'], // TVM Zodiac destination
+            destinations: ['195'], // TVM destination
             to: 'WrongSafeAddress', // Should match safeAddress
             inputAsset: 'TronToken1',
             amount: '1000000',
@@ -1404,7 +1274,7 @@ describe('TVM Chain Handling', () => {
             '195': 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
         });
 
-        await expect(sendIntents(invoiceId, [tvmIntent], mockDeps, configWithTvmZodiac, requestId))
+        await expect(sendIntents(invoiceId, [tvmIntent], mockDeps, configWithTvm, requestId))
             .to.be.rejectedWith(`intent.to (WrongSafeAddress) must be safeAddress (${safeAddress}) for destination 195`);
     });
 
@@ -1412,7 +1282,7 @@ describe('TVM Chain Handling', () => {
         const configWithInvalidWalletType = {
             ...mockConfig,
             chains: {
-                '728126428': { 
+                '728126428': {
                     providers: ['tron-provider'],
                     deployments: { everclear: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' }
                 },
