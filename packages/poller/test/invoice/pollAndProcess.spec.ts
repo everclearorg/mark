@@ -56,6 +56,7 @@ describe('pollAndProcessInvoices', () => {
         };
 
         (mockContext.everclear.fetchInvoices as SinonStub).resolves(mockInvoices);
+        (mockContext.purchaseCache.isPaused as SinonStub).resolves(false);
         processInvoicesStub = stub(processInvoicesModule, 'processInvoices').resolves();
     });
 
@@ -99,5 +100,16 @@ describe('pollAndProcessInvoices', () => {
             .to.be.rejectedWith('Process failed');
 
         expect((mockContext.logger.error as SinonStub).calledWith('Failed to process invoices')).to.be.true;
+    });
+
+    it('should return early when purchase loop is paused', async () => {
+        (mockContext.purchaseCache.isPaused as SinonStub).resolves(true);
+
+        await pollAndProcessInvoices(mockContext);
+
+        expect((mockContext.purchaseCache.isPaused as SinonStub).calledOnce).to.be.true;
+        expect((mockContext.logger.warn as SinonStub).calledOnceWith('Purchase loop is paused')).to.be.true;
+        expect((mockContext.everclear.fetchInvoices as SinonStub).called).to.be.false;
+        expect(processInvoicesStub.called).to.be.false;
     });
 });
