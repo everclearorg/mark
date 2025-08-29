@@ -145,6 +145,15 @@ resource "aws_security_group" "db" {
     description     = "Allow PostgreSQL traffic from Web3Signer"
   }
 
+  # Allow inbound PostgreSQL traffic from VPC CIDR
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr_block]
+    description = "Allow PostgreSQL traffic from within VPC"
+  }
+
   # Allow all outbound traffic
   egress {
     from_port   = 0
