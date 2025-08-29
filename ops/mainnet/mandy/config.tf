@@ -1,4 +1,10 @@
 locals {
+  rebalanceConfig = {
+    bucket = "mandy-rebalance-config"
+    key    = "rebalance-config.json"
+    region = var.region
+  }
+
   prometheus_config = <<-EOT
     global:
       scrape_interval: 15s
@@ -69,18 +75,22 @@ locals {
     DD_API_KEY                    = local.mark_config.dd_api_key
     DD_LAMBDA_HANDLER             = "packages/poller/dist/index.handler"
     MARK_CONFIG_SSM_PARAMETER     = "MANDY_CONFIG_MAINNET"
-    
+
+    REBALANCE_CONFIG_S3_BUCKET    = local.rebalanceConfig.bucket
+    REBALANCE_CONFIG_S3_KEY       = local.rebalanceConfig.key
+    REBALANCE_CONFIG_S3_REGION    = local.rebalanceConfig.region
+
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"
     USDT_1_THRESHOLD              = "2000000000"
-    
+
     WETH_10_THRESHOLD             = "1600000000000000000"
     USDC_10_THRESHOLD             = "4000000000"
     USDT_10_THRESHOLD             = "400000000"
-    
+
     USDC_56_THRESHOLD             = "2000000000000000000000"
     USDT_56_THRESHOLD             = "4000000000000000000000"
-    
+
 
     WETH_8453_THRESHOLD           = "1600000000000000000"
     USDC_8453_THRESHOLD           = "4000000000"
