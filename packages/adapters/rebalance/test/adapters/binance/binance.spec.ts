@@ -193,6 +193,7 @@ const mockConfig: MarkConfiguration = {
     providers: ['http://localhost:8545'],
   },
   routes: [],
+  purchaseCacheTtlSeconds: 3600,
 };
 
 // Mock API responses
