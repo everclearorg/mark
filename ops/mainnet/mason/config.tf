@@ -1,4 +1,10 @@
 locals {
+  rebalanceConfig = {
+    bucket = "mason-rebalance-config"
+    key    = "rebalance-config.json"
+    region = var.region
+  }
+
   prometheus_config = <<-EOT
     global:
       scrape_interval: 15s
@@ -75,6 +81,10 @@ locals {
     DD_TRACE_OTEL_ENABLED         = false
     MARK_CONFIG_SSM_PARAMETER     = "MASON_CONFIG_MAINNET"
     EVERCLEAR_API_URL             = "https://api.staging.everclear.org"
+    
+    REBALANCE_CONFIG_S3_BUCKET    = local.rebalanceConfig.bucket
+    REBALANCE_CONFIG_S3_KEY       = local.rebalanceConfig.key
+    REBALANCE_CONFIG_S3_REGION    = local.rebalanceConfig.region
 
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"
