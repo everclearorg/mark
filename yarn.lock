@@ -4266,6 +4266,7 @@ __metadata:
   dependencies:
     "@mark/cache": "workspace:*"
     "@mark/core": "workspace:*"
+    "@mark/database": "workspace:*"
     "@mark/logger": "workspace:*"
     "@types/aws-lambda": 8.10.147
     "@types/jest": 29.5.12
