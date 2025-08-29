@@ -16,7 +16,8 @@
         "dev": "ts-node-dev -r tsconfig-paths/register --respawn src/dev.ts",
         "lint": "eslint src",
         "lint:fix": "yarn lint --fix",
-        "test": "jest --coverage"
+        "test": "yarn test:unit",
+        "test:unit": "jest --coverage"
     },
     "dependencies": {
         "@mark/cache": "workspace:*",

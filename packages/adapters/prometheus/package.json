@@ -9,7 +9,8 @@
     "scripts": {
         "build": "tsc --build ./tsconfig.json",
         "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
-        "test": "jest",
+        "test": "yarn test:unit",
+        "test:unit": "jest",
         "lint": "eslint src"
     },
     "dependencies": {
