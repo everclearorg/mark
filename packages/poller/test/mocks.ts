@@ -57,6 +57,7 @@ export const mockConfig: MarkConfiguration = {
   supportedSettlementDomains: [1, 8453],
   forceOldestInvoice: false,
   supportedAssets: ['0xticker1'],
+  purchaseCacheTtlSeconds: 5400,
   chains: {
     '1': {
       providers: ['http://localhost:8545'],

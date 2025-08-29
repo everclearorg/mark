@@ -414,6 +414,7 @@ export async function processTickerGroup(
       },
       transactionHash: result.transactionHash,
       transactionType: result.type,
+      cachedAt: getTimeSeconds(),
     }));
 
     // Record metrics per invoice, properly handling split intents
@@ -590,8 +591,14 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
 
   const targetsToRemove = purchasesWithIntentIds
     .filter((purchase: PurchaseAction) => {
+      // Remove if spent status
       const status = intentStatusesMap.get(purchase.purchase.intentId!) || IntentStatus.NONE;
-      return spentStatuses.includes(status);
+      const isSpent = spentStatuses.includes(status);
+
+      // Remove if ttl elapsed
+      const elapsed = start - purchase.cachedAt;
+      const isElapsed = elapsed > config.purchaseCacheTtlSeconds;
+      return isSpent || isElapsed;
     })
     .map((purchase: PurchaseAction) => purchase.target.intent_id);
 
