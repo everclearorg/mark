@@ -52,6 +52,13 @@ interface CallbackInfo {
 }
 
 export class NearBridgeAdapter implements BridgeAdapter {
+  // Maximum amounts per asset symbol to send in a single rebalance operation
+  private readonly ASSET_CAPS: Record<string, bigint> = {
+    WETH: BigInt('8000000000000000000'), // 8 WETH
+    USDC: BigInt('50000000000'), // 50,000 USDC
+    USDT: BigInt('50000000000'), // 50,000 USDT
+  };
+
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
     private readonly jwtToken: string | undefined,
@@ -75,9 +82,32 @@ export class NearBridgeAdapter implements BridgeAdapter {
     return SupportedBridge.Near;
   }
 
+  private getCappedAmount(amount: string, assetSymbol: string | undefined): string {
+    if (!assetSymbol || !this.ASSET_CAPS[assetSymbol]) {
+      return amount;
+    }
+
+    const cap = this.ASSET_CAPS[assetSymbol];
+    const amountBigInt = BigInt(amount);
+
+    if (amountBigInt > cap) {
+      this.logger.info(`Capping ${assetSymbol} amount to maximum per transaction`, {
+        requestedAmount: amount,
+        cappedAmount: cap.toString(),
+        assetSymbol,
+      });
+      return cap.toString();
+    }
+
+    return amount;
+  }
+
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
-      const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, amount);
+      const originAsset = this.getAsset(route.asset, route.origin);
+      const _amount = this.getCappedAmount(amount, originAsset?.symbol);
+
+      const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, _amount);
       return quote.amountOut;
     } catch (error) {
       this.handleError(error, 'get received amount from Near', { amount, route });
@@ -91,18 +121,18 @@ export class NearBridgeAdapter implements BridgeAdapter {
     route: RebalanceRoute,
   ): Promise<MemoizedTransactionRequest[]> {
     try {
-      const quote = await this.getSuggestedFees(route, refundTo, recipient, amount);
-
-      // Check if we need to unwrap WETH to ETH before bridging
       const originAsset = this.getAsset(route.asset, route.origin);
+      const _amount = this.getCappedAmount(amount, originAsset?.symbol);
 
       // If origin is WETH then we need to unwrap
       const needsUnwrap = originAsset?.symbol === 'WETH';
 
+      const quote = await this.getSuggestedFees(route, refundTo, recipient, _amount);
+
       if (needsUnwrap) {
         this.logger.debug('Preparing WETH unwrap transaction before Near bridge deposit', {
           wethAddress: route.asset,
-          amount,
+          amount: _amount,
         });
 
         const unwrapTx = {
@@ -112,7 +142,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: wethAbi,
               functionName: 'withdraw',
-              args: [BigInt(amount)],
+              args: [BigInt(_amount)],
             }) as `0x${string}`,
             value: BigInt(0),
           },
