@@ -1,6 +1,7 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  setupFilesAfterEnv: ['<rootDir>/../../../jest.setup.shared.js'],
   testMatch: ['**/test/**/*.spec.ts', '**/test/**/*.integration.spec.ts'],
   testTimeout: 30000,
   collectCoverageFrom: [

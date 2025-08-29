@@ -43,6 +43,7 @@ locals {
     web3_signer_private_key = local.mark_config_json.web3_signer_private_key
     signerAddress = local.mark_config_json.signerAddress
     chains = local.mark_config_json.chains
+    db_password = local.mark_config_json.db_password
   }
 }
 
@@ -269,5 +270,27 @@ module "mark_admin_api" {
     REDIS_HOST                      = module.cache.redis_instance_address
     REDIS_PORT                      = module.cache.redis_instance_port
     ADMIN_TOKEN                     = local.mark_config_json.admin_token
+  }
+}
+
+module "db" {
+  source = "../../modules/db"
+  
+  identifier                 = "${var.stage}-${var.environment}-mark-db"
+  instance_class            = var.db_instance_class
+  allocated_storage         = var.db_allocated_storage
+  db_name                   = var.db_name
+  username                  = var.db_username
+  password                  = local.mark_config.db_password  # Use password from MARK_3_CONFIG_MAINNET
+  port                      = var.db_port
+  vpc_security_group_ids    = [module.sgs.db_sg_id]
+  db_subnet_group_subnet_ids = module.network.private_subnets
+  publicly_accessible       = false
+  maintenance_window        = "sun:06:30-sun:07:30"
+  
+  tags = {
+    Stage       = var.stage
+    Environment = var.environment
+    Domain      = var.domain
   }
 }
