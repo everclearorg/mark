@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'yarn'
@@ -130,6 +130,18 @@ jobs:
           docker build -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
           docker push $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG
 
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Install DBMate
+        run: sudo curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && sudo chmod +x /usr/local/bin/dbmate
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
         with:
@@ -163,6 +175,14 @@ jobs:
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
             -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
             -auto-approve > /dev/null 2>&1
+
+      - name: Migrate Database
+        run: |
+          # Get database URL from Terraform
+          DATABASE_URL=$(cd ${{ matrix.environment.terraform_dir }} && terraform output -raw database_url)
+          DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
+        env:
+          AWS_PROFILE: aws-deployer-connext
 
       - name: Show Admin API Endpoint URL
         if: success()
@@ -213,6 +233,18 @@ jobs:
           docker build -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
           docker push $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG
 
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Install DBMate
+        run: sudo curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && sudo chmod +x /usr/local/bin/dbmate
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
         with:
@@ -246,6 +278,14 @@ jobs:
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
             -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
             -auto-approve > /dev/null 2>&1
+
+      - name: Migrate Database
+        run: |
+          # Get database URL from Terraform
+          DATABASE_URL=$(cd ./ops/mainnet/mason && terraform output -raw database_url)
+          DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
+        env:
+          AWS_PROFILE: aws-deployer-connext
 
       - name: Show Admin API Endpoint URL
         if: success()
