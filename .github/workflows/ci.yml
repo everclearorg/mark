@@ -175,8 +175,7 @@ jobs:
 
       - name: Migrate Database
         run: |
-          # Get database URL from Terraform
-          DATABASE_URL=$(cd ${{ matrix.environment.terraform_dir }} && terraform output -raw database_url)
+          DATABASE_URL=$(cd ${{ matrix.environment.terraform_dir }} && terraform output -json database_url | jq -r .)
           DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
         env:
           AWS_PROFILE: aws-deployer-connext
@@ -275,8 +274,7 @@ jobs:
 
       - name: Migrate Database
         run: |
-          # Get database URL from Terraform
-          DATABASE_URL=$(cd ./ops/mainnet/mason && terraform output -raw database_url)
+          DATABASE_URL=$(cd ./ops/mainnet/mason && terraform output -json database_url | jq -r .)
           DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
         env:
           AWS_PROFILE: aws-deployer-connext
