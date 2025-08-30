@@ -139,9 +139,6 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Install DBMate
-        run: sudo curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && sudo chmod +x /usr/local/bin/dbmate
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
         with:
@@ -180,6 +177,7 @@ jobs:
         run: |
           # Get database URL from Terraform
           DATABASE_URL=$(cd ${{ matrix.environment.terraform_dir }} && terraform output -raw database_url)
+          echo "Database URL retrieved successfully"
           DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
         env:
           AWS_PROFILE: aws-deployer-connext
@@ -242,9 +240,6 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Install DBMate
-        run: sudo curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && sudo chmod +x /usr/local/bin/dbmate
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v1
         with:
@@ -283,6 +278,7 @@ jobs:
         run: |
           # Get database URL from Terraform
           DATABASE_URL=$(cd ./ops/mainnet/mason && terraform output -raw database_url)
+          echo "Database URL retrieved successfully"
           DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
         env:
           AWS_PROFILE: aws-deployer-connext
