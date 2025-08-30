@@ -10,7 +10,7 @@ output "project_arn" {
 
 output "webhook_url" {
   description = "Webhook URL for GitHub"
-  value       = aws_codebuild_project.github_runner.webhook[0].url
+  value       = aws_codebuild_webhook.github_runner.payload_url
   sensitive   = true
 }
 

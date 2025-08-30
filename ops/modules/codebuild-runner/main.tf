@@ -41,17 +41,20 @@ resource "aws_codebuild_project" "github_runner" {
     security_group_ids = [aws_security_group.codebuild.id]
   }
 
-  # Configure as GitHub Actions runner
-  webhook {
-    filter_group {
-      filter {
-        type    = "EVENT"
-        pattern = "WORKFLOW_JOB_QUEUED"
-      }
+  tags = var.tags
+}
+
+# Create webhook for GitHub Actions runner
+resource "aws_codebuild_webhook" "github_runner" {
+  project_name = aws_codebuild_project.github_runner.name
+  build_type   = "BUILD"
+
+  filter_group {
+    filter {
+      type    = "EVENT"
+      pattern = "WORKFLOW_JOB_QUEUED"
     }
   }
-
-  tags = var.tags
 }
 
 # Security group for CodeBuild in VPC
