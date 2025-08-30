@@ -32,22 +32,32 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
     return pool;
   }
 
-  // Parse connection string to check for SSL mode
-  const isSSLRequired = config.connectionString.includes('sslmode=require');
+  // Check if we need SSL based on connection string
+  const needsSSL = config.connectionString.includes('sslmode=require');
+  
+  // Remove sslmode from connection string to avoid conflicts
+  let connectionString = config.connectionString;
+  if (needsSSL) {
+    // Remove sslmode parameter to prevent it from overriding our ssl config
+    connectionString = config.connectionString
+      .replace(/\?sslmode=require/, '')
+      .replace(/&sslmode=require/, '');
+  }
 
   const poolConfig: PoolConfig = {
-    connectionString: config.connectionString,
+    connectionString,
     max: config.maxConnections || 20,
     idleTimeoutMillis: config.idleTimeoutMillis || 30000,
     connectionTimeoutMillis: config.connectionTimeoutMillis || 2000,
   };
 
-  // If SSL is required, configure to accept self-signed certificates
-  if (isSSLRequired) {
+  // Configure SSL if needed
+  if (needsSSL) {
+    // For AWS RDS within VPC, accept self-signed certificates
     poolConfig.ssl = {
-      rejectUnauthorized: false,
+      rejectUnauthorized: false
     };
-    console.log('Database connection configured with SSL (accepting self-signed certificates)');
+    console.log('Database SSL: Configured for AWS RDS (accepting self-signed certificates)');
   }
 
   pool = new Pool(poolConfig);
