@@ -58,3 +58,8 @@ output "database_url" {
   value       = module.db.database_url
   sensitive   = true
 }
+
+output "github_runner_label" {
+  description = "Label for GitHub Actions self-hosted runner"
+  value       = module.codebuild_runner.runner_label
+}
