@@ -177,7 +177,6 @@ jobs:
         run: |
           # Get database URL from Terraform
           DATABASE_URL=$(cd ${{ matrix.environment.terraform_dir }} && terraform output -raw database_url)
-          echo "Database URL retrieved successfully"
           DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
         env:
           AWS_PROFILE: aws-deployer-connext
@@ -278,7 +277,6 @@ jobs:
         run: |
           # Get database URL from Terraform
           DATABASE_URL=$(cd ./ops/mainnet/mason && terraform output -raw database_url)
-          echo "Database URL retrieved successfully"
           DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
         env:
           AWS_PROFILE: aws-deployer-connext

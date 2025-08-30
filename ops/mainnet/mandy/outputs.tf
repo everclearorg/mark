@@ -52,3 +52,9 @@ output "lambda_static_ips" {
   description = "Static IP addresses for Lambda outbound traffic (for API whitelisting)"
   value       = module.network.nat_gateway_ips
 }
+
+output "database_url" {
+  description = "PostgreSQL connection URL"
+  value       = module.db.database_url
+  sensitive   = true
+}
