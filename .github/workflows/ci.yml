@@ -181,28 +181,6 @@ jobs:
           echo "Admin API Endpoint URL for ${{ matrix.environment.name }}:"
           terraform output -raw admin_api_endpoint
 
-  # Database migrations for staging - runs on self-hosted runner in VPC
-  migrate-staging:
-    if: github.ref == 'refs/heads/staging'
-    runs-on: ['self-hosted', 'codebuild', 'mason']
-    needs: [build-and-deploy-staging]
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-
-      - name: Install dependencies
-        run: yarn install
-
-      - name: Run Database Migrations
-        run: yarn workspace @mark/database dbmate up
-        # DATABASE_URL is provided by CodeBuild environment variable
-
   # Staging deployment (mason) - triggered on staging branch
   build-and-deploy-staging:
     if: github.ref == 'refs/heads/staging'

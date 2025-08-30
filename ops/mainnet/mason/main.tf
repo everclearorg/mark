@@ -295,23 +295,3 @@ module "db" {
     Domain      = var.domain
   }
 }
-
-# CodeBuild GitHub Actions runner for database migrations
-module "codebuild_runner" {
-  source = "../../modules/codebuild-runner"
-
-  project_name          = "mark-${var.environment}-github-runner"
-  environment           = var.environment
-  github_repo           = "https://github.com/everclearorg/mark"
-  vpc_id                = module.network.vpc_id
-  private_subnet_ids    = module.network.private_subnets
-  rds_security_group_id = module.sgs.db_sg_id
-  runner_label          = "codebuild-${var.environment}"
-  database_url          = module.db.database_url
-
-  tags = {
-    Stage       = var.stage
-    Environment = var.environment
-    Purpose     = "GitHub Actions Runner"
-  }
-}

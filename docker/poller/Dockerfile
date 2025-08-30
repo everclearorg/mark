@@ -70,6 +70,10 @@ RUN yarn build
 
 FROM node AS runtime
 
+# Install dbmate for database migrations
+RUN curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && \
+    chmod +x /usr/local/bin/dbmate
+
 ENV NODE_ENV=production \
     PORT=8080
 
@@ -87,6 +91,9 @@ COPY --from=build /tmp/build/packages/adapters/prometheus/dist ${LAMBDA_TASK_ROO
 COPY --from=build /tmp/build/packages/adapters/web3signer/dist ${LAMBDA_TASK_ROOT}/packages/adapters/web3signer/dist
 COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/packages/adapters/cache/dist
 COPY --from=build /tmp/build/packages/adapters/database/dist ${LAMBDA_TASK_ROOT}/packages/adapters/database/dist
+
+# Copy database migrations
+COPY packages/adapters/database/db ${LAMBDA_TASK_ROOT}/db
 
 # Create symlinks for workspace dependencies
 RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
