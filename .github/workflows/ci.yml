@@ -143,6 +143,7 @@ jobs:
         uses: hashicorp/setup-terraform@v1
         with:
           terraform_version: 1.5.7
+          terraform_wrapper: false
 
       - name: Setup Sops
         uses: mdgreenwald/mozilla-sops-action@v1.2.0
@@ -175,7 +176,8 @@ jobs:
 
       - name: Migrate Database
         run: |
-          DATABASE_URL=$(cd ${{ matrix.environment.terraform_dir }} && terraform output -json database_url | jq -r .)
+          # Get database URL from Terraform
+          DATABASE_URL=$(cd ${{ matrix.environment.terraform_dir }} && terraform output -raw database_url)
           DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
         env:
           AWS_PROFILE: aws-deployer-connext
@@ -242,6 +244,7 @@ jobs:
         uses: hashicorp/setup-terraform@v1
         with:
           terraform_version: 1.5.7
+          terraform_wrapper: false
 
       - name: Setup Sops
         uses: mdgreenwald/mozilla-sops-action@v1.2.0
@@ -274,7 +277,8 @@ jobs:
 
       - name: Migrate Database
         run: |
-          DATABASE_URL=$(cd ./ops/mainnet/mason && terraform output -json database_url | jq -r .)
+          # Get database URL from Terraform
+          DATABASE_URL=$(cd ./ops/mainnet/mason && terraform output -raw database_url)
           DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
         env:
           AWS_PROFILE: aws-deployer-connext
