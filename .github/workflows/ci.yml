@@ -174,20 +174,34 @@ jobs:
             -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
             -auto-approve > /dev/null 2>&1
 
-      - name: Migrate Database
-        run: |
-          # Get database URL from Terraform
-          DATABASE_URL=$(cd ${{ matrix.environment.terraform_dir }} && terraform output -raw database_url)
-          DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
-        env:
-          AWS_PROFILE: aws-deployer-connext
-
       - name: Show Admin API Endpoint URL
         if: success()
         working-directory: ${{ matrix.environment.terraform_dir }}
         run: |
           echo "Admin API Endpoint URL for ${{ matrix.environment.name }}:"
           terraform output -raw admin_api_endpoint
+
+  # Database migrations for staging - runs on self-hosted runner in VPC
+  migrate-staging:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ['self-hosted', 'codebuild', 'mason']
+    needs: [build-and-deploy-staging]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Run Database Migrations
+        run: yarn workspace @mark/database dbmate up
+        # DATABASE_URL is provided by CodeBuild environment variable
 
   # Staging deployment (mason) - triggered on staging branch
   build-and-deploy-staging:
@@ -274,14 +288,6 @@ jobs:
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
             -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
             -auto-approve > /dev/null 2>&1
-
-      - name: Migrate Database
-        run: |
-          # Get database URL from Terraform
-          DATABASE_URL=$(cd ./ops/mainnet/mason && terraform output -raw database_url)
-          DATABASE_URL=$DATABASE_URL yarn workspace @mark/database dbmate up
-        env:
-          AWS_PROFILE: aws-deployer-connext
 
       - name: Show Admin API Endpoint URL
         if: success()

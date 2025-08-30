@@ -276,7 +276,7 @@ module "mark_admin_api" {
 
 module "db" {
   source = "../../modules/db"
-  
+
   identifier                 = "${var.stage}-${var.environment}-mark-db"
   instance_class            = var.db_instance_class
   allocated_storage         = var.db_allocated_storage
@@ -288,10 +288,30 @@ module "db" {
   db_subnet_group_subnet_ids = module.network.private_subnets
   publicly_accessible       = false
   maintenance_window        = "sun:06:30-sun:07:30"
-  
+
   tags = {
     Stage       = var.stage
     Environment = var.environment
     Domain      = var.domain
+  }
+}
+
+# CodeBuild GitHub Actions runner for database migrations
+module "codebuild_runner" {
+  source = "../../modules/codebuild-runner"
+
+  project_name          = "mark-${var.environment}-github-runner"
+  environment           = var.environment
+  github_repo           = "https://github.com/everclearorg/mark"
+  vpc_id                = module.network.vpc_id
+  private_subnet_ids    = module.network.private_subnets
+  rds_security_group_id = module.sgs.db_sg_id
+  runner_label          = "codebuild-${var.environment}"
+  database_url          = module.db.database_url
+
+  tags = {
+    Stage       = var.stage
+    Environment = var.environment
+    Purpose     = "GitHub Actions Runner"
   }
 }
