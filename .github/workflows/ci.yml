@@ -287,7 +287,7 @@ jobs:
           terraform apply \
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
             -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
-            -auto-approve > /dev/null 2>&1
+            -auto-approve
 
       - name: Show Admin API Endpoint URL
         if: success()
