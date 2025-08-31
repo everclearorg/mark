@@ -92,8 +92,8 @@ COPY --from=build /tmp/build/packages/adapters/web3signer/dist ${LAMBDA_TASK_ROO
 COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/packages/adapters/cache/dist
 COPY --from=build /tmp/build/packages/adapters/database/dist ${LAMBDA_TASK_ROOT}/packages/adapters/database/dist
 
-# Copy database migrations
-COPY packages/adapters/database/db ${LAMBDA_TASK_ROOT}/db
+# Copy database migrations from build stage
+COPY --from=build /tmp/build/packages/adapters/database/db ${LAMBDA_TASK_ROOT}/db
 
 # Create symlinks for workspace dependencies
 RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \

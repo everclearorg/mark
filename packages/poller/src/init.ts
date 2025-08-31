@@ -104,7 +104,10 @@ async function runMigration(logger: Logger): Promise<void> {
     }
 
     logger.info('Running database migration...');
-    const result = execSync(`dbmate --url "${databaseUrl}" -d /var/task/db --no-dump-schema up`, { encoding: 'utf-8' });
+    const result = execSync(
+      `dbmate --url "${databaseUrl}" --migrations-dir /var/task/db/migrations --no-dump-schema up`,
+      { encoding: 'utf-8' },
+    );
     logger.info('Database migration completed', { output: result });
   } catch (error) {
     logger.error('Failed to run database migration', { error });
