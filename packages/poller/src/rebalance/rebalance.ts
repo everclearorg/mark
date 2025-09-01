@@ -166,6 +166,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           requestId,
           route,
           bridgeType,
+          amountToBridge: amountToBridge.toString(),
           error: jsonifyError(quoteError),
         });
         continue; // Skip to next bridge preference
@@ -241,9 +242,10 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
       // Step 4: Submit the bridge transactions in order
       // TODO: Use multisend for zodiac-enabled origin transactions
       let idx = -1;
+      let effectiveBridgedAmount = amountToBridge.toString(); // Default to original amount
       try {
         let receipt: TransactionReceipt | undefined = undefined;
-        for (const { transaction, memo } of bridgeTxRequests) {
+        for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
           idx++;
           logger.info('Submitting bridge transaction', {
             requestId,
@@ -288,6 +290,16 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             continue;
           }
           receipt = result.receipt! as unknown as TransactionReceipt;
+          // Use the effective bridged amount if provided (e.g., for Near caps)
+          if (effectiveAmount) {
+            effectiveBridgedAmount = effectiveAmount;
+            logger.info('Using effective bridged amount from adapter', {
+              requestId,
+              originalAmount: amountToBridge.toString(),
+              effectiveAmount: effectiveBridgedAmount,
+              bridgeType,
+            });
+          }
         }
 
         // Step 5: Create database record
@@ -297,7 +309,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             originChainId: route.origin,
             destinationChainId: route.destination,
             tickerHash: route.asset,
-            amount: amountToBridge.toString(),
+            amount: effectiveBridgedAmount,
             slippage: route.slippagesDbps[bridgeIndex],
             status: RebalanceOperationStatus.PENDING,
             bridge: bridgeType,
@@ -309,7 +321,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             route,
             bridgeType,
             originTxHash: receipt?.transactionHash,
-            amountToBridge: amountToBridge,
+            amountToBridge: effectiveBridgedAmount,
+            originalRequestedAmount: amountToBridge.toString(),
             receiveAmount: receivedAmount,
           });
 
