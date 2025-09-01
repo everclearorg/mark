@@ -1,6 +1,6 @@
 // Database connection and query utilities with zapatos integration
 
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, PoolConfig } from 'pg';
 import {
   CamelCasedProperties,
   DatabaseConfig,
@@ -32,12 +32,35 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
     return pool;
   }
 
-  pool = new Pool({
-    connectionString: config.connectionString,
+  // Check if we need SSL based on connection string
+  const needsSSL = config.connectionString.includes('sslmode=require');
+  
+  // Remove sslmode from connection string to avoid conflicts
+  let connectionString = config.connectionString;
+  if (needsSSL) {
+    // Remove sslmode parameter to prevent it from overriding our ssl config
+    connectionString = config.connectionString
+      .replace(/\?sslmode=require/, '')
+      .replace(/&sslmode=require/, '');
+  }
+
+  const poolConfig: PoolConfig = {
+    connectionString,
     max: config.maxConnections || 20,
     idleTimeoutMillis: config.idleTimeoutMillis || 30000,
     connectionTimeoutMillis: config.connectionTimeoutMillis || 2000,
-  });
+  };
+
+  // Configure SSL if needed
+  if (needsSSL) {
+    // For AWS RDS within VPC, accept self-signed certificates
+    poolConfig.ssl = {
+      rejectUnauthorized: false
+    };
+    console.log('Database SSL: Configured for AWS RDS (accepting self-signed certificates)');
+  }
+
+  pool = new Pool(poolConfig);
 
   // Handle pool errors
   pool.on('error', (err) => {

@@ -67,3 +67,9 @@ output "db_name" {
   description = "The database name"
   value       = module.db.db_instance_name
 }
+
+output "database_url" {
+  description = "PostgreSQL connection URL"
+  value       = module.db.database_url
+  sensitive   = true
+}

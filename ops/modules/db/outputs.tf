@@ -41,6 +41,6 @@ output "db_subnet_group_name" {
 
 output "database_url" {
   description = "PostgreSQL connection URL"
-  value       = "postgresql://${aws_db_instance.db.username}:${aws_db_instance.db.password}@${aws_db_instance.db.endpoint}/${aws_db_instance.db.db_name}"
+  value       = "postgresql://${aws_db_instance.db.username}:${aws_db_instance.db.password}@${aws_db_instance.db.endpoint}/${aws_db_instance.db.db_name}?sslmode=require"
   sensitive   = true
 }

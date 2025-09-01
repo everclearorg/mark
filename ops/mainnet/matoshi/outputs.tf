@@ -52,3 +52,14 @@ output "lambda_static_ips" {
   description = "Static IP addresses for Lambda outbound traffic (for API whitelisting)"
   value       = module.network.nat_gateway_ips
 }
+
+output "database_url" {
+  description = "PostgreSQL connection URL"
+  value       = module.db.database_url
+  sensitive   = true
+}
+
+output "github_runner_label" {
+  description = "Label for GitHub Actions self-hosted runner"
+  value       = module.codebuild_runner.runner_label
+}

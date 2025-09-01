@@ -95,7 +95,7 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:sa-east-1:679752396206:certificate/1307051f-4df4-4233-aa42-a08a5d15e3e3"
+  default     = "arn:aws:acm:sa-east-1:679752396206:certificate/1307051f-4df4-4233-aa42-a08a5d15e3e3"
 }
 
 variable "admin_image_uri" {

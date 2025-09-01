@@ -181,9 +181,9 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     await db.queryWithClient(
       `
       UPDATE rebalance_operations
-      SET status = $1, "updatedAt" = NOW()
+      SET status = $1, "updated_at" = NOW()
       WHERE status = ANY($2)
-      AND "createdAt" < NOW() - INTERVAL '24 hours'
+      AND "created_at" < NOW() - INTERVAL '24 hours'
     `,
       [
         RebalanceOperationStatus.EXPIRED,

@@ -19,6 +19,7 @@ import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
 import * as database from '@mark/database';
 import { bytesToHex } from 'viem';
+import { execSync } from 'child_process';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
@@ -94,6 +95,26 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
   };
 }
 
+async function runMigration(logger: Logger): Promise<void> {
+  try {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) {
+      logger.warn('DATABASE_URL not found, skipping migrations');
+      return;
+    }
+
+    logger.info('Running database migration...');
+    const result = execSync(
+      `dbmate --url "${databaseUrl}" --migrations-dir /var/task/db/migrations --no-dump-schema up`,
+      { encoding: 'utf-8' },
+    );
+    logger.info('Database migration completed', { output: result });
+  } catch (error) {
+    logger.error('Failed to run database migration', { error });
+    throw new Error('Database migration failed - cannot continue with out-of-sync schema');
+  }
+}
+
 export const initPoller = async (): Promise<{ statusCode: number; body: string }> => {
   const config = await loadConfiguration();
 
@@ -101,6 +122,9 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     service: 'mark-poller',
     level: config.logLevel,
   });
+
+  // Run database migrations on cold start
+  await runMigration(logger);
 
   // Check file descriptor usage at startup
   logFileDescriptorUsage(logger);
