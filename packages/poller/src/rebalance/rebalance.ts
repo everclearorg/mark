@@ -296,7 +296,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             earmarkId: null, // NULL indicates regular rebalancing
             originChainId: route.origin,
             destinationChainId: route.destination,
-            tickerHash: route.asset,
+            tickerHash: ticker,
             amount: amountToBridge.toString(),
             slippage: route.slippagesDbps[bridgeIndex],
             status: RebalanceOperationStatus.PENDING,
