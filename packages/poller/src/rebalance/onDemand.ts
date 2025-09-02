@@ -544,13 +544,25 @@ export async function executeOnDemandRebalancing(
       totalOperations: rebalanceOperations!.length,
     });
 
-    // Create earmark in database
-    const earmark = await database.createEarmark({
-      invoiceId: invoice.intent_id,
-      designatedPurchaseChain: destinationChain!,
-      tickerHash: invoice.ticker_hash,
-      minAmount: minAmount!,
-    });
+    // Check if earmark already exists for this invoice
+    let earmark = await database.getEarmarkForInvoice(invoice.intent_id);
+
+    if (earmark) {
+      logger.info('Earmark already exists for invoice, skipping creation', {
+        requestId,
+        earmarkId: earmark.id,
+        invoiceId: invoice.intent_id,
+        status: earmark.status,
+      });
+    } else {
+      // Create earmark in database
+      earmark = await database.createEarmark({
+        invoiceId: invoice.intent_id,
+        designatedPurchaseChain: destinationChain!,
+        tickerHash: invoice.ticker_hash,
+        minAmount: minAmount!,
+      });
+    }
 
     logger.info('Created earmark for invoice', {
       requestId,
