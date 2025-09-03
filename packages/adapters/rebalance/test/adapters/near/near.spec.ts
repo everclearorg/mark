@@ -114,6 +114,21 @@ class TestNearBridgeAdapter extends NearBridgeAdapter {
   public getTransactionValue(provider: string, originTransaction: TransactionReceipt): Promise<bigint> {
     return super.getTransactionValue(provider, originTransaction);
   }
+
+  // Expose private methods for testing
+  public testChunkAmount(amount: string, assetSymbol: string | undefined): string[] {
+    return (this as any).chunkAmount(amount, assetSymbol);
+  }
+
+  public testSendSingleChunk(
+    refundTo: string,
+    recipient: string,
+    amount: string,
+    route: RebalanceRoute,
+    originAsset?: AssetConfiguration,
+  ): Promise<any> {
+    return (this as any).sendSingleChunk(refundTo, recipient, amount, route, originAsset);
+  }
 }
 
 // Mock the Logger
@@ -397,8 +412,8 @@ describe('NearBridgeAdapter', () => {
       );
     });
 
-    describe('asset capping', () => {
-      it('should cap WETH amounts exceeding the maximum', async () => {
+    describe('amount chunking', () => {
+      it('should chunk WETH amounts exceeding the maximum and sum received amounts', async () => {
         // Mock route for WETH
         const route: RebalanceRoute = {
           asset: mockAssets['WETH'].address,
@@ -406,23 +421,61 @@ describe('NearBridgeAdapter', () => {
           destination: 42161,
         };
 
-        // Mock OneClickService.getQuote
-        (OneClickService.getQuote as jest.MockedFunction<any>).mockResolvedValueOnce(mockQuoteResponse);
+        // Mock OneClickService.getQuote to be called twice (for 2 chunks)
+        const mockQuoteResponse1 = {
+          ...mockQuoteResponse,
+          quote: { ...mockQuoteResponse.quote, amountOut: '4500000000000000000' },
+        };
+        const mockQuoteResponse2 = {
+          ...mockQuoteResponse,
+          quote: { ...mockQuoteResponse.quote, amountOut: '500000000000000000' },
+        };
+        (OneClickService.getQuote as jest.MockedFunction<any>)
+          .mockResolvedValueOnce(mockQuoteResponse1)
+          .mockResolvedValueOnce(mockQuoteResponse2);
 
         // Execute with amount exceeding cap (10 WETH)
         const largeAmount = '10000000000000000000'; // 10 WETH
         const result = await adapter.getReceivedAmount(largeAmount, route);
 
-        // Verify the quote was called with capped amount (8 WETH)
-        expect(OneClickService.getQuote).toHaveBeenCalledWith(
+        // Verify the quote was called twice with chunked amounts (9 WETH + 1 WETH)
+        expect(OneClickService.getQuote).toHaveBeenCalledTimes(2);
+        expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+          1,
           expect.objectContaining({
-            amount: '8000000000000000000', // 8 WETH cap
+            amount: '9000000000000000000', // 9 WETH chunk (first chunk)
           }),
         );
-        expect(result).toBe(mockQuoteResponse.quote.amountOut);
+        expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            amount: '1000000000000000000', // 1 WETH chunk (remaining)
+          }),
+        );
+        // Result should be sum of both chunks
+        expect(result).toBe('5000000000000000000'); // 4.5 + 0.5 WETH
+
+        // Verify info logging was called for chunking
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          'Chunking large amount into smaller intents',
+          expect.objectContaining({
+            originalAmount: '10000000000000000000',
+            assetSymbol: 'WETH',
+            chunksCount: 2,
+          }),
+        );
+
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          'Calculated total received amount for chunked transaction',
+          expect.objectContaining({
+            originalAmount: '10000000000000000000',
+            chunksCount: 2,
+            totalReceivedAmount: '5000000000000000000',
+          }),
+        );
       });
 
-      it('should not cap WETH amounts below the maximum', async () => {
+      it('should not chunk WETH amounts below the maximum', async () => {
         // Mock route for WETH
         const route: RebalanceRoute = {
           asset: mockAssets['WETH'].address,
@@ -437,7 +490,8 @@ describe('NearBridgeAdapter', () => {
         const smallAmount = '5000000000000000000'; // 5 WETH
         const result = await adapter.getReceivedAmount(smallAmount, route);
 
-        // Verify the quote was called with original amount
+        // Verify the quote was called once with original amount
+        expect(OneClickService.getQuote).toHaveBeenCalledTimes(1);
         expect(OneClickService.getQuote).toHaveBeenCalledWith(
           expect.objectContaining({
             amount: '5000000000000000000', // Original 5 WETH
@@ -446,28 +500,110 @@ describe('NearBridgeAdapter', () => {
         expect(result).toBe(mockQuoteResponse.quote.amountOut);
       });
 
-      it('should not cap assets without defined limits', async () => {
-        // Mock route for ETH (no cap defined)
+      it('should chunk ETH amounts exceeding the maximum', async () => {
+        // Mock route for ETH
         const route: RebalanceRoute = {
           asset: mockAssets['ETH'].address,
           origin: 1,
           destination: 42161,
         };
 
-        // Mock OneClickService.getQuote
-        (OneClickService.getQuote as jest.MockedFunction<any>).mockResolvedValueOnce(mockQuoteResponse);
+        // Mock OneClickService.getQuote for multiple calls
+        const mockQuoteResponse1 = {
+          ...mockQuoteResponse,
+          quote: { ...mockQuoteResponse.quote, amountOut: '8910000000000000000' },
+        };
+        const mockQuoteResponse2 = {
+          ...mockQuoteResponse,
+          quote: { ...mockQuoteResponse.quote, amountOut: '990000000000000000' },
+        };
+        (OneClickService.getQuote as jest.MockedFunction<any>)
+          .mockResolvedValueOnce(mockQuoteResponse1)
+          .mockResolvedValueOnce(mockQuoteResponse2);
 
-        // Execute with large amount
-        const largeAmount = '1000000000000000000000'; // 1000 ETH
+        // Execute with large amount exceeding ETH cap (10 ETH)
+        const largeAmount = '10000000000000000000'; // 10 ETH
         const result = await adapter.getReceivedAmount(largeAmount, route);
 
-        // Verify the quote was called with original amount (no capping)
-        expect(OneClickService.getQuote).toHaveBeenCalledWith(
+        // Verify the quote was called twice with chunked amounts (9 ETH + 1 ETH)
+        expect(OneClickService.getQuote).toHaveBeenCalledTimes(2);
+        expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+          1,
           expect.objectContaining({
-            amount: '1000000000000000000000', // Original amount
+            amount: '9000000000000000000', // 9 ETH chunk (first chunk)
           }),
         );
-        expect(result).toBe(mockQuoteResponse.quote.amountOut);
+        expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            amount: '1000000000000000000', // 1 ETH chunk (remaining)
+          }),
+        );
+        // Result should be sum of both chunks
+        expect(result).toBe('9900000000000000000'); // 8.91 + 0.99 ETH
+
+        // Verify chunking was logged
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          'Chunking large amount into smaller intents',
+          expect.objectContaining({
+            originalAmount: '10000000000000000000',
+            assetSymbol: 'ETH',
+            chunksCount: 2,
+          }),
+        );
+      });
+
+      it('should chunk USDC amounts exceeding the maximum', async () => {
+        // Mock route for USDC
+        const route: RebalanceRoute = {
+          asset: mockAssets['USDC_ETH'].address,
+          origin: 1,
+          destination: 42161,
+        };
+
+        // Mock OneClickService.getQuote for multiple calls
+        const mockQuoteResponse1 = {
+          ...mockQuoteResponse,
+          quote: { ...mockQuoteResponse.quote, amountOut: '19800000000' },
+        };
+        const mockQuoteResponse2 = {
+          ...mockQuoteResponse,
+          quote: { ...mockQuoteResponse.quote, amountOut: '9900000000' },
+        };
+        (OneClickService.getQuote as jest.MockedFunction<any>)
+          .mockResolvedValueOnce(mockQuoteResponse1)
+          .mockResolvedValueOnce(mockQuoteResponse2);
+
+        // Execute with amount exceeding USDC cap (30,000 USDC)
+        const largeAmount = '30000000000'; // 30,000 USDC (6 decimals)
+        const result = await adapter.getReceivedAmount(largeAmount, route);
+
+        // Verify the quote was called twice with chunked amounts (20k + 10k USDC)
+        expect(OneClickService.getQuote).toHaveBeenCalledTimes(2);
+        expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({
+            amount: '20000000000', // 20k USDC chunk (first chunk)
+          }),
+        );
+        expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            amount: '10000000000', // 10k USDC chunk (remaining)
+          }),
+        );
+        // Result should be sum of both chunks
+        expect(result).toBe('29700000000'); // 19.8k + 9.9k USDC
+
+        // Verify chunking was logged
+        expect(mockLogger.info).toHaveBeenCalledWith(
+          'Chunking large amount into smaller intents',
+          expect.objectContaining({
+            originalAmount: '30000000000',
+            assetSymbol: 'USDC',
+            chunksCount: 2,
+          }),
+        );
       });
     });
   });
@@ -483,28 +619,29 @@ describe('NearBridgeAdapter', () => {
 
       // Mock OneClickService.getQuote
       (OneClickService.getQuote as jest.Mock).mockResolvedValueOnce(mockQuoteResponse as never);
-      (encodeFunctionData as jest.Mock).mockReturnValueOnce('0x');
+      (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xtransfer_data');
 
-      // TODO: Need to investigate why the amounts differ
-
-      // Execute
+      // Execute with amount below chunking threshold
       const senderAddress = '0x' + 'sender'.padStart(40, '0');
       const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
-      const amountIn = mockQuoteResponse.quote.amountIn;
-      const result = await adapter.send(senderAddress, recipientAddress, amountIn, route);
+      const amount = '1000000000'; // 1000 USDC (below 20k limit)
+      const result = await adapter.send(senderAddress, recipientAddress, amount, route);
 
-      // Assert
+      // Assert - should be single transaction (not chunked)
       expect(result.length).toBe(1);
       expect(result[0].memo).toEqual(RebalanceTransactionMemo.Rebalance);
       expect(result[0].transaction.to).toBe(mockAssets['USDC_ETH'].address);
       expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer, not native ETH
-      expect(result[0].transaction.data).toEqual('0x');
+      expect(result[0].transaction.data).toEqual('0xtransfer_data');
 
+      // Verify OneClickService.getQuote was called once
+      expect(OneClickService.getQuote).toHaveBeenCalledTimes(1);
+      
       // Verify encodeFunctionData was called with correct args
       expect(encodeFunctionData).toHaveBeenCalledWith({
         abi: erc20Abi,
         functionName: 'transfer',
-        args: [mockQuoteResponse.quote.depositAddress, BigInt(amountIn)],
+        args: [mockQuoteResponse.quote.depositAddress, BigInt(mockQuoteResponse.quote.amountIn)],
       });
     });
 
@@ -569,7 +706,7 @@ describe('NearBridgeAdapter', () => {
       expect(result[1].transaction.data).toBe('0x');
     });
 
-    it('should cap WETH amount in send when exceeding maximum', async () => {
+    it('should chunk WETH amount in send when exceeding maximum', async () => {
       // Mock route for WETH
       const route: RebalanceRoute = {
         asset: mockAssets['WETH'].address,
@@ -577,16 +714,30 @@ describe('NearBridgeAdapter', () => {
         destination: 42161,
       };
 
-      // Mock OneClickService.getQuote
-      const cappedQuoteResponse = {
+      // Mock OneClickService.getQuote for two chunks
+      const chunk1Response = {
         ...mockQuoteResponse,
         quote: {
           ...mockQuoteResponse.quote,
-          amountIn: '8000000000000000000', // 8 WETH capped
+          amountIn: '9000000000000000000', // 9 WETH first chunk
         },
       };
-      (OneClickService.getQuote as jest.Mock).mockResolvedValueOnce(cappedQuoteResponse as never);
-      (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xwithdraw_capped');
+      const chunk2Response = {
+        ...mockQuoteResponse,
+        quote: {
+          ...mockQuoteResponse.quote,
+          amountIn: '1000000000000000000', // 1 WETH second chunk
+          depositAddress: '0x2F7812209f30048Cc31D86E0075BD2E4d8c2e1B2', // Different deposit address
+        },
+      };
+      (OneClickService.getQuote as jest.Mock)
+        .mockResolvedValueOnce(chunk1Response as never)
+        .mockResolvedValueOnce(chunk2Response as never);
+      (encodeFunctionData as jest.Mock)
+        .mockReturnValueOnce('0xwithdraw_chunk1') // WETH withdraw for chunk 1
+        .mockReturnValueOnce('0xwithdraw_chunk2') // WETH withdraw for chunk 2
+        .mockReturnValueOnce('0x') // ETH deposit for chunk 1 (not actually called due to filter)
+        .mockReturnValueOnce('0x'); // ETH deposit for chunk 2 (not actually called due to filter)
 
       // Execute with amount exceeding cap (10 WETH)
       const largeAmount = '10000000000000000000'; // 10 WETH
@@ -594,33 +745,171 @@ describe('NearBridgeAdapter', () => {
       const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
       const result = await adapter.send(senderAddress, recipientAddress, largeAmount, route);
 
-      // Verify quote was called with capped amount
-      expect(OneClickService.getQuote).toHaveBeenCalledWith(
+      // Verify quote was called twice with chunked amounts
+      expect(OneClickService.getQuote).toHaveBeenCalledTimes(2);
+      expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+        1,
         expect.objectContaining({
-          amount: '8000000000000000000', // 8 WETH cap
+          amount: '9000000000000000000', // 9 WETH first chunk
+        }),
+      );
+      expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          amount: '1000000000000000000', // 1 WETH second chunk
         }),
       );
 
-      // Should return 2 transactions: unwrap + deposit
-      expect(result.length).toBe(2);
+      // Should return 4 transactions: unwrap + deposit for each chunk
+      expect(result.length).toBe(4);
 
-      // First: Unwrap capped amount of WETH
+      // First chunk: Unwrap 9 WETH
       expect(result[0].memo).toBe(RebalanceTransactionMemo.Unwrap);
       expect(result[0].transaction.to).toBe(mockAssets['WETH'].address);
-      expect(encodeFunctionData).toHaveBeenCalledWith({
-        abi: expect.arrayContaining([
-          expect.objectContaining({
-            name: 'withdraw',
-            type: 'function',
-          }),
-        ]),
-        functionName: 'withdraw',
-        args: [BigInt('8000000000000000000')], // Capped to 8 WETH
+      expect(result[0].transaction.data).toBe('0xwithdraw_chunk1');
+
+      // First chunk: Deposit 9 ETH
+      expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[1].transaction.value).toBe(BigInt('9000000000000000000'));
+      expect(result[1].transaction.to).toBe(mockQuoteResponse.quote.depositAddress);
+
+      // Second chunk: Unwrap 1 WETH
+      expect(result[2].memo).toBe(RebalanceTransactionMemo.Unwrap);
+      expect(result[2].transaction.to).toBe(mockAssets['WETH'].address);
+      expect(result[2].transaction.data).toBe('0xwithdraw_chunk2');
+
+      // Second chunk: Deposit 1 ETH
+      expect(result[3].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[3].transaction.value).toBe(BigInt('1000000000000000000'));
+      expect(result[3].transaction.to).toBe('0x2F7812209f30048Cc31D86E0075BD2E4d8c2e1B2'); // Different deposit address
+
+      // Verify debug logging was called for chunk processing
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Processing chunk 1/2',
+        expect.objectContaining({
+          chunkAmount: '9000000000000000000',
+          totalChunks: 2,
+          originalAmount: '10000000000000000000',
+        }),
+      );
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Processing chunk 2/2',
+        expect.objectContaining({
+          chunkAmount: '1000000000000000000',
+          totalChunks: 2,
+          originalAmount: '10000000000000000000',
+        }),
+      );
+
+      // Verify info logging for successful completion
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Successfully created transactions for all chunks',
+        expect.objectContaining({
+          totalChunks: 2,
+          totalTransactions: 4,
+          originalAmount: '10000000000000000000',
+        }),
+      );
+    });
+
+    it('should chunk ERC20 amounts in send when exceeding maximum', async () => {
+      // Mock route for USDC
+      const route: RebalanceRoute = {
+        asset: mockAssets['USDC_ETH'].address,
+        origin: 1,
+        destination: 42161,
+      };
+
+      // Mock OneClickService.getQuote for two chunks
+      const chunk1Response = {
+        ...mockQuoteResponse,
+        quote: {
+          ...mockQuoteResponse.quote,
+          amountIn: '20000000000', // 20k USDC first chunk
+          depositAddress: '0x1F7812209f30048Cc31D86E0075BD2E4d8c2e1B1',
+        },
+      };
+      const chunk2Response = {
+        ...mockQuoteResponse,
+        quote: {
+          ...mockQuoteResponse.quote,
+          amountIn: '10000000000', // 10k USDC second chunk
+          depositAddress: '0x2F7812209f30048Cc31D86E0075BD2E4d8c2e1B2',
+        },
+      };
+      (OneClickService.getQuote as jest.Mock)
+        .mockResolvedValueOnce(chunk1Response as never)
+        .mockResolvedValueOnce(chunk2Response as never);
+      (encodeFunctionData as jest.Mock)
+        .mockReturnValueOnce('0xtransfer_chunk1') // ERC20 transfer for chunk 1
+        .mockReturnValueOnce('0xtransfer_chunk2'); // ERC20 transfer for chunk 2
+
+      // Execute with amount exceeding cap (30k USDC)
+      const largeAmount = '30000000000'; // 30k USDC
+      const senderAddress = '0x' + 'sender'.padStart(40, '0');
+      const recipientAddress = '0x' + 'recipient'.padStart(40, '0');
+      const result = await adapter.send(senderAddress, recipientAddress, largeAmount, route);
+
+      // Verify quote was called twice with chunked amounts
+      expect(OneClickService.getQuote).toHaveBeenCalledTimes(2);
+      expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          amount: '20000000000', // 20k USDC first chunk
+        }),
+      );
+      expect(OneClickService.getQuote).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          amount: '10000000000', // 10k USDC second chunk
+        }),
+      );
+
+      // Should return 2 transactions: one ERC20 transfer for each chunk
+      expect(result.length).toBe(2);
+
+      // First chunk: ERC20 transfer 20k USDC
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[0].transaction.to).toBe(mockAssets['USDC_ETH'].address);
+      expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer has no ETH value
+      expect(result[0].transaction.data).toBe('0xtransfer_chunk1');
+
+      // Second chunk: ERC20 transfer 10k USDC
+      expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[1].transaction.to).toBe(mockAssets['USDC_ETH'].address);
+      expect(result[1].transaction.value).toBe(BigInt(0)); // ERC20 transfer has no ETH value
+      expect(result[1].transaction.data).toBe('0xtransfer_chunk2');
+
+      // Verify encodeFunctionData was called with correct args for both chunks
+      expect(encodeFunctionData).toHaveBeenCalledTimes(2);
+      expect(encodeFunctionData).toHaveBeenNthCalledWith(1, {
+        abi: erc20Abi,
+        functionName: 'transfer',
+        args: ['0x1F7812209f30048Cc31D86E0075BD2E4d8c2e1B1', BigInt('20000000000')],
+      });
+      expect(encodeFunctionData).toHaveBeenNthCalledWith(2, {
+        abi: erc20Abi,
+        functionName: 'transfer',
+        args: ['0x2F7812209f30048Cc31D86E0075BD2E4d8c2e1B2', BigInt('10000000000')],
       });
 
-      // Second: Deposit capped amount of ETH
-      expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
-      expect(result[1].transaction.value).toBe(BigInt('8000000000000000000'));
+      // Verify chunking and processing logs
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Chunking large amount into smaller intents',
+        expect.objectContaining({
+          originalAmount: '30000000000',
+          assetSymbol: 'USDC',
+          chunksCount: 2,
+        }),
+      );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Successfully created transactions for all chunks',
+        expect.objectContaining({
+          totalChunks: 2,
+          totalTransactions: 2,
+          originalAmount: '30000000000',
+        }),
+      );
     });
   });
 
@@ -1175,6 +1464,131 @@ describe('NearBridgeAdapter', () => {
       expect(mockGetTransaction).toHaveBeenCalledWith({
         hash: '0xmocktxhash',
       });
+    });
+  });
+
+  describe('chunkAmount', () => {
+    it('should return single chunk for amounts within limits', () => {
+      const result = adapter.testChunkAmount('5000000000000000000', 'WETH'); // 5 WETH
+      expect(result).toEqual(['5000000000000000000']);
+    });
+
+    it('should return single chunk for amounts equal to limit', () => {
+      const result = adapter.testChunkAmount('9000000000000000000', 'WETH'); // 9 WETH (at limit)
+      expect(result).toEqual(['9000000000000000000']);
+    });
+
+    it('should chunk WETH amounts exceeding the limit', () => {
+      const result = adapter.testChunkAmount('10000000000000000000', 'WETH'); // 10 WETH
+      expect(result).toEqual(['9000000000000000000', '1000000000000000000']); // 9 + 1 WETH
+    });
+
+    it('should chunk large WETH amounts into multiple chunks', () => {
+      const result = adapter.testChunkAmount('25000000000000000000', 'WETH'); // 25 WETH
+      expect(result).toEqual([
+        '9000000000000000000', // 9 WETH
+        '9000000000000000000', // 9 WETH
+        '7000000000000000000', // 7 WETH
+      ]);
+    });
+
+    it('should chunk ETH amounts exceeding the limit', () => {
+      const result = adapter.testChunkAmount('18000000000000000000', 'ETH'); // 18 ETH
+      expect(result).toEqual(['9000000000000000000', '9000000000000000000']); // 9 + 9 ETH
+    });
+
+    it('should chunk USDC amounts exceeding the limit', () => {
+      const result = adapter.testChunkAmount('50000000000', 'USDC'); // 50k USDC
+      expect(result).toEqual(['20000000000', '20000000000', '10000000000']); // 20k + 20k + 10k USDC
+    });
+
+    it('should chunk USDT amounts exceeding the limit', () => {
+      const result = adapter.testChunkAmount('30000000000', 'USDT'); // 30k USDT
+      expect(result).toEqual(['20000000000', '10000000000']); // 20k + 10k USDT
+    });
+
+    it('should return single chunk for undefined asset symbol', () => {
+      const result = adapter.testChunkAmount('1000000000000000000', undefined);
+      expect(result).toEqual(['1000000000000000000']);
+    });
+
+    it('should return single chunk for unknown asset symbol', () => {
+      const result = adapter.testChunkAmount('1000000000000000000', 'UNKNOWN');
+      expect(result).toEqual(['1000000000000000000']);
+    });
+  });
+
+  describe('sendSingleChunk', () => {
+    it('should create unwrap and deposit transactions for WETH', async () => {
+      const route: RebalanceRoute = {
+        asset: mockAssets['WETH'].address,
+        origin: 1,
+        destination: 42161,
+      };
+
+      (OneClickService.getQuote as jest.Mock).mockResolvedValueOnce(mockQuoteResponse as never);
+      (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xwithdraw_tx');
+
+      const result = await adapter.testSendSingleChunk(
+        '0xrefundTo',
+        '0xrecipient',
+        '1000000000000000000', // 1 WETH
+        route,
+        mockAssets['WETH'],
+      );
+
+      expect(result.length).toBe(2);
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Unwrap);
+      expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[1].transaction.value).toBe(BigInt(mockQuoteResponse.quote.amountIn));
+    });
+
+    it('should create single deposit transaction for ERC20', async () => {
+      const route: RebalanceRoute = {
+        asset: mockAssets['USDC_ETH'].address,
+        origin: 1,
+        destination: 42161,
+      };
+
+      (OneClickService.getQuote as jest.Mock).mockResolvedValueOnce(mockQuoteResponse as never);
+      (encodeFunctionData as jest.Mock).mockReturnValueOnce('0xtransfer_tx');
+
+      const result = await adapter.testSendSingleChunk(
+        '0xrefundTo',
+        '0xrecipient',
+        '1000000000', // 1000 USDC
+        route,
+        mockAssets['USDC_ETH'],
+      );
+
+      expect(result.length).toBe(1);
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[0].transaction.to).toBe(mockAssets['USDC_ETH'].address);
+      expect(result[0].transaction.value).toBe(BigInt(0));
+    });
+
+    it('should create single deposit transaction for native ETH', async () => {
+      const route: RebalanceRoute = {
+        asset: zeroAddress,
+        origin: 1,
+        destination: 42161,
+      };
+
+      (OneClickService.getQuote as jest.Mock).mockResolvedValueOnce(mockQuoteResponse as never);
+
+      const result = await adapter.testSendSingleChunk(
+        '0xrefundTo',
+        '0xrecipient',
+        '1000000000000000000', // 1 ETH
+        route,
+        mockAssets['ETH'],
+      );
+
+      expect(result.length).toBe(1);
+      expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
+      expect(result[0].transaction.to).toBe(mockQuoteResponse.quote.depositAddress);
+      expect(result[0].transaction.value).toBe(BigInt(mockQuoteResponse.quote.amountIn));
+      expect(result[0].transaction.data).toBe('0x');
     });
   });
 

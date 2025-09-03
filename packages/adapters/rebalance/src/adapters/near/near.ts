@@ -83,7 +83,6 @@ export class NearBridgeAdapter implements BridgeAdapter {
     return SupportedBridge.Near;
   }
 
-
   private chunkAmount(amount: string, assetSymbol: string | undefined): string[] {
     if (!assetSymbol || !this.ASSET_CAPS[assetSymbol]) {
       return [amount];
@@ -128,7 +127,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
 
       // Multiple chunks - sum up the received amounts
       let totalReceivedAmount = BigInt(0);
-      
+
       for (let i = 0; i < chunks.length; i++) {
         const chunkAmount = chunks[i];
         const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, chunkAmount);
@@ -155,18 +154,18 @@ export class NearBridgeAdapter implements BridgeAdapter {
   ): Promise<MemoizedTransactionRequest[]> {
     try {
       const originAsset = this.getAsset(route.asset, route.origin);
-      
+
       // Chunk the amount if it exceeds Near's limits
       const chunks = this.chunkAmount(amount, originAsset?.symbol);
-      
+
       if (chunks.length === 1) {
         // Single transaction - use existing logic
         return this.sendSingleChunk(refundTo, recipient, chunks[0], route, originAsset);
       }
-      
+
       // Multiple chunks - process each chunk
       const allTransactions: MemoizedTransactionRequest[] = [];
-      
+
       for (let i = 0; i < chunks.length; i++) {
         const chunkAmount = chunks[i];
         this.logger.debug(`Processing chunk ${i + 1}/${chunks.length}`, {
@@ -174,17 +173,17 @@ export class NearBridgeAdapter implements BridgeAdapter {
           totalChunks: chunks.length,
           originalAmount: amount,
         });
-        
+
         const chunkTransactions = await this.sendSingleChunk(refundTo, recipient, chunkAmount, route, originAsset);
         allTransactions.push(...chunkTransactions);
       }
-      
+
       this.logger.info('Successfully created transactions for all chunks', {
         totalChunks: chunks.length,
         totalTransactions: allTransactions.length,
         originalAmount: amount,
       });
-      
+
       return allTransactions;
     } catch (err) {
       this.logger.error('OneClick send failed', { error: err });
