@@ -393,7 +393,7 @@ describe('NearBridgeAdapter', () => {
 
       // Execute and expect error
       await expect(adapter.getReceivedAmount('1000000000', route)).rejects.toThrow(
-        'Failed to get received amount from Near:',
+        `Failed to get received amount from Near failed: Could not find matching output asset: ${route.asset} for ${route.destination}`,
       );
     });
 
