@@ -64,7 +64,6 @@ export async function evaluateOnDemandRebalancing(
   const evaluationResults: Map<number, OnDemandRebalanceResult & { minAmount: string }> = new Map();
 
   for (const destinationStr of invoice.destinations) {
-    console.log(`Processing destination: ${destinationStr}`);
     const destination = parseInt(destinationStr);
 
     // Skip if no minAmount for this destination
@@ -536,13 +535,22 @@ export async function executeOnDemandRebalancing(
       return null;
     }
 
-    // Only create earmark if we have at least one successful operation
-    logger.info('Creating earmark after successful rebalancing operations', {
-      requestId,
-      invoiceId: invoice.intent_id,
-      successfulOperations: successfulOperations.length,
-      totalOperations: rebalanceOperations!.length,
-    });
+    const allSucceeded = successfulOperations.length === rebalanceOperations!.length;
+    if (allSucceeded) {
+      logger.info('All rebalancing operations succeeded, creating earmark', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        successfulOperations: successfulOperations.length,
+        totalOperations: rebalanceOperations!.length,
+      });
+    } else {
+      logger.warn('Partial failure in rebalancing, creating FAILED earmark', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        successfulOperations: successfulOperations.length,
+        totalOperations: rebalanceOperations!.length,
+      });
+    }
 
     // Check if earmark already exists for this invoice
     let earmark = await database.getEarmarkForInvoice(invoice.intent_id);
@@ -555,12 +563,13 @@ export async function executeOnDemandRebalancing(
         status: earmark.status,
       });
     } else {
-      // Create earmark in database
+      // Create earmark with appropriate status
       earmark = await database.createEarmark({
         invoiceId: invoice.intent_id,
         designatedPurchaseChain: destinationChain!,
         tickerHash: invoice.ticker_hash,
         minAmount: minAmount!,
+        status: allSucceeded ? EarmarkStatus.PENDING : EarmarkStatus.FAILED,
       });
     }
 
@@ -603,7 +612,9 @@ export async function executeOnDemandRebalancing(
       }
     }
 
-    return earmark.id;
+    // Only return earmark ID if status is PENDING (successful)
+    // FAILED earmarks should not be processed further
+    return earmark.status === EarmarkStatus.PENDING ? earmark.id : null;
   } catch (error) {
     logger.error('Failed to execute on-demand rebalancing', {
       requestId,
@@ -642,7 +653,7 @@ async function getMinAmountsForInvoice(
  */
 async function checkAllOperationsComplete(earmarkId: string): Promise<boolean> {
   const operations = await database.getRebalanceOperationsByEarmark(earmarkId);
-  return operations.every((op) => op.status === RebalanceOperationStatus.COMPLETED);
+  return operations.length > 0 && operations.every((op) => op.status === RebalanceOperationStatus.COMPLETED);
 }
 
 /**

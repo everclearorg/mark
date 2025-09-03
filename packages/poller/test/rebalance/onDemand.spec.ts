@@ -452,13 +452,8 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       const invoice = createMockInvoice();
       const context = createMockContext();
 
-      // Setup the mock to return the earmark after it's created
-      const mockEarmark = {
-        id: 'mock-earmark-id',
-        status: 'pending',
-        invoiceId: MOCK_INVOICE_ID,
-      };
-      (database.getEarmarkForInvoice as jest.Mock).mockResolvedValue(mockEarmark);
+      // Setup the mock to return null initially (no existing earmark)
+      (database.getEarmarkForInvoice as jest.Mock).mockResolvedValue(null);
 
       const evaluationResult = {
         canRebalance: true,
@@ -533,6 +528,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
         designatedPurchaseChain: 1,
         tickerHash: MOCK_TICKER_HASH,
         minAmount: '1000',
+        status: EarmarkStatus.PENDING, // All ops succeeded, so status should be PENDING
       });
       
       expect(createRebalanceOperation).toHaveBeenCalledWith({

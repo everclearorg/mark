@@ -8,7 +8,7 @@ import {
   TransactionReasons,
   TransactionReceipt,
 } from './types';
-import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
+import { EarmarkStatus, RebalanceOperationStatus, serializeBigInt } from '@mark/core';
 
 // Import from the module declared in the schema file
 import type * as schema from 'zapatos/schema';
@@ -34,14 +34,12 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
 
   // Check if we need SSL based on connection string
   const needsSSL = config.connectionString.includes('sslmode=require');
-  
+
   // Remove sslmode from connection string to avoid conflicts
   let connectionString = config.connectionString;
   if (needsSSL) {
     // Remove sslmode parameter to prevent it from overriding our ssl config
-    connectionString = config.connectionString
-      .replace(/\?sslmode=require/, '')
-      .replace(/&sslmode=require/, '');
+    connectionString = config.connectionString.replace(/\?sslmode=require/, '').replace(/&sslmode=require/, '');
   }
 
   const poolConfig: PoolConfig = {
@@ -55,7 +53,7 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
   if (needsSSL) {
     // For AWS RDS within VPC, accept self-signed certificates
     poolConfig.ssl = {
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
     };
     console.log('Database SSL: Configured for AWS RDS (accepting self-signed certificates)');
   }
@@ -113,6 +111,7 @@ export interface CreateEarmarkInput {
   designatedPurchaseChain: number;
   tickerHash: string;
   minAmount: string;
+  status?: EarmarkStatus;
 }
 
 export interface GetEarmarksFilter {
@@ -129,7 +128,7 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<CamelCas
     // Insert earmark
     const earmarkData: earmarks_insert = {
       ...camelToSnake(input),
-      status: EarmarkStatus.PENDING,
+      status: input.status || EarmarkStatus.PENDING,
     };
 
     const insertQuery = `
@@ -355,9 +354,7 @@ export async function createRebalanceOperation(input: {
         cumulativeGasUsed,
         effectiveGasPrice,
         TransactionReasons.Rebalance,
-        JSON.stringify({
-          receipt,
-        }),
+        JSON.stringify(serializeBigInt({ receipt })),
       ];
 
       const response = await client.query<transactions>(transactionQuery, transactionValues);

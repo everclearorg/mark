@@ -83,7 +83,7 @@ CREATE TABLE public.earmarks (
     status text DEFAULT 'pending'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT earmark_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ready'::text, 'completed'::text, 'cancelled'::text])))
+    CONSTRAINT earmark_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ready'::text, 'completed'::text, 'cancelled'::text, 'failed'::text])))
 );
 
 
@@ -126,7 +126,7 @@ COMMENT ON COLUMN public.earmarks.min_amount IS 'Minimum amount of tokens requir
 -- Name: COLUMN earmarks.status; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.earmarks.status IS 'Earmark status: pending, ready, completed, cancelled (enforced by CHECK constraint)';
+COMMENT ON COLUMN public.earmarks.status IS 'Earmark status: pending, ready, completed, cancelled, failed (enforced by CHECK constraint)';
 
 
 --

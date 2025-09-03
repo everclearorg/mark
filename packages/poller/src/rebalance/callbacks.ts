@@ -3,7 +3,7 @@ import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
-import { RebalanceOperationStatus, SupportedBridge, getTokenAddressFromConfig } from '@mark/core';
+import { RebalanceOperationStatus, SupportedBridge, getTokenAddressFromConfig, serializeBigInt } from '@mark/core';
 import { TransactionEntry, TransactionReceipt } from '@mark/database';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
@@ -118,7 +118,11 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         continue;
       }
 
-      logger.info('Retrieved destination callback', { ...logContext, callback, receipt });
+      logger.info('Retrieved destination callback', {
+        ...logContext,
+        callback: serializeBigInt(callback),
+        receipt: serializeBigInt(receipt),
+      });
 
       // Check for Zodiac configuration on destination chain
       const destinationChainConfig = config.chains[route.destination];
@@ -147,8 +151,8 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
         logger.info('Successfully submitted destination callback', {
           ...logContext,
-          callback,
-          receipt,
+          callback: serializeBigInt(callback),
+          receipt: serializeBigInt(receipt),
           destinationTx: tx.hash,
           walletType: zodiacConfig.walletType,
         });
@@ -167,8 +171,8 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       } catch (e) {
         logger.error('Failed to execute destination callback', {
           ...logContext,
-          callback,
-          receipt,
+          callback: serializeBigInt(callback),
+          receipt: serializeBigInt(receipt),
           error: jsonifyError(e),
         });
         continue;
