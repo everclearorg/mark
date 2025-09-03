@@ -52,11 +52,12 @@ interface CallbackInfo {
 }
 
 export class NearBridgeAdapter implements BridgeAdapter {
-  // Maximum amounts per asset symbol to send in a single rebalance operation
+  // Maximum amounts per asset symbol to send in a single rebalance operation (Near 1-click API limits)
   private readonly ASSET_CAPS: Record<string, bigint> = {
-    WETH: BigInt('8000000000000000000'), // 8 WETH
-    USDC: BigInt('50000000000'), // 50,000 USDC
-    USDT: BigInt('50000000000'), // 50,000 USDT
+    WETH: BigInt('9000000000000000000'), // 9 WETH
+    ETH: BigInt('9000000000000000000'), // 9 ETH
+    USDC: BigInt('20000000000'), // 20,000 USDC (6 decimals)
+    USDT: BigInt('20000000000'), // 20,000 USDT (6 decimals)
   };
 
   constructor(
@@ -82,43 +83,65 @@ export class NearBridgeAdapter implements BridgeAdapter {
     return SupportedBridge.Near;
   }
 
-  private getCappedAmount(amount: string, assetSymbol: string | undefined): string {
+
+  private chunkAmount(amount: string, assetSymbol: string | undefined): string[] {
     if (!assetSymbol || !this.ASSET_CAPS[assetSymbol]) {
-      return amount;
+      return [amount];
     }
 
     const cap = this.ASSET_CAPS[assetSymbol];
     const amountBigInt = BigInt(amount);
 
-    if (amountBigInt > cap) {
-      this.logger.warn(`Capping: ${assetSymbol} amount exceeds maximum, applying cap`, {
-        originalAmount: amount,
-        cappedAmount: cap.toString(),
-        assetSymbol,
-      });
-      return cap.toString();
+    if (amountBigInt <= cap) {
+      return [amount];
     }
 
-    return amount;
+    const chunks: string[] = [];
+    let remainingAmount = amountBigInt;
+
+    while (remainingAmount > 0n) {
+      const chunkSize = remainingAmount > cap ? cap : remainingAmount;
+      chunks.push(chunkSize.toString());
+      remainingAmount -= chunkSize;
+    }
+
+    this.logger.info(`Chunking large amount into smaller intents`, {
+      originalAmount: amount,
+      assetSymbol,
+      chunksCount: chunks.length,
+      chunks: chunks.map((chunk, index) => ({ index, amount: chunk })),
+    });
+
+    return chunks;
   }
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
       const originAsset = this.getAsset(route.asset, route.origin);
-      const _amount = this.getCappedAmount(amount, originAsset?.symbol);
+      const chunks = this.chunkAmount(amount, originAsset?.symbol);
 
-      // Log if amount was capped for visibility
-      if (_amount !== amount) {
-        this.logger.info('Near bridge amount was capped', {
-          originalAmount: amount,
-          cappedAmount: _amount,
-          assetSymbol: originAsset?.symbol,
-          route,
-        });
+      if (chunks.length === 1) {
+        // Single chunk - use existing logic
+        const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, chunks[0]);
+        return quote.amountOut;
       }
 
-      const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, _amount);
-      return quote.amountOut;
+      // Multiple chunks - sum up the received amounts
+      let totalReceivedAmount = BigInt(0);
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkAmount = chunks[i];
+        const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, chunkAmount);
+        totalReceivedAmount += BigInt(quote.amountOut);
+      }
+
+      this.logger.info('Calculated total received amount for chunked transaction', {
+        originalAmount: amount,
+        chunksCount: chunks.length,
+        totalReceivedAmount: totalReceivedAmount.toString(),
+      });
+
+      return totalReceivedAmount.toString();
     } catch (error) {
       this.handleError(error, 'get received amount from Near', { amount, route });
     }
@@ -132,42 +155,80 @@ export class NearBridgeAdapter implements BridgeAdapter {
   ): Promise<MemoizedTransactionRequest[]> {
     try {
       const originAsset = this.getAsset(route.asset, route.origin);
-      const _amount = this.getCappedAmount(amount, originAsset?.symbol);
-
-      // If origin is WETH then we need to unwrap
-      const needsUnwrap = originAsset?.symbol === 'WETH';
-
-      const quote = await this.getSuggestedFees(route, refundTo, recipient, _amount);
-
-      if (needsUnwrap) {
-        this.logger.debug('Preparing WETH unwrap transaction before Near bridge deposit', {
-          wethAddress: route.asset,
-          amount: _amount,
-        });
-
-        const unwrapTx = {
-          memo: RebalanceTransactionMemo.Unwrap,
-          transaction: {
-            to: route.asset as `0x${string}`,
-            data: encodeFunctionData({
-              abi: wethAbi,
-              functionName: 'withdraw',
-              args: [BigInt(_amount)],
-            }) as `0x${string}`,
-            value: BigInt(0),
-          },
-        };
-
-        const depositTx = this.buildDepositTx(zeroAddress, quote.quote, _amount);
-        return [unwrapTx, depositTx].filter((x) => !!x);
-      } else {
-        // For all other cases, just build the deposit transaction
-        const depositTx = this.buildDepositTx(route.asset, quote.quote, _amount);
-        return [depositTx].filter((x) => !!x);
+      
+      // Chunk the amount if it exceeds Near's limits
+      const chunks = this.chunkAmount(amount, originAsset?.symbol);
+      
+      if (chunks.length === 1) {
+        // Single transaction - use existing logic
+        return this.sendSingleChunk(refundTo, recipient, chunks[0], route, originAsset);
       }
+      
+      // Multiple chunks - process each chunk
+      const allTransactions: MemoizedTransactionRequest[] = [];
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const chunkAmount = chunks[i];
+        this.logger.debug(`Processing chunk ${i + 1}/${chunks.length}`, {
+          chunkAmount,
+          totalChunks: chunks.length,
+          originalAmount: amount,
+        });
+        
+        const chunkTransactions = await this.sendSingleChunk(refundTo, recipient, chunkAmount, route, originAsset);
+        allTransactions.push(...chunkTransactions);
+      }
+      
+      this.logger.info('Successfully created transactions for all chunks', {
+        totalChunks: chunks.length,
+        totalTransactions: allTransactions.length,
+        originalAmount: amount,
+      });
+      
+      return allTransactions;
     } catch (err) {
       this.logger.error('OneClick send failed', { error: err });
       throw err;
+    }
+  }
+
+  private async sendSingleChunk(
+    refundTo: string,
+    recipient: string,
+    amount: string,
+    route: RebalanceRoute,
+    originAsset?: AssetConfiguration,
+  ): Promise<MemoizedTransactionRequest[]> {
+    // If origin is WETH then we need to unwrap
+    const needsUnwrap = originAsset?.symbol === 'WETH';
+
+    const quote = await this.getSuggestedFees(route, refundTo, recipient, amount);
+
+    if (needsUnwrap) {
+      this.logger.debug('Preparing WETH unwrap transaction before Near bridge deposit', {
+        wethAddress: route.asset,
+        amount,
+      });
+
+      const unwrapTx = {
+        memo: RebalanceTransactionMemo.Unwrap,
+        transaction: {
+          to: route.asset as `0x${string}`,
+          data: encodeFunctionData({
+            abi: wethAbi,
+            functionName: 'withdraw',
+            args: [BigInt(amount)],
+          }) as `0x${string}`,
+          value: BigInt(0),
+        },
+      };
+
+      const depositTx = this.buildDepositTx(zeroAddress, quote.quote, amount);
+      return [unwrapTx, depositTx].filter((x) => !!x);
+    } else {
+      // For all other cases, just build the deposit transaction
+      const depositTx = this.buildDepositTx(route.asset, quote.quote, amount);
+      return [depositTx].filter((x) => !!x);
     }
   }
 
