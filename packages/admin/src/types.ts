@@ -1,16 +1,18 @@
-import { PurchaseCache, RebalanceCache } from '@mark/cache';
-import { LogLevel, RedisConfig } from '@mark/core';
+import { PurchaseCache } from '@mark/cache';
+import { LogLevel, RedisConfig, DatabaseConfig } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { APIGatewayEvent } from 'aws-lambda';
+import * as database from '@mark/database';
 
 export interface AdminConfig {
   logLevel: LogLevel;
-  redis: RedisConfig;
   adminToken: string;
+  redis: RedisConfig;
+  database: DatabaseConfig;
 }
 
 export interface AdminAdapter {
-  rebalanceCache: RebalanceCache;
+  database: typeof database;
   purchaseCache: PurchaseCache;
 }
 

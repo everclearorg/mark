@@ -3,8 +3,10 @@ import {
   InvalidPurchaseReasons,
   Invoice,
   NewIntentParams,
+  EarmarkStatus,
   isSvmChain,
   AddressFormat,
+  BPS_MULTIPLIER,
 } from '@mark/core';
 import { jsonifyError, jsonifyMap } from '@mark/logger';
 import { IntentStatus } from '@mark/everclear';
@@ -22,11 +24,11 @@ import {
 } from '../helpers';
 import { isValidInvoice } from './validation';
 import { PurchaseAction } from '@mark/cache';
+import * as onDemand from '../rebalance/onDemand';
 import { TronWeb } from 'tronweb';
 
 export const MAX_DESTINATIONS = 10; // enforced onchain at 10
 export const TOP_N_DESTINATIONS = 7; // mark's preferred top-N domains ordered in his config
-export const BPS_MULTIPLIER = BigInt(10 ** 4);
 
 const getTimeSeconds = () => Math.floor(Date.now() / 1000);
 
@@ -36,6 +38,7 @@ export interface TickerGroup {
   remainingBalances: Map<string, Map<string, bigint>>;
   remainingCustodied: Map<string, Map<string, bigint>>;
   chosenOrigin: string | null;
+  earmarkedInvoices?: Map<string, number>; // invoiceId -> designatedOriginChain
 }
 
 interface ProcessTickerGroupResult {
@@ -109,10 +112,32 @@ export async function processTickerGroup(
   logger.debug('Processing ticker group', {
     requestId,
     ticker: group.ticker,
-    invoiceCount: group.invoices.length,
+    invoiceCount: group.invoices?.length || 0,
   });
 
-  const toEvaluate = group.invoices
+  // Early return if no invoices to process
+  if (!group.invoices?.length) {
+    logger.debug('No invoices to process in ticker group', { requestId, ticker: group.ticker });
+    return {
+      purchases: [],
+      remainingBalances: group.remainingBalances,
+      remainingCustodied: group.remainingCustodied,
+    };
+  }
+
+  // Order invoices: earmarked first, then regular
+  const { earmarked: earmarkedInvoices, regular: regularInvoices } = group.invoices.reduce(
+    (acc, invoice) => {
+      const isEarmarked = group.earmarkedInvoices?.has(invoice.intent_id);
+      acc[isEarmarked ? 'earmarked' : 'regular'].push(invoice);
+      return acc;
+    },
+    { earmarked: [] as Invoice[], regular: [] as Invoice[] },
+  );
+
+  const orderedInvoices = [...earmarkedInvoices, ...regularInvoices];
+
+  const toEvaluate = orderedInvoices
     .map((i) => {
       const reason = isValidInvoice(i, config, start);
       if (reason) {
@@ -242,11 +267,41 @@ export async function processTickerGroup(
       continue;
     }
 
-    // Use all candidate origins in split calc for the first invoice of this ticker.
-    // For subsequent invoices, only use the chosen origin.
-    filteredMinAmounts = batchedGroup.origin
-      ? { [batchedGroup.origin]: filteredMinAmounts[batchedGroup.origin] || '0' }
-      : filteredMinAmounts;
+    // For earmarked invoices, use their designated purchase chain
+    const designatedPurchaseChain = group.earmarkedInvoices?.get(invoiceId);
+    if (designatedPurchaseChain) {
+      // If we already have a chosen origin and it doesn't match the earmarked origin, skip it
+      if (batchedGroup.origin && batchedGroup.origin !== designatedPurchaseChain.toString()) {
+        logger.info('Skipping earmarked invoice with different designated origin', {
+          requestId,
+          invoiceId,
+          designatedOrigin: designatedPurchaseChain,
+          chosenOrigin: batchedGroup.origin,
+          ticker: invoice.ticker_hash,
+        });
+        continue;
+      }
+      // Only use the designated origin for this earmarked invoice
+      if (filteredMinAmounts[designatedPurchaseChain.toString()]) {
+        filteredMinAmounts = {
+          [designatedPurchaseChain.toString()]: filteredMinAmounts[designatedPurchaseChain.toString()],
+        };
+      } else {
+        logger.warn('Earmarked invoice designated origin not available', {
+          requestId,
+          invoiceId,
+          designatedOrigin: designatedPurchaseChain,
+          availableOrigins: Object.keys(filteredMinAmounts),
+        });
+        continue;
+      }
+    } else {
+      // Use all candidate origins in split calc for the first invoice of this ticker.
+      // For subsequent invoices, only use the chosen origin.
+      filteredMinAmounts = batchedGroup.origin
+        ? { [batchedGroup.origin]: filteredMinAmounts[batchedGroup.origin] || '0' }
+        : filteredMinAmounts;
+    }
 
     // Skip if we already have a chosen origin and insufficient balance for this invoice
     if (batchedGroup.origin) {
@@ -293,6 +348,40 @@ export async function processTickerGroup(
         duration: getTimeSeconds() - start,
       });
       break;
+    }
+
+    // Check if on-demand rebalancing can settle invoice if no valid allocation found
+    if (!originDomain && batchedGroup.origin === '') {
+      logger.info('No valid allocation found, evaluating on-demand rebalancing', {
+        requestId,
+        invoiceId,
+        ticker: invoice.ticker_hash,
+      });
+
+      try {
+        const evaluationResult = await onDemand.evaluateOnDemandRebalancing(invoice, minAmounts, context);
+
+        if (evaluationResult.canRebalance) {
+          const earmarkId = await onDemand.executeOnDemandRebalancing(invoice, evaluationResult, context);
+
+          if (earmarkId) {
+            logger.info('Successfully created earmark for on-demand rebalancing', {
+              requestId,
+              invoiceId,
+              earmarkId,
+            });
+
+            // This earmarked invoice will be processed later once all its rebalancing ops are done
+            continue;
+          }
+        }
+      } catch (error) {
+        logger.error('Failed to evaluate/execute on-demand rebalancing', {
+          requestId,
+          invoiceId,
+          error: jsonifyError(error),
+        });
+      }
     }
 
     if (intents.length > 0) {
@@ -525,6 +614,64 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
     invoices: invoices.map((i) => i.intent_id),
   });
 
+  const earmarkedInvoicesMap = new Map<string, number>();
+  start = getTimeSeconds();
+
+  // Process earmarked invoices first
+  try {
+    await onDemand.processPendingEarmarks(context, invoices);
+    const readyEarmarks = await context.database.getEarmarks({ status: EarmarkStatus.READY });
+    const staleEarmarkIds: string[] = [];
+
+    // Create invoice map for lookup
+    const invoiceMap = new Map<string, Invoice>();
+    for (const invoice of invoices) {
+      if (invoice) {
+        invoiceMap.set(invoice.intent_id, invoice);
+      }
+    }
+
+    // Add earmarked invoices to the processing queue if they're in the current batch
+    for (const { invoiceId, designatedPurchaseChain } of readyEarmarks) {
+      // Find the invoice in the current batch
+      const invoice = invoiceMap.get(invoiceId);
+      if (invoice) {
+        earmarkedInvoicesMap.set(invoiceId, designatedPurchaseChain);
+        logger.info('Earmarked invoice ready for processing', {
+          requestId,
+          invoiceId,
+          designatedPurchaseChain,
+          ticker: invoice.ticker_hash,
+        });
+      } else {
+        // Invoice not in current batch - mark earmark as stale
+        staleEarmarkIds.push(invoiceId);
+        logger.warn('Earmarked invoice not found in current batch, marking as stale', {
+          requestId,
+          invoiceId,
+          designatedPurchaseChain,
+        });
+      }
+    }
+
+    // Clean up stale earmarks
+    if (staleEarmarkIds.length > 0) {
+      await onDemand.cleanupStaleEarmarks(staleEarmarkIds, context);
+    }
+
+    logger.debug('Processed earmarked invoices', {
+      requestId,
+      earmarkedCount: readyEarmarks.length,
+      duration: getTimeSeconds() - start,
+    });
+  } catch (error) {
+    logger.error('Failed to process earmarked invoices', {
+      requestId,
+      error: jsonifyError(error),
+      duration: getTimeSeconds() - start,
+    });
+  }
+
   // Query all of Mark's balances across chains
   logger.info('Getting mark balances', { requestId, chains: Object.keys(config.chains) });
   start = getTimeSeconds();
@@ -570,7 +717,11 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   logger.debug('Getting cached purchases', { requestId });
   start = getTimeSeconds();
   const allCachedPurchases = await cache.getAllPurchases();
-  logger.debug('Retrieved cached purchases', { requestId, duration: getTimeSeconds() - start });
+  logger.debug('Retrieved cached purchases', {
+    requestId,
+    cachedCount: allCachedPurchases.length,
+    duration: getTimeSeconds() - start,
+  });
   start = getTimeSeconds();
 
   // Remove cached purchases that no longer apply to an invoice.
@@ -718,6 +869,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       remainingBalances,
       remainingCustodied: adjustedCustodied,
       chosenOrigin: null,
+      earmarkedInvoices: earmarkedInvoicesMap,
     };
 
     try {
@@ -746,6 +898,23 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
     try {
       await cache.addPurchases(allPurchases);
       logger.info(`Stored ${allPurchases.length} purchase(s) in cache`, { requestId, purchases: allPurchases });
+
+      // Clean up completed earmarks for successfully purchased invoices
+      const purchasedInvoiceIds = allPurchases.map((p) => p.target.intent_id);
+      if (purchasedInvoiceIds.length > 0) {
+        try {
+          await onDemand.cleanupCompletedEarmarks(purchasedInvoiceIds, context);
+          logger.info('Cleaned up completed earmarks', {
+            requestId,
+            invoiceCount: purchasedInvoiceIds.length,
+          });
+        } catch (error) {
+          logger.error('Failed to cleanup completed earmarks', {
+            requestId,
+            error: jsonifyError(error),
+          });
+        }
+      }
     } catch (e) {
       logger.error('Failed to add purchases to cache', {
         requestId,
@@ -754,7 +923,11 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       throw e;
     }
   } else {
-    logger.info('Method complete with 0 purchases', { requestId, invoices, duration: getTimeSeconds() - startTime });
+    logger.info('Method complete with 0 purchases', {
+      requestId,
+      invoices,
+      duration: getTimeSeconds() - startTime,
+    });
   }
 
   logger.info(`Method complete with ${allPurchases.length} purchase(s)`, {

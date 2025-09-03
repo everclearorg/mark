@@ -40,6 +40,7 @@ COPY packages/adapters/everclear/package.json /tmp/build/packages/adapters/everc
 COPY packages/adapters/web3signer/package.json /tmp/build/packages/adapters/web3signer/
 COPY packages/adapters/cache/package.json /tmp/build/packages/adapters/cache/
 COPY packages/adapters/prometheus/package.json /tmp/build/packages/adapters/prometheus/
+COPY packages/adapters/database/package.json /tmp/build/packages/adapters/database/
 COPY yarn.lock /tmp/build/
 
 # Install dependencies including devDependencies
@@ -57,6 +58,7 @@ COPY packages/adapters/everclear /tmp/build/packages/adapters/everclear
 COPY packages/adapters/web3signer /tmp/build/packages/adapters/web3signer
 COPY packages/adapters/cache /tmp/build/packages/adapters/cache
 COPY packages/adapters/prometheus /tmp/build/packages/adapters/prometheus
+COPY packages/adapters/database /tmp/build/packages/adapters/database
 COPY tsconfig.json /tmp/build/
 
 # Build packages
@@ -67,6 +69,10 @@ RUN yarn build
 # ----------------------------------------
 
 FROM node AS runtime
+
+# Install dbmate for database migrations
+RUN curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && \
+    chmod +x /usr/local/bin/dbmate
 
 ENV NODE_ENV=production \
     PORT=8080
@@ -84,10 +90,14 @@ COPY --from=build /tmp/build/packages/adapters/everclear/dist ${LAMBDA_TASK_ROOT
 COPY --from=build /tmp/build/packages/adapters/prometheus/dist ${LAMBDA_TASK_ROOT}/packages/adapters/prometheus/dist
 COPY --from=build /tmp/build/packages/adapters/web3signer/dist ${LAMBDA_TASK_ROOT}/packages/adapters/web3signer/dist
 COPY --from=build /tmp/build/packages/adapters/cache/dist ${LAMBDA_TASK_ROOT}/packages/adapters/cache/dist
+COPY --from=build /tmp/build/packages/adapters/database/dist ${LAMBDA_TASK_ROOT}/packages/adapters/database/dist
+
+# Copy database migrations from build stage
+COPY --from=build /tmp/build/packages/adapters/database/db ${LAMBDA_TASK_ROOT}/db
 
 # Create symlinks for workspace dependencies
 RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
-    rm -rf core logger chainservice everclear prometheus web3signer cache rebalance && \
+    rm -rf core logger chainservice everclear prometheus web3signer cache rebalance database && \
     ln -s ../../packages/core/dist core && \
     ln -s ../../packages/adapters/logger/dist logger && \
     ln -s ../../packages/adapters/rebalance/dist rebalance && \
@@ -95,7 +105,8 @@ RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
     ln -s ../../packages/adapters/everclear/dist everclear && \
     ln -s ../../packages/adapters/prometheus/dist prometheus && \
     ln -s ../../packages/adapters/web3signer/dist web3signer && \
-    ln -s ../../packages/adapters/cache/dist cache
+    ln -s ../../packages/adapters/cache/dist cache && \
+    ln -s ../../packages/adapters/database/dist database
 
 COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
 

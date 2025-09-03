@@ -11,23 +11,24 @@ import { EverclearAdapter } from '@mark/everclear';
 import { ChainService, EthWallet } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
 import { pollAndProcessInvoices } from './invoice';
-import { PurchaseCache, RebalanceCache } from '@mark/cache';
+import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { rebalanceInventory } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
-import * as process from 'node:process';
+import * as database from '@mark/database';
 import { bytesToHex, WalletClient } from 'viem';
+import { execSync } from 'child_process';
 
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
-  rebalanceCache: RebalanceCache;
   chainService: ChainService;
   everclear: EverclearAdapter;
   web3Signer: Web3Signer | WalletClient;
   logger: Logger;
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;
+  database: typeof database;
 }
 export interface ProcessingContext extends MarkAdapters {
   config: MarkConfiguration;
@@ -37,7 +38,7 @@ export interface ProcessingContext extends MarkAdapters {
 
 async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
   try {
-    await Promise.all([adapters.purchaseCache.disconnect(), adapters.rebalanceCache.disconnect()]);
+    await Promise.all([adapters.purchaseCache.disconnect(), database.closeDatabase()]);
     cleanupHttpConnections();
     cleanupViemClients();
   } catch (error) {
@@ -74,11 +75,12 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
   const purchaseCache = new PurchaseCache(config.redis.host, config.redis.port);
-  const rebalanceCache = new RebalanceCache(config.redis.host, config.redis.port);
 
   const prometheus = new PrometheusAdapter(logger, 'mark-poller', config.pushGatewayUrl);
 
-  const rebalance = new RebalanceAdapter(config, logger, rebalanceCache);
+  const rebalance = new RebalanceAdapter(config, logger, database);
+
+  database.initializeDatabase(config.database);
 
   return {
     logger,
@@ -86,10 +88,30 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     web3Signer: web3Signer as Web3Signer,
     everclear,
     purchaseCache,
-    rebalanceCache,
     prometheus,
     rebalance,
+    database,
   };
+}
+
+async function runMigration(logger: Logger): Promise<void> {
+  try {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) {
+      logger.warn('DATABASE_URL not found, skipping migrations');
+      return;
+    }
+
+    logger.info('Running database migration...');
+    const result = execSync(
+      `dbmate --url "${databaseUrl}" --migrations-dir /var/task/db/migrations --no-dump-schema up`,
+      { encoding: 'utf-8' },
+    );
+    logger.info('Database migration completed', { output: result });
+  } catch (error) {
+    logger.error('Failed to run database migration', { error });
+    throw new Error('Database migration failed - cannot continue with out-of-sync schema');
+  }
 }
 
 export const initPoller = async (): Promise<{ statusCode: number; body: string }> => {
@@ -99,6 +121,9 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     service: 'mark-poller',
     level: config.logLevel,
   });
+
+  // Run database migrations on cold start
+  await runMigration(logger);
 
   // Check file descriptor usage at startup
   logFileDescriptorUsage(logger);

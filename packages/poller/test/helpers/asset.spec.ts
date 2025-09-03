@@ -1,5 +1,11 @@
-import { expect } from 'chai';
 import sinon from 'sinon';
+
+// Mock isSvmChain and getTokenAddressFromConfig from @mark/core
+jest.mock('@mark/core', () => ({
+  ...jest.requireActual('@mark/core'),
+  isSvmChain: jest.fn(() => false),
+  getTokenAddressFromConfig: jest.fn(),
+}));
 import {
   getTickers,
   getAssetHash,
@@ -9,12 +15,29 @@ import {
   convertHubAmountToLocalDecimals,
   getSupportedDomainsForTicker,
 } from '../../src/helpers/asset';
-import * as viemFns from 'viem';
 import * as assetFns from '../../src/helpers/asset';
 import * as contractFns from '../../src/helpers/contracts';
-import { MarkConfiguration } from '@mark/core';
+import { MarkConfiguration, getTokenAddressFromConfig } from '@mark/core';
 
 // Test types
+enum SettlementStrategy {
+  DEFAULT,
+  XERC20,
+}
+
+interface AssetConfig {
+  tickerHash: string;
+  adopted: string;
+  domain: string;
+  approval: boolean;
+  strategy: SettlementStrategy;
+}
+
+interface MockHubStorageContract {
+  read: {
+    adoptedForAssets: sinon.SinonStub;
+  };
+}
 interface MockAssetConfig {
   tickerHash: string;
 }
@@ -73,27 +96,27 @@ describe('Asset Helper Functions', () => {
 
     it('should return ticker hashes in lowercase from the configuration', () => {
       const result = getTickers(mockConfigs.validConfig as MarkConfiguration);
-      expect(result).to.deep.eq(['0xabcdef', '0x123456', '0xdeadbeef']);
+      expect(result).toEqual(['0xabcdef', '0x123456', '0xdeadbeef']);
     });
 
     it('should return an empty array when configuration is empty', () => {
       const result = getTickers(mockConfigs.emptyConfig as MarkConfiguration);
-      expect(result).to.deep.eq([]);
+      expect(result).toEqual([]);
     });
 
     it('should return an empty array when chains have no assets', () => {
       const result = getTickers(mockConfigs.noAssetsConfig as MarkConfiguration);
-      expect(result).to.deep.eq([]);
+      expect(result).toEqual([]);
     });
 
     it('should handle mixed-case ticker hashes correctly', () => {
       const result = getTickers(mockConfigs.mixedCaseConfig as MarkConfiguration);
-      expect(result).to.deep.eq(['0xabcdef', '0x123abc']);
+      expect(result).toEqual(['0xabcdef', '0x123abc']);
     });
 
     it('should handle multiple chains with multiple assets', () => {
       const result = getTickers(mockConfigs.multipleChainsConfig as MarkConfiguration);
-      expect(result).to.deep.eq(['0xabcdef', '0x123456', '0xdeadbeef', '0xcafebabe']);
+      expect(result).toEqual(['0xabcdef', '0x123456', '0xdeadbeef', '0xcafebabe']);
     });
 
     it('should deduplicate ticker hashes ', () => {
@@ -111,7 +134,7 @@ describe('Asset Helper Functions', () => {
         },
       };
       const result = getTickers(duplicateConfig as MarkConfiguration);
-      expect(result).to.deep.eq(['0xabcdef', '0x123456', '0xdeadbeef', '0xnewhash']);
+      expect(result).toEqual(['0xabcdef', '0x123456', '0xdeadbeef', '0xnewhash']);
     });
   });
 
@@ -137,13 +160,12 @@ describe('Asset Helper Functions', () => {
 
     it('should return the correct asset hash for a valid token and domain', () => {
       const getTokenAddressMock = sinon.stub().returns('0x0000000000000000000000000000000000000001');
-      const encodeAbiStub = sinon.stub(viemFns, 'encodeAbiParameters').returns('0xEncodedParameters');
 
       const result = getAssetHash('0xhash1', '1', mockConfig as unknown as MarkConfiguration, getTokenAddressMock);
       const expectedHash = '0xcc69885fda6bcc1a4ace058b4a62bf5e179ea78fd58a1ccd71c22cc9b688792f';
 
-      expect(result).to.equal(expectedHash);
-      expect(getTokenAddressMock.calledOnceWith('0xhash1', '1', mockConfig)).to.be.true;
+      expect(result).toBe(expectedHash);
+      expect(getTokenAddressMock.calledOnceWith('0xhash1', '1', mockConfig)).toBe(true);
     });
 
     it('should return undefined if the token address is not found', () => {
@@ -151,7 +173,7 @@ describe('Asset Helper Functions', () => {
 
       const result = getAssetHash('0xhash1', '3', mockConfig as unknown as MarkConfiguration, getTokenAddressMock);
 
-      expect(result).to.be.undefined;
+      expect(result).toBeUndefined();
     });
   });
 
@@ -184,38 +206,33 @@ describe('Asset Helper Functions', () => {
       XERC20: 1,
     } as const;
 
-    interface MockAssetConfig {
-      tickerHash: string;
-      adopted: string;
-      domain: string;
-      approval: boolean;
-      strategy: typeof SettlementStrategy[keyof typeof SettlementStrategy];
-    }
-
     it('should return true if any domain supports XERC20', async () => {
       const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash').returns('0xAssetHash1');
-      const mockAssetConfig: MockAssetConfig = {
+      const mockAssetConfig: AssetConfig = {
         tickerHash: '0xhash1',
         adopted: '0xAdoptedAddress',
         domain: '1',
         approval: true,
         strategy: SettlementStrategy.XERC20,
       };
-      const getAssetConfigStub = sinon.stub(assetFns, 'getAssetConfig').resolves(mockAssetConfig as any);
+      const getAssetConfigStub = sinon.stub(assetFns, 'getAssetConfig').resolves(mockAssetConfig);
 
       const result = await isXerc20Supported('ticker', ['1', '2'], mockConfig as unknown as MarkConfiguration);
 
-      expect(result).to.be.true;
-      expect(getAssetHashStub.called).to.be.true;
-      expect(getAssetConfigStub.called).to.be.true;
+      expect(result).toBe(true);
+      expect(getAssetHashStub.called).toBe(true);
+      expect(getAssetConfigStub.called).toBe(true);
     });
 
     it('should return false if no domain supports XERC20', async () => {
-      const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash');
-      getAssetHashStub.withArgs('ticker', '1', sinon.match.any, sinon.match.any).returns('0xAssetHash1');
-      getAssetHashStub.withArgs('ticker', '2', sinon.match.any, sinon.match.any).returns('0xAssetHash2');
+      // Mock getTokenAddressFromConfig to return valid addresses
+      (getTokenAddressFromConfig as jest.Mock).mockImplementation((ticker, domain) => {
+        if (domain === '1') return '0x1234567890123456789012345678901234567890';
+        if (domain === '2') return '0x2345678901234567890123456789012345678901';
+        return undefined;
+      });
 
-      const mockDefaultConfig: MockAssetConfig = {
+      const mockDefaultConfig: AssetConfig = {
         tickerHash: '0xhash1',
         adopted: '0xAdoptedAddress',
         domain: '1',
@@ -223,14 +240,12 @@ describe('Asset Helper Functions', () => {
         strategy: SettlementStrategy.DEFAULT,
       };
       const getAssetConfigStub = sinon.stub(assetFns, 'getAssetConfig');
-      getAssetConfigStub.withArgs('0xAssetHash1', sinon.match.any).resolves(mockDefaultConfig as any);
-      getAssetConfigStub.withArgs('0xAssetHash2', sinon.match.any).resolves(mockDefaultConfig as any);
+      getAssetConfigStub.resolves(mockDefaultConfig);
 
       const result = await isXerc20Supported('ticker', ['1', '2'], mockConfig as unknown as MarkConfiguration);
 
-      expect(result).to.be.false;
-      expect(getAssetHashStub.calledTwice).to.be.true;
-      expect(getAssetConfigStub.calledTwice).to.be.true;
+      expect(result).toBe(false);
+      expect(getAssetConfigStub.calledTwice).toBe(true);
     });
 
     it('should return false if no asset hashes are found', async () => {
@@ -238,16 +253,19 @@ describe('Asset Helper Functions', () => {
 
       const result = await isXerc20Supported('ticker', ['1', '2'], mockConfig as unknown as MarkConfiguration);
 
-      expect(result).to.be.false;
-      expect(getAssetHashStub.calledTwice).to.be.true;
+      expect(result).toBe(false);
+      expect(getAssetHashStub.calledTwice).toBe(true);
     });
 
     it('should continue checking other domains if one domain has no asset hash', async () => {
-      const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash');
-      getAssetHashStub.withArgs('ticker', '1', sinon.match.any, sinon.match.any).returns(undefined);
-      getAssetHashStub.withArgs('ticker', '2', sinon.match.any, sinon.match.any).returns('0xAssetHash2');
+      // Mock getTokenAddressFromConfig
+      (getTokenAddressFromConfig as jest.Mock).mockImplementation((ticker, domain) => {
+        if (domain === '1') return undefined;
+        if (domain === '2') return '0x2345678901234567890123456789012345678901';
+        return undefined;
+      });
 
-      const mockXercConfig: MockAssetConfig = {
+      const mockXercConfig: AssetConfig = {
         tickerHash: '0xhash2',
         adopted: '0xAdoptedAddress2',
         domain: '2',
@@ -255,13 +273,12 @@ describe('Asset Helper Functions', () => {
         strategy: SettlementStrategy.XERC20,
       };
       const getAssetConfigStub = sinon.stub(assetFns, 'getAssetConfig');
-      getAssetConfigStub.withArgs('0xAssetHash2', sinon.match.any).resolves(mockXercConfig as any);
+      getAssetConfigStub.resolves(mockXercConfig);
 
       const result = await isXerc20Supported('ticker', ['1', '2'], mockConfig as unknown as MarkConfiguration);
 
-      expect(result).to.be.true;
-      expect(getAssetHashStub.calledTwice).to.be.true;
-      expect(getAssetConfigStub.calledOnceWith('0xAssetHash2', sinon.match.any)).to.be.true;
+      expect(result).toBe(true);
+      expect(getAssetConfigStub.calledOnce).toBe(true);
     });
 
     it('should skip SVM and TVM chains and return false when only non-EVM chains provided', async () => {
@@ -270,9 +287,9 @@ describe('Asset Helper Functions', () => {
 
       const result = await isXerc20Supported('ticker', ['728126428', '1399811149'], mockConfig as unknown as MarkConfiguration);
 
-      expect(result).to.be.false;
-      expect(getAssetHashStub.called).to.be.false;
-      expect(getAssetConfigStub.called).to.be.false;
+      expect(result).toBe(false);
+      expect(getAssetHashStub.called).toBe(false)
+      expect(getAssetConfigStub.called).toBe(false)
     });
   });
 
@@ -302,44 +319,38 @@ describe('Asset Helper Functions', () => {
 
     it('should return undefined if chainConfig does not exist', () => {
       const result = getTickerForAsset('0xTokenAddress1', 999, mockConfig as MarkConfiguration);
-      expect(result).to.be.undefined;
+      expect(result).toBeUndefined();
     });
 
     it('should return undefined if chainConfig has no assets', () => {
-      const configWithoutAssets: Partial<MockTickerConfig> = {
+      const configWithoutAssets = {
         chains: {
-          '1': {} as any,
+          '1': {} as { assets?: MockTickerAsset[] },
         },
       };
-      const result = getTickerForAsset('0xTokenAddress1', 1, configWithoutAssets as MarkConfiguration);
-      expect(result).to.be.undefined;
+      const result = getTickerForAsset('0xTokenAddress1', 1, configWithoutAssets as unknown as MarkConfiguration);
+      expect(result).toBeUndefined();
     });
 
     it('should return undefined if asset is not found', () => {
       const result = getTickerForAsset('0xNonExistentToken', 1, mockConfig as MarkConfiguration);
-      expect(result).to.be.undefined;
+      expect(result).toBeUndefined();
     });
 
     it('should return ticker hash for found asset', () => {
       const result = getTickerForAsset('0xTokenAddress1', 1, mockConfig as MarkConfiguration);
-      expect(result).to.equal('0xhash1');
+      expect(result).toBe('0xhash1');
     });
 
     it('should handle case insensitive asset addresses', () => {
       const result = getTickerForAsset('0xtokenaddress1', 1, mockConfig as MarkConfiguration);
-      expect(result).to.equal('0xhash1');
+      expect(result).toBe('0xhash1');
     });
   });
 
   describe('getAssetConfig', () => {
     it('should call getHubStorageContract and return asset config', async () => {
-      interface MockContract {
-        read: {
-          adoptedForAssets: sinon.SinonStub;
-        };
-      }
-
-      const mockContract: MockContract = {
+      const mockContract: MockHubStorageContract = {
         read: {
           adoptedForAssets: sinon.stub().resolves({
             tickerHash: '0xhash1',
@@ -350,14 +361,23 @@ describe('Asset Helper Functions', () => {
           }),
         },
       };
-      const getHubStorageContractStub = sinon.stub(contractFns, 'getHubStorageContract').returns(mockContract as any);
+      const getHubStorageContractStub = sinon
+        .stub(contractFns, 'getHubStorageContract')
+        .returns(mockContract as unknown as ReturnType<typeof contractFns.getHubStorageContract>);
 
-      const mockConfig: Partial<MarkConfiguration> = { hub: { domain: '1' } as any };
+      const mockConfig: Partial<MarkConfiguration> = {
+        hub: {
+          domain: '1',
+          providers: ['http://localhost:8545'],
+        } as MarkConfiguration['hub'],
+      };
       const result = await getAssetConfig('0xAssetHash', mockConfig as MarkConfiguration);
 
-      expect(getHubStorageContractStub.calledOnceWith(sinon.match.any)).to.be.true;
-      expect(mockContract.read.adoptedForAssets.calledOnceWith(['0xAssetHash'])).to.be.true;
-      expect(result).to.deep.equal({
+      expect(getHubStorageContractStub.calledOnce).toBe(true);
+      expect(getHubStorageContractStub.firstCall.args[0]).toEqual(mockConfig);
+      expect(mockContract.read.adoptedForAssets.calledOnce).toBe(true);
+      expect(mockContract.read.adoptedForAssets.firstCall.args[0]).toEqual(['0xAssetHash']);
+      expect(result).toEqual({
         tickerHash: '0xhash1',
         adopted: '0xAdoptedAddress',
         domain: '1',
@@ -398,7 +418,7 @@ describe('Asset Helper Functions', () => {
 
       // USDC has 6 decimals, so formatUnits should be called with 18-6=12 decimals
       // Result should be rounded up when there's a decimal
-      expect(result).to.match(/^\d+$/); // Should be a numeric string
+      expect(result).toMatch(/^\d+$/); // Should be a numeric string
     });
 
     it('should return integer when no decimal is present', () => {
@@ -410,7 +430,7 @@ describe('Asset Helper Functions', () => {
       );
 
       // DAI has 18 decimals, so formatUnits should be called with 18-18=0 decimals
-      expect(result).to.match(/^\d+$/); // Should be a numeric string
+      expect(result).toMatch(/^\d+$/); // Should be a numeric string
     });
 
     it('should use 18 decimals as default when asset not found', () => {
@@ -422,7 +442,7 @@ describe('Asset Helper Functions', () => {
       );
 
       // Unknown asset defaults to 18 decimals, so formatUnits should be called with 18-18=0 decimals
-      expect(result).to.match(/^\d+$/); // Should be a numeric string
+      expect(result).toMatch(/^\d+$/); // Should be a numeric string
     });
 
     it('should return integer directly when amount has no decimal part', () => {
@@ -436,7 +456,7 @@ describe('Asset Helper Functions', () => {
         mockConfig as MarkConfiguration,
       );
 
-      expect(result).to.equal('1000000000000000000');
+      expect(result).toBe('1000000000000000000');
     });
   });
 
@@ -462,17 +482,17 @@ describe('Asset Helper Functions', () => {
 
     it('should return domains that support the ticker', () => {
       const result = getSupportedDomainsForTicker('0xhash1', mockConfig as MarkConfiguration);
-      expect(result).to.deep.equal(['1', '2']);
+      expect(result).toEqual(['1', '2']);
     });
 
     it('should return empty array when no domains support the ticker', () => {
       const result = getSupportedDomainsForTicker('0xnonexistent', mockConfig as MarkConfiguration);
-      expect(result).to.deep.equal([]);
+      expect(result).toEqual([]);
     });
 
     it('should handle case insensitive ticker matching', () => {
       const result = getSupportedDomainsForTicker('0xHASH1', mockConfig as MarkConfiguration);
-      expect(result).to.deep.equal(['1', '2']);
+      expect(result).toEqual(['1', '2']);
     });
 
     it('should return empty array when chain config does not exist', () => {
@@ -486,7 +506,7 @@ describe('Asset Helper Functions', () => {
         },
       };
       const result = getSupportedDomainsForTicker('0xhash1', configWithMissingChain as MarkConfiguration);
-      expect(result).to.deep.equal(['1']);
+      expect(result).toEqual(['1']);
     });
   });
 });

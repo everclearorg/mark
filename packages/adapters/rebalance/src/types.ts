@@ -14,6 +14,7 @@ export interface MemoizedTransactionRequest {
     funcSig?: string; // Function signature for Tron support
   };
   memo: RebalanceTransactionMemo;
+  effectiveAmount?: string; // The effective amount being bridged (after any caps or adjustments)
 }
 
 export interface BridgeAdapter {

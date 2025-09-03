@@ -2,13 +2,13 @@
 import { beforeEach, describe, expect, it, jest, afterEach } from '@jest/globals';
 import { SupportedBridge, RebalanceRoute, AssetConfiguration, MarkConfiguration, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
-import { RebalanceCache } from '@mark/cache';
-import { TransactionReceipt, PublicClient, GetTransactionParameters, parseUnits, formatUnits } from 'viem';
+import * as database from '@mark/database';
+import { TransactionReceipt, PublicClient, parseUnits, formatUnits } from 'viem';
 import { KrakenBridgeAdapter } from '../../../src/adapters/kraken/kraken';
 import { KrakenClient } from '../../../src/adapters/kraken/client';
 import { DynamicAssetConfig } from '../../../src/adapters/kraken/dynamic-config';
 import { RebalanceTransactionMemo } from '../../../src/types';
-import { KrakenAssetMapping, KRAKEN_DEPOSIT_STATUS, KRAKEN_WITHDRAWAL_STATUS, KrakenWithdrawMethod } from '../../../src/adapters/kraken/types';
+import { KrakenAssetMapping, KRAKEN_DEPOSIT_STATUS, KrakenWithdrawMethod } from '../../../src/adapters/kraken/types';
 
 // Mock the external dependencies
 jest.mock('../../../src/adapters/kraken/client');
@@ -33,22 +33,23 @@ class TestKrakenBridgeAdapter extends KrakenBridgeAdapter {
     destinationMapping: KrakenAssetMapping,
     destinationAssetConfig: AssetConfiguration,
   ): Promise<any> {
-    return super.getOrInitWithdrawal(amount, route, originTransaction, recipient, originMapping, destinationMapping, destinationAssetConfig);
+    return super.getOrInitWithdrawal(
+      amount,
+      route,
+      originTransaction,
+      recipient,
+      originMapping,
+      destinationMapping,
+      destinationAssetConfig,
+    );
   }
 
-  public checkDepositConfirmed(
-    route: RebalanceRoute,
-    originTransaction: TransactionReceipt,
-    assetMapping: any,
-  ) {
+  public checkDepositConfirmed(route: RebalanceRoute, originTransaction: TransactionReceipt, assetMapping: any) {
     return super.checkDepositConfirmed(route, originTransaction, assetMapping);
   }
 
-  public findExistingWithdrawal(
-    route: RebalanceRoute,
-    originTransaction: TransactionReceipt
-  ) {
-    return super.findExistingWithdrawal(route, originTransaction)
+  public findExistingWithdrawal(route: RebalanceRoute, originTransaction: TransactionReceipt) {
+    return super.findExistingWithdrawal(route, originTransaction);
   }
 
   public initiateWithdrawal(
@@ -77,18 +78,15 @@ const mockLogger = {
 } as unknown as jest.Mocked<Logger>;
 
 // Mock the cache
-const mockRebalanceCache = {
-  getRebalances: jest.fn(),
-  addRebalances: jest.fn(),
-  removeRebalances: jest.fn(),
-  hasRebalance: jest.fn(),
+const mockDatabase = {
   setPause: jest.fn(),
   isPaused: jest.fn(),
-  getRebalanceByTransaction: jest.fn(),
-  addWithdrawalRecord: jest.fn(),
-  getWithdrawalRecord: jest.fn(),
-  removeWithdrawalRecord: jest.fn(),
-} as unknown as jest.Mocked<RebalanceCache>;
+  getRebalanceOperationByTransactionHash: jest.fn(),
+  createRebalanceOperation: jest.fn(),
+  updateRebalanceOperation: jest.fn(),
+  createCexWithdrawalRecord: jest.fn(),
+  getCexWithdrawalRecord: jest.fn(),
+} as unknown as jest.Mocked<typeof database>;
 
 // Mock data for testing
 const mockAssets: Record<string, AssetConfiguration> = {
@@ -142,7 +140,7 @@ const mockChains: Record<string, ChainConfiguration> = {
         isNative: false,
         balanceThreshold: '0',
       },
-      mockAssets.USDC
+      mockAssets.USDC,
     ],
     providers: ['https://arb-mainnet.example.com'],
     invoiceAge: 3600,
@@ -194,6 +192,9 @@ const mockConfig: MarkConfiguration = {
   },
   routes: [],
   purchaseCacheTtlSeconds: 3600,
+  database: {
+    connectionString: 'postgresql://test:test@localhost:5432/test',
+  },
 };
 
 // Mock Kraken client
@@ -233,20 +234,22 @@ const mockETHMainnetKrakenMapping: KrakenAssetMapping = {
     fee: {
       fee: '0.000001',
       asset: 'XETH',
-      aclass: 'currency'
+      aclass: 'currency',
     },
     method: 'Ether',
-    limits: [{
-      limit_type: 'amount',
-      description: '',
-      limits: {
-        '86400': {
-          remaining: '100000',
-          used: '0',
-          maximum: '100000000000',
-        }
-      }
-    }]
+    limits: [
+      {
+        limit_type: 'amount',
+        description: '',
+        limits: {
+          '86400': {
+            remaining: '100000',
+            used: '0',
+            maximum: '100000000000',
+          },
+        },
+      },
+    ],
   } as unknown as KrakenWithdrawMethod,
 };
 
@@ -267,20 +270,22 @@ const mockWETHArbitrumKrakenMapping: KrakenAssetMapping = {
     fee: {
       fee: '0.000001',
       asset: 'XETH',
-      aclass: 'currency'
+      aclass: 'currency',
     },
     method: 'Ether',
-    limits: [{
-      limit_type: 'amount',
-      description: '',
-      limits: {
-        '86400': {
-          remaining: '100000',
-          used: '0',
-          maximum: '100000000000',
-        }
-      }
-    }]
+    limits: [
+      {
+        limit_type: 'amount',
+        description: '',
+        limits: {
+          '86400': {
+            remaining: '100000',
+            used: '0',
+            maximum: '100000000000',
+          },
+        },
+      },
+    ],
   } as unknown as KrakenWithdrawMethod,
 };
 
@@ -301,22 +306,57 @@ const mockUSDCMainnetKrakenMapping: KrakenAssetMapping = {
     fee: {
       fee: '0.01',
       asset: 'XETH',
-      aclass: 'currency'
+      aclass: 'currency',
     },
     method: 'Ether (erc-20)',
-    limits: [{
-      limit_type: 'amount',
-      description: '',
-      limits: {
-        '86400': {
-          remaining: '100000',
-          used: '0',
-          maximum: '100000000000',
-        }
-      }
-    }]
+    limits: [
+      {
+        limit_type: 'amount',
+        description: '',
+        limits: {
+          '86400': {
+            remaining: '100000',
+            used: '0',
+            maximum: '100000000000',
+          },
+        },
+      },
+    ],
   } as unknown as KrakenWithdrawMethod,
 };
+
+// Helper function to create complete mock CEX withdrawal records
+function createMockCexWithdrawalRecord(overrides: Partial<any> = {}) {
+  return {
+    id: 'test-withdrawal-id',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    rebalanceOperationId: 'test-op-id',
+    platform: 'kraken',
+    metadata: {},
+    ...overrides,
+  };
+}
+
+// Helper function to create complete mock rebalance operations
+function createMockRebalanceOperation(overrides: Partial<any> = {}) {
+  return {
+    id: 'test-rebalance-id',
+    earmarkId: 'test-earmark-id',
+    originChainId: 1,
+    destinationChainId: 42161,
+    tickerHash: '0xtickerHash',
+    amount: '1000000000000000000',
+    slippage: 100,
+    status: 'pending',
+    bridge: SupportedBridge.Kraken,
+    recipient: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    transactions: {},
+    ...overrides,
+  };
+}
 
 describe('KrakenBridgeAdapter Unit', () => {
   let adapter: TestKrakenBridgeAdapter;
@@ -329,9 +369,7 @@ describe('KrakenBridgeAdapter Unit', () => {
 
     // Mock constructors
     (KrakenClient as jest.MockedClass<typeof KrakenClient>).mockImplementation(() => mockKrakenClient);
-    (DynamicAssetConfig as jest.MockedClass<typeof DynamicAssetConfig>).mockImplementation(
-      () => mockDynamicConfig,
-    );
+    (DynamicAssetConfig as jest.MockedClass<typeof DynamicAssetConfig>).mockImplementation(() => mockDynamicConfig);
 
     adapter = new TestKrakenBridgeAdapter(
       'test-kraken-api-key',
@@ -339,7 +377,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       'https://api.kraken.com',
       mockConfig,
       mockLogger,
-      mockRebalanceCache,
+      mockDatabase,
     );
   });
 
@@ -374,14 +412,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       (KrakenClient as jest.MockedClass<typeof KrakenClient>).mockImplementationOnce(() => unconfiguredClient);
 
       expect(() => {
-        new TestKrakenBridgeAdapter(
-          '',
-          '',
-          'https://api.kraken.com',
-          mockConfig,
-          mockLogger,
-          mockRebalanceCache,
-        );
+        new TestKrakenBridgeAdapter('', '', 'https://api.kraken.com', mockConfig, mockLogger, mockDatabase);
       }).toThrow('Kraken adapter requires API key and secret');
     });
   });
@@ -449,13 +480,12 @@ describe('KrakenBridgeAdapter Unit', () => {
         'https://api.kraken.com',
         configWithoutProviders,
         mockLogger,
-        mockRebalanceCache,
+        mockDatabase,
       );
 
       const provider = adapterWithoutProviders.getProvider(1);
       expect(provider).toBeUndefined();
     });
-
   });
 
   describe('getReceivedAmount()', () => {
@@ -472,9 +502,15 @@ describe('KrakenBridgeAdapter Unit', () => {
       // Mock getAssetMapping to return mappings based on chain and asset identifier
       mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number, assetIdentifier: string) => {
         // Handle WETH addresses and symbols
-        if ((chainId === 1 && (assetIdentifier === '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' || assetIdentifier === 'WETH'))) {
+        if (
+          chainId === 1 &&
+          (assetIdentifier === '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' || assetIdentifier === 'WETH')
+        ) {
           return Promise.resolve(mockETHMainnetKrakenMapping);
-        } else if ((chainId === 42161 && (assetIdentifier === '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1' || assetIdentifier === 'WETH'))) {
+        } else if (
+          chainId === 42161 &&
+          (assetIdentifier === '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1' || assetIdentifier === 'WETH')
+        ) {
           return Promise.resolve(mockWETHArbitrumKrakenMapping);
         } else if (assetIdentifier === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' || assetIdentifier === 'USDC') {
           // USDC mapping for both chains
@@ -491,9 +527,9 @@ describe('KrakenBridgeAdapter Unit', () => {
           altname: 'Eth',
           decimals: 18,
           display_decimals: 6,
-          status: 'enabled'
-        }
-      })
+          status: 'enabled',
+        },
+      });
     });
 
     it('should calculate net amount after withdrawal fees', async () => {
@@ -531,16 +567,16 @@ describe('KrakenBridgeAdapter Unit', () => {
       const amount = '2000000'; // 2 USDC in smallest units
 
       // Reset mocks for USDC
-      mockDynamicConfig.getAssetMapping.mockResolvedValue(mockUSDCMainnetKrakenMapping) // origin mapping
+      mockDynamicConfig.getAssetMapping.mockResolvedValue(mockUSDCMainnetKrakenMapping); // origin mapping
       mockKrakenClient.getAssetInfo.mockResolvedValue({
         [mockUSDCMainnetKrakenMapping.krakenAsset]: {
           aclass: 'currency',
           altname: 'USDC.e',
           decimals: 6,
           display_decimals: 6,
-          status: 'enabled'
-        }
-      })
+          status: 'enabled',
+        },
+      });
 
       // Fee is 0.01 USDC = 10000 in smallest units (6 decimals)
       const feeInSmallestUnits = parseUnits(mockUSDCMainnetKrakenMapping.withdrawMethod.fee.fee, 6);
@@ -552,8 +588,7 @@ describe('KrakenBridgeAdapter Unit', () => {
     });
 
     it('should handle validateAssetMapping errors', async () => {
-      mockDynamicConfig.getAssetMapping
-        .mockRejectedValueOnce(new Error('Asset not supported'));
+      mockDynamicConfig.getAssetMapping.mockRejectedValueOnce(new Error('Asset not supported'));
 
       const amount = '100000000000000000';
 
@@ -604,9 +639,15 @@ describe('KrakenBridgeAdapter Unit', () => {
 
       // Mock asset mapping calls
       mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number, assetIdentifier: string) => {
-        if ((chainId === 1 && (assetIdentifier === '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' || assetIdentifier === 'WETH'))) {
+        if (
+          chainId === 1 &&
+          (assetIdentifier === '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' || assetIdentifier === 'WETH')
+        ) {
           return Promise.resolve(mockETHMainnetKrakenMapping);
-        } else if ((chainId === 42161 && (assetIdentifier === '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1' || assetIdentifier === 'WETH'))) {
+        } else if (
+          chainId === 42161 &&
+          (assetIdentifier === '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1' || assetIdentifier === 'WETH')
+        ) {
           return Promise.resolve(mockWETHArbitrumKrakenMapping);
         }
         return Promise.reject(new Error(`Asset mapping not found for ${assetIdentifier} on chain ${chainId}`));
@@ -619,16 +660,16 @@ describe('KrakenBridgeAdapter Unit', () => {
           altname: 'WETH',
           decimals: 8,
           display_decimals: 4,
-          status: 'enabled'
-        }
+          status: 'enabled',
+        },
       });
 
       mockKrakenClient.getDepositAddresses.mockResolvedValue([
         {
           address: '0x1234567890123456789012345678901234567890',
           expiretm: 0,
-          new: true
-        }
+          new: true,
+        },
       ]);
     });
 
@@ -656,7 +697,7 @@ describe('KrakenBridgeAdapter Unit', () => {
     });
 
     it('should prepare WETH unwrap + ETH send for ETH kraken symbol', async () => {
-      mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number, assetIdentifier: string) => {
+      mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number) => {
         if (chainId === 1) return Promise.resolve(mockETHMainnetKrakenMapping);
         if (chainId === 42161) return Promise.resolve(mockWETHArbitrumKrakenMapping);
         return Promise.reject(new Error(`Asset mapping not found`));
@@ -668,8 +709,8 @@ describe('KrakenBridgeAdapter Unit', () => {
           altname: 'ETH',
           decimals: 18,
           display_decimals: 4,
-          status: 'enabled'
-        }
+          status: 'enabled',
+        },
       });
 
       const result = await adapter.send(sender, recipient, amount, sampleRoute);
@@ -702,8 +743,8 @@ describe('KrakenBridgeAdapter Unit', () => {
           altname: 'WETH',
           decimals: 18,
           display_decimals: 4,
-          status: 'enabled'
-        }
+          status: 'enabled',
+        },
       });
 
       const nativeETHRoute = { ...sampleRoute, asset: '0x0000000000000000000000000000000000000000' };
@@ -720,7 +761,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       const invalidRoute = { ...sampleRoute, asset: '0xInvalidAsset123' };
 
       await expect(adapter.send(sender, recipient, amount, invalidRoute)).rejects.toThrow(
-        'Unable to find origin asset config for asset 0xInvalidAsset123 on chain 1'
+        'Unable to find origin asset config for asset 0xInvalidAsset123 on chain 1',
       );
     });
 
@@ -733,15 +774,16 @@ describe('KrakenBridgeAdapter Unit', () => {
       };
 
       await expect(adapter.send(sender, recipient, amount, unknownAssetRoute)).rejects.toThrow(
-        'Unable to find origin asset config for asset 0x9999999999999999999999999999999999999999 on chain 999'
+        'Unable to find origin asset config for asset 0x9999999999999999999999999999999999999999 on chain 999',
       );
     });
 
     it('should throw error when withdrawal quota is exceeded', async () => {
-      const largeAmount = 2n * parseUnits(mockWETHArbitrumKrakenMapping.withdrawMethod.limits[0].limits['86400'].maximum, 18)
+      const largeAmount =
+        2n * parseUnits(mockWETHArbitrumKrakenMapping.withdrawMethod.limits[0].limits['86400'].maximum, 18);
 
       await expect(adapter.send(sender, recipient, largeAmount.toString(), sampleRoute)).rejects.toThrow(
-        'exceeds withdraw limits'
+        'exceeds withdraw limits',
       );
     });
 
@@ -761,8 +803,8 @@ describe('KrakenBridgeAdapter Unit', () => {
           altname: 'ETH',
           decimals: 8,
           display_decimals: 4,
-          status: 'enabled'
-        }
+          status: 'enabled',
+        },
       });
 
       const result = await adapter.send(sender, recipient, amount, nativeETHRoute);
@@ -788,8 +830,8 @@ describe('KrakenBridgeAdapter Unit', () => {
           altname: 'USDC',
           decimals: 6,
           display_decimals: 2,
-          status: 'enabled'
-        }
+          status: 'enabled',
+        },
       });
 
       const result = await adapter.send(sender, recipient, '10000000', usdcRoute); // 10 USDC
@@ -805,7 +847,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       mockKrakenClient.isSystemOperational.mockResolvedValue(false);
 
       await expect(adapter.send(sender, recipient, amount, sampleRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction: Kraken system is not operational'
+        'Failed to prepare Kraken deposit transaction: Kraken system is not operational',
       );
     });
 
@@ -821,7 +863,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       const unknownAssetRoute = { ...sampleRoute, asset: '0xUnknownAsset123' };
 
       await expect(adapter.send(sender, recipient, amount, unknownAssetRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction: Unable to find origin asset config for asset 0xUnknownAsset123 on chain 1'
+        'Failed to prepare Kraken deposit transaction: Unable to find origin asset config for asset 0xUnknownAsset123 on chain 1',
       );
     });
 
@@ -832,12 +874,12 @@ describe('KrakenBridgeAdapter Unit', () => {
           altname: 'WETH',
           decimals: 8,
           display_decimals: 4,
-          status: 'disabled'
-        }
+          status: 'disabled',
+        },
       });
 
       await expect(adapter.send(sender, recipient, amount, sampleRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction: Origin asset is disabled on Kraken'
+        'Failed to prepare Kraken deposit transaction: Origin asset is disabled on Kraken',
       );
     });
 
@@ -845,7 +887,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       mockKrakenClient.getDepositAddresses.mockResolvedValue([]);
 
       await expect(adapter.send(sender, recipient, amount, sampleRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction: No deposit address available'
+        'Failed to prepare Kraken deposit transaction: No deposit address available',
       );
     });
 
@@ -853,16 +895,16 @@ describe('KrakenBridgeAdapter Unit', () => {
       mockKrakenClient.getAssetInfo.mockRejectedValue(new Error('API connection failed'));
 
       await expect(adapter.send(sender, recipient, amount, sampleRoute)).rejects.toThrow(
-        'Failed to prepare Kraken deposit transaction'
+        'Failed to prepare Kraken deposit transaction',
       );
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Failed to prepare Kraken deposit transaction',
         expect.objectContaining({
           error: expect.objectContaining({
-            message: 'API connection failed'
-          })
-        })
+            message: 'API connection failed',
+          }),
+        }),
       );
     });
 
@@ -876,7 +918,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       expect(result).toHaveLength(2);
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Kraken deposit address obtained for transaction preparation',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
   });
@@ -918,20 +960,19 @@ describe('KrakenBridgeAdapter Unit', () => {
           altname: 'WETH',
           decimals: 18,
           display_decimals: 4,
-          status: 'enabled'
-        }
+          status: 'enabled',
+        },
       });
       // Mock the cache to return recipient by default
-      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValue({
-        id: 'test-rebalance-id',
-        recipient,
-        amount,
-        transaction: mockOriginTransaction.transactionHash,
-        bridge: SupportedBridge.Kraken,
-        origin: sampleRoute.origin,
-        destination: sampleRoute.destination,
-        asset: sampleRoute.asset,
-      });
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          recipient,
+          amount,
+          originChainId: sampleRoute.origin,
+          destinationChainId: sampleRoute.destination,
+          tickerHash: sampleRoute.asset,
+        }),
+      );
 
       // Mock asset mapping
       mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number) => {
@@ -959,7 +1000,7 @@ describe('KrakenBridgeAdapter Unit', () => {
         recipient,
         mockETHMainnetKrakenMapping,
         mockWETHArbitrumKrakenMapping,
-        mockChains[sampleRoute.destination].assets.find(a => a.symbol === 'WETH')
+        mockChains[sampleRoute.destination].assets.find((a) => a.symbol === 'WETH'),
       );
     });
 
@@ -996,7 +1037,7 @@ describe('KrakenBridgeAdapter Unit', () => {
     });
 
     it('should return false when recipient is not found in cache', async () => {
-      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValue(undefined);
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(undefined);
 
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
 
@@ -1004,7 +1045,7 @@ describe('KrakenBridgeAdapter Unit', () => {
     });
 
     it('should return false when cache lookup throws error', async () => {
-      mockRebalanceCache.getRebalanceByTransaction.mockRejectedValue(new Error('Cache lookup failed'));
+      mockDatabase.getRebalanceOperationByTransactionHash.mockRejectedValue(new Error('Cache lookup failed'));
 
       const result = await adapter.readyOnDestination(amount, sampleRoute, mockOriginTransaction);
 
@@ -1044,7 +1085,7 @@ describe('KrakenBridgeAdapter Unit', () => {
         'https://api.kraken.com',
         configWithoutProviders,
         mockLogger,
-        mockRebalanceCache,
+        mockDatabase,
       );
 
       const provider = adapterWithoutProviders.getProvider(1);
@@ -1069,7 +1110,7 @@ describe('KrakenBridgeAdapter Unit', () => {
         'https://api.kraken.com',
         configWithInvalidProvider,
         mockLogger,
-        mockRebalanceCache,
+        mockDatabase,
       );
 
       // This should handle the error gracefully and return undefined
@@ -1137,13 +1178,13 @@ describe('KrakenBridgeAdapter Unit', () => {
       const result = await adapter.checkDepositConfirmed(
         sampleRoute,
         mockOriginTransaction,
-        mockETHMainnetKrakenMapping
+        mockETHMainnetKrakenMapping,
       );
 
       expect(result.confirmed).toBe(true);
       expect(mockKrakenClient.getDepositStatus).toHaveBeenCalledWith(
         mockETHMainnetKrakenMapping.krakenAsset,
-        mockETHMainnetKrakenMapping.depositMethod.method
+        mockETHMainnetKrakenMapping.depositMethod.method,
       );
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Deposit confirmation check',
@@ -1152,7 +1193,7 @@ describe('KrakenBridgeAdapter Unit', () => {
           confirmed: true,
           matchingDepositId: mockOriginTransaction.transactionHash,
           status: KRAKEN_DEPOSIT_STATUS.SUCCESS,
-        })
+        }),
       );
     });
 
@@ -1175,7 +1216,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       const result = await adapter.checkDepositConfirmed(
         sampleRoute,
         mockOriginTransaction,
-        mockETHMainnetKrakenMapping
+        mockETHMainnetKrakenMapping,
       );
 
       expect(result.confirmed).toBe(false);
@@ -1185,7 +1226,7 @@ describe('KrakenBridgeAdapter Unit', () => {
           confirmed: false,
           matchingDepositId: undefined,
           status: undefined,
-        })
+        }),
       );
     });
 
@@ -1208,7 +1249,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       const result = await adapter.checkDepositConfirmed(
         sampleRoute,
         mockOriginTransaction,
-        mockETHMainnetKrakenMapping
+        mockETHMainnetKrakenMapping,
       );
 
       expect(result.confirmed).toBe(false);
@@ -1217,7 +1258,7 @@ describe('KrakenBridgeAdapter Unit', () => {
         expect.objectContaining({
           confirmed: false,
           status: KRAKEN_DEPOSIT_STATUS.PENDING,
-        })
+        }),
       );
     });
 
@@ -1227,7 +1268,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       const result = await adapter.checkDepositConfirmed(
         sampleRoute,
         mockOriginTransaction,
-        mockETHMainnetKrakenMapping
+        mockETHMainnetKrakenMapping,
       );
 
       expect(result.confirmed).toBe(false);
@@ -1238,7 +1279,7 @@ describe('KrakenBridgeAdapter Unit', () => {
             message: 'API error',
           }),
           transactionHash: mockOriginTransaction.transactionHash,
-        })
+        }),
       );
     });
 
@@ -1262,7 +1303,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       const result = await adapter.checkDepositConfirmed(
         sampleRoute,
         mockOriginTransaction,
-        mockETHMainnetKrakenMapping
+        mockETHMainnetKrakenMapping,
       );
 
       expect(result.confirmed).toBe(true);
@@ -1299,36 +1340,68 @@ describe('KrakenBridgeAdapter Unit', () => {
 
     it('should find existing withdrawal by refid', async () => {
       const refid = 'mark-1-42161-def45678';
-      const cached = {
+      const cached = createMockCexWithdrawalRecord({
+        rebalanceOperationId: 'test-rebalance-id',
         asset: mockWETHArbitrumKrakenMapping.krakenAsset,
         method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
         refid,
-      };
-      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue(cached)
+      });
 
-      const result = await adapter.findExistingWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
+      // Mock getRebalanceOperationByTransactionHash to return operation
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
       );
 
-      expect(result).toEqual(cached);
-      expect(mockRebalanceCache.getWithdrawalRecord).toHaveBeenCalledWith(
-        mockOriginTransaction.transactionHash
+      // Mock getCexWithdrawalRecord to return cached record with metadata
+      mockDatabase.getCexWithdrawalRecord.mockResolvedValue({
+        ...cached,
+        metadata: {
+          refid,
+          asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+          method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+        },
+      });
+
+      const result = await adapter.findExistingWithdrawal(sampleRoute, mockOriginTransaction);
+
+      expect(result).toEqual({
+        refid,
+        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+      });
+      expect(mockDatabase.getRebalanceOperationByTransactionHash).toHaveBeenCalledWith(
+        mockOriginTransaction.transactionHash,
+        sampleRoute.origin,
       );
+      expect(mockDatabase.getCexWithdrawalRecord).toHaveBeenCalledWith({
+        rebalanceOperationId: 'test-rebalance-id',
+        platform: 'kraken',
+      });
     });
 
     it('should return undefined when no existing withdrawal found', async () => {
-      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue(undefined)
-
-      const result = await adapter.findExistingWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
+      // Mock getRebalanceOperationByTransactionHash to return operation
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
       );
+
+      mockDatabase.getCexWithdrawalRecord.mockResolvedValue(undefined);
+
+      const result = await adapter.findExistingWithdrawal(sampleRoute, mockOriginTransaction);
 
       expect(result).toBeUndefined();
-      expect(mockRebalanceCache.getWithdrawalRecord).toHaveBeenCalledWith(
-        mockOriginTransaction.transactionHash
+      expect(mockDatabase.getRebalanceOperationByTransactionHash).toHaveBeenCalledWith(
+        mockOriginTransaction.transactionHash,
+        sampleRoute.origin,
       );
+      expect(mockDatabase.getCexWithdrawalRecord).toHaveBeenCalledWith({
+        rebalanceOperationId: 'test-rebalance-id',
+        platform: 'kraken',
+      });
     });
   });
 
@@ -1364,60 +1437,94 @@ describe('KrakenBridgeAdapter Unit', () => {
       jest.clearAllMocks();
 
       // mock withdrawal response
-      mockKrakenClient.withdraw.mockResolvedValue({ refid })
+      mockKrakenClient.withdraw.mockResolvedValue({ refid });
 
       // mock cache response
-      mockRebalanceCache.addWithdrawalRecord.mockResolvedValue();
+      mockDatabase.createCexWithdrawalRecord.mockResolvedValue(createMockCexWithdrawalRecord());
     });
 
     it('should successfully initiate withdrawal', async () => {
+      // Mock the rebalance operation lookup to succeed
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
+      );
+
       const result = await adapter.initiateWithdrawal(
         sampleRoute,
         mockOriginTransaction,
         amount,
         mockWETHArbitrumKrakenMapping,
         mockAssets['WETH'],
-        recipient
+        recipient,
       );
 
-      expect(result).toEqual({ refid, asset: mockWETHArbitrumKrakenMapping.krakenAsset, method: mockWETHArbitrumKrakenMapping.withdrawMethod.method });
+      expect(result).toEqual({
+        refid,
+        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+      });
       expect(mockKrakenClient.withdraw).toHaveBeenCalledWith({
         asset: mockWETHArbitrumKrakenMapping.krakenAsset,
         key: recipient,
         amount: formatUnits(BigInt(amount), 18),
       });
-      expect(mockRebalanceCache.addWithdrawalRecord).toHaveBeenCalledWith(
-        mockOriginTransaction.transactionHash,
-        mockWETHArbitrumKrakenMapping.krakenAsset,
-        mockWETHArbitrumKrakenMapping.withdrawMethod.method,
-        refid,
-      )
+      expect(mockDatabase.createCexWithdrawalRecord).toHaveBeenCalledWith({
+        rebalanceOperationId: 'test-rebalance-id',
+        platform: 'kraken',
+        metadata: {
+          asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+          method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+          refid,
+          depositTransactionHash: mockOriginTransaction.transactionHash,
+          destinationChainId: 42161,
+        },
+      });
     });
 
     it('should throw error when withdraw call fails', async () => {
+      // Mock the rebalance operation lookup to succeed
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
+      );
+
       mockKrakenClient.withdraw.mockRejectedValue(new Error('Withdrawal API error'));
 
-      await expect(adapter.initiateWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
-        amount,
-        mockWETHArbitrumKrakenMapping,
-        mockAssets['WETH'],
-        recipient
-      )).rejects.toThrow('Withdrawal API error');
+      await expect(
+        adapter.initiateWithdrawal(
+          sampleRoute,
+          mockOriginTransaction,
+          amount,
+          mockWETHArbitrumKrakenMapping,
+          mockAssets['WETH'],
+          recipient,
+        ),
+      ).rejects.toThrow('Withdrawal API error');
     });
 
     it('should throw error when cache call fails', async () => {
-      mockRebalanceCache.addWithdrawalRecord.mockRejectedValue(new Error('Cache error'));
+      // Mock the rebalance operation lookup to succeed
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
+      );
 
-      await expect(adapter.initiateWithdrawal(
-        sampleRoute,
-        mockOriginTransaction,
-        amount,
-        mockWETHArbitrumKrakenMapping,
-        mockAssets['WETH'],
-        recipient
-      )).rejects.toThrow('Cache error');
+      mockDatabase.createCexWithdrawalRecord.mockRejectedValue(new Error('Cache error'));
+
+      await expect(
+        adapter.initiateWithdrawal(
+          sampleRoute,
+          mockOriginTransaction,
+          amount,
+          mockWETHArbitrumKrakenMapping,
+          mockAssets['WETH'],
+          recipient,
+        ),
+      ).rejects.toThrow('Cache error');
     });
   });
 
@@ -1453,23 +1560,28 @@ describe('KrakenBridgeAdapter Unit', () => {
     beforeEach(() => {
       jest.clearAllMocks();
 
-      mockKrakenClient.getDepositStatus.mockResolvedValue([{
-        txid: mockOriginTransaction.transactionHash,
-        status: 'Success',
-      } as any]);
+      mockKrakenClient.getDepositStatus.mockResolvedValue([
+        {
+          txid: mockOriginTransaction.transactionHash,
+          status: 'Success',
+        } as any,
+      ]);
 
-      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue({
-        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
-        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
-        refid
-      });
+      mockDatabase.getCexWithdrawalRecord.mockResolvedValue(
+        createMockCexWithdrawalRecord({
+          rebalanceOperationId: 'test-rebalance-id',
+          asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+          method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+          refid,
+        }),
+      );
 
       mockKrakenClient.getWithdrawStatus.mockResolvedValue({
         status: 'Pending',
         txid: withdrawalTxId,
       } as any);
 
-      mockKrakenClient.withdraw.mockResolvedValue({ refid })
+      mockKrakenClient.withdraw.mockResolvedValue({ refid });
 
       // Mock on-chain confirmation
       const mockProvider = {
@@ -1483,41 +1595,84 @@ describe('KrakenBridgeAdapter Unit', () => {
 
     it('should return undefined when deposit is not confirmed', async () => {
       // Mock deposit not confirmed
-      mockKrakenClient.getDepositStatus.mockResolvedValue([{
-        txid: mockOriginTransaction.transactionHash,
-        status: 'Pending',
-      } as any]);
+      mockKrakenClient.getDepositStatus.mockResolvedValue([
+        {
+          txid: mockOriginTransaction.transactionHash,
+          status: 'Pending',
+        } as any,
+      ]);
 
-      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
+      const result = await adapter.getOrInitWithdrawal(
+        amount,
+        sampleRoute,
+        mockOriginTransaction,
+        recipient,
+        mockETHMainnetKrakenMapping,
+        mockWETHArbitrumKrakenMapping,
+        mockAssets['WETH'],
+      );
 
       expect(result).toBeUndefined();
     });
 
     it('should initiate new withdrawal when deposit is confirmed but no existing withdrawal', async () => {
       // Mock no existing withdrawal
-      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue(undefined);
+      mockDatabase.getCexWithdrawalRecord.mockResolvedValue(undefined);
 
-      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
+      // Mock getRebalanceOperationByTransactionHash for initiateWithdrawal
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
+      );
+
+      // Mock createCexWithdrawalRecord for initiateWithdrawal
+      mockDatabase.createCexWithdrawalRecord.mockResolvedValue(createMockCexWithdrawalRecord());
+
+      const result = await adapter.getOrInitWithdrawal(
+        amount,
+        sampleRoute,
+        mockOriginTransaction,
+        recipient,
+        mockETHMainnetKrakenMapping,
+        mockWETHArbitrumKrakenMapping,
+        mockAssets['WETH'],
+      );
 
       expect(result).toEqual({
         status: 'pending',
         onChainConfirmed: false,
-        txId: withdrawalTxId
+        txId: withdrawalTxId,
       });
       expect(mockKrakenClient.withdraw).toHaveBeenCalledWith({
         asset: mockWETHArbitrumKrakenMapping.krakenAsset,
         key: recipient,
-        amount: formatUnits(BigInt(amount), 18)
+        amount: formatUnits(BigInt(amount), 18),
       });
     });
 
     it('should return existing withdrawal status when withdrawal exists', async () => {
+      // Mock getRebalanceOperationByTransactionHash in case needed
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
+      );
+
       mockKrakenClient.getWithdrawStatus.mockResolvedValue({
         status: 'Success',
         txid: withdrawalTxId,
         refid,
-      } as any)
-      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
+      } as any);
+      const result = await adapter.getOrInitWithdrawal(
+        amount,
+        sampleRoute,
+        mockOriginTransaction,
+        recipient,
+        mockETHMainnetKrakenMapping,
+        mockWETHArbitrumKrakenMapping,
+        mockAssets['WETH'],
+      );
 
       expect(result).toEqual({
         status: 'completed',
@@ -1527,12 +1682,27 @@ describe('KrakenBridgeAdapter Unit', () => {
     });
 
     it('should return pending status when withdrawal exists but is not successful', async () => {
+      // Mock getRebalanceOperationByTransactionHash in case needed
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
+      );
+
       mockKrakenClient.getWithdrawStatus.mockResolvedValue({
         status: 'Failed',
         txid: undefined,
         refid,
-      } as any)
-      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
+      } as any);
+      const result = await adapter.getOrInitWithdrawal(
+        amount,
+        sampleRoute,
+        mockOriginTransaction,
+        recipient,
+        mockETHMainnetKrakenMapping,
+        mockWETHArbitrumKrakenMapping,
+        mockAssets['WETH'],
+      );
 
       expect(result).toEqual({
         status: 'pending',
@@ -1542,6 +1712,13 @@ describe('KrakenBridgeAdapter Unit', () => {
     });
 
     it('should handle on-chain confirmation errors gracefully', async () => {
+      // Mock getRebalanceOperationByTransactionHash in case needed
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          id: 'test-rebalance-id',
+        }),
+      );
+
       // Mock provider that throws error on getTransactionReceipt
       const mockProvider = {
         getTransactionReceipt: (jest.fn() as any).mockRejectedValue(new Error('RPC error')),
@@ -1552,9 +1729,17 @@ describe('KrakenBridgeAdapter Unit', () => {
         status: 'Success',
         txid: withdrawalTxId,
         refid,
-      } as any)
+      } as any);
 
-      const result = await adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']);
+      const result = await adapter.getOrInitWithdrawal(
+        amount,
+        sampleRoute,
+        mockOriginTransaction,
+        recipient,
+        mockETHMainnetKrakenMapping,
+        mockWETHArbitrumKrakenMapping,
+        mockAssets['WETH'],
+      );
 
       // Should still return completed status, but onChainConfirmed should be false due to error
       expect(result).toEqual({
@@ -1565,11 +1750,20 @@ describe('KrakenBridgeAdapter Unit', () => {
     });
 
     it('should throw error and log when getOrInitWithdrawal fails', async () => {
-      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue(undefined);
-      mockKrakenClient.withdraw.mockRejectedValue(new Error('failed'))
+      mockDatabase.getCexWithdrawalRecord.mockResolvedValue(undefined);
+      mockKrakenClient.withdraw.mockRejectedValue(new Error('failed'));
 
-      await expect(adapter.getOrInitWithdrawal(amount, sampleRoute, mockOriginTransaction, recipient, mockETHMainnetKrakenMapping, mockWETHArbitrumKrakenMapping, mockAssets['WETH']))
-        .rejects.toThrow('failed');
+      await expect(
+        adapter.getOrInitWithdrawal(
+          amount,
+          sampleRoute,
+          mockOriginTransaction,
+          recipient,
+          mockETHMainnetKrakenMapping,
+          mockWETHArbitrumKrakenMapping,
+          mockAssets['WETH'],
+        ),
+      ).rejects.toThrow('failed');
     });
   });
 
@@ -1599,29 +1793,36 @@ describe('KrakenBridgeAdapter Unit', () => {
 
     const recipient = '0x9876543210987654321098765432109876543210';
     const refid = 'adsfjha8291';
-    const withdrawalTxId = '0xwithdrawal123456789abcdef123456789abcdef123456789abcdef123456789abc';
     const amountWei = parseUnits('0.5', 18);
 
     beforeEach(() => {
       jest.clearAllMocks();
 
       // Mock the cache to return recipient
-      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValue({
-        id: 'test-rebalance-id',
-        recipient,
-        amount: '100000000000000000',
-        transaction: mockOriginTransaction.transactionHash,
-        bridge: SupportedBridge.Kraken,
-        origin: sampleRoute.origin,
-        destination: sampleRoute.destination,
-        asset: sampleRoute.asset,
-      })
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(
+        createMockRebalanceOperation({
+          recipient,
+          amount: '100000000000000000',
+          originChainId: sampleRoute.origin,
+          destinationChainId: sampleRoute.destination,
+          tickerHash: sampleRoute.asset,
+          transactions: { origin: mockOriginTransaction.transactionHash },
+        }),
+      );
 
-      // Mock cache to return withdrawal
-      mockRebalanceCache.getWithdrawalRecord.mockResolvedValue({
-        refid,
-        asset: mockWETHArbitrumKrakenMapping.krakenAsset,
-        method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+      // Mock cache to return withdrawal with metadata
+      mockDatabase.getCexWithdrawalRecord.mockResolvedValue({
+        ...createMockCexWithdrawalRecord({
+          rebalanceOperationId: 'test-rebalance-id',
+          refid,
+          asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+          method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+        }),
+        metadata: {
+          refid,
+          asset: mockWETHArbitrumKrakenMapping.krakenAsset,
+          method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
+        },
       });
 
       // Mock withdraw status
@@ -1630,7 +1831,7 @@ describe('KrakenBridgeAdapter Unit', () => {
         refid,
         method: mockWETHArbitrumKrakenMapping.withdrawMethod.method,
         amount: formatUnits(amountWei, 18),
-      } as any)
+      } as any);
     });
 
     it('should return WETH wrap transaction when withdrawal has ETH value', async () => {
@@ -1649,34 +1850,43 @@ describe('KrakenBridgeAdapter Unit', () => {
         refid,
         method: mockWETHArbitrumKrakenMapping.withdrawMethod.method + ' (ERC-20)',
         amount: formatUnits(amountWei, 18),
-      } as any)
+      } as any);
       const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
 
       expect(result).toBeUndefined();
     });
 
     it('should return void when cannot get recipient', async () => {
-      mockRebalanceCache.getRebalanceByTransaction.mockResolvedValue(undefined);
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(undefined);
 
       const result = await adapter.destinationCallback(sampleRoute, mockOriginTransaction);
 
       expect(result).toBeUndefined();
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'No recipient found in cache for callback',
-        { transactionHash: mockOriginTransaction.transactionHash },
-      );
+      expect(mockLogger.error).toHaveBeenCalledWith('No recipient found in cache for callback', {
+        transactionHash: mockOriginTransaction.transactionHash,
+      });
     });
 
     it('should throw when withdrawal is not retrieved', async () => {
+      // Ensure findExistingWithdrawal returns a valid value
+      // Already mocked in beforeEach via getCexWithdrawalRecord
+
       mockKrakenClient.getWithdrawStatus.mockResolvedValue(undefined);
 
-      await expect(adapter.destinationCallback(sampleRoute, mockOriginTransaction)).rejects.toThrow(`Failed to retrieve kraken withdrawal status`)
+      await expect(adapter.destinationCallback(sampleRoute, mockOriginTransaction)).rejects.toThrow(
+        `Failed to retrieve kraken withdrawal status`,
+      );
     });
 
     it('should return void when withdrawal status is not successful', async () => {
+      // Ensure findExistingWithdrawal returns a valid value
+      // Already mocked in beforeEach via getCexWithdrawalRecord
+
       mockKrakenClient.getWithdrawStatus.mockResolvedValue({ status: 'failed' } as any);
 
-      await expect(adapter.destinationCallback(sampleRoute, mockOriginTransaction)).rejects.toThrow(`is not successful, status`)
+      await expect(adapter.destinationCallback(sampleRoute, mockOriginTransaction)).rejects.toThrow(
+        `is not successful, status`,
+      );
     });
   });
 });
