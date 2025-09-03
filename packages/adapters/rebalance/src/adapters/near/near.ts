@@ -55,6 +55,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
   // Maximum amounts per asset symbol to send in a single rebalance operation
   private readonly ASSET_CAPS: Record<string, bigint> = {
     WETH: BigInt('8000000000000000000'), // 8 WETH
+    ETH: BigInt('8000000000000000000'), // 8 ETH
     USDC: BigInt('50000000000'), // 50,000 USDC
     USDT: BigInt('50000000000'), // 50,000 USDT
   };
