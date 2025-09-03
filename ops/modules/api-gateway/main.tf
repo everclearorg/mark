@@ -1,5 +1,5 @@
 resource "aws_api_gateway_rest_api" "admin_api" {
-  name        = "mark-admin-api-${var.environment}-${var.stage}"
+  name        = "${var.bot_name}-admin-api-${var.environment}-${var.stage}"
   description = "Mark Admin API"
 
   endpoint_configuration {
@@ -107,12 +107,12 @@ resource "aws_api_gateway_method" "clear_rebalance_post" {
 
 # Create Lambda function for admin API
 resource "aws_lambda_function" "admin_api" {
-  function_name = "mark-admin-api-${var.environment}-${var.stage}"
+  function_name = "${var.bot_name}-admin-api-${var.environment}-${var.stage}"
   role          = var.execution_role_arn
-  
+
   package_type = "Image"
   image_uri    = var.image_uri
-  
+
   memory_size = var.memory_size
   timeout     = var.timeout
 
@@ -122,13 +122,13 @@ resource "aws_lambda_function" "admin_api" {
   }
 
   environment {
-    variables = merge(var.container_env_vars, { DD_SERVICE = "mark-admin" })
+    variables = merge(var.container_env_vars, { DD_SERVICE = "${var.bot_name}-admin" })
   }
 }
 
 # Create CloudWatch log group for Lambda
 resource "aws_cloudwatch_log_group" "admin_api" {
-  name              = "/aws/lambda/mark-admin-api-${var.environment}-${var.stage}"
+  name              = "/aws/lambda/${var.bot_name}-admin-api-${var.environment}-${var.stage}"
   retention_in_days = 14
 
   tags = {
@@ -253,4 +253,4 @@ resource "aws_route53_record" "admin_api" {
     name                   = aws_api_gateway_domain_name.admin_api.regional_domain_name
     zone_id                = aws_api_gateway_domain_name.admin_api.regional_zone_id
   }
-} 
+}
