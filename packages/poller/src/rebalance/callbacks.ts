@@ -179,22 +179,4 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       }
     }
   }
-
-  // Mark PENDING/AWAITING_CALLBACK ops >24 hours since creation as EXPIRED
-  try {
-    await db.queryWithClient(
-      `
-      UPDATE rebalance_operations
-      SET status = $1, "updated_at" = NOW()
-      WHERE status = ANY($2)
-      AND "created_at" < NOW() - INTERVAL '24 hours'
-    `,
-      [
-        RebalanceOperationStatus.EXPIRED,
-        [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
-      ],
-    );
-  } catch (e) {
-    logger.error('Failed to expire old operations', { error: jsonifyError(e), requestId });
-  }
 };

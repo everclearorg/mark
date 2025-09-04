@@ -132,4 +132,5 @@ export interface MarkConfiguration extends RebalanceConfig {
   supportedAssets: string[];
   chains: Record<string, ChainConfiguration>; // keyed on chain id
   hub: Omit<HubConfig, 'confirmations' | 'subgraphUrls'>;
+  earmarkTTLMinutes?: number;
 }

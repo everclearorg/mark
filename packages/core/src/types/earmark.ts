@@ -4,6 +4,7 @@ export enum EarmarkStatus {
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
   FAILED = 'failed',
+  EXPIRED = 'expired',
 }
 
 export enum RebalanceOperationStatus {

@@ -1089,7 +1089,7 @@ export async function cleanupStaleEarmarks(invoiceIds: string[], context: Proces
         // Mark earmark as cancelled since the invoice is no longer available
         await database.updateEarmarkStatus(earmark.id, EarmarkStatus.CANCELLED);
 
-        logger.info('Marked stale earmark as failed', {
+        logger.info('Marked stale earmark as cancelled', {
           requestId,
           earmarkId: earmark.id,
           invoiceId,
