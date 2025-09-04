@@ -214,6 +214,15 @@ resource "aws_api_gateway_deployment" "admin_api" {
 
   rest_api_id = aws_api_gateway_rest_api.admin_api.id
 
+  triggers = {
+    # Redeploy when the Lambda function or its configuration changes
+    redeployment = sha1(jsonencode([
+      aws_lambda_function.admin_api.last_modified,
+      aws_lambda_function.admin_api.source_code_hash,
+      aws_lambda_function.admin_api.environment,
+    ]))
+  }
+
   lifecycle {
     create_before_destroy = true
   }
