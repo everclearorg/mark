@@ -103,9 +103,10 @@ export class NearBridgeAdapter implements BridgeAdapter {
   }
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
+    let _amount = amount;
     try {
       const originAsset = this.getAsset(route.asset, route.origin);
-      const _amount = this.getCappedAmount(amount, originAsset?.symbol);
+      _amount = this.getCappedAmount(amount, originAsset?.symbol);
 
       // Log if amount was capped for visibility
       if (_amount !== amount) {
@@ -120,7 +121,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
       const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, _amount);
       return quote.amountOut;
     } catch (error) {
-      this.handleError(error, 'get received amount from Near', { amount, route });
+      this.handleError(error, 'get received amount from Near failed', { _amount, route });
     }
   }
 

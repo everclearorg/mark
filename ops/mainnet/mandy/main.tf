@@ -91,7 +91,7 @@ module "cache" {
   source                        = "../../modules/redis"
   stage                         = var.stage
   environment                   = var.environment
-  family                        = "mark"
+  family                        = var.bot_name
   sg_id                         = module.sgs.lambda_sg_id
   vpc_id                        = module.network.vpc_id
   cache_subnet_group_subnet_ids = module.network.public_subnets
