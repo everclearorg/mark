@@ -463,6 +463,7 @@ export async function executeOnDemandRebalancing(
     slippage: number;
     bridge: string;
     receipt: database.TransactionReceipt;
+    recipient: string;
   }> = [];
 
   try {
@@ -509,6 +510,7 @@ export async function executeOnDemandRebalancing(
             slippage: operation.slippage,
             bridge: operation.bridge,
             receipt: result,
+            recipient,
           });
         } else {
           logger.warn('Failed to execute rebalancing operation, no transaction returned', {
@@ -592,6 +594,7 @@ export async function executeOnDemandRebalancing(
           status: RebalanceOperationStatus.PENDING,
           bridge: op.bridge,
           transactions: { [op.originChainId]: op.receipt },
+          recipient: op.recipient,
         });
 
         logger.info('Created rebalance operation record', {
@@ -747,6 +750,7 @@ async function handleMinAmountIncrease(
     slippage: number;
     bridge: string;
     receipt: database.TransactionReceipt;
+    recipient: string;
   }> = [];
 
   // Execute additional rebalancing operations
@@ -790,6 +794,7 @@ async function handleMinAmountIncrease(
           slippage: operation.slippage,
           bridge: operation.bridge,
           receipt: result,
+          recipient,
         });
       }
     } catch (error) {
@@ -821,6 +826,7 @@ async function handleMinAmountIncrease(
           status: RebalanceOperationStatus.PENDING,
           bridge: op.bridge,
           transactions: { [op.originChainId]: op.receipt },
+          recipient: op.recipient,
         });
 
         logger.info('Created additional rebalance operation record', {
