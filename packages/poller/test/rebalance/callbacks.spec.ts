@@ -562,17 +562,6 @@ describe('executeDestinationCallbacks', () => {
     }
   });
 
-  it('should query to expire old operations', async () => {
-    await executeDestinationCallbacks(mockContext);
-
-    expect((mockDatabase.queryWithClient as SinonStub).calledOnce).toBe(true);
-    const [query, params] = (mockDatabase.queryWithClient as SinonStub).firstCall.args;
-    expect(query).toContain('UPDATE rebalance_operations');
-    expect(query).toContain("INTERVAL '24 hours'");
-    expect(params![0]).toBe(RebalanceOperationStatus.EXPIRED);
-    expect(params![1]).toEqual([RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK]);
-  });
-
   it('should skip operation with missing bridge type', async () => {
     const dbOperationNoBridge = createDbOperation(mockAction1, mockAction1Id);
     dbOperationNoBridge.bridge = null as unknown as SupportedBridge;
@@ -605,23 +594,6 @@ describe('executeDestinationCallbacks', () => {
       expect(warnCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
     }
     expect(mockChainService.getTransactionReceipt.called).toBe(false);
-  });
-
-  it('should handle error when expiring old operations', async () => {
-    const error = new Error('Database error');
-    (mockDatabase.queryWithClient as SinonStub).rejects(error);
-
-    await executeDestinationCallbacks(mockContext);
-
-    expect(
-      mockLogger.error.calledWith(
-        'Failed to expire old operations',
-        sinon.match({
-          requestId: MOCK_REQUEST_ID,
-          error: sinon.match.any,
-        }),
-      ),
-    ).toBe(true);
   });
 
   it('should handle callback transaction with undefined value', async () => {

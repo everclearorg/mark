@@ -197,6 +197,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
       routes: filteredRoutes,
       onDemandRoutes: filteredOnDemandRoutes,
+      earmarkTTLMinutes: configJson.earmarkTTLMinutes ?? parseInt((await fromEnv('EARMARK_TTL_MINUTES')) || '1440'),
     };
 
     validateConfiguration(config);
