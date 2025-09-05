@@ -408,7 +408,7 @@ describe('Invoice Processing', () => {
       expect(mockDeps.purchaseCache.removePurchases.calledWith(['0x123'])).toBe(true);
 
       expect(mockDeps.prometheus.recordPurchaseClearanceDuration.calledOnce).toBe(true);
-      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[0]).toContain({
+      expect(mockDeps.prometheus.recordPurchaseClearanceDuration.firstCall.args[0]).toEqual({
         origin: '1',
         ticker: '0xticker1',
         destination: '8453',
@@ -451,7 +451,7 @@ describe('Invoice Processing', () => {
           },
           transactionHash: '0xabc',
           transactionType: TransactionSubmissionType.Onchain,
-          cachedAt: Math.floor(Date.now() / 1000)
+          cachedAt: Math.floor(Date.now() / 1000) - 10 // 10 seconds ago, older than 1 second TTL
         },
       ]);
 
@@ -536,7 +536,11 @@ describe('Invoice Processing', () => {
 
       // Verify the correct purchase was stored in cache
       expect(mockDeps.purchaseCache.addPurchases.calledOnce).toBe(true);
-      expect(mockDeps.purchaseCache.addPurchases.firstCall.args[0]).toEqual([expectedPurchase]);
+      const actualPurchases = mockDeps.purchaseCache.addPurchases.firstCall.args[0];
+      expect(actualPurchases).toHaveLength(1);
+      const { cachedAt, ...actualPurchaseWithoutTimestamp } = actualPurchases[0];
+      expect(actualPurchaseWithoutTimestamp).toEqual(expectedPurchase);
+      expect(typeof cachedAt).toBe('number');
 
       expect(mockDeps.prometheus.recordSuccessfulPurchase.calledOnce).toBe(true);
       expect(mockDeps.prometheus.recordSuccessfulPurchase.firstCall.args[0]).toEqual({
@@ -1078,7 +1082,10 @@ describe('Invoice Processing', () => {
       };
 
       // Verify the correct purchases were created
-      expect(result.purchases).toEqual([expectedPurchase]);
+      expect(result.purchases).toHaveLength(1);
+      const { cachedAt, ...actualPurchaseWithoutTimestamp } = result.purchases[0];
+      expect(actualPurchaseWithoutTimestamp).toEqual(expectedPurchase);
+      expect(typeof cachedAt).toBe('number');
 
       // Verify remaining balances were updated correctly
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
@@ -1186,7 +1193,12 @@ describe('Invoice Processing', () => {
       ];
 
       // Verify the correct purchases were created
-      expect(result.purchases).toEqual(expectedPurchases);
+      expect(result.purchases).toHaveLength(2);
+      const actualPurchasesWithoutTimestamp = result.purchases.map(({ cachedAt, ...purchase }) => purchase);
+      expect(actualPurchasesWithoutTimestamp).toEqual(expectedPurchases);
+      result.purchases.forEach(purchase => {
+        expect(typeof purchase.cachedAt).toBe('number');
+      });
 
       // Verify remaining balances were updated correctly (2 ETH - 1 ETH - 1 ETH = 0)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
@@ -1292,7 +1304,12 @@ describe('Invoice Processing', () => {
       ];
 
       // Verify the correct split intent purchases were created
-      expect(result.purchases).toEqual(expectedPurchases);
+      expect(result.purchases).toHaveLength(2);
+      const actualPurchasesWithoutTimestamp = result.purchases.map(({ cachedAt, ...purchase }) => purchase);
+      expect(actualPurchasesWithoutTimestamp).toEqual(expectedPurchases);
+      result.purchases.forEach(purchase => {
+        expect(typeof purchase.cachedAt).toBe('number');
+      });
 
       // Verify remaining balances were updated correctly (2 ETH - 2 ETH = 0)
       expect(result.remainingBalances.get('0xticker1')?.get('8453')).toBe(BigInt('0'));
