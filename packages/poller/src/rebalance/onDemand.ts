@@ -511,7 +511,7 @@ export async function executeOnDemandRebalancing(
             amount: result.effectiveAmount || operation.amount, // Use effective amount if adjusted
             slippage: operation.slippage,
             bridge: operation.bridge,
-            receipt: result,
+            receipt: result.receipt,
             recipient,
           });
         } else {
@@ -797,7 +797,7 @@ async function handleMinAmountIncrease(
           amount: result.effectiveAmount || operation.amount, // Use effective amount if adjusted
           slippage: operation.slippage,
           bridge: operation.bridge,
-          receipt: result,
+          receipt: result.receipt,
           recipient,
         });
       }
