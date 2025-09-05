@@ -1,7 +1,6 @@
 import { isValidInvoice } from '../../src/invoice';
-import { MarkConfiguration, Invoice, InvalidPurchaseReasons, WalletType } from '@mark/core';
+import { MarkConfiguration, Invoice, InvalidPurchaseReasons } from '@mark/core';
 import * as assetHelpers from '../../src/helpers/asset';
-import * as zodiacHelpers from '../../src/helpers/zodiac';
 import sinon from 'sinon';
 
 describe('isValidInvoice', () => {
@@ -21,6 +20,7 @@ describe('isValidInvoice', () => {
   const validConfig: MarkConfiguration = {
     web3SignerUrl: '0xDifferentAddress',
     ownAddress: '0xDifferentAddress',
+    ownSolAddress: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM',
     supportedSettlementDomains: [8453],
     chains: {
       '8453': {

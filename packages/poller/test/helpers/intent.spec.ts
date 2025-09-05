@@ -2,9 +2,7 @@ import { stub, createStubInstance, SinonStubbedInstance, SinonStub, restore as s
 import { INTENT_ADDED_TOPIC0, sendIntents, sendIntentsMulticall } from '../../src/helpers/intent';
 import { MarkConfiguration, NewIntentParams, TransactionSubmissionType } from '@mark/core';
 import { Logger } from '@mark/logger';
-import * as contractHelpers from '../../src/helpers/contracts';
-import * as permit2Helpers from '../../src/helpers/permit2';
-import { GetContractReturnType, zeroAddress } from 'viem';
+import { Log, TransactionReceipt, zeroAddress } from 'viem';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { MarkAdapters } from '../../src/init';

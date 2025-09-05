@@ -2,8 +2,7 @@ import { SinonStubbedInstance, stub, createStubInstance } from 'sinon';
 import * as contractModule from '../../src/helpers/contracts';
 import { getMarkBalances, getMarkGasBalances, getCustodiedBalances } from '../../src/helpers/balance';
 import * as assetModule from '../../src/helpers/asset';
-import * as zodiacModule from '../../src/helpers/zodiac';
-import { AssetConfiguration, MarkConfiguration, WalletType, GasType } from '@mark/core';
+import { AssetConfiguration, MarkConfiguration, GasType } from '@mark/core';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { ChainService } from '@mark/chainservice';
 import { PublicClient } from 'viem';
@@ -57,24 +56,6 @@ describe('Wallet Balance Utilities', () => {
     },
   } as unknown as MarkConfiguration;
 
-  const mockConfigWithZodiac = {
-    ownAddress: '0xOwnAddress',
-    chains: {
-      '1': {
-        providers: ['https://mainnet.infura.io/v3/test'],
-        assets: [mockAssetConfig],
-        zodiacRoleModuleAddress: '0xZodiacModule',
-        zodiacRoleKey: '0x1234567890abcdef',
-        gnosisSafeAddress: '0xGnosisSafe',
-      },
-      '2': {
-        providers: ['https://other.infura.io/v3/test'],
-        assets: [mockAssetConfig],
-        // Chain 2 has no Zodiac config
-      },
-    },
-  } as unknown as MarkConfiguration;
-
   let prometheus: SinonStubbedInstance<PrometheusAdapter>;
   let chainService: SinonStubbedInstance<ChainService>;
 
@@ -93,6 +74,12 @@ describe('Wallet Balance Utilities', () => {
       }
       return undefined;
     };
+
+    let createClientStub: any;
+
+    beforeEach(() => {
+      createClientStub = stub(contractModule, 'createClient');
+    });
 
     it('should return gas balances for all chains', async () => {
       const mockClient = {
@@ -142,11 +129,6 @@ describe('Wallet Balance Utilities', () => {
         '1': '0xOwnAddress',
         '728126428': '0xTronAddress',
       });
-
-      // Mock zodiac functions
-      const mockZodiacConfig = { walletType: WalletType.EOA };
-      stub(zodiacModule, 'getValidatedZodiacConfig').returns(mockZodiacConfig);
-      stub(zodiacModule, 'getActualOwner').returns('0xTronAddress');
 
       const mockTronWeb = {
         trx: {
@@ -207,6 +189,29 @@ describe('Wallet Balance Utilities', () => {
       const energyBalance = findMapKey(balances, '728126428', GasType.Energy);
       expect(energyBalance?.toString()).toBe('0');
     });
+
+    it('should handle Solana chain gas balance', async () => {
+      const mockConfigWithSolana = {
+        ...mockConfig,
+        ownSolAddress: 'A0b86a33E6cC3b21c1b27b66b1b242b5a0b1c23e1234567890abcdef',
+        chains: {
+          ...mockConfig.chains,
+          '1399811149': { // Solana chain ID
+            gasEstimate: {
+              type: 'gas',
+            },
+          },
+        },
+      } as any;
+
+      chainService.getBalance.withArgs(1399811149, 'A0b86a33E6cC3b21c1b27b66b1b242b5a0b1c23e1234567890abcdef', '11111111111111111111111111111111').resolves('2000000000');
+
+      const balances = await getMarkGasBalances(mockConfigWithSolana, chainService, prometheus);
+
+      const solanaBalance = findMapKey(balances, '1399811149', GasType.Gas);
+      expect(solanaBalance?.toString()).to.equal('2000000000');
+    });
+
   });
 
   describe('getMarkBalances', () => {
@@ -240,48 +245,160 @@ describe('Wallet Balance Utilities', () => {
       expect(prometheus.updateChainBalance.callCount).toBe(Object.keys(mockConfig.chains).length);
     });
 
-    it('should use Gnosis Safe address when Zodiac is enabled', async () => {
-      // Mock zodiac functions
-      const mockZodiacConfigEnabled = { walletType: WalletType.Zodiac, safeAddress: '0xGnosisSafe' as `0x${string}` };
-      const mockZodiacConfigDisabled = { walletType: WalletType.EOA };
+    it('should handle assets with missing decimals', async () => {
+      const configWithMissingDecimals = {
+        ...mockConfig,
+        chains: {
+          '1': {
+            providers: ['https://mainnet.infura.io/v3/test'],
+            assets: [
+              {
+                ...mockAssetConfig,
+                decimals: undefined, // Missing decimals
+              },
+            ],
+          },
+        },
+      } as unknown as MarkConfiguration;
 
-      stub(zodiacModule, 'getValidatedZodiacConfig')
-        .withArgs(mockConfigWithZodiac.chains['1'])
-        .returns(mockZodiacConfigEnabled)
-        .withArgs(mockConfigWithZodiac.chains['2'])
-        .returns(mockZodiacConfigDisabled);
+      stub(assetModule, 'getTickers').returns(mockTickers);
+      stub(contractModule, 'getERC20Contract').resolves({
+        read: {
+          balanceOf: stub().resolves('1000'),
+        },
+      } as any);
 
-      stub(zodiacModule, 'getActualOwner')
-        .withArgs(mockZodiacConfigEnabled, mockConfigWithZodiac.ownAddress)
-        .returns('0xGnosisSafe')
-        .withArgs(mockZodiacConfigDisabled, mockConfigWithZodiac.ownAddress)
-        .returns(mockConfigWithZodiac.ownAddress);
+      const balances = await getMarkBalances(configWithMissingDecimals, chainService, prometheus);
+      expect(balances.get(mockAssetConfig.tickerHash)?.get('1')).toBe(undefined);
+      expect(prometheus.updateChainBalance.callCount).toBe(0);
+    });
+
+    it('should skip chains that are not configured', async () => {
+      // Mock getTickers to return a ticker that's not supported on all chains
+      stub(assetModule, 'getTickers').returns(mockTickers);
+
+      // Create config where chain 2 doesn't have the ticker
+      const configMismatch = {
+        ...mockConfig,
+        chains: {
+          '1': {
+            providers: ['https://mainnet.infura.io/v3/test'],
+            assets: [mockAssetConfig], // Has the ticker
+          },
+          '2': {
+            providers: ['https://other.infura.io/v3/test'],
+            assets: [], // No assets - ticker not supported
+          },
+        },
+      } as unknown as MarkConfiguration;
+
+      stub(contractModule, 'getERC20Contract').resolves({
+        read: {
+          balanceOf: stub().resolves('1000'),
+        },
+      } as any);
+
+      const balances = await getMarkBalances(configMismatch, chainService, prometheus);
+      const domainBalances = balances.get(mockTickers[0]);
+
+      // Should have balance for chain 1 but not chain 2
+      expect(domainBalances?.get('1')?.toString()).to.equal('1000');
+      expect(domainBalances?.has('2')).to.be.false; // No balance entry created for unsupported asset
+      expect(prometheus.updateChainBalance.callCount).to.be.eq(1); // Only called for chain 1
+    });
+
+    it('should handle TVM chain balances', async () => {
+      const mockConfigWithTvm = {
+        ownAddress: '0xOwnAddress',
+        chains: {
+          '728126428': { // Tron chain ID
+            providers: ['https://api.trongrid.io'],
+            assets: [{
+              ...mockAssetConfig,
+              address: 'TokenAddressTron123456789',
+              decimals: 6, // USDT on Tron has 6 decimals
+            }],
+          },
+        },
+      } as unknown as MarkConfiguration;
 
       stub(assetModule, 'getTickers').returns(mockTickers);
 
-      // Mock ERC20 contracts to track which addresses are used
-      const mockBalanceOf1 = stub().resolves('5000');
-      const mockBalanceOf2 = stub().resolves('6000');
+      // Mock TVM address and balance
+      chainService.getAddress.resolves({
+        '728126428': 'TronAddressExample123456789'
+      });
+      chainService.getBalance.withArgs(728126428, 'TronAddressExample123456789', 'TokenAddressTron123456789')
+        .resolves('1000000'); // 1 token in 6 decimals
 
-      const mockContract1 = { read: { balanceOf: mockBalanceOf1 } };
-      const mockContract2 = { read: { balanceOf: mockBalanceOf2 } };
+      const balances = await getMarkBalances(mockConfigWithTvm, chainService, prometheus);
 
-      stub(contractModule, 'getERC20Contract')
-        .withArgs(mockConfigWithZodiac, '1', '0xtest')
-        .resolves(mockContract1 as unknown as Awaited<ReturnType<typeof contractModule.getERC20Contract>>)
-        .withArgs(mockConfigWithZodiac, '2', '0xtest')
-        .resolves(mockContract2 as unknown as Awaited<ReturnType<typeof contractModule.getERC20Contract>>);
-
-      const balances = await getMarkBalances(mockConfigWithZodiac, chainService, prometheus);
-
-      // Verify correct addresses were used for balance checks
-      expect(mockBalanceOf1.calledWith(['0xGnosisSafe'])).toBe(true);
-      expect(mockBalanceOf2.calledWith(['0xOwnAddress'])).toBe(true);
-
-      const ticker1Balances = balances.get(mockTickers[0]);
-      expect(ticker1Balances?.get('1')?.toString()).toBe('5000');
-      expect(ticker1Balances?.get('2')?.toString()).toBe('6000');
+      const domainBalances = balances.get(mockTickers[0]);
+      expect(domainBalances?.get('728126428')?.toString()).toBe('1000000000000000000'); // TVM balance normalized to 18 decimals
+      expect(prometheus.updateChainBalance.callCount).toBe(1);
     });
+
+    it('should handle TVM chain balance errors', async () => {
+      const mockConfigWithTvm = {
+        ownAddress: '0xOwnAddress',
+        chains: {
+          '728126428': { // Tron chain ID
+            providers: ['https://api.trongrid.io'],
+            assets: [{
+              ...mockAssetConfig,
+              address: 'TokenAddressTron123456789',
+              decimals: 6,
+            }],
+          },
+        },
+      } as unknown as MarkConfiguration;
+
+      stub(assetModule, 'getTickers').returns(mockTickers);
+
+      // Mock TVM address but balance error
+      chainService.getAddress.resolves({
+        '728126428': 'TronAddressExample123456789'
+      });
+      chainService.getBalance.rejects(new Error('Tron RPC error'));
+
+      const balances = await getMarkBalances(mockConfigWithTvm, chainService, prometheus);
+
+      const domainBalances = balances.get(mockTickers[0]);
+      expect(domainBalances?.get('728126428')?.toString()).to.equal('0'); // Should return 0 on error
+      expect(prometheus.updateChainBalance.callCount).to.be.eq(0);
+    });
+
+    it('should handle SVM chain balance errors', async () => {
+      const mockConfigWithSolana = {
+        ownAddress: '0x1234567890123456789012345678901234567890',
+        ownSolAddress: 'SoLAddress11111111111111111111111111112',
+        chains: {
+          '900': { // Solana chain ID
+            providers: ['https://api.mainnet-beta.solana.com'],
+            assets: [{
+              tickerHash: 'SOL',
+              address: 'So11111111111111111111111111111111111111112',
+              decimals: 9,
+              symbol: 'SOL',
+              isNative: true,
+              balanceThreshold: '0',
+            }],
+          },
+        },
+      } as unknown as MarkConfiguration;
+
+      stub(assetModule, 'getTickers').returns(['SOL']);
+
+      // Mock SVM balance error
+      chainService.getBalance.rejects(new Error('Solana RPC error'));
+
+      const balances = await getMarkBalances(mockConfigWithSolana, chainService, prometheus);
+
+      const domainBalances = balances.get('SOL');
+      expect(domainBalances?.get('900')?.toString()).to.equal('0'); // Should return 0 on error
+    });
+
+
 
     it('should normalize balance for non-18 decimal assets', async () => {
       // Create a 6 decimal asset config
@@ -434,6 +551,49 @@ describe('Wallet Balance Utilities', () => {
       const balances = await getCustodiedBalances(mockConfig);
       const domainBalances = balances.get(mockTickers[0]);
       expect(domainBalances?.get('1')?.toString()).toBe('0'); // Should return 0 for failed contract
+    });
+  });
+
+  describe('safeStringToBigInt', () => {
+    const { safeStringToBigInt } = require('../../src/helpers/balance');
+
+    it('should convert integer string to BigInt', () => {
+      const result = safeStringToBigInt('100', 1000000000000000000n);
+      expect(result.toString()).to.equal('100000000000000000000');
+    });
+
+    it('should convert decimal string to BigInt', () => {
+      const result = safeStringToBigInt('100.5', 1000000000000000000n);
+      expect(result.toString()).to.equal('100500000000000000000');
+    });
+
+    it('should handle zero values', () => {
+      expect(safeStringToBigInt('0', 1000000000000000000n).toString()).to.equal('0');
+      expect(safeStringToBigInt('0.0', 1000000000000000000n).toString()).to.equal('0');
+      expect(safeStringToBigInt('', 1000000000000000000n).toString()).to.equal('0');
+    });
+
+    it('should pad decimal part with zeros when needed', () => {
+      const result = safeStringToBigInt('100.1', 1000000000000000000n);
+      expect(result.toString()).to.equal('100100000000000000000');
+    });
+
+    it('should truncate excess decimal places', () => {
+      const result = safeStringToBigInt('100.123456789012345678901', 1000000000000000000n);
+      expect(result.toString()).to.equal('100123456789012345678');
+    });
+
+    it('should handle numbers without integer part', () => {
+      const result = safeStringToBigInt('.5', 1000000000000000000n);
+      expect(result.toString()).to.equal('500000000000000000');
+    });
+
+    it('should handle different scale factors', () => {
+      const result6Decimals = safeStringToBigInt('100.5', 1000000n);
+      expect(result6Decimals.toString()).to.equal('100500000');
+
+      const result8Decimals = safeStringToBigInt('100.5', 100000000n);
+      expect(result8Decimals.toString()).to.equal('10050000000');
     });
   });
 });

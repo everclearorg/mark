@@ -83,18 +83,18 @@ describe('executeDestinationCallbacks', () => {
     bridge: action.bridge,
     transactions: includeReceipt
       ? {
-          [action.origin]: {
-            hash: action.transaction,
-            metadata: {
-              receipt: mockReceipt1,
-            },
-          },
-        }
-      : {
-          [action.origin]: {
-            hash: action.transaction,
+        [action.origin]: {
+          hash: action.transaction,
+          metadata: {
+            receipt: mockReceipt1,
           },
         },
+      }
+      : {
+        [action.origin]: {
+          hash: action.transaction,
+        },
+      },
     status: RebalanceOperationStatus.PENDING,
     slippage: 100,
     createdAt: new Date(),
@@ -208,8 +208,8 @@ describe('executeDestinationCallbacks', () => {
       createRebalanceOperation: stub().resolves(),
       getRebalanceOperationsByEarmark: stub().resolves([]),
       withTransaction: stub().resolves(),
-      DatabaseError: class DatabaseError extends Error {},
-      ConnectionError: class ConnectionError extends Error {},
+      DatabaseError: class DatabaseError extends Error { },
+      ConnectionError: class ConnectionError extends Error { },
     } as unknown as typeof DatabaseModule;
 
     mockConfig = {

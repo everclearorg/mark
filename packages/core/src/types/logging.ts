@@ -16,7 +16,6 @@ export interface LoggingContext {
   amount?: string;
   asset?: string;
   bridge?: string;
-  useZodiac?: boolean;
   [key: string]: unknown;
 }
 

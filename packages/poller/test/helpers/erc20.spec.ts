@@ -1,11 +1,17 @@
 import * as sinon from 'sinon';
 import { stub, createStubInstance, SinonStubbedInstance } from 'sinon';
-import { checkTokenAllowance, isUSDTToken, checkAndApproveERC20, ApprovalParams } from '../../src/helpers/erc20';
-import { MarkConfiguration, WalletConfig, WalletType } from '@mark/core';
+import {
+  checkTokenAllowance,
+  isUSDTToken,
+  checkAndApproveERC20,
+  ApprovalParams,
+} from '../../src/helpers/erc20';
+import { MarkConfiguration } from '@mark/core';
 import { ChainService } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
 import { PrometheusAdapter, TransactionReason } from '@mark/prometheus';
 import * as transactionsModule from '../../src/helpers/transactions';
+import { TransactionReceipt } from 'viem';
 
 describe('ERC20 Helper Functions', () => {
   let mockConfig: MarkConfiguration;
@@ -19,10 +25,6 @@ describe('ERC20 Helper Functions', () => {
   const SPENDER_ADDRESS = '0x9876543210987654321098765432109876543210';
   const OWNER_ADDRESS = '0x1111111111111111111111111111111111111111';
   const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
-
-  const mockZodiacConfig: WalletConfig = {
-    walletType: WalletType.EOA,
-  };
 
   const mockReceipt = {
     transactionHash: '0xtxhash123',

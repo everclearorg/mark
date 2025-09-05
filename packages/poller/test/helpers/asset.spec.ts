@@ -201,10 +201,10 @@ describe('Asset Helper Functions', () => {
       },
     };
 
-    enum SettlementStrategy {
-      DEFAULT,
-      XERC20,
-    }
+    const SettlementStrategy = {
+      DEFAULT: 0,
+      XERC20: 1,
+    } as const;
 
     it('should return true if any domain supports XERC20', async () => {
       const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash').returns('0xAssetHash1');
@@ -279,6 +279,17 @@ describe('Asset Helper Functions', () => {
 
       expect(result).toBe(true);
       expect(getAssetConfigStub.calledOnce).toBe(true);
+    });
+
+    it('should skip SVM and TVM chains and return false when only non-EVM chains provided', async () => {
+      const getAssetHashStub = sinon.stub(assetFns, 'getAssetHash');
+      const getAssetConfigStub = sinon.stub(assetFns, 'getAssetConfig');
+
+      const result = await isXerc20Supported('ticker', ['728126428', '1399811149'], mockConfig as unknown as MarkConfiguration);
+
+      expect(result).toBe(false);
+      expect(getAssetHashStub.called).toBe(false)
+      expect(getAssetConfigStub.called).toBe(false)
     });
   });
 

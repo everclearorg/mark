@@ -1,17 +1,8 @@
-import {
-  getTokenAddressFromConfig,
-  Invoice,
-  NewIntentParams,
-  WalletType,
-  isSvmChain,
-  isTvmChain,
-  AddressFormat,
-} from '@mark/core';
+import { getTokenAddressFromConfig, Invoice, NewIntentParams, isSvmChain, isTvmChain, AddressFormat } from '@mark/core';
 import { jsonifyMap } from '@mark/logger';
 import { convertHubAmountToLocalDecimals } from './asset';
 import { MAX_DESTINATIONS, TOP_N_DESTINATIONS } from '../invoice/processInvoices';
 import { ProcessingContext } from '../init';
-import { getActualOwner, getValidatedZodiacConfig } from './zodiac';
 
 interface SplitIntentAllocation {
   origin: string;
@@ -147,7 +138,6 @@ export async function calculateSplitIntents(
         origin,
         required: totalNeeded.toString(),
         available: markOriginBalance.toString(),
-        custodian: getActualOwner(getValidatedZodiacConfig(config.chains[origin]), config.ownAddress),
       });
       continue;
     }
@@ -282,29 +272,24 @@ export async function calculateSplitIntents(
     // Check the chain type and get the appropriate address
     const isSvm = isSvmChain(domain);
     const isTvm = isTvmChain(domain);
-    const destinationChainConfig = config.chains[domain];
 
     if (isSvm) {
       toAddress = config.ownSolAddress;
     } else if (isTvm) {
-      // For TVM chains, use chain-specific address
-      const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
-      if (destinationZodiacConfig.walletType !== WalletType.EOA) {
-        toAddress = destinationZodiacConfig.safeAddress!;
+      // For TVM chains, use appropriate address based on wallet configuration
+      const chainConfig = config.chains[domain];
+      if (chainConfig?.walletType === 'SAFE' || 
+          (chainConfig?.walletType !== 'EOA' && chainConfig?.gnosisSafeAddress)) {
+        toAddress = chainConfig.gnosisSafeAddress || addresses[domain];
       } else {
-        const tvmAddress = addresses[domain];
-        if (!tvmAddress) {
-          throw new Error(`TVM address not found for domain ${domain}`);
-        }
-        toAddress = tvmAddress;
+        toAddress = addresses[domain];
+      }
+      if (!toAddress) {
+        throw new Error(`TVM address not found for domain ${domain}`);
       }
     } else {
       // For EVM chains
-      const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
-      toAddress =
-        destinationZodiacConfig.walletType !== WalletType.EOA
-          ? destinationZodiacConfig.safeAddress!
-          : config.ownAddress;
+      toAddress = config.ownAddress;
     }
 
     const params: NewIntentParams = {
@@ -346,7 +331,6 @@ export async function calculateSplitIntents(
         if (amountForThisSplit <= BigInt(0)) continue;
 
         let toAddress: string;
-        const destinationChainConfig = config.chains[targetDomain];
 
         // Check the chain type and get the appropriate address
         const isSVM = isSvmChain(targetDomain);
@@ -355,24 +339,20 @@ export async function calculateSplitIntents(
         if (isSVM) {
           toAddress = config.ownSolAddress;
         } else if (isTVM) {
-          // For TVM chains, use chain-specific address
-          const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
-          if (destinationZodiacConfig.walletType !== WalletType.EOA) {
-            toAddress = destinationZodiacConfig.safeAddress!;
+          // For TVM chains, use appropriate address based on wallet configuration
+          const chainConfig = config.chains[targetDomain];
+          if (chainConfig?.walletType === 'SAFE' || 
+              (chainConfig?.walletType !== 'EOA' && chainConfig?.gnosisSafeAddress)) {
+            toAddress = chainConfig.gnosisSafeAddress || addresses[targetDomain];
           } else {
-            const tvmAddress = addresses[targetDomain];
-            if (!tvmAddress) {
-              throw new Error(`TVM address not found for domain ${targetDomain}`);
-            }
-            toAddress = tvmAddress;
+            toAddress = addresses[targetDomain];
+          }
+          if (!toAddress) {
+            throw new Error(`TVM address not found for domain ${targetDomain}`);
           }
         } else {
           // For EVM chains
-          const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig);
-          toAddress =
-            destinationZodiacConfig.walletType !== WalletType.EOA
-              ? destinationZodiacConfig.safeAddress!
-              : config.ownAddress;
+          toAddress = config.ownAddress;
         }
 
         const params: NewIntentParams = {

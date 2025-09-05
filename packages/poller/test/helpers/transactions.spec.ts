@@ -1,7 +1,7 @@
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
 import { ChainService, TransactionReceipt } from '@mark/chainservice';
 import { Logger } from '@mark/logger';
-import { LoggingContext, TransactionSubmissionType, WalletType, TransactionRequest, WalletConfig } from '@mark/core';
+import { LoggingContext, TransactionSubmissionType, TransactionRequest } from '@mark/core';
 import { submitTransactionWithLogging } from '../../src/helpers/transactions';
 import * as zodiacHelpers from '../../src/helpers/zodiac';
 
@@ -11,9 +11,7 @@ describe('submitTransactionWithLogging', () => {
     logger: SinonStubbedInstance<Logger>;
   };
   let mockTxRequest: TransactionRequest;
-  let mockZodiacConfig: WalletConfig;
   let mockContext: LoggingContext;
-  let wrapTransactionWithZodiacStub: SinonStub;
 
   const MOCK_CHAIN_ID = 1;
   const MOCK_TX_HASH = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
@@ -43,13 +41,6 @@ describe('submitTransactionWithLogging', () => {
       invoiceId: 'test-invoice',
       intentId: 'test-intent',
     };
-
-    // Stub wrapTransactionWithZodiac
-    wrapTransactionWithZodiacStub = stub(zodiacHelpers, 'wrapTransactionWithZodiac').resolves(mockTxRequest);
-  });
-
-  afterEach(() => {
-    wrapTransactionWithZodiacStub.restore();
   });
 
   describe('EOA Transactions', () => {
@@ -72,7 +63,6 @@ describe('submitTransactionWithLogging', () => {
         logger: mockDeps.logger,
         chainId: MOCK_CHAIN_ID.toString(),
         txRequest: mockTxRequest,
-        zodiacConfig: mockZodiacConfig,
         context: mockContext,
       });
 
@@ -97,7 +87,6 @@ describe('submitTransactionWithLogging', () => {
           logger: mockDeps.logger,
           chainId: MOCK_CHAIN_ID.toString(),
           txRequest: mockTxRequest,
-          zodiacConfig: mockZodiacConfig,
           context: mockContext,
         }),
       ).rejects.toThrow(error);
@@ -252,7 +241,6 @@ describe('submitTransactionWithLogging', () => {
         logger: mockDeps.logger,
         chainId: MOCK_CHAIN_ID.toString(),
         txRequest: txWithoutValue,
-        zodiacConfig: mockZodiacConfig,
         context: mockContext,
       });
 
@@ -281,15 +269,11 @@ describe('submitTransactionWithLogging', () => {
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
-      // For this test, make the stub return the input transaction to preserve the value
-      wrapTransactionWithZodiacStub.resolves(txWithStringValue);
-
       await submitTransactionWithLogging({
         chainService: mockDeps.chainService,
         logger: mockDeps.logger,
         chainId: MOCK_CHAIN_ID.toString(),
         txRequest: txWithStringValue,
-        zodiacConfig: mockZodiacConfig,
         context: mockContext,
       });
 
@@ -318,18 +302,11 @@ describe('submitTransactionWithLogging', () => {
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
 
-      // For this test, make the stub return a transaction with value.toString()
-      wrapTransactionWithZodiacStub.resolves({
-        ...txWithBigIntValue,
-        value: '2000000000000000000',
-      });
-
       await submitTransactionWithLogging({
         chainService: mockDeps.chainService,
         logger: mockDeps.logger,
         chainId: MOCK_CHAIN_ID.toString(),
         txRequest: txWithBigIntValue,
-        zodiacConfig: mockZodiacConfig,
         context: mockContext,
       });
 
@@ -366,7 +343,6 @@ describe('submitTransactionWithLogging', () => {
         logger: mockDeps.logger,
         chainId: MOCK_CHAIN_ID.toString(),
         txRequest: mockTxRequest,
-        zodiacConfig: mockZodiacConfig,
         context: customContext,
       });
 
@@ -399,7 +375,6 @@ describe('submitTransactionWithLogging', () => {
         logger: mockDeps.logger,
         chainId: MOCK_CHAIN_ID.toString(),
         txRequest: mockTxRequest,
-        zodiacConfig: mockZodiacConfig,
         // No context provided
       });
 
@@ -420,7 +395,6 @@ describe('submitTransactionWithLogging', () => {
           logger: mockDeps.logger,
           chainId: MOCK_CHAIN_ID.toString(),
           txRequest: mockTxRequest,
-          zodiacConfig: mockZodiacConfig,
           context: mockContext,
         }),
       ).rejects.toThrow(error);
@@ -433,8 +407,37 @@ describe('submitTransactionWithLogging', () => {
         ...mockContext,
         chainId: MOCK_CHAIN_ID.toString(),
         error,
-        walletType: WalletType.EOA,
       });
+    });
+
+    it('should handle transaction with bigint value', async () => {
+      const txWithBigIntValue = {
+        ...mockTxRequest,
+        value: BigInt('1000000000000000000'), // 1 ETH as bigint
+      };
+
+      const mockReceipt = {
+        transactionHash: MOCK_TX_HASH,
+        blockNumber: 12345,
+        gasUsed: 100000n,
+        status: 1,
+      } as unknown as TransactionReceipt;
+
+      (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
+
+
+      await submitTransactionWithLogging({
+        chainService: mockDeps.chainService,
+        logger: mockDeps.logger,
+        chainId: MOCK_CHAIN_ID.toString(),
+        txRequest: txWithBigIntValue as any,
+        context: mockContext,
+      });
+
+      // Verify value is converted to string in logs
+      const submitCall = mockDeps.logger.info.getCall(0);
+      expect(submitCall).to.exist;
+      expect(submitCall?.args[1]?.value).to.equal('1000000000000000000');
     });
   });
 });

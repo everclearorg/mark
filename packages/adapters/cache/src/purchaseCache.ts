@@ -6,6 +6,9 @@ export interface PurchaseAction {
   purchase: { params: NewIntentParams; intentId: string };
   transactionHash: string;
   transactionType: TransactionSubmissionType;
+  // Timestamp (seconds) of when this record was cached.
+  // Backwards compatibility will use the default of Date.now()
+  cachedAt: number;
 }
 
 export class PurchaseCache {

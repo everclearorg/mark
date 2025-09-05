@@ -1,15 +1,9 @@
 import { getMarkBalances, getTickerForAsset, convertToNativeUnits } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
-import {
-  getDecimalsFromConfig,
-  WalletType,
-  RebalanceOperationStatus,
-  DBPS_MULTIPLIER,
-  RebalanceAction,
-} from '@mark/core';
+import { getDecimalsFromConfig, isSvmChain, isTvmChain, DBPS_MULTIPLIER, RebalanceOperationStatus } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
+import { RebalanceAction } from '@mark/cache';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getAvailableBalanceLessEarmarks } from './onDemand';
@@ -47,36 +41,6 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
     // otherwise, call `send` and submit return transaction (approving token if necessary)
     // add the rebalance action to the cache with the origin transaction hash
     logger.info('Processing route', { requestId, route });
-
-    // Check for Zodiac configuration on origin chain (for sender)
-    const originChainConfig = config.chains[route.origin];
-    const originZodiacConfig = getValidatedZodiacConfig(originChainConfig, logger, { requestId, route });
-
-    // Check for Zodiac configuration on destination chain (for recipient)
-    const destinationChainConfig = config.chains[route.destination];
-    const destinationZodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, { requestId });
-
-    if (originZodiacConfig.walletType !== WalletType.EOA) {
-      logger.info('Using Zodiac configuration for rebalance route origin chain', {
-        requestId,
-        route,
-        originChain: route.origin,
-        zodiacRoleModuleAddress: originZodiacConfig.moduleAddress,
-        zodiacRoleKey: originZodiacConfig.roleKey,
-        gnosisSafeAddress: originZodiacConfig.safeAddress,
-      });
-    }
-
-    if (destinationZodiacConfig.walletType !== WalletType.EOA) {
-      logger.info('Using Zodiac configuration for rebalance route destination chain', {
-        requestId,
-        route,
-        destinationChain: route.destination,
-        zodiacRoleModuleAddress: destinationZodiacConfig.moduleAddress,
-        zodiacRoleKey: destinationZodiacConfig.roleKey,
-        gnosisSafeAddress: destinationZodiacConfig.safeAddress,
-      });
-    }
 
     // --- Route Level Checks (Synchronous or handled internally) ---
     const ticker = getTickerForAsset(route.asset, route.origin, config);
@@ -208,8 +172,17 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
       // Step 3: Get Bridge Transaction Requests
       let bridgeTxRequests = [];
-      const sender = getActualAddress(route.origin, config, logger, { requestId });
-      const recipient = getActualAddress(route.destination, config, logger, { requestId });
+      const addresses = await chainService.getAddress();
+      const sender = isTvmChain(`${route.origin}`)
+        ? addresses[`${route.origin}`]
+        : isSvmChain(`${route.origin}`)
+          ? config.ownSolAddress
+          : config.ownAddress;
+      const recipient = isTvmChain(`${route.destination}`)
+        ? addresses[`${route.destination}`]
+        : isSvmChain(`${route.destination}`)
+          ? config.ownSolAddress
+          : config.ownAddress;
       try {
         bridgeTxRequests = await adapter.send(sender, recipient, amountToBridge.toString(), route);
         logger.info('Prepared bridge transaction request from adapter', {
@@ -222,8 +195,6 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           transactionCount: bridgeTxRequests.length,
           sender,
           recipient,
-          useOriginZodiac: originZodiacConfig.walletType,
-          useDestinationZodiac: destinationZodiacConfig.walletType,
         });
         if (!bridgeTxRequests.length) {
           throw new Error(`Failed to retrieve any bridge transaction requests`);
@@ -240,7 +211,6 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
       }
 
       // Step 4: Submit the bridge transactions in order
-      // TODO: Use multisend for zodiac-enabled origin transactions
       let idx = -1;
       let effectiveBridgedAmount = amountToBridge.toString(); // Default to original amount
       try {
@@ -256,7 +226,6 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             transaction,
             memo,
             amountToBridge: amountToBridge,
-            useZodiac: originZodiacConfig.walletType,
           });
           const result = await submitTransactionWithLogging({
             chainService,
@@ -270,7 +239,6 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
               from: config.ownAddress,
               funcSig: transaction.funcSig || '',
             },
-            zodiacConfig: originZodiacConfig,
             context: { requestId, route, bridgeType, transactionType: memo },
           });
 
@@ -283,7 +251,6 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             transactionHash: result.hash,
             memo,
             amountToBridge: amountToBridge,
-            useZodiac: originZodiacConfig.walletType,
           });
 
           if (memo !== RebalanceTransactionMemo.Rebalance) {

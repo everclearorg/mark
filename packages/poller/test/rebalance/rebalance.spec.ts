@@ -40,7 +40,7 @@ import {
   getDecimalsFromConfig,
 } from '@mark/core';
 import { Logger } from '@mark/logger';
-import { ChainService } from '@mark/chainservice';
+import { ChainService, ChainServiceTransactionReceipt } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
 import { PurchaseCache } from '@mark/cache';
 import { RebalanceAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
@@ -53,6 +53,16 @@ interface MockBridgeAdapterInterface {
   type: SinonStub<[], SupportedBridge>;
   // Add other methods if they are called by the SUT
 }
+
+const mockReceipt: ChainServiceTransactionReceipt = {
+  transactionHash: '0xBridgeTxHash',
+  blockNumber: 121,
+  status: 1,
+  confirmations: 10,
+  effectiveGasPrice: '10',
+  cumulativeGasUsed: '100',
+  logs: [],
+};
 
 describe('rebalanceInventory', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
@@ -1504,17 +1514,17 @@ describe('Zodiac Address Validation', () => {
     getMarkBalancesStub.resolves(defaultBalances);
   });
 
-  afterEach(() => {
-    restore();
-  });
-
-  it('should use Safe address as sender for Zodiac-enabled origin chain', async () => {
-    // Uses default route: Arbitrum (Zodiac) -> Ethereum (EOA)
-    const currentBalance = BigInt('20000000000000000000'); // 20 tokens, above maximum
+  it('should fail when adapter returns empty bridge transaction requests', async () => {
+    const routeToTest = mockContext.config.routes[0];
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    const currentBalance = BigInt(routeToTest.maximum) + 100n;
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
+    mockSpecificBridgeAdapter.getReceivedAmount.resolves(currentBalance.toString());
+    mockSpecificBridgeAdapter.send.resolves([]); // Empty array
+
+    mockContext.config.routes = [routeToTest];
     await rebalanceInventory(mockContext);
 
     // Verify adapter.send was called with Safe address as sender (first parameter)
@@ -1539,7 +1549,8 @@ describe('Zodiac Address Validation', () => {
 
     const currentBalance = BigInt('20000000000000000000'); // 20 tokens, above maximum
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
+    const currentBalance = BigInt(routeToTest.maximum) + 100n;
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
     await rebalanceInventory(mockContext);
@@ -1573,11 +1584,8 @@ describe('Zodiac Address Validation', () => {
         permit2: '0x1234567890123456789012345678901234567890',
         multicall3: '0x1234567890123456789012345678901234567890',
       },
-      zodiacRoleModuleAddress: '0x2345678901234567890123456789012345678901',
-      zodiacRoleKey: '0x2345678901234567890123456789012345678901234567890123456789012345',
-      gnosisSafeAddress: mockSafeAddress2,
+      memo: RebalanceTransactionMemo.Rebalance,
     };
-    mockContext.config.supportedSettlementDomains = [1, 10, 42161];
 
     // Configure route: Arbitrum (Zodiac) -> Optimism (Zodiac)
     mockContext.config.routes = [
@@ -1591,10 +1599,8 @@ describe('Zodiac Address Validation', () => {
       },
     ];
 
-    const currentBalance = BigInt('20000000000000000000'); // 20 tokens, above maximum
-    const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
-    getMarkBalancesStub.callsFake(async () => balances);
+    mockContext.config.routes = [routeToTest];
+    const result = await rebalanceInventory(mockContext);
 
     await rebalanceInventory(mockContext);
 
@@ -2103,6 +2109,7 @@ describe('Decimal Handling', () => {
           },
         },
       },
+      chainService: mockChainService,
       rebalance: mockRebalanceAdapter,
       purchaseCache: mockPurchaseCache,
     } as unknown as ProcessingContext;
@@ -2256,4 +2263,5 @@ describe('Decimal Handling', () => {
     // Cleanup
     restore();
   });
+
 });

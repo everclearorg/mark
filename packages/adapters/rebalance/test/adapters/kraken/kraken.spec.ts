@@ -191,6 +191,7 @@ const mockConfig: MarkConfiguration = {
     providers: ['http://localhost:8545'],
   },
   routes: [],
+  purchaseCacheTtlSeconds: 3600,
   database: {
     connectionString: 'postgresql://test:test@localhost:5432/test',
   },

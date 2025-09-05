@@ -4,24 +4,13 @@ import {
   NewIntentWithPermit2Params,
   TransactionSubmissionType,
   TransactionRequest,
-  WalletType,
 } from '@mark/core';
-import { getERC20Contract } from './contracts';
 import { decodeEventLog, Hex } from 'viem';
 import { TransactionReason } from '@mark/prometheus';
-import {
-  generatePermit2Nonce,
-  generatePermit2Deadline,
-  getPermit2Signature,
-  approvePermit2,
-  getPermit2Address,
-} from './permit2';
-import { prepareMulticall } from './multicall';
 import { MarkAdapters } from '../init';
 import { checkAndApproveERC20 } from './erc20';
 import { submitTransactionWithLogging } from './transactions';
 import { jsonifyError, Logger } from '@mark/logger';
-import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import {
   isSvmChain,
   isTvmChain,
@@ -30,7 +19,7 @@ import {
   hexToBase58,
 } from '@mark/core';
 import { LookupTableNotFoundError } from '@mark/everclear';
-import { TransactionReceipt } from '@mark/chainservice';
+import { ChainServiceTransactionReceipt } from '@mark/chainservice';
 
 export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
@@ -126,7 +115,7 @@ const intentAddedAbi = [
 ] as const;
 
 export const getAddedIntentIdsFromReceipt = async (
-  receipt: TransactionReceipt,
+  receipt: ChainServiceTransactionReceipt,
   chainId: string,
   logger: Logger,
   context?: { requestId: string; invoiceId: string },
@@ -172,12 +161,13 @@ export const sendIntents = async (
     logger.info('No intents to process', { invoiceId });
     return [];
   }
-
+  
   // Verify all intents have the same origin
   const origins = new Set(intents.map((intent) => intent.origin));
   if (origins.size !== 1) {
     throw new Error('Cannot process multiple intents with different origin domains');
   }
+
   const originChainId = intents[0].origin;
   if (isSvmChain(originChainId)) {
     return sendSvmIntents(invoiceId, intents, adapters, config, requestId);
@@ -198,8 +188,6 @@ export const sendEvmIntents = async (
 ): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, prometheus, logger } = adapters;
   const originChainId = intents[0].origin;
-  const chainConfig = config.chains[originChainId];
-  const originWalletConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset.toLowerCase()));
@@ -209,10 +197,6 @@ export const sendEvmIntents = async (
 
   // Sanity check intent constraints
   intents.forEach((intent) => {
-    // Ensure all intents have the same origin
-    if (intent.origin !== originChainId) {
-      throw new Error(`intent.origin (${intent.origin}) must be ${originChainId}`);
-    }
 
     // Ensure there is no solver entrypoint
     if (BigInt(intent.maxFee.toString()) !== BigInt(0)) {
@@ -226,36 +210,60 @@ export const sendEvmIntents = async (
 
     // Ensure each of the configured destinations uses the proper `to`.
     intent.destinations.forEach((destination) => {
-      const walletConfig = getValidatedZodiacConfig(config.chains[destination], logger, { invoiceId, requestId });
-      switch (walletConfig.walletType) {
-        case WalletType.EOA:
-          // Sanity checks for intents towards SVM
-          if (isSvmChain(destination)) {
-            if (intent.to !== config.ownSolAddress) {
-              throw new Error(
-                `intent.to (${intent.to}) must be ownSolAddress (${config.ownSolAddress}) for destination ${destination}`,
-              );
-            }
-            if (intent.destinations.length !== 1) {
-              throw new Error(`intent.destination must be length 1 for intents towards SVM`);
-            }
-            break;
+      const chainConfig = config.chains[destination];
+      
+      // Validate wallet type if specified
+      if (chainConfig?.walletType && !['EOA', 'SAFE'].includes(chainConfig.walletType)) {
+        throw new Error(`Unrecognized destination wallet type configured: ${chainConfig.walletType}`);
+      }
+      
+      // Sanity checks for intents towards SVM
+      if (isSvmChain(destination)) {
+        if (intent.to !== config.ownSolAddress) {
+          throw new Error(
+            `intent.to (${intent.to}) must be ownSolAddress (${config.ownSolAddress}) for destination ${destination}`,
+          );
+        }
+        if (intent.destinations.length !== 1) {
+          throw new Error(`intent.destination must be length 1 for intents towards SVM`);
+        }
+      } else if (!isTvmChain(destination)) {
+        // For EVM destinations only, check appropriate address based on configuration
+        let isGnosisSafe = false;
+        let expectedAddress = config.ownAddress;
+        
+        if (chainConfig?.walletType === 'SAFE') {
+          isGnosisSafe = true;
+          expectedAddress = chainConfig.gnosisSafeAddress ?? config.ownAddress;
+        } else if (chainConfig?.walletType === 'EOA') {
+          isGnosisSafe = false;
+          expectedAddress = config.ownAddress;
+        } else {
+          // walletType not explicitly set, infer from intent.to and available addresses
+          if (chainConfig?.gnosisSafeAddress && intent.to.toLowerCase() === chainConfig.gnosisSafeAddress.toLowerCase()) {
+            isGnosisSafe = true;
+            expectedAddress = chainConfig.gnosisSafeAddress;
+          } else if (intent.to.toLowerCase() === config.ownAddress.toLowerCase()) {
+            isGnosisSafe = false;
+            expectedAddress = config.ownAddress;
+          } else if (chainConfig?.gnosisSafeAddress) {
+            // Has safe address but intent.to doesn't match it, should expect safe address
+            isGnosisSafe = true;
+            expectedAddress = chainConfig.gnosisSafeAddress;
+          } else {
+            // No safe address configured, default to EOA
+            isGnosisSafe = false;
+            expectedAddress = config.ownAddress;
           }
-          if (intent.to.toLowerCase() !== config.ownAddress.toLowerCase()) {
-            throw new Error(
-              `intent.to (${intent.to}) must be ownAddress (${config.ownAddress}) for destination ${destination}`,
-            );
+        }
+        
+        if (intent.to.toLowerCase() !== expectedAddress?.toLowerCase()) {
+          if (isGnosisSafe) {
+            throw new Error(`intent.to (${intent.to}) must be safeAddress (${expectedAddress}) for destination ${destination}`);
+          } else {
+            throw new Error(`intent.to (${intent.to}) must be ownAddress (${expectedAddress}) for destination ${destination}`);
           }
-          break;
-        case WalletType.Zodiac:
-          if (intent.to.toLowerCase() !== walletConfig.safeAddress!.toLowerCase()) {
-            throw new Error(
-              `intent.to (${intent.to}) must be safeAddress (${walletConfig.safeAddress}) for destination ${destination}`,
-            );
-          }
-          break;
-        default:
-          throw new Error(`Unrecognized destination wallet type configured: ${walletConfig.walletType}`);
+        }
       }
     });
   });
@@ -274,7 +282,6 @@ export const sendEvmIntents = async (
     }, BigInt(0));
 
     const spenderForAllowance = feeAdapterTxData.to as `0x${string}`;
-    const ownerForAllowance = getActualOwner(originWalletConfig, config.ownAddress);
 
     logger.info('Total amount for approvals', {
       requestId,
@@ -282,9 +289,8 @@ export const sendEvmIntents = async (
       totalAmount: totalAmount.toString(),
       intentCount: intents.length,
       chainId: originChainId,
-      owner: ownerForAllowance,
+      owner: config.ownAddress,
       spender: spenderForAllowance,
-      walletType: originWalletConfig.walletType,
     });
 
     // Handle ERC20 approval using the general purpose helper
@@ -297,8 +303,7 @@ export const sendEvmIntents = async (
       tokenAddress: firstIntent.inputAsset,
       spenderAddress: spenderForAllowance,
       amount: totalAmount,
-      owner: ownerForAllowance,
-      zodiacConfig: originWalletConfig,
+      owner: config.ownAddress,
       context: { requestId, invoiceId },
     });
 
@@ -366,11 +371,10 @@ export const sendEvmIntents = async (
         from: config.ownAddress,
         funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))', // FeeAdapter newIntent function
       },
-      zodiacConfig: originWalletConfig,
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
     });
 
-    const purchaseTx: TransactionReceipt = purchaseResult.receipt!;
+    const purchaseTx: ChainServiceTransactionReceipt = purchaseResult.receipt!;
 
     const purchaseIntentIds = await getAddedIntentIdsFromReceipt(purchaseTx, intents[0].origin, logger, {
       invoiceId,
@@ -501,6 +505,13 @@ export const sendSvmIntents = async (
             txHash: lookupTableTx.transactionHash,
             chainId: intents[0].origin,
           });
+
+          // Regenerate the fee adapter data after lookup table created
+          feeAdapterTxData = await everclear.solanaCreateNewIntent({
+            ...intent,
+            user: sourceAddress,
+          });
+          feeAdapterTxDatas.push(feeAdapterTxData);
         } else {
           throw err;
         }
@@ -603,8 +614,6 @@ export const sendTvmIntents = async (
 ): Promise<{ transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[]> => {
   const { everclear, chainService, prometheus, logger } = adapters;
   const originChainId = intents[0].origin;
-  const chainConfig = config.chains[originChainId];
-  const originWalletConfig = getValidatedZodiacConfig(chainConfig, logger, { invoiceId, requestId });
 
   // Verify all intents have the same input asset
   const tokens = new Set(intents.map((intent) => intent.inputAsset.toLowerCase()));
@@ -614,32 +623,39 @@ export const sendTvmIntents = async (
 
   const addresses = await chainService.getAddress();
 
+  // Verify all intents have the same origin
+  const origins = new Set(intents.map((intent) => intent.origin));
+  if (origins.size !== 1) {
+    throw new Error('Cannot process multiple intents with different origin domains');
+  }
+
   // Sanity check intent constraints
   intents.forEach((intent) => {
-    // Ensure all intents have the same origin
-    if (intent.origin !== originChainId) {
-      throw new Error(`intent.origin (${intent.origin}) must be ${originChainId}`);
-    }
-
     // Ensure each of the configured destinations uses the proper `to`.
     intent.destinations.forEach((destination) => {
-      const walletConfig = getValidatedZodiacConfig(config.chains[destination], logger, { invoiceId, requestId });
-      switch (walletConfig.walletType) {
-        case WalletType.EOA:
-          const expectedAddress = isTvmChain(destination) ? addresses[destination] : config.ownAddress;
-          if (intent.to.toLowerCase() !== expectedAddress.toLowerCase()) {
+      if (isTvmChain(destination)) {
+        const chainConfig = config.chains[destination];
+        
+        // Validate wallet type if specified
+        if (chainConfig?.walletType && !['EOA', 'SAFE'].includes(chainConfig.walletType)) {
+          throw new Error(`Unrecognized destination wallet type configured: ${chainConfig.walletType}`);
+        }
+        
+        const expectedAddress = chainConfig?.gnosisSafeAddress || addresses[destination];
+        if (intent.to.toLowerCase() !== expectedAddress.toLowerCase()) {
+          if (chainConfig?.gnosisSafeAddress) {
+            throw new Error(
+              `intent.to (${intent.to}) must be safeAddress (${expectedAddress}) for destination ${destination}`,
+            );
+          } else {
             throw new Error(`intent.to (${intent.to}) must be ${expectedAddress} for destination ${destination}`);
           }
-          break;
-        case WalletType.Zodiac:
-          if (intent.to.toLowerCase() !== walletConfig.safeAddress!.toLowerCase()) {
-            throw new Error(
-              `intent.to (${intent.to}) must be safeAddress (${walletConfig.safeAddress}) for destination ${destination}`,
-            );
-          }
-          break;
-        default:
-          throw new Error(`Unrecognized destination wallet type configured: ${walletConfig.walletType}`);
+        }
+      } else {
+        const expectedAddress = config.ownAddress;
+        if (intent.to.toLowerCase() !== expectedAddress.toLowerCase()) {
+          throw new Error(`intent.to (${intent.to}) must be ${expectedAddress} for destination ${destination}`);
+        }
       }
     });
   });
@@ -675,7 +691,6 @@ export const sendTvmIntents = async (
       chainId: originChainId,
       owner: tronAddress,
       spender: feeAdapterTxData.to,
-      walletType: originWalletConfig.walletType,
     });
 
     try {
@@ -690,7 +705,6 @@ export const sendTvmIntents = async (
         spenderAddress: feeAdapterTxData.to!,
         amount: totalAmount,
         owner: tronAddress,
-        zodiacConfig: originWalletConfig,
         context: { requestId, invoiceId },
       });
 
@@ -732,19 +746,41 @@ export const sendTvmIntents = async (
     const results: { transactionHash: string; type: TransactionSubmissionType; chainId: string; intentId: string }[] =
       [];
 
-    // Only process first intent for now
-    if (intents.length > 1) {
+    // Filter intents based on min amounts first
+    const { minAmounts } = await everclear.getMinAmounts(invoiceId);
+    const validIntents = [];
+    
+    for (const intent of intents) {
+      if (BigInt(intent.amount) >= BigInt(minAmounts[intent.origin] ?? '0')) {
+        validIntents.push(intent);
+      } else {
+        logger.warn('Intent amount below minimum, skipping', {
+          intentAmount: intent.amount,
+          minAmount: minAmounts[intent.origin] ?? '0',
+          intent,
+          invoiceId,
+          requestId,
+        });
+      }
+    }
+    
+    if (validIntents.length === 0) {
+      logger.warn('No valid intents after min amount filtering', { invoiceId, requestId });
+      return [];
+    }
+    
+    // Only process first valid intent for now
+    if (validIntents.length > 1) {
       logger.warn('Tron API currently only supports single intents, processing first intent only', {
-        totalIntents: intents.length,
+        totalIntents: validIntents.length,
         processingOnly: 1,
         invoiceId,
         requestId,
       });
     }
-    const intentsToProcess = intents.slice(0, 1);
+    const intentsToProcess = validIntents.slice(0, 1);
     for (const intent of intentsToProcess) {
-      // Sanity check -- minAmounts < intent.amount
-      const { minAmounts } = await everclear.getMinAmounts(invoiceId);
+      // Sanity check -- minAmounts < intent.amount (warn if min amount is smaller than intent)
       if (BigInt(minAmounts[intent.origin] ?? '0') < BigInt(intent.amount)) {
         logger.warn('Latest min amount for origin is smaller than intent size', {
           minAmount: minAmounts[intent.origin] ?? '0',
@@ -752,10 +788,6 @@ export const sendTvmIntents = async (
           invoiceId,
           requestId,
         });
-        continue;
-        // NOTE: continue instead of exit in case other intents are still below the min amount,
-        // then you would still be contributing to invoice to settlement. The invoice will be handled
-        // again on the next polling cycle.
       }
 
       // API call to get txdata for this single intent
@@ -787,7 +819,6 @@ export const sendTvmIntents = async (
           from: tronAddress,
           funcSig: 'newIntent(uint32[],address,address,address,uint256,uint24,uint48,bytes,(uint256,uint256,bytes))',
         },
-        zodiacConfig: originWalletConfig,
         context: { requestId, invoiceId, transactionType: 'create-intent' },
       });
 
@@ -834,218 +865,6 @@ export const sendTvmIntents = async (
       invoiceId,
       requestId,
       error,
-      intentCount: intents.length,
-    });
-    throw error;
-  }
-};
-
-/**
- * Sends multiple intents in a single transaction using Multicall3 with Permit2 for token approvals
- * @param intents The intents to send with Permit2 parameters
- * @param deps The process dependencies (chainService, everclear, logger, etc.)
- * @returns Object containing transaction hash, chain ID, and a joined string of intent IDs
- */
-export const sendIntentsMulticall = async (
-  intents: NewIntentParams[],
-  adapters: MarkAdapters,
-  config: MarkConfiguration,
-): Promise<{ transactionHash: string; chainId: string; intentId: string }> => {
-  if (!intents || intents.length === 0) {
-    throw new Error('No intents provided for multicall');
-  }
-
-  const { chainService, everclear, logger, prometheus, web3Signer } = adapters;
-
-  const txs = [];
-
-  // Same chain for all multicalled intents
-  const chainId = intents[0].origin;
-
-  // Create a combined intent ID for tracking
-  const combinedIntentId = intents
-    .map((i) => i.to)
-    .join('_')
-    .slice(0, 42);
-
-  logger.info('Preparing multicall for intents with Permit2', {
-    intentCount: intents.length,
-    chainId,
-    combinedIntentId,
-  });
-
-  try {
-    try {
-      // Check if Mark already has sufficient allowance for Permit2
-      const tokenContract = await getERC20Contract(config, chainId, intents[0].inputAsset as `0x${string}`);
-      const permit2Address = getPermit2Address(chainId, config);
-      const allowance = await tokenContract.read.allowance([config.ownAddress, permit2Address as `0x${string}`]);
-
-      // Simplification here, we assume Mark sets infinite approve on Permit2
-      const hasAllowance = BigInt(allowance as string) > 0n;
-
-      // If not approved yet, set infinite approve on Permit2
-      if (!hasAllowance) {
-        const txHash = await approvePermit2(tokenContract.address as `0x${string}`, chainService, config);
-
-        // Verify allowance again after approval to ensure it worked
-        const newAllowance = await tokenContract.read.allowance([config.ownAddress, permit2Address as `0x${string}`]);
-        const newHasAllowance = BigInt(newAllowance as string) > 0n;
-
-        if (!newHasAllowance) {
-          throw new Error(`Permit2 approval transaction was submitted (${txHash}) but allowance is still zero`);
-        }
-      }
-    } catch (error) {
-      logger.error('Error signing/submitting Permit2 approval', {
-        error: error instanceof Error ? error.message : error,
-        chainId,
-      });
-      throw error;
-    }
-
-    // Generate a unique nonce for this batch of permits
-    const nonce = generatePermit2Nonce();
-    const deadline = generatePermit2Deadline();
-
-    // Track used nonces to avoid duplicates
-    const usedNonces = new Set();
-    for (let i = 0; i < intents.length; i++) {
-      const intent = intents[i];
-      // Generate a unique nonce for each intent to avoid conflicts
-      // Add an index suffix to ensure uniqueness within this batch
-      const intentNonce = nonce + i.toString().padStart(2, '0');
-      const tokenAddress = intent.inputAsset;
-      const spender = config!.chains[chainId]!.deployments!.everclear;
-
-      // Verify the spender address is properly set
-      if (!spender) {
-        throw new Error(`Everclear contract address not found for chain ID: ${chainId}`);
-      }
-
-      const amount = intent.amount.toString();
-
-      // Get the Permit2 signature and request transaction data
-      try {
-        const signature = await getPermit2Signature(
-          web3Signer,
-          parseInt(chainId),
-          tokenAddress,
-          spender,
-          amount,
-          intentNonce, // Use the unique nonce
-          deadline,
-          config,
-        );
-
-        // Ensure nonce has 0x prefix when sending to the API
-        let nonceForApi = intentNonce; // Use the unique nonce
-        if (typeof intentNonce === 'string' && !intentNonce.startsWith('0x')) {
-          nonceForApi = '0x' + intentNonce;
-        }
-
-        // Add to used nonces set to track uniqueness
-        usedNonces.add(nonceForApi);
-
-        // Add Permit2 parameters to the intent
-        const intentWithPermit = {
-          ...intent,
-          permit2Params: {
-            nonce: nonceForApi,
-            deadline: deadline.toString(),
-            signature,
-          },
-        };
-
-        // Fetch transaction data for Permit2-enabled newIntent
-        const txData = await everclear.createNewIntent(intentWithPermit);
-
-        // Add transaction to the batch
-        txs.push({
-          to: txData.to as `0x${string}`,
-          data: txData.data,
-          value: '0', // Only sending ERC20 tokens, no native value
-        });
-      } catch (error) {
-        logger.error('Error signing Permit2 message or fetching transaction data', {
-          error: error instanceof Error ? error.message : error,
-          tokenAddress,
-          spender,
-          amount,
-          nonce,
-          deadline: deadline.toString(),
-        });
-        throw error;
-      }
-    }
-
-    // Prepare the multicall transaction (not sending native)
-    const multicallTx = prepareMulticall(txs, false, chainId, config);
-
-    logger.info('Preparing to submit multicall transaction', {
-      to: multicallTx.to,
-      chainId,
-      combinedIntentId,
-    });
-
-    // Log transaction data for debugging
-    logger.info('Multicall transaction details', {
-      to: multicallTx.to,
-      data: multicallTx.data,
-      dataLength: multicallTx.data.length,
-      value: '0',
-    });
-
-    const receipt = await chainService.submitAndMonitor(chainId.toString(), {
-      to: multicallTx.to,
-      data: multicallTx.data,
-      value: '0',
-      chainId: +chainId,
-      funcSig: 'aggregate3((address,bool,bytes)[])',
-    });
-
-    // Extract individual intent IDs from transaction logs
-    const intentEvents = receipt.logs.filter(
-      (log: { topics: string[] }) => log.topics[0].toLowerCase() === INTENT_ADDED_TOPIC0,
-    );
-    const individualIntentIds = intentEvents.map((event: { topics: string[] }) => event.topics[1]);
-
-    logger.info('Multicall transaction confirmed', {
-      transactionHash: receipt.transactionHash,
-      chainId,
-      combinedIntentId,
-      individualIntentIds,
-    });
-
-    // Log each individual intent ID for DD searching
-    individualIntentIds.forEach((intentId: string, index: number) => {
-      logger.info('Individual intent created via multicall', {
-        transactionHash: receipt.transactionHash,
-        chainId,
-        intentId,
-        intentIndex: index,
-        totalIntents: individualIntentIds.length,
-      });
-    });
-
-    // Track gas spent for the multicall transaction
-    if (prometheus && receipt && receipt.cumulativeGasUsed && receipt.effectiveGasPrice) {
-      prometheus.updateGasSpent(
-        chainId.toString(),
-        TransactionReason.CreateIntent,
-        BigInt(receipt.cumulativeGasUsed.toString()) * BigInt(receipt.effectiveGasPrice.toString()),
-      );
-    }
-
-    return {
-      transactionHash: receipt.transactionHash,
-      chainId: chainId.toString(),
-      intentId: combinedIntentId,
-    };
-  } catch (error) {
-    logger.error('Failed to submit multicall transaction', {
-      error,
-      chainId,
       intentCount: intents.length,
     });
     throw error;

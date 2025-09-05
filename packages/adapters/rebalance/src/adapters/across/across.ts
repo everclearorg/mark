@@ -124,11 +124,11 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
               BigInt(amount), // inputAmount
               feesData.outputAmount, // outputAmount
               BigInt(route.destination), // destinationChainId
-              zeroAddress, // exclusiveRelayer - must be ZeroAddress per Zodiac permissions
+              zeroAddress, // exclusiveRelayer - must be ZeroAddress 
               feesData.timestamp, // quoteTimestamp
               feesData.fillDeadline, // fillDeadline
-              BigInt(0), // exclusivityDeadline - must be 0 per Zodiac permissions
-              '0x', // message - must be "0x" per Zodiac permissions
+              BigInt(0), // exclusivityDeadline - must be 0 
+              '0x', // message - must be "0x" 
             ],
           }),
           value: route.asset === zeroAddress ? BigInt(amount) : BigInt(0),
