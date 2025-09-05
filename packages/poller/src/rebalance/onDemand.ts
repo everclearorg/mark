@@ -497,16 +497,18 @@ export async function executeOnDemandRebalancing(
         if (result) {
           logger.info('On-demand rebalance transaction confirmed', {
             requestId,
-            transactionHash: result.transactionHash,
+            transactionHash: result.receipt.transactionHash,
             bridgeType: operation.bridge,
             originChain: operation.originChain,
-            amount: operation.amount,
+            amount: result.effectiveAmount || operation.amount,
+            originalAmount:
+              result.effectiveAmount && result.effectiveAmount !== operation.amount ? operation.amount : undefined,
           });
 
           // Track successful operation for later database insertion
           successfulOperations.push({
             originChainId: operation.originChain,
-            amount: operation.amount,
+            amount: result.effectiveAmount || operation.amount, // Use effective amount if adjusted
             slippage: operation.slippage,
             bridge: operation.bridge,
             receipt: result,
@@ -781,16 +783,18 @@ async function handleMinAmountIncrease(
       if (result) {
         logger.info('Additional rebalance transaction confirmed', {
           requestId,
-          transactionHash: result.transactionHash,
+          transactionHash: result.receipt.transactionHash,
           bridgeType: operation.bridge,
           originChain: operation.originChain,
-          amount: operation.amount,
+          amount: result.effectiveAmount || operation.amount,
+          originalAmount:
+            result.effectiveAmount && result.effectiveAmount !== operation.amount ? operation.amount : undefined,
         });
 
         // Track successful operation
         successfulAdditionalOps.push({
           originChainId: operation.originChain,
-          amount: operation.amount,
+          amount: result.effectiveAmount || operation.amount, // Use effective amount if adjusted
           slippage: operation.slippage,
           bridge: operation.bridge,
           receipt: result,
@@ -865,6 +869,11 @@ async function handleMinAmountIncrease(
   return true;
 }
 
+interface RebalanceTransactionResult {
+  receipt: database.TransactionReceipt;
+  effectiveAmount?: string;
+}
+
 /**
  * Execute rebalance transaction with a pre-determined bridge
  */
@@ -874,7 +883,7 @@ async function executeRebalanceTransactionWithBridge(
   recipient: string,
   bridgeType: SupportedBridge,
   context: ProcessingContext,
-): Promise<database.TransactionReceipt | undefined> {
+): Promise<RebalanceTransactionResult | undefined> {
   const { logger, rebalance, requestId, config } = context;
 
   try {
@@ -905,8 +914,9 @@ async function executeRebalanceTransactionWithBridge(
 
     if (bridgeTxRequests && bridgeTxRequests.length > 0) {
       let receipt: database.TransactionReceipt | undefined = undefined;
+      let effectiveBridgedAmount = amount; // Default to requested amount
 
-      for (const { transaction, memo } of bridgeTxRequests) {
+      for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
         logger.info('Submitting on-demand rebalance transaction', {
           requestId,
           bridgeType,
@@ -942,6 +952,16 @@ async function executeRebalanceTransactionWithBridge(
 
           if (memo === RebalanceTransactionMemo.Rebalance) {
             receipt = result.receipt as unknown as database.TransactionReceipt;
+            // Track effective amount if it was capped
+            if (effectiveAmount) {
+              effectiveBridgedAmount = effectiveAmount;
+              logger.info('Using effective bridged amount from adapter', {
+                requestId,
+                originalAmount: amount,
+                effectiveAmount: effectiveBridgedAmount,
+                bridgeType,
+              });
+            }
           }
         } catch (txError) {
           logger.error('Failed to submit on-demand rebalance transaction', {
@@ -958,12 +978,13 @@ async function executeRebalanceTransactionWithBridge(
         logger.info('Successfully completed on-demand rebalance transaction', {
           requestId,
           bridgeType,
-          amount,
+          amount: effectiveBridgedAmount,
+          originalAmount: amount !== effectiveBridgedAmount ? amount : undefined,
           route,
           transactionHash: receipt.transactionHash,
           transactionCount: bridgeTxRequests.length,
         });
-        return receipt;
+        return { receipt, effectiveAmount: effectiveBridgedAmount };
       }
     }
 
