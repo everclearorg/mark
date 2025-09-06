@@ -252,6 +252,17 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
         preferences: [SupportedBridge.CCTPV2],
       },
 
+      // Linea → Ethereum — WETH
+      {
+        origin: 59144,
+        destination: 1,
+        asset: '0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f',
+        maximum: '15000000000000000000', // 15
+        reserve: '10000000000000000000', // 10
+        slippages: [30],
+        preferences: [SupportedBridge.Kraken],
+      },
+
       // Ink → Ethereum — USDC
       {
         origin: 57073,
