@@ -492,6 +492,13 @@ export const sendSvmIntents = async (
             txHash: lookupTableTx.transactionHash,
             chainId: intents[0].origin,
           });
+
+          // Retry the intent creation after creating the lookup table
+          feeAdapterTxData = await everclear.solanaCreateNewIntent({
+            ...intent,
+            user: sourceAddress,
+          });
+          feeAdapterTxDatas.push(feeAdapterTxData);
         } else {
           throw err;
         }
@@ -543,7 +550,6 @@ export const sendSvmIntents = async (
         from: sourceAddress,
         funcSig: '',
       });
-      console.warn('debug tx', purchaseTx);
 
       // Find the IntentAdded event logs
       // TODO: CPI Logs integration

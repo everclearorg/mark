@@ -10,12 +10,12 @@ import { Log, TransactionReceipt, zeroAddress } from 'viem';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { MarkAdapters } from '../../src/init';
-import { Wallet } from 'ethers';
 import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { createMinimalDatabaseMock } from '../mocks/database';
 import { Web3Signer } from '@mark/web3signer';
+import * as contractHelpers from '../../src/helpers/contracts';
 
 // Common test constants for transaction logs
 const INTENT_ADDED_TOPIC = '0x5c5c7ce44a0165f76ea4e0a89f0f7ac5cce7b2c1d1b91d0f49c1f219656b7d8c';
@@ -75,7 +75,7 @@ describe('sendIntents', () => {
         readTx: stub(),
       }),
       logger: createStubInstance(Logger),
-      web3Signer: createStubInstance(Wallet, {
+      web3Signer: createStubInstance(Web3Signer, {
         signTypedData: stub(),
       }),
       purchaseCache: createStubInstance(PurchaseCache),
@@ -803,9 +803,9 @@ describe('SVM Chain Handling', () => {
       logger: createStubInstance(Logger),
       web3Signer: createStubInstance(Web3Signer),
       purchaseCache: createStubInstance(PurchaseCache),
-      rebalanceCache: createStubInstance(RebalanceCache),
       rebalance: createStubInstance(RebalanceAdapter),
       prometheus: createStubInstance(PrometheusAdapter),
+      database: createMinimalDatabaseMock(),
     };
 
     mockConfig = {
@@ -852,10 +852,10 @@ describe('SVM Chain Handling', () => {
 
     const result = await sendIntents(invoiceId, [svmIntent], mockDeps, mockConfig, requestId);
 
-    expect(result).to.have.length(1);
-    expect(result[0].transactionHash).to.equal('0xsolanatxhash');
-    expect(result[0].chainId).to.equal('1399811149');
-    expect((mockDeps.everclear.solanaCreateNewIntent as SinonStub).called).to.be.true;
+    expect(result).toHaveLength(1);
+    expect(result[0].transactionHash).toBe('0xsolanatxhash');
+    expect(result[0].chainId).toBe('1399811149');
+    expect((mockDeps.everclear.solanaCreateNewIntent as SinonStub).called).toBe(true);
   });
 
   it('should handle lookup table creation for SVM intents when LookupTableNotFoundError occurs', async () => {
@@ -899,9 +899,9 @@ describe('SVM Chain Handling', () => {
 
     const result = await sendIntents(invoiceId, [svmIntent], mockDeps, mockConfig, requestId);
 
-    expect(result).to.have.length(1);
-    expect((mockDeps.everclear.solanaCreateLookupTable as SinonStub).called).to.be.true;
-    expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).to.equal(2);
+    expect(result).toHaveLength(1);
+    expect((mockDeps.everclear.solanaCreateLookupTable as SinonStub).called).toBe(true);
+    expect((mockDeps.chainService.submitAndMonitor as SinonStub).callCount).toBe(2);
   });
 
   it('should handle SVM intents with different input assets error', async () => {
@@ -927,7 +927,7 @@ describe('SVM Chain Handling', () => {
     ];
 
     await expect(sendIntents(invoiceId, svmIntents, mockDeps, mockConfig, requestId))
-      .to.be.rejectedWith('Cannot process multiple intents with different input assets');
+      .rejects.toThrow('Cannot process multiple intents with different input assets');
   });
 
   it('should handle SVM intent min amount warning', async () => {
@@ -958,8 +958,8 @@ describe('SVM Chain Handling', () => {
 
     const result = await sendIntents(invoiceId, [svmIntent], mockDeps, mockConfig, requestId);
 
-    expect(result).to.have.length(1);
-    expect((mockDeps.logger.warn as SinonStub).called).to.be.true;
+    expect(result).toHaveLength(1);
+    expect((mockDeps.logger.warn as SinonStub).called).toBe(true);
   });
 
   it('should rethrow non-LookupTableNotFoundError from SVM intent creation', async () => {
@@ -977,7 +977,7 @@ describe('SVM Chain Handling', () => {
     (mockDeps.everclear.solanaCreateNewIntent as SinonStub).rejects(apiError);
 
     await expect(sendIntents(invoiceId, [svmIntent], mockDeps, mockConfig, requestId))
-      .to.be.rejectedWith('API connection failed');
+      .rejects.toThrow('API connection failed');
   });
 });
 
@@ -1001,9 +1001,9 @@ describe('TVM Chain Handling', () => {
       logger: createStubInstance(Logger),
       web3Signer: createStubInstance(Web3Signer),
       purchaseCache: createStubInstance(PurchaseCache),
-      rebalanceCache: createStubInstance(RebalanceCache),
       rebalance: createStubInstance(RebalanceAdapter),
       prometheus: createStubInstance(PrometheusAdapter),
+      database: createMinimalDatabaseMock(),
     };
 
     mockConfig = {
@@ -1068,10 +1068,10 @@ describe('TVM Chain Handling', () => {
 
     const result = await sendIntents(invoiceId, [tvmIntent], mockDeps, mockConfig, requestId);
 
-    expect(result).to.have.length(1);
-    expect(result[0].transactionHash).to.equal('0xtrontxhash');
-    expect(result[0].chainId).to.equal('728126428');
-    expect((mockDeps.everclear.tronCreateNewIntent as SinonStub).called).to.be.true;
+    expect(result).toHaveLength(1);
+    expect(result[0].transactionHash).toBe('0xtrontxhash');
+    expect(result[0].chainId).toBe('728126428');
+    expect((mockDeps.everclear.tronCreateNewIntent as SinonStub).called).toBe(true);
   });
 
   it('should handle TVM intents with different input assets error', async () => {
@@ -1097,7 +1097,7 @@ describe('TVM Chain Handling', () => {
     ];
 
     await expect(sendIntents(invoiceId, tvmIntents, mockDeps, mockConfig, requestId))
-      .to.be.rejectedWith('Cannot process multiple intents with different input assets');
+      .rejects.toThrow('Cannot process multiple intents with different input assets');
   });
 
   it('should handle TVM intents with Zodiac destination validation', async () => {
@@ -1162,7 +1162,7 @@ describe('TVM Chain Handling', () => {
     });
 
     const result = await sendIntents(invoiceId, [tvmIntent], mockDeps, configWithZodiac, requestId);
-    expect(result).to.have.length(1);
+    expect(result).toHaveLength(1);
   });
 
   it('should handle TVM intents with approval error', async () => {
@@ -1194,9 +1194,9 @@ describe('TVM Chain Handling', () => {
     (mockDeps.chainService.submitAndMonitor as SinonStub).rejects(new Error('TRC20 approval failed'));
 
     await expect(sendIntents(invoiceId, [tvmIntent], mockDeps, mockConfig, requestId))
-      .to.be.rejectedWith('TRC20 approval failed');
+      .rejects.toThrow('TRC20 approval failed');
 
-    expect((mockDeps.logger.error as SinonStub).calledWith('Failed to approve TRC20 on Tron')).to.be.true;
+    expect((mockDeps.logger.error as SinonStub).calledWith('Failed to approve TRC20 on Tron')).toBe(true);
   });
 
   it('should handle TVM intents with multiple intents warning (only processes first)', async () => {
@@ -1253,8 +1253,8 @@ describe('TVM Chain Handling', () => {
 
     const result = await sendIntents(invoiceId, tvmIntents, mockDeps, mockConfig, requestId);
 
-    expect(result).to.have.length(1); // Only first intent processed
-    expect((mockDeps.logger.warn as SinonStub).calledWith('Tron API currently only supports single intents, processing first intent only')).to.be.true;
+    expect(result).toHaveLength(1); // Only first intent processed
+    expect((mockDeps.logger.warn as SinonStub).calledWith('Tron API currently only supports single intents, processing first intent only')).toBe(true);
   });
 
   it('should handle TVM intents with gas metrics update failure', async () => {
@@ -1303,8 +1303,8 @@ describe('TVM Chain Handling', () => {
 
     const result = await sendIntents(invoiceId, [tvmIntent], mockDeps, mockConfig, requestId);
 
-    expect(result).to.have.length(1);
-    expect((mockDeps.logger.warn as SinonStub).calledWith('Failed to update gas spent')).to.be.true;
+    expect(result).toHaveLength(1);
+    expect((mockDeps.logger.warn as SinonStub).calledWith('Failed to update gas spent')).toBe(true);
   });
 });
 
@@ -1327,9 +1327,9 @@ describe('Destination Validation for SVM Chains', () => {
       logger: createStubInstance(Logger),
       web3Signer: createStubInstance(Web3Signer),
       purchaseCache: createStubInstance(PurchaseCache),
-      rebalanceCache: createStubInstance(RebalanceCache),
       rebalance: createStubInstance(RebalanceAdapter),
       prometheus: createStubInstance(PrometheusAdapter),
+      database: createMinimalDatabaseMock(),
     };
 
     mockConfig = {
@@ -1388,7 +1388,7 @@ describe('Destination Validation for SVM Chains', () => {
     });
 
     const result = await sendIntents(invoiceId, [evmToSvmIntent], mockDeps, mockConfig, requestId);
-    expect(result).to.have.length(1);
+    expect(result).toHaveLength(1);
   });
 
   it('should throw error when intent.to does not match ownSolAddress for SVM destination', async () => {
@@ -1403,7 +1403,7 @@ describe('Destination Validation for SVM Chains', () => {
     };
 
     await expect(sendIntents(invoiceId, [evmToSvmIntent], mockDeps, mockConfig, requestId))
-      .to.be.rejectedWith(`intent.to (WrongSolanaAddress123456789012345678901) must be ownSolAddress (${mockConfig.ownSolAddress}) for destination 1399811149`);
+      .rejects.toThrow(`intent.to (WrongSolanaAddress123456789012345678901) must be ownSolAddress (${mockConfig.ownSolAddress}) for destination 1399811149`);
   });
 
   it('should validate intent destinations length for SVM destination', async () => {
@@ -1418,6 +1418,6 @@ describe('Destination Validation for SVM Chains', () => {
     };
 
     await expect(sendIntents(invoiceId, [evmToSvmIntent], mockDeps, mockConfig, requestId))
-      .to.be.rejectedWith('intent.destination must be length 1 for intents towards SVM');
+      .rejects.toThrow('intent.destination must be length 1 for intents towards SVM');
   });
 });
