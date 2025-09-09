@@ -36,7 +36,7 @@ data "aws_ssm_parameter" "mark_config_mainnet" {
 locals {
   account_id = data.aws_caller_identity.current.account_id
   repository_url_prefix = "${local.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/"
-  
+
   mark_config_json = jsondecode(data.aws_ssm_parameter.mark_config_mainnet.value)
   mark_config = {
     dd_api_key = local.mark_config_json.dd_api_key
@@ -60,7 +60,7 @@ module "network" {
 resource "aws_service_discovery_private_dns_namespace" "mark_internal" {
   name        = "mark.internal"
   description = "Mark internal DNS namespace for service discovery"
-  vpc         = module.network.vpc_id 
+  vpc         = module.network.vpc_id
 }
 
 module "ecs" {
@@ -274,6 +274,7 @@ module "mark_admin_api" {
     REDIS_HOST                      = module.cache.redis_instance_address
     REDIS_PORT                      = module.cache.redis_instance_port
     ADMIN_TOKEN                     = local.mark_config.admin_token
+    DATABASE_URL                    = module.db.database_url
   }
 }
 
