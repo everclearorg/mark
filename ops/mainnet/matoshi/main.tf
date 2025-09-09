@@ -271,6 +271,7 @@ module "mark_admin_api" {
     REDIS_HOST                      = module.cache.redis_instance_address
     REDIS_PORT                      = module.cache.redis_instance_port
     ADMIN_TOKEN                     = local.mark_config.admin_token
+    DATABASE_URL                    = module.db.database_url
   }
 }
 

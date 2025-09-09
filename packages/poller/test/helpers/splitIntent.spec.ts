@@ -7,7 +7,7 @@ import { ProcessingContext } from '../../src/init';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { PurchaseCache } from '@mark/cache';
-import { Wallet } from 'ethers';
+import { Web3Signer } from '@mark/web3signer';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { mockConfig } from '../mocks';
 import { RebalanceAdapter } from '@mark/rebalance';
@@ -22,7 +22,7 @@ describe('Split Intent Helper Functions', () => {
     chainService: SinonStubbedInstance<ChainService>;
     purchaseCache: SinonStubbedInstance<PurchaseCache>;
     rebalance: SinonStubbedInstance<RebalanceAdapter>;
-    web3Signer: SinonStubbedInstance<Wallet>;
+    web3Signer: SinonStubbedInstance<Web3Signer>;
     prometheus: SinonStubbedInstance<PrometheusAdapter>;
     database: typeof import('@mark/database');
   };
@@ -35,7 +35,7 @@ describe('Split Intent Helper Functions', () => {
       chainService: createStubInstance(ChainService),
       purchaseCache: createStubInstance(PurchaseCache),
       rebalance: createStubInstance(RebalanceAdapter),
-      web3Signer: createStubInstance(Wallet),
+      web3Signer: createStubInstance(Web3Signer),
       prometheus: createStubInstance(PrometheusAdapter),
       database: createMinimalDatabaseMock(),
     };
