@@ -184,6 +184,7 @@ const mockConfig: MarkConfiguration = {
   logLevel: 'debug',
   supportedSettlementDomains: [1, 42161],
   forceOldestInvoice: false,
+  purchaseCacheTtlSeconds: 300,
   supportedAssets: ['ETH', 'WETH', 'USDC'],
   chains: mockChains,
   hub: {
