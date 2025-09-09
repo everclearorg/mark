@@ -202,6 +202,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         (await fromEnv('PURCHASE_CACHE_TTL_SECONDS')) ??
         '5400' // default to 90min
       ),
+      earmarkTTLMinutes: configJson.earmarkTTLMinutes ?? parseInt((await fromEnv('EARMARK_TTL_MINUTES')) || '1440'),
     };
 
     validateConfiguration(config);

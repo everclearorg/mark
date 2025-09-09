@@ -463,6 +463,7 @@ export async function executeOnDemandRebalancing(
     slippage: number;
     bridge: string;
     receipt: database.TransactionReceipt;
+    recipient: string;
   }> = [];
 
   try {
@@ -511,6 +512,7 @@ export async function executeOnDemandRebalancing(
             slippage: operation.slippage,
             bridge: operation.bridge,
             receipt: result.receipt,
+            recipient,
           });
         } else {
           logger.warn('Failed to execute rebalancing operation, no transaction returned', {
@@ -537,21 +539,43 @@ export async function executeOnDemandRebalancing(
       return null;
     }
 
-    // Only create earmark if we have at least one successful operation
-    logger.info('Creating earmark after successful rebalancing operations', {
-      requestId,
-      invoiceId: invoice.intent_id,
-      successfulOperations: successfulOperations.length,
-      totalOperations: rebalanceOperations!.length,
-    });
+    const allSucceeded = successfulOperations.length === rebalanceOperations!.length;
+    if (allSucceeded) {
+      logger.info('All rebalancing operations succeeded, creating earmark', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        successfulOperations: successfulOperations.length,
+        totalOperations: rebalanceOperations!.length,
+      });
+    } else {
+      logger.warn('Partial failure in rebalancing, creating FAILED earmark', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        successfulOperations: successfulOperations.length,
+        totalOperations: rebalanceOperations!.length,
+      });
+    }
 
-    // Create earmark in database
-    const earmark = await database.createEarmark({
-      invoiceId: invoice.intent_id,
-      designatedPurchaseChain: destinationChain!,
-      tickerHash: invoice.ticker_hash,
-      minAmount: minAmount!,
-    });
+    // Check if earmark already exists for this invoice
+    let earmark = await database.getEarmarkForInvoice(invoice.intent_id);
+
+    if (earmark) {
+      logger.info('Earmark already exists for invoice, skipping creation', {
+        requestId,
+        earmarkId: earmark.id,
+        invoiceId: invoice.intent_id,
+        status: earmark.status,
+      });
+    } else {
+      // Create earmark with appropriate status
+      earmark = await database.createEarmark({
+        invoiceId: invoice.intent_id,
+        designatedPurchaseChain: destinationChain!,
+        tickerHash: invoice.ticker_hash,
+        minAmount: minAmount!,
+        status: allSucceeded ? EarmarkStatus.PENDING : EarmarkStatus.FAILED,
+      });
+    }
 
     logger.info('Created earmark for invoice', {
       requestId,
@@ -572,6 +596,7 @@ export async function executeOnDemandRebalancing(
           status: RebalanceOperationStatus.PENDING,
           bridge: op.bridge,
           transactions: { [op.originChainId]: op.receipt },
+          recipient: op.recipient,
         });
 
         logger.info('Created rebalance operation record', {
@@ -592,7 +617,9 @@ export async function executeOnDemandRebalancing(
       }
     }
 
-    return earmark.id;
+    // Only return earmark ID if status is PENDING (successful)
+    // FAILED earmarks should not be processed further
+    return earmark.status === EarmarkStatus.PENDING ? earmark.id : null;
   } catch (error) {
     logger.error('Failed to execute on-demand rebalancing', {
       requestId,
@@ -631,7 +658,7 @@ async function getMinAmountsForInvoice(
  */
 async function checkAllOperationsComplete(earmarkId: string): Promise<boolean> {
   const operations = await database.getRebalanceOperationsByEarmark(earmarkId);
-  return operations.every((op) => op.status === RebalanceOperationStatus.COMPLETED);
+  return operations.length > 0 && operations.every((op) => op.status === RebalanceOperationStatus.COMPLETED);
 }
 
 /**
@@ -725,6 +752,7 @@ async function handleMinAmountIncrease(
     slippage: number;
     bridge: string;
     receipt: database.TransactionReceipt;
+    recipient: string;
   }> = [];
 
   // Execute additional rebalancing operations
@@ -770,6 +798,7 @@ async function handleMinAmountIncrease(
           slippage: operation.slippage,
           bridge: operation.bridge,
           receipt: result.receipt,
+          recipient,
         });
       }
     } catch (error) {
@@ -801,6 +830,7 @@ async function handleMinAmountIncrease(
           status: RebalanceOperationStatus.PENDING,
           bridge: op.bridge,
           transactions: { [op.originChainId]: op.receipt },
+          recipient: op.recipient,
         });
 
         logger.info('Created additional rebalance operation record', {
@@ -1086,7 +1116,7 @@ export async function cleanupStaleEarmarks(invoiceIds: string[], context: Proces
         // Mark earmark as cancelled since the invoice is no longer available
         await database.updateEarmarkStatus(earmark.id, EarmarkStatus.CANCELLED);
 
-        logger.info('Marked stale earmark as failed', {
+        logger.info('Marked stale earmark as cancelled', {
           requestId,
           earmarkId: earmark.id,
           invoiceId,

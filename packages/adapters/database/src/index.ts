@@ -26,6 +26,7 @@ export {
   getCexWithdrawalRecord,
   setPause,
   isPaused,
+  withTransaction,
   type CreateEarmarkInput,
   type GetEarmarksFilter,
 } from './db';

@@ -13,7 +13,7 @@ import { Web3Signer } from '@mark/web3signer';
 import { pollAndProcessInvoices } from './invoice';
 import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { rebalanceInventory } from './rebalance';
+import { rebalanceInventory, cleanupExpiredEarmarks } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
 import * as database from '@mark/database';
@@ -158,6 +158,8 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       requestId: bytesToHex(crypto.getRandomValues(new Uint8Array(32))),
       startTime: Math.floor(Date.now() / 1000),
     };
+
+    await cleanupExpiredEarmarks(context);
 
     const invoiceResult = await pollAndProcessInvoices(context);
     logger.info('Successfully processed invoices', { requestId: context.requestId, invoiceResult });

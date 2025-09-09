@@ -39,6 +39,7 @@ export interface TickerGroup {
   remainingCustodied: Map<string, Map<string, bigint>>;
   chosenOrigin: string | null;
   earmarkedInvoices?: Map<string, number>; // invoiceId -> designatedOriginChain
+  pendingEarmarkInvoiceIds?: Set<string>; // invoiceIds with PENDING earmarks to skip
 }
 
 interface ProcessTickerGroupResult {
@@ -267,6 +268,16 @@ export async function processTickerGroup(
       continue;
     }
 
+    // Skip invoices with PENDING earmarks
+    if (group.pendingEarmarkInvoiceIds?.has(invoiceId)) {
+      logger.debug('Skipping invoice with pending earmark', {
+        requestId,
+        invoiceId,
+        ticker: invoice.ticker_hash,
+      });
+      continue;
+    }
+
     // For earmarked invoices, use their designated purchase chain
     const designatedPurchaseChain = group.earmarkedInvoices?.get(invoiceId);
     if (designatedPurchaseChain) {
@@ -287,11 +298,12 @@ export async function processTickerGroup(
           [designatedPurchaseChain.toString()]: filteredMinAmounts[designatedPurchaseChain.toString()],
         };
       } else {
-        logger.warn('Earmarked invoice designated origin not available', {
+        logger.warn('Earmarked invoice designated origin not available in filtered minAmounts', {
           requestId,
           invoiceId,
           designatedOrigin: designatedPurchaseChain,
           availableOrigins: Object.keys(filteredMinAmounts),
+          originalMinAmounts: Object.keys(minAmounts),
         });
         continue;
       }
@@ -615,12 +627,16 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   });
 
   const earmarkedInvoicesMap = new Map<string, number>();
+  const pendingEarmarkInvoiceIds = new Set<string>();
   start = getTimeSeconds();
 
   // Process earmarked invoices first
   try {
     await onDemand.processPendingEarmarks(context, invoices);
-    const readyEarmarks = await context.database.getEarmarks({ status: EarmarkStatus.READY });
+    // Get all earmarks (PENDING and READY) to prevent duplicate processing
+    const allEarmarks = await context.database.getEarmarks({
+      status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
+    });
     const staleEarmarkIds: string[] = [];
 
     // Create invoice map for lookup
@@ -631,18 +647,31 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       }
     }
 
-    // Add earmarked invoices to the processing queue if they're in the current batch
-    for (const { invoiceId, designatedPurchaseChain } of readyEarmarks) {
+    // Process earmarks and separate READY vs PENDING
+    for (const earmark of allEarmarks) {
+      const { invoiceId, designatedPurchaseChain, status } = earmark;
       // Find the invoice in the current batch
       const invoice = invoiceMap.get(invoiceId);
       if (invoice) {
-        earmarkedInvoicesMap.set(invoiceId, designatedPurchaseChain);
-        logger.info('Earmarked invoice ready for processing', {
-          requestId,
-          invoiceId,
-          designatedPurchaseChain,
-          ticker: invoice.ticker_hash,
-        });
+        if (status === EarmarkStatus.READY) {
+          // READY earmarks go into the processing map
+          earmarkedInvoicesMap.set(invoiceId, designatedPurchaseChain);
+          logger.info('Earmarked invoice ready for processing', {
+            requestId,
+            invoiceId,
+            designatedPurchaseChain,
+            ticker: invoice.ticker_hash,
+          });
+        } else if (status === EarmarkStatus.PENDING) {
+          // PENDING earmarks are tracked separately to be skipped
+          pendingEarmarkInvoiceIds.add(invoiceId);
+          logger.debug('Pending earmarked invoice will be skipped', {
+            requestId,
+            invoiceId,
+            designatedPurchaseChain,
+            status,
+          });
+        }
       } else {
         // Invoice not in current batch - mark earmark as stale
         staleEarmarkIds.push(invoiceId);
@@ -650,6 +679,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
           requestId,
           invoiceId,
           designatedPurchaseChain,
+          status,
         });
       }
     }
@@ -661,7 +691,8 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
 
     logger.debug('Processed earmarked invoices', {
       requestId,
-      earmarkedCount: readyEarmarks.length,
+      earmarkedCount: earmarkedInvoicesMap.size,
+      pendingEarmarkCount: pendingEarmarkInvoiceIds.size,
       duration: getTimeSeconds() - start,
     });
   } catch (error) {
@@ -870,6 +901,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       remainingCustodied: adjustedCustodied,
       chosenOrigin: null,
       earmarkedInvoices: earmarkedInvoicesMap,
+      pendingEarmarkInvoiceIds,
     };
 
     try {

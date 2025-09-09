@@ -134,4 +134,5 @@ export interface MarkConfiguration extends RebalanceConfig {
   hub: Omit<HubConfig, 'confirmations' | 'subgraphUrls'>;
   // TTL (seconds) for cached purchases
   purchaseCacheTtlSeconds: number;
+  earmarkTTLMinutes?: number;
 }

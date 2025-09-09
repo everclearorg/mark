@@ -146,14 +146,18 @@ export const NEAR_IDENTIFIER_MAP = {
     1: 'nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near',
     8453: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near',
     42161: 'nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near',
-    101: 'nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near',
+    10: 'nep245:v2_1.omni.hot.tg:10_A2ewyUyDp6qsue1jqZsGypkCxRJ',
+    43114: 'nep245:v2_1.omni.hot.tg:43114_3atVJH3r5c4GqiSYmg9fECvjc47o',
+    1399811149: 'nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near', // Everclear Solana domain
     100: 'nep141:gnosis-0x2a22f9c3b484c3629090feed35f17ff8f88f76f0.omft.near',
     1313161554: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',
   },
   USDT: {
     1: 'nep141:eth-0xdac17f958d2ee523a2206206994597c13d831ec7.omft.near',
     42161: 'nep141:arb-0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9.omft.near',
-    101: 'nep141:sol-c800a4bd850783ccb82c2b2c7e84175443606352.omft.near',
+    10: 'nep245:v2_1.omni.hot.tg:10_359RPSJVdTxwTJT9TyGssr2rFoWo',
+    43114: 'nep245:v2_1.omni.hot.tg:43114_372BeH7ENZieCaabwkbWkBiTTgXp',
+    1399811149: 'nep141:sol-c800a4bd850783ccb82c2b2c7e84175443606352.omft.near', // Everclear Solana domain
     728126428: 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near',
     1313161554: 'nep141:usdt.tether-token.near',
   },

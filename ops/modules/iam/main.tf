@@ -55,3 +55,27 @@ resource "aws_iam_role_policy" "lambda_ssm_policy" {
 }
 EOF
 }
+
+resource "aws_iam_role_policy" "lambda_s3_policy" {
+  name = "mark-lambda-s3-policy-${var.environment}-${var.stage}"
+  role = aws_iam_role.lambda_role.id
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::*-rebalance-config",
+        "arn:aws:s3:::*-rebalance-config/*"
+      ]
+    }
+  ]
+}
+EOF
+}
