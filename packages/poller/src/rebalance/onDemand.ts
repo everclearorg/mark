@@ -64,7 +64,6 @@ export async function evaluateOnDemandRebalancing(
   const evaluationResults: Map<number, OnDemandRebalanceResult & { minAmount: string }> = new Map();
 
   for (const destinationStr of invoice.destinations) {
-    console.log(`Processing destination: ${destinationStr}`);
     const destination = parseInt(destinationStr);
 
     // Skip if no minAmount for this destination
