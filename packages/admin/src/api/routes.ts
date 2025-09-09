@@ -50,7 +50,6 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
       body: JSON.stringify({ message: `Successfully processed request: ${request}` }),
     };
   } catch (e) {
-    console.log('error', e);
     return {
       statusCode: 500,
       body: JSON.stringify(jsonifyError(e)),

@@ -8,7 +8,7 @@ import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
 import { PurchaseCache } from '@mark/cache';
-import { Wallet } from 'ethers';
+import { Web3Signer } from '@mark/web3signer';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { createMinimalDatabaseMock } from '../mocks/database';
@@ -53,7 +53,7 @@ describe('pollAndProcessInvoices', () => {
       chainService: createStubInstance(ChainService),
       purchaseCache: createStubInstance(PurchaseCache),
       rebalance: createStubInstance(RebalanceAdapter),
-      web3Signer: createStubInstance(Wallet),
+      web3Signer: createStubInstance(Web3Signer),
       prometheus: createStubInstance(PrometheusAdapter),
       database: createMinimalDatabaseMock(),
     };
