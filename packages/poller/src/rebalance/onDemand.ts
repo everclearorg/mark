@@ -129,7 +129,7 @@ async function evaluateDestinationChain(
   }
 
   const ticker = invoice.ticker_hash.toLowerCase();
-  
+
   // minAmount from API is in native token decimals, need to convert to 18 decimals
   // to match the format of balances from getMarkBalances
   const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
@@ -137,7 +137,7 @@ async function evaluateDestinationChain(
     logger.error('Could not find decimals for ticker', { ticker, destination });
     return { canRebalance: false };
   }
-  
+
   // Add detailed logging to debug the conversion issue
   logger.info('MinAmount conversion details', {
     ticker,
@@ -147,13 +147,13 @@ async function evaluateDestinationChain(
     minAmountLength: minAmount.length,
     invoiceId: invoice.intent_id,
   });
-  
+
   const requiredAmountNative = BigInt(minAmount);
   const requiredAmount = convertTo18Decimals(requiredAmountNative, decimals);
-  
+
   // Calculate what the human-readable amount would be
   const humanReadable = Number(requiredAmountNative) / Math.pow(10, decimals);
-  
+
   logger.info('MinAmount after conversion', {
     requiredAmountNative: requiredAmountNative.toString(),
     requiredAmount18Decimals: requiredAmount.toString(),
@@ -161,7 +161,7 @@ async function evaluateDestinationChain(
     humanReadableAmount: humanReadable,
     invoiceId: invoice.intent_id,
   });
-  
+
   if (!requiredAmount) {
     logger.error('Invalid minAmount', { minAmount, destination });
     return { canRebalance: false };
@@ -710,7 +710,7 @@ async function handleMinAmountIncrease(
 
   // Both values are in native decimals, so the difference is also in native decimals
   const additionalAmountNative = currentRequiredAmount - earmarkedAmount;
-  
+
   // Convert to 18 decimals for use with balance calculations
   const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
   const additionalAmount = convertTo18Decimals(additionalAmountNative, decimals);
