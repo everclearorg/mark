@@ -255,8 +255,11 @@ function calculateEarmarkedFunds(
   for (const earmark of earmarks) {
     const key = `${earmark.designatedPurchaseChain}-${earmark.tickerHash}`;
 
-    // earmark.minAmount is already in standardized 18 decimals from the API
-    const amount = BigInt(earmark.minAmount) || 0n;
+    // earmark.minAmount is stored in native decimals from the API
+    // Convert to 18 decimals for consistent comparison with balances
+    const nativeAmount = BigInt(earmark.minAmount) || 0n;
+    const decimals = getDecimalsFromConfig(earmark.tickerHash, earmark.designatedPurchaseChain.toString(), config);
+    const amount = convertTo18Decimals(nativeAmount, decimals);
 
     const existing = fundsMap.get(key);
     if (existing) {
@@ -705,7 +708,12 @@ async function handleMinAmountIncrease(
     return false;
   }
 
-  const additionalAmount = currentRequiredAmount - earmarkedAmount;
+  // Both values are in native decimals, so the difference is also in native decimals
+  const additionalAmountNative = currentRequiredAmount - earmarkedAmount;
+  
+  // Convert to 18 decimals for use with balance calculations
+  const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
+  const additionalAmount = convertTo18Decimals(additionalAmountNative, decimals);
 
   logger.info('MinAmount increased, evaluating additional rebalancing', {
     requestId,
@@ -1177,7 +1185,14 @@ export async function getAvailableBalanceLessEarmarks(
   });
   const earmarkedAmount = earmarks
     .filter((e) => e.tickerHash.toLowerCase() === ticker)
-    .reduce((sum, e) => sum + (BigInt(e.minAmount) || 0n), 0n);
+    .reduce((sum, e) => {
+      // earmark.minAmount is stored in native decimals from the API
+      // Convert to 18 decimals for consistent comparison with balances
+      const nativeAmount = BigInt(e.minAmount) || 0n;
+      const decimals = getDecimalsFromConfig(e.tickerHash, chainId.toString(), config);
+      const amount18Decimals = convertTo18Decimals(nativeAmount, decimals);
+      return sum + amount18Decimals;
+    }, 0n);
 
   return totalBalance - earmarkedAmount;
 }
