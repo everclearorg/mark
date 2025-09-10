@@ -416,7 +416,7 @@ describe('NearBridgeAdapter', () => {
         // Verify the quote was called with capped amount (8 WETH)
         expect(OneClickService.getQuote).toHaveBeenCalledWith(
           expect.objectContaining({
-            amount: '8000000000000000000', // 8 WETH cap
+            amount: '1000000000000000000', // 1 WETH cap
           }),
         );
         expect(result).toBe(mockQuoteResponse.quote.amountOut);
@@ -433,14 +433,14 @@ describe('NearBridgeAdapter', () => {
         // Mock OneClickService.getQuote
         (OneClickService.getQuote as jest.MockedFunction<any>).mockResolvedValueOnce(mockQuoteResponse);
 
-        // Execute with amount below cap (5 WETH)
-        const smallAmount = '5000000000000000000'; // 5 WETH
+        // Execute with amount below cap (0.5 WETH)
+        const smallAmount = '500000000000000000'; // 0.5 WETH
         const result = await adapter.getReceivedAmount(smallAmount, route);
 
         // Verify the quote was called with original amount
         expect(OneClickService.getQuote).toHaveBeenCalledWith(
           expect.objectContaining({
-            amount: '5000000000000000000', // Original 5 WETH
+            amount: '500000000000000000', // Original 0.5 WETH
           }),
         );
         expect(result).toBe(mockQuoteResponse.quote.amountOut);
@@ -582,7 +582,7 @@ describe('NearBridgeAdapter', () => {
         ...mockQuoteResponse,
         quote: {
           ...mockQuoteResponse.quote,
-          amountIn: '8000000000000000000', // 8 WETH capped
+          amountIn: '1000000000000000000', // 1 WETH capped
         },
       };
       (OneClickService.getQuote as jest.Mock).mockResolvedValueOnce(cappedQuoteResponse as never);
@@ -597,7 +597,7 @@ describe('NearBridgeAdapter', () => {
       // Verify quote was called with capped amount
       expect(OneClickService.getQuote).toHaveBeenCalledWith(
         expect.objectContaining({
-          amount: '8000000000000000000', // 8 WETH cap
+          amount: '1000000000000000000', // 1 WETH cap
         }),
       );
 
@@ -615,12 +615,12 @@ describe('NearBridgeAdapter', () => {
           }),
         ]),
         functionName: 'withdraw',
-        args: [BigInt('8000000000000000000')], // Capped to 8 WETH
+        args: [BigInt('1000000000000000000')], // Capped to 1 WETH
       });
 
       // Second: Deposit capped amount of ETH
       expect(result[1].memo).toBe(RebalanceTransactionMemo.Rebalance);
-      expect(result[1].transaction.value).toBe(BigInt('8000000000000000000'));
+      expect(result[1].transaction.value).toBe(BigInt('1000000000000000000'));
     });
   });
 

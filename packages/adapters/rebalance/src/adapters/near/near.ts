@@ -91,8 +91,8 @@ export class NearBridgeAdapter implements BridgeAdapter {
     const amountBigInt = BigInt(amount);
 
     if (amountBigInt > cap) {
-      this.logger.info(`Capping ${assetSymbol} amount to maximum per transaction`, {
-        requestedAmount: amount,
+      this.logger.warn(`Capping: ${assetSymbol} amount exceeds maximum, applying cap`, {
+        originalAmount: amount,
         cappedAmount: cap.toString(),
         assetSymbol,
       });
@@ -107,6 +107,16 @@ export class NearBridgeAdapter implements BridgeAdapter {
     try {
       const originAsset = this.getAsset(route.asset, route.origin);
       _amount = this.getCappedAmount(amount, originAsset?.symbol);
+
+      // Log if amount was capped for visibility
+      if (_amount !== amount) {
+        this.logger.info('Near bridge amount was capped', {
+          originalAmount: amount,
+          cappedAmount: _amount,
+          assetSymbol: originAsset?.symbol,
+          route,
+        });
+      }
 
       const { quote } = await this.getSuggestedFees(route, EOA_ADDRESS, EOA_ADDRESS, _amount);
       return quote.amountOut;
@@ -149,11 +159,11 @@ export class NearBridgeAdapter implements BridgeAdapter {
           },
         };
 
-        const depositTx = this.buildDepositTx(zeroAddress, quote.quote);
+        const depositTx = this.buildDepositTx(zeroAddress, quote.quote, _amount);
         return [unwrapTx, depositTx].filter((x) => !!x);
       } else {
         // For all other cases, just build the deposit transaction
-        const depositTx = this.buildDepositTx(route.asset, quote.quote);
+        const depositTx = this.buildDepositTx(route.asset, quote.quote, _amount);
         return [depositTx].filter((x) => !!x);
       }
     } catch (err) {
@@ -600,10 +610,11 @@ export class NearBridgeAdapter implements BridgeAdapter {
     throw new Error(`Failed to ${context}: ${(error as any)?.message ?? ''}`);
   }
 
-  protected buildDepositTx(inputAsset: string, quote: Quote): MemoizedTransactionRequest {
+  protected buildDepositTx(inputAsset: string, quote: Quote, effectiveAmount?: string): MemoizedTransactionRequest {
     if (inputAsset === zeroAddress) {
       return {
         memo: RebalanceTransactionMemo.Rebalance,
+        effectiveAmount,
         transaction: {
           to: quote.depositAddress as `0x${string}`,
           data: '0x',
@@ -613,6 +624,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
     } else {
       return {
         memo: RebalanceTransactionMemo.Rebalance,
+        effectiveAmount,
         transaction: {
           to: inputAsset as `0x${string}`,
           data: encodeFunctionData({

@@ -55,6 +55,7 @@ export const mockConfig: MarkConfiguration = {
   supportedSettlementDomains: [1, 8453],
   forceOldestInvoice: false,
   supportedAssets: ['0xticker1'],
+  purchaseCacheTtlSeconds: 5400,
   chains: {
     '1': {
       providers: ['http://localhost:8545'],
@@ -132,4 +133,7 @@ export const mockConfig: MarkConfiguration = {
     ],
   },
   routes: [],
+  database: {
+    connectionString: 'postgresql://test:test@localhost:5432/test',
+  },
 };

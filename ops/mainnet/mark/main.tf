@@ -36,13 +36,15 @@ data "aws_ssm_parameter" "mark_config_mainnet" {
 locals {
   account_id = data.aws_caller_identity.current.account_id
   repository_url_prefix = "${local.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/"
-  
+
   mark_config_json = jsondecode(data.aws_ssm_parameter.mark_config_mainnet.value)
   mark_config = {
     dd_api_key = local.mark_config_json.dd_api_key
     web3_signer_private_key = local.mark_config_json.web3_signer_private_key
     signerAddress = local.mark_config_json.signerAddress
     chains = local.mark_config_json.chains
+    db_password = local.mark_config_json.db_password
+    admin_token = local.mark_config_json.admin_token
   }
 }
 
@@ -58,7 +60,7 @@ module "network" {
 resource "aws_service_discovery_private_dns_namespace" "mark_internal" {
   name        = "mark.internal"
   description = "Mark internal DNS namespace for service discovery"
-  vpc         = module.network.vpc_id 
+  vpc         = module.network.vpc_id
 }
 
 module "ecs" {
@@ -271,6 +273,29 @@ module "mark_admin_api" {
     LOG_LEVEL                       = "debug"
     REDIS_HOST                      = module.cache.redis_instance_address
     REDIS_PORT                      = module.cache.redis_instance_port
-    ADMIN_TOKEN                     = local.mark_config_json.admin_token
+    ADMIN_TOKEN                     = local.mark_config.admin_token
+    DATABASE_URL                    = module.db.database_url
+  }
+}
+
+module "db" {
+  source = "../../modules/db"
+
+  identifier                 = "${var.stage}-${var.environment}-mark-db"
+  instance_class             = var.db_instance_class
+  allocated_storage          = var.db_allocated_storage
+  db_name                    = var.db_name
+  username                   = var.db_username
+  password                   = local.mark_config.db_password # Use password from MARK_CONFIG_MAINNET
+  port                       = var.db_port
+  vpc_security_group_ids     = [module.sgs.db_sg_id]
+  db_subnet_group_subnet_ids = module.network.private_subnets
+  publicly_accessible        = false
+  maintenance_window         = "sun:06:30-sun:07:30"
+
+  tags = {
+    Stage       = var.stage
+    Environment = var.environment
+    Domain      = var.domain
   }
 }

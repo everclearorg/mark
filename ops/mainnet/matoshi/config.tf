@@ -1,4 +1,10 @@
 locals {
+  rebalanceConfig = {
+    bucket = "matoshi-rebalance-config"
+    key    = "rebalance-config.json"
+    region = var.region
+  }
+
   prometheus_config = <<-EOT
     global:
       scrape_interval: 15s
@@ -55,6 +61,7 @@ locals {
     SIGNER_ADDRESS                = local.mark_config.signerAddress
     REDIS_HOST                    = module.cache.redis_instance_address
     REDIS_PORT                    = module.cache.redis_instance_port
+    DATABASE_URL                  = module.db.database_url
     SUPPORTED_SETTLEMENT_DOMAINS  = var.supported_settlement_domains
     SUPPORTED_ASSET_SYMBOLS       = var.supported_asset_symbols
     LOG_LEVEL                     = var.log_level
@@ -73,6 +80,10 @@ locals {
     DD_MERGE_XRAY_TRACES          = true
     DD_TRACE_OTEL_ENABLED         = false
     MARK_CONFIG_SSM_PARAMETER     = "MATOSHI_CONFIG_MAINNET"
+
+    REBALANCE_CONFIG_S3_BUCKET    = local.rebalanceConfig.bucket
+    REBALANCE_CONFIG_S3_KEY       = local.rebalanceConfig.key
+    REBALANCE_CONFIG_S3_REGION    = local.rebalanceConfig.region
 
     WETH_1_THRESHOLD              = "800000000000000000"
     USDC_1_THRESHOLD              = "4000000000"

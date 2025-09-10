@@ -1,19 +1,25 @@
-import { getMarkBalances, safeStringToBigInt, getTickerForAsset } from '../helpers';
+import { getMarkBalances, getTickerForAsset, convertToNativeUnits } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
-import { getDecimalsFromConfig, WalletType } from '@mark/core';
+import {
+  getDecimalsFromConfig,
+  WalletType,
+  RebalanceOperationStatus,
+  DBPS_MULTIPLIER,
+  RebalanceAction,
+} from '@mark/core';
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
-import { formatUnits } from 'viem';
-import { RebalanceAction } from '@mark/cache';
-import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
+import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
+import { getAvailableBalanceLessEarmarks } from './onDemand';
+import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<RebalanceAction[]> {
-  const { logger, requestId, rebalanceCache, config, chainService, rebalance } = context;
+  const { logger, requestId, purchaseCache, config, chainService, rebalance } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
-  const isPaused = await rebalanceCache.isPaused();
+  const isPaused = await rebalance.isPaused();
   if (isPaused) {
     logger.warn('Rebalance loop is paused', { requestId });
     return rebalanceOperations;
@@ -21,9 +27,11 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
   logger.info('Starting to rebalance inventory', { requestId });
 
-  // Execute any callbacks from cached actions prior to proceeding
-  await executeDestinationCallbacks(context);
-  logger.debug('Executed destination callbacks');
+  // Only execute callbacks if purchase cache is paused
+  const isPurchasePaused = await purchaseCache.isPaused();
+  if (isPurchasePaused) {
+    await executeDestinationCallbacks(context);
+  }
 
   // Get all of mark balances
   const balances = await getMarkBalances(config, chainService, context.prometheus);
@@ -84,16 +92,19 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
       logger.warn('No balances found for ticker, skipping route', { requestId, route, ticker });
       continue; // Skip to next route
     }
-    const normalizedBalance = tickerBalances.get(route.origin.toString()) ?? 0n;
+
+    // Get balance minus earmarked funds
+    const availableBalance = await getAvailableBalanceLessEarmarks(route.origin, ticker, context);
+
     // Ticker balances always in 18 units, convert to proper decimals
     const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);
-    const currentBalance = BigInt(formatUnits(normalizedBalance, 18 - (decimals ?? 18)));
+    const currentBalance = convertToNativeUnits(availableBalance, decimals);
 
     logger.debug('Current balance for route', { requestId, route, currentBalance: currentBalance.toString() });
 
     // Convert route maximum and reserve from standardized 18 decimals to asset's native decimals
-    const maximumBalance = BigInt(formatUnits(BigInt(route.maximum), 18 - (decimals ?? 18)));
-    const reserveAmount = BigInt(formatUnits(BigInt(route.reserve ?? '0'), 18 - (decimals ?? 18)));
+    const maximumBalance = convertToNativeUnits(BigInt(route.maximum), decimals);
+    const reserveAmount = convertToNativeUnits(BigInt(route.reserve ?? '0'), decimals);
     if (currentBalance <= maximumBalance) {
       logger.info('Balance is at or below maximum, skipping route', {
         requestId,
@@ -155,6 +166,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           requestId,
           route,
           bridgeType,
+          amountToBridge: amountToBridge.toString(),
           error: jsonifyError(quoteError),
         });
         continue; // Skip to next bridge preference
@@ -162,15 +174,10 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
 
       // Step 2: Check Slippage
       const receivedAmount = BigInt(receivedAmountStr);
-      const scaleFactor = BigInt(10_000);
-      const dbpsDenominator = BigInt(100_000);
-      const currentSlippage = route.slippages[bridgeIndex];
-      const slippage = safeStringToBigInt(currentSlippage.toString(), scaleFactor);
-      const slippageScaled = slippage * scaleFactor;
-      const minimumAcceptableAmount =
-        amountToBridge - (amountToBridge * slippageScaled) / (scaleFactor * dbpsDenominator);
+      const slippageDbps = BigInt(route.slippagesDbps[bridgeIndex]);
+      const minimumAcceptableAmount = amountToBridge - (amountToBridge * slippageDbps) / DBPS_MULTIPLIER;
 
-      const actualSlippageBps = ((amountToBridge - receivedAmount) * scaleFactor) / amountToBridge;
+      const actualSlippageDbps = ((amountToBridge - receivedAmount) * DBPS_MULTIPLIER) / amountToBridge;
 
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Quote does not meet slippage requirements, trying next preference', {
@@ -180,9 +187,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           amountToBridge: amountToBridge.toString(),
           receivedAmount: receivedAmount.toString(),
           minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-          slippageBps: currentSlippage.toString(),
-          actualSlippageBps: actualSlippageBps.toString(),
-          configuredSlippageBPS: currentSlippage.toString(),
+          slippageDbps: slippageDbps.toString(),
+          actualSlippageDbps: actualSlippageDbps.toString(),
+          configuredSlippageDBPS: slippageDbps.toString(),
         });
         continue; // Skip to next bridge preference
       }
@@ -194,15 +201,15 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
         amountToBridge: amountToBridge.toString(),
         receivedAmount: receivedAmount.toString(),
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-        slippageBps: currentSlippage.toString(),
-        actualSlippageBps: actualSlippageBps.toString(),
-        configuredSlippageBPS: currentSlippage.toString(),
+        slippageDbps: slippageDbps.toString(),
+        actualSlippageDbps: actualSlippageDbps.toString(),
+        configuredSlippageDBPS: slippageDbps.toString(),
       });
 
       // Step 3: Get Bridge Transaction Requests
       let bridgeTxRequests = [];
-      const sender = getActualOwner(originZodiacConfig, config.ownAddress);
-      const recipient = getActualOwner(destinationZodiacConfig, config.ownAddress);
+      const sender = getActualAddress(route.origin, config, logger, { requestId });
+      const recipient = getActualAddress(route.destination, config, logger, { requestId });
       try {
         bridgeTxRequests = await adapter.send(sender, recipient, amountToBridge.toString(), route);
         logger.info('Prepared bridge transaction request from adapter', {
@@ -235,9 +242,10 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
       // Step 4: Submit the bridge transactions in order
       // TODO: Use multisend for zodiac-enabled origin transactions
       let idx = -1;
+      let effectiveBridgedAmount = amountToBridge.toString(); // Default to original amount
       try {
-        let transactionHash: string = '';
-        for (const { transaction, memo } of bridgeTxRequests) {
+        let receipt: TransactionReceipt | undefined = undefined;
+        for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
           idx++;
           logger.info('Submitting bridge transaction', {
             requestId,
@@ -281,56 +289,71 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           if (memo !== RebalanceTransactionMemo.Rebalance) {
             continue;
           }
-          transactionHash = result.hash;
+          receipt = result.receipt! as unknown as TransactionReceipt;
+          // Use the effective bridged amount if provided (e.g., for Near caps)
+          if (effectiveAmount) {
+            effectiveBridgedAmount = effectiveAmount;
+            logger.info('Using effective bridged amount from adapter', {
+              requestId,
+              originalAmount: amountToBridge.toString(),
+              effectiveAmount: effectiveBridgedAmount,
+              bridgeType,
+            });
+          }
         }
 
-        // Step 5: Add rebalance action to cache
-        const rebalanceAction: RebalanceAction = {
-          bridge: adapter.type(),
-          amount: amountToBridge.toString(),
-          origin: route.origin,
-          destination: route.destination,
-          asset: route.asset,
-          transaction: transactionHash,
-          recipient,
-        };
-
+        // Step 5: Create database record
         try {
-          await rebalanceCache.addRebalances([rebalanceAction]);
-          logger.info('Successfully added rebalance action to cache', {
+          await createRebalanceOperation({
+            earmarkId: null, // NULL indicates regular rebalancing
+            originChainId: route.origin,
+            destinationChainId: route.destination,
+            tickerHash: route.asset,
+            amount: effectiveBridgedAmount,
+            slippage: route.slippagesDbps[bridgeIndex],
+            status: RebalanceOperationStatus.PENDING,
+            bridge: bridgeType,
+            transactions: receipt ? { [route.origin]: receipt } : undefined,
+          });
+
+          logger.info('Successfully created rebalance operation in database', {
             requestId,
             route,
             bridgeType,
-            originTxHash: transactionHash,
-            amountToBridge: amountToBridge,
+            originTxHash: receipt?.transactionHash,
+            amountToBridge: effectiveBridgedAmount,
+            originalRequestedAmount: amountToBridge.toString(),
             receiveAmount: receivedAmount,
-            action: rebalanceAction,
           });
 
           // Add for tracking
+          const rebalanceAction: RebalanceAction = {
+            bridge: adapter.type(),
+            amount: amountToBridge.toString(),
+            origin: route.origin,
+            destination: route.destination,
+            asset: route.asset,
+            transaction: receipt!.transactionHash,
+            recipient,
+          };
           rebalanceOperations.push(rebalanceAction);
 
           rebalanceSuccessful = true;
           // If we got here, the rebalance for this route was successful with this bridge.
           break; // Exit the bridge preference loop for this route
-        } catch (cacheError) {
-          logger.error('Failed to add rebalance action to cache. Transaction was sent, but caching failed.', {
+        } catch (error) {
+          logger.error('Failed to confirm transaction or create database record', {
             requestId,
             route,
             bridgeType,
-            transactionHash,
+            transactionHash: receipt?.transactionHash,
             amountToBridge: amountToBridge,
             receiveAmount: receivedAmount,
-            error: jsonifyError(cacheError),
-            rebalanceAction,
+            error: jsonifyError(error),
           });
 
-          // Add for tracking, even if caching failed
-          rebalanceOperations.push(rebalanceAction);
-
-          // Consider this a success for the route as funds were moved. Exit bridge loop.
-          rebalanceSuccessful = true;
-          break; // Exit the bridge preference loop for this route
+          // Don't consider this a success if we can't confirm or record it
+          continue; // Try next bridge
         }
       } catch (sendError) {
         logger.error('Failed to send or monitor bridge transaction, trying next preference', {

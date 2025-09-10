@@ -95,10 +95,41 @@ variable "zone_id" {
 
 variable "cert_arn" {
   description = "ACM certificate"
-  default = "arn:aws:acm:sa-east-1:679752396206:certificate/1307051f-4df4-4233-aa42-a08a5d15e3e3"
+  default     = "arn:aws:acm:sa-east-1:679752396206:certificate/1307051f-4df4-4233-aa42-a08a5d15e3e3"
 }
 
 variable "admin_image_uri" {
   description = "The ECR image URI for the admin API Lambda function."
   type        = string
+}
+
+# Database variables
+variable "db_instance_class" {
+  description = "The instance class for the RDS database"
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "The allocated storage in gibibytes"
+  type        = string
+  default     = "20"
+}
+
+variable "db_name" {
+  description = "The name of the database"
+  type        = string
+  default     = "markdb"
+}
+
+variable "db_username" {
+  description = "The master username for the database"
+  type        = string
+  default     = "markadmin"
+}
+
+variable "db_port" {
+  description = "The port on which the database accepts connections"
+  type        = string
+  default     = "5432"
 }

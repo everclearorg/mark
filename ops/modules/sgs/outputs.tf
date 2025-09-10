@@ -17,3 +17,8 @@ output "efs_sg_id" {
   description = "ID of the EFS security group"
   value       = aws_security_group.efs.id
 }
+
+output "db_sg_id" {
+  description = "ID of the database security group"
+  value       = aws_security_group.db.id
+}
