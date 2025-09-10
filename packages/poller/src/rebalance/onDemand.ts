@@ -129,13 +129,18 @@ async function evaluateDestinationChain(
   }
 
   const ticker = invoice.ticker_hash.toLowerCase();
-  const requiredAmount = BigInt(minAmount);
+
+  // minAmount from API is in native token decimals, convert to 18 decimals for comparison
+  const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
+  const requiredAmountNative = BigInt(minAmount);
+  const requiredAmount = convertTo18Decimals(requiredAmountNative, decimals);
+
   if (!requiredAmount) {
     logger.error('Invalid minAmount', { minAmount, destination });
     return { canRebalance: false };
   }
 
-  // Check current balance on destination
+  // Check current balance on destination (already in 18 decimals from getMarkBalances)
   const destinationBalance = balances.get(ticker)?.get(destination.toString()) || 0n;
   const earmarkedOnDestination = earmarkedFunds
     .filter((e) => e.chainId === destination && e.tickerHash.toLowerCase() === ticker)
@@ -145,7 +150,7 @@ async function evaluateDestinationChain(
   const availableOnDestination =
     destinationBalance > earmarkedOnDestination ? destinationBalance - earmarkedOnDestination : 0n;
 
-  // Calculate the amount needed to fulfill the invoice
+  // Calculate the amount needed to fulfill the invoice (both values now in 18 decimals)
   const amountNeeded = requiredAmount > availableOnDestination ? requiredAmount - availableOnDestination : 0n;
 
   // If destination already has enough, no need to rebalance
@@ -153,13 +158,9 @@ async function evaluateDestinationChain(
     return { canRebalance: false };
   }
 
-  // Convert amountNeeded to 18-decimal format for calculateRebalancingOperations
-  const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
-  const amountNeededIn18Decimals = convertTo18Decimals(amountNeeded, decimals);
-
   // Calculate rebalancing operations
   const { operations, canFulfill, totalAchievable } = await calculateRebalancingOperations(
-    amountNeededIn18Decimals,
+    amountNeeded,
     applicableRoutes,
     balances,
     earmarkedFunds,
@@ -190,7 +191,6 @@ async function evaluateDestinationChain(
     earmarkedOnDestination: earmarkedOnDestination.toString(),
     availableOnDestination: availableOnDestination.toString(),
     amountNeeded: amountNeeded.toString(),
-    amountNeededIn18Decimals: amountNeededIn18Decimals.toString(),
     operations: operations.length,
     totalAchievable: totalAchievable.toString(),
   });
