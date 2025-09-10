@@ -108,7 +108,8 @@ RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
     ln -s ../../packages/adapters/cache/dist cache && \
     ln -s ../../packages/adapters/database/dist database
 
-COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
+# Datadog extension temporarily disabled due to architecture mismatch
+# COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
 
 CMD [ "index.handler" ]
 EXPOSE 8080

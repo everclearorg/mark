@@ -129,12 +129,39 @@ async function evaluateDestinationChain(
   }
 
   const ticker = invoice.ticker_hash.toLowerCase();
-
-  // minAmount from API is in native token decimals, convert to 18 decimals for comparison
+  
+  // minAmount from API is in native token decimals, need to convert to 18 decimals
+  // to match the format of balances from getMarkBalances
   const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
+  if (decimals === undefined) {
+    logger.error('Could not find decimals for ticker', { ticker, destination });
+    return { canRebalance: false };
+  }
+  
+  // Add detailed logging to debug the conversion issue
+  logger.info('MinAmount conversion details', {
+    ticker,
+    destination,
+    decimals,
+    minAmountRaw: minAmount,
+    minAmountLength: minAmount.length,
+    invoiceId: invoice.intent_id,
+  });
+  
   const requiredAmountNative = BigInt(minAmount);
   const requiredAmount = convertTo18Decimals(requiredAmountNative, decimals);
-
+  
+  // Calculate what the human-readable amount would be
+  const humanReadable = Number(requiredAmountNative) / Math.pow(10, decimals);
+  
+  logger.info('MinAmount after conversion', {
+    requiredAmountNative: requiredAmountNative.toString(),
+    requiredAmount18Decimals: requiredAmount.toString(),
+    decimals,
+    humanReadableAmount: humanReadable,
+    invoiceId: invoice.intent_id,
+  });
+  
   if (!requiredAmount) {
     logger.error('Invalid minAmount', { minAmount, destination });
     return { canRebalance: false };
@@ -228,10 +255,8 @@ function calculateEarmarkedFunds(
   for (const earmark of earmarks) {
     const key = `${earmark.designatedPurchaseChain}-${earmark.tickerHash}`;
 
-    // Convert earmark amount to 18 decimals for consistent comparison with balances
-    const nativeAmount = BigInt(earmark.minAmount) || 0n;
-    const decimals = getDecimalsFromConfig(earmark.tickerHash, earmark.designatedPurchaseChain.toString(), config);
-    const amount = convertTo18Decimals(nativeAmount, decimals);
+    // earmark.minAmount is already in standardized 18 decimals from the API
+    const amount = BigInt(earmark.minAmount) || 0n;
 
     const existing = fundsMap.get(key);
     if (existing) {
