@@ -136,6 +136,12 @@ jobs:
           node-version: '20'
           cache: 'yarn'
 
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3
+          npm install -g node-gyp
+
       - name: Install dependencies
         run: yarn install
 
@@ -228,6 +234,12 @@ jobs:
         with:
           node-version: '20'
           cache: 'yarn'
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3
+          npm install -g node-gyp
 
       - name: Install dependencies
         run: yarn install
