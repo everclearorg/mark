@@ -290,7 +290,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             continue;
           }
           receipt = result.receipt! as unknown as TransactionReceipt;
-          // Use the effective bridged amount if provided (e.g., for Near caps)
+          // Use the effective bridged amount if provided (e.g., for Near caps or Binance rounding)
           if (effectiveAmount) {
             effectiveBridgedAmount = effectiveAmount;
             logger.info('Using effective bridged amount from adapter', {
