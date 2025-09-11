@@ -287,6 +287,103 @@ export async function getActiveEarmarksForChain(chainId: number): Promise<CamelC
   return ret.map(snakeToCamel);
 }
 
+export async function getEarmarksWithOperations(
+  limit: number,
+  offset: number,
+  filter?: {
+    status?: string;
+    chainId?: number;
+    invoiceId?: string;
+  },
+): Promise<
+  Array<
+    CamelCasedProperties<earmarks> & {
+      operations?: Array<Record<string, string | number | Date | null>>;
+    }
+  >
+> {
+  let query = `
+    SELECT e.*,
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', ro.id,
+                 'status', ro.status,
+                 'origin_chain_id', ro.origin_chain_id,
+                 'destination_chain_id', ro.destination_chain_id,
+                 'ticker_hash', ro.ticker_hash,
+                 'amount', ro.amount,
+                 'slippage', ro.slippage,
+                 'bridge', ro.bridge,
+                 'recipient', ro.recipient,
+                 'created_at', ro.created_at,
+                 'updated_at', ro.updated_at
+               ) ORDER BY ro.created_at DESC
+             ) FILTER (WHERE ro.id IS NOT NULL),
+             '[]'::json
+           ) as operations
+    FROM earmarks e
+    LEFT JOIN rebalance_operations ro ON e.id = ro.earmark_id
+  `;
+
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let paramCount = 1;
+
+  if (filter) {
+    if (filter.status) {
+      conditions.push(`e.status = $${paramCount++}`);
+      values.push(filter.status);
+    }
+    if (filter.chainId) {
+      conditions.push(`e.designated_purchase_chain = $${paramCount++}`);
+      values.push(filter.chainId);
+    }
+    if (filter.invoiceId) {
+      conditions.push(`e.invoice_id = $${paramCount++}`);
+      values.push(filter.invoiceId);
+    }
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+
+  query += `
+    GROUP BY e.id
+    ORDER BY e.created_at DESC
+    LIMIT $${paramCount++} OFFSET $${paramCount}
+  `;
+
+  values.push(limit, offset);
+
+  interface QueryResult extends earmarks {
+    operations: Array<{
+      id: string;
+      status: string;
+      origin_chain_id: number;
+      destination_chain_id: number;
+      ticker_hash: string;
+      amount: string;
+      slippage: number;
+      bridge: string | null;
+      recipient: string | null;
+      created_at: Date;
+      updated_at: Date;
+    }>;
+  }
+
+  const results = await queryWithClient<QueryResult>(query, values);
+
+  return results.map((row) => {
+    const { operations, ...earmark } = row;
+    return {
+      ...snakeToCamel(earmark),
+      operations: operations.map((op: Record<string, string | number | Date | null>) => snakeToCamel(op)),
+    };
+  });
+}
+
 export async function createRebalanceOperation(input: {
   earmarkId: string | null;
   originChainId: number;
