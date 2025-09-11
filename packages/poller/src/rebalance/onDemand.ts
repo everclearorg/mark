@@ -58,7 +58,7 @@ export async function evaluateOnDemandRebalancing(
 
   // Get active earmarks to exclude from available balance
   const activeEarmarks = await database.getEarmarks({ status: [EarmarkStatus.PENDING, EarmarkStatus.READY] });
-  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks, config);
+  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
 
   // For each potential destination chain, evaluate if we can aggregate enough funds
   const evaluationResults: Map<number, OnDemandRebalanceResult & { minAmount: string }> = new Map();
@@ -129,13 +129,24 @@ async function evaluateDestinationChain(
   }
 
   const ticker = invoice.ticker_hash.toLowerCase();
+
+  // minAmount from API is in native token decimals, need to convert to 18 decimals
+  // to match the format of balances from getMarkBalances
+  const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
+  if (decimals === undefined) {
+    logger.error('Could not find decimals for ticker', { ticker, destination });
+    return { canRebalance: false };
+  }
+
+  // minAmount from API is already in standardized 18 decimals
   const requiredAmount = BigInt(minAmount);
+
   if (!requiredAmount) {
     logger.error('Invalid minAmount', { minAmount, destination });
     return { canRebalance: false };
   }
 
-  // Check current balance on destination
+  // Check current balance on destination (already in 18 decimals from getMarkBalances)
   const destinationBalance = balances.get(ticker)?.get(destination.toString()) || 0n;
   const earmarkedOnDestination = earmarkedFunds
     .filter((e) => e.chainId === destination && e.tickerHash.toLowerCase() === ticker)
@@ -145,7 +156,7 @@ async function evaluateDestinationChain(
   const availableOnDestination =
     destinationBalance > earmarkedOnDestination ? destinationBalance - earmarkedOnDestination : 0n;
 
-  // Calculate the amount needed to fulfill the invoice
+  // Calculate the amount needed to fulfill the invoice (both values now in 18 decimals)
   const amountNeeded = requiredAmount > availableOnDestination ? requiredAmount - availableOnDestination : 0n;
 
   // If destination already has enough, no need to rebalance
@@ -153,13 +164,9 @@ async function evaluateDestinationChain(
     return { canRebalance: false };
   }
 
-  // Convert amountNeeded to 18-decimal format for calculateRebalancingOperations
-  const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
-  const amountNeededIn18Decimals = convertTo18Decimals(amountNeeded, decimals);
-
   // Calculate rebalancing operations
   const { operations, canFulfill, totalAchievable } = await calculateRebalancingOperations(
-    amountNeededIn18Decimals,
+    amountNeeded,
     applicableRoutes,
     balances,
     earmarkedFunds,
@@ -190,7 +197,6 @@ async function evaluateDestinationChain(
     earmarkedOnDestination: earmarkedOnDestination.toString(),
     availableOnDestination: availableOnDestination.toString(),
     amountNeeded: amountNeeded.toString(),
-    amountNeededIn18Decimals: amountNeededIn18Decimals.toString(),
     operations: operations.length,
     totalAchievable: totalAchievable.toString(),
   });
@@ -219,19 +225,14 @@ function getAvailableBalance(
   return available > 0n ? available : 0n;
 }
 
-function calculateEarmarkedFunds(
-  earmarks: database.CamelCasedProperties<earmarks>[],
-  config: ProcessingContext['config'],
-): EarmarkedFunds[] {
+function calculateEarmarkedFunds(earmarks: database.CamelCasedProperties<earmarks>[]): EarmarkedFunds[] {
   const fundsMap = new Map<string, EarmarkedFunds>();
 
   for (const earmark of earmarks) {
     const key = `${earmark.designatedPurchaseChain}-${earmark.tickerHash}`;
 
-    // Convert earmark amount to 18 decimals for consistent comparison with balances
-    const nativeAmount = BigInt(earmark.minAmount) || 0n;
-    const decimals = getDecimalsFromConfig(earmark.tickerHash, earmark.designatedPurchaseChain.toString(), config);
-    const amount = convertTo18Decimals(nativeAmount, decimals);
+    // earmark.minAmount is already stored in standardized 18 decimals from the API
+    const amount = BigInt(earmark.minAmount) || 0n;
 
     const existing = fundsMap.get(key);
     if (existing) {
@@ -680,6 +681,7 @@ async function handleMinAmountIncrease(
     return false;
   }
 
+  // Both values are already in standardized 18 decimals from the API
   const additionalAmount = currentRequiredAmount - earmarkedAmount;
 
   logger.info('MinAmount increased, evaluating additional rebalancing', {
@@ -693,7 +695,7 @@ async function handleMinAmountIncrease(
   // Get current balances and earmarked funds
   const balances = await getMarkBalances(config, context.chainService, context.prometheus);
   const activeEarmarks = await database.getEarmarks({ status: [EarmarkStatus.PENDING, EarmarkStatus.READY] });
-  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks, config);
+  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
 
   // Check if destination already has enough available balance
   const destinationBalance = balances.get(ticker)?.get(earmark.designatedPurchaseChain.toString()) || 0n;
@@ -1152,7 +1154,11 @@ export async function getAvailableBalanceLessEarmarks(
   });
   const earmarkedAmount = earmarks
     .filter((e) => e.tickerHash.toLowerCase() === ticker)
-    .reduce((sum, e) => sum + (BigInt(e.minAmount) || 0n), 0n);
+    .reduce((sum, e) => {
+      // earmark.minAmount is already stored in standardized 18 decimals from the API
+      const amount = BigInt(e.minAmount) || 0n;
+      return sum + amount;
+    }, 0n);
 
   return totalBalance - earmarkedAmount;
 }
