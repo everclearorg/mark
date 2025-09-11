@@ -316,6 +316,7 @@ export async function getEarmarksWithOperations(
                  'slippage', ro.slippage,
                  'bridge', ro.bridge,
                  'recipient', ro.recipient,
+                 'is_orphaned', ro.is_orphaned,
                  'created_at', ro.created_at,
                  'updated_at', ro.updated_at
                ) ORDER BY ro.created_at DESC
@@ -524,6 +525,7 @@ export async function updateRebalanceOperation(
   updates: {
     status?: RebalanceOperationStatus;
     txHashes?: Record<string, TransactionReceipt>;
+    isOrphaned?: boolean;
   },
 ): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }> {
   return withTransaction(async (client) => {
@@ -535,6 +537,11 @@ export async function updateRebalanceOperation(
     if (updates.status !== undefined) {
       setClause.push(`status = $${paramCount++}`);
       values.push(updates.status);
+    }
+
+    if (updates.isOrphaned !== undefined) {
+      setClause.push(`is_orphaned = $${paramCount++}`);
+      values.push(updates.isOrphaned);
     }
 
     values.push(operationId);
