@@ -58,7 +58,7 @@ export async function evaluateOnDemandRebalancing(
 
   // Get active earmarks to exclude from available balance
   const activeEarmarks = await database.getEarmarks({ status: [EarmarkStatus.PENDING, EarmarkStatus.READY] });
-  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks, config);
+  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
 
   // For each potential destination chain, evaluate if we can aggregate enough funds
   const evaluationResults: Map<number, OnDemandRebalanceResult & { minAmount: string }> = new Map();
@@ -225,10 +225,7 @@ function getAvailableBalance(
   return available > 0n ? available : 0n;
 }
 
-function calculateEarmarkedFunds(
-  earmarks: database.CamelCasedProperties<earmarks>[],
-  config: ProcessingContext['config'],
-): EarmarkedFunds[] {
+function calculateEarmarkedFunds(earmarks: database.CamelCasedProperties<earmarks>[]): EarmarkedFunds[] {
   const fundsMap = new Map<string, EarmarkedFunds>();
 
   for (const earmark of earmarks) {
@@ -698,7 +695,7 @@ async function handleMinAmountIncrease(
   // Get current balances and earmarked funds
   const balances = await getMarkBalances(config, context.chainService, context.prometheus);
   const activeEarmarks = await database.getEarmarks({ status: [EarmarkStatus.PENDING, EarmarkStatus.READY] });
-  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks, config);
+  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
 
   // Check if destination already has enough available balance
   const destinationBalance = balances.get(ticker)?.get(earmark.designatedPurchaseChain.toString()) || 0n;
