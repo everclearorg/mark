@@ -138,29 +138,8 @@ async function evaluateDestinationChain(
     return { canRebalance: false };
   }
 
-  // Add detailed logging to debug the conversion issue
-  logger.info('MinAmount conversion details', {
-    ticker,
-    destination,
-    decimals,
-    minAmountRaw: minAmount,
-    minAmountLength: minAmount.length,
-    invoiceId: invoice.intent_id,
-  });
-
-  const requiredAmountNative = BigInt(minAmount);
-  const requiredAmount = convertTo18Decimals(requiredAmountNative, decimals);
-
-  // Calculate what the human-readable amount would be
-  const humanReadable = Number(requiredAmountNative) / Math.pow(10, decimals);
-
-  logger.info('MinAmount after conversion', {
-    requiredAmountNative: requiredAmountNative.toString(),
-    requiredAmount18Decimals: requiredAmount.toString(),
-    decimals,
-    humanReadableAmount: humanReadable,
-    invoiceId: invoice.intent_id,
-  });
+  // minAmount from API is already in standardized 18 decimals
+  const requiredAmount = BigInt(minAmount);
 
   if (!requiredAmount) {
     logger.error('Invalid minAmount', { minAmount, destination });
@@ -255,11 +234,8 @@ function calculateEarmarkedFunds(
   for (const earmark of earmarks) {
     const key = `${earmark.designatedPurchaseChain}-${earmark.tickerHash}`;
 
-    // earmark.minAmount is stored in native decimals from the API
-    // Convert to 18 decimals for consistent comparison with balances
-    const nativeAmount = BigInt(earmark.minAmount) || 0n;
-    const decimals = getDecimalsFromConfig(earmark.tickerHash, earmark.designatedPurchaseChain.toString(), config);
-    const amount = convertTo18Decimals(nativeAmount, decimals);
+    // earmark.minAmount is already stored in standardized 18 decimals from the API
+    const amount = BigInt(earmark.minAmount) || 0n;
 
     const existing = fundsMap.get(key);
     if (existing) {
@@ -708,12 +684,8 @@ async function handleMinAmountIncrease(
     return false;
   }
 
-  // Both values are in native decimals, so the difference is also in native decimals
-  const additionalAmountNative = currentRequiredAmount - earmarkedAmount;
-
-  // Convert to 18 decimals for use with balance calculations
-  const decimals = getDecimalsFromConfig(ticker, earmark.designatedPurchaseChain.toString(), config);
-  const additionalAmount = convertTo18Decimals(additionalAmountNative, decimals);
+  // Both values are already in standardized 18 decimals from the API
+  const additionalAmount = currentRequiredAmount - earmarkedAmount;
 
   logger.info('MinAmount increased, evaluating additional rebalancing', {
     requestId,
@@ -1186,12 +1158,9 @@ export async function getAvailableBalanceLessEarmarks(
   const earmarkedAmount = earmarks
     .filter((e) => e.tickerHash.toLowerCase() === ticker)
     .reduce((sum, e) => {
-      // earmark.minAmount is stored in native decimals from the API
-      // Convert to 18 decimals for consistent comparison with balances
-      const nativeAmount = BigInt(e.minAmount) || 0n;
-      const decimals = getDecimalsFromConfig(e.tickerHash, chainId.toString(), config);
-      const amount18Decimals = convertTo18Decimals(nativeAmount, decimals);
-      return sum + amount18Decimals;
+      // earmark.minAmount is already stored in standardized 18 decimals from the API
+      const amount = BigInt(e.minAmount) || 0n;
+      return sum + amount;
     }, 0n);
 
   return totalBalance - earmarkedAmount;
