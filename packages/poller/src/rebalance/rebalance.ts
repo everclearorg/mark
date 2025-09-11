@@ -290,7 +290,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             continue;
           }
           receipt = result.receipt! as unknown as TransactionReceipt;
-          // Use the effective bridged amount if provided (e.g., for Near caps)
+          // Use the effective bridged amount if provided (e.g., for Near caps or Binance rounding)
           if (effectiveAmount) {
             effectiveBridgedAmount = effectiveAmount;
             logger.info('Using effective bridged amount from adapter', {
@@ -308,7 +308,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             earmarkId: null, // NULL indicates regular rebalancing
             originChainId: route.origin,
             destinationChainId: route.destination,
-            tickerHash: route.asset,
+            tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
             amount: effectiveBridgedAmount,
             slippage: route.slippagesDbps[bridgeIndex],
             status: RebalanceOperationStatus.PENDING,

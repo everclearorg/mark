@@ -72,7 +72,7 @@ const mockAssets: Record<string, AssetConfiguration> = {
   USDC: {
     address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     symbol: 'USDC',
-    decimals: 18,
+    decimals: 6,
     tickerHash: '0xUSDCHash',
     isNative: false,
     balanceThreshold: '0',
@@ -1224,7 +1224,7 @@ describe('BinanceBridgeAdapter', () => {
           coin: 'ETH',
           network: 'ARBITRUM',
           address: recipient,
-          amount: '1.00000000',
+          amount: '1.000000',
           withdrawOrderId: expect.stringMatching(/^mark-[0-9a-f]{8}-1-42161-[0-9a-zA-Z]{6}$/),
         });
       });

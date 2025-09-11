@@ -159,11 +159,36 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         throw new Error('Amount is too low for Binance withdrawal');
       }
 
-      // Calculate net amount after withdrawal fee
-      const netAmount = calculateNetAmount(amount, destinationMapping.withdrawalFee);
+      // Get decimals for precision checking
+      const assetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+      if (!assetConfig) {
+        throw new Error(`Unable to find asset config for asset ${route.asset} on chain ${route.origin}`);
+      }
+      const ticker = assetConfig.tickerHash;
+      const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
+      if (!decimals) {
+        throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
+      }
+
+      // Round the deposit amount to required precision
+      const amountInUnits = parseFloat(formatUnits(BigInt(amount), decimals));
+      const precision = this.getWithdrawalPrecision(originMapping.binanceSymbol, originMapping.network);
+      const roundedDepositAmount = this.roundToPrecision(amountInUnits, precision);
+      const roundedDepositAmountInWei = parseUnits(roundedDepositAmount, decimals);
+
+      // Check if deposit amount becomes 0 after rounding
+      if (roundedDepositAmountInWei === BigInt(0)) {
+        throw new Error(
+          `Amount too small after rounding to ${precision} decimals for ${originMapping.binanceSymbol}. Original: ${amountInUnits}, Rounded: ${roundedDepositAmount}`,
+        );
+      }
+
+      // Calculate net amount after withdrawal fee from the rounded deposit amount
+      const netAmount = calculateNetAmount(roundedDepositAmountInWei.toString(), destinationMapping.withdrawalFee);
 
       this.logger.debug('Calculated received amount', {
         originalAmount: amount,
+        roundedDepositAmount: roundedDepositAmountInWei.toString(),
         withdrawalFee: destinationMapping.withdrawalFee,
         netAmount,
         route,
@@ -236,6 +261,11 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         decimals,
       );
 
+      // Check if rounded amount becomes 0
+      if (BigInt(roundedAmount) === BigInt(0)) {
+        throw new Error(`Amount too small after rounding to required precision for ${assetMapping.binanceSymbol}`);
+      }
+
       this.logger.debug('Binance deposit address obtained', {
         coin: assetMapping.binanceSymbol,
         network: assetMapping.network,
@@ -259,6 +289,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         });
         const unwrapTx = {
           memo: RebalanceTransactionMemo.Unwrap,
+          effectiveAmount: roundedAmount,
           transaction: {
             to: route.asset as `0x${string}`,
             data: encodeFunctionData({
@@ -272,6 +303,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         };
         const sendToBinanceTx = {
           memo: RebalanceTransactionMemo.Rebalance,
+          effectiveAmount: roundedAmount,
           transaction: {
             to: depositInfo.address as `0x${string}`,
             value: BigInt(roundedAmount),
@@ -287,6 +319,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         if (binanceTakesNativeETH) {
           transactions.push({
             memo: RebalanceTransactionMemo.Rebalance,
+            effectiveAmount: roundedAmount,
             transaction: {
               to: depositInfo.address as `0x${string}`,
               value: BigInt(roundedAmount),
@@ -297,6 +330,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
           // BSC: Transfer WETH to Binance
           transactions.push({
             memo: RebalanceTransactionMemo.Rebalance,
+            effectiveAmount: roundedAmount,
             transaction: {
               to: route.asset as `0x${string}`,
               value: BigInt(0),
@@ -313,13 +347,14 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         // For all other assets (i.e. USDC, USDT), transfer token
         transactions.push({
           memo: RebalanceTransactionMemo.Rebalance,
+          effectiveAmount: roundedAmount,
           transaction: {
             to: route.asset as `0x${string}`,
             value: BigInt(0),
             data: encodeFunctionData({
               abi: erc20Abi,
               functionName: 'transfer',
-              args: [depositInfo.address as `0x${string}`, BigInt(amount)],
+              args: [depositInfo.address as `0x${string}`, BigInt(roundedAmount)],
             }),
             funcSig: route.asset !== zeroAddress ? 'transfer(address,uint256)' : '',
           },
