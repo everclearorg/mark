@@ -130,14 +130,6 @@ async function evaluateDestinationChain(
 
   const ticker = invoice.ticker_hash.toLowerCase();
 
-  // minAmount from API is in native token decimals, need to convert to 18 decimals
-  // to match the format of balances from getMarkBalances
-  const decimals = getDecimalsFromConfig(ticker, destination.toString(), config);
-  if (decimals === undefined) {
-    logger.error('Could not find decimals for ticker', { ticker, destination });
-    return { canRebalance: false };
-  }
-
   // minAmount from API is already in standardized 18 decimals
   const requiredAmount = BigInt(minAmount);
 
