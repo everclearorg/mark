@@ -314,6 +314,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
             status: RebalanceOperationStatus.PENDING,
             bridge: bridgeType,
             transactions: receipt ? { [route.origin]: receipt } : undefined,
+            recipient: recipient,
           });
 
           logger.info('Successfully created rebalance operation in database', {
