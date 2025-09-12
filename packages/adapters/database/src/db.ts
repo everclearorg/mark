@@ -570,7 +570,35 @@ export async function updateRebalanceOperation(
 
     // Insert new transactions for this rebalance operation
     for (const [chainId, receipt] of Object.entries(updates.txHashes)) {
-      const { transactionHash, cumulativeGasUsed, effectiveGasPrice, from, to } = receipt;
+      // Validate required fields exist
+      if (!receipt.transactionHash) {
+        throw new Error(
+          `Invalid receipt for chain ${chainId}: missing transactionHash. ` + `Receipt: ${JSON.stringify(receipt)}`,
+        );
+      }
+
+      if (!receipt.from) {
+        throw new Error(
+          `Invalid receipt for chain ${chainId}, tx ${receipt.transactionHash}: missing 'from' address. ` +
+            `Receipt: ${JSON.stringify(receipt)}`,
+        );
+      }
+
+      if (!receipt.to) {
+        throw new Error(
+          `Invalid receipt for chain ${chainId}, tx ${receipt.transactionHash}: missing 'to' address. ` +
+            `Receipt: ${JSON.stringify(receipt)}`,
+        );
+      }
+
+      const transactionHash = receipt.transactionHash;
+      const from = receipt.from;
+      const to = receipt.to;
+
+      // Gas values can default to '0' if missing
+      const cumulativeGasUsed = String(receipt.cumulativeGasUsed || '0');
+      const effectiveGasPrice = String(receipt.effectiveGasPrice || '0');
+
       const transactionQuery = `
           INSERT INTO transactions (
             rebalance_operation_id,
