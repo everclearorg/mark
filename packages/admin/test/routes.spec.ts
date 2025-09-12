@@ -4,6 +4,7 @@ import { extractRequest, handleApiRequest } from '../src/api/routes';
 import { AdminContext, AdminConfig, HttpPaths } from '../src/types';
 import { APIGatewayEvent } from 'aws-lambda';
 import * as database from '@mark/database';
+import { EarmarkStatus } from '@mark/core';
 
 jest.mock('@mark/cache', () => {
   return {
@@ -17,6 +18,9 @@ jest.mock('@mark/cache', () => {
 jest.mock('@mark/database', () => ({
   isPaused: jest.fn(),
   setPause: jest.fn(),
+  queryWithClient: jest.fn(),
+  updateEarmarkStatus: jest.fn(),
+  snakeToCamel: jest.fn((obj) => obj), // Simple pass-through mock
 }));
 
 const mockLogger = {
@@ -119,15 +123,24 @@ describe('extractRequest', () => {
     });
   });
 
-  it('should return undefined for a GET request to a known path', () => {
+  it('should return undefined for a DELETE request', () => {
     const event: APIGatewayEvent = {
       ...mockEvent,
-      httpMethod: 'GET', // Different method
+      httpMethod: 'DELETE', // Unsupported method
       path: '/admin/pause/purchase',
     };
     const context: AdminContext = { ...mockAdminContextBase, event };
     expect(extractRequest(context)).toBeUndefined();
     expect(mockLogger.error).toHaveBeenCalled();
+  });
+
+  it('should return HttpPaths.CancelEarmark for POST /admin/rebalance/cancel', () => {
+    const event: APIGatewayEvent = {
+      ...mockEvent,
+      path: '/admin/rebalance/cancel',
+    };
+    const context: AdminContext = { ...mockAdminContextBase, event };
+    expect(extractRequest(context)).toBe(HttpPaths.CancelEarmark);
   });
 });
 
@@ -284,5 +297,95 @@ describe('handleApiRequest', () => {
     expect(result.statusCode).toBe(500);
     expect(JSON.parse(result.body).message).toBe(`Rebalance is not paused`);
     expect(database.setPause).toHaveBeenCalledTimes(0);
+  });
+
+  describe('Cancel Earmark', () => {
+    it('should cancel earmark successfully', async () => {
+      const earmarkId = 'test-earmark-id';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/cancel',
+        body: JSON.stringify({ earmarkId }),
+      };
+
+      // Mock earmark exists and is pending
+      (database.queryWithClient as jest.Mock)
+        .mockResolvedValueOnce([{ id: earmarkId, status: 'pending', invoiceId: 'test-invoice' }]) // getEarmark
+        .mockResolvedValueOnce([{ count: '2' }]) // cancelled operations count
+        .mockResolvedValueOnce([{ count: '1' }]) // orphaned operations count
+        .mockResolvedValueOnce([{ count: '3' }]); // total operations count
+
+      (database.updateEarmarkStatus as jest.Mock).mockResolvedValueOnce({
+        id: earmarkId,
+        status: EarmarkStatus.CANCELLED,
+      });
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Earmark cancelled successfully');
+      expect(database.updateEarmarkStatus).toHaveBeenCalledWith(earmarkId, EarmarkStatus.CANCELLED);
+    });
+
+    it('should return 400 if earmarkId is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/cancel',
+        body: JSON.stringify({}),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).message).toBe('earmarkId is required in request body');
+    });
+
+    it('should return 404 if earmark not found', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/cancel',
+        body: JSON.stringify({ earmarkId: 'non-existent' }),
+      };
+
+      (database.queryWithClient as jest.Mock).mockResolvedValueOnce([]); // no earmark found
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).message).toBe('Earmark not found');
+    });
+
+    it('should not cancel already completed earmark', async () => {
+      const earmarkId = 'completed-earmark';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/cancel',
+        body: JSON.stringify({ earmarkId }),
+      };
+
+      (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
+        { id: earmarkId, status: 'completed', invoiceId: 'test-invoice' },
+      ]);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Cannot cancel earmark with status: completed');
+      expect(body.currentStatus).toBe('completed');
+    });
   });
 });

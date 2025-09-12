@@ -5,7 +5,14 @@ import {
 } from '../../src/rebalance/onDemand';
 import * as database from '@mark/database';
 import { ProcessingContext } from '../../src/init';
-import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge } from '@mark/core';
+import {
+  Invoice,
+  EarmarkStatus,
+  RebalanceOperationStatus,
+  SupportedBridge,
+  MarkConfiguration,
+  AssetConfiguration,
+} from '@mark/core';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getMarkBalances, safeStringToBigInt, parseAmountWithDecimals } from '../../src/helpers';
 import { getValidatedZodiacConfig, getActualOwner, getActualAddress } from '../../src/helpers/zodiac';
@@ -21,13 +28,15 @@ jest.mock('../../src/helpers', () => {
   return {
     ...actualHelpers,
     getMarkBalances: jest.fn(),
-    getTickerForAsset: jest.fn((asset: string, chain: number, config: any) => {
+    getTickerForAsset: jest.fn((asset: string, chain: number, config: MarkConfiguration) => {
       // Mock the actual getTickerForAsset behavior
       const chainConfig = config.chains[chain.toString()];
       if (!chainConfig || !chainConfig.assets) {
         return undefined;
       }
-      const assetConfig = chainConfig.assets.find((a: any) => a.address.toLowerCase() === asset.toLowerCase());
+      const assetConfig = chainConfig.assets.find(
+        (a: AssetConfiguration) => a.address.toLowerCase() === asset.toLowerCase(),
+      );
       if (!assetConfig) {
         return undefined;
       }
@@ -359,7 +368,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       invoice.destinations = ['1'];
 
       const minAmounts = {
-        '1': '1000000', // 1 USDC required on chain 1 (6 decimals)
+        '1': '1000000000000000000', // 1 USDC required on chain 1 (18 decimals)
       };
 
       // Mock the logger methods to capture calls
@@ -455,7 +464,8 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       // Setup the mock to return null initially (no existing earmark), then return the created earmark
       (database.getEarmarkForInvoice as jest.Mock)
         .mockResolvedValueOnce(null) // First call during execution
-        .mockResolvedValue({ // Subsequent calls after creation
+        .mockResolvedValue({
+          // Subsequent calls after creation
           id: 'test-earmark-id-123',
           status: 'pending',
           invoiceId: MOCK_INVOICE_ID,
@@ -500,37 +510,41 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
         status: 'pending',
         bridge: SupportedBridge.Across,
       });
-      
+
       // Mock getRebalanceOperationsByEarmark to return the created operation
-      (getRebalanceOperationsByEarmark as jest.Mock).mockResolvedValue([{
-        id: 'test-operation-id',
-        earmarkId: 'test-earmark-id-123',
-        originChainId: 10,
-        destinationChainId: 1,
-        tickerHash: MOCK_TICKER_HASH,
-        amount: '1000',
-        slippage: 5000,
-        status: 'pending',
-        bridge: SupportedBridge.Across,
-      }]);
+      (getRebalanceOperationsByEarmark as jest.Mock).mockResolvedValue([
+        {
+          id: 'test-operation-id',
+          earmarkId: 'test-earmark-id-123',
+          originChainId: 10,
+          destinationChainId: 1,
+          tickerHash: MOCK_TICKER_HASH,
+          amount: '1000',
+          slippage: 5000,
+          status: 'pending',
+          bridge: SupportedBridge.Across,
+        },
+      ]);
 
       // Mock the context functions to ensure proper execution
       (context.rebalance.getAdapter as jest.Mock).mockReturnValue({
-        send: jest.fn().mockResolvedValue([{
-          transaction: {
-            to: '0xbridge',
-            data: '0xdata',
-            value: 0,
+        send: jest.fn().mockResolvedValue([
+          {
+            transaction: {
+              to: '0xbridge',
+              data: '0xdata',
+              value: 0,
+            },
+            memo: RebalanceTransactionMemo.Rebalance,
           },
-          memo: RebalanceTransactionMemo.Rebalance,
-        }]),
+        ]),
       });
 
       const earmarkId = await executeOnDemandRebalancing(invoice, evaluationResult, context);
-      
+
       // Check that earmarkId was returned
       expect(earmarkId).toBe('test-earmark-id-123');
-      
+
       // Verify database functions were called
       expect(createEarmark).toHaveBeenCalledWith({
         invoiceId: MOCK_INVOICE_ID,
@@ -539,7 +553,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
         minAmount: '1000',
         status: EarmarkStatus.PENDING, // All ops succeeded, so status should be PENDING
       });
-      
+
       expect(createRebalanceOperation).toHaveBeenCalledWith({
         earmarkId: 'test-earmark-id-123',
         originChainId: 10,
@@ -604,14 +618,14 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
         ...mockEarmark,
         status: EarmarkStatus.READY,
       });
-      
+
       // Mock getRebalanceOperationsByEarmark to return completed operations
       (database.getRebalanceOperationsByEarmark as jest.Mock).mockResolvedValue([
         {
           id: 'op-1',
           earmarkId: mockEarmark.id,
           status: RebalanceOperationStatus.COMPLETED,
-        }
+        },
       ]);
 
       const context = createMockContext();
@@ -621,7 +635,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           '1': '1000', // Same as earmarked amount
         },
       });
-      
+
       const currentInvoices = [createMockInvoice()];
 
       await processPendingEarmarks(context, currentInvoices);
@@ -654,16 +668,16 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
 
       // Mock the database calls
       (database.getEarmarks as jest.Mock).mockResolvedValue([mockEarmark]);
-      
+
       // Mock pending operations
       (database.getRebalanceOperationsByEarmark as jest.Mock).mockResolvedValue([
         {
           id: 'op-1',
           earmarkId: mockEarmark.id,
           status: RebalanceOperationStatus.PENDING, // Still pending
-        }
+        },
       ]);
-      
+
       // Mock getEarmarkForInvoice to return the earmark with PENDING status (not updated to READY)
       (database.getEarmarkForInvoice as jest.Mock).mockResolvedValue(mockEarmark);
 
@@ -674,7 +688,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           '1': '1000',
         },
       });
-      
+
       const currentInvoices = [createMockInvoice()];
 
       await processPendingEarmarks(context, currentInvoices);
@@ -757,7 +771,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
 
       // Mock getEarmarks to return only the first earmark
       (database.getEarmarks as jest.Mock).mockResolvedValue([earmark1]);
-      
+
       // Verify only one earmark exists
       const earmarks = await database.getEarmarks();
       const invoiceEarmarks = earmarks.filter((e) => e.invoiceId === MOCK_INVOICE_ID);
