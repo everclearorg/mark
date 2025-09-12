@@ -8,7 +8,11 @@ FROM node AS build
 RUN dnf update -y
 RUN dnf install -y git
 
-RUN npm install --global yarn@1.22.19 node-gyp
+# Install node-gyp globally
+RUN npm install --global node-gyp
+
+# Enable corepack to use Yarn 3
+RUN corepack enable
 
 ENV HOME=/tmp/build \
     PATH=/tmp/build/node_modules/.bin:./node_modules/.bin:${PATH} \
@@ -24,7 +28,7 @@ ENV HOME=/tmp/build \
 
 WORKDIR /tmp/build
 
-# Copy yarn configuration files first
+# Copy yarn configuration files first (including Yarn 3 binary)
 COPY .yarn /tmp/build/.yarn/
 COPY .yarnrc.yml /tmp/build/
 COPY package.json /tmp/build/
@@ -44,7 +48,7 @@ COPY packages/adapters/database/package.json /tmp/build/packages/adapters/databa
 COPY yarn.lock /tmp/build/
 
 # Install dependencies including devDependencies
-RUN yarn install --mode=skip-build && \
+RUN yarn install --immutable && \
     yarn workspaces foreach -A run rebuild
 
 # Copy source files

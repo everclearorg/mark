@@ -27,11 +27,14 @@ jobs:
           node-version: '20'
           cache: 'yarn'
 
+      - name: Enable Corepack for Yarn 3
+        run: corepack enable
+
       - name: Check Yarn version
         run: yarn --version
 
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --immutable
 
       - name: Build
         run: yarn build
@@ -67,11 +70,14 @@ jobs:
           node-version: 20.x
           cache: 'yarn'
 
+      - name: Enable Corepack for Yarn 3
+        run: corepack enable
+
       - name: Check Yarn version
         run: yarn --version
 
       - name: Install dependencies
-        run: yarn install
+        run: yarn install --immutable
 
       - name: Lint workspaces
         run: yarn lint
