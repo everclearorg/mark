@@ -124,7 +124,7 @@ export const getAddedIntentIdsFromReceipt = async (
 ) => {
   // Find the IntentAdded event logs
   const intentAddedLogs = receipt.logs.filter(
-    (l) => ((l as any).topics?.[0] ?? '').toLowerCase() === INTENT_ADDED_TOPIC0,
+    (l) => ((l as { topics?: string[] }).topics?.[0] ?? '').toLowerCase() === INTENT_ADDED_TOPIC0,
   );
   if (!intentAddedLogs.length) {
     logger.error('No intents created from purchase transaction', {
@@ -139,8 +139,8 @@ export const getAddedIntentIdsFromReceipt = async (
   const purchaseIntentIds = intentAddedLogs.map((log) => {
     const { args } = decodeEventLog({
       abi: intentAddedAbi,
-      data: (log as any).data as `0x${string}`,
-      topics: (log as any).topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
+      data: (log as { data: string }).data as `0x${string}`,
+      topics: (log as { topics: string[] }).topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
     }) as { args: { _intentId: string } };
     return args._intentId;
   });
@@ -574,8 +574,7 @@ export const sendSvmIntents = async (
 
     // Return results for each intent in the batch
     return purchaseData.map((d) => ({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      transactionHash: (d.tx as any).transactionHash,
+      transactionHash: (d.tx as { transactionHash: string }).transactionHash,
       type: TransactionSubmissionType.Onchain,
       chainId: intents[0].origin,
       intentId: d.intentId,
