@@ -257,10 +257,10 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       }),
       getAdapter: jest.fn(() => ({
         getReceivedAmount: jest.fn().mockImplementation((amount: string) => {
-          // The adapter receives amounts in smallest units as a string (e.g., "500" for 500 USDC units)
-          // We return with 5% slippage (matching the 500 basis points in config)
+          // The adapter receives amounts in native decimals (6 for USDC)
+          // Apply ~0.5% slippage to stay within the 500 dbps (5%) limit
           const inputBigInt = BigInt(amount);
-          const outputBigInt = (inputBigInt * 9500n) / 10000n; // 5% slippage = 500 bps
+          const outputBigInt = (inputBigInt * 9950n) / 10000n; // 0.5% slippage
           return Promise.resolve(outputBigInt.toString());
         }),
         send: jest.fn().mockResolvedValue([
@@ -313,7 +313,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           destination: 1,
           asset: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', // USDC on Optimism
           maximum: '10000',
-          slippagesDbps: [5000], // 5% in decibasis points
+          slippagesDbps: [500], // 5% in decibasis points (500 dbps = 5%)
           preferences: [SupportedBridge.Across],
           reserve: '0',
         },
@@ -368,7 +368,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       invoice.destinations = ['1'];
 
       const minAmounts = {
-        '1': '1000000000000000000', // 1 USDC required on chain 1 (18 decimals)
+        '1': '1000000000000000000', // 1 USDC required on chain 1 (18 decimals for standardized format)
       };
 
       // Mock the logger methods to capture calls

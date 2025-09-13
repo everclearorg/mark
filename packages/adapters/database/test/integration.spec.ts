@@ -74,6 +74,10 @@ describe('Database Adapter - Integration Tests', () => {
 
         const earmark = await createEarmark(earmarkData);
 
+        // Verify earmark was created
+        expect(earmark).toBeDefined();
+        expect(earmark.id).toBeDefined();
+
         // Create rebalance operations separately
         await createRebalanceOperation({
           earmarkId: earmark.id,

@@ -158,19 +158,24 @@ export class DynamicAssetConfig {
     krakenSymbol: string,
     krakenAsset: string,
   ): Promise<KrakenAssetMapping> {
-    // Get asset info from config for origin and destination
-    const assetInfo = (this.chains[chainId]?.assets ?? []).find(
-      (a) => a.symbol.toLowerCase() === externalSymbol.toLowerCase(),
-    );
-    if (!assetInfo) {
-      throw new Error(`No configured asset information for ${externalSymbol} on ${chainId}`);
+    if (krakenSymbol === 'ETH') {
+      const chainConfig = this.chains[chainId.toString()];
+      if (!chainConfig) {
+        throw new Error(`No configured asset information for ETH on ${chainId}`);
+      }
     }
+
+    // For ETH/WETH, use ETH as the symbol since that's what Kraken recognizes
+    const assetInfoForMethod = {
+      symbol: krakenSymbol === 'ETH' ? 'ETH' : externalSymbol,
+      address: krakenSymbol === 'ETH' ? '0x0000000000000000000000000000000000000000' : '',
+    } as AssetConfiguration;
 
     // Get available deposit methods for this asset
     const depositMethods = await this.client.getDepositMethods(krakenAsset);
 
     // Find the method that matches our target chain
-    const depositMethod = await this.findMethodByChainId(depositMethods, chainId, assetInfo);
+    const depositMethod = await this.findMethodByChainId(depositMethods, chainId, assetInfoForMethod);
     if (!depositMethod) {
       throw new Error(
         `Kraken does not support deposits of ${externalSymbol} on chain ${chainId}. ` +
@@ -180,7 +185,7 @@ export class DynamicAssetConfig {
 
     // Find the withdraw method that matches our target chain
     const withdrawMethods = await this.client.getWithdrawMethods(krakenAsset);
-    const withdrawMethod = await this.findMethodByChainId(withdrawMethods, chainId, assetInfo);
+    const withdrawMethod = await this.findMethodByChainId(withdrawMethods, chainId, assetInfoForMethod);
     if (!withdrawMethod) {
       throw new Error(
         `Kraken does not support withdrawals of ${externalSymbol} on chain ${chainId}. ` +
