@@ -104,6 +104,8 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
         break;
       case HttpPaths.CancelEarmark:
         return handleCancelEarmark(context);
+      case HttpPaths.CancelRebalanceOperation:
+        return handleCancelRebalanceOperation(context);
       default:
         throw new Error(`Unknown request: ${request}`);
     }
@@ -115,6 +117,93 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
     return {
       statusCode: 500,
       body: JSON.stringify(jsonifyError(e)),
+    };
+  }
+};
+
+const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
+  const { logger, event, database } = context;
+  const body = JSON.parse(event.body || '{}');
+  const operationId = body.operationId;
+
+  if (!operationId) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ message: 'operationId is required in request body' }),
+    };
+  }
+
+  logger.info('Cancelling rebalance operation', { operationId });
+
+  try {
+    // Get current operation to verify it exists and check status
+    const operations = await database
+      .queryWithClient<database.rebalance_operations>('SELECT * FROM rebalance_operations WHERE id = $1', [operationId])
+      .then((rows) => rows.map((row) => snakeToCamel(row)));
+
+    if (operations.length === 0) {
+      return {
+        statusCode: 404,
+        body: JSON.stringify({ message: 'Rebalance operation not found' }),
+      };
+    }
+
+    const operation = operations[0];
+
+    // Check if operation is standalone (not associated with an earmark)
+    if (operation.earmarkId !== null) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: 'Cannot cancel operation associated with an earmark. Use earmark cancellation instead.',
+          earmarkId: operation.earmarkId,
+        }),
+      };
+    }
+
+    // Check if operation can be cancelled (must be PENDING or AWAITING_CALLBACK)
+    if (!['pending', 'awaiting_callback'].includes(operation.status)) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: `Cannot cancel operation with status: ${operation.status}. Only PENDING and AWAITING_CALLBACK operations can be cancelled.`,
+          currentStatus: operation.status,
+        }),
+      };
+    }
+
+    // Update operation status to cancelled and mark as orphaned
+    const updated = await database
+      .queryWithClient<database.rebalance_operations>(
+        `UPDATE rebalance_operations
+       SET status = $1, is_orphaned = true, updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+        [RebalanceOperationStatus.CANCELLED, operationId],
+      )
+      .then((rows) => rows.map((row) => snakeToCamel(row)));
+
+    logger.info('Rebalance operation cancelled successfully', {
+      operationId,
+      previousStatus: operation.status,
+      chainId: operation.chainId,
+    });
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        message: 'Rebalance operation cancelled successfully',
+        operation: updated[0],
+      }),
+    };
+  } catch (error) {
+    logger.error('Failed to cancel rebalance operation', { operationId, error });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: 'Failed to cancel rebalance operation',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
     };
   }
 };
@@ -352,6 +441,11 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
   // Handle cancel earmark
   if (httpMethod === 'POST' && path.endsWith('/rebalance/cancel')) {
     return HttpPaths.CancelEarmark;
+  }
+
+  // Handle cancel rebalance operation
+  if (httpMethod === 'POST' && path.endsWith('/rebalance/operation/cancel')) {
+    return HttpPaths.CancelRebalanceOperation;
   }
 
   for (const httpPath of Object.values(HttpPaths)) {

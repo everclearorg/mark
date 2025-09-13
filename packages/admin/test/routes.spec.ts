@@ -388,4 +388,218 @@ describe('handleApiRequest', () => {
       expect(body.currentStatus).toBe('completed');
     });
   });
+
+  describe('Cancel Rebalance Operation', () => {
+    it('should cancel standalone pending operation successfully', async () => {
+      const operationId = 'test-operation-id';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/operation/cancel',
+        body: JSON.stringify({ operationId }),
+      };
+
+      // Mock operation exists, is standalone (earmarkId null), and is pending
+      (database.queryWithClient as jest.Mock)
+        .mockResolvedValueOnce([{ 
+          id: operationId, 
+          status: 'pending', 
+          earmarkId: null,
+          chainId: 1
+        }]) // getOperation
+        .mockResolvedValueOnce([{ 
+          id: operationId, 
+          status: 'cancelled',
+          earmarkId: null,
+          chainId: 1
+        }]); // updated operation
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Rebalance operation cancelled successfully');
+      expect(body.operation).toBeDefined();
+    });
+
+    it('should cancel standalone awaiting_callback operation successfully', async () => {
+      const operationId = 'test-operation-id';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/operation/cancel',
+        body: JSON.stringify({ operationId }),
+      };
+
+      // Mock operation exists, is standalone, and is awaiting_callback
+      (database.queryWithClient as jest.Mock)
+        .mockResolvedValueOnce([{ 
+          id: operationId, 
+          status: 'awaiting_callback', 
+          earmarkId: null,
+          chainId: 1
+        }])
+        .mockResolvedValueOnce([{ 
+          id: operationId, 
+          status: 'cancelled',
+          earmarkId: null,
+          chainId: 1
+        }]);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Rebalance operation cancelled successfully');
+    });
+
+    it('should return 400 if operationId is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/operation/cancel',
+        body: JSON.stringify({}),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).message).toBe('operationId is required in request body');
+    });
+
+    it('should return 404 if operation not found', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/operation/cancel',
+        body: JSON.stringify({ operationId: 'non-existent' }),
+      };
+
+      (database.queryWithClient as jest.Mock).mockResolvedValueOnce([]); // no operation found
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(404);
+      expect(JSON.parse(result.body).message).toBe('Rebalance operation not found');
+    });
+
+    it('should reject operation associated with earmark', async () => {
+      const operationId = 'test-operation-id';
+      const earmarkId = 'test-earmark-id';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/operation/cancel',
+        body: JSON.stringify({ operationId }),
+      };
+
+      (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
+        { 
+          id: operationId, 
+          status: 'pending', 
+          earmarkId: earmarkId,
+          chainId: 1
+        }
+      ]);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Cannot cancel operation associated with an earmark. Use earmark cancellation instead.');
+      expect(body.earmarkId).toBe(earmarkId);
+    });
+
+    it('should reject cancelling completed operation', async () => {
+      const operationId = 'completed-operation';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/operation/cancel',
+        body: JSON.stringify({ operationId }),
+      };
+
+      (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
+        { 
+          id: operationId, 
+          status: 'completed', 
+          earmarkId: null,
+          chainId: 1
+        }
+      ]);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Cannot cancel operation with status: completed. Only PENDING and AWAITING_CALLBACK operations can be cancelled.');
+      expect(body.currentStatus).toBe('completed');
+    });
+
+    it('should reject cancelling expired operation', async () => {
+      const operationId = 'expired-operation';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/operation/cancel',
+        body: JSON.stringify({ operationId }),
+      };
+
+      (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
+        { 
+          id: operationId, 
+          status: 'expired', 
+          earmarkId: null,
+          chainId: 1
+        }
+      ]);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Cannot cancel operation with status: expired. Only PENDING and AWAITING_CALLBACK operations can be cancelled.');
+    });
+
+    it('should reject cancelling already cancelled operation', async () => {
+      const operationId = 'cancelled-operation';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/operation/cancel',
+        body: JSON.stringify({ operationId }),
+      };
+
+      (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
+        { 
+          id: operationId, 
+          status: 'cancelled', 
+          earmarkId: null,
+          chainId: 1
+        }
+      ]);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Cannot cancel operation with status: cancelled. Only PENDING and AWAITING_CALLBACK operations can be cancelled.');
+    });
+  });
 });

@@ -35,6 +35,7 @@ export enum HttpPaths {
   GetRebalanceOperations = '/rebalance/operations',
   GetEarmarkDetails = '/rebalance/earmark',
   CancelEarmark = '/rebalance/cancel',
+  CancelRebalanceOperation = '/rebalance/operation/cancel',
 }
 
 export interface PaginationParams {
