@@ -83,7 +83,7 @@ CREATE TABLE public.earmarks (
     status text DEFAULT 'pending'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT earmark_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ready'::text, 'completed'::text, 'cancelled'::text, 'failed'::text])))
+    CONSTRAINT earmark_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ready'::text, 'completed'::text, 'cancelled'::text, 'failed'::text, 'expired'::text])))
 );
 
 
@@ -126,7 +126,7 @@ COMMENT ON COLUMN public.earmarks.min_amount IS 'Minimum amount of tokens requir
 -- Name: COLUMN earmarks.status; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.earmarks.status IS 'Earmark status: pending, ready, completed, cancelled, failed (enforced by CHECK constraint)';
+COMMENT ON COLUMN public.earmarks.status IS 'Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)';
 
 
 --
@@ -146,7 +146,8 @@ CREATE TABLE public.rebalance_operations (
     recipient text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT rebalance_operation_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'awaiting_callback'::text, 'completed'::text, 'expired'::text])))
+    is_orphaned boolean DEFAULT false NOT NULL,
+    CONSTRAINT rebalance_operation_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'awaiting_callback'::text, 'completed'::text, 'expired'::text, 'cancelled'::text])))
 );
 
 
@@ -203,7 +204,7 @@ COMMENT ON COLUMN public.rebalance_operations.bridge IS 'Bridge adapter type use
 -- Name: COLUMN rebalance_operations.status; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)';
+COMMENT ON COLUMN public.rebalance_operations.status IS 'Operation status: pending, awaiting_callback, completed, expired, cancelled (enforced by CHECK constraint)';
 
 
 --
@@ -211,6 +212,13 @@ COMMENT ON COLUMN public.rebalance_operations.status IS 'Operation status: pendi
 --
 
 COMMENT ON COLUMN public.rebalance_operations.recipient IS 'Recipient address for the rebalance operation (destination address on target chain)';
+
+
+--
+-- Name: COLUMN rebalance_operations.is_orphaned; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.rebalance_operations.is_orphaned IS 'Indicates if this operation was orphaned when its associated earmark was cancelled';
 
 
 --
@@ -433,6 +441,13 @@ CREATE INDEX idx_rebalance_operations_origin_chain ON public.rebalance_operation
 
 
 --
+-- Name: idx_rebalance_operations_orphaned; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rebalance_operations_orphaned ON public.rebalance_operations USING btree (is_orphaned) WHERE (is_orphaned = true);
+
+
+--
 -- Name: idx_rebalance_operations_recipient; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -550,4 +565,7 @@ ALTER TABLE ONLY public.transactions
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20250722213145');
+    ('20250722213145'),
+    ('20250902175116'),
+    ('20250903171904'),
+    ('20250911');

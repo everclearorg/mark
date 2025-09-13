@@ -57,6 +57,8 @@ const toITransactionReceipt = (viemReceipt: TransactionReceipt): ITransactionRec
 // Helper to create ChainServiceReceipt for ChainService.submitAndMonitor mocks
 const toChainServiceReceipt = (viemReceipt: TransactionReceipt): ChainServiceReceipt => ({
   ...toITransactionReceipt(viemReceipt),
+  from: viemReceipt.from,
+  to: viemReceipt.to || '',
   cumulativeGasUsed: viemReceipt.cumulativeGasUsed.toString(),
   effectiveGasPrice: viemReceipt.effectiveGasPrice.toString(),
 });
@@ -163,6 +165,8 @@ describe('executeDestinationCallbacks', () => {
   // Create ChainServiceReceipt for submitTransactionWithLogging
   const mockChainServiceReceipt: ChainServiceReceipt = {
     transactionHash: mockSubmitSuccessReceipt.transactionHash,
+    from: mockSubmitSuccessReceipt.from,
+    to: mockSubmitSuccessReceipt.to || '',
     blockNumber: Number(mockSubmitSuccessReceipt.blockNumber),
     confirmations: 1,
     status: 1,

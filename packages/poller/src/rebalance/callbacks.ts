@@ -162,12 +162,25 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
           logger.error('Destination transaction receipt not found', { ...logContext, tx });
           continue;
         }
-        await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.COMPLETED,
-          txHashes: {
-            [route.destination.toString()]: tx.receipt as TransactionReceipt,
-          },
-        });
+
+        try {
+          await db.updateRebalanceOperation(operation.id, {
+            status: RebalanceOperationStatus.COMPLETED,
+            txHashes: {
+              [route.destination.toString()]: tx.receipt as TransactionReceipt,
+            },
+          });
+        } catch (dbError) {
+          logger.error('Failed to update database with destination transaction', {
+            ...logContext,
+            destinationTx: tx.hash,
+            receipt: serializeBigInt(tx.receipt),
+            error: jsonifyError(dbError),
+            errorMessage: (dbError as Error)?.message,
+            errorStack: (dbError as Error)?.stack,
+          });
+          throw dbError;
+        }
       } catch (e) {
         logger.error('Failed to execute destination callback', {
           ...logContext,

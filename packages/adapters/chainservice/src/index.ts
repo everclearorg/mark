@@ -1,6 +1,8 @@
 import { TronWeb } from 'tronweb';
 import { ChainService as ChimeraChainService, EthWallet } from '@chimera-monorepo/chainservice';
 import { ILogger, jsonifyError } from '@mark/logger';
+import type { TransactionReceipt } from '@mark/database';
+import { normalizeReceipt } from '@mark/database';
 import {
   createLoggingContext,
   ChainConfiguration,
@@ -16,11 +18,7 @@ import { jsonRpc, createNonceManager } from 'viem/nonce';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
 export { EthWallet } from '@chimera-monorepo/chainservice';
-
-export type TransactionReceipt = Awaited<ReturnType<typeof ChimeraChainService.prototype.sendTx>> & {
-  cumulativeGasUsed: string;
-  effectiveGasPrice: string;
-};
+export type { TransactionReceipt };
 
 export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
@@ -289,7 +287,13 @@ export class ChainService {
         txHash: tx.transactionHash,
       });
 
-      return tx as unknown as TransactionReceipt;
+      const normalizedReceipt = normalizeReceipt({
+        ...tx,
+        confirmations: 2, // We waited for 2 confirmations above
+      });
+
+      // Cast to our extended TransactionReceipt type
+      return normalizedReceipt as TransactionReceipt;
     } catch (error) {
       this.logger.error('Failed to submit transaction', {
         chainId,

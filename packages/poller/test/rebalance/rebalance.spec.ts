@@ -153,6 +153,8 @@ describe('rebalanceInventory', () => {
       hash: '0xBridgeTxHash',
       receipt: {
         transactionHash: '0xBridgeTxHash',
+        from: '0xSenderAddress',
+        to: '0xRecipientAddress',
         blockNumber: 121,
         status: 1,
         confirmations: 1,
@@ -287,6 +289,8 @@ describe('rebalanceInventory', () => {
     // Mock chainService return
     mockChainService.submitAndMonitor.resolves({
       transactionHash: '0xMockTxHash',
+      from: '0xSenderAddress',
+      to: '0xRecipientAddress',
       blockNumber: 123,
       status: 1,
       confirmations: 1,
@@ -1484,6 +1488,8 @@ describe('Zodiac Address Validation', () => {
     // Mock successful transaction
     mockChainService.submitAndMonitor.resolves({
       transactionHash: '0xMockTxHash',
+      from: '0xSenderAddress',
+      to: '0xRecipientAddress',
       blockNumber: 123,
       status: 1,
       confirmations: 1,
@@ -1700,6 +1706,8 @@ describe('Reserve Amount Functionality', () => {
       submissionType: TransactionSubmissionType.Onchain,
       receipt: {
         transactionHash: '0xBridgeTxHash',
+        from: '0xSenderAddress',
+        to: '0xRecipientAddress',
         blockNumber: 121,
         status: 1,
         confirmations: 1,
@@ -2025,6 +2033,8 @@ describe('Decimal Handling', () => {
       submissionType: TransactionSubmissionType.Onchain,
       receipt: {
         transactionHash: '0xBridgeTxHash',
+        from: '0xSenderAddress',
+        to: '0xRecipientAddress',
         blockNumber: 121,
         status: 1,
         confirmations: 1,

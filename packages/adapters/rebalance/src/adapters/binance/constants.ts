@@ -7,6 +7,7 @@ export const BINANCE_NETWORK_TO_CHAIN_ID = {
   BASE: 8453,
   SCROLL: 534352,
   ZKSYNCERA: 324,
+  AVAXC: 43114,
 } as const;
 
 export const BINANCE_RATE_LIMITS = {
@@ -66,6 +67,7 @@ export const WITHDRAWAL_PRECISION_MAP: Record<string, Record<string, number>> = 
     POLYGON: 6,
     BASE: 6,
     SCROLL: 6,
+    AVAXC: 6,
   },
   ETH: {
     ETH: 6,

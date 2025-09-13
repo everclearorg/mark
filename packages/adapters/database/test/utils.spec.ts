@@ -143,19 +143,19 @@ describe('Database Utils', () => {
     });
 
     it('should handle null input', () => {
-      const result = snakeToCamel(null as any);
+      const result = snakeToCamel(null as unknown as object);
       expect(result).toBeNull();
     });
 
     it('should handle undefined input', () => {
-      const result = snakeToCamel(undefined as any);
+      const result = snakeToCamel(undefined as unknown as object);
       expect(result).toBeUndefined();
     });
 
     it('should handle primitive values', () => {
-      expect(snakeToCamel('string' as any)).toBe('string');
-      expect(snakeToCamel(123 as any)).toBe(123);
-      expect(snakeToCamel(true as any)).toBe(true);
+      expect(snakeToCamel('string' as unknown as object)).toBe('string');
+      expect(snakeToCamel(123 as unknown as object)).toBe(123);
+      expect(snakeToCamel(true as unknown as object)).toBe(true);
     });
 
     it('should handle multiple underscores correctly', () => {
@@ -315,19 +315,19 @@ describe('Database Utils', () => {
     });
 
     it('should handle null input', () => {
-      const result = camelToSnake(null as any);
+      const result = camelToSnake(null as unknown as object);
       expect(result).toBeNull();
     });
 
     it('should handle undefined input', () => {
-      const result = camelToSnake(undefined as any);
+      const result = camelToSnake(undefined as unknown as object);
       expect(result).toBeUndefined();
     });
 
     it('should handle primitive values', () => {
-      expect(camelToSnake('string' as any)).toBe('string');
-      expect(camelToSnake(123 as any)).toBe(123);
-      expect(camelToSnake(true as any)).toBe(true);
+      expect(camelToSnake('string' as unknown as object)).toBe('string');
+      expect(camelToSnake(123 as unknown as object)).toBe(123);
+      expect(camelToSnake(true as unknown as object)).toBe(true);
     });
 
     it('should handle consecutive capital letters correctly', () => {
@@ -371,9 +371,7 @@ describe('Database Utils', () => {
             phone_number: '123-456-7890',
           },
         },
-        user_list: [
-          { user_id: 1, is_active: true },
-        ],
+        user_list: [{ user_id: 1, is_active: true }],
       };
 
       const camelCased = snakeToCamel(original);
@@ -391,9 +389,7 @@ describe('Database Utils', () => {
             phoneNumber: '123-456-7890',
           },
         },
-        userList: [
-          { userId: 1, isActive: true },
-        ],
+        userList: [{ userId: 1, isActive: true }],
       };
 
       const snakeCased = camelToSnake(original);

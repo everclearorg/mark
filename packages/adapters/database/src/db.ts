@@ -287,6 +287,104 @@ export async function getActiveEarmarksForChain(chainId: number): Promise<CamelC
   return ret.map(snakeToCamel);
 }
 
+export async function getEarmarksWithOperations(
+  limit: number,
+  offset: number,
+  filter?: {
+    status?: string;
+    chainId?: number;
+    invoiceId?: string;
+  },
+): Promise<
+  Array<
+    CamelCasedProperties<earmarks> & {
+      operations?: Array<Record<string, string | number | Date | null>>;
+    }
+  >
+> {
+  let query = `
+    SELECT e.*,
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', ro.id,
+                 'status', ro.status,
+                 'origin_chain_id', ro.origin_chain_id,
+                 'destination_chain_id', ro.destination_chain_id,
+                 'ticker_hash', ro.ticker_hash,
+                 'amount', ro.amount,
+                 'slippage', ro.slippage,
+                 'bridge', ro.bridge,
+                 'recipient', ro.recipient,
+                 'is_orphaned', ro.is_orphaned,
+                 'created_at', ro.created_at,
+                 'updated_at', ro.updated_at
+               ) ORDER BY ro.created_at DESC
+             ) FILTER (WHERE ro.id IS NOT NULL),
+             '[]'::json
+           ) as operations
+    FROM earmarks e
+    LEFT JOIN rebalance_operations ro ON e.id = ro.earmark_id
+  `;
+
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let paramCount = 1;
+
+  if (filter) {
+    if (filter.status) {
+      conditions.push(`e.status = $${paramCount++}`);
+      values.push(filter.status);
+    }
+    if (filter.chainId) {
+      conditions.push(`e.designated_purchase_chain = $${paramCount++}`);
+      values.push(filter.chainId);
+    }
+    if (filter.invoiceId) {
+      conditions.push(`e.invoice_id = $${paramCount++}`);
+      values.push(filter.invoiceId);
+    }
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+
+  query += `
+    GROUP BY e.id
+    ORDER BY e.created_at DESC
+    LIMIT $${paramCount++} OFFSET $${paramCount}
+  `;
+
+  values.push(limit, offset);
+
+  interface QueryResult extends earmarks {
+    operations: Array<{
+      id: string;
+      status: string;
+      origin_chain_id: number;
+      destination_chain_id: number;
+      ticker_hash: string;
+      amount: string;
+      slippage: number;
+      bridge: string | null;
+      recipient: string | null;
+      created_at: Date;
+      updated_at: Date;
+    }>;
+  }
+
+  const results = await queryWithClient<QueryResult>(query, values);
+
+  return results.map((row) => {
+    const { operations, ...earmark } = row;
+    return {
+      ...snakeToCamel(earmark),
+      operations: operations.map((op: Record<string, string | number | Date | null>) => snakeToCamel(op)),
+    };
+  });
+}
+
 export async function createRebalanceOperation(input: {
   earmarkId: string | null;
   originChainId: number;
@@ -427,6 +525,7 @@ export async function updateRebalanceOperation(
   updates: {
     status?: RebalanceOperationStatus;
     txHashes?: Record<string, TransactionReceipt>;
+    isOrphaned?: boolean;
   },
 ): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }> {
   return withTransaction(async (client) => {
@@ -438,6 +537,11 @@ export async function updateRebalanceOperation(
     if (updates.status !== undefined) {
       setClause.push(`status = $${paramCount++}`);
       values.push(updates.status);
+    }
+
+    if (updates.isOrphaned !== undefined) {
+      setClause.push(`is_orphaned = $${paramCount++}`);
+      values.push(updates.isOrphaned);
     }
 
     values.push(operationId);
@@ -466,7 +570,35 @@ export async function updateRebalanceOperation(
 
     // Insert new transactions for this rebalance operation
     for (const [chainId, receipt] of Object.entries(updates.txHashes)) {
-      const { transactionHash, cumulativeGasUsed, effectiveGasPrice, from, to } = receipt;
+      // Validate required fields exist
+      if (!receipt.transactionHash) {
+        throw new Error(
+          `Invalid receipt for chain ${chainId}: missing transactionHash. ` + `Receipt: ${JSON.stringify(receipt)}`,
+        );
+      }
+
+      if (!receipt.from) {
+        throw new Error(
+          `Invalid receipt for chain ${chainId}, tx ${receipt.transactionHash}: missing 'from' address. ` +
+            `Receipt: ${JSON.stringify(receipt)}`,
+        );
+      }
+
+      if (!receipt.to) {
+        throw new Error(
+          `Invalid receipt for chain ${chainId}, tx ${receipt.transactionHash}: missing 'to' address. ` +
+            `Receipt: ${JSON.stringify(receipt)}`,
+        );
+      }
+
+      const transactionHash = receipt.transactionHash;
+      const from = receipt.from;
+      const to = receipt.to;
+
+      // Gas values can default to '0' if missing
+      const cumulativeGasUsed = String(receipt.cumulativeGasUsed || '0');
+      const effectiveGasPrice = String(receipt.effectiveGasPrice || '0');
+
       const transactionQuery = `
           INSERT INTO transactions (
             rebalance_operation_id,

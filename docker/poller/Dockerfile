@@ -8,7 +8,11 @@ FROM node AS build
 RUN dnf update -y
 RUN dnf install -y git
 
-RUN npm install --global yarn@1.22.19 node-gyp
+# Install node-gyp globally
+RUN npm install --global node-gyp
+
+# Enable corepack to use Yarn 3
+RUN corepack enable
 
 ENV HOME=/tmp/build \
     PATH=/tmp/build/node_modules/.bin:./node_modules/.bin:${PATH} \
@@ -24,7 +28,7 @@ ENV HOME=/tmp/build \
 
 WORKDIR /tmp/build
 
-# Copy yarn configuration files first
+# Copy yarn configuration files first (including Yarn 3 binary)
 COPY .yarn /tmp/build/.yarn/
 COPY .yarnrc.yml /tmp/build/
 COPY package.json /tmp/build/
@@ -44,7 +48,7 @@ COPY packages/adapters/database/package.json /tmp/build/packages/adapters/databa
 COPY yarn.lock /tmp/build/
 
 # Install dependencies including devDependencies
-RUN yarn install --mode=skip-build && \
+RUN yarn install --immutable && \
     yarn workspaces foreach -A run rebuild
 
 # Copy source files
@@ -81,7 +85,7 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 
 # Copy only the necessary files from build
 COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
-COPY --from=build /tmp/build/packages/poller/dist/* ${LAMBDA_TASK_ROOT}/
+COPY --from=build /tmp/build/packages/poller/dist ${LAMBDA_TASK_ROOT}/
 COPY --from=build /tmp/build/packages/core/dist ${LAMBDA_TASK_ROOT}/packages/core/dist
 COPY --from=build /tmp/build/packages/adapters/rebalance/dist ${LAMBDA_TASK_ROOT}/packages/adapters/rebalance/dist
 COPY --from=build /tmp/build/packages/adapters/logger/dist ${LAMBDA_TASK_ROOT}/packages/adapters/logger/dist
@@ -110,5 +114,5 @@ RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
 
 COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
 
-CMD [ "index.handler" ]
+CMD [ "src/index.handler" ]
 EXPOSE 8080

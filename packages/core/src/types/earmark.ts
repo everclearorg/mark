@@ -12,4 +12,5 @@ export enum RebalanceOperationStatus {
   AWAITING_CALLBACK = 'awaiting_callback', // Waiting for callback execution
   COMPLETED = 'completed', // Fully complete
   EXPIRED = 'expired', // Expired (24 hours)
+  CANCELLED = 'cancelled', // Cancelled (e.g., due to earmark cancellation)
 }

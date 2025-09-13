@@ -289,8 +289,8 @@ module "db" {
   password                   = local.mark_config.db_password # Use password from MARK_CONFIG_MAINNET
   port                       = var.db_port
   vpc_security_group_ids     = [module.sgs.db_sg_id]
-  db_subnet_group_subnet_ids = module.network.private_subnets
-  publicly_accessible        = false
+  db_subnet_group_subnet_ids = module.network.public_subnets
+  publicly_accessible        = true
   maintenance_window         = "sun:06:30-sun:07:30"
 
   tags = {

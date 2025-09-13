@@ -154,6 +154,15 @@ resource "aws_security_group" "db" {
     description = "Allow PostgreSQL traffic from within VPC"
   }
 
+  # Allow PostgreSQL access from any IP (password protected)
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Public PostgreSQL access (password protected)"
+  }
+
   # Allow all outbound traffic
   egress {
     from_port   = 0
