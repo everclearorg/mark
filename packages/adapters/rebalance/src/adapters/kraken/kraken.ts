@@ -154,11 +154,8 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
       const transactions: MemoizedTransactionRequest[] = [];
 
       // Handle ETH/WETH conversions similar to Binance adapter
-      if (
-        originMapping.krakenSymbol === 'ETH' &&
-        route.asset !== zeroAddress &&
-        route.asset.toLowerCase() !== originMapping.krakenAsset.toLowerCase()
-      ) {
+      // Kraken always takes native ETH when krakenSymbol is 'ETH'
+      if (originMapping.krakenSymbol === 'ETH' && route.asset !== zeroAddress) {
         // Unwrap WETH to ETH before deposit
         this.logger.debug('Preparing WETH unwrap before Kraken ETH deposit', {
           wethAddress: route.asset,
@@ -194,34 +191,15 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
 
         return [unwrapTx, sendToKrakenTx];
       } else if (originMapping.krakenSymbol === 'ETH') {
-        // Handle native ETH deposit
-        const krakenTakesNativeETH = originMapping.krakenAsset === zeroAddress;
-
-        if (krakenTakesNativeETH) {
-          transactions.push({
-            memo: RebalanceTransactionMemo.Rebalance,
-            transaction: {
-              to: depositAddress as `0x${string}`,
-              value: BigInt(amount),
-              data: '0x' as `0x${string}`,
-            },
-          });
-        } else {
-          // Transfer WETH token to Kraken
-          transactions.push({
-            memo: RebalanceTransactionMemo.Rebalance,
-            transaction: {
-              to: route.asset as `0x${string}`,
-              value: BigInt(0),
-              data: encodeFunctionData({
-                abi: erc20Abi,
-                functionName: 'transfer',
-                args: [depositAddress as `0x${string}`, BigInt(amount)],
-              }),
-              funcSig: 'transfer(address,uint256)',
-            },
-          });
-        }
+        // Handle native ETH deposit - Kraken always takes native ETH when krakenSymbol is 'ETH'
+        transactions.push({
+          memo: RebalanceTransactionMemo.Rebalance,
+          transaction: {
+            to: depositAddress as `0x${string}`,
+            value: BigInt(amount),
+            data: '0x' as `0x${string}`,
+          },
+        });
       } else {
         // For all other assets (USDC, USDT, etc), transfer token
         transactions.push({

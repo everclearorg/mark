@@ -730,7 +730,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       expect(result[1].transaction.data).toBe('0x');
     });
 
-    it('should handle WETH transfer to Kraken when krakenAsset does not match zero address', async () => {
+    it('should handle native ETH transfer to Kraken', async () => {
       mockDynamicConfig.getAssetMapping.mockImplementation((chainId: number) => {
         if (chainId === 1) return Promise.resolve(mockETHMainnetKrakenMapping);
         if (chainId === 42161) return Promise.resolve(mockWETHArbitrumKrakenMapping);
@@ -740,7 +740,7 @@ describe('KrakenBridgeAdapter Unit', () => {
       mockKrakenClient.getAssetInfo.mockResolvedValue({
         [mockETHMainnetKrakenMapping.krakenAsset]: {
           aclass: 'currency',
-          altname: 'WETH',
+          altname: 'ETH',
           decimals: 18,
           display_decimals: 4,
           status: 'enabled',
@@ -752,9 +752,9 @@ describe('KrakenBridgeAdapter Unit', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].memo).toBe(RebalanceTransactionMemo.Rebalance);
-      expect(result[0].transaction.to).toBe(nativeETHRoute.asset); // Should be zero address
-      expect(result[0].transaction.value).toBe(BigInt(0)); // ERC20 transfer has no value
-      expect(result[0].transaction.data).toEqual(expect.any(String)); // ERC20 transfer encoded
+      expect(result[0].transaction.to).toBe('0x1234567890123456789012345678901234567890'); // Deposit address
+      expect(result[0].transaction.value).toBe(BigInt(amount)); // Native ETH value
+      expect(result[0].transaction.data).toBe('0x'); // No data for native ETH transfer
     });
 
     it('should throw error when asset config is not found', async () => {

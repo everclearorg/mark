@@ -9,7 +9,6 @@ export interface DatabaseConfig {
   connectionTimeoutMillis?: number;
 }
 
-// TODO: improve type source, should be whats returned from `submitAndMonitor`
 export interface TransactionReceipt {
   from: string;
   to: string;
