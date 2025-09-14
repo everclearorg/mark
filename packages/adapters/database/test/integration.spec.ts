@@ -59,7 +59,9 @@ describe('Database Adapter - Integration Tests', () => {
 
         await createEarmark(earmarkData);
 
-        await expect(createEarmark(earmarkData)).rejects.toThrow();
+        await expect(createEarmark(earmarkData)).rejects.toThrow(
+          /duplicate key value violates unique constraint|unique_invoice_id/i,
+        );
       });
 
       it('should create earmark and then create rebalance operations separately', async () => {
@@ -508,6 +510,7 @@ describe('Database Adapter - Integration Tests', () => {
         expect(operation.bridge).toBe('cross-chain-bridge');
         const expected = Object.fromEntries(
           Object.entries(transactionReceipts).map(([chain, receipt]) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { confirmations, blockNumber, status, ...ret } = receipt;
             return [
               chain,
@@ -536,6 +539,7 @@ describe('Database Adapter - Integration Tests', () => {
           RebalanceOperationStatus.AWAITING_CALLBACK,
           RebalanceOperationStatus.COMPLETED,
           RebalanceOperationStatus.EXPIRED,
+          RebalanceOperationStatus.CANCELLED,
         ];
 
         const operations = [];
@@ -553,11 +557,26 @@ describe('Database Adapter - Integration Tests', () => {
           operations.push(operation);
         }
 
-        expect(operations).toHaveLength(4);
+        expect(operations).toHaveLength(5);
         operations.forEach((op, index) => {
           expect(op.status).toBe(statuses[index]);
           expect(op.bridge).toBe(`bridge-${index + 1}`);
         });
+      });
+
+      it('should create operation with isOrphaned defaulting to false', async () => {
+        const operation = await createRebalanceOperation({
+          earmarkId: null,
+          originChainId: 1,
+          destinationChainId: 10,
+          tickerHash: '0xaaaa111111111111111111111111111111111111',
+          amount: '50000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'test-bridge',
+        });
+
+        expect(operation.isOrphaned).toBe(false);
       });
     });
 
@@ -740,6 +759,82 @@ describe('Database Adapter - Integration Tests', () => {
         });
 
         expect(new Date(updated.updatedAt!).getTime()).toBeGreaterThan(new Date(originalUpdatedAt!).getTime());
+      });
+
+      it('should update isOrphaned flag', async () => {
+        const earmark = await createEarmark({
+          invoiceId: 'invoice-orphan-test',
+          designatedPurchaseChain: 10,
+          tickerHash: '0x5555555555555555555555555555555555555555',
+          minAmount: '100000000000',
+        });
+
+        const operation = await createRebalanceOperation({
+          earmarkId: earmark.id,
+          originChainId: 1,
+          destinationChainId: 10,
+          tickerHash: earmark.tickerHash,
+          amount: '50000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'test-bridge',
+        });
+
+        // Update to mark as orphaned
+        const updated = await updateRebalanceOperation(operation.id, {
+          isOrphaned: true,
+        });
+
+        expect(updated.isOrphaned).toBe(true);
+        expect(updated.earmarkId).toBe(earmark.id); // Should still have earmark
+      });
+
+      it('should update status to CANCELLED', async () => {
+        const operation = await createRebalanceOperation({
+          earmarkId: null,
+          originChainId: 1,
+          destinationChainId: 10,
+          tickerHash: '0x6666666666666666666666666666666666666666',
+          amount: '75000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'test-bridge',
+        });
+
+        const updated = await updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.CANCELLED,
+        });
+
+        expect(updated.status).toBe(RebalanceOperationStatus.CANCELLED);
+      });
+
+      it('should update both status and isOrphaned together', async () => {
+        const earmark = await createEarmark({
+          invoiceId: 'invoice-combined-update',
+          designatedPurchaseChain: 1,
+          tickerHash: '0x7777777777777777777777777777777777777777',
+          minAmount: '200000000000',
+        });
+
+        const operation = await createRebalanceOperation({
+          earmarkId: earmark.id,
+          originChainId: 10,
+          destinationChainId: 1,
+          tickerHash: earmark.tickerHash,
+          amount: '100000000000',
+          slippage: 150,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'cross-chain',
+        });
+
+        const updated = await updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.CANCELLED,
+          isOrphaned: true,
+        });
+
+        expect(updated.status).toBe(RebalanceOperationStatus.CANCELLED);
+        expect(updated.isOrphaned).toBe(true);
+        expect(updated.earmarkId).toBe(earmark.id);
       });
     });
 

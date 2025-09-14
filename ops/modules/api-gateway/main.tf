@@ -62,6 +62,54 @@ resource "aws_api_gateway_resource" "clear_rebalance" {
   path_part   = "rebalance"
 }
 
+resource "aws_api_gateway_resource" "rebalance" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_rest_api.admin_api.root_resource_id
+  path_part   = "rebalance"
+}
+
+resource "aws_api_gateway_resource" "rebalance_earmarks" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_resource.rebalance.id
+  path_part   = "earmarks"
+}
+
+resource "aws_api_gateway_resource" "rebalance_operations" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_resource.rebalance.id
+  path_part   = "operations"
+}
+
+resource "aws_api_gateway_resource" "rebalance_earmark" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_resource.rebalance.id
+  path_part   = "earmark"
+}
+
+resource "aws_api_gateway_resource" "rebalance_earmark_id" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_resource.rebalance_earmark.id
+  path_part   = "{id}"
+}
+
+resource "aws_api_gateway_resource" "rebalance_cancel" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_resource.rebalance.id
+  path_part   = "cancel"
+}
+
+resource "aws_api_gateway_resource" "rebalance_operation" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_resource.rebalance.id
+  path_part   = "operation"
+}
+
+resource "aws_api_gateway_resource" "rebalance_operation_cancel" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_resource.rebalance_operation.id
+  path_part   = "cancel"
+}
+
 # Create POST methods for each endpoint
 resource "aws_api_gateway_method" "pause_purchase_post" {
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
@@ -103,6 +151,43 @@ resource "aws_api_gateway_method" "clear_rebalance_post" {
   resource_id   = aws_api_gateway_resource.clear_rebalance.id
   http_method   = "POST"
   authorization = "NONE" # Consider using AWS_IAM for authentication
+}
+
+resource "aws_api_gateway_method" "rebalance_earmarks_get" {
+  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
+  resource_id   = aws_api_gateway_resource.rebalance_earmarks.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "rebalance_operations_get" {
+  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
+  resource_id   = aws_api_gateway_resource.rebalance_operations.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "rebalance_earmark_id_get" {
+  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
+  resource_id   = aws_api_gateway_resource.rebalance_earmark_id.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+# POST method for cancel endpoint
+resource "aws_api_gateway_method" "rebalance_cancel_post" {
+  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
+  resource_id   = aws_api_gateway_resource.rebalance_cancel.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+# POST method for operation cancel endpoint
+resource "aws_api_gateway_method" "rebalance_operation_cancel_post" {
+  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
+  resource_id   = aws_api_gateway_resource.rebalance_operation_cancel.id
+  http_method   = "POST"
+  authorization = "NONE"
 }
 
 # Create Lambda function for admin API
@@ -192,6 +277,51 @@ resource "aws_api_gateway_integration" "clear_rebalance_integration" {
   uri                     = aws_lambda_function.admin_api.invoke_arn
 }
 
+resource "aws_api_gateway_integration" "rebalance_earmarks_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.admin_api.id
+  resource_id             = aws_api_gateway_resource.rebalance_earmarks.id
+  http_method             = aws_api_gateway_method.rebalance_earmarks_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.admin_api.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "rebalance_operations_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.admin_api.id
+  resource_id             = aws_api_gateway_resource.rebalance_operations.id
+  http_method             = aws_api_gateway_method.rebalance_operations_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.admin_api.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "rebalance_earmark_id_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.admin_api.id
+  resource_id             = aws_api_gateway_resource.rebalance_earmark_id.id
+  http_method             = aws_api_gateway_method.rebalance_earmark_id_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.admin_api.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "rebalance_cancel_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.admin_api.id
+  resource_id             = aws_api_gateway_resource.rebalance_cancel.id
+  http_method             = aws_api_gateway_method.rebalance_cancel_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.admin_api.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "rebalance_operation_cancel_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.admin_api.id
+  resource_id             = aws_api_gateway_resource.rebalance_operation_cancel.id
+  http_method             = aws_api_gateway_method.rebalance_operation_cancel_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.admin_api.invoke_arn
+}
+
 # Allow API Gateway to invoke Lambda
 resource "aws_lambda_permission" "api_gateway_lambda" {
   statement_id  = "AllowExecutionFromAPIGateway"
@@ -209,7 +339,11 @@ resource "aws_api_gateway_deployment" "admin_api" {
     aws_api_gateway_integration.unpause_purchase_integration,
     aws_api_gateway_integration.unpause_rebalance_integration,
     aws_api_gateway_integration.clear_purchase_integration,
-    aws_api_gateway_integration.clear_rebalance_integration
+    aws_api_gateway_integration.clear_rebalance_integration,
+    aws_api_gateway_integration.rebalance_earmarks_integration,
+    aws_api_gateway_integration.rebalance_operations_integration,
+    aws_api_gateway_integration.rebalance_earmark_id_integration,
+    aws_api_gateway_integration.rebalance_cancel_integration
   ]
 
   rest_api_id = aws_api_gateway_rest_api.admin_api.id
@@ -220,6 +354,8 @@ resource "aws_api_gateway_deployment" "admin_api" {
       aws_lambda_function.admin_api.last_modified,
       aws_lambda_function.admin_api.source_code_hash,
       aws_lambda_function.admin_api.environment,
+      # Auto-track all API configuration changes
+      filemd5("${path.module}/main.tf")
     ]))
   }
 
