@@ -474,7 +474,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled (enforced by CHECK constraint)
+      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -534,7 +534,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled (enforced by CHECK constraint)
+      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -594,7 +594,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled (enforced by CHECK constraint)
+      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -654,7 +654,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled (enforced by CHECK constraint)
+      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -714,7 +714,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled (enforced by CHECK constraint)
+      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -793,6 +793,14 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
+      * **rebalance_operations.is_orphaned**
+      *
+      * Indicates if this operation was orphaned when its associated earmark was cancelled
+      * - `bool` in database
+      * - `NOT NULL`, default: `false`
+      */
+      is_orphaned: boolean;
+      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -819,7 +827,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired, cancelled (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -883,6 +891,14 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
+      * **rebalance_operations.is_orphaned**
+      *
+      * Indicates if this operation was orphaned when its associated earmark was cancelled
+      * - `bool` in database
+      * - `NOT NULL`, default: `false`
+      */
+      is_orphaned: boolean;
+      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -909,7 +925,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired, cancelled (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -973,6 +989,14 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
+      * **rebalance_operations.is_orphaned**
+      *
+      * Indicates if this operation was orphaned when its associated earmark was cancelled
+      * - `bool` in database
+      * - `NOT NULL`, default: `false`
+      */
+      is_orphaned?: boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn>;
+      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -999,7 +1023,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired, cancelled (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -1063,6 +1087,14 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
+      * **rebalance_operations.is_orphaned**
+      *
+      * Indicates if this operation was orphaned when its associated earmark was cancelled
+      * - `bool` in database
+      * - `NOT NULL`, default: `false`
+      */
+      is_orphaned?: boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment;
+      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -1089,7 +1121,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired, cancelled (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -1153,6 +1185,14 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
       /**
+      * **rebalance_operations.is_orphaned**
+      *
+      * Indicates if this operation was orphaned when its associated earmark was cancelled
+      * - `bool` in database
+      * - `NOT NULL`, default: `false`
+      */
+      is_orphaned?: boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment>;
+      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -1179,7 +1219,7 @@ declare module 'zapatos/schema' {
       /**
       * **rebalance_operations.status**
       *
-      * Operation status: pending, awaiting_callback, completed, expired (enforced by CHECK constraint)
+      * Operation status: pending, awaiting_callback, completed, expired, cancelled (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */

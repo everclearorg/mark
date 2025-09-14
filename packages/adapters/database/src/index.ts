@@ -6,6 +6,7 @@ import { DatabaseConfig } from './types';
 // Re-export all core functionality
 export * from './db';
 export * from './types';
+export * from './utils';
 // Schema types are exported via db.ts
 
 // Core earmark operations
@@ -27,6 +28,7 @@ export {
   setPause,
   isPaused,
   withTransaction,
+  getEarmarksWithOperations,
   type CreateEarmarkInput,
   type GetEarmarksFilter,
 } from './db';

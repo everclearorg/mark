@@ -31,4 +31,26 @@ export enum HttpPaths {
   PauseRebalance = '/pause/rebalance',
   UnpausePurchase = '/unpause/purchase',
   UnpauseRebalance = '/unpause/rebalance',
+  GetEarmarks = '/rebalance/earmarks',
+  GetRebalanceOperations = '/rebalance/operations',
+  GetEarmarkDetails = '/rebalance/earmark',
+  CancelEarmark = '/rebalance/cancel',
+  CancelRebalanceOperation = '/rebalance/operation/cancel',
+}
+
+export interface PaginationParams {
+  limit: number;
+  offset: number;
+}
+
+export interface EarmarkFilter {
+  status?: string;
+  chainId?: number;
+  invoiceId?: string;
+}
+
+export interface OperationFilter {
+  status?: string;
+  chainId?: number;
+  earmarkId?: string;
 }
