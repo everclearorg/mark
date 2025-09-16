@@ -38,7 +38,13 @@ export const getTickerForAsset = (asset: string, chain: number, config: MarkConf
  * @returns Amount in native token units
  */
 export const convertToNativeUnits = (amount: bigint, decimals: number | undefined): bigint => {
-  return BigInt(formatUnits(amount, 18 - (decimals ?? 18)));
+  const targetDecimals = decimals ?? 18;
+  if (targetDecimals === 18) {
+    return amount;
+  }
+
+  const divisor = BigInt(10 ** (18 - targetDecimals));
+  return amount / divisor;
 };
 
 /**
