@@ -63,6 +63,8 @@ describe('submitTransactionWithLogging', () => {
         effectiveGasPrice: '1000000000',
         confirmations: 1,
         logs: [],
+        from: '0x1234567890123456789012345678901234567890',
+        to: '0x0987654321098765432109876543210987654321',
       } as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
@@ -136,6 +138,8 @@ describe('submitTransactionWithLogging', () => {
         effectiveGasPrice: '1000000000',
         confirmations: 1,
         logs: [],
+        from: '0x1234567890123456789012345678901234567890',
+        to: '0x0987654321098765432109876543210987654321',
       } as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
@@ -195,6 +199,8 @@ describe('submitTransactionWithLogging', () => {
         effectiveGasPrice: '1000000000',
         confirmations: 1,
         logs: [],
+        from: '0x1234567890123456789012345678901234567890',
+        to: '0x0987654321098765432109876543210987654321',
       } as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
@@ -243,6 +249,8 @@ describe('submitTransactionWithLogging', () => {
         effectiveGasPrice: '1000000000',
         confirmations: 1,
         logs: [],
+        from: '0x1234567890123456789012345678901234567890',
+        to: '0x0987654321098765432109876543210987654321',
       } as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
@@ -277,6 +285,8 @@ describe('submitTransactionWithLogging', () => {
         effectiveGasPrice: '1000000000',
         confirmations: 1,
         logs: [],
+        from: '0x1234567890123456789012345678901234567890',
+        to: '0x0987654321098765432109876543210987654321',
       } as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
@@ -314,6 +324,8 @@ describe('submitTransactionWithLogging', () => {
         effectiveGasPrice: '1000000000',
         confirmations: 1,
         logs: [],
+        from: '0x1234567890123456789012345678901234567890',
+        to: '0x0987654321098765432109876543210987654321',
       } as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
@@ -351,6 +363,8 @@ describe('submitTransactionWithLogging', () => {
         effectiveGasPrice: '1000000000',
         confirmations: 1,
         logs: [],
+        from: '0x1234567890123456789012345678901234567890',
+        to: '0x0987654321098765432109876543210987654321',
       } as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
@@ -390,6 +404,8 @@ describe('submitTransactionWithLogging', () => {
         effectiveGasPrice: '1000000000',
         confirmations: 1,
         logs: [],
+        from: '0x1234567890123456789012345678901234567890',
+        to: '0x0987654321098765432109876543210987654321',
       } as TransactionReceipt;
 
       (mockDeps.chainService.submitAndMonitor as SinonStub).resolves(mockReceipt);
