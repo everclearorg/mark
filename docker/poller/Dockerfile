@@ -66,7 +66,9 @@ COPY packages/adapters/database /tmp/build/packages/adapters/database
 COPY tsconfig.json /tmp/build/
 
 # Build packages
-RUN yarn build
+# Build core first to ensure declaration files are available
+RUN yarn workspace @mark/core build && \
+    yarn build
 
 # ----------------------------------------
 # Runtime stage
