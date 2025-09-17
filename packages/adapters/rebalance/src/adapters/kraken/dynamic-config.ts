@@ -209,10 +209,13 @@ export class DynamicAssetConfig {
     const viemEntry = allChains.find((c) => c.id === chainId);
 
     // Manual edits to translate viem chain names -> kraken chain names
-    if (chainId !== 10) {
-      return viemEntry;
+    if (chainId === 10) {
+      return { ...viemEntry!, name: 'optimism' };
     }
-    return { ...viemEntry!, name: 'optimism' };
+    if (chainId === 59144) {
+      return { ...viemEntry!, name: 'linea' };
+    }
+    return viemEntry;
   }
 
   /**
