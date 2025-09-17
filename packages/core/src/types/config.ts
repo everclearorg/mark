@@ -60,6 +60,7 @@ export enum SupportedBridge {
   Binance = 'binance',
   CCTPV1 = 'cctpv1',
   CCTPV2 = 'cctpv2',
+  CowSwap = 'cowswap',
   Kraken = 'kraken',
   Near = 'near',
 }
