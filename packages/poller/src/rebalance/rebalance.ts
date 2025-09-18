@@ -19,6 +19,9 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
   const { logger, requestId, purchaseCache, config, chainService, rebalance } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
+  // Always check destination callbacks to ensure operations complete
+  await executeDestinationCallbacks(context);
+
   const isPaused = await rebalance.isPaused();
   if (isPaused) {
     logger.warn('Rebalance loop is paused', { requestId });
@@ -26,12 +29,6 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
   }
 
   logger.info('Starting to rebalance inventory', { requestId });
-
-  // Only execute callbacks if purchase cache is paused
-  const isPurchasePaused = await purchaseCache.isPaused();
-  if (isPurchasePaused) {
-    await executeDestinationCallbacks(context);
-  }
 
   // Get all of mark balances
   const balances = await getMarkBalances(config, chainService, context.prometheus);
