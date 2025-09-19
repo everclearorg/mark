@@ -121,17 +121,27 @@ export class DynamicAssetConfig {
       );
     }
 
-    // Get Binance asset address and decimals
+    // Get asset configuration from chain to get decimals
+    const chainConfig = this.chains[chainId.toString()];
+    if (!chainConfig) {
+      throw new Error(`No chain configuration found for chain ${chainId}`);
+    }
+
+    const assetConfig = chainConfig.assets.find((a) => a.symbol === externalSymbol);
+    if (!assetConfig) {
+      throw new Error(`No asset ${externalSymbol} found in chain ${chainId} configuration`);
+    }
+
+    // Get Binance asset address
     const binanceAsset = this.getBinanceAddress(externalSymbol, chainId);
-    const decimals = this.getTokenDecimals(binanceSymbol);
 
     return {
       chainId,
       binanceAsset: binanceAsset.toLowerCase(),
       binanceSymbol: coin.coin,
       network: network.network,
-      minWithdrawalAmount: parseUnits(network.withdrawMin, decimals).toString(),
-      withdrawalFee: parseUnits(network.withdrawFee, decimals).toString(),
+      minWithdrawalAmount: parseUnits(network.withdrawMin, assetConfig.decimals).toString(),
+      withdrawalFee: parseUnits(network.withdrawFee, assetConfig.decimals).toString(),
       depositConfirmations: network.minConfirm,
     };
   }
@@ -187,24 +197,5 @@ export class DynamicAssetConfig {
     }
 
     return networkList.find((network) => network.network === binanceNetwork);
-  }
-
-  /**
-   * Get token decimals based on Binance symbol
-   * @param binanceSymbol - Binance token symbol (e.g., 'ETH', 'USDC', 'USDT')
-   * @returns number - Decimal places for the token
-   */
-  private getTokenDecimals(binanceSymbol: string): number {
-    const decimalsMap: Record<string, number> = {
-      ETH: 18,
-      BTC: 8,
-      USDC: 6,
-      USDT: 6,
-      USDD: 18,
-      BUSD: 18,
-      DAI: 18,
-    };
-
-    return decimalsMap[binanceSymbol] ?? 18; // Default to 18 decimals
   }
 }

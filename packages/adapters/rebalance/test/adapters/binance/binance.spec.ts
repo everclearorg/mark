@@ -1269,6 +1269,13 @@ describe('BinanceBridgeAdapter', () => {
           {
             txId: mockTransaction.transactionHash,
             status: 1,
+            confirmTimes: '120/120',
+            insertTime: Date.now(),
+            amount: '1',
+            coin: 'ETH',
+            network: 'ARBITRUM',
+            address: '0xabc',
+            transferType: 0,
           },
         ]);
 
@@ -1309,6 +1316,13 @@ describe('BinanceBridgeAdapter', () => {
           {
             txId: mockTransaction.transactionHash,
             status: 1,
+            confirmTimes: '120/120',
+            insertTime: Date.now(),
+            amount: '1',
+            coin: 'ETH',
+            network: 'ARBITRUM',
+            address: '0xabc',
+            transferType: 0,
           },
         ]);
 
@@ -1339,6 +1353,13 @@ describe('BinanceBridgeAdapter', () => {
           {
             txId: mockTransaction.transactionHash,
             status: 1,
+            confirmTimes: '120/120',
+            insertTime: Date.now(),
+            amount: '1',
+            coin: 'ETH',
+            network: 'ARBITRUM',
+            address: '0xabc',
+            transferType: 0,
           },
         ]);
 
@@ -1367,6 +1388,13 @@ describe('BinanceBridgeAdapter', () => {
           {
             txId: mockTransaction.transactionHash,
             status: 1,
+            confirmTimes: '120/120',
+            insertTime: Date.now(),
+            amount: '1',
+            coin: 'ETH',
+            network: 'ARBITRUM',
+            address: '0xabc',
+            transferType: 0,
           },
         ]);
 
