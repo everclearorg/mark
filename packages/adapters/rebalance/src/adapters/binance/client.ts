@@ -10,6 +10,7 @@ import {
   WithdrawRecord,
   WithdrawQuotaResponse,
   TickerPrice,
+  CoinConfig,
   BINANCE_BASE_URL,
 } from './types';
 import { BINANCE_ENDPOINTS, BINANCE_RATE_LIMITS } from './constants';
@@ -466,10 +467,10 @@ export class BinanceClient {
   /**
    * Get asset configuration
    */
-  async getAssetConfig(): Promise<unknown[]> {
+  async getAssetConfig(): Promise<CoinConfig[]> {
     this.logger.debug('Getting asset configuration');
 
-    const result = await this.request<unknown[]>('GET', BINANCE_ENDPOINTS.ASSET_CONFIG, {}, true);
+    const result = await this.request<CoinConfig[]>('GET', BINANCE_ENDPOINTS.ASSET_CONFIG, {}, true);
 
     this.logger.debug('Asset configuration retrieved', {
       assetCount: result.length,
