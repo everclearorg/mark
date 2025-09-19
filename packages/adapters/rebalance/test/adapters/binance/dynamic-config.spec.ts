@@ -384,6 +384,18 @@ describe('DynamicAssetConfig', () => {
       const configWithUSDT = [
         {
           coin: 'USDT',
+          name: 'Tether',
+          free: '0',
+          locked: '0',
+          freeze: '0',
+          withdrawing: '0',
+          ipoing: '0',
+          ipoable: '0',
+          storage: '0',
+          isLegalMoney: false,
+          trading: true,
+          depositAllEnable: true,
+          withdrawAllEnable: true,
           networkList: [
             {
               network: 'ETH',
@@ -401,7 +413,7 @@ describe('DynamicAssetConfig', () => {
         },
       ];
 
-      mockClient.getAssetConfig.mockResolvedValue(configWithUSDT);
+      mockClient.getAssetConfig.mockResolvedValue(configWithUSDT as CoinConfig[]);
 
       // Add USDT to the symbol mapping for this test
       mockChains['1'].assets.push({
@@ -424,6 +436,18 @@ describe('DynamicAssetConfig', () => {
         const bscUSDCConfig = [
           {
             coin: 'USDC',
+            name: 'USD Coin',
+            free: '0',
+            locked: '0',
+            freeze: '0',
+            withdrawing: '0',
+            ipoing: '0',
+            ipoable: '0',
+            storage: '0',
+            isLegalMoney: false,
+            trading: true,
+            depositAllEnable: true,
+            withdrawAllEnable: true,
             networkList: [
               {
                 network: 'BSC',
@@ -441,7 +465,7 @@ describe('DynamicAssetConfig', () => {
           },
         ];
 
-        mockClient.getAssetConfig.mockResolvedValue(bscUSDCConfig);
+        mockClient.getAssetConfig.mockResolvedValue(bscUSDCConfig as CoinConfig[]);
 
         const result = await dynamicConfig.getAssetMapping(56, 'USDC');
 
@@ -454,6 +478,18 @@ describe('DynamicAssetConfig', () => {
         const bscUSDTConfig = [
           {
             coin: 'USDT',
+            name: 'Tether',
+            free: '0',
+            locked: '0',
+            freeze: '0',
+            withdrawing: '0',
+            ipoing: '0',
+            ipoable: '0',
+            storage: '0',
+            isLegalMoney: false,
+            trading: true,
+            depositAllEnable: true,
+            withdrawAllEnable: true,
             networkList: [
               {
                 network: 'BSC',
@@ -471,7 +507,7 @@ describe('DynamicAssetConfig', () => {
           },
         ];
 
-        mockClient.getAssetConfig.mockResolvedValue(bscUSDTConfig);
+        mockClient.getAssetConfig.mockResolvedValue(bscUSDTConfig as CoinConfig[]);
 
         const result = await dynamicConfig.getAssetMapping(56, 'USDT');
 
@@ -484,6 +520,18 @@ describe('DynamicAssetConfig', () => {
         const bscUSDCConfig = [
           {
             coin: 'USDC',
+            name: 'USD Coin',
+            free: '0',
+            locked: '0',
+            freeze: '0',
+            withdrawing: '0',
+            ipoing: '0',
+            ipoable: '0',
+            storage: '0',
+            isLegalMoney: false,
+            trading: true,
+            depositAllEnable: true,
+            withdrawAllEnable: true,
             networkList: [
               {
                 network: 'BSC',
@@ -501,7 +549,7 @@ describe('DynamicAssetConfig', () => {
           },
         ];
 
-        mockClient.getAssetConfig.mockResolvedValue(bscUSDCConfig);
+        mockClient.getAssetConfig.mockResolvedValue(bscUSDCConfig as CoinConfig[]);
 
         // Chain 999 doesn't exist
         await expect(dynamicConfig.getAssetMapping(999, 'USDC')).rejects.toThrow(
@@ -513,6 +561,18 @@ describe('DynamicAssetConfig', () => {
         const bscUnknownConfig = [
           {
             coin: 'UNKNOWN',
+            name: 'Unknown Coin',
+            free: '0',
+            locked: '0',
+            freeze: '0',
+            withdrawing: '0',
+            ipoing: '0',
+            ipoable: '0',
+            storage: '0',
+            isLegalMoney: false,
+            trading: true,
+            depositAllEnable: true,
+            withdrawAllEnable: true,
             networkList: [
               {
                 network: 'BSC',
@@ -529,7 +589,7 @@ describe('DynamicAssetConfig', () => {
           },
         ];
 
-        mockClient.getAssetConfig.mockResolvedValue(bscUnknownConfig);
+        mockClient.getAssetConfig.mockResolvedValue(bscUnknownConfig as CoinConfig[]);
 
         // UNKNOWN doesn't exist in BSC chain config
         await expect(dynamicConfig.getAssetMapping(56, 'UNKNOWN')).rejects.toThrow('Unknown asset identifier: UNKNOWN');
