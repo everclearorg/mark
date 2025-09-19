@@ -2,12 +2,15 @@ export const BINANCE_NETWORK_TO_CHAIN_ID = {
   ETH: 1,
   ARBITRUM: 42161,
   OPTIMISM: 10,
-  POLYGON: 137,
+  MATIC: 137,
+  POLYGON: 137, // Keep for backward compatibility
   BSC: 56,
   BASE: 8453,
   SCROLL: 534352,
   ZKSYNCERA: 324,
   AVAXC: 43114,
+  RON: 2020,
+  SONIC: 146,
 } as const;
 
 export const BINANCE_RATE_LIMITS = {
