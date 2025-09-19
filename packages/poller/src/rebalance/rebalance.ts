@@ -16,7 +16,7 @@ import { getAvailableBalanceLessEarmarks } from './onDemand';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<RebalanceAction[]> {
-  const { logger, requestId, purchaseCache, config, chainService, rebalance } = context;
+  const { logger, requestId, config, chainService, rebalance } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
   // Always check destination callbacks to ensure operations complete
