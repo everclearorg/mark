@@ -191,9 +191,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
 
       // Extract fillTx if available - it might not be immediately available even for SUCCESS status
       const destinationTxHashes = statusData?.swapDetails.destinationChainTxHashes;
-      const fillTx = destinationTxHashes && destinationTxHashes.length > 0
-        ? destinationTxHashes[0].hash
-        : undefined;
+      const fillTx = destinationTxHashes && destinationTxHashes.length > 0 ? destinationTxHashes[0].hash : undefined;
 
       if (!fillTx) {
         // If no fill transaction hash is available but status is SUCCESS,
@@ -369,9 +367,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
 
       // If status is SUCCESS, return the status data even if destination hashes aren't available yet
       if (statusData.status === GetExecutionStatusResponse.status.SUCCESS) {
-        const fillTx = destinationTxHashes && destinationTxHashes.length > 0
-          ? destinationTxHashes[0].hash
-          : undefined;
+        const fillTx = destinationTxHashes && destinationTxHashes.length > 0 ? destinationTxHashes[0].hash : undefined;
 
         if (!fillTx) {
           this.logger.warn('NEAR reports SUCCESS but no destination transaction hashes available yet', {
@@ -639,8 +635,8 @@ export class NearBridgeAdapter implements BridgeAdapter {
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${this.jwtToken}`,
-          'Accept': 'application/json',
+          Authorization: `Bearer ${this.jwtToken}`,
+          Accept: 'application/json',
         },
       });
 
@@ -661,7 +657,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
       this.logger.error('Failed to get deposit status', {
         error: jsonifyError(error),
         depositAddress,
-        endpoint: '/v0/status'
+        endpoint: '/v0/status',
       });
       return undefined;
     }
