@@ -159,8 +159,8 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         const requiredMin = BigInt(originMapping.minWithdrawalAmount) + BigInt(originMapping.withdrawalFee);
         throw new Error(
           `Amount ${amount} is too low for Binance withdrawal. ` +
-          `Minimum required: ${requiredMin.toString()} (min: ${originMapping.minWithdrawalAmount} + fee: ${originMapping.withdrawalFee}) ` +
-          `for ${originMapping.binanceSymbol} on ${originMapping.network}`
+            `Minimum required: ${requiredMin.toString()} (min: ${originMapping.minWithdrawalAmount} + fee: ${originMapping.withdrawalFee}) ` +
+            `for ${originMapping.binanceSymbol} on ${originMapping.network}`,
         );
       }
 
@@ -230,8 +230,8 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         const requiredMin = BigInt(assetMapping.minWithdrawalAmount) + BigInt(assetMapping.withdrawalFee);
         throw new Error(
           `Amount ${amount} does not meet minimum withdrawal requirement. ` +
-          `Minimum required: ${requiredMin.toString()} (min: ${assetMapping.minWithdrawalAmount} + fee: ${assetMapping.withdrawalFee}) ` +
-          `for ${assetMapping.binanceSymbol} on ${assetMapping.network}`,
+            `Minimum required: ${requiredMin.toString()} (min: ${assetMapping.minWithdrawalAmount} + fee: ${assetMapping.withdrawalFee}) ` +
+            `for ${assetMapping.binanceSymbol} on ${assetMapping.network}`,
         );
       }
 
