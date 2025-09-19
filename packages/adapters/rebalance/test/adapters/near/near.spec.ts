@@ -284,6 +284,9 @@ describe('NearBridgeAdapter', () => {
     // Clear all mocks
     jest.clearAllMocks();
 
+    // Reset global fetch mock
+    global.fetch = jest.fn() as jest.MockedFunction<typeof fetch>;
+
     // Reset all mock implementations
     (createPublicClient as jest.Mock).mockImplementation(() => ({
       getBalance: jest.fn<() => Promise<bigint>>(),
@@ -316,6 +319,10 @@ describe('NearBridgeAdapter', () => {
 
   afterEach(() => {
     cleanupHttpConnections();
+    // Restore fetch
+    if (global.fetch && (global.fetch as jest.Mock).mockRestore) {
+      (global.fetch as jest.Mock).mockRestore();
+    }
   });
 
   afterAll(() => {
@@ -657,8 +664,12 @@ describe('NearBridgeAdapter', () => {
       // Mock the extractDepositAddress method
       jest.spyOn(adapter, 'extractDepositAddress').mockReturnValue('0xDepositAddress');
 
-      // Mock OneClickService.getExecutionStatus
-      (OneClickService.getExecutionStatus as jest.Mock).mockResolvedValueOnce(mockStatusResponse as never);
+      // Mock fetch for getDepositStatusFromApi
+      (global.fetch as jest.MockedFunction<typeof fetch>).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockStatusResponse,
+      } as Response);
 
       // Execute
       const result = await adapter.readyOnDestination('1000000000', route, mockReceipt as TransactionReceipt);
@@ -699,11 +710,15 @@ describe('NearBridgeAdapter', () => {
       // Mock the extractDepositAddress method
       jest.spyOn(adapter, 'extractDepositAddress').mockReturnValue('0xDepositAddress');
 
-      // Mock OneClickService.getExecutionStatus to return pending status
-      (OneClickService.getExecutionStatus as jest.Mock).mockResolvedValueOnce({
-        ...mockStatusResponse,
-        status: MockGetExecutionStatusResponse.status.PENDING_DEPOSIT,
-      } as never);
+      // Mock fetch for getDepositStatusFromApi to return pending status
+      (global.fetch as jest.MockedFunction<typeof fetch>).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ...mockStatusResponse,
+          status: MockGetExecutionStatusResponse.status.PENDING_DEPOSIT,
+        }),
+      } as Response);
 
       // Execute
       const result = await adapter.readyOnDestination('1000000000', route, mockReceipt as TransactionReceipt);
@@ -1124,16 +1139,31 @@ describe('NearBridgeAdapter', () => {
 
   describe('getDepositStatusFromApi', () => {
     it('should return status data when API call succeeds', async () => {
-      (OneClickService.getExecutionStatus as jest.Mock).mockResolvedValueOnce(mockStatusResponse as never);
+      // Mock fetch for successful API response
+      (global.fetch as jest.MockedFunction<typeof fetch>).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => mockStatusResponse,
+      } as Response);
 
       const result = await adapter.getDepositStatusFromApi('0xDepositAddress');
 
       expect(result).toEqual(mockStatusResponse);
-      expect(OneClickService.getExecutionStatus).toHaveBeenCalledWith('0xDepositAddress');
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://1click.chaindefuser.com/v0/status?depositAddress=0xDepositAddress',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'Authorization': 'Bearer test-jwt-token',
+            'Accept': 'application/json',
+          }),
+        })
+      );
     });
 
     it('should return undefined when API call fails', async () => {
-      (OneClickService.getExecutionStatus as jest.Mock).mockRejectedValueOnce(new Error('API error') as never);
+      // Mock fetch for API error
+      (global.fetch as jest.MockedFunction<typeof fetch>).mockRejectedValue(new Error('API error'));
 
       const result = await adapter.getDepositStatusFromApi('0xDepositAddress');
 
@@ -1141,12 +1171,34 @@ describe('NearBridgeAdapter', () => {
       expect(mockLogger.error).toHaveBeenCalledWith('Failed to get deposit status', expect.any(Object));
     });
 
-    it('should handle specific error cases', async () => {
-      const apiError = new Error('Internal Server Error');
-      (apiError as any).status = 500;
-      (apiError as any).data = { message: 'Server error' };
+    it('should return undefined for 404 not found', async () => {
+      // Mock fetch for 404 response
+      (global.fetch as jest.MockedFunction<typeof fetch>).mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      } as Response);
 
-      (OneClickService.getExecutionStatus as jest.Mock).mockRejectedValueOnce(apiError as never);
+      const result = await adapter.getDepositStatusFromApi('0xDepositAddress');
+
+      expect(result).toBeUndefined();
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Deposit not found',
+        expect.objectContaining({
+          depositAddress: '0xDepositAddress',
+          status: 404,
+        }),
+      );
+    });
+
+    it('should handle specific error cases', async () => {
+      // Mock fetch for server error response
+      (global.fetch as jest.MockedFunction<typeof fetch>).mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({ message: 'Server error' }),
+      } as Response);
 
       const result = await adapter.getDepositStatusFromApi('0xDepositAddress');
 
