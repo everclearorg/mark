@@ -94,38 +94,3 @@ export const WITHDRAWAL_PRECISION_MAP: Record<string, Record<string, number>> = 
     BTC: 8,
   },
 };
-
-// Deposit confirmation requirements
-// These values were fetched from the API; since they don't change much we use static values here
-export const DEPOSIT_CONFIRMATION_MAP: Record<string, Record<string, { minConfirm: number; unLockConfirm: number }>> = {
-  BTC: {
-    BSC: { minConfirm: 5, unLockConfirm: 0 },
-    ETH: { minConfirm: 6, unLockConfirm: 64 },
-  },
-  USDT: {
-    BSC: { minConfirm: 5, unLockConfirm: 0 },
-    AVAXC: { minConfirm: 12, unLockConfirm: 0 },
-    ARBITRUM: { minConfirm: 120, unLockConfirm: 120 },
-    ETH: { minConfirm: 6, unLockConfirm: 64 },
-    OPTIMISM: { minConfirm: 25, unLockConfirm: 100 },
-    SCROLL: { minConfirm: 1, unLockConfirm: 0 },
-  },
-  USDC: {
-    BSC: { minConfirm: 5, unLockConfirm: 0 },
-    AVAXC: { minConfirm: 12, unLockConfirm: 0 },
-    ARBITRUM: { minConfirm: 120, unLockConfirm: 120 },
-    BASE: { minConfirm: 1, unLockConfirm: 100 },
-    ETH: { minConfirm: 6, unLockConfirm: 64 },
-    OPTIMISM: { minConfirm: 25, unLockConfirm: 100 },
-    ZKSYNCERA: { minConfirm: 1, unLockConfirm: 100 },
-  },
-  ETH: {
-    BSC: { minConfirm: 5, unLockConfirm: 0 },
-    ETH: { minConfirm: 6, unLockConfirm: 64 },
-    ARBITRUM: { minConfirm: 120, unLockConfirm: 120 },
-    BASE: { minConfirm: 1, unLockConfirm: 100 },
-    OPTIMISM: { minConfirm: 25, unLockConfirm: 100 },
-    SCROLL: { minConfirm: 1, unLockConfirm: 0 },
-    ZKSYNCERA: { minConfirm: 1, unLockConfirm: 100 },
-  },
-};
