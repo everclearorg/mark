@@ -34,29 +34,34 @@ export class ChainService {
     private readonly config: ChainServiceConfig,
     private readonly signer: EthWallet,
     private readonly logger: ILogger,
+    txService?: ChimeraChainService,
   ) {
-    // Convert chain configuration format to nxtp-txservice format
-    const nxtpChainConfig = Object.entries(config.chains).reduce(
-      (acc, [chainId, chainConfig]) => ({
-        ...acc,
-        [chainId]: {
-          providers: chainConfig.providers.map((url) => url),
-          confirmations: 2,
-          confirmationTimeout: config.retryDelay || 45000,
-          // NOTE: enable per chain pk overrides
-          privateKey: chainConfig.privateKey,
-        },
-      }),
-      {},
-    );
+    if (txService) {
+      this.txService = txService;
+    } else {
+      // Convert chain configuration format to nxtp-txservice format
+      const nxtpChainConfig = Object.entries(config.chains).reduce(
+        (acc, [chainId, chainConfig]) => ({
+          ...acc,
+          [chainId]: {
+            providers: chainConfig.providers.map((url) => url),
+            confirmations: 2,
+            confirmationTimeout: config.retryDelay || 45000,
+            // NOTE: enable per chain pk overrides
+            privateKey: chainConfig.privateKey,
+          },
+        }),
+        {},
+      );
 
-    this.txService = new ChimeraChainService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      logger as any,
-      nxtpChainConfig,
-      signer,
-      true,
-    );
+      this.txService = new ChimeraChainService(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        logger as any,
+        nxtpChainConfig,
+        signer,
+        true,
+      );
+    }
 
     this.logger.info('Chain service initialized', {
       supportedChains: Object.keys(config.chains),
@@ -78,7 +83,7 @@ export class ChainService {
     const [url] = this.config.chains[TRON_CHAINID].providers;
     // NOTE: this works for trongrid, but may not for other providers
     const [host, key] = url.split('?apiKey=');
-    const tronWeb = new TronWeb({
+    return new TronWeb({
       fullHost: host,
       privateKey: this.config.chains[TRON_CHAINID].privateKey?.startsWith('0x')
         ? this.config.chains[TRON_CHAINID].privateKey.slice(2)
@@ -87,7 +92,6 @@ export class ChainService {
         'TRON-PRO-API-KEY': key,
       },
     });
-    return tronWeb;
   }
 
   async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<TransactionReceipt> {
@@ -119,15 +123,20 @@ export class ChainService {
           throw new Error(`Fix native asset transfer handling and use txservice methods`);
         }
 
+        // Remove the function selector because triggerSmartContract expects rawParameter to contain
+        // only the encoded parameters without the function selector, as it will prepend the function
+        // signature automatically
+        const parameterData = writeTransaction.data.startsWith('0x')
+          ? writeTransaction.data.slice(10)
+          : writeTransaction.data.slice(8);
+
         const tx = await tronWeb.transactionBuilder.triggerSmartContract(
           writeTransaction.to,
           writeTransaction.funcSig,
           {
             feeLimit: 1000000000,
             callValue: +writeTransaction.value,
-            rawParameter: writeTransaction.data.startsWith('0x')
-              ? writeTransaction.data.slice(2)
-              : writeTransaction.data,
+            rawParameter: parameterData,
           },
           [], // Empty parameters array since we're using rawParameter
           tronWeb.defaultAddress.hex as string,
