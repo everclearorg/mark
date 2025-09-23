@@ -14,8 +14,8 @@ import * as database from '@mark/database';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { BinanceClient } from './client';
-import { WithdrawalStatus, BinanceAssetMapping, DepositRecord } from './types';
-import { WITHDRAWAL_STATUS, DEPOSIT_STATUS, WITHDRAWAL_PRECISION_MAP, DEPOSIT_CONFIRMATION_MAP } from './constants';
+import { WithdrawalStatus, BinanceAssetMapping } from './types';
+import { WITHDRAWAL_STATUS, DEPOSIT_STATUS, WITHDRAWAL_PRECISION_MAP } from './constants';
 import {
   getDestinationAssetMapping,
   calculateNetAmount,
@@ -551,92 +551,11 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       // Check if deposit is confirmed first
       const depositStatus = await this.checkDepositConfirmed(route, originTransaction, originMapping);
-      if (!depositStatus.confirmed || !depositStatus.deposit) {
+      if (!depositStatus.confirmed) {
         this.logger.debug('Deposit not yet confirmed', {
           transactionHash: originTransaction.transactionHash,
         });
         return undefined;
-      }
-
-      const matchingDeposit = depositStatus.deposit;
-
-      // Check unlock confirmation requirements
-      const confirmationRequirements = DEPOSIT_CONFIRMATION_MAP[originMapping.binanceSymbol]?.[originMapping.network];
-
-      if (confirmationRequirements && confirmationRequirements.unLockConfirm > 0) {
-        // Parse confirmations from the format "X/Y" where X is current, Y is minConfirm for credit
-        const confirmTimes = matchingDeposit.confirmTimes;
-        let currentConfirmations = 0;
-        let canParseConfirmations = false;
-
-        // Try to parse standard "X/Y" format
-        if (confirmTimes && /^\d+\/\d+$/.test(confirmTimes)) {
-          const [current] = confirmTimes.split('/');
-          currentConfirmations = parseInt(current, 10);
-          canParseConfirmations = !isNaN(currentConfirmations);
-        }
-
-        if (!canParseConfirmations) {
-          // Cannot parse confirmations - check deposit age
-          const depositAge = Date.now() - matchingDeposit.insertTime;
-          const hoursSinceDeposit = depositAge / (1000 * 60 * 60);
-
-          if (hoursSinceDeposit >= 1) {
-            this.logger.warn('Cannot parse confirmations but deposit is >1 hour old, proceeding with withdrawal', {
-              transactionHash: originTransaction.transactionHash,
-              confirmTimes,
-              hoursSinceDeposit,
-              coin: originMapping.binanceSymbol,
-              network: originMapping.network,
-            });
-            // Proceed with withdrawal attempt
-          } else {
-            this.logger.info('Cannot parse confirmations and deposit is recent, blocking withdrawal', {
-              transactionHash: originTransaction.transactionHash,
-              confirmTimes,
-              hoursSinceDeposit,
-              coin: originMapping.binanceSymbol,
-              network: originMapping.network,
-            });
-            return undefined;
-          }
-        } else {
-          // We have valid confirmation count - check if unlocked
-          const unlocked = currentConfirmations >= confirmationRequirements.unLockConfirm;
-
-          if (!unlocked) {
-            // Check deposit age as fallback
-            const depositAge = Date.now() - matchingDeposit.insertTime;
-            const hoursSinceDeposit = depositAge / (1000 * 60 * 60);
-
-            if (hoursSinceDeposit >= 1) {
-              this.logger.warn('Deposit not unlocked but is >1 hour old, proceeding with withdrawal', {
-                transactionHash: originTransaction.transactionHash,
-                currentConfirmations,
-                requiredForUnlock: confirmationRequirements.unLockConfirm,
-                hoursSinceDeposit,
-              });
-              // Proceed with withdrawal attempt
-            } else {
-              this.logger.info('Deposit confirmed but not yet unlocked for withdrawal', {
-                transactionHash: originTransaction.transactionHash,
-                currentConfirmations,
-                requiredForUnlock: confirmationRequirements.unLockConfirm,
-                confirmTimes,
-                coin: originMapping.binanceSymbol,
-                network: originMapping.network,
-              });
-              return undefined;
-            }
-          } else {
-            this.logger.debug('Deposit is unlocked and ready for withdrawal', {
-              transactionHash: originTransaction.transactionHash,
-              currentConfirmations,
-              requiredForUnlock: confirmationRequirements.unLockConfirm,
-              confirmTimes,
-            });
-          }
-        }
       }
 
       // Check if withdrawal exists, if not initiate it
@@ -681,12 +600,14 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         txId: currentWithdrawal.txId || undefined,
       };
     } catch (error) {
-      this.logger.error('Failed to get withdrawal status', {
+      this.logger.error('Failed to get or initiate withdrawal', {
         error: jsonifyError(error),
         route,
         transactionHash: originTransaction.transactionHash,
       });
-      throw error;
+      // Return undefined to indicate withdrawal is not ready or failed
+      // This allows the system to retry later
+      return undefined;
     }
   }
 
@@ -697,7 +618,7 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     _route: RebalanceRoute,
     originTransaction: TransactionReceipt,
     assetMapping: BinanceAssetMapping,
-  ): Promise<{ confirmed: boolean; deposit?: DepositRecord }> {
+  ): Promise<{ confirmed: boolean }> {
     try {
       // Check Binance deposit history for this transaction
       const deposits = await this.client.getDepositHistory(assetMapping.binanceSymbol, DEPOSIT_STATUS.SUCCESS);
@@ -711,10 +632,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         transactionHash: originTransaction.transactionHash,
         confirmed,
         matchingDepositId: matchingDeposit?.txId,
-        confirmTimes: matchingDeposit?.confirmTimes,
       });
 
-      return { confirmed, deposit: matchingDeposit };
+      return { confirmed };
     } catch (error) {
       this.logger.error('Failed to check deposit confirmation', {
         error: jsonifyError(error),
