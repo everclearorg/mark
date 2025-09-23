@@ -61,6 +61,8 @@ export const WITHDRAWAL_PRECISION_MAP: Record<string, Record<string, number>> = 
     BASE: 6,
     SCROLL: 6,
     ZKSYNCERA: 6,
+    AVAXC: 6,
+    SONIC: 6,
   },
   USDC: {
     ETH: 6,
@@ -71,6 +73,9 @@ export const WITHDRAWAL_PRECISION_MAP: Record<string, Record<string, number>> = 
     BASE: 6,
     SCROLL: 6,
     AVAXC: 6,
+    ZKSYNCERA: 6,
+    RON: 6,
+    SONIC: 6,
   },
   ETH: {
     ETH: 6,
@@ -80,6 +85,10 @@ export const WITHDRAWAL_PRECISION_MAP: Record<string, Record<string, number>> = 
     POLYGON: 6,
     BASE: 6,
     SCROLL: 6,
+    ZKSYNCERA: 6,
+    AVAXC: 6,
+    RON: 6,
+    SONIC: 6,
   },
   BTC: {
     BTC: 8,

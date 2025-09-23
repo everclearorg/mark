@@ -78,9 +78,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       return coinPrecision[network];
     }
 
-    // Default fallback to 8 decimal places
+    // Default fallback to 6 decimal places
     this.logger.warn(`No precision mapping found for ${coin} on ${network}, using default precision`);
-    return 8;
+    return 6;
   }
 
   /**
