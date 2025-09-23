@@ -1347,7 +1347,7 @@ describe('BinanceBridgeAdapter', () => {
         expect(utils.checkWithdrawQuota).toHaveBeenCalled();
       });
 
-      it('should throw error if withdrawal exceeds quota during initiation', async () => {
+      it('should return undefined and log error if withdrawal exceeds quota during initiation', async () => {
         // Mock deposit confirmed
         mockBinanceClient.getDepositHistory.mockResolvedValueOnce([
           {
@@ -1366,6 +1366,9 @@ describe('BinanceBridgeAdapter', () => {
         // Mock no existing withdrawal
         mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
 
+        // Mock system operational check
+        mockBinanceClient.isSystemOperational.mockResolvedValueOnce(true);
+
         // Mock quota check to return exceeded
         const checkWithdrawQuotaMock = utils.checkWithdrawQuota as jest.MockedFunction<typeof utils.checkWithdrawQuota>;
         checkWithdrawQuotaMock.mockResolvedValueOnce({
@@ -1376,9 +1379,24 @@ describe('BinanceBridgeAdapter', () => {
 
         const largeAmount = '5000000000000000000'; // 5 ETH = $10,000 at $2000/ETH
 
-        // Should throw error due to quota exceeded
-        await expect(adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, largeAmount, recipient)).rejects.toThrow(
-          'Withdrawal amount $10000.00 USD exceeds remaining daily quota of $1000.00 USD',
+        // Should return undefined when quota is exceeded
+        const result = await adapter.getOrInitWithdrawal(sampleRoute, mockTransaction, largeAmount, recipient);
+        expect(result).toBeUndefined();
+
+        // Verify error was logged
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          'Failed to initiate withdrawal',
+          expect.objectContaining({
+            error: expect.objectContaining({
+              message: 'Withdrawal amount $10000.00 USD exceeds remaining daily quota of $1000.00 USD',
+            }),
+          }),
+        );
+
+        // Also verify the outer error log
+        expect(mockLogger.error).toHaveBeenCalledWith(
+          'Failed to get or initiate withdrawal',
+          expect.any(Object),
         );
       });
 
