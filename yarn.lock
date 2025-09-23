@@ -1957,9 +1957,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/chainservice@npm:0.0.1-alpha.12":
-  version: 0.0.1-alpha.12
-  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.12"
+"@chimera-monorepo/chainservice@npm:0.0.1-alpha.14":
+  version: 0.0.1-alpha.14
+  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.14"
   dependencies:
     "@chimera-monorepo/utils": 0.0.1-alpha.12
     "@safe-global/api-kit": ^2.5.6
@@ -1973,7 +1973,7 @@ __metadata:
     interval-promise: 1.4.0
     p-queue: 6.6.2
     tronweb: ^6.0.3
-  checksum: b887522d07491e46a956643895700907ba6550f26014fceba27ccc7da5d342be79ad2a486b0e164cade7ce1671219d3a9fd0b70ae2113de8ab5ba45c69750580
+  checksum: 92c1f1236d3ce793151e148f239a581766ba1339a310983072fb4027dee6e05cce4787602f63473c7df4b83a9733bbbe7f7d3b5b0c78b3a2cb3ec4555a80a0f3
   languageName: node
   linkType: hard
 
@@ -4722,7 +4722,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/chainservice@workspace:packages/adapters/chainservice"
   dependencies:
-    "@chimera-monorepo/chainservice": 0.0.1-alpha.12
+    "@chimera-monorepo/chainservice": 0.0.1-alpha.14
     "@connext/nxtp-txservice": 2.5.0-alpha.6
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
