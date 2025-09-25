@@ -150,17 +150,6 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
 
     const operation = operations[0];
 
-    // Check if operation is standalone (not associated with an earmark)
-    if (operation.earmarkId !== null) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: 'Cannot cancel operation associated with an earmark. Use earmark cancellation instead.',
-          earmarkId: operation.earmarkId,
-        }),
-      };
-    }
-
     // Check if operation can be cancelled (must be PENDING or AWAITING_CALLBACK)
     if (!['pending', 'awaiting_callback'].includes(operation.status)) {
       return {
@@ -172,11 +161,12 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
       };
     }
 
-    // Update operation status to cancelled and mark as orphaned
+    // Update operation status to cancelled
+    // Mark as orphaned if it has an associated earmark
     const updated = await database
       .queryWithClient<database.rebalance_operations>(
         `UPDATE rebalance_operations
-       SET status = $1, is_orphaned = true, updated_at = NOW()
+       SET status = $1, is_orphaned = CASE WHEN earmark_id IS NOT NULL THEN true ELSE is_orphaned END, updated_at = NOW()
        WHERE id = $2
        RETURNING *`,
         [RebalanceOperationStatus.CANCELLED, operationId],
@@ -187,6 +177,8 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
       operationId,
       previousStatus: operation.status,
       chainId: operation.chainId,
+      hadEarmark: operation.earmarkId !== null,
+      earmarkId: operation.earmarkId,
     });
 
     return {
