@@ -311,9 +311,11 @@ describe('handleApiRequest', () => {
       // Mock earmark exists and is pending
       (database.queryWithClient as jest.Mock)
         .mockResolvedValueOnce([{ id: earmarkId, status: 'pending', invoiceId: 'test-invoice' }]) // getEarmark
-        .mockResolvedValueOnce([{ count: '2' }]) // cancelled operations count
-        .mockResolvedValueOnce([{ count: '1' }]) // orphaned operations count
-        .mockResolvedValueOnce([{ count: '3' }]); // total operations count
+        .mockResolvedValueOnce([
+          { id: 'op1', status: 'pending' },
+          { id: 'op2', status: 'pending' },
+          { id: 'op3', status: 'awaiting_callback' },
+        ]); // orphaned operations
 
       (database.updateEarmarkStatus as jest.Mock).mockResolvedValueOnce({
         id: earmarkId,
@@ -387,6 +389,45 @@ describe('handleApiRequest', () => {
       expect(body.message).toBe('Cannot cancel earmark with status: completed');
       expect(body.currentStatus).toBe('completed');
     });
+
+    it('should mark operations as orphaned without changing their status', async () => {
+      const earmarkId = 'test-earmark-id-2';
+      const event = {
+        ...mockEvent,
+        path: '/admin/rebalance/cancel',
+        body: JSON.stringify({ earmarkId }),
+      };
+
+      const mockOperations = [
+        { id: 'op1', status: 'pending' },
+        { id: 'op2', status: 'pending' },
+        { id: 'op3', status: 'awaiting_callback' },
+        { id: 'op4', status: 'awaiting_callback' },
+      ];
+
+      // Mock earmark exists and is pending
+      (database.queryWithClient as jest.Mock)
+        .mockResolvedValueOnce([{ id: earmarkId, status: 'pending', invoiceId: 'test-invoice-2' }]) // getEarmark
+        .mockResolvedValueOnce(mockOperations); // orphaned operations returned from UPDATE query
+
+      (database.updateEarmarkStatus as jest.Mock).mockResolvedValueOnce({
+        id: earmarkId,
+        status: EarmarkStatus.CANCELLED,
+      });
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+
+      // Verify the UPDATE query was called with correct parameters
+      const updateCall = (database.queryWithClient as jest.Mock).mock.calls[1];
+      expect(updateCall[0]).toContain('SET is_orphaned = true');
+      expect(updateCall[0]).not.toContain('SET status =');
+      expect(updateCall[1]).toEqual([earmarkId, 'pending', 'awaiting_callback']);
+    });
   });
 
   describe('Cancel Rebalance Operation', () => {
@@ -400,18 +441,22 @@ describe('handleApiRequest', () => {
 
       // Mock operation exists, is standalone (earmarkId null), and is pending
       (database.queryWithClient as jest.Mock)
-        .mockResolvedValueOnce([{ 
-          id: operationId, 
-          status: 'pending', 
-          earmarkId: null,
-          chainId: 1
-        }]) // getOperation
-        .mockResolvedValueOnce([{ 
-          id: operationId, 
-          status: 'cancelled',
-          earmarkId: null,
-          chainId: 1
-        }]); // updated operation
+        .mockResolvedValueOnce([
+          {
+            id: operationId,
+            status: 'pending',
+            earmarkId: null,
+            chainId: 1,
+          },
+        ]) // getOperation
+        .mockResolvedValueOnce([
+          {
+            id: operationId,
+            status: 'cancelled',
+            earmarkId: null,
+            chainId: 1,
+          },
+        ]); // updated operation
 
       const result = await handleApiRequest({
         ...mockAdminContextBase,
@@ -434,18 +479,22 @@ describe('handleApiRequest', () => {
 
       // Mock operation exists, is standalone, and is awaiting_callback
       (database.queryWithClient as jest.Mock)
-        .mockResolvedValueOnce([{ 
-          id: operationId, 
-          status: 'awaiting_callback', 
-          earmarkId: null,
-          chainId: 1
-        }])
-        .mockResolvedValueOnce([{ 
-          id: operationId, 
-          status: 'cancelled',
-          earmarkId: null,
-          chainId: 1
-        }]);
+        .mockResolvedValueOnce([
+          {
+            id: operationId,
+            status: 'awaiting_callback',
+            earmarkId: null,
+            chainId: 1,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: operationId,
+            status: 'cancelled',
+            earmarkId: null,
+            chainId: 1,
+          },
+        ]);
 
       const result = await handleApiRequest({
         ...mockAdminContextBase,
@@ -501,12 +550,12 @@ describe('handleApiRequest', () => {
       };
 
       (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
-        { 
-          id: operationId, 
-          status: 'pending', 
+        {
+          id: operationId,
+          status: 'pending',
           earmarkId: earmarkId,
-          chainId: 1
-        }
+          chainId: 1,
+        },
       ]);
 
       const result = await handleApiRequest({
@@ -516,7 +565,9 @@ describe('handleApiRequest', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toBe('Cannot cancel operation associated with an earmark. Use earmark cancellation instead.');
+      expect(body.message).toBe(
+        'Cannot cancel operation associated with an earmark. Use earmark cancellation instead.',
+      );
       expect(body.earmarkId).toBe(earmarkId);
     });
 
@@ -529,12 +580,12 @@ describe('handleApiRequest', () => {
       };
 
       (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
-        { 
-          id: operationId, 
-          status: 'completed', 
+        {
+          id: operationId,
+          status: 'completed',
           earmarkId: null,
-          chainId: 1
-        }
+          chainId: 1,
+        },
       ]);
 
       const result = await handleApiRequest({
@@ -544,7 +595,9 @@ describe('handleApiRequest', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toBe('Cannot cancel operation with status: completed. Only PENDING and AWAITING_CALLBACK operations can be cancelled.');
+      expect(body.message).toBe(
+        'Cannot cancel operation with status: completed. Only PENDING and AWAITING_CALLBACK operations can be cancelled.',
+      );
       expect(body.currentStatus).toBe('completed');
     });
 
@@ -557,12 +610,12 @@ describe('handleApiRequest', () => {
       };
 
       (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
-        { 
-          id: operationId, 
-          status: 'expired', 
+        {
+          id: operationId,
+          status: 'expired',
           earmarkId: null,
-          chainId: 1
-        }
+          chainId: 1,
+        },
       ]);
 
       const result = await handleApiRequest({
@@ -572,7 +625,9 @@ describe('handleApiRequest', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toBe('Cannot cancel operation with status: expired. Only PENDING and AWAITING_CALLBACK operations can be cancelled.');
+      expect(body.message).toBe(
+        'Cannot cancel operation with status: expired. Only PENDING and AWAITING_CALLBACK operations can be cancelled.',
+      );
     });
 
     it('should reject cancelling already cancelled operation', async () => {
@@ -584,12 +639,12 @@ describe('handleApiRequest', () => {
       };
 
       (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
-        { 
-          id: operationId, 
-          status: 'cancelled', 
+        {
+          id: operationId,
+          status: 'cancelled',
           earmarkId: null,
-          chainId: 1
-        }
+          chainId: 1,
+        },
       ]);
 
       const result = await handleApiRequest({
@@ -599,7 +654,9 @@ describe('handleApiRequest', () => {
 
       expect(result.statusCode).toBe(400);
       const body = JSON.parse(result.body);
-      expect(body.message).toBe('Cannot cancel operation with status: cancelled. Only PENDING and AWAITING_CALLBACK operations can be cancelled.');
+      expect(body.message).toBe(
+        'Cannot cancel operation with status: cancelled. Only PENDING and AWAITING_CALLBACK operations can be cancelled.',
+      );
     });
   });
 });

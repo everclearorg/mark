@@ -247,32 +247,14 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       };
     }
 
-    // Atomic update for all pending operations - cancel and mark as orphaned
-    const cancelledResult = await database.queryWithClient<{ count: string }>(
-      `UPDATE rebalance_operations
-       SET status = $1, is_orphaned = true, updated_at = NOW()
-       WHERE earmark_id = $2 AND status = 'pending'
-       RETURNING (SELECT COUNT(*) FROM rebalance_operations WHERE earmark_id = $2 AND status = 'pending')`,
-      [RebalanceOperationStatus.CANCELLED, earmarkId],
-    );
-    const cancelledCount = parseInt(cancelledResult[0]?.count || '0');
-
-    // Atomic update for awaiting_callback operations - only mark as orphaned
-    const orphanedResult = await database.queryWithClient<{ count: string }>(
+    // Mark all operations as orphaned (both PENDING and AWAITING_CALLBACK keep their status)
+    const orphanedOps = await database.queryWithClient<{ id: string; status: string }>(
       `UPDATE rebalance_operations
        SET is_orphaned = true, updated_at = NOW()
-       WHERE earmark_id = $1 AND status = 'awaiting_callback'
-       RETURNING (SELECT COUNT(*) FROM rebalance_operations WHERE earmark_id = $1 AND status = 'awaiting_callback')`,
-      [earmarkId],
+       WHERE earmark_id = $1 AND status IN ($2, $3)
+       RETURNING id, status`,
+      [earmarkId, RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
     );
-    const orphanedCount = parseInt(orphanedResult[0]?.count || '0');
-
-    // Get total count of operations for logging
-    const totalResult = await database.queryWithClient<{ count: string }>(
-      `SELECT COUNT(*) as count FROM rebalance_operations WHERE earmark_id = $1`,
-      [earmarkId],
-    );
-    const totalOperations = parseInt(totalResult[0]?.count || '0');
 
     // Update earmark status to cancelled
     const updated = await database.updateEarmarkStatus(earmarkId, EarmarkStatus.CANCELLED);
@@ -281,9 +263,10 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       earmarkId,
       invoiceId: earmark.invoiceId,
       previousStatus: earmark.status,
-      cancelledOperations: cancelledCount,
-      orphanedOperations: orphanedCount,
-      totalOperations,
+      orphanedOperations: orphanedOps.length,
+      orphanedPending: orphanedOps.filter((op) => op.status === RebalanceOperationStatus.PENDING).length,
+      orphanedAwaitingCallback: orphanedOps.filter((op) => op.status === RebalanceOperationStatus.AWAITING_CALLBACK)
+        .length,
     });
 
     return {
