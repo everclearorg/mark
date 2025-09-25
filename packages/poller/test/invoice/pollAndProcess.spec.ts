@@ -1,7 +1,6 @@
 import { stub, createStubInstance, SinonStubbedInstance, SinonStub } from 'sinon';
 import { pollAndProcessInvoices } from '../../src/invoice/pollAndProcess';
 import * as processInvoicesModule from '../../src/invoice/processInvoices';
-import * as callbacksModule from '../../src/rebalance/callbacks';
 import { MarkConfiguration, Invoice } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
@@ -16,7 +15,6 @@ import { createMinimalDatabaseMock } from '../mocks/database';
 describe('pollAndProcessInvoices', () => {
   let mockContext: SinonStubbedInstance<ProcessingContext>;
   let processInvoicesStub: sinon.SinonStub;
-  let executeDestinationCallbacksStub: sinon.SinonStub;
 
   const mockConfig: MarkConfiguration = {
     chains: {
@@ -66,18 +64,15 @@ describe('pollAndProcessInvoices', () => {
     (mockContext.purchaseCache.isPaused as SinonStub).resolves(false);
 
     processInvoicesStub = stub(processInvoicesModule, 'processInvoices').resolves();
-    executeDestinationCallbacksStub = stub(callbacksModule, 'executeDestinationCallbacks').resolves();
   });
 
   afterEach(() => {
     processInvoicesStub.restore();
-    executeDestinationCallbacksStub.restore();
   });
 
   it('should fetch and process invoices successfully', async () => {
     await pollAndProcessInvoices(mockContext);
 
-    expect(executeDestinationCallbacksStub.calledOnceWith(mockContext)).toBe(true);
     expect((mockContext.everclear.fetchInvoices as SinonStub).calledOnceWith(mockConfig.chains)).toBe(true);
     expect(processInvoicesStub.callCount).toBe(1);
     expect(processInvoicesStub.firstCall.args).toEqual([mockContext, mockInvoices]);
@@ -88,7 +83,6 @@ describe('pollAndProcessInvoices', () => {
 
     await pollAndProcessInvoices(mockContext);
 
-    expect(executeDestinationCallbacksStub.calledOnceWith(mockContext)).toBe(true);
     expect((mockContext.everclear.fetchInvoices as SinonStub).calledOnceWith(mockConfig.chains)).toBe(true);
     expect(
       (mockContext.logger.info as SinonStub).calledOnceWith('No invoices to process', {
@@ -123,7 +117,6 @@ describe('pollAndProcessInvoices', () => {
     await pollAndProcessInvoices(mockContext);
 
     expect((mockContext.logger.warn as SinonStub).calledOnceWith('Purchase loop is paused')).toBe(true);
-    expect(executeDestinationCallbacksStub.called).toBe(false);
     expect((mockContext.everclear.fetchInvoices as SinonStub).called).toBe(false);
     expect(processInvoicesStub.called).toBe(false);
   });
