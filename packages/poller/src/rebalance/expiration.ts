@@ -2,6 +2,57 @@ import { ProcessingContext } from '../init';
 import { EarmarkStatus, RebalanceOperationStatus } from '@mark/core';
 import { jsonifyError } from '@mark/logger';
 
+export async function cleanupExpiredRegularRebalanceOps(context: ProcessingContext): Promise<void> {
+  const { database, logger, requestId, config } = context;
+  const ttlMinutes = config.regularRebalanceOpTTLMinutes || 1440;
+
+  try {
+    await database.withTransaction(async (client) => {
+      // Find regular rebalance operations (no earmark) that should expire
+      const opsToExpire = await client.query(
+        `
+        UPDATE rebalance_operations
+        SET status = $1, updated_at = NOW()
+        WHERE earmark_id IS NULL
+          AND status IN ($2, $3)
+          AND created_at < NOW() - INTERVAL '${ttlMinutes} minutes'
+        RETURNING id, status, created_at, origin_chain_id, destination_chain_id
+        `,
+        [
+          RebalanceOperationStatus.EXPIRED,
+          RebalanceOperationStatus.PENDING,
+          RebalanceOperationStatus.AWAITING_CALLBACK,
+        ],
+      );
+
+      if (opsToExpire.rows.length > 0) {
+        for (const op of opsToExpire.rows) {
+          logger.info('Regular rebalance operation expired due to TTL', {
+            requestId,
+            operationId: op.id,
+            previousStatus: op.status,
+            originChain: op.origin_chain_id,
+            destinationChain: op.destination_chain_id,
+            ageMinutes: Math.floor((Date.now() - new Date(op.created_at).getTime()) / (1000 * 60)),
+            ttlMinutes,
+          });
+        }
+
+        logger.info('Expired regular rebalance operations summary', {
+          requestId,
+          expiredCount: opsToExpire.rows.length,
+          ttlMinutes,
+        });
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to expire regular rebalance operations', {
+      requestId,
+      error: jsonifyError(error),
+    });
+  }
+}
+
 export async function cleanupExpiredEarmarks(context: ProcessingContext): Promise<void> {
   const { database, logger, requestId, config } = context;
   const ttlMinutes = config.earmarkTTLMinutes || 1440;

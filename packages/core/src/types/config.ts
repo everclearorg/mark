@@ -135,4 +135,5 @@ export interface MarkConfiguration extends RebalanceConfig {
   // TTL (seconds) for cached purchases
   purchaseCacheTtlSeconds: number;
   earmarkTTLMinutes?: number;
+  regularRebalanceOpTTLMinutes?: number;
 }

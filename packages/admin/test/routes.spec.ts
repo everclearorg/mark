@@ -447,6 +447,7 @@ describe('handleApiRequest', () => {
             status: 'pending',
             earmarkId: null,
             chainId: 1,
+            isOrphaned: false,
           },
         ]) // getOperation
         .mockResolvedValueOnce([
@@ -455,6 +456,7 @@ describe('handleApiRequest', () => {
             status: 'cancelled',
             earmarkId: null,
             chainId: 1,
+            isOrphaned: false, // Should remain false for standalone ops
           },
         ]); // updated operation
 
@@ -467,6 +469,7 @@ describe('handleApiRequest', () => {
       const body = JSON.parse(result.body);
       expect(body.message).toBe('Rebalance operation cancelled successfully');
       expect(body.operation).toBeDefined();
+      expect(body.operation.isOrphaned).toBe(false);
     });
 
     it('should cancel standalone awaiting_callback operation successfully', async () => {
@@ -485,6 +488,7 @@ describe('handleApiRequest', () => {
             status: 'awaiting_callback',
             earmarkId: null,
             chainId: 1,
+            isOrphaned: false,
           },
         ])
         .mockResolvedValueOnce([
@@ -493,6 +497,7 @@ describe('handleApiRequest', () => {
             status: 'cancelled',
             earmarkId: null,
             chainId: 1,
+            isOrphaned: false, // Should remain false for standalone ops
           },
         ]);
 
@@ -504,6 +509,7 @@ describe('handleApiRequest', () => {
       expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body);
       expect(body.message).toBe('Rebalance operation cancelled successfully');
+      expect(body.operation.isOrphaned).toBe(false);
     });
 
     it('should return 400 if operationId is missing', async () => {
@@ -540,7 +546,7 @@ describe('handleApiRequest', () => {
       expect(JSON.parse(result.body).message).toBe('Rebalance operation not found');
     });
 
-    it('should reject operation associated with earmark', async () => {
+    it('should allow cancelling operation with earmark and mark it as orphaned', async () => {
       const operationId = 'test-operation-id';
       const earmarkId = 'test-earmark-id';
       const event = {
@@ -549,26 +555,42 @@ describe('handleApiRequest', () => {
         body: JSON.stringify({ operationId }),
       };
 
-      (database.queryWithClient as jest.Mock).mockResolvedValueOnce([
-        {
-          id: operationId,
-          status: 'pending',
-          earmarkId: earmarkId,
-          chainId: 1,
-        },
-      ]);
+      (database.queryWithClient as jest.Mock)
+        .mockResolvedValueOnce([
+          {
+            id: operationId,
+            status: 'pending',
+            earmarkId: earmarkId,
+            chainId: 1,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: operationId,
+            status: 'cancelled',
+            earmarkId: earmarkId,
+            chainId: 1,
+            isOrphaned: true,
+          },
+        ]);
 
       const result = await handleApiRequest({
         ...mockAdminContextBase,
         event,
       });
 
-      expect(result.statusCode).toBe(400);
+      expect(result.statusCode).toBe(200);
       const body = JSON.parse(result.body);
-      expect(body.message).toBe(
-        'Cannot cancel operation associated with an earmark. Use earmark cancellation instead.',
-      );
-      expect(body.earmarkId).toBe(earmarkId);
+      expect(body.message).toBe('Rebalance operation cancelled successfully');
+      expect(body.operation.id).toBe(operationId);
+      expect(body.operation.status).toBe('cancelled');
+      expect(body.operation.isOrphaned).toBe(true);
+
+      // Check that the update query was called with correct parameters
+      expect(database.queryWithClient).toHaveBeenCalledWith(expect.stringContaining('UPDATE rebalance_operations'), [
+        'cancelled',
+        operationId,
+      ]);
     });
 
     it('should reject cancelling completed operation', async () => {
