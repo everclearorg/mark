@@ -138,7 +138,7 @@ jest.mock('@mark/database', () => ({
     query: jest.fn().mockResolvedValue({ rows: [] }),
   })),
   getEarmarks: jest.fn().mockResolvedValue([]),
-  getEarmarkForInvoice: jest.fn(),
+  getActiveEarmarkForInvoice: jest.fn().mockResolvedValue(null),
   createEarmark: jest.fn().mockResolvedValue({
     id: 'mock-earmark-id',
     status: 'pending',
@@ -462,7 +462,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       const context = createMockContext();
 
       // Setup the mock to return null initially (no existing earmark), then return the created earmark
-      (database.getEarmarkForInvoice as jest.Mock)
+      (database.getActiveEarmarkForInvoice as jest.Mock)
         .mockResolvedValueOnce(null) // First call during execution
         .mockResolvedValue({
           // Subsequent calls after creation
@@ -572,7 +572,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       });
 
       // Verify earmark was created
-      const earmark = await database.getEarmarkForInvoice(MOCK_INVOICE_ID);
+      const earmark = await database.getActiveEarmarkForInvoice(MOCK_INVOICE_ID);
       expect(earmark).toBeTruthy();
       expect(earmark?.invoiceId).toBe(MOCK_INVOICE_ID);
       expect(earmark?.status).toBe('pending');
@@ -614,7 +614,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
 
       // Mock the database calls
       (database.getEarmarks as jest.Mock).mockResolvedValue([mockEarmark]);
-      (database.getEarmarkForInvoice as jest.Mock).mockResolvedValue({
+      (database.getActiveEarmarkForInvoice as jest.Mock).mockResolvedValue({
         ...mockEarmark,
         status: EarmarkStatus.READY,
       });
@@ -644,7 +644,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       expect(database.updateEarmarkStatus).toHaveBeenCalled();
 
       // Simulate the effect of the update
-      const updatedEarmark = await database.getEarmarkForInvoice(MOCK_INVOICE_ID);
+      const updatedEarmark = await database.getActiveEarmarkForInvoice(MOCK_INVOICE_ID);
       const readyInvoices =
         updatedEarmark?.status === EarmarkStatus.READY
           ? [{ invoiceId: MOCK_INVOICE_ID, designatedPurchaseChain: 1 }]
@@ -679,7 +679,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       ]);
 
       // Mock getEarmarkForInvoice to return the earmark with PENDING status (not updated to READY)
-      (database.getEarmarkForInvoice as jest.Mock).mockResolvedValue(mockEarmark);
+      (database.getActiveEarmarkForInvoice as jest.Mock).mockResolvedValue(mockEarmark);
 
       const context = createMockContext();
       // Mock everclear.getMinAmounts
@@ -694,7 +694,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       await processPendingEarmarks(context, currentInvoices);
 
       // Check if earmark status was updated
-      const updatedEarmark = await database.getEarmarkForInvoice(MOCK_INVOICE_ID);
+      const updatedEarmark = await database.getActiveEarmarkForInvoice(MOCK_INVOICE_ID);
       const readyInvoices =
         updatedEarmark?.status === EarmarkStatus.READY
           ? [{ invoiceId: MOCK_INVOICE_ID, designatedPurchaseChain: 1 }]
@@ -720,7 +720,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
         ...mockEarmark,
         status: EarmarkStatus.CANCELLED,
       });
-      (database.getEarmarkForInvoice as jest.Mock).mockResolvedValue({
+      (database.getActiveEarmarkForInvoice as jest.Mock).mockResolvedValue({
         ...mockEarmark,
         status: EarmarkStatus.CANCELLED,
       });
@@ -733,7 +733,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       // Verify earmark was marked as cancelled
       expect(database.updateEarmarkStatus).toHaveBeenCalledWith('mock-earmark-id-2', EarmarkStatus.CANCELLED);
 
-      const earmark = await database.getEarmarkForInvoice('missing-invoice');
+      const earmark = await database.getActiveEarmarkForInvoice('missing-invoice');
       expect(earmark?.status).toBe(EarmarkStatus.CANCELLED);
     });
   });

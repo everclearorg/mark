@@ -14,7 +14,7 @@ jest.mock('@mark/database', () => ({
   createEarmark: jest.fn(),
   updateRebalanceOperation: jest.fn(),
   updateEarmarkStatus: jest.fn(),
-  getEarmarkForInvoice: jest.fn(),
+  getActiveEarmarkForInvoice: jest.fn(),
   getActiveEarmarksForChain: jest.fn(),
   getRebalanceOperationsByEarmark: jest.fn(),
   initializeDatabase: jest.fn(),
@@ -120,7 +120,7 @@ describe('rebalanceInventory', () => {
     });
     (database.updateRebalanceOperation as jest.Mock).mockResolvedValue(undefined);
     (database.updateEarmarkStatus as jest.Mock).mockResolvedValue(undefined);
-    (database.getEarmarkForInvoice as jest.Mock).mockResolvedValue(null);
+    (database.getActiveEarmarkForInvoice as jest.Mock).mockResolvedValue(null);
     (database.getActiveEarmarksForChain as jest.Mock).mockResolvedValue([]);
     (database.getRebalanceOperationsByEarmark as jest.Mock).mockResolvedValue([]);
 
