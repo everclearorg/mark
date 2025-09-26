@@ -149,12 +149,16 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<CamelCas
       const earmark = earmarkResult.rows[0] as earmarks;
 
       return snakeToCamel(earmark);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Add error handling for unique constraint violations
-      if (error.code === '23505' && error.constraint === 'unique_active_earmark_per_invoice') {
-        const enrichedError = new Error(`An active earmark already exists for invoice ${input.invoiceId}`);
-        (enrichedError as any).code = '23505';
-        (enrichedError as any).constraint = 'unique_active_earmark_per_invoice';
+      const dbError = error as { code?: string; constraint?: string };
+      if (dbError.code === '23505' && dbError.constraint === 'unique_active_earmark_per_invoice') {
+        const enrichedError = new Error(`An active earmark already exists for invoice ${input.invoiceId}`) as Error & {
+          code: string;
+          constraint: string;
+        };
+        enrichedError.code = '23505';
+        enrichedError.constraint = 'unique_active_earmark_per_invoice';
         throw enrichedError;
       }
       throw error;

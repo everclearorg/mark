@@ -572,9 +572,10 @@ export async function executeOnDemandRebalancing(
         minAmount: minAmount!,
         status: allSucceeded ? EarmarkStatus.PENDING : EarmarkStatus.FAILED,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // PostgreSQL unique constraint violation error code
-      if (error.code === '23505' && error.constraint === 'unique_active_earmark_per_invoice') {
+      const dbError = error as { code?: string; constraint?: string };
+      if (dbError.code === '23505' && dbError.constraint === 'unique_active_earmark_per_invoice') {
         logger.warn('Race condition: Active earmark created by another process', {
           requestId,
           invoiceId: invoice.intent_id,
