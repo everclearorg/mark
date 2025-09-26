@@ -2,7 +2,7 @@ import { ProcessingContext } from '../init';
 import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge, DBPS_MULTIPLIER } from '@mark/core';
 import { OnDemandRouteConfig } from '@mark/core';
 import * as database from '@mark/database';
-import type { earmarks } from '@mark/database';
+import type { earmarks, Earmark } from '@mark/database';
 import { getMarkBalances, convertToNativeUnits, convertTo18Decimals, getTickerForAsset } from '../helpers';
 import { getDecimalsFromConfig } from '@mark/core';
 import { jsonifyError } from '@mark/logger';
@@ -449,6 +449,19 @@ export async function executeOnDemandRebalancing(
 
   const { destinationChain, rebalanceOperations, minAmount } = evaluationResult;
 
+  // Check if an active earmark already exists for this invoice before executing operations
+  const existingActive = await database.getActiveEarmarkForInvoice(invoice.intent_id);
+
+  if (existingActive) {
+    logger.warn('Active earmark already exists for invoice, skipping rebalance operations', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      existingEarmarkId: existingActive.id,
+      existingStatus: existingActive.status,
+    });
+    return existingActive.status === EarmarkStatus.PENDING ? existingActive.id : null;
+  }
+
   // Track successful operations to create database records later
   const successfulOperations: Array<{
     originChainId: number;
@@ -549,18 +562,9 @@ export async function executeOnDemandRebalancing(
       });
     }
 
-    // Check if earmark already exists for this invoice
-    let earmark = await database.getEarmarkForInvoice(invoice.intent_id);
-
-    if (earmark) {
-      logger.info('Earmark already exists for invoice, skipping creation', {
-        requestId,
-        earmarkId: earmark.id,
-        invoiceId: invoice.intent_id,
-        status: earmark.status,
-      });
-    } else {
-      // Create earmark with appropriate status
+    // Create earmark with appropriate status
+    let earmark: Earmark;
+    try {
       earmark = await database.createEarmark({
         invoiceId: invoice.intent_id,
         designatedPurchaseChain: destinationChain!,
@@ -568,12 +572,24 @@ export async function executeOnDemandRebalancing(
         minAmount: minAmount!,
         status: allSucceeded ? EarmarkStatus.PENDING : EarmarkStatus.FAILED,
       });
+    } catch (error: any) {
+      // PostgreSQL unique constraint violation error code
+      if (error.code === '23505' && error.constraint === 'unique_active_earmark_per_invoice') {
+        logger.warn('Race condition: Active earmark created by another process', {
+          requestId,
+          invoiceId: invoice.intent_id,
+        });
+        const existing = await database.getActiveEarmarkForInvoice(invoice.intent_id);
+        return existing?.status === EarmarkStatus.PENDING ? existing.id : null;
+      }
+      throw error;
     }
 
     logger.info('Created earmark for invoice', {
       requestId,
       earmarkId: earmark.id,
       invoiceId: invoice.intent_id,
+      status: earmark.status,
     });
 
     // Create rebalance operation records for all successful operations
@@ -1078,7 +1094,7 @@ export async function cleanupCompletedEarmarks(
 
   for (const invoiceId of purchasedInvoiceIds) {
     try {
-      const earmark = await database.getEarmarkForInvoice(invoiceId);
+      const earmark = await database.getActiveEarmarkForInvoice(invoiceId);
 
       if (earmark && earmark.status === EarmarkStatus.READY) {
         await database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
@@ -1104,7 +1120,7 @@ export async function cleanupStaleEarmarks(invoiceIds: string[], context: Proces
 
   for (const invoiceId of invoiceIds) {
     try {
-      const earmark = await database.getEarmarkForInvoice(invoiceId);
+      const earmark = await database.getActiveEarmarkForInvoice(invoiceId);
 
       if (earmark) {
         // Mark earmark as cancelled since the invoice is no longer available

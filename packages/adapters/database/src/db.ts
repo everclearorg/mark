@@ -125,29 +125,40 @@ export interface GetEarmarksFilter {
 
 export async function createEarmark(input: CreateEarmarkInput): Promise<CamelCasedProperties<earmarks>> {
   return withTransaction(async (client) => {
-    // Insert earmark
-    const earmarkData: earmarks_insert = {
-      ...camelToSnake(input),
-      status: input.status || EarmarkStatus.PENDING,
-    };
+    try {
+      // Insert earmark
+      const earmarkData: earmarks_insert = {
+        ...camelToSnake(input),
+        status: input.status || EarmarkStatus.PENDING,
+      };
 
-    const insertQuery = `
-      INSERT INTO earmarks ("invoice_id", "designated_purchase_chain", "ticker_hash", "min_amount", status)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-    `;
+      const insertQuery = `
+        INSERT INTO earmarks ("invoice_id", "designated_purchase_chain", "ticker_hash", "min_amount", status)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `;
 
-    const earmarkResult = await client.query(insertQuery, [
-      earmarkData.invoice_id,
-      earmarkData.designated_purchase_chain,
-      input.tickerHash,
-      earmarkData.min_amount,
-      earmarkData.status,
-    ]);
+      const earmarkResult = await client.query(insertQuery, [
+        earmarkData.invoice_id,
+        earmarkData.designated_purchase_chain,
+        input.tickerHash,
+        earmarkData.min_amount,
+        earmarkData.status,
+      ]);
 
-    const earmark = earmarkResult.rows[0] as earmarks;
+      const earmark = earmarkResult.rows[0] as earmarks;
 
-    return snakeToCamel(earmark);
+      return snakeToCamel(earmark);
+    } catch (error: any) {
+      // Add error handling for unique constraint violations
+      if (error.code === '23505' && error.constraint === 'unique_active_earmark_per_invoice') {
+        const enrichedError = new Error(`An active earmark already exists for invoice ${input.invoiceId}`);
+        (enrichedError as any).code = '23505';
+        (enrichedError as any).constraint = 'unique_active_earmark_per_invoice';
+        throw enrichedError;
+      }
+      throw error;
+    }
   });
 }
 
@@ -217,8 +228,12 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<CamelCase
   return ret.map(snakeToCamel);
 }
 
-export async function getEarmarkForInvoice(invoiceId: string): Promise<CamelCasedProperties<earmarks> | null> {
-  const query = 'SELECT * FROM earmarks WHERE "invoice_id" = $1';
+export async function getActiveEarmarkForInvoice(invoiceId: string): Promise<CamelCasedProperties<earmarks> | null> {
+  const query = `
+    SELECT * FROM earmarks
+    WHERE "invoice_id" = $1
+    AND status IN ('pending', 'ready')
+  `;
   const result = await queryWithClient<earmarks>(query, [invoiceId]);
 
   if (result.length === 0) {
@@ -226,7 +241,7 @@ export async function getEarmarkForInvoice(invoiceId: string): Promise<CamelCase
   }
 
   if (result.length > 1) {
-    throw new Error(`Multiple earmarks found for invoice ${invoiceId}. Expected unique constraint violation.`);
+    throw new Error(`Multiple active earmarks found for invoice ${invoiceId}. Expected unique constraint violation.`);
   }
 
   return snakeToCamel(result[0]);
@@ -868,6 +883,11 @@ export async function isPaused(type: 'rebalance' | 'purchase'): Promise<boolean>
   }
   return Boolean((rows[0] as unknown as { paused: unknown }).paused);
 }
+
+// Type aliases for convenience
+export type Earmark = CamelCasedProperties<earmarks>;
+export type RebalanceOperation = CamelCasedProperties<rebalance_operations>;
+export type Transaction = CamelCasedProperties<transactions>;
 
 // Re-export types for convenience
 export type {
