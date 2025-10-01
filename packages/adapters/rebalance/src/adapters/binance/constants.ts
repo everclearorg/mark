@@ -10,6 +10,7 @@ export const BINANCE_NETWORK_TO_CHAIN_ID = {
   AVAXC: 43114,
   RON: 2020,
   SONIC: 146,
+  SOL: 1399811149,
 } as const;
 
 export const BINANCE_RATE_LIMITS = {
@@ -75,6 +76,7 @@ export const WITHDRAWAL_PRECISION_MAP: Record<string, Record<string, number>> = 
     ZKSYNCERA: 6,
     RON: 6,
     SONIC: 6,
+    SOL: 8,
   },
   ETH: {
     ETH: 6,
