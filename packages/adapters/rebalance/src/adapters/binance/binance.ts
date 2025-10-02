@@ -23,8 +23,9 @@ import {
   meetsMinimumWithdrawal,
   checkWithdrawQuota,
 } from './utils';
-import { getDestinationAssetAddress, findAssetByAddress } from '../../shared/asset';
+import { getDestinationAssetAddress, findAssetByAddress, validateExchangeAssetBalance } from '../../shared/asset';
 import { generateWithdrawOrderId } from '../../shared/withdrawals';
+import { cancelRebalanceOperation } from '../../shared/operations';
 
 const wethAbi = [
   ...erc20Abi,
@@ -732,6 +733,16 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
+      // Validate Binance account balance before withdrawal
+      await validateExchangeAssetBalance(
+        () => this.client.getAccountBalance(),
+        this.logger,
+        'Binance',
+        assetMapping.binanceSymbol,
+        withdrawAmount,
+        decimals,
+      );
+
       // Convert amount from wei to standard unit for Binance API
       // Get the proper withdrawal precision from Binance API configuration
       const withdrawAmountInUnits = parseFloat(formatUnits(BigInt(withdrawAmount), decimals));
@@ -773,6 +784,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         transactionHash: originTransaction.transactionHash,
         assetMapping,
       });
+
+      // Cancel the rebalance operation if this is an insufficient funds error
+      if (error instanceof Error && error.message.includes('Insufficient funds')) {
+        await cancelRebalanceOperation(this.db, this.logger, route, originTransaction, error);
+      }
+
       throw error;
     }
   }

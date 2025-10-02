@@ -79,6 +79,16 @@ export interface TickerPrice {
   price: string;
 }
 
+export interface AccountBalance {
+  asset: string;
+  free: string;
+  locked: string;
+}
+
+export interface AccountInfo {
+  balances: AccountBalance[];
+}
+
 export interface NetworkConfig {
   network: string;
   name: string;
