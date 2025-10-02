@@ -13,6 +13,12 @@ import { KrakenAssetMapping, KRAKEN_DEPOSIT_STATUS, KrakenWithdrawMethod } from 
 // Mock the external dependencies
 jest.mock('../../../src/adapters/kraken/client');
 jest.mock('../../../src/adapters/kraken/dynamic-config');
+jest.mock('../../../src/shared/asset', () => ({
+  getDestinationAssetAddress: jest.fn(),
+  findAssetByAddress: jest.fn(),
+  findMatchingDestinationAsset: jest.fn(),
+  validateExchangeAssetBalance: (jest.requireActual('../../../src/shared/asset') as any).validateExchangeAssetBalance,
+}));
 
 // Test adapter that exposes protected methods
 class TestKrakenBridgeAdapter extends KrakenBridgeAdapter {
@@ -208,6 +214,7 @@ const mockKrakenClient = {
   getAssetInfo: jest.fn(),
   getDepositMethods: jest.fn(),
   getWithdrawInfo: jest.fn(),
+  getBalance: jest.fn(),
 } as unknown as jest.Mocked<KrakenClient>;
 
 // Mock dynamic config
@@ -366,6 +373,85 @@ describe('KrakenBridgeAdapter Unit', () => {
 
     // Reset mock implementations
     mockKrakenClient.isConfigured.mockReturnValue(true);
+
+    // Mock shared asset functions globally
+    const assetModule = jest.requireMock('../../../src/shared/asset') as any;
+    
+    assetModule.findAssetByAddress.mockImplementation((asset: string, chainId: number) => {
+      if (asset === '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' && chainId === 1) {
+        return {
+          address: asset,
+          symbol: 'WETH',
+          decimals: 18,
+          tickerHash: '0xWETHHash',
+          isNative: false,
+          balanceThreshold: '0',
+        };
+      }
+      if (asset === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' && chainId === 1) {
+        return {
+          address: asset,
+          symbol: 'USDC',
+          decimals: 6,
+          tickerHash: '0xUSDCHash',
+          isNative: false,
+          balanceThreshold: '0',
+        };
+      }
+      if (asset === '0x0000000000000000000000000000000000000000' && chainId === 1) {
+        return {
+          address: asset,
+          symbol: 'ETH',
+          decimals: 18,
+          tickerHash: '0xETHHash',
+          isNative: true,
+          balanceThreshold: '0',
+        };
+      }
+      return null;
+    });
+
+    assetModule.findMatchingDestinationAsset.mockImplementation((asset: string, origin: number, destination: number) => {
+      if (asset === '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' && origin === 1 && destination === 42161) {
+        return {
+          address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', // WETH on Arbitrum
+          symbol: 'WETH',
+          decimals: 18,
+          tickerHash: '0xWETHHash',
+          isNative: false,
+          balanceThreshold: '0',
+        };
+      }
+      if (asset === '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' && origin === 1 && destination === 42161) {
+        return {
+          address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', // USDC on Arbitrum
+          symbol: 'USDC',
+          decimals: 6,
+          tickerHash: '0xUSDCHash',
+          isNative: false,
+          balanceThreshold: '0',
+        };
+      }
+      if (asset === '0x0000000000000000000000000000000000000000' && origin === 1 && destination === 42161) {
+        return {
+          address: '0x0000000000000000000000000000000000000000', // Native ETH on Arbitrum
+          symbol: 'ETH',
+          decimals: 18,
+          tickerHash: '0xETHHash',
+          isNative: true,
+          balanceThreshold: '0',
+        };
+      }
+      return null;
+    });
+
+    // Mock Kraken client getBalance globally
+    mockKrakenClient.getBalance.mockResolvedValue({
+      XETH: '1.0', // Sufficient ETH balance
+      ZUSD: '1000.0', // Sufficient USDC balance
+      USDC: '1000.0', // Sufficient USDC balance (alternative naming)
+      '0x0000000000000000000000000000000000000000': '1.0', // ETH (zero address) balance
+    });
 
     // Mock constructors
     (KrakenClient as jest.MockedClass<typeof KrakenClient>).mockImplementation(() => mockKrakenClient);
@@ -1887,6 +1973,121 @@ describe('KrakenBridgeAdapter Unit', () => {
       await expect(adapter.destinationCallback(sampleRoute, mockOriginTransaction)).rejects.toThrow(
         `is not successful, status`,
       );
+    });
+  });
+
+  describe('initiateWithdrawal balance validation', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      
+      // Setup common mocks for KrakenAdapter
+      mockKrakenClient.getBalance.mockResolvedValue({
+        ETH: '1.0', // Default sufficient balance
+      });
+      
+      mockKrakenClient.withdraw.mockResolvedValue({
+        refid: 'test-refid',
+      });
+      
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue({
+        recipient: '0x9876543210987654321098765432109876543210',
+        amount: '100000000000000000',
+        originChainId: 1,
+        destinationChainId: 42161,
+        tickerHash: '0x1234567890123456789012345678901234567890123456789012345678901234',
+        transactions: { origin: '0xtesttx123' },
+      });
+    });
+
+    const sampleRoute: RebalanceRoute = {
+      origin: 1,
+      destination: 42161,
+      asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    };
+
+    const originTransaction: TransactionReceipt = {
+      transactionHash: '0xtesttx123',
+      blockHash: '0xabc123',
+      blockNumber: BigInt(12345),
+      contractAddress: null,
+      cumulativeGasUsed: BigInt(21000),
+      effectiveGasPrice: BigInt(20000000000),
+      from: '0x1234567890123456789012345678901234567890',
+      gasUsed: BigInt(21000),
+      logs: [],
+      logsBloom: '0x',
+      status: 'success',
+      to: '0x9876543210987654321098765432109876543210',
+      transactionIndex: 0,
+      type: 'legacy',
+    };
+
+    const assetMapping = {'krakenAsset': 'ETH', 'krakenSymbol': 'ETH', 'chainId': 42161, 'network': 'arbitrum', 'depositMethod': {'method': 'ether', 'minimum': '0.001', 'limit': false, 'gen-address': false}, 'withdrawMethod': {'asset': 'ETH', 'minimum': '0.01', 'fee': {'fee': '0.001', 'asset': 'ETH', 'aclass': 'currency'}, 'method': 'Ether', 'limits': []}};
+
+    const assetConfig: AssetConfiguration = {
+      address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', // WETH on Arbitrum
+      symbol: 'WETH',
+      decimals: 18,
+      tickerHash: '0x1234567890123456789012345678901234567890123456789012345678901234',
+      isNative: false,
+      balanceThreshold: '0'
+    };
+
+    it('should validate balance before withdrawal', async () => {
+      // Test uses default sufficient balance from beforeEach setup
+      const testAdapter = adapter as TestKrakenBridgeAdapter;
+
+      // Act - call initiateWithdrawal successfully
+      const result = await testAdapter.initiateWithdrawal(
+        sampleRoute,
+        originTransaction,
+        '50000000000000000', // 0.05 ETH (less than available 1.0 ETH)
+        assetMapping,
+        assetConfig,
+        '0x9876543210987654321098765432109876543210'
+      );
+
+      // Assert - verify getBalance was called (validation reads balance)
+      expect(mockKrakenClient.getBalance).toHaveBeenCalled();
+      // Verify withdrawal was attempted after successful validation
+      expect(mockKrakenClient.withdraw).toHaveBeenCalledWith({
+        asset: assetMapping.krakenAsset,
+        key: '0x9876543210987654321098765432109876543210',
+        amount: '0.05' // 50000000000000000 formatted
+      });
+      
+      // Verify result
+      expect(result).toEqual({
+        refid: 'test-refid',
+        asset: assetMapping.krakenAsset,
+        method: assetMapping.withdrawMethod.method
+      });
+    });
+
+    it('should handle balance validation failure during withdrawal', async () => {
+      // Override default balance to set insufficient balance for this test
+      mockKrakenClient.getBalance.mockResolvedValue({
+        ETH: '0.001', // Insufficient balance (< 0.052 ETH)
+      });
+
+      const testAdapter = adapter as TestKrakenBridgeAdapter;
+
+      // Act & Assert - should throw insufficient balance error during validation
+      await expect(
+        testAdapter.initiateWithdrawal(
+          sampleRoute,
+          originTransaction,
+          '52000000000000000', // 0.052 ETH (more than available 0.001 ETH)
+          assetMapping,
+          assetConfig,
+          '0x9876543210987654321098765432109876543210'
+        )
+      ).rejects.toThrow('Insufficient balance');
+
+      // Assert that getBalance was called (validation reads balance)
+      expect(mockKrakenClient.getBalance).toHaveBeenCalled();
+      // Assert that withdrawal was NOT attempted after failed validation
+      expect(mockKrakenClient.withdraw).not.toHaveBeenCalled();
     });
   });
 });
