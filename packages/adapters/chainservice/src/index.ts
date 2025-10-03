@@ -14,7 +14,6 @@ import {
   isSvmChain,
 } from '@mark/core';
 import { createPublicClient, defineChain, http, parseTransaction, zeroAddress } from 'viem';
-import { jsonRpc, createNonceManager } from 'viem/nonce';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
 export { EthWallet } from '@chimera-monorepo/chainservice';
@@ -88,6 +87,28 @@ export class ChainService {
       },
     });
     return tronWeb;
+  }
+
+  private applyGasMultiplier(prepared: any, chainId: string) {
+    const multiplier = chainId === '59144' ? 2.0 : 1.0; // Linea 2x gas multiplier
+    if (multiplier === 1.0) return;
+
+    const scale = (value: bigint) => (value * BigInt(Math.floor(multiplier * 100))) / 100n;
+
+    if (prepared.maxFeePerGas) {
+      prepared.maxFeePerGas = scale(prepared.maxFeePerGas);
+    }
+    if (prepared.maxPriorityFeePerGas) {
+      prepared.maxPriorityFeePerGas = scale(prepared.maxPriorityFeePerGas);
+    }
+    if (prepared.gasPrice) {
+      prepared.gasPrice = scale(prepared.gasPrice);
+    }
+  }
+
+  private getTimeout(chainId: string): number {
+    // Linea needs longer timeout due to slower finality
+    return chainId === '59144' ? 300_000 : 120_000;
   }
 
   async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<TransactionReceipt> {
@@ -191,13 +212,12 @@ export class ChainService {
       // NOTE: return txservice once gas prices / initial submission errors are fixed
       // (introduced in chainservice version 0.0.1-alpha.12)
       const addresses = await this.getAddress();
-      this.logger.debug('Sending transaction with viem + nonce manager', {
+      this.logger.debug('Sending transaction with viem', {
         chainId,
         writeTransaction,
         addresses,
         signerAddr: await this.signer.getAddress(),
       });
-      const nonceManager = createNonceManager({ source: jsonRpc() });
       const native = this.getAssetConfig(chainId, zeroAddress);
       const chain = defineChain({
         id: +chainId,
@@ -227,8 +247,11 @@ export class ChainService {
         chainId: +chainId,
         chain,
         account,
-        nonceManager,
       });
+
+      // Apply chain-specific gas price adjustments
+      this.applyGasMultiplier(prepared, chainId);
+
       this.logger.info('Transaction prepared with viem', {
         chainId,
         prepared,
@@ -261,20 +284,37 @@ export class ChainService {
         sent,
       });
 
-      let tx = await publicClient.waitForTransactionReceipt({
-        hash: sent,
-        confirmations: 2,
-        onReplaced: (res) => {
-          this.logger.warn('Transaction replaced, detected with viem', {
-            chainId,
-            sent,
-            details: res,
-            writeTransaction,
-          });
+      const timeout = this.getTimeout(chainId);
+      let tx;
+      try {
+        tx = await publicClient.waitForTransactionReceipt({
+          hash: sent,
+          confirmations: 2,
+          timeout,
+          onReplaced: (res) => {
+            this.logger.warn('Transaction replaced, detected with viem', {
+              chainId,
+              sent,
+              details: res,
+              writeTransaction,
+            });
 
-          tx = res.transactionReceipt;
-        },
-      });
+            tx = res.transactionReceipt;
+          },
+        });
+      } catch (error: any) {
+        if (error.name === 'WaitForTransactionReceiptTimeoutError') {
+          this.logger.error('Transaction timeout - may still be pending', {
+            chainId,
+            txHash: sent,
+            timeout,
+            error: jsonifyError(error),
+          });
+          throw new Error(`Transaction timeout after ${timeout}ms. Hash: ${sent}.`);
+        }
+        throw error;
+      }
+
       if (!tx) {
         throw new Error(`Could not assign transaction on waiting or replaced callback`);
       }
