@@ -89,7 +89,14 @@ export class ChainService {
     return tronWeb;
   }
 
-  private applyGasMultiplier(prepared: any, chainId: string) {
+  private applyGasMultiplier(
+    prepared: {
+      maxFeePerGas?: bigint;
+      maxPriorityFeePerGas?: bigint;
+      gasPrice?: bigint;
+    },
+    chainId: string,
+  ) {
     const multiplier = chainId === '59144' ? 2.0 : 1.0; // Linea 2x gas multiplier
     if (multiplier === 1.0) return;
 
@@ -302,8 +309,13 @@ export class ChainService {
             tx = res.transactionReceipt;
           },
         });
-      } catch (error: any) {
-        if (error.name === 'WaitForTransactionReceiptTimeoutError') {
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'name' in error &&
+          error.name === 'WaitForTransactionReceiptTimeoutError'
+        ) {
           this.logger.error('Transaction timeout - may still be pending', {
             chainId,
             txHash: sent,

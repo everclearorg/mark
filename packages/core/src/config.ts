@@ -203,7 +203,9 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         '5400' // default to 90min
       ),
       earmarkTTLMinutes: configJson.earmarkTTLMinutes ?? parseInt((await fromEnv('EARMARK_TTL_MINUTES')) || '1440'),
-      regularRebalanceOpTTLMinutes: configJson.regularRebalanceOpTTLMinutes ?? parseInt((await fromEnv('REGULAR_REBALANCE_OP_TTL_MINUTES')) || '1440'),
+      regularRebalanceOpTTLMinutes:
+        configJson.regularRebalanceOpTTLMinutes ??
+        parseInt((await fromEnv('REGULAR_REBALANCE_OP_TTL_MINUTES')) || '1440'),
     };
 
     validateConfiguration(config);
