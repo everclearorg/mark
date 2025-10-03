@@ -4,7 +4,7 @@ import {
   createEarmark,
   getEarmarks,
   updateEarmarkStatus,
-  getEarmarkForInvoice,
+  getActiveEarmarkForInvoice,
   getActiveEarmarksForChain,
   getRebalanceOperationsByEarmark,
   removeEarmark,
@@ -49,7 +49,7 @@ describe('Database Adapter - Integration Tests', () => {
         expect(earmark.createdAt).toBeDefined();
       });
 
-      it('should prevent duplicate earmarks for the same invoice', async () => {
+      it('should prevent duplicate active earmarks for the same invoice', async () => {
         const earmarkData = {
           invoiceId: 'invoice-001',
           designatedPurchaseChain: 1,
@@ -57,10 +57,12 @@ describe('Database Adapter - Integration Tests', () => {
           minAmount: '100000000000',
         };
 
+        // Create first active earmark
         await createEarmark(earmarkData);
 
+        // Should fail to create another active earmark for the same invoice
         await expect(createEarmark(earmarkData)).rejects.toThrow(
-          /duplicate key value violates unique constraint|unique_invoice_id/i,
+          /An active earmark already exists for invoice|duplicate key value/i,
         );
       });
 
@@ -207,9 +209,14 @@ describe('Database Adapter - Integration Tests', () => {
         expect(earmark.status).toBe('pending');
 
         await updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
-        const updated = await getEarmarkForInvoice('invoice-001');
-        expect(updated?.status).toBe('completed');
-        expect(updated?.updatedAt).toBeDefined();
+        // After completing, getActiveEarmarkForInvoice should return null (completed is not active)
+        const activeEarmark = await getActiveEarmarkForInvoice('invoice-001');
+        expect(activeEarmark).toBeNull();
+
+        // Verify the earmark was actually updated by querying all earmarks
+        const allEarmarks = await getEarmarks({ invoiceId: 'invoice-001' });
+        expect(allEarmarks[0].status).toBe('completed');
+        expect(allEarmarks[0].updatedAt).toBeDefined();
       });
 
       it('should handle invalid earmark ID', async () => {
@@ -217,7 +224,7 @@ describe('Database Adapter - Integration Tests', () => {
       });
     });
 
-    describe('getEarmarkForInvoice', () => {
+    describe('getActiveEarmarkForInvoice', () => {
       it('should return earmark for specific invoice', async () => {
         await createEarmark({
           invoiceId: 'invoice-001',
@@ -226,13 +233,13 @@ describe('Database Adapter - Integration Tests', () => {
           minAmount: '100000000000',
         });
 
-        const earmark = await getEarmarkForInvoice('invoice-001');
+        const earmark = await getActiveEarmarkForInvoice('invoice-001');
         expect(earmark).toBeDefined();
         expect(earmark?.invoiceId).toBe('invoice-001');
       });
 
       it('should return null for non-existent invoice', async () => {
-        const earmark = await getEarmarkForInvoice('non-existent');
+        const earmark = await getActiveEarmarkForInvoice('non-existent');
         expect(earmark).toBeNull();
       });
     });
@@ -287,13 +294,13 @@ describe('Database Adapter - Integration Tests', () => {
         });
 
         // Verify earmark exists
-        expect(await getEarmarkForInvoice('invoice-001')).toBeDefined();
+        expect(await getActiveEarmarkForInvoice('invoice-001')).toBeDefined();
 
         // Remove earmark
         await removeEarmark(earmark.id);
 
         // Verify earmark is gone
-        expect(await getEarmarkForInvoice('invoice-001')).toBeNull();
+        expect(await getActiveEarmarkForInvoice('invoice-001')).toBeNull();
 
         // Verify operations are also gone (cascade delete)
         const operations = await getRebalanceOperationsByEarmark(earmark.id);
@@ -1663,12 +1670,166 @@ describe('Database Adapter - Integration Tests', () => {
       await updateEarmarkStatus(earmark.id, EarmarkStatus.READY);
 
       // Verify all data is consistent
-      const updatedEarmark = await getEarmarkForInvoice('integrity-test');
+      const updatedEarmark = await getActiveEarmarkForInvoice('integrity-test');
       const operations = await getRebalanceOperationsByEarmark(earmark.id);
 
       expect(updatedEarmark?.status).toBe('ready');
       expect(operations).toHaveLength(2);
       expect(operations.every((op) => op.earmarkId === earmark.id)).toBe(true);
+    });
+
+    describe('Zombie Earmark Prevention', () => {
+      it('should allow creating new earmark after cancelling previous one', async () => {
+        const invoiceId = 'zombie-test-001';
+
+        // Create first earmark
+        const firstEarmark = await createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+
+        // Cancel it (simulating a failed or cancelled rebalance)
+        await updateEarmarkStatus(firstEarmark.id, EarmarkStatus.CANCELLED);
+
+        // Should be able to create a new earmark for the same invoice
+        const secondEarmark = await createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+
+        expect(secondEarmark.id).not.toBe(firstEarmark.id);
+        expect(secondEarmark.status).toBe('pending');
+
+        // Verify only the active earmark is returned
+        const activeEarmark = await getActiveEarmarkForInvoice(invoiceId);
+        expect(activeEarmark?.id).toBe(secondEarmark.id);
+
+        // Verify we have 2 total earmarks for this invoice
+        const allEarmarks = await getEarmarks({ invoiceId });
+        expect(allEarmarks).toHaveLength(2);
+        expect(allEarmarks.find(e => e.id === firstEarmark.id)?.status).toBe('cancelled');
+        expect(allEarmarks.find(e => e.id === secondEarmark.id)?.status).toBe('pending');
+      });
+
+      it('should allow multiple cancelled/expired earmarks for same invoice', async () => {
+        const invoiceId = 'zombie-test-002';
+
+        // Create and cancel first earmark
+        const earmark1 = await createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+        await updateEarmarkStatus(earmark1.id, EarmarkStatus.CANCELLED);
+
+        // Create and expire second earmark
+        const earmark2 = await createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+        await updateEarmarkStatus(earmark2.id, EarmarkStatus.EXPIRED);
+
+        // Create and complete third earmark
+        const earmark3 = await createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+        await updateEarmarkStatus(earmark3.id, EarmarkStatus.COMPLETED);
+
+        // Should be able to create a fourth active earmark
+        const earmark4 = await createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+
+        // Verify we have all 4 earmarks
+        const allEarmarks = await getEarmarks({ invoiceId });
+        expect(allEarmarks).toHaveLength(4);
+
+        // Verify only the pending one is returned as active
+        const activeEarmark = await getActiveEarmarkForInvoice(invoiceId);
+        expect(activeEarmark?.id).toBe(earmark4.id);
+      });
+
+      it('should prevent creating second active earmark when one already exists', async () => {
+        const invoiceId = 'zombie-test-003';
+
+        // Create first pending earmark
+        await createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+          status: EarmarkStatus.PENDING,
+        });
+
+        // Should fail to create another pending earmark
+        await expect(createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+          status: EarmarkStatus.PENDING,
+        })).rejects.toThrow(/An active earmark already exists/);
+
+        // Should also fail to create a ready earmark
+        await expect(createEarmark({
+          invoiceId,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+          status: EarmarkStatus.READY,
+        })).rejects.toThrow(/An active earmark already exists/);
+      });
+
+      it('should handle race condition when creating earmarks concurrently', async () => {
+        const invoiceId = 'zombie-test-race-' + Date.now();
+
+        // Try to create two earmarks concurrently
+        const promises = [
+          createEarmark({
+            invoiceId,
+            designatedPurchaseChain: 1,
+            tickerHash: '0x1234567890123456789012345678901234567890',
+            minAmount: '100000000000',
+          }),
+          createEarmark({
+            invoiceId,
+            designatedPurchaseChain: 1,
+            tickerHash: '0x1234567890123456789012345678901234567890',
+            minAmount: '100000000000',
+          }),
+        ];
+
+        const results = await Promise.allSettled(promises);
+
+        // One should succeed, one should fail
+        const successful = results.filter(r => r.status === 'fulfilled');
+        const failed = results.filter(r => r.status === 'rejected');
+
+        expect(successful).toHaveLength(1);
+        expect(failed).toHaveLength(1);
+
+        // The failure should be due to the unique constraint
+        if (failed[0].status === 'rejected') {
+          expect(failed[0].reason.message).toMatch(/An active earmark already exists|duplicate key value/);
+        }
+
+        // Should have exactly one earmark in the database
+        const earmarks = await getEarmarks({ invoiceId });
+        expect(earmarks).toHaveLength(1);
+      });
     });
   });
 });

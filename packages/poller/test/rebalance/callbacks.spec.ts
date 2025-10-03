@@ -205,7 +205,7 @@ describe('executeDestinationCallbacks', () => {
       gracefulShutdown: stub().resolves(),
       createEarmark: stub().resolves(),
       getEarmarks: stub().resolves([]),
-      getEarmarkForInvoice: stub().resolves(null),
+      getActiveEarmarkForInvoice: stub().resolves(null),
       removeEarmark: stub().resolves(),
       updateEarmarkStatus: stub().resolves(),
       getActiveEarmarksForChain: stub().resolves([]),
