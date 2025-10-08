@@ -150,7 +150,7 @@ export class EverclearAdapter {
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ctx = (err as any).context;
-      if (ctx?.error?.status === 404) {
+      if (ctx?.status === 404) {
         throw new LookupTableNotFoundError();
       }
       throw new Error(`Failed to fetch create solana intent from API ${err}`);
