@@ -12,9 +12,7 @@
           "dev"
         ],
         "envFile": "${workspaceFolder}/.env",
-        "env": {
-          "DEBUG_LOG_VIEW": "console"
-        },
+        "env": {},
         "sourceMaps": true,
         "autoAttachChildProcesses": true,
         "console": "integratedTerminal",
