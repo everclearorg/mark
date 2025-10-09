@@ -4744,7 +4744,7 @@ __metadata:
     "@aws-sdk/client-s3": ^3.787.0
     "@aws-sdk/client-ssm": 3.759.0
     "@solana/addresses": ^2.1.1
-    "@types/js-yaml": ^4.0.9
+    "@types/js-yaml": 4.0.9
     "@types/node": 20.17.12
     "@types/uuid": 9.0.0
     axios: 1.9.0
@@ -4830,6 +4830,7 @@ __metadata:
     "@types/sinon": 17.0.3
     aws-lambda: 1.0.7
     datadog-lambda-js: 10.123.0
+    dbmate: ^2.0.0
     dd-trace: 5.42.0
     eslint: 9.17.0
     jest: ^30.0.5
@@ -7080,7 +7081,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/js-yaml@npm:^4.0.9":
+"@types/js-yaml@npm:4.0.9":
   version: 4.0.9
   resolution: "@types/js-yaml@npm:4.0.9"
   checksum: e5e5e49b5789a29fdb1f7d204f82de11cb9e8f6cb24ab064c616da5d6e1b3ccfbf95aa5d1498a9fbd3b9e745564e69b4a20b6c530b5a8bbb2d4eb830cda9bc69
@@ -14315,6 +14316,7 @@ __metadata:
     "@types/node": 20.17.12
     "@typescript-eslint/eslint-plugin": 8.19.1
     "@typescript-eslint/parser": 8.19.1
+    dbmate: ^2.0.0
     eslint: 9.17.0
     eslint-config-prettier: 9.1.0
     eslint-plugin-import: 2.31.0
