@@ -59,7 +59,7 @@ export const MESSAGE_TRANSMITTERS_V1: Record<string, string> = {
 };
 
 export const TOKEN_MESSENGERS_V2: Record<string, string> = {
-  ethereun: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
+  ethereum: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
   avalanche: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
   optimism: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
   arbitrum: '0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d',
