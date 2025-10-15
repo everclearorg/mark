@@ -149,6 +149,7 @@ jest.mock('@mark/database', () => ({
   cleanupCompletedEarmarks: jest.fn().mockResolvedValue(undefined),
   cleanupStaleEarmarks: jest.fn().mockResolvedValue(undefined),
   createRebalanceOperation: jest.fn().mockResolvedValue({ id: 'mock-rebalance-id' }),
+  getRebalanceOperations: jest.fn().mockResolvedValue([]),
   getRebalanceOperationsByEarmark: jest.fn().mockResolvedValue([
     {
       id: 'mock-rebalance-id',

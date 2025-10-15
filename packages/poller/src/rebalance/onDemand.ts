@@ -1162,12 +1162,29 @@ export async function getAvailableBalanceLessEarmarks(
     status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
   });
   const earmarkedAmount = earmarks
-    .filter((e) => e.tickerHash.toLowerCase() === ticker)
-    .reduce((sum, e) => {
+    .filter((e: database.Earmark) => e.tickerHash.toLowerCase() === ticker)
+    .reduce((sum: bigint, e: database.Earmark) => {
       // earmark.minAmount is already stored in standardized 18 decimals from the API
       const amount = BigInt(e.minAmount) || 0n;
       return sum + amount;
     }, 0n);
 
-  return totalBalance - earmarkedAmount;
+  // Exclude funds from on-demand operations associated with active earmarks
+  const activeEarmarkIds = new Set(earmarks.map((e: database.Earmark) => e.id));
+  const onDemandOps = await database.getRebalanceOperations({
+    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK, RebalanceOperationStatus.COMPLETED],
+  });
+
+  const onDemandFunds = onDemandOps
+    .filter((op: database.RebalanceOperation) =>
+      op.destinationChainId === chainId &&
+      op.tickerHash.toLowerCase() === ticker &&
+      op.earmarkId !== null &&
+      activeEarmarkIds.has(op.earmarkId))
+    .reduce((sum: bigint, op: database.RebalanceOperation) => {
+      const decimals = getDecimalsFromConfig(ticker, op.originChainId.toString(), config);
+      return sum + convertTo18Decimals(BigInt(op.amount), decimals);
+    }, 0n);
+
+  return totalBalance - (earmarkedAmount > onDemandFunds ? earmarkedAmount : onDemandFunds);
 }
