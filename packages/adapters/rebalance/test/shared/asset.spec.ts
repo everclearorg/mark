@@ -1,7 +1,7 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 import { Logger } from '@mark/logger';
 import { AssetConfiguration, ChainConfiguration } from '@mark/core';
-import { findAssetByAddress, findMatchingDestinationAsset, getDestinationAssetAddress } from '../../src/shared/asset';
+import { findAssetByAddress, findMatchingDestinationAsset, getDestinationAssetAddress, validateExchangeAssetBalance } from '../../src/shared/asset';
 
 // Mock logger
 const mockLogger: Logger = {
@@ -317,6 +317,221 @@ describe('Asset Utils', () => {
       );
 
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('validateExchangeAssetBalance', () => {
+    const mockGetBalance = jest.fn() as jest.MockedFunction<() => Promise<Record<string, string>>>;
+
+    beforeEach(() => {
+      mockGetBalance.mockClear();
+    });
+
+    it('should pass validation when balance is sufficient', async () => {
+      mockGetBalance.mockResolvedValue({
+        USDC: '10.0',
+        BTC: '1.5',
+      });
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'Kraken',
+          'USDC',
+          '1000000', // 1 USDC (6 decimals)
+          6,
+        ),
+      ).resolves.not.toThrow();
+
+      expect(mockGetBalance).toHaveBeenCalledTimes(1);
+      expect(mockLogger.debug).toHaveBeenCalledWith('Kraken balance validation', {
+        asset: 'USDC',
+        requiredAmount: '1000000',
+        availableBalance: '10.0',
+        availableAmount: '10000000',
+        sufficient: true,
+      });
+    });
+
+    it('should fail validation when balance is insufficient', async () => {
+      mockGetBalance.mockResolvedValue({
+        USDC: '0.5',
+        BTC: '1.5',
+      });
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'Binance',
+          'USDC',
+          '1000000', // 1 USDC (6 decimals)
+          6,
+        ),
+      ).rejects.toThrow('Insufficient balance (Binance) USDC: required 1000000, available 0.5');
+
+      expect(mockGetBalance).toHaveBeenCalledTimes(1);
+      expect(mockLogger.debug).toHaveBeenCalledWith('Binance balance validation', {
+        asset: 'USDC',
+        requiredAmount: '1000000',
+        availableBalance: '0.5',
+        availableAmount: '500000',
+        sufficient: false,
+      });
+    });
+
+    it('should fail validation when asset is not in balance record', async () => {
+      mockGetBalance.mockResolvedValue({
+        BTC: '1.5',
+      });
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'Kraken',
+          'USDC',
+          '1000000',
+          6,
+        ),
+      ).rejects.toThrow('Insufficient balance (Kraken) USDC: required 1000000, available 0');
+
+      expect(mockGetBalance).toHaveBeenCalledTimes(1);
+      expect(mockLogger.debug).toHaveBeenCalledWith('Kraken balance validation', {
+        asset: 'USDC',
+        requiredAmount: '1000000',
+        availableBalance: '0',
+        availableAmount: '0',
+        sufficient: false,
+      });
+    });
+
+    it('should handle large precision amounts correctly', async () => {
+      mockGetBalance.mockResolvedValue({
+        ETH: '100.123456789',
+      });
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'Binance',
+          'ETH',
+          '100123456789000000000', // 100.123456789 ETH (18 decimals)
+          18,
+        ),
+      ).resolves.not.toThrow();
+
+      expect(mockLogger.debug).toHaveBeenCalledWith('Binance balance validation', {
+        asset: 'ETH',
+        requiredAmount: '100123456789000000000',
+        availableBalance: '100.123456789',
+        availableAmount: '100123456789000000000',
+        sufficient: true,
+      });
+    });
+
+    it('should handle zero balance correctly', async () => {
+      mockGetBalance.mockResolvedValue({
+        USDC: '0',
+        BTC: '1.5',
+      });
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'Kraken',
+          'USDC',
+          '100000', // 0.1 USDC
+          6,
+        ),
+      ).rejects.toThrow('Insufficient balance (Kraken) USDC: required 100000, available 0');
+    });
+
+    it('should pass when available amount exactly equals required amount', async () => {
+      mockGetBalance.mockResolvedValue({
+        USDC: '1.0',
+      });
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'Binance',
+          'USDC',
+          '1000000', // Exactly 1 USDC
+          6,
+        ),
+      ).resolves.not.toThrow();
+
+      expect(mockLogger.debug).toHaveBeenCalledWith('Binance balance validation', {
+        asset: 'USDC',
+        requiredAmount: '1000000',
+        availableBalance: '1.0',
+        availableAmount: '1000000',
+        sufficient: true,
+      });
+    });
+
+    it('should handle empty balance record', async () => {
+      mockGetBalance.mockResolvedValue({});
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'Kraken',
+          'USDC',
+          '100000',
+          6,
+        ),
+      ).rejects.toThrow('Insufficient balance (Kraken) USDC: required 100000, available 0');
+    });
+
+    it('should propagate getBalance errors', async () => {
+      const balanceError = new Error('API connection failed');
+      mockGetBalance.mockRejectedValue(balanceError);
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'Binance',
+          'USDC',
+          '1000000',
+          6,
+        ),
+      ).rejects.toThrow('API connection failed');
+
+      expect(mockGetBalance).toHaveBeenCalledTimes(1);
+      expect(mockLogger.debug).not.toHaveBeenCalled();
+    });
+
+    it('should handle different exchange names correctly', async () => {
+      mockGetBalance.mockResolvedValue({
+        BTC: '0.99',
+      });
+
+      await expect(
+        validateExchangeAssetBalance(
+          mockGetBalance,
+          mockLogger,
+          'CustomExchange',
+          'BTC',
+          '100000000', // 1 BTC (8 decimals)
+          8,
+        ),
+      ).rejects.toThrow('Insufficient balance (CustomExchange) BTC: required 100000000, available 0.99');
+
+      expect(mockLogger.debug).toHaveBeenCalledWith('CustomExchange balance validation', {
+        asset: 'BTC',
+        requiredAmount: '100000000',
+        availableBalance: '0.99',
+        availableAmount: '99000000',
+        sufficient: false,
+      });
     });
   });
 });

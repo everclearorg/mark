@@ -150,17 +150,6 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
 
     const operation = operations[0];
 
-    // Check if operation is standalone (not associated with an earmark)
-    if (operation.earmarkId !== null) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: 'Cannot cancel operation associated with an earmark. Use earmark cancellation instead.',
-          earmarkId: operation.earmarkId,
-        }),
-      };
-    }
-
     // Check if operation can be cancelled (must be PENDING or AWAITING_CALLBACK)
     if (!['pending', 'awaiting_callback'].includes(operation.status)) {
       return {
@@ -172,11 +161,12 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
       };
     }
 
-    // Update operation status to cancelled and mark as orphaned
+    // Update operation status to cancelled
+    // Mark as orphaned if it has an associated earmark
     const updated = await database
       .queryWithClient<database.rebalance_operations>(
         `UPDATE rebalance_operations
-       SET status = $1, is_orphaned = true, updated_at = NOW()
+       SET status = $1, is_orphaned = CASE WHEN earmark_id IS NOT NULL THEN true ELSE is_orphaned END, updated_at = NOW()
        WHERE id = $2
        RETURNING *`,
         [RebalanceOperationStatus.CANCELLED, operationId],
@@ -187,6 +177,8 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
       operationId,
       previousStatus: operation.status,
       chainId: operation.chainId,
+      hadEarmark: operation.earmarkId !== null,
+      earmarkId: operation.earmarkId,
     });
 
     return {
@@ -247,32 +239,14 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       };
     }
 
-    // Atomic update for all pending operations - cancel and mark as orphaned
-    const cancelledResult = await database.queryWithClient<{ count: string }>(
-      `UPDATE rebalance_operations
-       SET status = $1, is_orphaned = true, updated_at = NOW()
-       WHERE earmark_id = $2 AND status = 'pending'
-       RETURNING (SELECT COUNT(*) FROM rebalance_operations WHERE earmark_id = $2 AND status = 'pending')`,
-      [RebalanceOperationStatus.CANCELLED, earmarkId],
-    );
-    const cancelledCount = parseInt(cancelledResult[0]?.count || '0');
-
-    // Atomic update for awaiting_callback operations - only mark as orphaned
-    const orphanedResult = await database.queryWithClient<{ count: string }>(
+    // Mark all operations as orphaned (both PENDING and AWAITING_CALLBACK keep their status)
+    const orphanedOps = await database.queryWithClient<{ id: string; status: string }>(
       `UPDATE rebalance_operations
        SET is_orphaned = true, updated_at = NOW()
-       WHERE earmark_id = $1 AND status = 'awaiting_callback'
-       RETURNING (SELECT COUNT(*) FROM rebalance_operations WHERE earmark_id = $1 AND status = 'awaiting_callback')`,
-      [earmarkId],
+       WHERE earmark_id = $1 AND status IN ($2, $3)
+       RETURNING id, status`,
+      [earmarkId, RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
     );
-    const orphanedCount = parseInt(orphanedResult[0]?.count || '0');
-
-    // Get total count of operations for logging
-    const totalResult = await database.queryWithClient<{ count: string }>(
-      `SELECT COUNT(*) as count FROM rebalance_operations WHERE earmark_id = $1`,
-      [earmarkId],
-    );
-    const totalOperations = parseInt(totalResult[0]?.count || '0');
 
     // Update earmark status to cancelled
     const updated = await database.updateEarmarkStatus(earmarkId, EarmarkStatus.CANCELLED);
@@ -281,9 +255,10 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       earmarkId,
       invoiceId: earmark.invoiceId,
       previousStatus: earmark.status,
-      cancelledOperations: cancelledCount,
-      orphanedOperations: orphanedCount,
-      totalOperations,
+      orphanedOperations: orphanedOps.length,
+      orphanedPending: orphanedOps.filter((op) => op.status === RebalanceOperationStatus.PENDING).length,
+      orphanedAwaitingCallback: orphanedOps.filter((op) => op.status === RebalanceOperationStatus.AWAITING_CALLBACK)
+        .length,
     });
 
     return {

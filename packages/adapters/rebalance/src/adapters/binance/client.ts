@@ -11,6 +11,7 @@ import {
   WithdrawQuotaResponse,
   TickerPrice,
   CoinConfig,
+  AccountInfo,
   BINANCE_BASE_URL,
 } from './types';
 import { BINANCE_ENDPOINTS, BINANCE_RATE_LIMITS } from './constants';
@@ -543,5 +544,29 @@ export class BinanceClient {
     });
 
     return result;
+  }
+
+  /**
+   * Get account balance for all assets
+   * Private endpoint - requires authentication
+   */
+  async getAccountBalance(): Promise<Record<string, string>> {
+    this.logger.debug('Getting account balance');
+
+    const result = await this.request<AccountInfo>('GET', BINANCE_ENDPOINTS.ACCOUNT_BALANCE, {}, true);
+
+    this.logger.debug('Account balance retrieved', {
+      balances: result.balances,
+    });
+
+    const balances: Record<string, string> = {};
+    for (const balance of result.balances) {
+      const totalBalance = (parseFloat(balance.free) + parseFloat(balance.locked)).toString();
+      if (parseFloat(totalBalance) > 0) {
+        balances[balance.asset] = totalBalance;
+      }
+    }
+
+    return balances;
   }
 }

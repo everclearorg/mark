@@ -17,7 +17,8 @@ import { KrakenClient } from './client';
 import { DynamicAssetConfig } from './dynamic-config';
 import { WithdrawalStatus, KrakenAssetMapping, KRAKEN_WITHDRAWAL_STATUS, KRAKEN_DEPOSIT_STATUS } from './types';
 import { getValidAssetMapping, getDestinationAssetMapping } from './utils';
-import { findAssetByAddress, findMatchingDestinationAsset } from '../../shared/asset';
+import { findAssetByAddress, findMatchingDestinationAsset, validateExchangeAssetBalance } from '../../shared/asset';
+import { cancelRebalanceOperation } from '../../shared/operations';
 
 const wethAbi = [
   ...erc20Abi,
@@ -565,6 +566,16 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
       throw new Error(`Received amount (${received}) exceeds withdraw limits (${limit})`);
     }
 
+    // safety check: validate Kraken account balance before withdrawal
+    await validateExchangeAssetBalance(
+      () => this.client.getBalance(),
+      this.logger,
+      'Kraken',
+      destinationMapping.krakenAsset,
+      amount.toString(),
+      destinationAssetConfig.decimals,
+    );
+
     return { received, destinationAssetConfig: destinationAssetConfig!, destinationMapping };
   }
 
@@ -757,6 +768,16 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
         amount,
       });
 
+      // Validate Kraken account balance before withdrawal
+      await validateExchangeAssetBalance(
+        () => this.client.getBalance(),
+        this.logger,
+        'Kraken',
+        assetMapping.krakenAsset,
+        amount,
+        assetConfig.decimals,
+      );
+
       const withdrawal = await this.client.withdraw({
         asset: assetMapping.krakenAsset,
         key: recipient,
@@ -804,6 +825,12 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
         transactionHash: originTransaction.transactionHash,
         assetMapping,
       });
+
+      // Cancel the rebalance operation if this is an insufficient funds error
+      if (error instanceof Error && error.message.includes('Insufficient funds')) {
+        await cancelRebalanceOperation(this.db, this.logger, route, originTransaction, error);
+      }
+
       throw error;
     }
   }

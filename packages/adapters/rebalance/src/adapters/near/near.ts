@@ -323,8 +323,10 @@ export class NearBridgeAdapter implements BridgeAdapter {
       // Finding the deposit value
       const provider = this.chains[route.origin]?.providers?.[0];
       const value = await this.getTransactionValue(provider, originTransaction);
-      if (!value) {
-        this.logger.warn('No value found in transaction receipt', {
+      // Note: value can be 0n for ERC20 token transfers (USDC, USDT, etc.)
+      // Only warn if value retrieval fails completely (null/undefined)
+      if (value === null || value === undefined) {
+        this.logger.warn('Failed to retrieve transaction value', {
           transactionHash: originTransaction.transactionHash,
         });
         return undefined;
