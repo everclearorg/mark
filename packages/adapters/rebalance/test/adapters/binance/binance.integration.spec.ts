@@ -285,6 +285,30 @@ describe('BinanceClient Integration Tests', () => {
         console.log(`✅ Dynamic config structure validated for network mappings`);
       }
     }, 30000);
+
+    it('should get account balance for all assets', async () => {
+      const result = await client.getAccountBalance();
+
+      expect(result).toBeDefined();
+      expect(typeof result).toBe('object');
+
+      // Verify structure - should be a Record<string, string>
+      const balanceEntries = Object.entries(result);
+      expect(balanceEntries.length).toBeGreaterThanOrEqual(0);
+
+      // If there are balances, validate structure
+      if (balanceEntries.length > 0) {
+        const [asset, balance] = balanceEntries[0];
+        expect(typeof asset).toBe('string');
+        expect(typeof balance).toBe('string');
+        expect(parseFloat(balance)).toBeGreaterThan(0);
+
+        console.log(`✅ Account balance retrieved: ${balanceEntries.length} assets with balance`);
+        console.log(`   Example: ${asset} = ${balance}`);
+      } else {
+        console.log(`✅ Account balance retrieved (empty account)`);
+      }
+    }, 30000);
   });
 
   describe('Error Handling', () => {
