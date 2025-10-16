@@ -104,21 +104,21 @@ export async function cleanupExpiredEarmarks(context: ProcessingContext): Promis
       }
 
       // Also handle orphaned earmarks (earmarks with no active operations)
-      // READY earmarks are not orphaned - they're successfully ready for purchase
       const orphanedEarmarks = await client.query(
         `
         SELECT DISTINCT e.id, e.invoice_id, e.created_at
         FROM earmarks e
-        WHERE e.status = $1
+        WHERE e.status IN ($1, $2)
         AND NOT EXISTS (
           SELECT 1 FROM rebalance_operations ro
           WHERE ro.earmark_id = e.id
-          AND ro.status IN ($2, $3)
+          AND ro.status IN ($3, $4)
         )
         AND e.created_at < NOW() - INTERVAL '${ttlMinutes} minutes'
       `,
         [
           EarmarkStatus.PENDING,
+          EarmarkStatus.READY,
           RebalanceOperationStatus.PENDING,
           RebalanceOperationStatus.AWAITING_CALLBACK,
         ],
