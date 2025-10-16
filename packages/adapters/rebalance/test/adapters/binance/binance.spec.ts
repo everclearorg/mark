@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, jest, afterEach } from '@jest/globals
 import { SupportedBridge, RebalanceRoute, AssetConfiguration, MarkConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import * as database from '@mark/database';
-import { TransactionReceipt } from 'viem';
+import { TransactionReceipt, parseUnits } from 'viem';
 import { BinanceBridgeAdapter } from '../../../src/adapters/binance/binance';
 import { BinanceClient } from '../../../src/adapters/binance/client';
 import { DynamicAssetConfig } from '../../../src/adapters/binance/dynamic-config';
@@ -26,6 +26,7 @@ jest.mock('../../../src/adapters/binance/utils', () => ({
 jest.mock('../../../src/shared/asset', () => ({
   getDestinationAssetAddress: jest.fn(),
   findAssetByAddress: jest.fn(),
+  validateExchangeAssetBalance: (jest.requireActual('../../../src/shared/asset') as any).validateExchangeAssetBalance,
 }));
 
 // Test adapter that exposes private methods
@@ -41,6 +42,16 @@ class TestBinanceBridgeAdapter extends BinanceBridgeAdapter {
     recipient: string,
   ): Promise<any> {
     return super.getOrInitWithdrawal(route, originTransaction, amount, recipient);
+  }
+
+  public initiateWithdrawal(
+    route: RebalanceRoute,
+    originTransaction: TransactionReceipt,
+    amount: string,
+    assetMapping: BinanceAssetMapping,
+    recipient: string,
+  ): Promise<{ id: string }> {
+    return super.initiateWithdrawal(route, originTransaction, amount, assetMapping, recipient);
   }
 }
 
@@ -273,6 +284,7 @@ const mockBinanceClient = {
     price: '2000',
   }),
   getAssetConfig: jest.fn<() => Promise<any[]>>().mockResolvedValue([]),
+  getAccountBalance: jest.fn<() => Promise<Record<string, string>>>(),
 };
 
 // Mock DynamicAssetConfig implementation
@@ -1279,6 +1291,11 @@ describe('BinanceBridgeAdapter', () => {
           },
         ]);
 
+        // Mock sufficient balance for validation
+        mockBinanceClient.getAccountBalance.mockResolvedValueOnce({
+          ETH: '2.0', // Sufficient balance for withdrawal
+        });
+
         // Mock no existing withdrawal
         mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
 
@@ -1325,6 +1342,11 @@ describe('BinanceBridgeAdapter', () => {
             transferType: 0,
           },
         ]);
+
+        // Mock sufficient balance for validation
+        mockBinanceClient.getAccountBalance.mockResolvedValueOnce({
+          ETH: '2.0', // Sufficient balance for withdrawal
+        });
 
         // Mock no existing withdrawal
         mockBinanceClient.getWithdrawHistory.mockResolvedValueOnce([]);
@@ -1592,6 +1614,107 @@ describe('BinanceBridgeAdapter', () => {
       expect(() => {
         rebalanceAdapter.getAdapter(SupportedBridge.Binance);
       }).toThrow('Binance adapter requires API key and secret');
+    });
+  });
+
+  describe('initiateWithdrawal balance validation', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      
+      // Setup common mocks for BinanceAdapter
+      mockBinanceClient.getAccountBalance.mockResolvedValue({
+        WETH: '1.0', // Default sufficient balance
+      });
+      
+      mockBinanceClient.withdraw.mockResolvedValue({
+        id: 'test-withdrawal-id',
+      });
+      
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue({
+        recipient: '0x9876543210987654321098765432109876543210',
+        amount: '100000000000000000',
+        originChainId: 1,
+        destinationChainId: 42161,
+        tickerHash: '0x1234567890123456789012345678901234567890123456789012345678901234',
+        transactions: { origin: '0xtesttx123' },
+      });
+    });
+
+    const sampleRoute: RebalanceRoute = {
+      origin: 1,
+      destination: 42161,
+      asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    };
+
+    const originTransaction: TransactionReceipt = {
+      transactionHash: '0xtesttx123',
+      blockHash: '0xabc123',
+      blockNumber: BigInt(12345),
+      contractAddress: null,
+      cumulativeGasUsed: BigInt(21000),
+      effectiveGasPrice: BigInt(20000000000),
+      from: '0x1234567890123456789012345678901234567890',
+      gasUsed: BigInt(21000),
+      logs: [],
+      logsBloom: '0x',
+      status: 'success',
+      to: '0x9876543210987654321098765432109876543210',
+      transactionIndex: 0,
+      type: 'legacy',
+    };
+
+    const assetMapping = {
+      chainId: sampleRoute.destination,
+      binanceAsset: 'WETH',
+      binanceSymbol: 'WETH',
+      network: 'ETH',
+      minWithdrawalAmount: '0.01',
+      withdrawalFee: '0.001',
+      depositConfirmations: 12
+    };
+
+    it('should validate balance before withdrawal', async () => {
+      // Test uses default sufficient balance from beforeEach setup
+      const testAdapter = adapter as TestBinanceBridgeAdapter;
+
+      // Act - call initiateWithdrawal successfully
+      await testAdapter.initiateWithdrawal(
+        sampleRoute as any,
+        originTransaction,
+        '50000000000000000', // 0.05 ETH (less than available 1.0 ETH)
+        assetMapping,
+        '0x9876543210987654321098765432109876543210'
+      );
+
+      // Assert - verify getAccountBalance was called (validation reads balance)
+      expect(mockBinanceClient.getAccountBalance).toHaveBeenCalled();
+      // Verify withdrawal was attempted after successful validation
+      expect(mockBinanceClient.withdraw).toHaveBeenCalled();
+    });
+
+    it('should handle balance validation failure during withdrawal', async () => {
+      // Override default balance to set insufficient balance for this test
+      mockBinanceClient.getAccountBalance.mockResolvedValue({
+        WETH: '0.001', // Insufficient balance (< 0.052 ETH)
+      });
+
+      const testAdapter = adapter as TestBinanceBridgeAdapter;
+
+      // Act & Assert - should throw insufficient balance error during validation
+      await expect(
+        testAdapter.initiateWithdrawal(
+          sampleRoute as any,
+          originTransaction,
+          '52000000000000000', // 0.052 ETH (more than available 0.001 ETH)
+          assetMapping,
+          '0x9876543210987654321098765432109876543210'
+        )
+      ).rejects.toThrow('Insufficient balance');
+
+      // Assert that getAccountBalance was called (validation reads balance)
+      expect(mockBinanceClient.getAccountBalance).toHaveBeenCalled();
+      // Assert that withdrawal was NOT attempted after failed validation
+      expect(mockBinanceClient.withdraw).not.toHaveBeenCalled();
     });
   });
 });

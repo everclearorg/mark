@@ -1,5 +1,6 @@
 import { AssetConfiguration, ChainConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
+import { parseUnits } from 'viem';
 
 /**
  * Finds an asset configuration by address in a specific chain
@@ -101,4 +102,41 @@ export function getDestinationAssetAddress(
 ): string | undefined {
   const destinationAsset = findMatchingDestinationAsset(originAsset, originChain, destinationChain, chains, logger);
   return destinationAsset?.address;
+}
+
+/**
+ * Validate exchange account balance
+ * @param getBalance - Function to get account balances
+ * @param logger - Logger instance
+ * @param exchangeName - Name of the exchange (for logging/errors)
+ * @param asset - Asset symbol to check
+ * @param amount - Required amount (in base units)
+ * @param decimals - Asset decimals
+ */
+export async function validateExchangeAssetBalance(
+  getBalance: () => Promise<Record<string, string>>,
+  logger: Logger,
+  exchangeName: string,
+  asset: string,
+  amount: string,
+  decimals: number,
+): Promise<void> {
+  const balance = await getBalance();
+  const availableBalance = balance[asset] || '0';
+  const requiredAmount = BigInt(amount);
+  const availableAmount = parseUnits(availableBalance, decimals);
+
+  logger.debug(`${exchangeName} balance validation`, {
+    asset,
+    requiredAmount: amount,
+    availableBalance,
+    availableAmount: availableAmount.toString(),
+    sufficient: availableAmount >= requiredAmount,
+  });
+
+  if (availableAmount < requiredAmount) {
+    throw new Error(
+      `Insufficient balance (${exchangeName}) ${asset}: required ${amount}, available ${availableBalance}`,
+    );
+  }
 }

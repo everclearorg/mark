@@ -13,7 +13,7 @@ export * from './utils';
 export {
   createEarmark,
   getEarmarks,
-  getEarmarkForInvoice,
+  getActiveEarmarkForInvoice,
   removeEarmark,
   updateEarmarkStatus,
   getActiveEarmarksForChain,

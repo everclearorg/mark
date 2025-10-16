@@ -53,7 +53,7 @@ export function createDatabaseMock(): typeof DatabaseModule {
       updatedAt: new Date(),
     }),
     getEarmarks: stub().resolves([]),
-    getEarmarkForInvoice: stub().resolves(null),
+    getActiveEarmarkForInvoice: stub().resolves(null),
     removeEarmark: stub().resolves(),
     updateEarmarkStatus: stub().resolves({
       id: 'mock-earmark-id',
