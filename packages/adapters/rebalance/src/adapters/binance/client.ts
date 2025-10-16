@@ -555,6 +555,17 @@ export class BinanceClient {
 
     const result = await this.request<AccountInfo>('GET', BINANCE_ENDPOINTS.ACCOUNT_BALANCE, {}, true);
 
+    // Validate response structure
+    if (!result || !Array.isArray(result.balances)) {
+      this.logger.error('Invalid response structure from account balance endpoint', {
+        result,
+        hasResult: !!result,
+        hasBalances: !!(result as any)?.balances,
+        balancesType: typeof (result as any)?.balances,
+      });
+      throw new Error('Invalid response structure from Binance account balance endpoint: balances field is missing or not an array');
+    }
+
     this.logger.debug('Account balance retrieved', {
       balances: result.balances,
     });
