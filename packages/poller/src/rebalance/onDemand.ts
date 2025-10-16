@@ -1172,15 +1172,21 @@ export async function getAvailableBalanceLessEarmarks(
   // Exclude funds from on-demand operations associated with active earmarks
   const activeEarmarkIds = new Set(earmarks.map((e: database.Earmark) => e.id));
   const onDemandOps = await database.getRebalanceOperations({
-    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK, RebalanceOperationStatus.COMPLETED],
+    status: [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+      RebalanceOperationStatus.COMPLETED,
+    ],
   });
 
   const onDemandFunds = onDemandOps
-    .filter((op: database.RebalanceOperation) =>
-      op.destinationChainId === chainId &&
-      op.tickerHash.toLowerCase() === ticker &&
-      op.earmarkId !== null &&
-      activeEarmarkIds.has(op.earmarkId))
+    .filter(
+      (op: database.RebalanceOperation) =>
+        op.destinationChainId === chainId &&
+        op.tickerHash.toLowerCase() === ticker &&
+        op.earmarkId !== null &&
+        activeEarmarkIds.has(op.earmarkId),
+    )
     .reduce((sum: bigint, op: database.RebalanceOperation) => {
       const decimals = getDecimalsFromConfig(ticker, op.originChainId.toString(), config);
       return sum + convertTo18Decimals(BigInt(op.amount), decimals);

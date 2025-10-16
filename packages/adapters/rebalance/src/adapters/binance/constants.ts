@@ -29,7 +29,7 @@ export const BINANCE_ENDPOINTS = {
   SYSTEM_STATUS: '/sapi/v1/system/status',
   ASSET_CONFIG: '/sapi/v1/capital/config/getall',
   TICKER_PRICE: '/api/v3/ticker/price',
-  ACCOUNT_BALANCE: '/sapi/v3/account',
+  ACCOUNT_BALANCE: '/api/v3/account',
 } as const;
 
 // Withdrawal status mappings
