@@ -96,11 +96,17 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
       case HttpPaths.PauseRebalance:
         await pauseIfNeeded('rebalance', context.database, context);
         break;
+      case HttpPaths.PauseOnDemandRebalance:
+        await pauseIfNeeded('ondemand', context.database, context);
+        break;
       case HttpPaths.UnpausePurchase:
         await unpauseIfNeeded('purchase', context.purchaseCache, context);
         break;
       case HttpPaths.UnpauseRebalance:
         await unpauseIfNeeded('rebalance', context.database, context);
+        break;
+      case HttpPaths.UnpauseOnDemandRebalance:
+        await unpauseIfNeeded('ondemand', context.database, context);
         break;
       case HttpPaths.CancelEarmark:
         return handleCancelEarmark(context);
@@ -350,7 +356,7 @@ const handleGetRequest = async (
 };
 
 const unpauseIfNeeded = async (
-  type: 'rebalance' | 'purchase',
+  type: 'rebalance' | 'purchase' | 'ondemand',
   _store: Database | PurchaseCache,
   context: AdminContext,
 ) => {
@@ -363,6 +369,13 @@ const unpauseIfNeeded = async (
       throw new Error(`Rebalance is not paused`);
     }
     return db.setPause('rebalance', false);
+  } else if (type === 'ondemand') {
+    const db = _store as Database;
+    logger.debug('Unpausing on-demand rebalance', { requestId });
+    if (!(await db.isPaused('ondemand'))) {
+      throw new Error(`On-demand rebalance is not paused`);
+    }
+    return db.setPause('ondemand', false);
   } else {
     const store = _store as PurchaseCache;
     logger.debug('Unpausing purchase cache', { requestId });
@@ -374,7 +387,7 @@ const unpauseIfNeeded = async (
 };
 
 const pauseIfNeeded = async (
-  type: 'rebalance' | 'purchase',
+  type: 'rebalance' | 'purchase' | 'ondemand',
   _store: Database | PurchaseCache,
   context: AdminContext,
 ) => {
@@ -387,6 +400,13 @@ const pauseIfNeeded = async (
       throw new Error(`Rebalance is already paused`);
     }
     return db.setPause('rebalance', true);
+  } else if (type === 'ondemand') {
+    const db = _store as Database;
+    logger.debug('Pausing on-demand rebalance', { requestId });
+    if (await db.isPaused('ondemand')) {
+      throw new Error(`On-demand rebalance is already paused`);
+    }
+    return db.setPause('ondemand', true);
   } else {
     const store = _store as PurchaseCache;
     logger.debug('Pausing purchase cache', { requestId });

@@ -52,7 +52,8 @@ CREATE TABLE public.admin_actions (
     updated_at timestamp with time zone DEFAULT now(),
     description text,
     rebalance_paused boolean DEFAULT false,
-    purchase_paused boolean DEFAULT false
+    purchase_paused boolean DEFAULT false,
+    ondemand_rebalance_paused boolean DEFAULT false
 );
 
 
@@ -568,4 +569,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20250722213145'),
     ('20250902175116'),
     ('20250903171904'),
-    ('20250911');
+    ('20250911'),
+    ('20251016000000');
