@@ -839,11 +839,11 @@ export async function getCexWithdrawalRecord<T extends object = JSONObject>(inpu
 }
 
 // Admin functions
-export async function setPause(type: 'rebalance' | 'purchase', input: boolean): Promise<void> {
+export async function setPause(type: 'rebalance' | 'purchase' | 'ondemand', input: boolean): Promise<void> {
   // Read the latest admin_actions row and insert a new snapshot with the updated pause flag
   return withTransaction(async (client) => {
     const latestQuery = `
-      SELECT rebalance_paused, purchase_paused
+      SELECT rebalance_paused, purchase_paused, ondemand_rebalance_paused
       FROM admin_actions
       ORDER BY created_at DESC
       LIMIT 1
@@ -853,28 +853,33 @@ export async function setPause(type: 'rebalance' | 'purchase', input: boolean): 
     // Defaults when no prior admin_actions exist
     let rebalancePaused = false;
     let purchasePaused = false;
+    let ondemandRebalancePaused = false;
 
     if (latest.rows.length > 0) {
       rebalancePaused = Boolean(latest.rows[0].rebalance_paused);
       purchasePaused = Boolean(latest.rows[0].purchase_paused);
+      ondemandRebalancePaused = Boolean(latest.rows[0].ondemand_rebalance_paused);
     }
 
     if (type === 'rebalance') {
       rebalancePaused = input;
-    } else {
+    } else if (type === 'purchase') {
       purchasePaused = input;
+    } else {
+      ondemandRebalancePaused = input;
     }
 
     const insertQuery = `
-      INSERT INTO admin_actions (rebalance_paused, purchase_paused, description)
-      VALUES ($1, $2, $3)
+      INSERT INTO admin_actions (rebalance_paused, purchase_paused, ondemand_rebalance_paused, description)
+      VALUES ($1, $2, $3, $4)
     `;
-    await client.query(insertQuery, [rebalancePaused, purchasePaused, null]);
+    await client.query(insertQuery, [rebalancePaused, purchasePaused, ondemandRebalancePaused, null]);
   });
 }
 
-export async function isPaused(type: 'rebalance' | 'purchase'): Promise<boolean> {
-  const column = type === 'rebalance' ? 'rebalance_paused' : 'purchase_paused';
+export async function isPaused(type: 'rebalance' | 'purchase' | 'ondemand'): Promise<boolean> {
+  const column =
+    type === 'rebalance' ? 'rebalance_paused' : type === 'purchase' ? 'purchase_paused' : 'ondemand_rebalance_paused';
   const query = `
     SELECT ${column} AS paused
     FROM admin_actions

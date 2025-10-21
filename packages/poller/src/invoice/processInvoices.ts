@@ -364,35 +364,45 @@ export async function processTickerGroup(
 
     // Check if on-demand rebalancing can settle invoice if no valid allocation found
     if (!originDomain && batchedGroup.origin === '') {
-      logger.info('No valid allocation found, evaluating on-demand rebalancing', {
-        requestId,
-        invoiceId,
-        ticker: invoice.ticker_hash,
-      });
-
-      try {
-        const evaluationResult = await onDemand.evaluateOnDemandRebalancing(invoice, minAmounts, context);
-
-        if (evaluationResult.canRebalance) {
-          const earmarkId = await onDemand.executeOnDemandRebalancing(invoice, evaluationResult, context);
-
-          if (earmarkId) {
-            logger.info('Successfully created earmark for on-demand rebalancing', {
-              requestId,
-              invoiceId,
-              earmarkId,
-            });
-
-            // This earmarked invoice will be processed later once all its rebalancing ops are done
-            continue;
-          }
-        }
-      } catch (error) {
-        logger.error('Failed to evaluate/execute on-demand rebalancing', {
+      // Check if on-demand rebalancing is paused
+      const isOnDemandPaused = await context.database.isPaused('ondemand');
+      if (isOnDemandPaused) {
+        logger.warn('On-demand rebalancing is paused, skipping', {
           requestId,
           invoiceId,
-          error: jsonifyError(error),
+          ticker: invoice.ticker_hash,
         });
+      } else {
+        logger.info('No valid allocation found, evaluating on-demand rebalancing', {
+          requestId,
+          invoiceId,
+          ticker: invoice.ticker_hash,
+        });
+
+        try {
+          const evaluationResult = await onDemand.evaluateOnDemandRebalancing(invoice, minAmounts, context);
+
+          if (evaluationResult.canRebalance) {
+            const earmarkId = await onDemand.executeOnDemandRebalancing(invoice, evaluationResult, context);
+
+            if (earmarkId) {
+              logger.info('Successfully created earmark for on-demand rebalancing', {
+                requestId,
+                invoiceId,
+                earmarkId,
+              });
+
+              // This earmarked invoice will be processed later once all its rebalancing ops are done
+              continue;
+            }
+          }
+        } catch (error) {
+          logger.error('Failed to evaluate/execute on-demand rebalancing', {
+            requestId,
+            invoiceId,
+            error: jsonifyError(error),
+          });
+        }
       }
     }
 

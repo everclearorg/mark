@@ -299,6 +299,69 @@ describe('handleApiRequest', () => {
     expect(database.setPause).toHaveBeenCalledTimes(0);
   });
 
+  it('should handle pause on-demand rebalancing', async () => {
+    const event = {
+      ...mockEvent,
+      path: HttpPaths.PauseOnDemandRebalance,
+    };
+    const result = await handleApiRequest({
+      ...mockAdminContextBase,
+      event,
+    });
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toBe(
+      JSON.stringify({ message: `Successfully processed request: ${HttpPaths.PauseOnDemandRebalance}` }),
+    );
+    expect(database.setPause).toHaveBeenCalledWith('ondemand', true);
+  });
+
+  it('should error on pause on-demand rebalancing if already paused', async () => {
+    const event = {
+      ...mockEvent,
+      path: HttpPaths.PauseOnDemandRebalance,
+    };
+    (database.isPaused as jest.Mock).mockResolvedValue(true);
+    const result = await handleApiRequest({
+      ...mockAdminContextBase,
+      event,
+    });
+    expect(result.statusCode).toBe(500);
+    expect(JSON.parse(result.body).message).toBe(`On-demand rebalance is already paused`);
+    expect(database.setPause).toHaveBeenCalledTimes(0);
+  });
+
+  it('should handle unpause on-demand rebalancing', async () => {
+    const event = {
+      ...mockEvent,
+      path: HttpPaths.UnpauseOnDemandRebalance,
+    };
+    (database.isPaused as jest.Mock).mockResolvedValue(true);
+    const result = await handleApiRequest({
+      ...mockAdminContextBase,
+      event,
+    });
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toBe(
+      JSON.stringify({ message: `Successfully processed request: ${HttpPaths.UnpauseOnDemandRebalance}` }),
+    );
+    expect(database.setPause).toHaveBeenCalledWith('ondemand', false);
+  });
+
+  it('should error on unpause on-demand rebalancing if not paused', async () => {
+    const event = {
+      ...mockEvent,
+      path: HttpPaths.UnpauseOnDemandRebalance,
+    };
+    (database.isPaused as jest.Mock).mockResolvedValue(false);
+    const result = await handleApiRequest({
+      ...mockAdminContextBase,
+      event,
+    });
+    expect(result.statusCode).toBe(500);
+    expect(JSON.parse(result.body).message).toBe(`On-demand rebalance is not paused`);
+    expect(database.setPause).toHaveBeenCalledTimes(0);
+  });
+
   describe('Cancel Earmark', () => {
     it('should cancel earmark successfully', async () => {
       const earmarkId = 'test-earmark-id';
