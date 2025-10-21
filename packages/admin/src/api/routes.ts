@@ -362,7 +362,7 @@ const handleGetRequest = async (
             operations,
           }),
         };
-      } catch (error) {
+      } catch {
         // Handle invalid UUID format or other database errors
         return {
           statusCode: 404,
@@ -393,7 +393,7 @@ const handleGetRequest = async (
           statusCode: 200,
           body: JSON.stringify({ operation }),
         };
-      } catch (error) {
+      } catch {
         // Handle invalid UUID format or other database errors
         return {
           statusCode: 404,
