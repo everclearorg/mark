@@ -163,11 +163,11 @@ paths:
       parameters:
         - name: limit
           in: query
-          description: Maximum number of earmarks to return (max 100)
+          description: Maximum number of earmarks to return (max 1000)
           schema:
             type: integer
             minimum: 1
-            maximum: 100
+            maximum: 1000
             default: 50
         - name: offset
           in: query
@@ -273,9 +273,24 @@ paths:
       tags:
         - Rebalance Operations
       summary: List rebalance operations
-      description: Retrieve a list of rebalance operations with optional filtering
+      description: Retrieve a paginated list of rebalance operations with optional filtering
       operationId: getRebalanceOperations
       parameters:
+        - name: limit
+          in: query
+          description: Maximum number of operations to return (max 1000)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+        - name: offset
+          in: query
+          description: Number of operations to skip for pagination
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
         - name: status
           in: query
           description: Filter by operation status
@@ -298,6 +313,11 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: invoiceId
+          in: query
+          description: Filter by invoice ID of the associated earmark
+          schema:
+            type: string
       responses:
         '200':
           description: List of rebalance operations retrieved successfully
@@ -310,8 +330,57 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/RebalanceOperation'
+                  total:
+                    type: integer
+                    description: Total number of operations matching the filter (before pagination)
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /rebalance/operation/{id}:
+    get:
+      tags:
+        - Rebalance Operations
+      summary: Get rebalance operation details
+      description: Retrieve detailed information about a specific rebalance operation by its ID
+      operationId: getRebalanceOperationDetails
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The rebalance operation ID (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rebalance operation details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    $ref: '#/components/schemas/RebalanceOperation'
+        '400':
+          description: Invalid operation ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Operation ID required
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Rebalance operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Rebalance operation not found
         '500':
           $ref: '#/components/responses/InternalError'
 

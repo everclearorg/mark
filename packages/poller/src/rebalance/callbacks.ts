@@ -11,7 +11,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
   logger.info('Executing destination callbacks', { requestId });
 
   // Get all pending operations from database
-  const operations = await db.getRebalanceOperations({
+  const { operations } = await db.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
   });
 
