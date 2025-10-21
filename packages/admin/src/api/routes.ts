@@ -14,8 +14,12 @@ function validatePagination(queryParams: APIGatewayProxyEventQueryStringParamete
   limit: number;
   offset: number;
 } {
-  const limit = Math.min(parseInt(queryParams?.limit || '50'), 100);
-  const offset = parseInt(queryParams?.offset || '0');
+  const parsedLimit = parseInt(queryParams?.limit || '50');
+  const parsedOffset = parseInt(queryParams?.offset || '0');
+
+  const limit = Math.min(isNaN(parsedLimit) ? 50 : parsedLimit, 1000);
+  const offset = isNaN(parsedOffset) ? 0 : Math.max(0, parsedOffset);
+
   return { limit, offset };
 }
 
@@ -30,7 +34,10 @@ function validateEarmarkFilter(queryParams: APIGatewayProxyEventQueryStringParam
     filter.status = queryParams.status;
   }
   if (queryParams?.chainId) {
-    filter.chainId = parseInt(queryParams.chainId);
+    const parsedChainId = parseInt(queryParams.chainId);
+    if (!isNaN(parsedChainId)) {
+      filter.chainId = parsedChainId;
+    }
   }
   if (queryParams?.invoiceId) {
     filter.invoiceId = queryParams.invoiceId;
@@ -44,16 +51,24 @@ function validateOperationFilter(queryParams: APIGatewayProxyEventQueryStringPar
     status?: RebalanceOperationStatus | RebalanceOperationStatus[];
     chainId?: number;
     earmarkId?: string | null;
+    invoiceId?: string;
   } = {};
 
   if (queryParams?.status) {
     filter.status = queryParams.status as RebalanceOperationStatus;
   }
-  if (queryParams?.earmarkId) {
-    filter.earmarkId = queryParams.earmarkId;
+  if (queryParams?.earmarkId !== undefined) {
+    // Handle special case where "null" string means null earmarkId (standalone operations)
+    filter.earmarkId = queryParams.earmarkId === 'null' ? null : queryParams.earmarkId;
   }
   if (queryParams?.chainId) {
-    filter.chainId = parseInt(queryParams.chainId);
+    const parsedChainId = parseInt(queryParams.chainId);
+    if (!isNaN(parsedChainId)) {
+      filter.chainId = parsedChainId;
+    }
+  }
+  if (queryParams?.invoiceId) {
+    filter.invoiceId = queryParams.invoiceId;
   }
 
   return filter;
@@ -308,12 +323,13 @@ const handleGetRequest = async (
 
     case HttpPaths.GetRebalanceOperations: {
       const queryParams = event.queryStringParameters;
+      const { limit, offset } = validatePagination(queryParams);
       const filter = validateOperationFilter(queryParams);
 
-      const operations = await context.database.getRebalanceOperations(filter);
+      const result = await context.database.getRebalanceOperations(limit, offset, filter);
       return {
         statusCode: 200,
-        body: JSON.stringify({ operations }),
+        body: JSON.stringify({ operations: result.operations, total: result.total }),
       };
     }
 
@@ -326,25 +342,64 @@ const handleGetRequest = async (
         };
       }
 
-      const earmarks = await context.database
-        .queryWithClient<database.earmarks>('SELECT * FROM earmarks WHERE id = $1', [earmarkId])
-        .then((rows) => rows.map((row) => snakeToCamel(row)));
-      if (earmarks.length === 0) {
+      try {
+        const earmarks = await context.database
+          .queryWithClient<database.earmarks>('SELECT * FROM earmarks WHERE id = $1', [earmarkId])
+          .then((rows) => rows.map((row) => snakeToCamel(row)));
+        if (earmarks.length === 0) {
+          return {
+            statusCode: 404,
+            body: JSON.stringify({ message: 'Earmark not found' }),
+          };
+        }
+
+        const operations = await context.database.getRebalanceOperationsByEarmark(earmarkId);
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            earmark: earmarks[0],
+            operations,
+          }),
+        };
+      } catch (error) {
+        // Handle invalid UUID format or other database errors
         return {
           statusCode: 404,
           body: JSON.stringify({ message: 'Earmark not found' }),
         };
       }
+    }
 
-      const operations = await context.database.getRebalanceOperationsByEarmark(earmarkId);
+    case HttpPaths.GetRebalanceOperationDetails: {
+      const operationId = event.pathParameters?.id;
+      if (!operationId) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ message: 'Operation ID required' }),
+        };
+      }
 
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          earmark: earmarks[0],
-          operations,
-        }),
-      };
+      try {
+        const operation = await context.database.getRebalanceOperationById(operationId);
+        if (!operation) {
+          return {
+            statusCode: 404,
+            body: JSON.stringify({ message: 'Rebalance operation not found' }),
+          };
+        }
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ operation }),
+        };
+      } catch (error) {
+        // Handle invalid UUID format or other database errors
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ message: 'Rebalance operation not found' }),
+        };
+      }
     }
 
     default:
@@ -431,6 +486,12 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
   // Handle earmark detail path with ID parameter
   if (httpMethod === 'GET' && path.includes('/rebalance/earmark/')) {
     return HttpPaths.GetEarmarkDetails;
+  }
+
+  // Handle rebalance operation detail path with ID parameter
+  // Must check this before the cancel operation check
+  if (httpMethod === 'GET' && path.match(/\/rebalance\/operation\/[^/]+$/)) {
+    return HttpPaths.GetRebalanceOperationDetails;
   }
 
   // Handle cancel earmark

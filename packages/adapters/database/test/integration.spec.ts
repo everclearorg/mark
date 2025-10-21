@@ -1135,9 +1135,10 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'bridge-3',
         });
 
-        const allOperations = await getRebalanceOperations();
+        const { operations: allOperations, total } = await getRebalanceOperations();
 
         expect(allOperations.length).toBeGreaterThanOrEqual(3);
+        expect(total).toBeGreaterThanOrEqual(3);
 
         // Check that operations are ordered by created_at ASC
         for (let i = 1; i < allOperations.length; i++) {
@@ -1189,11 +1190,11 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'bridge-awaiting',
         });
 
-        const pendingOperations = await getRebalanceOperations({
+        const { operations: pendingOperations } = await getRebalanceOperations(undefined, undefined, {
           status: RebalanceOperationStatus.PENDING,
         });
 
-        const completedOperations = await getRebalanceOperations({
+        const { operations: completedOperations } = await getRebalanceOperations(undefined, undefined, {
           status: RebalanceOperationStatus.COMPLETED,
         });
 
@@ -1267,11 +1268,11 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'bridge-4',
         });
 
-        const activeOperations = await getRebalanceOperations({
+        const { operations: activeOperations } = await getRebalanceOperations(undefined, undefined, {
           status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
         });
 
-        const finalOperations = await getRebalanceOperations({
+        const { operations: finalOperations } = await getRebalanceOperations(undefined, undefined, {
           status: [RebalanceOperationStatus.COMPLETED, RebalanceOperationStatus.EXPIRED],
         });
 
@@ -1334,11 +1335,11 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'eth-bridge-2',
         });
 
-        const ethereumOperations = await getRebalanceOperations({
+        const { operations: ethereumOperations } = await getRebalanceOperations(undefined, undefined, {
           chainId: 1,
         });
 
-        const polygonOperations = await getRebalanceOperations({
+        const { operations: polygonOperations } = await getRebalanceOperations(undefined, undefined, {
           chainId: 137,
         });
 
@@ -1409,15 +1410,15 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'standalone-bridge',
         });
 
-        const earmark1Operations = await getRebalanceOperations({
+        const { operations: earmark1Operations } = await getRebalanceOperations(undefined, undefined, {
           earmarkId: earmark1.id,
         });
 
-        const earmark2Operations = await getRebalanceOperations({
+        const { operations: earmark2Operations } = await getRebalanceOperations(undefined, undefined, {
           earmarkId: earmark2.id,
         });
 
-        const standaloneOperations = await getRebalanceOperations({
+        const { operations: standaloneOperations } = await getRebalanceOperations(undefined, undefined, {
           earmarkId: null,
         });
 
@@ -1476,7 +1477,7 @@ describe('Database Adapter - Integration Tests', () => {
         });
 
         // Filter by earmark, status, and chainId
-        const filteredOperations = await getRebalanceOperations({
+        const { operations: filteredOperations } = await getRebalanceOperations(undefined, undefined, {
           earmarkId: earmark.id,
           status: RebalanceOperationStatus.PENDING,
           chainId: 1,
@@ -1490,7 +1491,7 @@ describe('Database Adapter - Integration Tests', () => {
       });
 
       it('should return empty array when no operations match filter', async () => {
-        const operations = await getRebalanceOperations({
+        const { operations } = await getRebalanceOperations(undefined, undefined, {
           status: RebalanceOperationStatus.EXPIRED,
           chainId: 999999, // Non-existent chain
           earmarkId: '12345678-1234-1234-1234-123456789012',
@@ -1546,7 +1547,7 @@ describe('Database Adapter - Integration Tests', () => {
           bridge: 'third-bridge',
         });
 
-        const operations = await getRebalanceOperations({
+        const { operations } = await getRebalanceOperations(undefined, undefined, {
           earmarkId: earmark.id,
           status: RebalanceOperationStatus.PENDING,
         });

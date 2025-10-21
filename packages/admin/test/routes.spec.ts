@@ -21,6 +21,10 @@ jest.mock('@mark/database', () => ({
   queryWithClient: jest.fn(),
   updateEarmarkStatus: jest.fn(),
   snakeToCamel: jest.fn((obj) => obj), // Simple pass-through mock
+  getEarmarksWithOperations: jest.fn(),
+  getRebalanceOperations: jest.fn(),
+  getRebalanceOperationsByEarmark: jest.fn(),
+  getRebalanceOperationById: jest.fn(),
 }));
 
 const mockLogger = {
@@ -742,6 +746,188 @@ describe('handleApiRequest', () => {
       expect(body.message).toBe(
         'Cannot cancel operation with status: cancelled. Only PENDING and AWAITING_CALLBACK operations can be cancelled.',
       );
+    });
+  });
+
+  describe('GET Rebalance Operations', () => {
+    it('should retrieve rebalance operations with pagination', async () => {
+      const mockOperations = [
+        { id: 'op1', status: 'pending', originChainId: 1, destinationChainId: 10 },
+        { id: 'op2', status: 'completed', originChainId: 1, destinationChainId: 137 },
+      ];
+
+      const event = {
+        ...mockEvent,
+        httpMethod: 'GET',
+        path: '/admin/rebalance/operations',
+        queryStringParameters: {
+          limit: '10',
+          offset: '0',
+        },
+      };
+
+      (database.getRebalanceOperations as jest.Mock).mockResolvedValueOnce({
+        operations: mockOperations,
+        total: 25,
+      });
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.operations).toEqual(mockOperations);
+      expect(body.total).toBe(25);
+      expect(database.getRebalanceOperations).toHaveBeenCalledWith(10, 0, {});
+    });
+
+    it('should retrieve rebalance operations with invoiceId filter', async () => {
+      const mockOperations = [
+        { id: 'op1', status: 'pending', originChainId: 1, destinationChainId: 10 },
+      ];
+
+      const event = {
+        ...mockEvent,
+        httpMethod: 'GET',
+        path: '/admin/rebalance/operations',
+        queryStringParameters: {
+          limit: '50',
+          offset: '0',
+          invoiceId: 'test-invoice-123',
+        },
+      };
+
+      (database.getRebalanceOperations as jest.Mock).mockResolvedValueOnce({
+        operations: mockOperations,
+        total: 1,
+      });
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.operations).toEqual(mockOperations);
+      expect(body.total).toBe(1);
+      expect(database.getRebalanceOperations).toHaveBeenCalledWith(50, 0, {
+        invoiceId: 'test-invoice-123',
+      });
+    });
+
+    it('should retrieve rebalance operations with multiple filters', async () => {
+      const mockOperations = [
+        { id: 'op1', status: 'pending', originChainId: 1, destinationChainId: 10 },
+      ];
+
+      const event = {
+        ...mockEvent,
+        httpMethod: 'GET',
+        path: '/admin/rebalance/operations',
+        queryStringParameters: {
+          limit: '20',
+          offset: '10',
+          status: 'pending',
+          chainId: '1',
+          invoiceId: 'test-invoice-456',
+        },
+      };
+
+      (database.getRebalanceOperations as jest.Mock).mockResolvedValueOnce({
+        operations: mockOperations,
+        total: 15,
+      });
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.operations).toEqual(mockOperations);
+      expect(body.total).toBe(15);
+      expect(database.getRebalanceOperations).toHaveBeenCalledWith(20, 10, {
+        status: 'pending',
+        chainId: 1,
+        invoiceId: 'test-invoice-456',
+      });
+    });
+  });
+
+  describe('GET Rebalance Operation By ID', () => {
+    it('should retrieve a specific operation by ID', async () => {
+      const operationId = 'test-op-id-123';
+      const mockOperation = {
+        id: operationId,
+        status: 'pending',
+        originChainId: 1,
+        destinationChainId: 10,
+        earmarkId: 'test-earmark-id',
+        transactions: { '1': { transactionHash: '0x123' } },
+      };
+
+      const event = {
+        ...mockEvent,
+        httpMethod: 'GET',
+        path: `/admin/rebalance/operation/${operationId}`,
+        pathParameters: { id: operationId },
+      };
+
+      (database.getRebalanceOperationById as jest.Mock).mockResolvedValueOnce(mockOperation);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.operation).toEqual(mockOperation);
+      expect(database.getRebalanceOperationById).toHaveBeenCalledWith(operationId);
+    });
+
+    it('should return 400 when operation ID is missing', async () => {
+      const event = {
+        ...mockEvent,
+        httpMethod: 'GET',
+        path: '/admin/rebalance/operation/some-id',
+        pathParameters: {}, // No id in pathParameters
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Operation ID required');
+    });
+
+    it('should return 404 when operation is not found', async () => {
+      const operationId = 'non-existent-op-id';
+
+      const event = {
+        ...mockEvent,
+        httpMethod: 'GET',
+        path: `/admin/rebalance/operation/${operationId}`,
+        pathParameters: { id: operationId },
+      };
+
+      (database.getRebalanceOperationById as jest.Mock).mockResolvedValueOnce(undefined);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(404);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Rebalance operation not found');
     });
   });
 });

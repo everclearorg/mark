@@ -36,6 +36,7 @@ export enum HttpPaths {
   GetEarmarks = '/rebalance/earmarks',
   GetRebalanceOperations = '/rebalance/operations',
   GetEarmarkDetails = '/rebalance/earmark',
+  GetRebalanceOperationDetails = '/rebalance/operation',
   CancelEarmark = '/rebalance/cancel',
   CancelRebalanceOperation = '/rebalance/operation/cancel',
 }
@@ -55,4 +56,5 @@ export interface OperationFilter {
   status?: string;
   chainId?: number;
   earmarkId?: string;
+  invoiceId?: string;
 }
