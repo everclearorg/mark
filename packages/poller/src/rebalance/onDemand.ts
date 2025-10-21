@@ -1175,7 +1175,11 @@ export async function getAvailableBalanceLessEarmarks(
   // this performs well (~10-15ms). If scale exceeds 10,000 operations, consider adding chainId filter here.
   const activeEarmarkIds = new Set(earmarks.map((e: database.Earmark) => e.id));
   const { operations: onDemandOps } = await database.getRebalanceOperations(undefined, undefined, {
-    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK, RebalanceOperationStatus.COMPLETED],
+    status: [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+      RebalanceOperationStatus.COMPLETED,
+    ],
   });
 
   const onDemandFunds = onDemandOps
