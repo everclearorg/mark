@@ -308,10 +308,10 @@ const handleGetRequest = async (
       const { limit, offset } = validatePagination(queryParams);
       const filter = validateEarmarkFilter(queryParams);
 
-      const earmarks = await context.database.getEarmarksWithOperations(limit, offset, filter);
+      const result = await context.database.getEarmarksWithOperations(limit, offset, filter);
       return {
         statusCode: 200,
-        body: JSON.stringify({ earmarks, total: earmarks.length }),
+        body: JSON.stringify({ earmarks: result.earmarks, total: result.total }),
       };
     }
 
