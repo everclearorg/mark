@@ -234,6 +234,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         apiKey: configJson.binance_api_key ?? (await fromEnv('BINANCE_API_KEY', true)) ?? undefined,
         apiSecret: configJson.binance_api_secret ?? (await fromEnv('BINANCE_API_SECRET', true)) ?? undefined,
       },
+      coinbase: {
+        apiKey: configJson.coinbase_api_key ?? (await fromEnv('COINBASE_API_KEY', true)) ?? undefined,
+        apiSecret: configJson.coinbase_api_secret ?? (await fromEnv('COINBASE_API_SECRET', true)) ?? undefined,
+      },
       kraken: {
         apiKey: configJson.kraken_api_key ?? (await fromEnv('KRAKEN_API_KEY', true)) ?? undefined,
         apiSecret: configJson.kraken_api_secret ?? (await fromEnv('KRAKEN_API_SECRET', true)) ?? undefined,
