@@ -99,12 +99,6 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
 
     // Handle POST requests (existing functionality)
     switch (request) {
-      case HttpPaths.ClearRebalance:
-        throw new Error(`Fix rebalance clearing with db`);
-      case HttpPaths.ClearPurchase:
-        context.logger.info('Clearing purchase cache');
-        await context.purchaseCache.clear();
-        break;
       case HttpPaths.PausePurchase:
         await pauseIfNeeded('purchase', context.purchaseCache, context);
         break;

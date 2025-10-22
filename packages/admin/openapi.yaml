@@ -22,25 +22,6 @@ tags:
     description: Endpoints for managing earmarks and related operations
 
 paths:
-  /clear/purchase:
-    post:
-      tags:
-        - Purchase Operations
-      summary: Clear purchase cache
-      description: Clears all entries from the purchase cache
-      operationId: clearPurchaseCache
-      responses:
-        '200':
-          description: Purchase cache cleared successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
   /pause/purchase:
     post:
       tags:

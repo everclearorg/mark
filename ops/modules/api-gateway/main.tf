@@ -20,12 +20,6 @@ resource "aws_api_gateway_resource" "unpause" {
   path_part   = "unpause"
 }
 
-resource "aws_api_gateway_resource" "clear" {
-  rest_api_id = aws_api_gateway_rest_api.admin_api.id
-  parent_id   = aws_api_gateway_rest_api.admin_api.root_resource_id
-  path_part   = "clear"
-}
-
 resource "aws_api_gateway_resource" "pause_purchase" {
   rest_api_id = aws_api_gateway_rest_api.admin_api.id
   parent_id   = aws_api_gateway_resource.pause.id
@@ -60,18 +54,6 @@ resource "aws_api_gateway_resource" "unpause_ondemand_rebalance" {
   rest_api_id = aws_api_gateway_rest_api.admin_api.id
   parent_id   = aws_api_gateway_resource.unpause.id
   path_part   = "ondemand-rebalance"
-}
-
-resource "aws_api_gateway_resource" "clear_purchase" {
-  rest_api_id = aws_api_gateway_rest_api.admin_api.id
-  parent_id   = aws_api_gateway_resource.clear.id
-  path_part   = "purchase"
-}
-
-resource "aws_api_gateway_resource" "clear_rebalance" {
-  rest_api_id = aws_api_gateway_rest_api.admin_api.id
-  parent_id   = aws_api_gateway_resource.clear.id
-  path_part   = "rebalance"
 }
 
 resource "aws_api_gateway_resource" "rebalance" {
@@ -161,20 +143,6 @@ resource "aws_api_gateway_method" "pause_ondemand_rebalance_post" {
 resource "aws_api_gateway_method" "unpause_ondemand_rebalance_post" {
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
   resource_id   = aws_api_gateway_resource.unpause_ondemand_rebalance.id
-  http_method   = "POST"
-  authorization = "NONE" # Consider using AWS_IAM for authentication
-}
-
-resource "aws_api_gateway_method" "clear_purchase_post" {
-  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
-  resource_id   = aws_api_gateway_resource.clear_purchase.id
-  http_method   = "POST"
-  authorization = "NONE" # Consider using AWS_IAM for authentication
-}
-
-resource "aws_api_gateway_method" "clear_rebalance_post" {
-  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
-  resource_id   = aws_api_gateway_resource.clear_rebalance.id
   http_method   = "POST"
   authorization = "NONE" # Consider using AWS_IAM for authentication
 }
@@ -303,24 +271,6 @@ resource "aws_api_gateway_integration" "unpause_ondemand_rebalance_integration" 
   uri                     = aws_lambda_function.admin_api.invoke_arn
 }
 
-resource "aws_api_gateway_integration" "clear_purchase_integration" {
-  rest_api_id             = aws_api_gateway_rest_api.admin_api.id
-  resource_id             = aws_api_gateway_resource.clear_purchase.id
-  http_method             = aws_api_gateway_method.clear_purchase_post.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.admin_api.invoke_arn
-}
-
-resource "aws_api_gateway_integration" "clear_rebalance_integration" {
-  rest_api_id             = aws_api_gateway_rest_api.admin_api.id
-  resource_id             = aws_api_gateway_resource.clear_rebalance.id
-  http_method             = aws_api_gateway_method.clear_rebalance_post.http_method
-  integration_http_method = "POST"
-  type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.admin_api.invoke_arn
-}
-
 resource "aws_api_gateway_integration" "rebalance_earmarks_integration" {
   rest_api_id             = aws_api_gateway_rest_api.admin_api.id
   resource_id             = aws_api_gateway_resource.rebalance_earmarks.id
@@ -384,8 +334,6 @@ resource "aws_api_gateway_deployment" "admin_api" {
     aws_api_gateway_integration.unpause_purchase_integration,
     aws_api_gateway_integration.unpause_rebalance_integration,
     aws_api_gateway_integration.unpause_ondemand_rebalance_integration,
-    aws_api_gateway_integration.clear_purchase_integration,
-    aws_api_gateway_integration.clear_rebalance_integration,
     aws_api_gateway_integration.rebalance_earmarks_integration,
     aws_api_gateway_integration.rebalance_operations_integration,
     aws_api_gateway_integration.rebalance_earmark_id_integration,
