@@ -104,6 +104,12 @@ resource "aws_api_gateway_resource" "rebalance_operation_cancel" {
   path_part   = "cancel"
 }
 
+resource "aws_api_gateway_resource" "rebalance_operation_id" {
+  rest_api_id = aws_api_gateway_rest_api.admin_api.id
+  parent_id   = aws_api_gateway_resource.rebalance_operation.id
+  path_part   = "{id}"
+}
+
 # Create POST methods for each endpoint
 resource "aws_api_gateway_method" "pause_purchase_post" {
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
@@ -164,6 +170,13 @@ resource "aws_api_gateway_method" "rebalance_operations_get" {
 resource "aws_api_gateway_method" "rebalance_earmark_id_get" {
   rest_api_id   = aws_api_gateway_rest_api.admin_api.id
   resource_id   = aws_api_gateway_resource.rebalance_earmark_id.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "rebalance_operation_id_get" {
+  rest_api_id   = aws_api_gateway_rest_api.admin_api.id
+  resource_id   = aws_api_gateway_resource.rebalance_operation_id.id
   http_method   = "GET"
   authorization = "NONE"
 }
@@ -298,6 +311,15 @@ resource "aws_api_gateway_integration" "rebalance_earmark_id_integration" {
   uri                     = aws_lambda_function.admin_api.invoke_arn
 }
 
+resource "aws_api_gateway_integration" "rebalance_operation_id_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.admin_api.id
+  resource_id             = aws_api_gateway_resource.rebalance_operation_id.id
+  http_method             = aws_api_gateway_method.rebalance_operation_id_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.admin_api.invoke_arn
+}
+
 resource "aws_api_gateway_integration" "rebalance_cancel_integration" {
   rest_api_id             = aws_api_gateway_rest_api.admin_api.id
   resource_id             = aws_api_gateway_resource.rebalance_cancel.id
@@ -337,6 +359,7 @@ resource "aws_api_gateway_deployment" "admin_api" {
     aws_api_gateway_integration.rebalance_earmarks_integration,
     aws_api_gateway_integration.rebalance_operations_integration,
     aws_api_gateway_integration.rebalance_earmark_id_integration,
+    aws_api_gateway_integration.rebalance_operation_id_integration,
     aws_api_gateway_integration.rebalance_cancel_integration,
     aws_api_gateway_integration.rebalance_operation_cancel_integration
   ]
