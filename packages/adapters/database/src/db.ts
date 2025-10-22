@@ -687,68 +687,104 @@ export async function getRebalanceOperationsByEarmark(
   });
 }
 
-export async function getRebalanceOperations(filter?: {
-  status?: RebalanceOperationStatus | RebalanceOperationStatus[];
-  chainId?: number;
-  earmarkId?: string | null;
-}): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]> {
-  let query = 'SELECT * FROM rebalance_operations';
+export async function getRebalanceOperations(
+  limit?: number,
+  offset?: number,
+  filter?: {
+    status?: RebalanceOperationStatus | RebalanceOperationStatus[];
+    chainId?: number;
+    earmarkId?: string | null;
+    invoiceId?: string;
+  },
+): Promise<{
+  operations: (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[];
+  total: number;
+}> {
   const values: unknown[] = [];
   const conditions: string[] = [];
   let paramCount = 1;
 
+  // Build WHERE conditions
   if (filter) {
     if (filter.status) {
       if (Array.isArray(filter.status)) {
-        conditions.push(`status = ANY($${paramCount})`);
+        conditions.push(`ro.status = ANY($${paramCount})`);
         values.push(filter.status);
       } else {
-        conditions.push(`status = $${paramCount}`);
+        conditions.push(`ro.status = $${paramCount}`);
         values.push(filter.status);
       }
       paramCount++;
     }
 
     if (filter.chainId !== undefined) {
-      conditions.push(`"origin_chain_id" = $${paramCount}`);
+      conditions.push(`ro."origin_chain_id" = $${paramCount}`);
       values.push(filter.chainId);
       paramCount++;
     }
 
     if (filter.earmarkId !== undefined) {
       if (filter.earmarkId === null) {
-        conditions.push('"earmark_id" IS NULL');
+        conditions.push('ro."earmark_id" IS NULL');
       } else {
-        conditions.push(`"earmark_id" = $${paramCount}`);
+        conditions.push(`ro."earmark_id" = $${paramCount}`);
         values.push(filter.earmarkId);
         paramCount++;
       }
     }
+
+    if (filter.invoiceId !== undefined) {
+      conditions.push(`e."invoice_id" = $${paramCount}`);
+      values.push(filter.invoiceId);
+      paramCount++;
+    }
   }
 
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
+  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  // Get total count
+  const needsJoin = filter?.invoiceId !== undefined;
+  const countQuery = needsJoin
+    ? `SELECT COUNT(*) FROM rebalance_operations ro LEFT JOIN earmarks e ON ro."earmark_id" = e.id ${whereClause}`
+    : `SELECT COUNT(*) FROM rebalance_operations ro ${whereClause}`;
+
+  const countResult = await queryWithClient<{ count: string }>(countQuery, values);
+  const total = parseInt(countResult[0].count, 10);
+
+  // Get operations with pagination
+  const dataQuery = needsJoin
+    ? `SELECT ro.* FROM rebalance_operations ro LEFT JOIN earmarks e ON ro."earmark_id" = e.id ${whereClause} ORDER BY ro."created_at" ASC`
+    : `SELECT * FROM rebalance_operations ro ${whereClause} ORDER BY ro."created_at" ASC`;
+
+  let finalQuery = dataQuery;
+  if (limit !== undefined) {
+    finalQuery += ` LIMIT $${paramCount++}`;
+    values.push(limit);
+  }
+  if (offset !== undefined) {
+    finalQuery += ` OFFSET $${paramCount}`;
+    values.push(offset);
   }
 
-  query += ' ORDER BY "created_at" ASC';
-
-  const operations = await queryWithClient<rebalance_operations>(query, values);
+  const operations = await queryWithClient<rebalance_operations>(finalQuery, values);
 
   if (operations.length === 0) {
-    return [];
+    return { operations: [], total };
   }
 
   // Fetch transactions for all operations
   const operationIds = operations.map((op) => op.id);
   const transactionsByOperation = await getTransactionsForRebalanceOperations(operationIds);
 
-  return operations.map((op) => {
+  const operationsWithTransactions = operations.map((op) => {
     const camelCasedOp = snakeToCamel(op);
     return {
       ...camelCasedOp,
       transactions: transactionsByOperation[op.id] || undefined,
     };
   });
+
+  return { operations: operationsWithTransactions, total };
 }
 
 export async function getRebalanceOperationByTransactionHash(
@@ -792,6 +828,30 @@ export async function getRebalanceOperationByTransactionHash(
   return {
     ...camelOp,
     transactions: transactionsByOperation[tx.rebalance_operation_id] || {},
+  };
+}
+
+export async function getRebalanceOperationById(
+  operationId: string,
+): Promise<
+  (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }) | undefined
+> {
+  const opQuery = `SELECT * FROM rebalance_operations WHERE id = $1 LIMIT 1`;
+  const opResult = await queryWithClient<rebalance_operations>(opQuery, [operationId]);
+
+  if (opResult.length === 0) {
+    return undefined;
+  }
+
+  const operation = opResult[0];
+
+  // Fetch all transactions associated with this operation
+  const transactionsByOperation = await getTransactionsForRebalanceOperations([operationId]);
+  const camelOp = snakeToCamel(operation);
+
+  return {
+    ...camelOp,
+    transactions: transactionsByOperation[operationId] || undefined,
   };
 }
 

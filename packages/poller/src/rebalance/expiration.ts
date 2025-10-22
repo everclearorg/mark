@@ -117,11 +117,7 @@ export async function cleanupExpiredEarmarks(context: ProcessingContext): Promis
         )
         AND e.created_at < NOW() - INTERVAL '${ttlMinutes} minutes'
       `,
-        [
-          EarmarkStatus.PENDING,
-          RebalanceOperationStatus.PENDING,
-          RebalanceOperationStatus.AWAITING_CALLBACK,
-        ],
+        [EarmarkStatus.PENDING, RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
       );
 
       for (const earmark of orphanedEarmarks.rows) {
