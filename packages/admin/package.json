@@ -20,9 +20,11 @@
     },
     "dependencies": {
         "@mark/cache": "workspace:*",
+        "@mark/chainservice": "workspace:*",
         "@mark/core": "workspace:*",
         "@mark/database": "workspace:*",
         "@mark/logger": "workspace:*",
+        "@mark/web3signer": "workspace:*",
         "aws-lambda": "1.0.7",
         "datadog-lambda-js": "10.123.0",
         "dd-trace": "5.42.0",

@@ -4,8 +4,9 @@ import { verifyAdminToken } from './auth';
 import * as database from '@mark/database';
 import { snakeToCamel } from '@mark/database';
 import { PurchaseCache } from '@mark/cache';
-import { RebalanceOperationStatus, EarmarkStatus } from '@mark/core';
+import { RebalanceOperationStatus, EarmarkStatus, getTokenAddressFromConfig } from '@mark/core';
 import { APIGatewayProxyEventQueryStringParameters } from 'aws-lambda';
+import { encodeFunctionData, erc20Abi, Hex } from 'viem';
 
 type Database = typeof database;
 
@@ -121,6 +122,8 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
         return handleCancelEarmark(context);
       case HttpPaths.CancelRebalanceOperation:
         return handleCancelRebalanceOperation(context);
+      case HttpPaths.TriggerSend:
+        return handleTriggerSend(context);
       default:
         throw new Error(`Unknown request: ${request}`);
     }
@@ -289,6 +292,164 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       statusCode: 500,
       body: JSON.stringify({
         message: 'Failed to cancel earmark',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
+    };
+  }
+};
+
+const handleTriggerSend = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
+  const { logger, event, config } = context;
+  const startTime = Date.now();
+
+  try {
+    const body = JSON.parse(event.body || '{}');
+    const { chainId, asset, recipient, amount, memo } = body;
+
+    // Validate required fields
+    if (!chainId) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'chainId is required in request body' }),
+      };
+    }
+    if (!asset) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'asset is required in request body' }),
+      };
+    }
+    if (!recipient) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'recipient is required in request body' }),
+      };
+    }
+    if (!amount) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'amount is required in request body' }),
+      };
+    }
+
+    // Validate recipient is whitelisted
+    const whitelistedRecipients = config.whitelistedRecipients || [];
+    if (whitelistedRecipients.length === 0) {
+      logger.warn('No whitelisted recipients configured', { chainId, recipient });
+      return {
+        statusCode: 403,
+        body: JSON.stringify({ message: 'No whitelisted recipients configured. Cannot send funds.' }),
+      };
+    }
+
+    const isWhitelisted = whitelistedRecipients.some(
+      (whitelisted) => whitelisted.toLowerCase() === recipient.toLowerCase()
+    );
+
+    if (!isWhitelisted) {
+      logger.warn('Recipient not whitelisted', {
+        chainId,
+        recipient,
+        whitelistedRecipients,
+      });
+      return {
+        statusCode: 403,
+        body: JSON.stringify({
+          message: 'Recipient address is not whitelisted',
+          recipient,
+        }),
+      };
+    }
+
+    logger.info('Trigger send request validated', {
+      chainId,
+      asset,
+      recipient,
+      amount,
+      memo: memo || 'none',
+      operation: 'trigger_send',
+    });
+
+    // Get chain configuration
+    const { markConfig } = config;
+    const chainConfig = markConfig.chains[chainId];
+    if (!chainConfig) {
+      logger.error('Chain not configured', { chainId });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Chain ${chainId} is not configured` }),
+      };
+    }
+
+    // Get token address from configuration
+    const tokenAddress = getTokenAddressFromConfig(asset, chainId.toString(), markConfig);
+    if (!tokenAddress) {
+      logger.error('Token not found in configuration', { chainId, asset });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Token ${asset} not found for chain ${chainId}` }),
+      };
+    }
+
+    // Encode ERC20 transfer call
+    const transferData = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: 'transfer',
+      args: [recipient as `0x${string}`, BigInt(amount)],
+    });
+
+    logger.info('Submitting token transfer', {
+      chainId,
+      asset,
+      tokenAddress,
+      recipient,
+      amount,
+      operation: 'trigger_send',
+    });
+
+    // Submit transaction
+    const receipt = await context.chainService.submitAndMonitor(chainId.toString(), {
+      chainId,
+      to: tokenAddress,
+      data: transferData as Hex,
+      value: '0',
+      from: markConfig.ownAddress,
+      funcSig: 'transfer(address,uint256)',
+    });
+
+    const duration = Date.now() - startTime;
+
+    logger.info('Trigger send completed successfully', {
+      chainId,
+      asset,
+      tokenAddress,
+      recipient,
+      amount,
+      transactionHash: receipt.transactionHash,
+      duration,
+      status: 'completed',
+      operation: 'trigger_send',
+    });
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        message: 'Funds sent successfully',
+        transactionHash: receipt.transactionHash,
+        chainId,
+        asset,
+        recipient,
+        amount,
+        memo,
+      }),
+    };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logger.error('Failed to process trigger send', { error, duration });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: 'Failed to process trigger send request',
         error: error instanceof Error ? error.message : 'Unknown error',
       }),
     };

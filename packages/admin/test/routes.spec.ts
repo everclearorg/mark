@@ -39,6 +39,11 @@ const mockAdminConfig: AdminConfig = {
   redis: { host: 'localhost', port: 6379 },
   adminToken: 'test-token',
   database: { connectionString: 'postgresql://localhost:5432/test' },
+  whitelistedRecipients: ['0x1234567890123456789012345678901234567890'],
+  markConfig: {
+    chains: {},
+    ownAddress: '0x0000000000000000000000000000000000000000',
+  } as any,
 };
 
 const mockEvent: APIGatewayEvent = {
@@ -57,6 +62,11 @@ const mockEvent: APIGatewayEvent = {
   } as any,
 } as any;
 
+const mockChainService = {
+  submitAndMonitor: jest.fn(),
+  readTx: jest.fn(),
+} as any;
+
 const mockAdminContextBase: AdminContext = {
   logger: mockLogger as any,
   requestId: 'test-request-id',
@@ -65,6 +75,7 @@ const mockAdminContextBase: AdminContext = {
   startTime: Date.now(),
   purchaseCache: new PurchaseCache(mockAdminConfig.redis.host, mockAdminConfig.redis.port),
   database: database as typeof database,
+  chainService: mockChainService,
 };
 
 describe('extractRequest', () => {
@@ -928,6 +939,285 @@ describe('handleApiRequest', () => {
       expect(result.statusCode).toBe(404);
       const body = JSON.parse(result.body);
       expect(body.message).toBe('Rebalance operation not found');
+    });
+  });
+
+  describe('GET Earmarks', () => {
+    it('should retrieve earmarks with operations and total count', async () => {
+      const mockEarmarks = [
+        {
+          id: 'earmark1',
+          invoiceId: 'invoice-001',
+          status: 'pending',
+          designatedPurchaseChain: 1,
+          operations: [
+            { id: 'op1', status: 'pending' },
+            { id: 'op2', status: 'completed' },
+          ],
+        },
+        {
+          id: 'earmark2',
+          invoiceId: 'invoice-002',
+          status: 'ready',
+          designatedPurchaseChain: 137,
+          operations: [],
+        },
+      ];
+
+      const event = {
+        ...mockEvent,
+        httpMethod: 'GET',
+        path: '/admin/rebalance/earmarks',
+        queryStringParameters: {
+          limit: '50',
+          offset: '0',
+        },
+      };
+
+      (database.getEarmarksWithOperations as jest.Mock).mockResolvedValueOnce({
+        earmarks: mockEarmarks,
+        total: 10,
+      });
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.earmarks).toEqual(mockEarmarks);
+      expect(body.total).toBe(10);
+      expect(database.getEarmarksWithOperations).toHaveBeenCalledWith(50, 0, {});
+    });
+
+    it('should retrieve earmarks with filters', async () => {
+      const event = {
+        ...mockEvent,
+        httpMethod: 'GET',
+        path: '/admin/rebalance/earmarks',
+        queryStringParameters: {
+          limit: '20',
+          offset: '5',
+          status: 'pending',
+          chainId: '1',
+          invoiceId: 'test-invoice',
+        },
+      };
+
+      (database.getEarmarksWithOperations as jest.Mock).mockResolvedValueOnce({
+        earmarks: [],
+        total: 0,
+      });
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.earmarks).toEqual([]);
+      expect(body.total).toBe(0);
+      expect(database.getEarmarksWithOperations).toHaveBeenCalledWith(20, 5, {
+        status: 'pending',
+        chainId: 1,
+        invoiceId: 'test-invoice',
+      });
+    });
+  });
+
+  describe('POST Trigger Send', () => {
+    it('should validate whitelisted recipient and reject with chain not configured', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+        body: JSON.stringify({
+          chainId: 999, // Non-existent chain
+          asset: 'USDC',
+          recipient: '0x1234567890123456789012345678901234567890',
+          amount: '1000000',
+          memo: 'Test send',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toContain('Chain 999 is not configured');
+    });
+
+    it('should reject non-whitelisted recipient', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+        body: JSON.stringify({
+          chainId: 1,
+          asset: 'USDC',
+          recipient: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('Recipient address is not whitelisted');
+      expect(body.recipient).toBe('0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef');
+    });
+
+    it('should perform case-insensitive whitelist matching', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+        body: JSON.stringify({
+          chainId: 999, // Non-existent chain
+          asset: 'USDC',
+          recipient: '0X1234567890123456789012345678901234567890', // Uppercase
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      // Should pass whitelist validation but fail on chain config
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toContain('Chain 999 is not configured');
+    });
+
+    it('should return 400 when chainId is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+        body: JSON.stringify({
+          asset: 'USDC',
+          recipient: '0x1234567890123456789012345678901234567890',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('chainId is required in request body');
+    });
+
+    it('should return 400 when asset is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+        body: JSON.stringify({
+          chainId: 1,
+          recipient: '0x1234567890123456789012345678901234567890',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('asset is required in request body');
+    });
+
+    it('should return 400 when recipient is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+        body: JSON.stringify({
+          chainId: 1,
+          asset: 'USDC',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('recipient is required in request body');
+    });
+
+    it('should return 400 when amount is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+        body: JSON.stringify({
+          chainId: 1,
+          asset: 'USDC',
+          recipient: '0x1234567890123456789012345678901234567890',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('amount is required in request body');
+    });
+
+    it('should return 403 when no whitelist is configured', async () => {
+      const configNoWhitelist = {
+        ...mockAdminConfig,
+        whitelistedRecipients: [],
+      };
+
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+        body: JSON.stringify({
+          chainId: 1,
+          asset: 'USDC',
+          recipient: '0x1234567890123456789012345678901234567890',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        config: configNoWhitelist,
+        event,
+      });
+
+      expect(result.statusCode).toBe(403);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('No whitelisted recipients configured. Cannot send funds.');
+    });
+  });
+
+  describe('extractRequest for trigger/send', () => {
+    it('should return HttpPaths.TriggerSend for POST /admin/trigger/send', () => {
+      const event: APIGatewayEvent = {
+        ...mockEvent,
+        path: '/admin/trigger/send',
+      };
+      const context: AdminContext = { ...mockAdminContextBase, event };
+      expect(extractRequest(context)).toBe(HttpPaths.TriggerSend);
     });
   });
 });

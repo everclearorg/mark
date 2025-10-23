@@ -1,5 +1,5 @@
 import { PurchaseCache } from '@mark/cache';
-import { ConfigurationError, fromEnv, LogLevel, requireEnv, cleanupHttpConnections } from '@mark/core';
+import { ConfigurationError, fromEnv, LogLevel, requireEnv, cleanupHttpConnections, loadConfiguration as loadMarkConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { AdminConfig, AdminAdapter, AdminContext } from './types';
 import * as database from '@mark/database';
@@ -7,12 +7,32 @@ import { APIGatewayProxyEvent } from 'aws-lambda';
 import { handleApiRequest } from './api';
 import { bytesToHex } from 'viem';
 import { getRandomValues } from 'crypto';
+import { ChainService, EthWallet } from '@mark/chainservice';
+import { Web3Signer } from '@mark/web3signer';
 
-function initializeAdapters(config: AdminConfig): AdminAdapter {
+function initializeAdapters(config: AdminConfig, logger: Logger): AdminAdapter {
   database.initializeDatabase(config.database);
+
+  // Initialize web3signer and chainService
+  const web3Signer = config.markConfig.web3SignerUrl.startsWith('http')
+    ? new Web3Signer(config.markConfig.web3SignerUrl)
+    : new EthWallet(config.markConfig.web3SignerUrl);
+
+  const chainService = new ChainService(
+    {
+      chains: config.markConfig.chains,
+      maxRetries: 3,
+      retryDelay: 15000,
+      logLevel: config.logLevel,
+    },
+    web3Signer as EthWallet,
+    logger,
+  );
+
   return {
     database,
     purchaseCache: new PurchaseCache(config.redis.host, config.redis.port),
+    chainService,
   };
 }
 
@@ -27,14 +47,21 @@ async function cleanupAdapters(adapters: AdminAdapter): Promise<void> {
 
 async function loadConfiguration(): Promise<AdminConfig> {
   try {
+    // Load the full Mark configuration (for chainService)
+    const markConfig = await loadMarkConfiguration();
+
+    const whitelistedRecipientsRaw = await fromEnv('WHITELISTED_RECIPIENTS');
+    const whitelistedRecipients = whitelistedRecipientsRaw
+      ? whitelistedRecipientsRaw.split(',').map((addr) => addr.trim())
+      : undefined;
+
     const config = {
-      logLevel: ((await fromEnv('LOG_LEVEL')) ?? 'debug') as LogLevel,
+      logLevel: markConfig.logLevel,
       adminToken: await requireEnv('ADMIN_TOKEN'),
-      redis: {
-        host: await requireEnv('REDIS_HOST'),
-        port: parseInt(await requireEnv('REDIS_PORT')),
-      },
-      database: { connectionString: await requireEnv('DATABASE_URL') },
+      redis: markConfig.redis,
+      database: markConfig.database,
+      whitelistedRecipients,
+      markConfig,
     };
     return config;
   } catch (e) {
@@ -55,7 +82,7 @@ export const initAdminApi = async (event: APIGatewayProxyEvent): Promise<{ statu
     level: config.logLevel,
   });
 
-  const adapters = initializeAdapters(config);
+  const adapters = initializeAdapters(config, logger);
 
   try {
     const context: AdminContext = {
