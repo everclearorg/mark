@@ -20,6 +20,8 @@ tags:
     description: Endpoints for managing rebalance operations and state
   - name: Earmarks
     description: Endpoints for managing earmarks and related operations
+  - name: Trigger Operations
+    description: Endpoints for manually triggering operations (send, rebalance, intent)
 
 paths:
   /pause/purchase:
@@ -193,7 +195,7 @@ paths:
                       $ref: '#/components/schemas/EarmarkWithOperations'
                   total:
                     type: integer
-                    description: Total number of earmarks returned
+                    description: Total number of earmarks matching the filter (before pagination)
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
@@ -412,7 +414,7 @@ paths:
                 cannotCancel:
                   summary: Cannot cancel earmark
                   value:
-                    message: Cannot cancel earmark with status: completed
+                    message: "Cannot cancel earmark with status: completed"
                     currentStatus: completed
         '403':
           $ref: '#/components/responses/Forbidden'
@@ -474,7 +476,7 @@ paths:
                 cannotCancel:
                   summary: Cannot cancel operation
                   value:
-                    message: Cannot cancel operation with status: completed. Only PENDING and AWAITING_CALLBACK operations can be cancelled.
+                    message: "Cannot cancel operation with status: completed. Only PENDING and AWAITING_CALLBACK operations can be cancelled."
                     currentStatus: completed
         '403':
           $ref: '#/components/responses/Forbidden'
@@ -486,6 +488,321 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 message: Rebalance operation not found
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /trigger/send:
+    post:
+      tags:
+        - Trigger Operations
+      summary: Send funds to whitelisted address
+      description: Manually send ERC20 tokens to a whitelisted EOA address
+      operationId: triggerSend
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - chainId
+                - asset
+                - recipient
+                - amount
+              properties:
+                chainId:
+                  type: integer
+                  description: Chain ID to send from
+                  example: 42161
+                asset:
+                  type: string
+                  description: Asset ticker to send (e.g., USDC, WETH)
+                  example: USDC
+                recipient:
+                  type: string
+                  description: Recipient address (must be in whitelist)
+                  example: "0x1234567890123456789012345678901234567890"
+                amount:
+                  type: string
+                  description: Amount to send in token native units (e.g., wei for 18 decimals, smallest unit for 6 decimals)
+                  example: "1000000"
+                memo:
+                  type: string
+                  description: Optional transaction memo for logging purposes
+                  example: "Emergency withdrawal"
+      responses:
+        '200':
+          description: Funds sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                  - transactionHash
+                  - chainId
+                  - asset
+                  - recipient
+                  - amount
+                properties:
+                  message:
+                    type: string
+                    example: Funds sent successfully
+                  transactionHash:
+                    type: string
+                    example: "0xabc123..."
+                  chainId:
+                    type: integer
+                    example: 42161
+                  asset:
+                    type: string
+                    example: USDC
+                  recipient:
+                    type: string
+                    example: "0x1234567890123456789012345678901234567890"
+                  amount:
+                    type: string
+                    example: "1000000"
+                  memo:
+                    type: string
+                    nullable: true
+                    example: "Emergency withdrawal"
+        '400':
+          description: Invalid request - missing required field or recipient not whitelisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingField:
+                  summary: Missing required field
+                  value:
+                    message: "Missing required field: chainId"
+                notWhitelisted:
+                  summary: Recipient not whitelisted
+                  value:
+                    message: "Recipient address is not whitelisted"
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /trigger/rebalance:
+    post:
+      tags:
+        - Trigger Operations
+      summary: Trigger manual rebalance
+      description: Manually initiate a rebalance operation to move funds between chains
+      operationId: triggerRebalance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - originChain
+                - destinationChain
+                - asset
+                - amount
+                - bridge
+              properties:
+                originChain:
+                  type: integer
+                  description: Origin chain ID
+                  example: 42161
+                destinationChain:
+                  type: integer
+                  description: Destination chain ID
+                  example: 10
+                asset:
+                  type: string
+                  description: Asset ticker (e.g., USDC, WETH)
+                  example: USDC
+                amount:
+                  type: string
+                  description: Amount to rebalance in 18-decimal format
+                  example: "1000000000000000000"
+                bridge:
+                  type: string
+                  description: Bridge type to use
+                  enum:
+                    - across
+                    - cctp
+                    - binance
+                    - kraken
+                    - near
+                  example: across
+                slippage:
+                  type: integer
+                  description: Optional slippage tolerance in decibasis points (DBPS, 1e-7). If provided, validates actual slippage doesn't exceed this value.
+                  example: 1000000
+                earmarkId:
+                  type: string
+                  format: uuid
+                  description: Optional earmark ID to associate this rebalance with
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Rebalance operation triggered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                  - operation
+                properties:
+                  message:
+                    type: string
+                    example: Rebalance operation created successfully
+                  operation:
+                    $ref: '#/components/schemas/RebalanceOperation'
+        '400':
+          description: Invalid request - missing fields, unsupported bridge, or slippage exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingField:
+                  summary: Missing required field
+                  value:
+                    message: "Missing required field: originChain"
+                invalidBridge:
+                  summary: Invalid bridge type
+                  value:
+                    message: "Invalid bridge type: xyz. Supported: across, cctp, binance, kraken, near"
+                slippageExceeded:
+                  summary: Slippage tolerance exceeded
+                  value:
+                    message: Slippage tolerance exceeded
+                    providedSlippageDbps: 1000000
+                    actualSlippageDbps: "1500000"
+                    sentAmount: "1000000000000000000"
+                    receivedAmount: "985000000000000000"
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /trigger/intent:
+    post:
+      tags:
+        - Trigger Operations
+      summary: Trigger intent submission
+      description: Manually submit an intent to the Everclear protocol. Automatically handles ERC20 approval if needed.
+      operationId: triggerIntent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - origin
+                - destinations
+                - to
+                - inputAsset
+                - amount
+                - maxFee
+              properties:
+                origin:
+                  type: string
+                  description: Origin chain ID (as string)
+                  example: "10"
+                destinations:
+                  type: array
+                  description: Array of destination chain IDs
+                  items:
+                    type: number
+                  example: [42161, 8453]
+                to:
+                  type: string
+                  description: Receiver address (must be own address for safety)
+                  example: "0x1234567890123456789012345678901234567890"
+                inputAsset:
+                  type: string
+                  description: Input asset address (ERC20 token)
+                  example: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+                amount:
+                  type: string
+                  description: Amount in token native units
+                  example: "1000000"
+                maxFee:
+                  type: number
+                  description: Maximum fee in basis points (must be 0 for safety)
+                  example: 0
+                callData:
+                  type: string
+                  description: Optional call data (must be "0x" for safety)
+                  example: "0x"
+                user:
+                  type: string
+                  description: Optional user parameter for SVM chains
+                  example: "SolanaAddress..."
+      responses:
+        '200':
+          description: Intent submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                  - transactionHash
+                  - intentId
+                  - chainId
+                  - blockNumber
+                properties:
+                  message:
+                    type: string
+                    example: Intent submitted successfully
+                  transactionHash:
+                    type: string
+                    description: Intent transaction hash
+                    example: "0xabc123..."
+                  intentId:
+                    type: string
+                    description: Extracted intent ID from IntentAdded event
+                    example: "0xdef456..."
+                  chainId:
+                    type: integer
+                    description: Origin chain ID where intent was submitted
+                    example: 10
+                  blockNumber:
+                    type: string
+                    description: Block number where intent was mined
+                    example: "12345678"
+        '400':
+          description: Invalid request - missing fields, validation failure, or safety constraints violated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingField:
+                  summary: Missing required field
+                  value:
+                    message: "Missing required field: origin"
+                invalidMaxFee:
+                  summary: Safety constraint - maxFee must be 0
+                  value:
+                    message: "maxFee must be 0 (safety constraint)"
+                invalidCallData:
+                  summary: Safety constraint - callData must be 0x
+                  value:
+                    message: "callData must be 0x (safety constraint)"
+                invalidReceiver:
+                  summary: Safety constraint - receiver must be own address
+                  value:
+                    message: "receiver must be own address (safety constraint)"
+                chainNotConfigured:
+                  summary: Chain not configured
+                  value:
+                    message: "Origin chain 999 is not configured"
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalError'
 
