@@ -71,9 +71,10 @@ export enum GasType {
 }
 
 export interface RebalanceRoute {
-  asset: string;
+  asset: string; // Origin asset address
   origin: number;
   destination: number;
+  destinationAsset?: string; // Destination asset address. If undefined, same asset as origin (matched by tickerHash). If defined, indicates cross-asset swap route.
 }
 export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum

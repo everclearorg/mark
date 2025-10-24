@@ -27,3 +27,40 @@ export interface BridgeAdapter {
   ): Promise<MemoizedTransactionRequest | void>;
   readyOnDestination(amount: string, route: RebalanceRoute, originTransaction: TransactionReceipt): Promise<boolean>;
 }
+
+// Extension interface for swap-capable adapters (CEX adapters)
+export interface SwapCapableBridgeAdapter extends BridgeAdapter {
+  supportsSwap(fromAsset: string, toAsset: string): Promise<boolean>;
+  getSwapQuote(fromAsset: string, toAsset: string, fromAmount: string): Promise<SwapQuote>;
+  executeSwap(quote: SwapQuote): Promise<SwapExecution>;
+  getSwapStatus(orderId: string): Promise<SwapStatus>;
+}
+
+export interface SwapQuote {
+  quoteId: string;
+  fromAsset: string; // e.g., 'USDT'
+  toAsset: string; // e.g., 'USDC'
+  fromAmount: string; // Amount in native units
+  toAmount: string; // Amount in native units
+  rate: string; // Conversion rate
+  validUntil: number; // Unix timestamp
+  estimatedFee?: string;
+}
+
+export interface SwapExecution {
+  orderId: string;
+  quoteId: string;
+  status: 'processing' | 'success' | 'failed';
+  executedAmount?: string;
+  executedRate?: string;
+}
+
+export interface SwapStatus {
+  orderId: string;
+  status: 'processing' | 'success' | 'failed';
+  fromAsset: string;
+  toAsset: string;
+  fromAmount: string;
+  toAmount: string;
+  executedAt?: number;
+}
