@@ -142,3 +142,6 @@ tf-vars.json
 .DS_Store
 .idea
 *.local.json
+
+config-*.yaml
+!config-*.example.yaml

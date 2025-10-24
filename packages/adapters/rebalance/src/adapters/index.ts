@@ -1,6 +1,7 @@
 import { BridgeAdapter } from '../types';
 import { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';
 import { BinanceBridgeAdapter, BINANCE_BASE_URL } from './binance';
+import { CoinbaseBridgeAdapter } from './coinbase';
 import { KrakenBridgeAdapter, KRAKEN_BASE_URL } from './kraken';
 import { NearBridgeAdapter, NEAR_BASE_URL } from './near';
 import { SupportedBridge, MarkConfiguration } from '@mark/core';
@@ -54,6 +55,15 @@ export class RebalanceAdapter {
           this.config,
           this.logger,
           this.db,
+        );
+      case SupportedBridge.Coinbase:
+        if (!this.config.coinbase?.apiKey || !this.config.coinbase?.apiSecret) {
+          throw new Error(`Coinbase adapter requires API key and secret`);
+        }
+        return new CoinbaseBridgeAdapter(
+          this.config,
+          this.logger,
+          this.db
         );
       case SupportedBridge.CCTPV1:
         return new CctpBridgeAdapter('v1', this.config.chains, this.logger);
