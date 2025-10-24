@@ -366,7 +366,12 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       const mappedRoute = await this.mapRoute(route);
       const currentWithdrawal = await client.getWithdrawalById(mappedRoute.depositAccount.accountId, withdrawal.id);
 
-
+      // NOTE: coinbase will show a transaction hash here prior to them considering the withdrawal to be "completed" (confirmed on chain).
+      // We can wait for them to report that they consider it confirmed, but this can take 10+ minutes.
+      // Since our only subsequent actions are a potential wrap of native asset, 
+      // it seems low-risk to just assume its confirmed "enough" as soon as the hash appears and (in next steps) a reciept can be pulled for it.
+      //
+      // if this assumption becomes problematic down the road, we can implement our own confirmation logic that can be faster than coinbase's.
       if(currentWithdrawal?.network?.hash){
           currentWithdrawal.status = 'completed'
       }
