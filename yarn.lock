@@ -4680,9 +4680,13 @@ __metadata:
   resolution: "@mark/admin@workspace:packages/admin"
   dependencies:
     "@mark/cache": "workspace:*"
+    "@mark/chainservice": "workspace:*"
     "@mark/core": "workspace:*"
     "@mark/database": "workspace:*"
+    "@mark/everclear": "workspace:*"
     "@mark/logger": "workspace:*"
+    "@mark/rebalance": "workspace:*"
+    "@mark/web3signer": "workspace:*"
     "@types/aws-lambda": 8.10.147
     "@types/jest": 29.5.12
     "@types/node": 20.17.12

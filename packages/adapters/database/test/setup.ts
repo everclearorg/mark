@@ -65,8 +65,9 @@ export async function setupTestDatabase(): Promise<void> {
 export async function cleanupTestDatabase(): Promise<void> {
   const db = getPool();
   if (db) {
-    // Clean up all test data
+    // Clean up all test data in correct dependency order
     await db.query('DELETE FROM transactions');
+    await db.query('DELETE FROM cex_withdrawals');
     await db.query('DELETE FROM rebalance_operations');
     await db.query('DELETE FROM earmarks');
     await db.query('DELETE FROM admin_actions');

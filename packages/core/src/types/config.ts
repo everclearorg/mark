@@ -136,4 +136,6 @@ export interface MarkConfiguration extends RebalanceConfig {
   purchaseCacheTtlSeconds: number;
   earmarkTTLMinutes?: number;
   regularRebalanceOpTTLMinutes?: number;
+  // Whitelisted recipient addresses for admin trigger/send endpoint
+  whitelistedRecipients?: string[];
 }
