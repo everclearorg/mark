@@ -4,6 +4,7 @@ import { Logger } from '@mark/logger';
 import { APIGatewayEvent } from 'aws-lambda';
 import * as database from '@mark/database';
 import { ChainService } from '@mark/chainservice';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 export interface AdminConfig {
   logLevel: LogLevel;
@@ -18,6 +19,7 @@ export interface AdminAdapter {
   database: typeof database;
   purchaseCache: PurchaseCache;
   chainService: ChainService;
+  rebalanceAdapter: RebalanceAdapter;
 }
 
 export interface AdminContext extends AdminAdapter {
@@ -42,6 +44,7 @@ export enum HttpPaths {
   CancelEarmark = '/rebalance/cancel',
   CancelRebalanceOperation = '/rebalance/operation/cancel',
   TriggerSend = '/trigger/send',
+  TriggerRebalance = '/trigger/rebalance',
 }
 
 export interface PaginationParams {

@@ -3,6 +3,7 @@ import { TransactionReasons, TransactionReceipt } from '../src';
 import {
   createEarmark,
   getEarmarks,
+  getEarmarksWithOperations,
   updateEarmarkStatus,
   getActiveEarmarkForInvoice,
   getActiveEarmarksForChain,
@@ -194,6 +195,148 @@ describe('Database Adapter - Integration Tests', () => {
 
         expect(filtered).toHaveLength(2);
         expect(filtered.map((e) => e.invoiceId).sort()).toEqual(['invoice-001', 'invoice-003']);
+      });
+    });
+
+    describe('getEarmarksWithOperations', () => {
+      it('should return earmarks with their operations and total count', async () => {
+        const earmark1 = await createEarmark({
+          invoiceId: 'invoice-001',
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+
+        const earmark2 = await createEarmark({
+          invoiceId: 'invoice-002',
+          designatedPurchaseChain: 10,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '200000000000',
+        });
+
+        await createRebalanceOperation({
+          earmarkId: earmark1.id,
+          originChainId: 1,
+          destinationChainId: 10,
+          tickerHash: earmark1.tickerHash,
+          amount: '50000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'test-bridge',
+        });
+
+        await createRebalanceOperation({
+          earmarkId: earmark1.id,
+          originChainId: 137,
+          destinationChainId: 10,
+          tickerHash: earmark1.tickerHash,
+          amount: '60000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.COMPLETED,
+          bridge: 'test-bridge',
+        });
+
+        const result = await getEarmarksWithOperations(10, 0);
+
+        expect(result.total).toBe(2);
+        expect(result.earmarks).toHaveLength(2);
+
+        const earmark1Result = result.earmarks.find(e => e.invoiceId === 'invoice-001');
+        expect(earmark1Result).toBeDefined();
+        expect(earmark1Result?.operations).toHaveLength(2);
+
+        const earmark2Result = result.earmarks.find(e => e.invoiceId === 'invoice-002');
+        expect(earmark2Result).toBeDefined();
+        expect(earmark2Result?.operations).toHaveLength(0);
+      });
+
+      it('should filter by status', async () => {
+        const earmark1 = await createEarmark({
+          invoiceId: 'invoice-003',
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+
+        const earmark2 = await createEarmark({
+          invoiceId: 'invoice-004',
+          designatedPurchaseChain: 10,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '200000000000',
+        });
+
+        await updateEarmarkStatus(earmark2.id, EarmarkStatus.COMPLETED);
+
+        const pendingResult = await getEarmarksWithOperations(10, 0, { status: 'pending' });
+        expect(pendingResult.total).toBe(1);
+        expect(pendingResult.earmarks[0].invoiceId).toBe('invoice-003');
+
+        const completedResult = await getEarmarksWithOperations(10, 0, { status: 'completed' });
+        expect(completedResult.total).toBe(1);
+        expect(completedResult.earmarks[0].invoiceId).toBe('invoice-004');
+      });
+
+      it('should filter by chainId', async () => {
+        await createEarmark({
+          invoiceId: 'invoice-005',
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+
+        await createEarmark({
+          invoiceId: 'invoice-006',
+          designatedPurchaseChain: 10,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '200000000000',
+        });
+
+        const chain1Result = await getEarmarksWithOperations(10, 0, { chainId: 1 });
+        expect(chain1Result.total).toBe(1);
+        expect(chain1Result.earmarks[0].designatedPurchaseChain).toBe(1);
+
+        const chain10Result = await getEarmarksWithOperations(10, 0, { chainId: 10 });
+        expect(chain10Result.total).toBe(1);
+        expect(chain10Result.earmarks[0].designatedPurchaseChain).toBe(10);
+      });
+
+      it('should filter by invoiceId', async () => {
+        await createEarmark({
+          invoiceId: 'invoice-007',
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+
+        await createEarmark({
+          invoiceId: 'invoice-008',
+          designatedPurchaseChain: 10,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '200000000000',
+        });
+
+        const result = await getEarmarksWithOperations(10, 0, { invoiceId: 'invoice-007' });
+        expect(result.total).toBe(1);
+        expect(result.earmarks[0].invoiceId).toBe('invoice-007');
+      });
+
+      it('should handle pagination', async () => {
+        for (let i = 0; i < 15; i++) {
+          await createEarmark({
+            invoiceId: `invoice-page-${i}`,
+            designatedPurchaseChain: 1,
+            tickerHash: '0x1234567890123456789012345678901234567890',
+            minAmount: '100000000000',
+          });
+        }
+
+        const page1 = await getEarmarksWithOperations(10, 0);
+        expect(page1.earmarks).toHaveLength(10);
+        expect(page1.total).toBe(15);
+
+        const page2 = await getEarmarksWithOperations(10, 10);
+        expect(page2.earmarks).toHaveLength(5);
+        expect(page2.total).toBe(15);
       });
     });
 
@@ -1570,6 +1713,106 @@ describe('Database Adapter - Integration Tests', () => {
 
         expect(op1Index).toBeLessThan(op2Index);
         expect(op2Index).toBeLessThan(op3Index);
+      });
+
+      it('should handle pagination with limit and offset', async () => {
+        const earmark = await createEarmark({
+          invoiceId: 'invoice-pagination-001',
+          designatedPurchaseChain: 1,
+          tickerHash: '0x6666cccccccccccccccccccccccccccccccccccc',
+          minAmount: '100000000000',
+        });
+
+        // Create 10 operations
+        for (let i = 0; i < 10; i++) {
+          await createRebalanceOperation({
+            earmarkId: earmark.id,
+            originChainId: 1,
+            destinationChainId: 10,
+            tickerHash: earmark.tickerHash,
+            amount: `${(i + 1) * 10000000000}`,
+            slippage: 100,
+            status: RebalanceOperationStatus.PENDING,
+            bridge: `bridge-${i}`,
+          });
+        }
+
+        // Get first page (5 items)
+        const page1 = await getRebalanceOperations(5, 0, { earmarkId: earmark.id });
+        expect(page1.operations).toHaveLength(5);
+        expect(page1.total).toBe(10);
+
+        // Get second page (5 items)
+        const page2 = await getRebalanceOperations(5, 5, { earmarkId: earmark.id });
+        expect(page2.operations).toHaveLength(5);
+        expect(page2.total).toBe(10);
+
+        // Ensure no overlap
+        const page1Ids = page1.operations.map(op => op.id);
+        const page2Ids = page2.operations.map(op => op.id);
+        const overlap = page1Ids.filter(id => page2Ids.includes(id));
+        expect(overlap).toHaveLength(0);
+      });
+
+      it('should filter by invoiceId', async () => {
+        const earmark1 = await createEarmark({
+          invoiceId: 'invoice-filter-001',
+          designatedPurchaseChain: 1,
+          tickerHash: '0x7777dddddddddddddddddddddddddddddddddddd',
+          minAmount: '100000000000',
+        });
+
+        const earmark2 = await createEarmark({
+          invoiceId: 'invoice-filter-002',
+          designatedPurchaseChain: 10,
+          tickerHash: '0x8888eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+          minAmount: '200000000000',
+        });
+
+        await createRebalanceOperation({
+          earmarkId: earmark1.id,
+          originChainId: 1,
+          destinationChainId: 10,
+          tickerHash: earmark1.tickerHash,
+          amount: '50000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'bridge-1',
+        });
+
+        await createRebalanceOperation({
+          earmarkId: earmark1.id,
+          originChainId: 137,
+          destinationChainId: 10,
+          tickerHash: earmark1.tickerHash,
+          amount: '60000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.COMPLETED,
+          bridge: 'bridge-2',
+        });
+
+        await createRebalanceOperation({
+          earmarkId: earmark2.id,
+          originChainId: 10,
+          destinationChainId: 1,
+          tickerHash: earmark2.tickerHash,
+          amount: '70000000000',
+          slippage: 100,
+          status: RebalanceOperationStatus.PENDING,
+          bridge: 'bridge-3',
+        });
+
+        const result1 = await getRebalanceOperations(undefined, undefined, { invoiceId: 'invoice-filter-001' });
+        expect(result1.operations).toHaveLength(2);
+        expect(result1.total).toBe(2);
+        result1.operations.forEach(op => {
+          expect(op.earmarkId).toBe(earmark1.id);
+        });
+
+        const result2 = await getRebalanceOperations(undefined, undefined, { invoiceId: 'invoice-filter-002' });
+        expect(result2.operations).toHaveLength(1);
+        expect(result2.total).toBe(1);
+        expect(result2.operations[0].earmarkId).toBe(earmark2.id);
       });
     });
   });

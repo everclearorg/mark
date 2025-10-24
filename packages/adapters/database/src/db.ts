@@ -910,7 +910,7 @@ export async function setPause(type: 'rebalance' | 'purchase' | 'ondemand', inpu
     const latestQuery = `
       SELECT rebalance_paused, purchase_paused, ondemand_rebalance_paused
       FROM admin_actions
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT 1
     `;
     const latest = await client.query(latestQuery);
@@ -948,7 +948,7 @@ export async function isPaused(type: 'rebalance' | 'purchase' | 'ondemand'): Pro
   const query = `
     SELECT ${column} AS paused
     FROM admin_actions
-    ORDER BY created_at DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT 1
   `;
   const rows = await queryWithClient<{ paused: boolean }>(query);

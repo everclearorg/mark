@@ -9,6 +9,7 @@ import { bytesToHex } from 'viem';
 import { getRandomValues } from 'crypto';
 import { ChainService, EthWallet } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
+import { RebalanceAdapter } from '@mark/rebalance';
 
 function initializeAdapters(config: AdminConfig, logger: Logger): AdminAdapter {
   database.initializeDatabase(config.database);
@@ -29,10 +30,14 @@ function initializeAdapters(config: AdminConfig, logger: Logger): AdminAdapter {
     logger,
   );
 
+  // Initialize rebalance adapter
+  const rebalanceAdapter = new RebalanceAdapter(config.markConfig, logger, database);
+
   return {
     database,
     purchaseCache: new PurchaseCache(config.redis.host, config.redis.port),
     chainService,
+    rebalanceAdapter,
   };
 }
 

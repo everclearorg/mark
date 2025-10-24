@@ -4,9 +4,10 @@ import { verifyAdminToken } from './auth';
 import * as database from '@mark/database';
 import { snakeToCamel } from '@mark/database';
 import { PurchaseCache } from '@mark/cache';
-import { RebalanceOperationStatus, EarmarkStatus, getTokenAddressFromConfig } from '@mark/core';
+import { RebalanceOperationStatus, EarmarkStatus, getTokenAddressFromConfig, SupportedBridge, MarkConfiguration } from '@mark/core';
 import { APIGatewayProxyEventQueryStringParameters } from 'aws-lambda';
-import { encodeFunctionData, erc20Abi, Hex } from 'viem';
+import { encodeFunctionData, erc20Abi, Hex, formatUnits, parseUnits } from 'viem';
+import { MemoizedTransactionRequest } from '@mark/rebalance';
 
 type Database = typeof database;
 
@@ -124,6 +125,8 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
         return handleCancelRebalanceOperation(context);
       case HttpPaths.TriggerSend:
         return handleTriggerSend(context);
+      case HttpPaths.TriggerRebalance:
+        return handleTriggerRebalance(context);
       default:
         throw new Error(`Unknown request: ${request}`);
     }
@@ -450,6 +453,310 @@ const handleTriggerSend = async (context: AdminContext): Promise<{ statusCode: n
       statusCode: 500,
       body: JSON.stringify({
         message: 'Failed to process trigger send request',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
+    };
+  }
+};
+
+// Helper functions for rebalance
+const getTickerForAsset = (asset: string, chainId: number, config: MarkConfiguration) => {
+  const chainConfig = config.chains[chainId.toString()];
+  if (!chainConfig || !chainConfig.assets) {
+    return undefined;
+  }
+  const assetConfig = chainConfig.assets.find((a: any) => a.address.toLowerCase() === asset.toLowerCase());
+  return assetConfig?.tickerHash;
+};
+
+const getDecimalsFromConfig = (ticker: string, chainId: number, config: MarkConfiguration) => {
+  const chainConfig = config.chains[chainId.toString()];
+  if (!chainConfig) return undefined;
+  const asset = chainConfig.assets.find((a: any) => a.tickerHash.toLowerCase() === ticker.toLowerCase());
+  return asset?.decimals;
+};
+
+const convertToNativeUnits = (amount: bigint, decimals: number | undefined): bigint => {
+  const targetDecimals = decimals ?? 18;
+  if (targetDecimals === 18) return amount;
+  const divisor = BigInt(10 ** (18 - targetDecimals));
+  return amount / divisor;
+};
+
+const convertTo18Decimals = (amount: bigint, decimals: number | undefined): bigint => {
+  return parseUnits(formatUnits(amount, decimals ?? 18), 18);
+};
+
+const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
+  const { logger, event, config, chainService, rebalanceAdapter, database } = context;
+  const startTime = Date.now();
+
+  try {
+    const body = JSON.parse(event.body || '{}');
+    const { originChain, destinationChain, asset, amount, bridge, slippage, earmarkId } = body;
+
+    // Validate required fields
+    if (!originChain) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'originChain is required in request body' }),
+      };
+    }
+    if (!destinationChain) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'destinationChain is required in request body' }),
+      };
+    }
+    if (!asset) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'asset is required in request body' }),
+      };
+    }
+    if (!amount) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'amount is required in request body' }),
+      };
+    }
+    if (!bridge) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'bridge is required in request body' }),
+      };
+    }
+
+    logger.info('Trigger rebalance request received', {
+      originChain,
+      destinationChain,
+      asset,
+      amount,
+      bridge,
+      slippage,
+      earmarkId: earmarkId || null,
+      operation: 'trigger_rebalance',
+    });
+
+    // Validate chain configurations
+    const { markConfig } = config;
+    const originChainConfig = markConfig.chains[originChain.toString()];
+    const destChainConfig = markConfig.chains[destinationChain.toString()];
+
+    if (!originChainConfig) {
+      logger.error('Origin chain not configured', { originChain });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Origin chain ${originChain} is not configured` }),
+      };
+    }
+
+    if (!destChainConfig) {
+      logger.error('Destination chain not configured', { destinationChain });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Destination chain ${destinationChain} is not configured` }),
+      };
+    }
+
+    // Get asset address and ticker
+    const originAssetAddress = getTokenAddressFromConfig(asset, originChain.toString(), markConfig);
+    const destAssetAddress = getTokenAddressFromConfig(asset, destinationChain.toString(), markConfig);
+
+    if (!originAssetAddress) {
+      logger.error('Asset not found on origin chain', { asset, originChain });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Asset ${asset} not found on origin chain ${originChain}` }),
+      };
+    }
+
+    if (!destAssetAddress) {
+      logger.error('Asset not found on destination chain', { asset, destinationChain });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Asset ${asset} not found on destination chain ${destinationChain}` }),
+      };
+    }
+
+    const ticker = getTickerForAsset(originAssetAddress, originChain, markConfig);
+    if (!ticker) {
+      logger.error('Could not determine ticker for asset', { asset, originChain });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Could not determine ticker for asset ${asset}` }),
+      };
+    }
+
+    // Get decimals and convert amount
+    const originDecimals = getDecimalsFromConfig(ticker, originChain, markConfig);
+    const destDecimals = getDecimalsFromConfig(ticker, destinationChain, markConfig);
+
+    // Parse amount as 18 decimals
+    const amount18Decimals = parseUnits(amount, 18);
+    const amountNativeUnits = convertToNativeUnits(amount18Decimals, originDecimals);
+
+    logger.info('Amount conversions', {
+      amountInput: amount,
+      amount18Decimals: amount18Decimals.toString(),
+      amountNativeUnits: amountNativeUnits.toString(),
+      originDecimals,
+      destDecimals,
+    });
+
+    // Validate bridge type
+    const bridgeType = bridge as SupportedBridge;
+    if (!Object.values(SupportedBridge).includes(bridgeType)) {
+      logger.error('Invalid bridge type', { bridge });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Invalid bridge type: ${bridge}. Supported: ${Object.values(SupportedBridge).join(', ')}` }),
+      };
+    }
+
+    // Get bridge adapter
+    const adapter = rebalanceAdapter.getAdapter(bridgeType);
+
+    // Get quote from adapter
+    const route = {
+      asset: originAssetAddress,
+      origin: originChain,
+      destination: destinationChain,
+    };
+
+    logger.info('Getting quote from adapter', { bridge: bridgeType, route });
+    const receivedAmount = await adapter.getReceivedAmount(amountNativeUnits.toString(), route);
+    const receivedAmount18 = convertTo18Decimals(BigInt(receivedAmount), destDecimals);
+
+    logger.info('Quote received', {
+      sentAmount: amountNativeUnits.toString(),
+      receivedAmount,
+      receivedAmount18: receivedAmount18.toString(),
+    });
+
+    // Validate slippage if provided
+    if (slippage !== undefined) {
+      const slippageDbps = BigInt(slippage);
+      const DBPS_MULTIPLIER = 10000000n; // 1e7 for decibasis points
+      const minimumAcceptableAmount = amount18Decimals - (amount18Decimals * slippageDbps) / DBPS_MULTIPLIER;
+      const actualSlippageDbps = ((amount18Decimals - receivedAmount18) * DBPS_MULTIPLIER) / amount18Decimals;
+
+      logger.info('Slippage validation', {
+        providedSlippageDbps: slippage,
+        actualSlippageDbps: actualSlippageDbps.toString(),
+        minimumAcceptableAmount: minimumAcceptableAmount.toString(),
+        receivedAmount18: receivedAmount18.toString(),
+      });
+
+      if (receivedAmount18 < minimumAcceptableAmount) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({
+            message: 'Slippage tolerance exceeded',
+            providedSlippageDbps: slippage,
+            actualSlippageDbps: actualSlippageDbps.toString(),
+            sentAmount: amount,
+            receivedAmount: formatUnits(receivedAmount18, 18),
+          }),
+        };
+      }
+    }
+
+    // Get transaction requests from adapter
+    logger.info('Requesting transactions from adapter', { bridge: bridgeType });
+    const recipient = markConfig.ownAddress;
+    const sender = markConfig.ownAddress;
+    const txRequests: MemoizedTransactionRequest[] = await adapter.send(sender, recipient, amountNativeUnits.toString(), route);
+
+    logger.info('Transaction requests received', {
+      count: txRequests.length,
+      effectiveAmount: txRequests[0]?.effectiveAmount,
+    });
+
+    // Submit transactions
+    const receipts: Record<string, any> = {};
+    for (const txRequest of txRequests) {
+      logger.info('Submitting transaction', {
+        chainId: originChain,
+        to: txRequest.transaction.to,
+        value: txRequest.transaction.value,
+        memo: txRequest.memo,
+      });
+
+      const receipt = await chainService.submitAndMonitor(originChain.toString(), {
+        chainId: originChain,
+        to: txRequest.transaction.to as `0x${string}`,
+        data: (txRequest.transaction.data as Hex) || '0x',
+        value: txRequest.transaction.value?.toString() || '0',
+        from: sender as `0x${string}`,
+        funcSig: txRequest.transaction.funcSig || '',
+      });
+
+      receipts[originChain.toString()] = receipt;
+      logger.info('Transaction submitted', {
+        chainId: originChain,
+        transactionHash: receipt.transactionHash,
+        memo: txRequest.memo,
+      });
+    }
+
+    // Create database record
+    const effectiveAmount = txRequests[0]?.effectiveAmount || amountNativeUnits.toString();
+    const effectiveAmount18 = convertTo18Decimals(BigInt(effectiveAmount), originDecimals);
+
+    const operation = await database.createRebalanceOperation({
+      earmarkId: earmarkId || null,
+      originChainId: originChain,
+      destinationChainId: destinationChain,
+      tickerHash: ticker,
+      amount: effectiveAmount18.toString(),
+      slippage: slippage || 0,
+      status: RebalanceOperationStatus.PENDING,
+      bridge: bridgeType,
+      recipient,
+      transactions: receipts,
+    });
+
+    const duration = Date.now() - startTime;
+
+    logger.info('Trigger rebalance completed successfully', {
+      operationId: operation.id,
+      originChain,
+      destinationChain,
+      asset,
+      ticker,
+      amount: effectiveAmount18.toString(),
+      bridge: bridgeType,
+      transactionHashes: Object.values(receipts).map((r: any) => r.transactionHash),
+      duration,
+      status: 'completed',
+      operation: 'trigger_rebalance',
+    });
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        message: 'Rebalance operation triggered successfully',
+        operation: {
+          id: operation.id,
+          originChain,
+          destinationChain,
+          asset,
+          ticker,
+          amount: formatUnits(effectiveAmount18, 18),
+          bridge: bridgeType,
+          status: operation.status,
+          transactionHashes: Object.values(receipts).map((r: any) => r.transactionHash),
+        },
+      }),
+    };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logger.error('Failed to process trigger rebalance', { error, duration });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: 'Failed to process trigger rebalance request',
         error: error instanceof Error ? error.message : 'Unknown error',
       }),
     };
