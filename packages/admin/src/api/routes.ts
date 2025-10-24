@@ -4,7 +4,16 @@ import { verifyAdminToken } from './auth';
 import * as database from '@mark/database';
 import { snakeToCamel } from '@mark/database';
 import { PurchaseCache } from '@mark/cache';
-import { RebalanceOperationStatus, EarmarkStatus, getTokenAddressFromConfig, SupportedBridge, MarkConfiguration } from '@mark/core';
+import {
+  RebalanceOperationStatus,
+  EarmarkStatus,
+  getTokenAddressFromConfig,
+  SupportedBridge,
+  MarkConfiguration,
+  isSvmChain,
+  isTvmChain,
+  NewIntentParams,
+} from '@mark/core';
 import { APIGatewayProxyEventQueryStringParameters } from 'aws-lambda';
 import { encodeFunctionData, erc20Abi, Hex, formatUnits, parseUnits } from 'viem';
 import { MemoizedTransactionRequest } from '@mark/rebalance';
@@ -127,6 +136,8 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
         return handleTriggerSend(context);
       case HttpPaths.TriggerRebalance:
         return handleTriggerRebalance(context);
+      case HttpPaths.TriggerIntent:
+        return handleTriggerIntent(context);
       default:
         throw new Error(`Unknown request: ${request}`);
     }
@@ -346,7 +357,7 @@ const handleTriggerSend = async (context: AdminContext): Promise<{ statusCode: n
     }
 
     const isWhitelisted = whitelistedRecipients.some(
-      (whitelisted) => whitelisted.toLowerCase() === recipient.toLowerCase()
+      (whitelisted) => whitelisted.toLowerCase() === recipient.toLowerCase(),
     );
 
     if (!isWhitelisted) {
@@ -610,7 +621,9 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
       logger.error('Invalid bridge type', { bridge });
       return {
         statusCode: 400,
-        body: JSON.stringify({ message: `Invalid bridge type: ${bridge}. Supported: ${Object.values(SupportedBridge).join(', ')}` }),
+        body: JSON.stringify({
+          message: `Invalid bridge type: ${bridge}. Supported: ${Object.values(SupportedBridge).join(', ')}`,
+        }),
       };
     }
 
@@ -666,7 +679,12 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
     logger.info('Requesting transactions from adapter', { bridge: bridgeType });
     const recipient = markConfig.ownAddress;
     const sender = markConfig.ownAddress;
-    const txRequests: MemoizedTransactionRequest[] = await adapter.send(sender, recipient, amountNativeUnits.toString(), route);
+    const txRequests: MemoizedTransactionRequest[] = await adapter.send(
+      sender,
+      recipient,
+      amountNativeUnits.toString(),
+      route,
+    );
 
     logger.info('Transaction requests received', {
       count: txRequests.length,
@@ -931,6 +949,292 @@ const pauseIfNeeded = async (
       throw new Error(`Purchase cache is already paused`);
     }
     return store.setPause(true);
+  }
+};
+
+const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
+
+const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
+  const { logger, event, config, chainService, everclearAdapter } = context;
+  const startTime = Date.now();
+
+  try {
+    const body = JSON.parse(event.body || '{}');
+    const { origin, destinations, to, inputAsset, amount, maxFee, callData, user } = body;
+
+    // Validate required fields
+    if (!origin) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'origin (chain ID) is required in request body' }),
+      };
+    }
+    if (!destinations || !Array.isArray(destinations) || destinations.length === 0) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'destinations (array of chain IDs) is required in request body' }),
+      };
+    }
+    if (!to) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'to (receiver address) is required in request body' }),
+      };
+    }
+    if (!inputAsset) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'inputAsset is required in request body' }),
+      };
+    }
+    if (!amount) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'amount is required in request body' }),
+      };
+    }
+    if (maxFee === undefined || maxFee === null) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'maxFee is required in request body' }),
+      };
+    }
+
+    logger.info('Trigger intent request received', {
+      origin,
+      destinations,
+      to,
+      inputAsset,
+      amount,
+      maxFee,
+      callData: callData || '0x',
+      user: user || undefined,
+      operation: 'trigger_intent',
+    });
+
+    // Apply safety constraints (same as invoice purchasing)
+    if (BigInt(maxFee.toString()) !== BigInt(0)) {
+      logger.error('Invalid maxFee - must be 0 for safety', { maxFee });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'maxFee must be 0 (no solver fees allowed)' }),
+      };
+    }
+
+    const normalizedCallData = callData || '0x';
+    if (normalizedCallData !== '0x') {
+      logger.error('Invalid callData - must be 0x for safety', { callData: normalizedCallData });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'callData must be 0x (no custom execution allowed)' }),
+      };
+    }
+
+    // Validate receiver is ownAddress (funds must come to Mark wallet)
+    if (to.toLowerCase() !== config.markConfig.ownAddress.toLowerCase()) {
+      logger.error('Invalid receiver - must be ownAddress', {
+        to,
+        ownAddress: config.markConfig.ownAddress,
+      });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: `Receiver must be Mark's own address (${config.markConfig.ownAddress}). Got: ${to}`,
+        }),
+      };
+    }
+
+    // Validate origin chain is configured
+    const originChainId = origin.toString();
+    const originChainConfig = config.markConfig.chains[originChainId];
+    if (!originChainConfig) {
+      logger.error('Origin chain not configured', { origin: originChainId });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Origin chain ${originChainId} is not configured` }),
+      };
+    }
+
+    // Validate all destination chains are configured
+    for (const dest of destinations) {
+      const destChainId = dest.toString();
+      const destChainConfig = config.markConfig.chains[destChainId];
+      if (!destChainConfig) {
+        logger.error('Destination chain not configured', { destination: destChainId });
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ message: `Destination chain ${destChainId} is not configured` }),
+        };
+      }
+    }
+
+    // Construct NewIntentParams
+    const intentParams: NewIntentParams = {
+      origin: originChainId,
+      destinations: destinations.map((d: number) => d.toString()),
+      to,
+      inputAsset,
+      amount: amount.toString(),
+      callData: callData || '0x',
+      maxFee: maxFee.toString(),
+      ...(user && { user }), // SVM only
+    };
+
+    // Detect chain type and call appropriate everclear adapter method
+    const originChainIdNum = parseInt(originChainId);
+    let transactionRequest;
+
+    if (isSvmChain(originChainId)) {
+      logger.info('Creating Solana intent', { origin: originChainIdNum });
+      transactionRequest = await everclearAdapter.solanaCreateNewIntent(intentParams);
+    } else if (isTvmChain(originChainId)) {
+      logger.info('Creating Tron intent', { origin: originChainIdNum });
+      transactionRequest = await everclearAdapter.tronCreateNewIntent(intentParams);
+    } else {
+      logger.info('Creating EVM intent', { origin: originChainIdNum });
+      transactionRequest = await everclearAdapter.createNewIntent(intentParams);
+    }
+
+    logger.info('Received transaction request from Everclear API', {
+      to: transactionRequest.to,
+      dataLength: transactionRequest.data?.length,
+      value: transactionRequest.value,
+      chainId: transactionRequest.chainId,
+    });
+
+    // Check and handle ERC20 approval for the input asset
+    const spender = transactionRequest.to as Hex;
+    const owner = config.markConfig.ownAddress as Hex;
+
+    logger.info('Checking ERC20 allowance', {
+      token: inputAsset,
+      spender,
+      owner,
+      requiredAmount: amount,
+    });
+
+    // Check current allowance
+    const allowanceData = encodeFunctionData({
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [owner, spender],
+    });
+
+    const allowanceResult = await chainService.readTx({
+      to: inputAsset,
+      data: allowanceData,
+      domain: originChainIdNum,
+      funcSig: 'allowance(address,address)',
+    });
+
+    const currentAllowance = BigInt(allowanceResult || '0');
+    const requiredAmount = BigInt(amount);
+
+    logger.info('Allowance check result', {
+      currentAllowance: currentAllowance.toString(),
+      requiredAmount: requiredAmount.toString(),
+      needsApproval: currentAllowance < requiredAmount,
+    });
+
+    // Approve if needed
+    if (currentAllowance < requiredAmount) {
+      logger.info('Insufficient allowance, approving ERC20', {
+        token: inputAsset,
+        spender,
+        amount: requiredAmount.toString(),
+      });
+
+      const approvalData = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [spender, requiredAmount],
+      });
+
+      const approvalTx = {
+        chainId: originChainIdNum,
+        to: inputAsset as Hex,
+        data: approvalData,
+        value: '0',
+        from: owner,
+        funcSig: 'approve(address,uint256)',
+      };
+
+      logger.info('Submitting approval transaction', { approvalTx });
+
+      const approvalReceipt = await chainService.submitAndMonitor(originChainId, approvalTx);
+
+      logger.info('Approval transaction mined', {
+        transactionHash: approvalReceipt.transactionHash,
+        blockNumber: approvalReceipt.blockNumber,
+      });
+    } else {
+      logger.info('Sufficient allowance, skipping approval');
+    }
+
+    // Submit intent transaction via chainService
+    logger.info('Submitting intent transaction', { transactionRequest, originChainId });
+
+    const receipt = await chainService.submitAndMonitor(originChainId, transactionRequest);
+
+    logger.info('Intent transaction mined', {
+      transactionHash: receipt.transactionHash,
+      blockNumber: receipt.blockNumber,
+      status: receipt.status,
+    });
+
+    // Extract intentId from receipt logs
+    let intentId: string | undefined;
+    for (const log of receipt.logs || []) {
+      const typedLog = log as { topics?: string[] };
+      if (typedLog.topics && typedLog.topics[0] === INTENT_ADDED_TOPIC0) {
+        // First indexed parameter is the intentId
+        intentId = typedLog.topics[1];
+        break;
+      }
+    }
+
+    if (!intentId) {
+      logger.warn('Could not extract intentId from receipt', {
+        transactionHash: receipt.transactionHash,
+        logsCount: receipt.logs?.length || 0,
+      });
+    }
+
+    const duration = Date.now() - startTime;
+    logger.info('Trigger intent completed successfully', {
+      transactionHash: receipt.transactionHash,
+      intentId,
+      chainId: originChainIdNum,
+      duration,
+      operation: 'trigger_intent',
+    });
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        message: 'Intent submitted successfully',
+        transactionHash: receipt.transactionHash,
+        intentId,
+        chainId: originChainIdNum,
+        blockNumber: receipt.blockNumber,
+      }),
+    };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logger.error('Failed to trigger intent', {
+      error: jsonifyError(error),
+      body: event.body,
+      duration,
+      operation: 'trigger_intent',
+    });
+
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: 'Failed to trigger intent',
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    };
   }
 };
 

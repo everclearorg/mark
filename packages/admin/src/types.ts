@@ -5,6 +5,7 @@ import { APIGatewayEvent } from 'aws-lambda';
 import * as database from '@mark/database';
 import { ChainService } from '@mark/chainservice';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { EverclearAdapter } from '@mark/everclear';
 
 export interface AdminConfig {
   logLevel: LogLevel;
@@ -20,6 +21,7 @@ export interface AdminAdapter {
   purchaseCache: PurchaseCache;
   chainService: ChainService;
   rebalanceAdapter: RebalanceAdapter;
+  everclearAdapter: EverclearAdapter;
 }
 
 export interface AdminContext extends AdminAdapter {
@@ -45,6 +47,7 @@ export enum HttpPaths {
   CancelRebalanceOperation = '/rebalance/operation/cancel',
   TriggerSend = '/trigger/send',
   TriggerRebalance = '/trigger/rebalance',
+  TriggerIntent = '/trigger/intent',
 }
 
 export interface PaginationParams {

@@ -1,5 +1,11 @@
 import { PurchaseCache } from '@mark/cache';
-import { ConfigurationError, fromEnv, LogLevel, requireEnv, cleanupHttpConnections, loadConfiguration as loadMarkConfiguration } from '@mark/core';
+import {
+  ConfigurationError,
+  fromEnv,
+  requireEnv,
+  cleanupHttpConnections,
+  loadConfiguration as loadMarkConfiguration,
+} from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { AdminConfig, AdminAdapter, AdminContext } from './types';
 import * as database from '@mark/database';
@@ -10,6 +16,7 @@ import { getRandomValues } from 'crypto';
 import { ChainService, EthWallet } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { EverclearAdapter } from '@mark/everclear';
 
 function initializeAdapters(config: AdminConfig, logger: Logger): AdminAdapter {
   database.initializeDatabase(config.database);
@@ -33,11 +40,15 @@ function initializeAdapters(config: AdminConfig, logger: Logger): AdminAdapter {
   // Initialize rebalance adapter
   const rebalanceAdapter = new RebalanceAdapter(config.markConfig, logger, database);
 
+  // Initialize everclear adapter
+  const everclearAdapter = new EverclearAdapter(config.markConfig.everclearApiUrl, logger);
+
   return {
     database,
     purchaseCache: new PurchaseCache(config.redis.host, config.redis.port),
     chainService,
     rebalanceAdapter,
+    everclearAdapter,
   };
 }
 

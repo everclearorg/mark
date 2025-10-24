@@ -52,7 +52,7 @@ describe('Database Adapter - Integration Tests', () => {
 
       it('should prevent duplicate active earmarks for the same invoice', async () => {
         const earmarkData = {
-          invoiceId: 'invoice-001',
+          invoiceId: 'invoice-duplicate-test',
           designatedPurchaseChain: 1,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '100000000000',
@@ -201,14 +201,14 @@ describe('Database Adapter - Integration Tests', () => {
     describe('getEarmarksWithOperations', () => {
       it('should return earmarks with their operations and total count', async () => {
         const earmark1 = await createEarmark({
-          invoiceId: 'invoice-001',
+          invoiceId: 'invoice-earmarks-ops-001',
           designatedPurchaseChain: 1,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '100000000000',
         });
 
         const earmark2 = await createEarmark({
-          invoiceId: 'invoice-002',
+          invoiceId: 'invoice-earmarks-ops-002',
           designatedPurchaseChain: 10,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '200000000000',
@@ -241,25 +241,25 @@ describe('Database Adapter - Integration Tests', () => {
         expect(result.total).toBe(2);
         expect(result.earmarks).toHaveLength(2);
 
-        const earmark1Result = result.earmarks.find(e => e.invoiceId === 'invoice-001');
+        const earmark1Result = result.earmarks.find(e => e.invoiceId === 'invoice-earmarks-ops-001');
         expect(earmark1Result).toBeDefined();
         expect(earmark1Result?.operations).toHaveLength(2);
 
-        const earmark2Result = result.earmarks.find(e => e.invoiceId === 'invoice-002');
+        const earmark2Result = result.earmarks.find(e => e.invoiceId === 'invoice-earmarks-ops-002');
         expect(earmark2Result).toBeDefined();
         expect(earmark2Result?.operations).toHaveLength(0);
       });
 
       it('should filter by status', async () => {
         const earmark1 = await createEarmark({
-          invoiceId: 'invoice-003',
+          invoiceId: 'invoice-earmarks-ops-003',
           designatedPurchaseChain: 1,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '100000000000',
         });
 
         const earmark2 = await createEarmark({
-          invoiceId: 'invoice-004',
+          invoiceId: 'invoice-earmarks-ops-004',
           designatedPurchaseChain: 10,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '200000000000',
@@ -269,23 +269,23 @@ describe('Database Adapter - Integration Tests', () => {
 
         const pendingResult = await getEarmarksWithOperations(10, 0, { status: 'pending' });
         expect(pendingResult.total).toBe(1);
-        expect(pendingResult.earmarks[0].invoiceId).toBe('invoice-003');
+        expect(pendingResult.earmarks[0].invoiceId).toBe('invoice-earmarks-ops-003');
 
         const completedResult = await getEarmarksWithOperations(10, 0, { status: 'completed' });
         expect(completedResult.total).toBe(1);
-        expect(completedResult.earmarks[0].invoiceId).toBe('invoice-004');
+        expect(completedResult.earmarks[0].invoiceId).toBe('invoice-earmarks-ops-004');
       });
 
       it('should filter by chainId', async () => {
         await createEarmark({
-          invoiceId: 'invoice-005',
+          invoiceId: 'invoice-earmarks-ops-005',
           designatedPurchaseChain: 1,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '100000000000',
         });
 
         await createEarmark({
-          invoiceId: 'invoice-006',
+          invoiceId: 'invoice-earmarks-ops-006',
           designatedPurchaseChain: 10,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '200000000000',
@@ -302,22 +302,22 @@ describe('Database Adapter - Integration Tests', () => {
 
       it('should filter by invoiceId', async () => {
         await createEarmark({
-          invoiceId: 'invoice-007',
+          invoiceId: 'invoice-earmarks-ops-007',
           designatedPurchaseChain: 1,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '100000000000',
         });
 
         await createEarmark({
-          invoiceId: 'invoice-008',
+          invoiceId: 'invoice-earmarks-ops-008',
           designatedPurchaseChain: 10,
           tickerHash: '0x1234567890123456789012345678901234567890',
           minAmount: '200000000000',
         });
 
-        const result = await getEarmarksWithOperations(10, 0, { invoiceId: 'invoice-007' });
+        const result = await getEarmarksWithOperations(10, 0, { invoiceId: 'invoice-earmarks-ops-007' });
         expect(result.total).toBe(1);
-        expect(result.earmarks[0].invoiceId).toBe('invoice-007');
+        expect(result.earmarks[0].invoiceId).toBe('invoice-earmarks-ops-007');
       });
 
       it('should handle pagination', async () => {

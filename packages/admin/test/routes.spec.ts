@@ -74,6 +74,12 @@ const mockRebalanceAdapter = {
   })),
 } as any;
 
+const mockEverclearAdapter = {
+  createNewIntent: jest.fn(),
+  solanaCreateNewIntent: jest.fn(),
+  tronCreateNewIntent: jest.fn(),
+} as any;
+
 const mockAdminContextBase: AdminContext = {
   logger: mockLogger as any,
   requestId: 'test-request-id',
@@ -84,6 +90,7 @@ const mockAdminContextBase: AdminContext = {
   database: database as typeof database,
   chainService: mockChainService,
   rebalanceAdapter: mockRebalanceAdapter,
+  everclearAdapter: mockEverclearAdapter,
 };
 
 describe('extractRequest', () => {
@@ -1465,6 +1472,322 @@ describe('handleApiRequest', () => {
       };
       const context: AdminContext = { ...mockAdminContextBase, event };
       expect(extractRequest(context)).toBe(HttpPaths.TriggerRebalance);
+    });
+  });
+
+  describe('POST Trigger Intent', () => {
+    const VALID_TO = mockAdminConfig.markConfig.ownAddress; // Must be ownAddress
+
+    it('should return 400 when origin is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          destinations: [10, 42161],
+          to: VALID_TO,
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+          maxFee: 0,
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('origin (chain ID) is required in request body');
+    });
+
+    it('should return 400 when destinations is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          to: VALID_TO,
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+          maxFee: 0,
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('destinations (array of chain IDs) is required in request body');
+    });
+
+    it('should return 400 when to (receiver) is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          destinations: [10, 42161],
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+          maxFee: 0,
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('to (receiver address) is required in request body');
+    });
+
+    it('should return 400 when inputAsset is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          destinations: [10, 42161],
+          to: VALID_TO,
+          amount: '1000000',
+          maxFee: 0,
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('inputAsset is required in request body');
+    });
+
+    it('should return 400 when amount is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          destinations: [10, 42161],
+          to: VALID_TO,
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          maxFee: 0,
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('amount is required in request body');
+    });
+
+    it('should return 400 when maxFee is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          destinations: [10, 42161],
+          to: VALID_TO,
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('maxFee is required in request body');
+    });
+
+    it('should return 400 when maxFee is not 0', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          destinations: [10, 42161],
+          to: VALID_TO,
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+          maxFee: 100,
+        }),
+      };
+
+      const configWithChain = {
+        ...mockAdminConfig,
+        markConfig: {
+          ...mockAdminConfig.markConfig,
+          chains: { '1': { chainId: 1, rpc: ['http://localhost:8545'], assets: [] } },
+        } as any,
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        config: configWithChain,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('maxFee must be 0 (no solver fees allowed)');
+    });
+
+    it('should return 400 when callData is not 0x', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          destinations: [10, 42161],
+          to: VALID_TO,
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+          maxFee: 0,
+          callData: '0x1234',
+        }),
+      };
+
+      const configWithChain = {
+        ...mockAdminConfig,
+        markConfig: {
+          ...mockAdminConfig.markConfig,
+          chains: { '1': { chainId: 1, rpc: ['http://localhost:8545'], assets: [] } },
+        } as any,
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        config: configWithChain,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('callData must be 0x (no custom execution allowed)');
+    });
+
+    it('should return 400 when receiver is not ownAddress', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          destinations: [10, 42161],
+          to: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+          maxFee: 0,
+        }),
+      };
+
+      const configWithChain = {
+        ...mockAdminConfig,
+        markConfig: {
+          ...mockAdminConfig.markConfig,
+          chains: { '1': { chainId: 1, rpc: ['http://localhost:8545'], assets: [] } },
+        } as any,
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        config: configWithChain,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toContain('Receiver must be Mark');
+    });
+
+    it('should return 400 when origin chain is not configured', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 999999,
+          destinations: [10, 42161],
+          to: VALID_TO,
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+          maxFee: 0,
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toContain('Origin chain 999999 is not configured');
+    });
+
+    it('should return 400 when destination chain is not configured', async () => {
+      const configWithOriginChain = {
+        ...mockAdminConfig,
+        markConfig: {
+          ...mockAdminConfig.markConfig,
+          chains: {
+            '1': {
+              chainId: 1,
+              rpc: ['http://localhost:8545'],
+              assets: [],
+            },
+          },
+        } as any,
+      };
+
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+        body: JSON.stringify({
+          origin: 1,
+          destinations: [999999],
+          to: VALID_TO,
+          inputAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+          amount: '1000000',
+          maxFee: 0,
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        config: configWithOriginChain,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toContain('Destination chain 999999 is not configured');
+    });
+  });
+
+  describe('extractRequest for trigger/intent', () => {
+    it('should return HttpPaths.TriggerIntent for POST /admin/trigger/intent', () => {
+      const event: APIGatewayEvent = {
+        ...mockEvent,
+        path: '/admin/trigger/intent',
+      };
+      const context: AdminContext = { ...mockAdminContextBase, event };
+      expect(extractRequest(context)).toBe(HttpPaths.TriggerIntent);
     });
   });
 });
