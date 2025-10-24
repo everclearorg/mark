@@ -2,7 +2,7 @@ import { jsonifyError } from '@mark/logger';
 import { AdminContext, HttpPaths } from '../types';
 import { verifyAdminToken } from './auth';
 import * as database from '@mark/database';
-import { snakeToCamel } from '@mark/database';
+import { snakeToCamel, TransactionReceipt } from '@mark/database';
 import { PurchaseCache } from '@mark/cache';
 import {
   RebalanceOperationStatus,
@@ -13,6 +13,7 @@ import {
   isSvmChain,
   isTvmChain,
   NewIntentParams,
+  AssetConfiguration,
 } from '@mark/core';
 import { APIGatewayProxyEventQueryStringParameters } from 'aws-lambda';
 import { encodeFunctionData, erc20Abi, Hex, formatUnits, parseUnits } from 'viem';
@@ -476,14 +477,16 @@ const getTickerForAsset = (asset: string, chainId: number, config: MarkConfigura
   if (!chainConfig || !chainConfig.assets) {
     return undefined;
   }
-  const assetConfig = chainConfig.assets.find((a: any) => a.address.toLowerCase() === asset.toLowerCase());
+  const assetConfig = chainConfig.assets.find(
+    (a: AssetConfiguration) => a.address.toLowerCase() === asset.toLowerCase(),
+  );
   return assetConfig?.tickerHash;
 };
 
 const getDecimalsFromConfig = (ticker: string, chainId: number, config: MarkConfiguration) => {
   const chainConfig = config.chains[chainId.toString()];
   if (!chainConfig) return undefined;
-  const asset = chainConfig.assets.find((a: any) => a.tickerHash.toLowerCase() === ticker.toLowerCase());
+  const asset = chainConfig.assets.find((a: AssetConfiguration) => a.tickerHash.toLowerCase() === ticker.toLowerCase());
   return asset?.decimals;
 };
 
@@ -692,7 +695,7 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
     });
 
     // Submit transactions
-    const receipts: Record<string, any> = {};
+    const receipts: Record<string, TransactionReceipt> = {};
     for (const txRequest of txRequests) {
       logger.info('Submitting transaction', {
         chainId: originChain,
@@ -745,7 +748,7 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
       ticker,
       amount: effectiveAmount18.toString(),
       bridge: bridgeType,
-      transactionHashes: Object.values(receipts).map((r: any) => r.transactionHash),
+      transactionHashes: Object.values(receipts).map((r: TransactionReceipt) => r.transactionHash),
       duration,
       status: 'completed',
       operation: 'trigger_rebalance',
@@ -764,7 +767,7 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
           amount: formatUnits(effectiveAmount18, 18),
           bridge: bridgeType,
           status: operation.status,
-          transactionHashes: Object.values(receipts).map((r: any) => r.transactionHash),
+          transactionHashes: Object.values(receipts).map((r: TransactionReceipt) => r.transactionHash),
         },
       }),
     };

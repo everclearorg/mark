@@ -4683,6 +4683,7 @@ __metadata:
     "@mark/chainservice": "workspace:*"
     "@mark/core": "workspace:*"
     "@mark/database": "workspace:*"
+    "@mark/everclear": "workspace:*"
     "@mark/logger": "workspace:*"
     "@mark/rebalance": "workspace:*"
     "@mark/web3signer": "workspace:*"
