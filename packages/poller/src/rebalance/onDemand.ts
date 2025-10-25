@@ -120,8 +120,13 @@ async function evaluateDestinationChain(
   // Find routes that can send to this destination
   const applicableRoutes = routes.filter((route) => {
     if (route.destination !== destination) return false;
-    const routeTickerHash = getTickerForAsset(route.asset, route.origin, config);
-    return routeTickerHash && routeTickerHash.toLowerCase() === invoice.ticker_hash.toLowerCase();
+
+    // For cross-asset routes, check destination ticker
+    const tickerToCheck = route.destinationAsset
+      ? getTickerForAsset(route.destinationAsset, route.destination, config)
+      : getTickerForAsset(route.asset, route.origin, config);
+
+    return tickerToCheck && tickerToCheck.toLowerCase() === invoice.ticker_hash.toLowerCase();
   });
 
   if (applicableRoutes.length === 0) {
@@ -271,15 +276,34 @@ async function calculateRebalancingOperations(
 
   // Sort routes by available balance (descending) to minimize number of operations
   const sortedRoutes = routes.sort((a, b) => {
-    const balanceA = getAvailableBalance(a.origin, ticker, balances, earmarkedFunds, a.reserve || '0');
-    const balanceB = getAvailableBalance(b.origin, ticker, balances, earmarkedFunds, b.reserve || '0');
+    // For swap routes, we need to check balance of the ORIGIN asset (what we're swapping FROM)
+    const originTickerHashA = getTickerForAsset(a.asset, a.origin, config) || '';
+    const originTickerHashB = getTickerForAsset(b.asset, b.origin, config) || '';
+    const balanceA = getAvailableBalance(a.origin, originTickerHashA, balances, earmarkedFunds, a.reserve || '0');
+    const balanceB = getAvailableBalance(b.origin, originTickerHashB, balances, earmarkedFunds, b.reserve || '0');
     return balanceB > balanceA ? 1 : -1;
   });
 
   for (const route of sortedRoutes) {
     if (remainingNeeded <= 0n) break;
 
-    const availableOnOrigin = getAvailableBalance(route.origin, ticker, balances, earmarkedFunds, route.reserve || '0');
+    // For swap routes, we need to check balance of the ORIGIN asset (what we're swapping FROM)
+    const originTickerHash = getTickerForAsset(route.asset, route.origin, config);
+    if (!originTickerHash) {
+      logger.warn('Could not find ticker hash for origin asset', {
+        asset: route.asset,
+        origin: route.origin,
+      });
+      continue;
+    }
+
+    const availableOnOrigin = getAvailableBalance(
+      route.origin,
+      originTickerHash,
+      balances,
+      earmarkedFunds,
+      route.reserve || '0',
+    );
 
     if (availableOnOrigin <= 0n) continue;
 

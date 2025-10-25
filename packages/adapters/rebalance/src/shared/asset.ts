@@ -26,13 +26,15 @@ export function findAssetByAddress(
 }
 
 /**
- * Finds the matching destination asset for a given origin asset
- * Uses the asset symbol to match between origin and destination chains
+ * Finds the destination asset for a route
+ * If destinationAsset is provided, looks it up directly
+ * Otherwise, matches by ticker hash (same-asset route)
  * @param asset - The origin asset address
  * @param origin - The origin chain ID
  * @param destination - The destination chain ID
  * @param chains - The chain configurations
  * @param logger - Logger instance for debugging
+ * @param destinationAsset - Optional explicit destination asset address (for cross-asset swaps)
  * @returns The matching destination asset configuration if found, undefined otherwise
  */
 export function findMatchingDestinationAsset(
@@ -41,7 +43,15 @@ export function findMatchingDestinationAsset(
   destination: number,
   chains: Record<string, ChainConfiguration>,
   logger: Logger,
+  destinationAsset?: string,
 ): AssetConfiguration | undefined {
+  // If explicit destination asset provided, use it directly
+  if (destinationAsset) {
+    logger.debug('Finding explicit destination asset', { destinationAsset, destination });
+    return findAssetByAddress(destinationAsset, destination, chains, logger);
+  }
+
+  // Otherwise, find matching asset by ticker hash (same-asset route)
   logger.debug('Finding matching destination asset', { asset, origin, destination });
 
   const destinationChainConfig = chains[destination.toString()];
@@ -64,11 +74,11 @@ export function findMatchingDestinationAsset(
   });
 
   // Find the matching asset in the destination chain by ticker hash
-  const destinationAsset = destinationChainConfig.assets.find(
+  const matchedAsset = destinationChainConfig.assets.find(
     (a: AssetConfiguration) => a.tickerHash === originAsset.tickerHash,
   );
 
-  if (!destinationAsset) {
+  if (!matchedAsset) {
     logger.warn(`Matching asset not found in destination chain`, {
       asset: originAsset,
       destination,
@@ -78,10 +88,10 @@ export function findMatchingDestinationAsset(
 
   logger.debug('Found matching asset in destination chain', {
     originAsset,
-    destinationAsset,
+    destinationAsset: matchedAsset,
   });
 
-  return destinationAsset;
+  return matchedAsset;
 }
 
 /**

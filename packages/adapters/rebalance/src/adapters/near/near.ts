@@ -231,6 +231,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
         route.destination,
         this.chains,
         this.logger,
+        route.destinationAsset,
       );
       if (!destinationWETH) {
         throw new Error('Failed to find destination WETH');
@@ -722,9 +723,16 @@ export class NearBridgeAdapter implements BridgeAdapter {
       throw new Error('Could not find matching input identifier');
     }
 
-    const outputAsset = this.findMatchingDestinationAsset(route.asset, route.origin, route.destination);
+    const outputAsset = findMatchingDestinationAsset(
+      route.asset,
+      route.origin,
+      route.destination,
+      this.chains,
+      this.logger,
+      route.destinationAsset,
+    );
     if (!outputAsset) {
-      throw new Error(`Could not find matching output asset: ${route.asset} for ${route.destination}`);
+      throw new Error(`Could not find destination asset for route`);
     }
 
     // For WETH routes, we bridge as ETH and wrap on destination if needed
@@ -735,7 +743,7 @@ export class NearBridgeAdapter implements BridgeAdapter {
         route.destination as keyof (typeof NEAR_IDENTIFIER_MAP)[keyof typeof NEAR_IDENTIFIER_MAP]
       ];
     if (!outputAssetIdentifier) {
-      throw new Error(`Could not find matching output identifier: ${outputAsset.symbol} for ${route.destination}`);
+      throw new Error(`Could not find matching output identifier: ${outputSymbol} for ${route.destination}`);
     }
 
     return { inputAssetIdentifier, outputAssetIdentifier };

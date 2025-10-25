@@ -71,6 +71,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         route.destination,
         this.chains,
         this.logger,
+        route.destinationAsset,
       );
       if (!outputToken) {
         throw new Error('Could not find matching destination asset');
@@ -176,6 +177,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         route.destination,
         this.chains,
         this.logger,
+        route.destinationAsset,
       );
       if (!destinationWETH) {
         throw new Error('Failed to find destination WETH');
@@ -431,6 +433,7 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       route.destination,
       this.chains,
       this.logger,
+      route.destinationAsset,
     );
     if (!outputToken) {
       throw new Error('Could not find matching destination asset');
