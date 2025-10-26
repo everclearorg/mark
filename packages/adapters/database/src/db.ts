@@ -415,6 +415,7 @@ export async function createRebalanceOperation(input: {
   bridge: string;
   recipient?: string;
   transactions?: Record<string, TransactionReceipt>;
+  operationType?: 'bridge' | 'swap_and_bridge';
 }): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }> {
   const client = await getPool().connect();
 
@@ -423,9 +424,9 @@ export async function createRebalanceOperation(input: {
     const rebalanceQuery = `
       INSERT INTO rebalance_operations (
         "earmark_id", "origin_chain_id", "destination_chain_id",
-        "ticker_hash", amount, slippage, status, bridge, recipient
+        "ticker_hash", amount, slippage, status, bridge, recipient, operation_type
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `;
 
@@ -439,6 +440,7 @@ export async function createRebalanceOperation(input: {
       input.status,
       input.bridge,
       input.recipient || null,
+      input.operationType || 'bridge',
     ];
 
     const rebalanceResult = await client.query<rebalance_operations>(rebalanceQuery, rebalanceValues);
@@ -896,6 +898,114 @@ export async function getCexWithdrawalRecord<T extends object = JSONObject>(inpu
   }
   const row = rows[0];
   return { ...snakeToCamel(row), metadata: JSON.parse(JSON.stringify(row.metadata ?? {})) };
+}
+
+// Swap operations functions
+export interface CreateSwapOperationParams {
+  rebalanceOperationId: string;
+  platform: string;
+  fromAsset: string;
+  toAsset: string;
+  fromAmount: string;
+  toAmount: string;
+  expectedRate: string;
+  quoteId?: string;
+  status: 'pending_deposit' | 'deposit_confirmed' | 'processing' | 'completed' | 'failed' | 'recovering';
+  metadata?: Record<string, any>;
+}
+
+export async function createSwapOperation(params: CreateSwapOperationParams): Promise<any> {
+  const pool = getPool();
+  const result = await pool.query(
+    `INSERT INTO swap_operations (
+      rebalance_operation_id, platform, from_asset, to_asset,
+      from_amount, to_amount, expected_rate, quote_id, status, metadata
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING *`,
+    [
+      params.rebalanceOperationId,
+      params.platform,
+      params.fromAsset,
+      params.toAsset,
+      params.fromAmount,
+      params.toAmount,
+      params.expectedRate,
+      params.quoteId,
+      params.status,
+      params.metadata ? JSON.stringify(params.metadata) : null,
+    ],
+  );
+  return snakeToCamel(result.rows[0]);
+}
+
+export async function getSwapOperations(filters: {
+  status?: string | string[];
+  rebalanceOperationId?: string;
+}): Promise<any[]> {
+  const pool = getPool();
+  const whereClauses: string[] = [];
+  const values: any[] = [];
+  let paramIndex = 1;
+
+  if (filters.status) {
+    if (Array.isArray(filters.status)) {
+      whereClauses.push(`status = ANY($${paramIndex})`);
+      values.push(filters.status);
+    } else {
+      whereClauses.push(`status = $${paramIndex}`);
+      values.push(filters.status);
+    }
+    paramIndex++;
+  }
+
+  if (filters.rebalanceOperationId) {
+    whereClauses.push(`rebalance_operation_id = $${paramIndex}`);
+    values.push(filters.rebalanceOperationId);
+    paramIndex++;
+  }
+
+  const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const result = await pool.query(`SELECT * FROM swap_operations ${whereClause} ORDER BY created_at ASC`, values);
+  return result.rows.map((row) => snakeToCamel(row));
+}
+
+export async function updateSwapOperationStatus(
+  id: string,
+  status: 'pending_deposit' | 'deposit_confirmed' | 'processing' | 'completed' | 'failed' | 'recovering',
+  metadata?: Record<string, any>,
+): Promise<void> {
+  const pool = getPool();
+
+  // Build update fields and values dynamically
+  const updates: string[] = ['status = $2', 'updated_at = NOW()'];
+  const values: any[] = [id, status];
+  let paramIndex = 3;
+
+  if (metadata) {
+    updates.push(`metadata = $${paramIndex}`);
+    values.push(JSON.stringify(metadata));
+    paramIndex++;
+
+    // Extract specific fields from metadata if provided
+    if (metadata.orderId) {
+      updates.push(`order_id = $${paramIndex}`);
+      values.push(metadata.orderId);
+      paramIndex++;
+    }
+    if (metadata.actualRate) {
+      updates.push(`actual_rate = $${paramIndex}`);
+      values.push(metadata.actualRate);
+      paramIndex++;
+    }
+  }
+
+  await pool.query(`UPDATE swap_operations SET ${updates.join(', ')} WHERE id = $1`, values);
+}
+
+export async function getSwapOperationByOrderId(orderId: string): Promise<any | undefined> {
+  const pool = getPool();
+  const result = await pool.query('SELECT * FROM swap_operations WHERE order_id = $1', [orderId]);
+  return result.rows[0] ? snakeToCamel(result.rows[0]) : undefined;
 }
 
 // Admin functions

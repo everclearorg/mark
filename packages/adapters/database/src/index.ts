@@ -26,12 +26,17 @@ export {
   getRebalanceOperationByTransactionHash,
   createCexWithdrawalRecord,
   getCexWithdrawalRecord,
+  createSwapOperation,
+  getSwapOperations,
+  updateSwapOperationStatus,
+  getSwapOperationByOrderId,
   setPause,
   isPaused,
   withTransaction,
   getEarmarksWithOperations,
   type CreateEarmarkInput,
   type GetEarmarksFilter,
+  type CreateSwapOperationParams,
 } from './db';
 
 // Health check and utility functions

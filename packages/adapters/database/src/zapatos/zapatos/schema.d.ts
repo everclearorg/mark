@@ -841,13 +841,13 @@ declare module 'zapatos/schema' {
       */
       is_orphaned: boolean;
       /**
-      * **rebalance_operations.metadata**
+      * **rebalance_operations.operation_type**
       *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
+      * Type of operation: bridge (normal) or swap_and_bridge (CEX swap)
+      * - `text` in database
+      * - Nullable, default: `'bridge'::text`
       */
-      metadata: db.JSONValue;
+      operation_type: string | null;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -947,13 +947,13 @@ declare module 'zapatos/schema' {
       */
       is_orphaned: boolean;
       /**
-      * **rebalance_operations.metadata**
+      * **rebalance_operations.operation_type**
       *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
+      * Type of operation: bridge (normal) or swap_and_bridge (CEX swap)
+      * - `text` in database
+      * - Nullable, default: `'bridge'::text`
       */
-      metadata: db.JSONValue;
+      operation_type: string | null;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -1053,13 +1053,13 @@ declare module 'zapatos/schema' {
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.metadata**
+      * **rebalance_operations.operation_type**
       *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
+      * Type of operation: bridge (normal) or swap_and_bridge (CEX swap)
+      * - `text` in database
+      * - Nullable, default: `'bridge'::text`
       */
-      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
+      operation_type?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -1159,13 +1159,13 @@ declare module 'zapatos/schema' {
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.metadata**
+      * **rebalance_operations.operation_type**
       *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
+      * Type of operation: bridge (normal) or swap_and_bridge (CEX swap)
+      * - `text` in database
+      * - Nullable, default: `'bridge'::text`
       */
-      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment;
+      operation_type?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -1265,13 +1265,13 @@ declare module 'zapatos/schema' {
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment>;
       /**
-      * **rebalance_operations.metadata**
+      * **rebalance_operations.operation_type**
       *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
+      * Type of operation: bridge (normal) or swap_and_bridge (CEX swap)
+      * - `text` in database
+      * - Nullable, default: `'bridge'::text`
       */
-      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment>;
+      operation_type?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -1371,6 +1371,599 @@ declare module 'zapatos/schema' {
       version?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
     }
     export type UniqueIndex = 'schema_migrations_pkey';
+    export type Column = keyof Selectable;
+    export type OnlyCols<T extends readonly Column[]> = Pick<Selectable, T[number]>;
+    export type SQLExpression = Table | db.ColumnNames<Updatable | (keyof Updatable)[]> | db.ColumnValues<Updatable> | Whereable | Column | db.ParentColumn | db.GenericSQLExpression;
+    export type SQL = SQLExpression | SQLExpression[];
+  }
+
+  /**
+   * **swap_operations**
+   * - Table in database
+   */
+  export namespace swap_operations {
+    export type Table = 'swap_operations';
+    export interface Selectable {
+      /**
+      * **swap_operations.actual_rate**
+      *
+      * Actual conversion rate after execution (18 decimals)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      actual_rate: string | null;
+      /**
+      * **swap_operations.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at: Date;
+      /**
+      * **swap_operations.expected_rate**
+      *
+      * Expected conversion rate (18 decimals)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      expected_rate: string;
+      /**
+      * **swap_operations.from_amount**
+      *
+      * Amount of origin asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_amount: string;
+      /**
+      * **swap_operations.from_asset**
+      *
+      * Origin asset symbol (e.g., USDT)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_asset: string;
+      /**
+      * **swap_operations.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **swap_operations.metadata**
+      *
+      * Additional swap-specific data (slippage limits, chain IDs, etc.)
+      * - `jsonb` in database
+      * - Nullable, no default
+      */
+      metadata: db.JSONValue | null;
+      /**
+      * **swap_operations.order_id**
+      *
+      * CEX order identifier after execution
+      * - `text` in database
+      * - Nullable, no default
+      */
+      order_id: string | null;
+      /**
+      * **swap_operations.platform**
+      *
+      * CEX platform (e.g., binance, kraken)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string;
+      /**
+      * **swap_operations.quote_id**
+      *
+      * CEX quote identifier
+      * - `text` in database
+      * - Nullable, no default
+      */
+      quote_id: string | null;
+      /**
+      * **swap_operations.rebalance_operation_id**
+      *
+      * Parent rebalance operation that initiated this swap
+      * - `uuid` in database
+      * - `NOT NULL`, no default
+      */
+      rebalance_operation_id: string;
+      /**
+      * **swap_operations.status**
+      *
+      * Swap lifecycle: pending_deposit → deposit_confirmed → processing → completed/failed/recovering
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      status: string;
+      /**
+      * **swap_operations.to_amount**
+      *
+      * Expected amount of destination asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_amount: string;
+      /**
+      * **swap_operations.to_asset**
+      *
+      * Destination asset symbol (e.g., USDC)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_asset: string;
+      /**
+      * **swap_operations.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at: Date;
+    }
+    export interface JSONSelectable {
+      /**
+      * **swap_operations.actual_rate**
+      *
+      * Actual conversion rate after execution (18 decimals)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      actual_rate: string | null;
+      /**
+      * **swap_operations.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at: db.TimestampTzString;
+      /**
+      * **swap_operations.expected_rate**
+      *
+      * Expected conversion rate (18 decimals)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      expected_rate: string;
+      /**
+      * **swap_operations.from_amount**
+      *
+      * Amount of origin asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_amount: string;
+      /**
+      * **swap_operations.from_asset**
+      *
+      * Origin asset symbol (e.g., USDT)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_asset: string;
+      /**
+      * **swap_operations.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id: string;
+      /**
+      * **swap_operations.metadata**
+      *
+      * Additional swap-specific data (slippage limits, chain IDs, etc.)
+      * - `jsonb` in database
+      * - Nullable, no default
+      */
+      metadata: db.JSONValue | null;
+      /**
+      * **swap_operations.order_id**
+      *
+      * CEX order identifier after execution
+      * - `text` in database
+      * - Nullable, no default
+      */
+      order_id: string | null;
+      /**
+      * **swap_operations.platform**
+      *
+      * CEX platform (e.g., binance, kraken)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string;
+      /**
+      * **swap_operations.quote_id**
+      *
+      * CEX quote identifier
+      * - `text` in database
+      * - Nullable, no default
+      */
+      quote_id: string | null;
+      /**
+      * **swap_operations.rebalance_operation_id**
+      *
+      * Parent rebalance operation that initiated this swap
+      * - `uuid` in database
+      * - `NOT NULL`, no default
+      */
+      rebalance_operation_id: string;
+      /**
+      * **swap_operations.status**
+      *
+      * Swap lifecycle: pending_deposit → deposit_confirmed → processing → completed/failed/recovering
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      status: string;
+      /**
+      * **swap_operations.to_amount**
+      *
+      * Expected amount of destination asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_amount: string;
+      /**
+      * **swap_operations.to_asset**
+      *
+      * Destination asset symbol (e.g., USDC)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_asset: string;
+      /**
+      * **swap_operations.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at: db.TimestampTzString;
+    }
+    export interface Whereable {
+      /**
+      * **swap_operations.actual_rate**
+      *
+      * Actual conversion rate after execution (18 decimals)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      actual_rate?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.expected_rate**
+      *
+      * Expected conversion rate (18 decimals)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      expected_rate?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.from_amount**
+      *
+      * Amount of origin asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_amount?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.from_asset**
+      *
+      * Origin asset symbol (e.g., USDT)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_asset?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.metadata**
+      *
+      * Additional swap-specific data (slippage limits, chain IDs, etc.)
+      * - `jsonb` in database
+      * - Nullable, no default
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.order_id**
+      *
+      * CEX order identifier after execution
+      * - `text` in database
+      * - Nullable, no default
+      */
+      order_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.platform**
+      *
+      * CEX platform (e.g., binance, kraken)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.quote_id**
+      *
+      * CEX quote identifier
+      * - `text` in database
+      * - Nullable, no default
+      */
+      quote_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.rebalance_operation_id**
+      *
+      * Parent rebalance operation that initiated this swap
+      * - `uuid` in database
+      * - `NOT NULL`, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.status**
+      *
+      * Swap lifecycle: pending_deposit → deposit_confirmed → processing → completed/failed/recovering
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      status?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.to_amount**
+      *
+      * Expected amount of destination asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_amount?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.to_asset**
+      *
+      * Destination asset symbol (e.g., USDC)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_asset?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **swap_operations.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.SQLFragment | db.ParentColumn>;
+    }
+    export interface Insertable {
+      /**
+      * **swap_operations.actual_rate**
+      *
+      * Actual conversion rate after execution (18 decimals)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      actual_rate?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **swap_operations.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
+      /**
+      * **swap_operations.expected_rate**
+      *
+      * Expected conversion rate (18 decimals)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      expected_rate: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **swap_operations.from_amount**
+      *
+      * Amount of origin asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_amount: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **swap_operations.from_asset**
+      *
+      * Origin asset symbol (e.g., USDT)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_asset: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **swap_operations.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
+      /**
+      * **swap_operations.metadata**
+      *
+      * Additional swap-specific data (slippage limits, chain IDs, etc.)
+      * - `jsonb` in database
+      * - Nullable, no default
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **swap_operations.order_id**
+      *
+      * CEX order identifier after execution
+      * - `text` in database
+      * - Nullable, no default
+      */
+      order_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **swap_operations.platform**
+      *
+      * CEX platform (e.g., binance, kraken)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **swap_operations.quote_id**
+      *
+      * CEX quote identifier
+      * - `text` in database
+      * - Nullable, no default
+      */
+      quote_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment;
+      /**
+      * **swap_operations.rebalance_operation_id**
+      *
+      * Parent rebalance operation that initiated this swap
+      * - `uuid` in database
+      * - `NOT NULL`, no default
+      */
+      rebalance_operation_id: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **swap_operations.status**
+      *
+      * Swap lifecycle: pending_deposit → deposit_confirmed → processing → completed/failed/recovering
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      status: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **swap_operations.to_amount**
+      *
+      * Expected amount of destination asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_amount: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **swap_operations.to_asset**
+      *
+      * Destination asset symbol (e.g., USDC)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_asset: string | db.Parameter<string> | db.SQLFragment;
+      /**
+      * **swap_operations.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment;
+    }
+    export interface Updatable {
+      /**
+      * **swap_operations.actual_rate**
+      *
+      * Actual conversion rate after execution (18 decimals)
+      * - `text` in database
+      * - Nullable, no default
+      */
+      actual_rate?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **swap_operations.created_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      created_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **swap_operations.expected_rate**
+      *
+      * Expected conversion rate (18 decimals)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      expected_rate?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **swap_operations.from_amount**
+      *
+      * Amount of origin asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_amount?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **swap_operations.from_asset**
+      *
+      * Origin asset symbol (e.g., USDT)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      from_asset?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **swap_operations.id**
+      * - `uuid` in database
+      * - `NOT NULL`, default: `uuid_generate_v4()`
+      */
+      id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **swap_operations.metadata**
+      *
+      * Additional swap-specific data (slippage limits, chain IDs, etc.)
+      * - `jsonb` in database
+      * - Nullable, no default
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **swap_operations.order_id**
+      *
+      * CEX order identifier after execution
+      * - `text` in database
+      * - Nullable, no default
+      */
+      order_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **swap_operations.platform**
+      *
+      * CEX platform (e.g., binance, kraken)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      platform?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **swap_operations.quote_id**
+      *
+      * CEX quote identifier
+      * - `text` in database
+      * - Nullable, no default
+      */
+      quote_id?: string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | null | db.DefaultType | db.SQLFragment>;
+      /**
+      * **swap_operations.rebalance_operation_id**
+      *
+      * Parent rebalance operation that initiated this swap
+      * - `uuid` in database
+      * - `NOT NULL`, no default
+      */
+      rebalance_operation_id?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **swap_operations.status**
+      *
+      * Swap lifecycle: pending_deposit → deposit_confirmed → processing → completed/failed/recovering
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      status?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **swap_operations.to_amount**
+      *
+      * Expected amount of destination asset (in native units)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_amount?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **swap_operations.to_asset**
+      *
+      * Destination asset symbol (e.g., USDC)
+      * - `text` in database
+      * - `NOT NULL`, no default
+      */
+      to_asset?: string | db.Parameter<string> | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment>;
+      /**
+      * **swap_operations.updated_at**
+      * - `timestamptz` in database
+      * - `NOT NULL`, default: `now()`
+      */
+      updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | db.DefaultType | db.SQLFragment>;
+    }
+    export type UniqueIndex = 'swap_operations_order_id_key' | 'swap_operations_pkey';
     export type Column = keyof Selectable;
     export type OnlyCols<T extends readonly Column[]> = Pick<Selectable, T[number]>;
     export type SQLExpression = Table | db.ColumnNames<Updatable | (keyof Updatable)[]> | db.ColumnValues<Updatable> | Whereable | Column | db.ParentColumn | db.GenericSQLExpression;
@@ -1853,20 +2446,20 @@ declare module 'zapatos/schema' {
   /* --- aggregate types --- */
 
   export namespace public {  
-    export type Table = admin_actions.Table | cex_withdrawals.Table | earmarks.Table | rebalance_operations.Table | schema_migrations.Table | transactions.Table;
-    export type Selectable = admin_actions.Selectable | cex_withdrawals.Selectable | earmarks.Selectable | rebalance_operations.Selectable | schema_migrations.Selectable | transactions.Selectable;
-    export type JSONSelectable = admin_actions.JSONSelectable | cex_withdrawals.JSONSelectable | earmarks.JSONSelectable | rebalance_operations.JSONSelectable | schema_migrations.JSONSelectable | transactions.JSONSelectable;
-    export type Whereable = admin_actions.Whereable | cex_withdrawals.Whereable | earmarks.Whereable | rebalance_operations.Whereable | schema_migrations.Whereable | transactions.Whereable;
-    export type Insertable = admin_actions.Insertable | cex_withdrawals.Insertable | earmarks.Insertable | rebalance_operations.Insertable | schema_migrations.Insertable | transactions.Insertable;
-    export type Updatable = admin_actions.Updatable | cex_withdrawals.Updatable | earmarks.Updatable | rebalance_operations.Updatable | schema_migrations.Updatable | transactions.Updatable;
-    export type UniqueIndex = admin_actions.UniqueIndex | cex_withdrawals.UniqueIndex | earmarks.UniqueIndex | rebalance_operations.UniqueIndex | schema_migrations.UniqueIndex | transactions.UniqueIndex;
-    export type Column = admin_actions.Column | cex_withdrawals.Column | earmarks.Column | rebalance_operations.Column | schema_migrations.Column | transactions.Column;
+    export type Table = admin_actions.Table | cex_withdrawals.Table | earmarks.Table | rebalance_operations.Table | schema_migrations.Table | swap_operations.Table | transactions.Table;
+    export type Selectable = admin_actions.Selectable | cex_withdrawals.Selectable | earmarks.Selectable | rebalance_operations.Selectable | schema_migrations.Selectable | swap_operations.Selectable | transactions.Selectable;
+    export type JSONSelectable = admin_actions.JSONSelectable | cex_withdrawals.JSONSelectable | earmarks.JSONSelectable | rebalance_operations.JSONSelectable | schema_migrations.JSONSelectable | swap_operations.JSONSelectable | transactions.JSONSelectable;
+    export type Whereable = admin_actions.Whereable | cex_withdrawals.Whereable | earmarks.Whereable | rebalance_operations.Whereable | schema_migrations.Whereable | swap_operations.Whereable | transactions.Whereable;
+    export type Insertable = admin_actions.Insertable | cex_withdrawals.Insertable | earmarks.Insertable | rebalance_operations.Insertable | schema_migrations.Insertable | swap_operations.Insertable | transactions.Insertable;
+    export type Updatable = admin_actions.Updatable | cex_withdrawals.Updatable | earmarks.Updatable | rebalance_operations.Updatable | schema_migrations.Updatable | swap_operations.Updatable | transactions.Updatable;
+    export type UniqueIndex = admin_actions.UniqueIndex | cex_withdrawals.UniqueIndex | earmarks.UniqueIndex | rebalance_operations.UniqueIndex | schema_migrations.UniqueIndex | swap_operations.UniqueIndex | transactions.UniqueIndex;
+    export type Column = admin_actions.Column | cex_withdrawals.Column | earmarks.Column | rebalance_operations.Column | schema_migrations.Column | swap_operations.Column | transactions.Column;
   
-    export type AllBaseTables = [admin_actions.Table, cex_withdrawals.Table, earmarks.Table, rebalance_operations.Table, schema_migrations.Table, transactions.Table];
+    export type AllBaseTables = [admin_actions.Table, cex_withdrawals.Table, earmarks.Table, rebalance_operations.Table, schema_migrations.Table, swap_operations.Table, transactions.Table];
     export type AllForeignTables = [];
     export type AllViews = [];
     export type AllMaterializedViews = [];
-    export type AllTablesAndViews = [admin_actions.Table, cex_withdrawals.Table, earmarks.Table, rebalance_operations.Table, schema_migrations.Table, transactions.Table];
+    export type AllTablesAndViews = [admin_actions.Table, cex_withdrawals.Table, earmarks.Table, rebalance_operations.Table, schema_migrations.Table, swap_operations.Table, transactions.Table];
   }
 
 
@@ -1899,6 +2492,7 @@ declare module 'zapatos/schema' {
     "earmarks": earmarks.Selectable;
     "rebalance_operations": rebalance_operations.Selectable;
     "schema_migrations": schema_migrations.Selectable;
+    "swap_operations": swap_operations.Selectable;
     "transactions": transactions.Selectable;
   }[T];
 
@@ -1908,6 +2502,7 @@ declare module 'zapatos/schema' {
     "earmarks": earmarks.JSONSelectable;
     "rebalance_operations": rebalance_operations.JSONSelectable;
     "schema_migrations": schema_migrations.JSONSelectable;
+    "swap_operations": swap_operations.JSONSelectable;
     "transactions": transactions.JSONSelectable;
   }[T];
 
@@ -1917,6 +2512,7 @@ declare module 'zapatos/schema' {
     "earmarks": earmarks.Whereable;
     "rebalance_operations": rebalance_operations.Whereable;
     "schema_migrations": schema_migrations.Whereable;
+    "swap_operations": swap_operations.Whereable;
     "transactions": transactions.Whereable;
   }[T];
 
@@ -1926,6 +2522,7 @@ declare module 'zapatos/schema' {
     "earmarks": earmarks.Insertable;
     "rebalance_operations": rebalance_operations.Insertable;
     "schema_migrations": schema_migrations.Insertable;
+    "swap_operations": swap_operations.Insertable;
     "transactions": transactions.Insertable;
   }[T];
 
@@ -1935,6 +2532,7 @@ declare module 'zapatos/schema' {
     "earmarks": earmarks.Updatable;
     "rebalance_operations": rebalance_operations.Updatable;
     "schema_migrations": schema_migrations.Updatable;
+    "swap_operations": swap_operations.Updatable;
     "transactions": transactions.Updatable;
   }[T];
 
@@ -1944,6 +2542,7 @@ declare module 'zapatos/schema' {
     "earmarks": earmarks.UniqueIndex;
     "rebalance_operations": rebalance_operations.UniqueIndex;
     "schema_migrations": schema_migrations.UniqueIndex;
+    "swap_operations": swap_operations.UniqueIndex;
     "transactions": transactions.UniqueIndex;
   }[T];
 
@@ -1953,6 +2552,7 @@ declare module 'zapatos/schema' {
     "earmarks": earmarks.Column;
     "rebalance_operations": rebalance_operations.Column;
     "schema_migrations": schema_migrations.Column;
+    "swap_operations": swap_operations.Column;
     "transactions": transactions.Column;
   }[T];
 
@@ -1962,6 +2562,7 @@ declare module 'zapatos/schema' {
     "earmarks": earmarks.SQL;
     "rebalance_operations": rebalance_operations.SQL;
     "schema_migrations": schema_migrations.SQL;
+    "swap_operations": swap_operations.SQL;
     "transactions": transactions.SQL;
   }[T];
 
