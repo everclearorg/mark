@@ -901,6 +901,24 @@ export async function getCexWithdrawalRecord<T extends object = JSONObject>(inpu
 }
 
 // Swap operations functions
+export interface SwapOperation {
+  id: string;
+  rebalanceOperationId: string;
+  platform: string;
+  fromAsset: string;
+  toAsset: string;
+  fromAmount: string;
+  toAmount: string;
+  expectedRate: string;
+  actualRate?: string;
+  quoteId?: string;
+  orderId?: string;
+  status: 'pending_deposit' | 'deposit_confirmed' | 'processing' | 'completed' | 'failed' | 'recovering';
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CreateSwapOperationParams {
   rebalanceOperationId: string;
   platform: string;
@@ -911,10 +929,10 @@ export interface CreateSwapOperationParams {
   expectedRate: string;
   quoteId?: string;
   status: 'pending_deposit' | 'deposit_confirmed' | 'processing' | 'completed' | 'failed' | 'recovering';
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
-export async function createSwapOperation(params: CreateSwapOperationParams): Promise<any> {
+export async function createSwapOperation(params: CreateSwapOperationParams): Promise<SwapOperation> {
   const pool = getPool();
   const result = await pool.query(
     `INSERT INTO swap_operations (
@@ -941,10 +959,10 @@ export async function createSwapOperation(params: CreateSwapOperationParams): Pr
 export async function getSwapOperations(filters: {
   status?: string | string[];
   rebalanceOperationId?: string;
-}): Promise<any[]> {
+}): Promise<SwapOperation[]> {
   const pool = getPool();
   const whereClauses: string[] = [];
-  const values: any[] = [];
+  const values: unknown[] = [];
   let paramIndex = 1;
 
   if (filters.status) {
@@ -972,13 +990,13 @@ export async function getSwapOperations(filters: {
 export async function updateSwapOperationStatus(
   id: string,
   status: 'pending_deposit' | 'deposit_confirmed' | 'processing' | 'completed' | 'failed' | 'recovering',
-  metadata?: Record<string, any>,
+  metadata?: Record<string, unknown>,
 ): Promise<void> {
   const pool = getPool();
 
   // Build update fields and values dynamically
   const updates: string[] = ['status = $2', 'updated_at = NOW()'];
-  const values: any[] = [id, status];
+  const values: unknown[] = [id, status];
   let paramIndex = 3;
 
   if (metadata) {
@@ -1002,7 +1020,7 @@ export async function updateSwapOperationStatus(
   await pool.query(`UPDATE swap_operations SET ${updates.join(', ')} WHERE id = $1`, values);
 }
 
-export async function getSwapOperationByOrderId(orderId: string): Promise<any | undefined> {
+export async function getSwapOperationByOrderId(orderId: string): Promise<SwapOperation | undefined> {
   const pool = getPool();
   const result = await pool.query('SELECT * FROM swap_operations WHERE order_id = $1', [orderId]);
   return result.rows[0] ? snakeToCamel(result.rows[0]) : undefined;
