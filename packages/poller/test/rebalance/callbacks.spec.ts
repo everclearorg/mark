@@ -212,6 +212,7 @@ describe('executeDestinationCallbacks', () => {
       createRebalanceOperation: stub().resolves(),
       getRebalanceOperationsByEarmark: stub().resolves([]),
       withTransaction: stub().resolves(),
+      getSwapOperations: stub().resolves([]),
       DatabaseError: class DatabaseError extends Error {},
       ConnectionError: class ConnectionError extends Error {},
     } as unknown as typeof DatabaseModule;

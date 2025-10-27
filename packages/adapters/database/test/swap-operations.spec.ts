@@ -1,7 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import {
-  initializeDatabase,
-  closeDatabase,
   createRebalanceOperation,
   createSwapOperation,
   getSwapOperations,
@@ -10,28 +8,21 @@ import {
   CreateSwapOperationParams,
 } from '../src';
 import { RebalanceOperationStatus } from '@mark/core';
+import { setupTestDatabase, teardownTestDatabase, cleanupTestDatabase } from './setup';
 
 describe('Swap Operations CRUD', () => {
   beforeAll(async () => {
-    const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/mark_dev?sslmode=disable';
-    initializeDatabase({ connectionString: dbUrl });
+    await setupTestDatabase();
   });
 
   afterAll(async () => {
-    await closeDatabase();
+    await teardownTestDatabase();
   });
 
   let testRebalanceOpId: string;
 
   beforeEach(async () => {
-    // Clean up previous test data
-    const pool = require('pg').Pool;
-    const dbPool = new pool({
-      connectionString:
-        process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/mark_dev?sslmode=disable',
-    });
-    await dbPool.query('TRUNCATE TABLE swap_operations, rebalance_operations, earmarks CASCADE');
-    await dbPool.end();
+    await cleanupTestDatabase();
 
     // Create a rebalance operation to link swaps to
     const rebalanceOp = await createRebalanceOperation({

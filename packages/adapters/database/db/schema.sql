@@ -1,7 +1,6 @@
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -55,6 +54,13 @@ CREATE TABLE public.admin_actions (
     purchase_paused boolean DEFAULT false,
     ondemand_rebalance_paused boolean DEFAULT false
 );
+
+
+--
+-- Name: COLUMN admin_actions.ondemand_rebalance_paused; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.admin_actions.ondemand_rebalance_paused IS 'Pause flag for on-demand rebalancing operations triggered by invoice processing';
 
 
 --
@@ -148,7 +154,9 @@ CREATE TABLE public.rebalance_operations (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     is_orphaned boolean DEFAULT false NOT NULL,
-    CONSTRAINT rebalance_operation_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'awaiting_callback'::text, 'completed'::text, 'expired'::text, 'cancelled'::text])))
+    operation_type text DEFAULT 'bridge'::text,
+    CONSTRAINT rebalance_operation_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'awaiting_callback'::text, 'completed'::text, 'expired'::text, 'cancelled'::text]))),
+    CONSTRAINT rebalance_operations_operation_type_check CHECK ((operation_type = ANY (ARRAY['bridge'::text, 'swap_and_bridge'::text])))
 );
 
 
@@ -223,12 +231,134 @@ COMMENT ON COLUMN public.rebalance_operations.is_orphaned IS 'Indicates if this 
 
 
 --
+-- Name: COLUMN rebalance_operations.operation_type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.rebalance_operations.operation_type IS 'Type of operation: bridge (normal) or swap_and_bridge (CEX swap)';
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.schema_migrations (
-    version character varying NOT NULL
+    version character varying(128) NOT NULL
 );
+
+
+--
+-- Name: swap_operations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.swap_operations (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    rebalance_operation_id uuid NOT NULL,
+    platform text NOT NULL,
+    from_asset text NOT NULL,
+    to_asset text NOT NULL,
+    from_amount text NOT NULL,
+    to_amount text NOT NULL,
+    expected_rate text NOT NULL,
+    actual_rate text,
+    quote_id text,
+    order_id text,
+    status text NOT NULL,
+    metadata jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT swap_operations_status_check CHECK ((status = ANY (ARRAY['pending_deposit'::text, 'deposit_confirmed'::text, 'processing'::text, 'completed'::text, 'failed'::text, 'recovering'::text])))
+);
+
+
+--
+-- Name: TABLE swap_operations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.swap_operations IS 'Tracks CEX swap operations for cross-asset rebalancing (deposit → swap → withdraw flow)';
+
+
+--
+-- Name: COLUMN swap_operations.rebalance_operation_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.rebalance_operation_id IS 'Parent rebalance operation that initiated this swap';
+
+
+--
+-- Name: COLUMN swap_operations.platform; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.platform IS 'CEX platform (e.g., binance, kraken)';
+
+
+--
+-- Name: COLUMN swap_operations.from_asset; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.from_asset IS 'Origin asset symbol (e.g., USDT)';
+
+
+--
+-- Name: COLUMN swap_operations.to_asset; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.to_asset IS 'Destination asset symbol (e.g., USDC)';
+
+
+--
+-- Name: COLUMN swap_operations.from_amount; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.from_amount IS 'Amount of origin asset (in native units)';
+
+
+--
+-- Name: COLUMN swap_operations.to_amount; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.to_amount IS 'Expected amount of destination asset (in native units)';
+
+
+--
+-- Name: COLUMN swap_operations.expected_rate; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.expected_rate IS 'Expected conversion rate (18 decimals)';
+
+
+--
+-- Name: COLUMN swap_operations.actual_rate; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.actual_rate IS 'Actual conversion rate after execution (18 decimals)';
+
+
+--
+-- Name: COLUMN swap_operations.quote_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.quote_id IS 'CEX quote identifier';
+
+
+--
+-- Name: COLUMN swap_operations.order_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.order_id IS 'CEX order identifier after execution';
+
+
+--
+-- Name: COLUMN swap_operations.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.status IS 'Swap lifecycle: pending_deposit → deposit_confirmed → processing → completed/failed/recovering';
+
+
+--
+-- Name: COLUMN swap_operations.metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.swap_operations.metadata IS 'Additional swap-specific data (slippage limits, chain IDs, etc.)';
 
 
 --
@@ -362,19 +492,27 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: swap_operations swap_operations_order_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.swap_operations
+    ADD CONSTRAINT swap_operations_order_id_key UNIQUE (order_id);
+
+
+--
+-- Name: swap_operations swap_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.swap_operations
+    ADD CONSTRAINT swap_operations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: transactions transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.transactions
     ADD CONSTRAINT transactions_pkey PRIMARY KEY (id);
-
-
---
--- Name: earmarks unique_invoice_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.earmarks
-    ADD CONSTRAINT unique_invoice_id UNIQUE (invoice_id);
 
 
 --
@@ -404,6 +542,13 @@ CREATE INDEX idx_earmarks_created_at ON public.earmarks USING btree (created_at)
 --
 
 CREATE INDEX idx_earmarks_invoice_id ON public.earmarks USING btree (invoice_id);
+
+
+--
+-- Name: idx_earmarks_invoice_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_earmarks_invoice_status ON public.earmarks USING btree (invoice_id, status);
 
 
 --
@@ -470,6 +615,41 @@ CREATE INDEX idx_rebalance_operations_status_earmark_dest ON public.rebalance_op
 
 
 --
+-- Name: idx_swap_operations_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_swap_operations_created_at ON public.swap_operations USING btree (created_at);
+
+
+--
+-- Name: idx_swap_operations_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_swap_operations_order_id ON public.swap_operations USING btree (order_id) WHERE (order_id IS NOT NULL);
+
+
+--
+-- Name: idx_swap_operations_platform; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_swap_operations_platform ON public.swap_operations USING btree (platform);
+
+
+--
+-- Name: idx_swap_operations_rebalance_op; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_swap_operations_rebalance_op ON public.swap_operations USING btree (rebalance_operation_id);
+
+
+--
+-- Name: idx_swap_operations_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_swap_operations_status ON public.swap_operations USING btree (status) WHERE (status = ANY (ARRAY['pending_deposit'::text, 'deposit_confirmed'::text, 'processing'::text, 'recovering'::text]));
+
+
+--
 -- Name: idx_transactions_chain; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -512,6 +692,13 @@ CREATE INDEX idx_transactions_rebalance_op ON public.transactions USING btree (r
 
 
 --
+-- Name: unique_active_earmark_per_invoice; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_active_earmark_per_invoice ON public.earmarks USING btree (invoice_id) WHERE (status = ANY (ARRAY['pending'::text, 'ready'::text]));
+
+
+--
 -- Name: admin_actions update_admin_actions_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -530,6 +717,13 @@ CREATE TRIGGER update_earmarks_updated_at BEFORE UPDATE ON public.earmarks FOR E
 --
 
 CREATE TRIGGER update_rebalance_operations_updated_at BEFORE UPDATE ON public.rebalance_operations FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: swap_operations update_swap_operations_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_swap_operations_updated_at BEFORE UPDATE ON public.swap_operations FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
@@ -556,6 +750,14 @@ ALTER TABLE ONLY public.rebalance_operations
 
 
 --
+-- Name: swap_operations swap_operations_rebalance_operation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.swap_operations
+    ADD CONSTRAINT swap_operations_rebalance_operation_id_fkey FOREIGN KEY (rebalance_operation_id) REFERENCES public.rebalance_operations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: transactions transactions_rebalance_operation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -577,5 +779,7 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20250902175116'),
     ('20250903171904'),
     ('20250911'),
+    ('20250925232303'),
     ('20251016000000'),
-    ('20251021000000');
+    ('20251021000000'),
+    ('20251024000000');

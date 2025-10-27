@@ -13,7 +13,12 @@ import { Web3Signer } from '@mark/web3signer';
 import { pollAndProcessInvoices } from './invoice';
 import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
-import { rebalanceInventory, cleanupExpiredEarmarks, cleanupExpiredRegularRebalanceOps } from './rebalance';
+import {
+  rebalanceInventory,
+  cleanupExpiredEarmarks,
+  cleanupExpiredRegularRebalanceOps,
+  processSwapOperations,
+} from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
 import * as database from '@mark/database';
@@ -180,6 +185,11 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         operations: rebalanceOperations,
       });
     }
+
+    logFileDescriptorUsage(logger);
+
+    // Process swap operations for on-demand rebalancing
+    await processSwapOperations(context);
 
     logFileDescriptorUsage(logger);
 

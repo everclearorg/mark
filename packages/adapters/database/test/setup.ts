@@ -10,7 +10,7 @@ const execAsync = promisify(exec);
 // Test database configuration
 export const TEST_DATABASE_CONFIG: DatabaseConfig = {
   connectionString:
-    process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/mark_test?sslmode=disable',
+    process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/mark_test?sslmode=disable',
   maxConnections: 5,
   idleTimeoutMillis: 10000,
   connectionTimeoutMillis: 5000,
@@ -21,7 +21,7 @@ export default async function globalSetup() {
   // Connect to postgres database to create test database
   const client = new Client({
     host: 'localhost',
-    port: 5433,
+    port: 5432,
     user: 'postgres',
     password: 'postgres',
     database: 'postgres', // Connect to default postgres db
@@ -34,11 +34,6 @@ export default async function globalSetup() {
     try {
       await client.query('CREATE DATABASE mark_test');
       console.log('Created test database: mark_test');
-
-      // Run migrations on test database
-      const testDbUrl = TEST_DATABASE_CONFIG.connectionString;
-      await execAsync(`DATABASE_URL="${testDbUrl}" yarn db:migrate`);
-      console.log('Ran migrations on test database');
     } catch (error) {
       // Database already exists, which is fine
       const pgError = error as { code?: string };
@@ -46,6 +41,17 @@ export default async function globalSetup() {
         // 42P04 is "database already exists"
         throw error;
       }
+      console.log('Test database already exists');
+    }
+
+    // Run migrations on test database
+    try {
+      const testDbUrl = TEST_DATABASE_CONFIG.connectionString;
+      const migrationsDir = require('path').join(__dirname, '../db/migrations');
+      await execAsync(`dbmate --url "${testDbUrl}" --migrations-dir "${migrationsDir}" up`);
+      console.log('Ran migrations on test database');
+    } catch (error) {
+      console.warn('Failed to run migrations, may already be applied:', (error as Error).message);
     }
   } catch (error) {
     console.error('Error setting up test database:', error);
@@ -65,8 +71,15 @@ export async function setupTestDatabase(): Promise<void> {
 export async function cleanupTestDatabase(): Promise<void> {
   const db = getPool();
   if (db) {
-    // Clean up all test data
+    // Clean up all test data (order matters due to foreign keys)
+    // Use IF EXISTS to handle tables that may not exist yet
+    try {
+      await db.query('DELETE FROM swap_operations');
+    } catch (error) {
+      // Table might not exist in test database yet, ignore
+    }
     await db.query('DELETE FROM transactions');
+    await db.query('DELETE FROM cex_withdrawals');
     await db.query('DELETE FROM rebalance_operations');
     await db.query('DELETE FROM earmarks');
     await db.query('DELETE FROM admin_actions');

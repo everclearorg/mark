@@ -5,8 +5,8 @@ import * as database from '@mark/database';
 import type { earmarks, Earmark } from '@mark/database';
 import { getMarkBalances, convertToNativeUnits, convertTo18Decimals, getTickerForAsset } from '../helpers';
 import { getDecimalsFromConfig } from '@mark/core';
-import { jsonifyError } from '@mark/logger';
-import { RebalanceTransactionMemo } from '@mark/rebalance';
+import { jsonifyError, Logger } from '@mark/logger';
+import { RebalanceTransactionMemo, SwapCapableBridgeAdapter, isSwapRoute, getRouteAssetSymbols } from '@mark/rebalance';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 
@@ -18,6 +18,7 @@ interface OnDemandRebalanceResult {
     amount: string;
     bridge: SupportedBridge;
     slippage: number;
+    swapMetadata?: SwapMetadata;
   }[];
   totalAmount?: string;
   minAmount?: string;
@@ -27,6 +28,16 @@ interface EarmarkedFunds {
   chainId: number;
   tickerHash: string;
   amount: bigint;
+}
+
+interface SwapMetadata {
+  fromAsset: string;
+  toAsset: string;
+  expectedFromAmount: string;
+  expectedToAmount: string;
+  observedSwapSlippageDbps: number;
+  observedBridgeSlippageDbps: number;
+  totalSlippageBudgetDbps: number;
 }
 
 export async function evaluateOnDemandRebalancing(
@@ -264,13 +275,25 @@ async function calculateRebalancingOperations(
   tickerHash: string,
   context: ProcessingContext,
 ): Promise<{
-  operations: { originChain: number; amount: string; bridge: SupportedBridge; slippage: number }[];
+  operations: {
+    originChain: number;
+    amount: string;
+    bridge: SupportedBridge;
+    slippage: number;
+    swapMetadata?: SwapMetadata;
+  }[];
   totalAchievable: bigint;
   canFulfill: boolean;
 }> {
   const { logger, rebalance, config } = context;
   const ticker = tickerHash.toLowerCase();
-  const operations: { originChain: number; amount: string; bridge: SupportedBridge; slippage: number }[] = [];
+  const operations: {
+    originChain: number;
+    amount: string;
+    bridge: SupportedBridge;
+    slippage: number;
+    swapMetadata?: SwapMetadata;
+  }[] = [];
   let remainingNeeded = amountNeeded;
   let totalAchievable = 0n;
 
@@ -322,6 +345,149 @@ async function calculateRebalancingOperations(
         continue;
       }
 
+      // Handle CEX swap routes (routes with destinationAsset defined)
+      if (isSwapRoute(route)) {
+        // Check if adapter supports swap
+        if (!('supportsSwap' in adapter)) {
+          logger.debug('Adapter does not support swap methods', {
+            bridgeType,
+            route,
+          });
+          continue; // Skip this bridge, try next
+        }
+
+        const swapAdapter = adapter as SwapCapableBridgeAdapter;
+        const { fromSymbol, toSymbol, fromDecimals, toDecimals } = getRouteAssetSymbols(route, config.chains, logger);
+        const supportsSwap = await swapAdapter.supportsSwap(fromSymbol, toSymbol);
+
+        if (!supportsSwap) {
+          logger.debug('Adapter does not support this swap pair', {
+            bridgeType,
+            fromSymbol,
+            toSymbol,
+          });
+          continue; // Skip this bridge, try next
+        }
+
+        // Check minimum swap amount
+        try {
+          // Fetch CEX platform minimum dynamically (with caching)
+          const exchangeInfo = await swapAdapter.getSwapExchangeInfo(fromSymbol, toSymbol);
+          const platformMinNative = BigInt(exchangeInfo.minAmount);
+
+          // Convert platform minimum to 18 decimals for comparison
+          const platformMin18Dec = convertTo18Decimals(platformMinNative, fromDecimals);
+
+          // Apply buffer for withdrawal fees (2x platform minimum is conservative)
+          const effectiveMinimum = platformMin18Dec * 2n;
+
+          // Check configured override (if user wants higher minimum)
+          const configuredMin = route.minSwapAmount ? BigInt(route.minSwapAmount) : 0n;
+
+          // Use the larger of configured or effective platform minimum
+          const finalMinimum = configuredMin > effectiveMinimum ? configuredMin : effectiveMinimum;
+
+          if (availableOnOrigin < finalMinimum) {
+            logger.debug('Available balance below minimum swap amount', {
+              availableOnOrigin: availableOnOrigin.toString(),
+              platformMinimum: platformMin18Dec.toString(),
+              effectiveMinimum: effectiveMinimum.toString(),
+              configuredMinimum: configuredMin.toString(),
+              finalMinimum: finalMinimum.toString(),
+            });
+            continue; // Skip this bridge, try next
+          }
+        } catch (error) {
+          // If fetching platform minimum fails, fall back to configured minimum only
+          logger.warn('Failed to fetch platform minimum, using configured minimum only', {
+            fromAsset: fromSymbol,
+            toAsset: toSymbol,
+            error: jsonifyError(error),
+          });
+
+          if (route.minSwapAmount && availableOnOrigin < BigInt(route.minSwapAmount)) {
+            logger.debug('Available balance below configured minimum swap amount', {
+              availableOnOrigin: availableOnOrigin.toString(),
+              minSwapAmount: route.minSwapAmount,
+            });
+            continue;
+          }
+        }
+
+        try {
+          // Convert to native units for swap quote (using origin asset decimals)
+          const nativeAmount = convertToNativeUnits(availableOnOrigin, fromDecimals);
+
+          // Get swap quote
+          const swapQuote = await swapAdapter.getSwapQuote(fromSymbol, toSymbol, nativeAmount.toString());
+
+          // Convert swapped amount back to 18 decimals (using destination asset decimals)
+          const afterSwapAmount = convertTo18Decimals(BigInt(swapQuote.toAmount), toDecimals);
+
+          // Now get bridge quote for the swapped asset
+          const receivedAmountStr = await swapAdapter.getReceivedAmount(swapQuote.toAmount, route);
+          const receivedIn18Decimals = convertTo18Decimals(BigInt(receivedAmountStr), toDecimals);
+
+          // Calculate total slippage (combines both swap and bridge slippage)
+          const totalSlippageDbps = ((availableOnOrigin - receivedIn18Decimals) * DBPS_MULTIPLIER) / availableOnOrigin;
+
+          // Check total slippage against maximum acceptable tolerance
+          const maxSlippageDbps = route.slippagesDbps?.[bridgeIndex] ?? 1000;
+          if (totalSlippageDbps > BigInt(maxSlippageDbps)) {
+            logger.debug('Total slippage (swap + bridge) exceeds tolerance', {
+              totalSlippageDbps: totalSlippageDbps.toString(),
+              maxSlippageDbps,
+            });
+            continue;
+          }
+
+          // Calculate individual slippages for logging
+          const swapSlippageDbps = ((availableOnOrigin - afterSwapAmount) * DBPS_MULTIPLIER) / availableOnOrigin;
+          const bridgeSlippageDbps =
+            afterSwapAmount > 0n ? ((afterSwapAmount - receivedIn18Decimals) * DBPS_MULTIPLIER) / afterSwapAmount : 0n;
+
+          logger.debug('CEX swap route quote evaluation', {
+            bridgeType,
+            originAmount: availableOnOrigin.toString(),
+            afterSwapAmount: afterSwapAmount.toString(),
+            receivedAmount: receivedIn18Decimals.toString(),
+            swapSlippageDbps: swapSlippageDbps.toString(),
+            bridgeSlippageDbps: bridgeSlippageDbps.toString(),
+            totalSlippageDbps: totalSlippageDbps.toString(),
+          });
+
+          // Add operation with swap metadata
+          operations.push({
+            originChain: route.origin,
+            amount: nativeAmount.toString(),
+            bridge: bridgeType,
+            slippage: maxSlippageDbps,
+            swapMetadata: {
+              fromAsset: fromSymbol,
+              toAsset: toSymbol,
+              expectedFromAmount: nativeAmount.toString(),
+              expectedToAmount: swapQuote.toAmount,
+              observedSwapSlippageDbps: Number(swapSlippageDbps),
+              observedBridgeSlippageDbps: Number(bridgeSlippageDbps),
+              totalSlippageBudgetDbps: maxSlippageDbps,
+            },
+          });
+
+          remainingNeeded -= receivedIn18Decimals;
+          totalAchievable += receivedIn18Decimals;
+          operationAdded = true;
+          break; // Found a working bridge for this route
+        } catch (error) {
+          logger.debug('Failed to get swap quote during planning', {
+            bridgeType,
+            route,
+            error: jsonifyError(error),
+          });
+          continue;
+        }
+      }
+
+      // Continue with existing same-asset logic if no swap route matched
       try {
         // Calculate how much to send - we need to account for slippage
         // so that we receive at least remainingNeeded after slippage
@@ -494,6 +660,7 @@ export async function executeOnDemandRebalancing(
     bridge: string;
     receipt: database.TransactionReceipt;
     recipient: string;
+    swapMetadata?: SwapMetadata;
   }> = [];
 
   try {
@@ -543,6 +710,7 @@ export async function executeOnDemandRebalancing(
             bridge: operation.bridge,
             receipt: result.receipt,
             recipient,
+            swapMetadata: operation.swapMetadata, // NEW: Track swap metadata
           });
         } else {
           logger.warn('Failed to execute rebalancing operation, no transaction returned', {
@@ -620,7 +788,7 @@ export async function executeOnDemandRebalancing(
     // Create rebalance operation records for all successful operations
     for (const op of successfulOperations) {
       try {
-        await database.createRebalanceOperation({
+        const rebalanceOp = await database.createRebalanceOperation({
           earmarkId: earmark.id,
           originChainId: op.originChainId,
           destinationChainId: destinationChain!,
@@ -631,6 +799,7 @@ export async function executeOnDemandRebalancing(
           bridge: op.bridge,
           transactions: { [op.originChainId]: op.receipt },
           recipient: op.recipient,
+          operationType: op.swapMetadata ? 'swap_and_bridge' : 'bridge', // NEW
         });
 
         logger.info('Created rebalance operation record', {
@@ -639,7 +808,40 @@ export async function executeOnDemandRebalancing(
           originChain: op.originChainId,
           txHash: op.receipt.transactionHash,
           bridge: op.bridge,
+          operationType: rebalanceOp.operationType,
         });
+
+        // NEW: Create swap operation record if swap is involved
+        if (op.swapMetadata) {
+          const rate =
+            (BigInt(op.swapMetadata.expectedToAmount) * BigInt(1e18)) / BigInt(op.swapMetadata.expectedFromAmount);
+
+          await database.createSwapOperation({
+            rebalanceOperationId: rebalanceOp.id,
+            platform: op.bridge,
+            fromAsset: op.swapMetadata.fromAsset,
+            toAsset: op.swapMetadata.toAsset,
+            fromAmount: op.swapMetadata.expectedFromAmount,
+            toAmount: op.swapMetadata.expectedToAmount,
+            expectedRate: rate.toString(),
+            status: 'pending_deposit',
+            metadata: {
+              observedSwapSlippageDbps: op.swapMetadata.observedSwapSlippageDbps,
+              observedBridgeSlippageDbps: op.swapMetadata.observedBridgeSlippageDbps,
+              totalSlippageBudgetDbps: op.swapMetadata.totalSlippageBudgetDbps,
+              originChainId: op.originChainId,
+              destinationChainId: destinationChain!,
+            },
+          });
+
+          logger.info('Created swap operation record', {
+            requestId,
+            earmarkId: earmark.id,
+            fromAsset: op.swapMetadata.fromAsset,
+            toAsset: op.swapMetadata.toAsset,
+            expectedRate: rate.toString(),
+          });
+        }
       } catch (error) {
         // This is a critical error - we have a transaction on-chain but failed to record it
         logger.error('CRITICAL: Failed to create rebalance operation record for confirmed transaction', {
@@ -1220,4 +1422,381 @@ export async function getAvailableBalanceLessEarmarks(
     }, 0n);
 
   return totalBalance - (earmarkedAmount > onDemandFunds ? earmarkedAmount : onDemandFunds);
+}
+
+/**
+ * Process pending swap operations for CEX adapters
+ * OPTIMIZED FLOW: Once deposit confirmed, execute swap + poll status + withdraw in single loop
+ */
+export async function processSwapOperations(context: ProcessingContext): Promise<void> {
+  const { logger, requestId, rebalance } = context;
+
+  try {
+    // Step 1: Verify deposits for pending_deposit swaps
+    const pendingDepositSwaps = await database.getSwapOperations({ status: 'pending_deposit' });
+
+    for (const swap of pendingDepositSwaps) {
+      try {
+        const rebalanceOp = await database.getRebalanceOperationById(swap.rebalanceOperationId);
+        if (!rebalanceOp) {
+          logger.error('Rebalance operation not found for swap', { swapId: swap.id });
+          continue;
+        }
+
+        const adapter = rebalance.getAdapter(rebalanceOp.bridge as SupportedBridge);
+        if (!('supportsSwap' in adapter)) continue;
+
+        const swapAdapter = adapter as SwapCapableBridgeAdapter;
+
+        // Check if deposit is confirmed on CEX
+        const txHashes = rebalanceOp.transactions;
+        if (!txHashes) continue;
+
+        const originTx = txHashes[rebalanceOp.originChainId] as any;
+        if (!originTx) continue;
+
+        const receipt = originTx?.metadata?.receipt;
+        if (!receipt) continue;
+
+        const route = {
+          asset: swap.metadata?.originAssetAddress,
+          origin: swap.metadata?.originChainId,
+          destination: swap.metadata?.destinationChainId,
+        };
+
+        const isDepositReady = await swapAdapter.readyOnDestination(swap.fromAmount, route, receipt);
+
+        if (isDepositReady) {
+          logger.info('Deposit confirmed on CEX, will execute swap immediately', {
+            requestId,
+            swapId: swap.id,
+            platform: swap.platform,
+          });
+
+          await database.updateSwapOperationStatus(swap.id, 'deposit_confirmed');
+        }
+      } catch (error) {
+        logger.error('Failed to verify deposit for swap', {
+          requestId,
+          swapId: swap.id,
+          error: jsonifyError(error),
+        });
+      }
+    }
+
+    // Step 2: Execute deposit_confirmed swaps AND complete entire flow synchronously
+    const confirmedSwaps = await database.getSwapOperations({ status: 'deposit_confirmed' });
+
+    for (const swap of confirmedSwaps) {
+      try {
+        // Idempotency check
+        const existingProcessingSwap = await database.getSwapOperations({
+          rebalanceOperationId: swap.rebalanceOperationId,
+          status: 'processing',
+        });
+
+        if (existingProcessingSwap.length > 0) {
+          logger.debug('Swap already processing', { swapId: swap.id });
+          continue;
+        }
+
+        const adapter = rebalance.getAdapter(swap.platform as SupportedBridge) as SwapCapableBridgeAdapter;
+
+        // Get fresh quote
+        const quote = await adapter.getSwapQuote(swap.fromAsset, swap.toAsset, swap.fromAmount);
+
+        // Validate quote against slippage tolerance
+        // Calculate actual swap slippage from fresh quote
+        const actualSwapSlippageDbps =
+          ((BigInt(quote.fromAmount) - BigInt(quote.toAmount)) * DBPS_MULTIPLIER) / BigInt(quote.fromAmount);
+
+        // Get observed slippages and budget from planning phase
+        const observedBridgeSlippageDbps = BigInt(swap.metadata?.observedBridgeSlippageDbps || 0);
+        const totalSlippageBudgetDbps = BigInt(swap.metadata?.totalSlippageBudgetDbps || 1000);
+
+        // Estimate total slippage if we proceed with this swap
+        // Assume bridge slippage will be similar to what was observed during planning
+        const estimatedTotalSlippageDbps = actualSwapSlippageDbps + observedBridgeSlippageDbps;
+
+        // Check if estimated total would exceed budget
+        if (estimatedTotalSlippageDbps > totalSlippageBudgetDbps) {
+          logger.warn('Fresh swap quote would exceed total slippage budget, initiating recovery', {
+            swapId: swap.id,
+            actualSwapSlippage: actualSwapSlippageDbps.toString(),
+            estimatedBridgeSlippage: observedBridgeSlippageDbps.toString(),
+            estimatedTotal: estimatedTotalSlippageDbps.toString(),
+            budget: totalSlippageBudgetDbps.toString(),
+          });
+
+          await database.updateSwapOperationStatus(swap.id, 'failed', {
+            reason: 'total_slippage_would_exceed_budget',
+            actualSwapSlippageDbps: actualSwapSlippageDbps.toString(),
+            estimatedTotalSlippageDbps: estimatedTotalSlippageDbps.toString(),
+            totalSlippageBudgetDbps: totalSlippageBudgetDbps.toString(),
+          });
+
+          await initiateSwapRecovery(swap, adapter, logger, requestId);
+          continue;
+        }
+
+        // Execute swap
+        logger.info('Executing swap', {
+          requestId,
+          swapId: swap.id,
+          actualSwapSlippage: actualSwapSlippageDbps.toString(),
+          estimatedTotal: estimatedTotalSlippageDbps.toString(),
+          budget: totalSlippageBudgetDbps.toString(),
+        });
+        const execution = await adapter.executeSwap(quote);
+
+        const actualRate = (BigInt(quote.toAmount) * BigInt(1e18)) / BigInt(quote.fromAmount);
+        await database.updateSwapOperationStatus(swap.id, 'processing', {
+          orderId: execution.orderId,
+          quoteId: quote.quoteId,
+          actualRate: actualRate.toString(),
+        });
+
+        // OPTIMIZATION: Poll for completion immediately (30s max)
+        const swapCompleted = await pollSwapStatusWithTimeout(adapter, execution.orderId, {
+          timeout: 30000,
+          interval: 1000,
+          logger,
+          requestId,
+        });
+
+        if (swapCompleted) {
+          const status = await adapter.getSwapStatus(execution.orderId);
+
+          if (status.status === 'success') {
+            await database.updateSwapOperationStatus(swap.id, 'completed', {
+              actualRate: ((BigInt(status.toAmount) * BigInt(1e18)) / BigInt(status.fromAmount)).toString(),
+              completedAt: status.executedAt,
+            });
+
+            logger.info('Swap completed, initiating withdrawal', { requestId, swapId: swap.id });
+            await initiateWithdrawalForCompletedSwap(swap, adapter, context);
+          } else if (status.status === 'failed') {
+            await database.updateSwapOperationStatus(swap.id, 'failed', {
+              reason: 'exchange_reported_failure',
+            });
+            await initiateSwapRecovery(swap, adapter, logger, requestId);
+          }
+        } else {
+          logger.warn('Swap still processing after 30s, will check next loop', {
+            requestId,
+            swapId: swap.id,
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to execute swap flow', {
+          requestId,
+          swapId: swap.id,
+          error: jsonifyError(error),
+        });
+
+        await database.updateSwapOperationStatus(swap.id, 'failed', {
+          error: jsonifyError(error),
+        });
+      }
+    }
+
+    // Step 3: Poll processing swaps (timeout cases from Step 2)
+    const processingSwaps = await database.getSwapOperations({ status: 'processing' });
+
+    for (const swap of processingSwaps) {
+      try {
+        const adapter = rebalance.getAdapter(swap.platform as SupportedBridge) as SwapCapableBridgeAdapter;
+        const status = await adapter.getSwapStatus(swap.orderId!);
+
+        if (status.status === 'success') {
+          await database.updateSwapOperationStatus(swap.id, 'completed', {
+            actualRate: ((BigInt(status.toAmount) * BigInt(1e18)) / BigInt(status.fromAmount)).toString(),
+            completedAt: status.executedAt,
+          });
+
+          await initiateWithdrawalForCompletedSwap(swap, adapter, context);
+        } else if (status.status === 'failed') {
+          await database.updateSwapOperationStatus(swap.id, 'failed', {
+            reason: 'exchange_reported_failure',
+          });
+          await initiateSwapRecovery(swap, adapter, logger, requestId);
+        }
+      } catch (error) {
+        logger.error('Failed to check swap status', {
+          requestId,
+          swapId: swap.id,
+          error: jsonifyError(error),
+        });
+      }
+    }
+  } catch (error) {
+    logger.error('Failed to process swap operations', {
+      requestId,
+      error: jsonifyError(error),
+    });
+  }
+}
+
+/**
+ * Poll swap status with timeout (optimizes flow)
+ */
+async function pollSwapStatusWithTimeout(
+  adapter: SwapCapableBridgeAdapter,
+  orderId: string,
+  options: { timeout: number; interval: number; logger: Logger; requestId: string },
+): Promise<boolean> {
+  const { timeout, interval, logger, requestId } = options;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeout) {
+    try {
+      const status = await adapter.getSwapStatus(orderId);
+
+      if (status.status === 'success' || status.status === 'failed') {
+        return true;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    } catch (error) {
+      logger.warn('Error polling swap status', { requestId, orderId, error: jsonifyError(error) });
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Initiate withdrawal immediately after swap completes
+ */
+async function initiateWithdrawalForCompletedSwap(
+  swap: any,
+  adapter: SwapCapableBridgeAdapter,
+  context: ProcessingContext,
+): Promise<void> {
+  const { logger, requestId } = context;
+
+  try {
+    const rebalanceOp = await database.getRebalanceOperationById(swap.rebalanceOperationId);
+    if (!rebalanceOp) {
+      logger.error('Rebalance operation not found for withdrawal', { swapId: swap.id });
+      return;
+    }
+
+    const txHashes = rebalanceOp.transactions;
+    if (!txHashes) {
+      logger.error('No transactions found for rebalance operation', { swapId: swap.id });
+      return;
+    }
+
+    const originTx = txHashes[rebalanceOp.originChainId] as any;
+    if (!originTx) {
+      logger.error('Origin transaction not found', { swapId: swap.id });
+      return;
+    }
+
+    const receipt = originTx?.metadata?.receipt;
+    if (!receipt) {
+      logger.error('Transaction receipt not found', { swapId: swap.id });
+      return;
+    }
+
+    const route = {
+      asset: swap.metadata?.destinationAssetAddress || swap.metadata?.originAssetAddress,
+      origin: swap.metadata?.originChainId,
+      destination: swap.metadata?.destinationChainId,
+    };
+
+    const callback = await adapter.destinationCallback(route, receipt);
+
+    if (!callback) {
+      // No callback needed, mark as completed
+      await database.updateRebalanceOperation(rebalanceOp.id, {
+        status: RebalanceOperationStatus.COMPLETED,
+      });
+
+      if (rebalanceOp.earmarkId) {
+        await database.updateEarmarkStatus(rebalanceOp.earmarkId, EarmarkStatus.COMPLETED);
+      }
+
+      logger.info('No withdrawal callback needed', { requestId, swapId: swap.id });
+      return;
+    }
+
+    // Execute the withdrawal callback
+    const { config, chainService } = context;
+    const destinationChainConfig = config.chains[route.destination];
+    const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, {
+      requestId,
+      swapId: swap.id,
+      destination: route.destination,
+    });
+
+    const tx = await submitTransactionWithLogging({
+      chainService,
+      logger,
+      chainId: route.destination.toString(),
+      txRequest: {
+        chainId: +route.destination,
+        to: callback.transaction.to!,
+        data: callback.transaction.data!,
+        value: (callback.transaction.value || 0).toString(),
+        from: config.ownAddress,
+        funcSig: callback.transaction.funcSig || '',
+      },
+      zodiacConfig,
+      context: { requestId, swapId: swap.id, callbackType: `swap_withdrawal: ${callback.memo}` },
+    });
+
+    if (!tx || !tx.receipt) {
+      logger.error('Withdrawal transaction receipt not found', { requestId, swapId: swap.id });
+      return;
+    }
+
+    await database.updateRebalanceOperation(rebalanceOp.id, {
+      status: RebalanceOperationStatus.COMPLETED,
+      txHashes: {
+        [route.destination.toString()]: tx.receipt as any,
+      },
+    });
+
+    if (rebalanceOp.earmarkId) {
+      await database.updateEarmarkStatus(rebalanceOp.earmarkId, EarmarkStatus.COMPLETED);
+    }
+
+    logger.info('Withdrawal initiated successfully', { requestId, swapId: swap.id, txHash: tx.hash });
+  } catch (error) {
+    logger.error('Failed to initiate withdrawal', {
+      requestId,
+      swapId: swap.id,
+      error: jsonifyError(error),
+    });
+  }
+}
+
+/**
+ * Initiate recovery by withdrawing original asset back to origin
+ */
+async function initiateSwapRecovery(
+  swap: any,
+  adapter: SwapCapableBridgeAdapter,
+  logger: Logger,
+  requestId: string,
+): Promise<void> {
+  try {
+    logger.info('Initiating swap recovery', { requestId, swapId: swap.id });
+
+    await database.updateSwapOperationStatus(swap.id, 'recovering', {
+      recoveryInitiatedAt: Date.now(),
+      reason: 'withdrawal_original_asset_to_origin',
+    });
+
+    // Note: Actual withdrawal handled by executeDestinationCallbacks
+  } catch (error) {
+    logger.error('Failed to initiate swap recovery', {
+      requestId,
+      swapId: swap.id,
+      error: jsonifyError(error),
+    });
+  }
 }

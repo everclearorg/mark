@@ -1,6 +1,6 @@
 {
   "db": {
-    "connectionString": "postgresql://postgres:postgres@localhost:5433/mark_dev"
+    "connectionString": "postgresql://postgres:postgres@localhost:5432/mark"
   },
   "outDir": "./src/zapatos",
   "schemas": {

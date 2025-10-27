@@ -30,6 +30,18 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       destinationChain: operation.destinationChainId,
     };
 
+    // Skip swap operations - they're handled in processSwapOperations
+    const swapOps = await db.getSwapOperations({
+      rebalanceOperationId: operation.id,
+    });
+
+    if (swapOps.length > 0) {
+      logger.debug('Skipping swap-based operation, handled by processSwapOperations', {
+        operationId: operation.id,
+      });
+      continue;
+    }
+
     if (!operation.bridge) {
       logger.warn('Operation missing bridge type', logContext);
       continue;

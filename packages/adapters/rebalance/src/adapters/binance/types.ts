@@ -129,3 +129,48 @@ export interface CoinConfig {
   depositAllEnable: boolean;
   withdrawAllEnable: boolean;
 }
+
+// Binance Convert API types
+export interface ConvertQuoteRequest {
+  fromAsset: string;
+  toAsset: string;
+  fromAmount?: string;
+  toAmount?: string;
+  validTime?: string; // Optional, defaults to 10s
+}
+
+export interface ConvertQuoteResponse {
+  quoteId: string;
+  ratio: string;
+  inverseRatio: string;
+  validTimestamp: number;
+  toAmount: string;
+  fromAmount: string;
+}
+
+export interface ConvertAcceptRequest {
+  quoteId: string;
+}
+
+export interface ConvertAcceptResponse {
+  orderId: string;
+  createTime: number;
+  orderStatus: 'PROCESS' | 'SUCCESS' | 'FAIL';
+}
+
+export interface ConvertOrderStatusRequest {
+  orderId?: string;
+  quoteId?: string;
+}
+
+export interface ConvertOrderStatusResponse {
+  orderId: string;
+  orderStatus: 'PROCESS' | 'SUCCESS' | 'FAIL';
+  fromAsset: string;
+  fromAmount: string;
+  toAsset: string;
+  toAmount: string;
+  ratio: string;
+  inverseRatio: string;
+  createTime: number;
+}

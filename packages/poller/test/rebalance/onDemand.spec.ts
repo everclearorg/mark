@@ -570,6 +570,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           }),
         }),
         recipient: '0xtest',
+        operationType: 'bridge',
       });
 
       // Verify earmark was created

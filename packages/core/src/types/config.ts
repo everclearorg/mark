@@ -84,9 +84,10 @@ export interface RouteRebalancingConfig extends RebalanceRoute {
 }
 
 export interface OnDemandRouteConfig extends RebalanceRoute {
-  slippagesDbps: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
+  slippagesDbps: number[]; // Total slippage tolerance for entire operation (swap + bridge) in decibasis points (1000 = 1%). Array indices match preferences
   preferences: SupportedBridge[]; // Priority ordered platforms
   reserve?: string; // Amount to keep on origin chain during rebalancing
+  minSwapAmount?: string; // Optional: Min amount to justify swap (18 decimals). If not set, uses CEX platform minimum with buffer
 }
 
 export interface RebalanceConfig {

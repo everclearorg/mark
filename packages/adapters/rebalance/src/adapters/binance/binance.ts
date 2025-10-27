@@ -12,10 +12,18 @@ import {
 import { SupportedBridge, RebalanceRoute, MarkConfiguration, getDecimalsFromConfig } from '@mark/core';
 import * as database from '@mark/database';
 import { jsonifyError, Logger } from '@mark/logger';
-import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
+import {
+  MemoizedTransactionRequest,
+  RebalanceTransactionMemo,
+  SwapCapableBridgeAdapter,
+  SwapQuote,
+  SwapExecution,
+  SwapStatus,
+  SwapExchangeInfo,
+} from '../../types';
 import { BinanceClient } from './client';
 import { WithdrawalStatus, BinanceAssetMapping } from './types';
-import { WITHDRAWAL_STATUS, DEPOSIT_STATUS, WITHDRAWAL_PRECISION_MAP } from './constants';
+import { WITHDRAWAL_STATUS, DEPOSIT_STATUS, WITHDRAWAL_PRECISION_MAP, BINANCE_CONVERT_SUPPORTED_PAIRS } from './constants';
 import {
   getDestinationAssetMapping,
   calculateNetAmount,
@@ -45,8 +53,14 @@ const wethAbi = [
   },
 ] as const;
 
-export class BinanceBridgeAdapter implements BridgeAdapter {
+interface CachedSwapExchangeInfo extends SwapExchangeInfo {
+  cachedAt: number;
+}
+
+export class BinanceBridgeAdapter implements SwapCapableBridgeAdapter {
   private readonly client: BinanceClient;
+  private readonly swapExchangeInfoCache: Map<string, CachedSwapExchangeInfo> = new Map();
+  private readonly SWAP_INFO_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
   constructor(
     apiKey: string,
@@ -827,5 +841,154 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       ...metadata,
     });
     throw new Error(`Failed to ${context}: ${(error as unknown as Error)?.message ?? 'Unknown error'}`);
+  }
+
+  /**
+   * Check if swap is supported between two assets
+   * Uses static list of commonly supported pairs from Binance Convert API
+   */
+  async supportsSwap(fromAsset: string, toAsset: string): Promise<boolean> {
+    try {
+      const pairKey = `${fromAsset}:${toAsset}`;
+      const isSupported = BINANCE_CONVERT_SUPPORTED_PAIRS.has(pairKey);
+
+      this.logger.debug('Checking swap support', {
+        fromAsset,
+        toAsset,
+        isSupported,
+      });
+
+      return isSupported;
+    } catch (error) {
+      this.logger.error('Failed to check swap support', {
+        error: jsonifyError(error),
+        fromAsset,
+        toAsset,
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Get swap quote from Binance Convert API
+   */
+  async getSwapQuote(fromAsset: string, toAsset: string, fromAmount: string): Promise<SwapQuote> {
+    try {
+      const quote = await this.client.getConvertQuote({
+        fromAsset,
+        toAsset,
+        fromAmount,
+      });
+
+      return {
+        quoteId: quote.quoteId,
+        fromAsset,
+        toAsset,
+        fromAmount: quote.fromAmount,
+        toAmount: quote.toAmount,
+        rate: quote.ratio,
+        validUntil: quote.validTimestamp,
+      };
+    } catch (error) {
+      this.handleError(error, 'get swap quote', { fromAsset, toAsset, fromAmount });
+    }
+  }
+
+  /**
+   * Execute swap by accepting a quote
+   */
+  async executeSwap(quote: SwapQuote): Promise<SwapExecution> {
+    try {
+      const result = await this.client.acceptConvertQuote({ quoteId: quote.quoteId });
+
+      return {
+        orderId: result.orderId,
+        quoteId: quote.quoteId,
+        status: result.orderStatus === 'SUCCESS' ? 'success' : result.orderStatus === 'FAIL' ? 'failed' : 'processing',
+        executedRate: quote.rate,
+      };
+    } catch (error) {
+      this.handleError(error, 'execute swap', { quoteId: quote.quoteId });
+    }
+  }
+
+  /**
+   * Get status of a swap operation
+   */
+  async getSwapStatus(orderId: string): Promise<SwapStatus> {
+    try {
+      const status = await this.client.getConvertOrderStatus({ orderId });
+
+      return {
+        orderId: status.orderId,
+        status: status.orderStatus === 'SUCCESS' ? 'success' : status.orderStatus === 'FAIL' ? 'failed' : 'processing',
+        fromAsset: status.fromAsset,
+        toAsset: status.toAsset,
+        fromAmount: status.fromAmount,
+        toAmount: status.toAmount,
+        executedAt: status.createTime,
+      };
+    } catch (error) {
+      this.handleError(error, 'get swap status', { orderId });
+    }
+  }
+
+  /**
+   * Get swap exchange info (min/max amounts) for a trading pair
+   * Results are cached for 1 hour to minimize API calls
+   */
+  async getSwapExchangeInfo(fromAsset: string, toAsset: string): Promise<SwapExchangeInfo> {
+    const cacheKey = `${fromAsset}/${toAsset}`;
+
+    // Check cache
+    const cached = this.swapExchangeInfoCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < this.SWAP_INFO_CACHE_TTL_MS) {
+      this.logger.debug('Using cached swap exchange info', {
+        fromAsset,
+        toAsset,
+        cachedAt: new Date(cached.cachedAt).toISOString(),
+      });
+      return {
+        minAmount: cached.minAmount,
+        maxAmount: cached.maxAmount,
+      };
+    }
+
+    // Fetch fresh data
+    try {
+      this.logger.debug('Fetching swap exchange info from Binance API', {
+        fromAsset,
+        toAsset,
+      });
+
+      const allPairs = await this.client.getConvertExchangeInfo();
+      const pair = allPairs.find((p) => p.fromAsset === fromAsset && p.toAsset === toAsset);
+
+      if (!pair) {
+        throw new Error(`No swap pair found for ${fromAsset}/${toAsset}`);
+      }
+
+      // Cache the result
+      const cachedInfo: CachedSwapExchangeInfo = {
+        minAmount: pair.fromAssetMinAmount,
+        maxAmount: pair.fromAssetMaxAmount,
+        cachedAt: Date.now(),
+      };
+      this.swapExchangeInfoCache.set(cacheKey, cachedInfo);
+
+      this.logger.debug('Cached swap exchange info', {
+        fromAsset,
+        toAsset,
+        minAmount: pair.fromAssetMinAmount,
+        maxAmount: pair.fromAssetMaxAmount,
+      });
+
+      return {
+        minAmount: pair.fromAssetMinAmount,
+        maxAmount: pair.fromAssetMaxAmount,
+      };
+    } catch (error) {
+      this.handleError(error, 'get swap exchange info', { fromAsset, toAsset });
+    }
   }
 }

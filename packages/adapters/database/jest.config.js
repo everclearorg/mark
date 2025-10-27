@@ -5,6 +5,7 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/../../../jest.setup.shared.js'],
   testMatch: ['**/test/**/*.spec.ts'],
   testTimeout: 30000,
+  maxWorkers: 1,
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',

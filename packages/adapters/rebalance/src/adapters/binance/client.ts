@@ -13,6 +13,12 @@ import {
   CoinConfig,
   AccountInfo,
   BINANCE_BASE_URL,
+  ConvertQuoteRequest,
+  ConvertQuoteResponse,
+  ConvertAcceptRequest,
+  ConvertAcceptResponse,
+  ConvertOrderStatusRequest,
+  ConvertOrderStatusResponse,
 } from './types';
 import { BINANCE_ENDPOINTS, BINANCE_RATE_LIMITS } from './constants';
 
@@ -582,5 +588,67 @@ export class BinanceClient {
     }
 
     return balances;
+  }
+
+  /**
+   * Get supported convert pairs
+   */
+  async getConvertExchangeInfo(): Promise<
+    Array<{ fromAsset: string; toAsset: string; fromAssetMinAmount: string; fromAssetMaxAmount: string }>
+  > {
+    this.logger.debug('Getting convert exchange info');
+    const result = await this.request<Array<{ fromAsset: string; toAsset: string; fromAssetMinAmount: string; fromAssetMaxAmount: string }>>(
+      'GET',
+      BINANCE_ENDPOINTS.CONVERT_EXCHANGE_INFO,
+      {},
+      true,
+    );
+    this.logger.debug('Convert exchange info retrieved', { pairCount: result.length });
+    return result;
+  }
+
+  /**
+   * Get quote for converting between two assets
+   */
+  async getConvertQuote(params: ConvertQuoteRequest): Promise<ConvertQuoteResponse> {
+    this.logger.debug('Getting convert quote', { fromAsset: params.fromAsset, toAsset: params.toAsset, fromAmount: params.fromAmount });
+    const result = await this.request<ConvertQuoteResponse>(
+      'POST',
+      BINANCE_ENDPOINTS.CONVERT_GET_QUOTE,
+      params as unknown as Record<string, unknown>,
+      true,
+    );
+    this.logger.debug('Convert quote retrieved', { quoteId: result.quoteId, ratio: result.ratio });
+    return result;
+  }
+
+  /**
+   * Accept a convert quote to execute the swap
+   */
+  async acceptConvertQuote(params: ConvertAcceptRequest): Promise<ConvertAcceptResponse> {
+    this.logger.debug('Accepting convert quote', { quoteId: params.quoteId });
+    const result = await this.request<ConvertAcceptResponse>(
+      'POST',
+      BINANCE_ENDPOINTS.CONVERT_ACCEPT_QUOTE,
+      params as unknown as Record<string, unknown>,
+      true,
+    );
+    this.logger.debug('Convert quote accepted', { orderId: result.orderId, status: result.orderStatus });
+    return result;
+  }
+
+  /**
+   * Get status of a convert order
+   */
+  async getConvertOrderStatus(params: ConvertOrderStatusRequest): Promise<ConvertOrderStatusResponse> {
+    this.logger.debug('Getting convert order status', { orderId: params.orderId, quoteId: params.quoteId });
+    const result = await this.request<ConvertOrderStatusResponse>(
+      'GET',
+      BINANCE_ENDPOINTS.CONVERT_ORDER_STATUS,
+      params as unknown as Record<string, unknown>,
+      true,
+    );
+    this.logger.debug('Convert order status retrieved', { orderId: result.orderId, status: result.orderStatus });
+    return result;
   }
 }
