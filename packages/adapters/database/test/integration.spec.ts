@@ -12,6 +12,8 @@ import {
   updateRebalanceOperation,
   getRebalanceOperations,
   getRebalanceOperationByTransactionHash,
+  getEarmarksWithOperations,
+  getTransactionsForRebalanceOperations,
 } from '../src/db';
 import { setupTestDatabase, teardownTestDatabase, cleanupTestDatabase } from './setup';
 
@@ -1831,6 +1833,184 @@ describe('Database Adapter - Integration Tests', () => {
         const earmarks = await getEarmarks({ invoiceId });
         expect(earmarks).toHaveLength(1);
       });
+    });
+  });
+
+  describe('getEarmarksWithOperations', () => {
+    it('should return earmarks with their operations', async () => {
+      const earmark = await createEarmark({
+        invoiceId: 'invoice-with-ops',
+        designatedPurchaseChain: 1,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        minAmount: '100000000000',
+      });
+
+      await createRebalanceOperation({
+        earmarkId: earmark.id,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: earmark.tickerHash,
+        amount: '50000000000',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'binance',
+      });
+
+      await createRebalanceOperation({
+        earmarkId: earmark.id,
+        originChainId: 42161,
+        destinationChainId: 10,
+        tickerHash: earmark.tickerHash,
+        amount: '50000000000',
+        slippage: 100,
+        status: RebalanceOperationStatus.COMPLETED,
+        bridge: 'across',
+      });
+
+      const results = await getEarmarksWithOperations(10, 0);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(earmark.id);
+      expect(results[0].operations).toBeDefined();
+      expect(results[0].operations).toHaveLength(2);
+    });
+
+    it('should filter earmarks by status', async () => {
+      await createEarmark({
+        invoiceId: 'invoice-pending',
+        designatedPurchaseChain: 1,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        minAmount: '100000000000',
+      });
+
+      const completed = await createEarmark({
+        invoiceId: 'invoice-completed',
+        designatedPurchaseChain: 1,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        minAmount: '100000000000',
+      });
+
+      await updateEarmarkStatus(completed.id, EarmarkStatus.COMPLETED);
+
+      const results = await getEarmarksWithOperations(10, 0, { status: 'completed' });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(completed.id);
+    });
+
+    it('should filter earmarks by chainId', async () => {
+      await createEarmark({
+        invoiceId: 'invoice-chain-1',
+        designatedPurchaseChain: 1,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        minAmount: '100000000000',
+      });
+
+      await createEarmark({
+        invoiceId: 'invoice-chain-10',
+        designatedPurchaseChain: 10,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        minAmount: '100000000000',
+      });
+
+      const results = await getEarmarksWithOperations(10, 0, { chainId: 10 });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].designatedPurchaseChain).toBe(10);
+    });
+
+    it('should filter earmarks by invoiceId', async () => {
+      await createEarmark({
+        invoiceId: 'specific-invoice',
+        designatedPurchaseChain: 1,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        minAmount: '100000000000',
+      });
+
+      await createEarmark({
+        invoiceId: 'other-invoice',
+        designatedPurchaseChain: 1,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        minAmount: '100000000000',
+      });
+
+      const results = await getEarmarksWithOperations(10, 0, { invoiceId: 'specific-invoice' });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].invoiceId).toBe('specific-invoice');
+    });
+
+    it('should support pagination', async () => {
+      for (let i = 0; i < 5; i++) {
+        await createEarmark({
+          invoiceId: `invoice-${i}`,
+          designatedPurchaseChain: 1,
+          tickerHash: '0x1234567890123456789012345678901234567890',
+          minAmount: '100000000000',
+        });
+      }
+
+      const page1 = await getEarmarksWithOperations(2, 0);
+      const page2 = await getEarmarksWithOperations(2, 2);
+
+      expect(page1).toHaveLength(2);
+      expect(page2).toHaveLength(2);
+      expect(page1[0].id).not.toBe(page2[0].id);
+    });
+  });
+
+  describe('getTransactionsForRebalanceOperations', () => {
+    it('should return transactions for given operation IDs', async () => {
+      const receipt: TransactionReceipt = {
+        transactionHash: '0xhash123',
+        blockNumber: 100,
+        from: '0xfrom',
+        to: '0xto',
+        status: 1,
+        cumulativeGasUsed: '42000',
+        effectiveGasPrice: '1000000000',
+        logs: [],
+        confirmations: 1,
+      };
+
+      const op1 = await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        amount: '1000000',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'binance',
+        transactions: { '1': receipt },
+      });
+
+      const op2 = await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 42161,
+        destinationChainId: 10,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        amount: '2000000',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'across',
+        transactions: { '42161': receipt },
+      });
+
+      const results = await getTransactionsForRebalanceOperations([op1.id, op2.id]);
+
+      expect(results).toBeDefined();
+      expect(Object.keys(results)).toHaveLength(2);
+      expect(results[op1.id]).toBeDefined();
+      expect(results[op2.id]).toBeDefined();
+      expect(results[op1.id]['1']).toBeDefined();
+      expect(results[op1.id]['1'].transactionHash).toBe('0xhash123');
+    });
+
+    it('should return empty object for non-existent operations', async () => {
+      const results = await getTransactionsForRebalanceOperations(['00000000-0000-0000-0000-000000000000']);
+
+      expect(results).toEqual({});
     });
   });
 });

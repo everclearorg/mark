@@ -1,4 +1,4 @@
-import { snakeToCamel, camelToSnake } from '../src/utils';
+import { snakeToCamel, camelToSnake, normalizeReceipt, isNormalizedReceipt } from '../src/utils';
 
 describe('Database Utils', () => {
   describe('snakeToCamel', () => {
@@ -396,6 +396,100 @@ describe('Database Utils', () => {
       const backToCamel = snakeToCamel(snakeCased);
 
       expect(backToCamel).toEqual(original);
+    });
+  });
+
+  describe('normalizeReceipt', () => {
+    it('should normalize a valid receipt', () => {
+      const receipt = {
+        transactionHash: '0x123',
+        from: '0xfrom',
+        to: '0xto',
+        blockNumber: 100,
+        status: 1,
+        gasUsed: 21000n,
+        cumulativeGasUsed: 42000n,
+        effectiveGasPrice: 1000000000n,
+        logs: [],
+      };
+
+      const result = normalizeReceipt(receipt);
+
+      expect(result.transactionHash).toBe('0x123');
+      expect(result.from).toBe('0xfrom');
+      expect(result.to).toBe('0xto');
+      expect(result.status).toBe(1);
+    });
+
+    it('should throw error for missing transactionHash', () => {
+      const receipt = {
+        from: '0xfrom',
+        to: '0xto',
+      };
+
+      expect(() => normalizeReceipt(receipt as any)).toThrow('missing or invalid transactionHash');
+    });
+
+    it('should throw error for missing from address', () => {
+      const receipt = {
+        transactionHash: '0x123',
+        to: '0xto',
+      };
+
+      expect(() => normalizeReceipt(receipt as any)).toThrow('missing or invalid \'from\' address');
+    });
+
+    it('should handle contract creation (null to field)', () => {
+      const receipt = {
+        transactionHash: '0x123',
+        from: '0xfrom',
+        to: null,
+        blockNumber: 100,
+        status: 1,
+      };
+
+      const result = normalizeReceipt(receipt as any);
+
+      expect(result.to).toBe(''); // null converted to empty string
+    });
+
+    it('should handle missing optional fields', () => {
+      const receipt = {
+        transactionHash: '0x123',
+        from: '0xfrom',
+        to: '0xto',
+        blockNumber: 100,
+        status: 1,
+      };
+
+      const result = normalizeReceipt(receipt);
+
+      expect(result.cumulativeGasUsed).toBe('0');
+      expect(result.effectiveGasPrice).toBe('0');
+    });
+  });
+
+  describe('isNormalizedReceipt', () => {
+    it('should return true for valid normalized receipt', () => {
+      const receipt = {
+        transactionHash: '0x123',
+        from: '0xfrom',
+        to: '0xto',
+        cumulativeGasUsed: '42000',
+        effectiveGasPrice: '1000000000',
+        blockNumber: 100,
+        status: 1,
+        logs: [],
+      };
+
+      expect(isNormalizedReceipt(receipt)).toBe(true);
+    });
+
+    it('should return false for invalid receipt', () => {
+      expect(isNormalizedReceipt(null)).toBe(false);
+      expect(isNormalizedReceipt(undefined)).toBe(false);
+      expect(isNormalizedReceipt({})).toBe(false);
+      expect(isNormalizedReceipt({ transactionHash: '0x123' })).toBe(false);
     });
   });
 });

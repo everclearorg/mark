@@ -597,12 +597,9 @@ export class BinanceClient {
     Array<{ fromAsset: string; toAsset: string; fromAssetMinAmount: string; fromAssetMaxAmount: string }>
   > {
     this.logger.debug('Getting convert exchange info');
-    const result = await this.request<Array<{ fromAsset: string; toAsset: string; fromAssetMinAmount: string; fromAssetMaxAmount: string }>>(
-      'GET',
-      BINANCE_ENDPOINTS.CONVERT_EXCHANGE_INFO,
-      {},
-      true,
-    );
+    const result = await this.request<
+      Array<{ fromAsset: string; toAsset: string; fromAssetMinAmount: string; fromAssetMaxAmount: string }>
+    >('GET', BINANCE_ENDPOINTS.CONVERT_EXCHANGE_INFO, {}, true);
     this.logger.debug('Convert exchange info retrieved', { pairCount: result.length });
     return result;
   }
@@ -611,7 +608,11 @@ export class BinanceClient {
    * Get quote for converting between two assets
    */
   async getConvertQuote(params: ConvertQuoteRequest): Promise<ConvertQuoteResponse> {
-    this.logger.debug('Getting convert quote', { fromAsset: params.fromAsset, toAsset: params.toAsset, fromAmount: params.fromAmount });
+    this.logger.debug('Getting convert quote', {
+      fromAsset: params.fromAsset,
+      toAsset: params.toAsset,
+      fromAmount: params.fromAmount,
+    });
     const result = await this.request<ConvertQuoteResponse>(
       'POST',
       BINANCE_ENDPOINTS.CONVERT_GET_QUOTE,

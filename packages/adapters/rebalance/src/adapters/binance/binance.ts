@@ -23,7 +23,12 @@ import {
 } from '../../types';
 import { BinanceClient } from './client';
 import { WithdrawalStatus, BinanceAssetMapping } from './types';
-import { WITHDRAWAL_STATUS, DEPOSIT_STATUS, WITHDRAWAL_PRECISION_MAP, BINANCE_CONVERT_SUPPORTED_PAIRS } from './constants';
+import {
+  WITHDRAWAL_STATUS,
+  DEPOSIT_STATUS,
+  WITHDRAWAL_PRECISION_MAP,
+  BINANCE_CONVERT_SUPPORTED_PAIRS,
+} from './constants';
 import {
   getDestinationAssetMapping,
   calculateNetAmount,

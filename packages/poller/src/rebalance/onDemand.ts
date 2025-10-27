@@ -1452,19 +1452,25 @@ export async function processSwapOperations(context: ProcessingContext): Promise
         const txHashes = rebalanceOp.transactions;
         if (!txHashes) continue;
 
-        const originTx = txHashes[rebalanceOp.originChainId] as any;
-        if (!originTx) continue;
+        const originTx = txHashes[rebalanceOp.originChainId];
+        if (!originTx || typeof originTx !== 'object') continue;
 
-        const receipt = originTx?.metadata?.receipt;
+        const receipt = (originTx as { metadata?: { receipt?: unknown } })?.metadata?.receipt;
         if (!receipt) continue;
 
+        if (!swap.metadata?.originChainId || !swap.metadata?.destinationChainId || !swap.metadata?.originAssetAddress) {
+          logger.error('Swap metadata missing required fields', { swapId: swap.id });
+          continue;
+        }
+
         const route = {
-          asset: swap.metadata?.originAssetAddress,
-          origin: swap.metadata?.originChainId,
-          destination: swap.metadata?.destinationChainId,
+          asset: swap.metadata.originAssetAddress,
+          origin: swap.metadata.originChainId,
+          destination: swap.metadata.destinationChainId,
         };
 
-        const isDepositReady = await swapAdapter.readyOnDestination(swap.fromAmount, route, receipt);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const isDepositReady = await swapAdapter.readyOnDestination(swap.fromAmount, route, receipt as any);
 
         if (isDepositReady) {
           logger.info('Deposit confirmed on CEX, will execute swap immediately', {
@@ -1669,8 +1675,32 @@ async function pollSwapStatusWithTimeout(
 /**
  * Initiate withdrawal immediately after swap completes
  */
+interface SwapOperation {
+  id: string;
+  rebalanceOperationId: string;
+  platform: string;
+  fromAsset: string;
+  toAsset: string;
+  fromAmount: string;
+  toAmount: string;
+  expectedRate: string;
+  status: string;
+  orderId?: string;
+  quoteId?: string;
+  metadata?: {
+    observedSwapSlippageDbps?: number;
+    observedBridgeSlippageDbps?: number;
+    totalSlippageBudgetDbps?: number;
+    originChainId?: number;
+    destinationChainId?: number;
+    originAssetAddress?: string;
+    destinationAssetAddress?: string;
+    [key: string]: unknown;
+  };
+}
+
 async function initiateWithdrawalForCompletedSwap(
-  swap: any,
+  swap: SwapOperation,
   adapter: SwapCapableBridgeAdapter,
   context: ProcessingContext,
 ): Promise<void> {
@@ -1689,25 +1719,37 @@ async function initiateWithdrawalForCompletedSwap(
       return;
     }
 
-    const originTx = txHashes[rebalanceOp.originChainId] as any;
-    if (!originTx) {
+    const originTx = txHashes[rebalanceOp.originChainId];
+    if (!originTx || typeof originTx !== 'object') {
       logger.error('Origin transaction not found', { swapId: swap.id });
       return;
     }
 
-    const receipt = originTx?.metadata?.receipt;
+    const receipt = (originTx as { metadata?: { receipt?: unknown } })?.metadata?.receipt;
     if (!receipt) {
       logger.error('Transaction receipt not found', { swapId: swap.id });
       return;
     }
 
+    if (!swap.metadata?.originChainId || !swap.metadata?.destinationChainId) {
+      logger.error('Swap metadata missing required chain IDs', { swapId: swap.id });
+      return;
+    }
+
+    const destinationAsset = swap.metadata.destinationAssetAddress || swap.metadata.originAssetAddress;
+    if (!destinationAsset) {
+      logger.error('Swap metadata missing asset address', { swapId: swap.id });
+      return;
+    }
+
     const route = {
-      asset: swap.metadata?.destinationAssetAddress || swap.metadata?.originAssetAddress,
-      origin: swap.metadata?.originChainId,
-      destination: swap.metadata?.destinationChainId,
+      asset: destinationAsset,
+      origin: swap.metadata.originChainId,
+      destination: swap.metadata.destinationChainId,
     };
 
-    const callback = await adapter.destinationCallback(route, receipt);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const callback = await adapter.destinationCallback(route, receipt as any);
 
     if (!callback) {
       // No callback needed, mark as completed
@@ -1756,7 +1798,7 @@ async function initiateWithdrawalForCompletedSwap(
     await database.updateRebalanceOperation(rebalanceOp.id, {
       status: RebalanceOperationStatus.COMPLETED,
       txHashes: {
-        [route.destination.toString()]: tx.receipt as any,
+        [route.destination.toString()]: tx.receipt as database.TransactionReceipt,
       },
     });
 
@@ -1778,7 +1820,7 @@ async function initiateWithdrawalForCompletedSwap(
  * Initiate recovery by withdrawing original asset back to origin
  */
 async function initiateSwapRecovery(
-  swap: any,
+  swap: SwapOperation,
   adapter: SwapCapableBridgeAdapter,
   logger: Logger,
   requestId: string,
