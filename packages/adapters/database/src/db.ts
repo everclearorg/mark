@@ -953,7 +953,7 @@ export async function createSwapOperation(params: CreateSwapOperationParams): Pr
       params.metadata ? JSON.stringify(params.metadata) : null,
     ],
   );
-  return snakeToCamel(result.rows[0]);
+  return snakeToCamel(result.rows[0]) as SwapOperation;
 }
 
 export async function getSwapOperations(filters: {
@@ -984,7 +984,7 @@ export async function getSwapOperations(filters: {
 
   const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
   const result = await pool.query(`SELECT * FROM swap_operations ${whereClause} ORDER BY created_at ASC`, values);
-  return result.rows.map((row) => snakeToCamel(row));
+  return result.rows.map((row) => snakeToCamel(row) as SwapOperation);
 }
 
 export async function updateSwapOperationStatus(
@@ -1023,7 +1023,7 @@ export async function updateSwapOperationStatus(
 export async function getSwapOperationByOrderId(orderId: string): Promise<SwapOperation | undefined> {
   const pool = getPool();
   const result = await pool.query('SELECT * FROM swap_operations WHERE order_id = $1', [orderId]);
-  return result.rows[0] ? snakeToCamel(result.rows[0]) : undefined;
+  return result.rows[0] ? (snakeToCamel(result.rows[0]) as SwapOperation) : undefined;
 }
 
 // Admin functions

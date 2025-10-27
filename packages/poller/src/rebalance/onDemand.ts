@@ -1464,9 +1464,9 @@ export async function processSwapOperations(context: ProcessingContext): Promise
         }
 
         const route = {
-          asset: swap.metadata.originAssetAddress,
-          origin: swap.metadata.originChainId,
-          destination: swap.metadata.destinationChainId,
+          asset: swap.metadata.originAssetAddress as string,
+          origin: swap.metadata.originChainId as number,
+          destination: swap.metadata.destinationChainId as number,
         };
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1517,8 +1517,8 @@ export async function processSwapOperations(context: ProcessingContext): Promise
           ((BigInt(quote.fromAmount) - BigInt(quote.toAmount)) * DBPS_MULTIPLIER) / BigInt(quote.fromAmount);
 
         // Get observed slippages and budget from planning phase
-        const observedBridgeSlippageDbps = BigInt(swap.metadata?.observedBridgeSlippageDbps || 0);
-        const totalSlippageBudgetDbps = BigInt(swap.metadata?.totalSlippageBudgetDbps || 1000);
+        const observedBridgeSlippageDbps = BigInt((swap.metadata?.observedBridgeSlippageDbps as number) || 0);
+        const totalSlippageBudgetDbps = BigInt((swap.metadata?.totalSlippageBudgetDbps as number) || 1000);
 
         // Estimate total slippage if we proceed with this swap
         // Assume bridge slippage will be similar to what was observed during planning
