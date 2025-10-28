@@ -125,29 +125,44 @@ export interface GetEarmarksFilter {
 
 export async function createEarmark(input: CreateEarmarkInput): Promise<CamelCasedProperties<earmarks>> {
   return withTransaction(async (client) => {
-    // Insert earmark
-    const earmarkData: earmarks_insert = {
-      ...camelToSnake(input),
-      status: input.status || EarmarkStatus.PENDING,
-    };
+    try {
+      // Insert earmark
+      const earmarkData: earmarks_insert = {
+        ...camelToSnake(input),
+        status: input.status || EarmarkStatus.PENDING,
+      };
 
-    const insertQuery = `
-      INSERT INTO earmarks ("invoice_id", "designated_purchase_chain", "ticker_hash", "min_amount", status)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-    `;
+      const insertQuery = `
+        INSERT INTO earmarks ("invoice_id", "designated_purchase_chain", "ticker_hash", "min_amount", status)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `;
 
-    const earmarkResult = await client.query(insertQuery, [
-      earmarkData.invoice_id,
-      earmarkData.designated_purchase_chain,
-      input.tickerHash,
-      earmarkData.min_amount,
-      earmarkData.status,
-    ]);
+      const earmarkResult = await client.query(insertQuery, [
+        earmarkData.invoice_id,
+        earmarkData.designated_purchase_chain,
+        input.tickerHash,
+        earmarkData.min_amount,
+        earmarkData.status,
+      ]);
 
-    const earmark = earmarkResult.rows[0] as earmarks;
+      const earmark = earmarkResult.rows[0] as earmarks;
 
-    return snakeToCamel(earmark);
+      return snakeToCamel(earmark);
+    } catch (error: unknown) {
+      // Add error handling for unique constraint violations
+      const dbError = error as { code?: string; constraint?: string };
+      if (dbError.code === '23505' && dbError.constraint === 'unique_active_earmark_per_invoice') {
+        const enrichedError = new Error(`An active earmark already exists for invoice ${input.invoiceId}`) as Error & {
+          code: string;
+          constraint: string;
+        };
+        enrichedError.code = '23505';
+        enrichedError.constraint = 'unique_active_earmark_per_invoice';
+        throw enrichedError;
+      }
+      throw error;
+    }
   });
 }
 
@@ -217,8 +232,12 @@ export async function getEarmarks(filter?: GetEarmarksFilter): Promise<CamelCase
   return ret.map(snakeToCamel);
 }
 
-export async function getEarmarkForInvoice(invoiceId: string): Promise<CamelCasedProperties<earmarks> | null> {
-  const query = 'SELECT * FROM earmarks WHERE "invoice_id" = $1';
+export async function getActiveEarmarkForInvoice(invoiceId: string): Promise<CamelCasedProperties<earmarks> | null> {
+  const query = `
+    SELECT * FROM earmarks
+    WHERE "invoice_id" = $1
+    AND status IN ('pending', 'ready')
+  `;
   const result = await queryWithClient<earmarks>(query, [invoiceId]);
 
   if (result.length === 0) {
@@ -226,7 +245,7 @@ export async function getEarmarkForInvoice(invoiceId: string): Promise<CamelCase
   }
 
   if (result.length > 1) {
-    throw new Error(`Multiple earmarks found for invoice ${invoiceId}. Expected unique constraint violation.`);
+    throw new Error(`Multiple active earmarks found for invoice ${invoiceId}. Expected unique constraint violation.`);
   }
 
   return snakeToCamel(result[0]);
@@ -668,68 +687,104 @@ export async function getRebalanceOperationsByEarmark(
   });
 }
 
-export async function getRebalanceOperations(filter?: {
-  status?: RebalanceOperationStatus | RebalanceOperationStatus[];
-  chainId?: number;
-  earmarkId?: string | null;
-}): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]> {
-  let query = 'SELECT * FROM rebalance_operations';
+export async function getRebalanceOperations(
+  limit?: number,
+  offset?: number,
+  filter?: {
+    status?: RebalanceOperationStatus | RebalanceOperationStatus[];
+    chainId?: number;
+    earmarkId?: string | null;
+    invoiceId?: string;
+  },
+): Promise<{
+  operations: (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[];
+  total: number;
+}> {
   const values: unknown[] = [];
   const conditions: string[] = [];
   let paramCount = 1;
 
+  // Build WHERE conditions
   if (filter) {
     if (filter.status) {
       if (Array.isArray(filter.status)) {
-        conditions.push(`status = ANY($${paramCount})`);
+        conditions.push(`ro.status = ANY($${paramCount})`);
         values.push(filter.status);
       } else {
-        conditions.push(`status = $${paramCount}`);
+        conditions.push(`ro.status = $${paramCount}`);
         values.push(filter.status);
       }
       paramCount++;
     }
 
     if (filter.chainId !== undefined) {
-      conditions.push(`"origin_chain_id" = $${paramCount}`);
+      conditions.push(`ro."origin_chain_id" = $${paramCount}`);
       values.push(filter.chainId);
       paramCount++;
     }
 
     if (filter.earmarkId !== undefined) {
       if (filter.earmarkId === null) {
-        conditions.push('"earmark_id" IS NULL');
+        conditions.push('ro."earmark_id" IS NULL');
       } else {
-        conditions.push(`"earmark_id" = $${paramCount}`);
+        conditions.push(`ro."earmark_id" = $${paramCount}`);
         values.push(filter.earmarkId);
         paramCount++;
       }
     }
+
+    if (filter.invoiceId !== undefined) {
+      conditions.push(`e."invoice_id" = $${paramCount}`);
+      values.push(filter.invoiceId);
+      paramCount++;
+    }
   }
 
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
+  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  // Get total count
+  const needsJoin = filter?.invoiceId !== undefined;
+  const countQuery = needsJoin
+    ? `SELECT COUNT(*) FROM rebalance_operations ro LEFT JOIN earmarks e ON ro."earmark_id" = e.id ${whereClause}`
+    : `SELECT COUNT(*) FROM rebalance_operations ro ${whereClause}`;
+
+  const countResult = await queryWithClient<{ count: string }>(countQuery, values);
+  const total = parseInt(countResult[0].count, 10);
+
+  // Get operations with pagination
+  const dataQuery = needsJoin
+    ? `SELECT ro.* FROM rebalance_operations ro LEFT JOIN earmarks e ON ro."earmark_id" = e.id ${whereClause} ORDER BY ro."created_at" ASC`
+    : `SELECT * FROM rebalance_operations ro ${whereClause} ORDER BY ro."created_at" ASC`;
+
+  let finalQuery = dataQuery;
+  if (limit !== undefined) {
+    finalQuery += ` LIMIT $${paramCount++}`;
+    values.push(limit);
+  }
+  if (offset !== undefined) {
+    finalQuery += ` OFFSET $${paramCount}`;
+    values.push(offset);
   }
 
-  query += ' ORDER BY "created_at" ASC';
-
-  const operations = await queryWithClient<rebalance_operations>(query, values);
+  const operations = await queryWithClient<rebalance_operations>(finalQuery, values);
 
   if (operations.length === 0) {
-    return [];
+    return { operations: [], total };
   }
 
   // Fetch transactions for all operations
   const operationIds = operations.map((op) => op.id);
   const transactionsByOperation = await getTransactionsForRebalanceOperations(operationIds);
 
-  return operations.map((op) => {
+  const operationsWithTransactions = operations.map((op) => {
     const camelCasedOp = snakeToCamel(op);
     return {
       ...camelCasedOp,
       transactions: transactionsByOperation[op.id] || undefined,
     };
   });
+
+  return { operations: operationsWithTransactions, total };
 }
 
 export async function getRebalanceOperationByTransactionHash(
@@ -773,6 +828,30 @@ export async function getRebalanceOperationByTransactionHash(
   return {
     ...camelOp,
     transactions: transactionsByOperation[tx.rebalance_operation_id] || {},
+  };
+}
+
+export async function getRebalanceOperationById(
+  operationId: string,
+): Promise<
+  (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }) | undefined
+> {
+  const opQuery = `SELECT * FROM rebalance_operations WHERE id = $1 LIMIT 1`;
+  const opResult = await queryWithClient<rebalance_operations>(opQuery, [operationId]);
+
+  if (opResult.length === 0) {
+    return undefined;
+  }
+
+  const operation = opResult[0];
+
+  // Fetch all transactions associated with this operation
+  const transactionsByOperation = await getTransactionsForRebalanceOperations([operationId]);
+  const camelOp = snakeToCamel(operation);
+
+  return {
+    ...camelOp,
+    transactions: transactionsByOperation[operationId] || undefined,
   };
 }
 
@@ -820,11 +899,11 @@ export async function getCexWithdrawalRecord<T extends object = JSONObject>(inpu
 }
 
 // Admin functions
-export async function setPause(type: 'rebalance' | 'purchase', input: boolean): Promise<void> {
+export async function setPause(type: 'rebalance' | 'purchase' | 'ondemand', input: boolean): Promise<void> {
   // Read the latest admin_actions row and insert a new snapshot with the updated pause flag
   return withTransaction(async (client) => {
     const latestQuery = `
-      SELECT rebalance_paused, purchase_paused
+      SELECT rebalance_paused, purchase_paused, ondemand_rebalance_paused
       FROM admin_actions
       ORDER BY created_at DESC
       LIMIT 1
@@ -834,28 +913,33 @@ export async function setPause(type: 'rebalance' | 'purchase', input: boolean): 
     // Defaults when no prior admin_actions exist
     let rebalancePaused = false;
     let purchasePaused = false;
+    let ondemandRebalancePaused = false;
 
     if (latest.rows.length > 0) {
       rebalancePaused = Boolean(latest.rows[0].rebalance_paused);
       purchasePaused = Boolean(latest.rows[0].purchase_paused);
+      ondemandRebalancePaused = Boolean(latest.rows[0].ondemand_rebalance_paused);
     }
 
     if (type === 'rebalance') {
       rebalancePaused = input;
-    } else {
+    } else if (type === 'purchase') {
       purchasePaused = input;
+    } else {
+      ondemandRebalancePaused = input;
     }
 
     const insertQuery = `
-      INSERT INTO admin_actions (rebalance_paused, purchase_paused, description)
-      VALUES ($1, $2, $3)
+      INSERT INTO admin_actions (rebalance_paused, purchase_paused, ondemand_rebalance_paused, description)
+      VALUES ($1, $2, $3, $4)
     `;
-    await client.query(insertQuery, [rebalancePaused, purchasePaused, null]);
+    await client.query(insertQuery, [rebalancePaused, purchasePaused, ondemandRebalancePaused, null]);
   });
 }
 
-export async function isPaused(type: 'rebalance' | 'purchase'): Promise<boolean> {
-  const column = type === 'rebalance' ? 'rebalance_paused' : 'purchase_paused';
+export async function isPaused(type: 'rebalance' | 'purchase' | 'ondemand'): Promise<boolean> {
+  const column =
+    type === 'rebalance' ? 'rebalance_paused' : type === 'purchase' ? 'purchase_paused' : 'ondemand_rebalance_paused';
   const query = `
     SELECT ${column} AS paused
     FROM admin_actions
@@ -868,6 +952,11 @@ export async function isPaused(type: 'rebalance' | 'purchase'): Promise<boolean>
   }
   return Boolean((rows[0] as unknown as { paused: unknown }).paused);
 }
+
+// Type aliases for convenience
+export type Earmark = CamelCasedProperties<earmarks>;
+export type RebalanceOperation = CamelCasedProperties<rebalance_operations>;
+export type Transaction = CamelCasedProperties<transactions>;
 
 // Re-export types for convenience
 export type {

@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc --build ./tsconfig.json",
-    "clean": "rimraf ./dist ./tsconfig.tsBuildInfo",
+    "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
     "dbmate": "dbmate",
     "db:migrate": "dbmate migrate",
     "db:new": "dbmate new",

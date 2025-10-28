@@ -1,0 +1,811 @@
+openapi: 3.0.3
+info:
+  title: Mark Admin API
+  description: API for managing purchase and rebalance operations, earmarks, and system state
+  version: 1.0.0
+  contact:
+    name: Everclear Team
+
+servers:
+  - url: https://admin.api.everclear.org
+    description: Production server
+
+security:
+  - AdminToken: []
+
+tags:
+  - name: Purchase Operations
+    description: Endpoints for managing purchase cache operations
+  - name: Rebalance Operations
+    description: Endpoints for managing rebalance operations and state
+  - name: Earmarks
+    description: Endpoints for managing earmarks and related operations
+
+paths:
+  /clear/purchase:
+    post:
+      tags:
+        - Purchase Operations
+      summary: Clear purchase cache
+      description: Clears all entries from the purchase cache
+      operationId: clearPurchaseCache
+      responses:
+        '200':
+          description: Purchase cache cleared successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /pause/purchase:
+    post:
+      tags:
+        - Purchase Operations
+      summary: Pause purchase operations
+      description: Pauses all purchase cache operations
+      operationId: pausePurchase
+      responses:
+        '200':
+          description: Purchase operations paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error or purchase cache already paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                alreadyPaused:
+                  summary: Purchase cache already paused
+                  value:
+                    message: Purchase cache is already paused
+
+  /unpause/purchase:
+    post:
+      tags:
+        - Purchase Operations
+      summary: Unpause purchase operations
+      description: Resumes paused purchase cache operations
+      operationId: unpausePurchase
+      responses:
+        '200':
+          description: Purchase operations resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error or purchase cache not paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notPaused:
+                  summary: Purchase cache not paused
+                  value:
+                    message: Purchase cache is not paused
+
+  /pause/rebalance:
+    post:
+      tags:
+        - Rebalance Operations
+      summary: Pause rebalance operations
+      description: Pauses all rebalance operations
+      operationId: pauseRebalance
+      responses:
+        '200':
+          description: Rebalance operations paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error or rebalance already paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                alreadyPaused:
+                  summary: Rebalance already paused
+                  value:
+                    message: Rebalance is already paused
+
+  /unpause/rebalance:
+    post:
+      tags:
+        - Rebalance Operations
+      summary: Unpause rebalance operations
+      description: Resumes paused rebalance operations
+      operationId: unpauseRebalance
+      responses:
+        '200':
+          description: Rebalance operations resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error or rebalance not paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notPaused:
+                  summary: Rebalance not paused
+                  value:
+                    message: Rebalance is not paused
+
+  /rebalance/earmarks:
+    get:
+      tags:
+        - Earmarks
+      summary: List earmarks
+      description: Retrieve a paginated list of earmarks with optional filtering. Each earmark includes a nested array of its associated operations.
+      operationId: getEarmarks
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of earmarks to return (max 1000)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+        - name: offset
+          in: query
+          description: Number of earmarks to skip for pagination
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: status
+          in: query
+          description: Filter by earmark status
+          schema:
+            type: string
+            enum:
+              - pending
+              - ready
+              - completed
+              - cancelled
+              - failed
+              - expired
+        - name: chainId
+          in: query
+          description: Filter by designated purchase chain ID
+          schema:
+            type: integer
+        - name: invoiceId
+          in: query
+          description: Filter by invoice ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of earmarks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  earmarks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EarmarkWithOperations'
+                  total:
+                    type: integer
+                    description: Total number of earmarks returned
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /rebalance/earmark/{id}:
+    get:
+      tags:
+        - Earmarks
+      summary: Get earmark details
+      description: Retrieve detailed information about a specific earmark including its operations
+      operationId: getEarmarkDetails
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The earmark ID (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Earmark details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  earmark:
+                    $ref: '#/components/schemas/Earmark'
+                  operations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RebalanceOperation'
+        '400':
+          description: Invalid earmark ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Earmark ID required
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Earmark not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Earmark not found
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /rebalance/operations:
+    get:
+      tags:
+        - Rebalance Operations
+      summary: List rebalance operations
+      description: Retrieve a paginated list of rebalance operations with optional filtering
+      operationId: getRebalanceOperations
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of operations to return (max 1000)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+        - name: offset
+          in: query
+          description: Number of operations to skip for pagination
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: status
+          in: query
+          description: Filter by operation status
+          schema:
+            type: string
+            enum:
+              - pending
+              - awaiting_callback
+              - completed
+              - expired
+              - cancelled
+        - name: chainId
+          in: query
+          description: Filter by origin chain ID
+          schema:
+            type: integer
+        - name: earmarkId
+          in: query
+          description: Filter by associated earmark ID
+          schema:
+            type: string
+            format: uuid
+        - name: invoiceId
+          in: query
+          description: Filter by invoice ID of the associated earmark
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of rebalance operations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RebalanceOperation'
+                  total:
+                    type: integer
+                    description: Total number of operations matching the filter (before pagination)
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /rebalance/operation/{id}:
+    get:
+      tags:
+        - Rebalance Operations
+      summary: Get rebalance operation details
+      description: Retrieve detailed information about a specific rebalance operation by its ID
+      operationId: getRebalanceOperationDetails
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The rebalance operation ID (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rebalance operation details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operation:
+                    $ref: '#/components/schemas/RebalanceOperation'
+        '400':
+          description: Invalid operation ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Operation ID required
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Rebalance operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Rebalance operation not found
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /rebalance/cancel:
+    post:
+      tags:
+        - Earmarks
+      summary: Cancel earmark
+      description: Cancel an earmark and orphan all associated pending operations
+      operationId: cancelEarmark
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - earmarkId
+              properties:
+                earmarkId:
+                  type: string
+                  format: uuid
+                  description: The ID of the earmark to cancel
+      responses:
+        '200':
+          description: Earmark cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Earmark cancelled successfully
+                  earmark:
+                    $ref: '#/components/schemas/Earmark'
+        '400':
+          description: Invalid request or earmark cannot be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingEarmarkId:
+                  summary: Missing earmark ID
+                  value:
+                    message: earmarkId is required in request body
+                cannotCancel:
+                  summary: Cannot cancel earmark
+                  value:
+                    message: Cannot cancel earmark with status: completed
+                    currentStatus: completed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Earmark not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Earmark not found
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /rebalance/operation/cancel:
+    post:
+      tags:
+        - Rebalance Operations
+      summary: Cancel rebalance operation
+      description: Cancel a specific rebalance operation. Only pending and awaiting_callback operations can be cancelled.
+      operationId: cancelRebalanceOperation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - operationId
+              properties:
+                operationId:
+                  type: string
+                  format: uuid
+                  description: The ID of the rebalance operation to cancel
+      responses:
+        '200':
+          description: Rebalance operation cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Rebalance operation cancelled successfully
+                  operation:
+                    $ref: '#/components/schemas/RebalanceOperation'
+        '400':
+          description: Invalid request or operation cannot be cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingOperationId:
+                  summary: Missing operation ID
+                  value:
+                    message: operationId is required in request body
+                cannotCancel:
+                  summary: Cannot cancel operation
+                  value:
+                    message: Cannot cancel operation with status: completed. Only PENDING and AWAITING_CALLBACK operations can be cancelled.
+                    currentStatus: completed
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Rebalance operation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Rebalance operation not found
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    AdminToken:
+      type: apiKey
+      in: header
+      name: x-admin-token
+      description: Admin token for authenticating API requests
+
+  schemas:
+    Earmark:
+      type: object
+      description: An earmark represents a reservation of funds for a specific invoice on a designated chain
+      required:
+        - id
+        - invoiceId
+        - designatedPurchaseChain
+        - tickerHash
+        - minAmount
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique earmark identifier
+        invoiceId:
+          type: string
+          description: External invoice identifier from the invoice processing system
+        designatedPurchaseChain:
+          type: integer
+          description: Designated chain ID for purchasing this invoice
+        tickerHash:
+          type: string
+          description: Token ticker hash (e.g., USDC, ETH) required for invoice payment
+        minAmount:
+          type: string
+          description: Minimum amount of tokens required for invoice payment (string to preserve precision)
+        status:
+          type: string
+          enum:
+            - pending
+            - ready
+            - completed
+            - cancelled
+            - failed
+            - expired
+          description: Current status of the earmark
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the earmark was created
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the earmark was last updated
+
+    EarmarkWithOperations:
+      allOf:
+        - $ref: '#/components/schemas/Earmark'
+        - type: object
+          properties:
+            operations:
+              type: array
+              description: Array of rebalance operations associated with this earmark
+              items:
+                $ref: '#/components/schemas/EarmarkOperation'
+
+    EarmarkOperation:
+      type: object
+      description: Rebalance operation as returned in earmark list (without earmarkId field since it's implicit)
+      required:
+        - id
+        - originChainId
+        - destinationChainId
+        - tickerHash
+        - amount
+        - slippage
+        - status
+        - isOrphaned
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique operation identifier
+        originChainId:
+          type: integer
+          description: Source chain ID where funds are being moved from
+        destinationChainId:
+          type: integer
+          description: Target chain ID where funds are being moved to
+        tickerHash:
+          type: string
+          description: Token ticker hash for the operation
+        amount:
+          type: string
+          description: Amount of tokens being rebalanced (string to preserve precision)
+        slippage:
+          type: integer
+          description: Expected slippage in basis points (e.g., 30 = 0.3%)
+        bridge:
+          type: string
+          nullable: true
+          description: Bridge adapter type used for this operation (e.g., across, binance)
+        recipient:
+          type: string
+          nullable: true
+          description: Recipient address for the rebalance operation
+        status:
+          type: string
+          enum:
+            - pending
+            - awaiting_callback
+            - completed
+            - expired
+            - cancelled
+          description: Current status of the operation
+        isOrphaned:
+          type: boolean
+          description: Indicates if this operation was orphaned when its associated earmark was cancelled
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the operation was created
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the operation was last updated
+
+    RebalanceOperation:
+      type: object
+      description: A rebalance operation represents a cross-chain token movement
+      required:
+        - id
+        - originChainId
+        - destinationChainId
+        - tickerHash
+        - amount
+        - slippage
+        - status
+        - isOrphaned
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique operation identifier
+        earmarkId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Foreign key to the earmark this operation fulfills (null for regular rebalancing)
+        originChainId:
+          type: integer
+          description: Source chain ID where funds are being moved from
+        destinationChainId:
+          type: integer
+          description: Target chain ID where funds are being moved to
+        tickerHash:
+          type: string
+          description: Token ticker hash for the operation
+        amount:
+          type: string
+          description: Amount of tokens being rebalanced (string to preserve precision)
+        slippage:
+          type: integer
+          description: Expected slippage in basis points (e.g., 30 = 0.3%)
+        bridge:
+          type: string
+          nullable: true
+          description: Bridge adapter type used for this operation (e.g., across, binance)
+        recipient:
+          type: string
+          nullable: true
+          description: Recipient address for the rebalance operation
+        status:
+          type: string
+          enum:
+            - pending
+            - awaiting_callback
+            - completed
+            - expired
+            - cancelled
+          description: Current status of the operation
+        isOrphaned:
+          type: boolean
+          description: Indicates if this operation was orphaned when its associated earmark was cancelled
+        transactions:
+          type: object
+          nullable: true
+          description: Map of chain IDs to transaction entries for this operation
+          additionalProperties:
+            $ref: '#/components/schemas/TransactionEntry'
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the operation was created
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the operation was last updated
+
+    TransactionEntry:
+      type: object
+      description: On-chain transaction associated with a rebalance operation
+      required:
+        - id
+        - chainId
+        - transactionHash
+        - from
+        - to
+        - cumulativeGasUsed
+        - effectiveGasPrice
+        - reason
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique transaction identifier
+        rebalanceOperationId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Associated rebalance operation ID
+        chainId:
+          type: string
+          description: Chain ID where transaction occurred (stored as text for large chain IDs)
+        transactionHash:
+          type: string
+          description: On-chain transaction hash
+        from:
+          type: string
+          description: Transaction sender address
+        to:
+          type: string
+          description: Transaction destination address
+        cumulativeGasUsed:
+          type: string
+          description: Total gas used by transaction (string for precision)
+        effectiveGasPrice:
+          type: string
+          description: Effective gas price paid (string for precision)
+        reason:
+          type: string
+          description: Transaction purpose/category (e.g., Rebalance)
+        metadata:
+          type: object
+          nullable: true
+          description: Additional transaction-specific data (e.g., receipt)
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the transaction was recorded
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the transaction was last updated
+
+    SuccessResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Success message describing the completed operation
+
+    ErrorResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Error message describing what went wrong
+        currentStatus:
+          type: string
+          description: Current status when relevant to the error
+          nullable: true
+
+  responses:
+    Forbidden:
+      description: Invalid or missing admin token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: 'Forbidden: Invalid admin token'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

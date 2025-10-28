@@ -48,6 +48,14 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused: boolean | null;
+      /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
       * - Nullable, default: `false`
@@ -85,6 +93,14 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `uuid_generate_v4()`
       */
       id: string;
+      /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused: boolean | null;
       /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
@@ -124,6 +140,14 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused?: boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn>;
+      /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
       * - Nullable, default: `false`
@@ -162,6 +186,14 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused?: boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment;
+      /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
       * - Nullable, default: `false`
@@ -199,6 +231,14 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `uuid_generate_v4()`
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused?: boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment>;
       /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
@@ -734,7 +774,7 @@ declare module 'zapatos/schema' {
       */
       updated_at?: (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, (db.TimestampTzString | Date) | db.Parameter<(db.TimestampTzString | Date)> | null | db.DefaultType | db.SQLFragment>;
     }
-    export type UniqueIndex = 'earmarks_pkey' | 'unique_invoice_id';
+    export type UniqueIndex = 'earmarks_pkey' | 'unique_active_earmark_per_invoice';
     export type Column = keyof Selectable;
     export type OnlyCols<T extends readonly Column[]> = Pick<Selectable, T[number]>;
     export type SQLExpression = Table | db.ColumnNames<Updatable | (keyof Updatable)[]> | db.ColumnValues<Updatable> | Whereable | Column | db.ParentColumn | db.GenericSQLExpression;
@@ -800,6 +840,14 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `false`
       */
       is_orphaned: boolean;
+      /**
+      * **rebalance_operations.metadata**
+      *
+      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata: db.JSONValue;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -899,6 +947,14 @@ declare module 'zapatos/schema' {
       */
       is_orphaned: boolean;
       /**
+      * **rebalance_operations.metadata**
+      *
+      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata: db.JSONValue;
+      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -996,6 +1052,14 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `false`
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn>;
+      /**
+      * **rebalance_operations.metadata**
+      *
+      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -1095,6 +1159,14 @@ declare module 'zapatos/schema' {
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment;
       /**
+      * **rebalance_operations.metadata**
+      *
+      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment;
+      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -1192,6 +1264,14 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `false`
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **rebalance_operations.metadata**
+      *
+      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
+      * - `jsonb` in database
+      * - `NOT NULL`, default: `'{}'::jsonb`
+      */
+      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment>;
       /**
       * **rebalance_operations.origin_chain_id**
       *

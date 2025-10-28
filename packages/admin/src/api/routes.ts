@@ -14,8 +14,12 @@ function validatePagination(queryParams: APIGatewayProxyEventQueryStringParamete
   limit: number;
   offset: number;
 } {
-  const limit = Math.min(parseInt(queryParams?.limit || '50'), 100);
-  const offset = parseInt(queryParams?.offset || '0');
+  const parsedLimit = parseInt(queryParams?.limit || '50');
+  const parsedOffset = parseInt(queryParams?.offset || '0');
+
+  const limit = Math.min(isNaN(parsedLimit) ? 50 : parsedLimit, 1000);
+  const offset = isNaN(parsedOffset) ? 0 : Math.max(0, parsedOffset);
+
   return { limit, offset };
 }
 
@@ -30,7 +34,10 @@ function validateEarmarkFilter(queryParams: APIGatewayProxyEventQueryStringParam
     filter.status = queryParams.status;
   }
   if (queryParams?.chainId) {
-    filter.chainId = parseInt(queryParams.chainId);
+    const parsedChainId = parseInt(queryParams.chainId);
+    if (!isNaN(parsedChainId)) {
+      filter.chainId = parsedChainId;
+    }
   }
   if (queryParams?.invoiceId) {
     filter.invoiceId = queryParams.invoiceId;
@@ -44,16 +51,24 @@ function validateOperationFilter(queryParams: APIGatewayProxyEventQueryStringPar
     status?: RebalanceOperationStatus | RebalanceOperationStatus[];
     chainId?: number;
     earmarkId?: string | null;
+    invoiceId?: string;
   } = {};
 
   if (queryParams?.status) {
     filter.status = queryParams.status as RebalanceOperationStatus;
   }
-  if (queryParams?.earmarkId) {
-    filter.earmarkId = queryParams.earmarkId;
+  if (queryParams?.earmarkId !== undefined) {
+    // Handle special case where "null" string means null earmarkId (standalone operations)
+    filter.earmarkId = queryParams.earmarkId === 'null' ? null : queryParams.earmarkId;
   }
   if (queryParams?.chainId) {
-    filter.chainId = parseInt(queryParams.chainId);
+    const parsedChainId = parseInt(queryParams.chainId);
+    if (!isNaN(parsedChainId)) {
+      filter.chainId = parsedChainId;
+    }
+  }
+  if (queryParams?.invoiceId) {
+    filter.invoiceId = queryParams.invoiceId;
   }
 
   return filter;
@@ -96,11 +111,17 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
       case HttpPaths.PauseRebalance:
         await pauseIfNeeded('rebalance', context.database, context);
         break;
+      case HttpPaths.PauseOnDemandRebalance:
+        await pauseIfNeeded('ondemand', context.database, context);
+        break;
       case HttpPaths.UnpausePurchase:
         await unpauseIfNeeded('purchase', context.purchaseCache, context);
         break;
       case HttpPaths.UnpauseRebalance:
         await unpauseIfNeeded('rebalance', context.database, context);
+        break;
+      case HttpPaths.UnpauseOnDemandRebalance:
+        await unpauseIfNeeded('ondemand', context.database, context);
         break;
       case HttpPaths.CancelEarmark:
         return handleCancelEarmark(context);
@@ -150,17 +171,6 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
 
     const operation = operations[0];
 
-    // Check if operation is standalone (not associated with an earmark)
-    if (operation.earmarkId !== null) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: 'Cannot cancel operation associated with an earmark. Use earmark cancellation instead.',
-          earmarkId: operation.earmarkId,
-        }),
-      };
-    }
-
     // Check if operation can be cancelled (must be PENDING or AWAITING_CALLBACK)
     if (!['pending', 'awaiting_callback'].includes(operation.status)) {
       return {
@@ -172,11 +182,12 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
       };
     }
 
-    // Update operation status to cancelled and mark as orphaned
+    // Update operation status to cancelled
+    // Mark as orphaned if it has an associated earmark
     const updated = await database
       .queryWithClient<database.rebalance_operations>(
         `UPDATE rebalance_operations
-       SET status = $1, is_orphaned = true, updated_at = NOW()
+       SET status = $1, is_orphaned = CASE WHEN earmark_id IS NOT NULL THEN true ELSE is_orphaned END, updated_at = NOW()
        WHERE id = $2
        RETURNING *`,
         [RebalanceOperationStatus.CANCELLED, operationId],
@@ -187,6 +198,8 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
       operationId,
       previousStatus: operation.status,
       chainId: operation.chainId,
+      hadEarmark: operation.earmarkId !== null,
+      earmarkId: operation.earmarkId,
     });
 
     return {
@@ -247,32 +260,14 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       };
     }
 
-    // Atomic update for all pending operations - cancel and mark as orphaned
-    const cancelledResult = await database.queryWithClient<{ count: string }>(
-      `UPDATE rebalance_operations
-       SET status = $1, is_orphaned = true, updated_at = NOW()
-       WHERE earmark_id = $2 AND status = 'pending'
-       RETURNING (SELECT COUNT(*) FROM rebalance_operations WHERE earmark_id = $2 AND status = 'pending')`,
-      [RebalanceOperationStatus.CANCELLED, earmarkId],
-    );
-    const cancelledCount = parseInt(cancelledResult[0]?.count || '0');
-
-    // Atomic update for awaiting_callback operations - only mark as orphaned
-    const orphanedResult = await database.queryWithClient<{ count: string }>(
+    // Mark all operations as orphaned (both PENDING and AWAITING_CALLBACK keep their status)
+    const orphanedOps = await database.queryWithClient<{ id: string; status: string }>(
       `UPDATE rebalance_operations
        SET is_orphaned = true, updated_at = NOW()
-       WHERE earmark_id = $1 AND status = 'awaiting_callback'
-       RETURNING (SELECT COUNT(*) FROM rebalance_operations WHERE earmark_id = $1 AND status = 'awaiting_callback')`,
-      [earmarkId],
+       WHERE earmark_id = $1 AND status IN ($2, $3)
+       RETURNING id, status`,
+      [earmarkId, RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
     );
-    const orphanedCount = parseInt(orphanedResult[0]?.count || '0');
-
-    // Get total count of operations for logging
-    const totalResult = await database.queryWithClient<{ count: string }>(
-      `SELECT COUNT(*) as count FROM rebalance_operations WHERE earmark_id = $1`,
-      [earmarkId],
-    );
-    const totalOperations = parseInt(totalResult[0]?.count || '0');
 
     // Update earmark status to cancelled
     const updated = await database.updateEarmarkStatus(earmarkId, EarmarkStatus.CANCELLED);
@@ -281,9 +276,10 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       earmarkId,
       invoiceId: earmark.invoiceId,
       previousStatus: earmark.status,
-      cancelledOperations: cancelledCount,
-      orphanedOperations: orphanedCount,
-      totalOperations,
+      orphanedOperations: orphanedOps.length,
+      orphanedPending: orphanedOps.filter((op) => op.status === RebalanceOperationStatus.PENDING).length,
+      orphanedAwaitingCallback: orphanedOps.filter((op) => op.status === RebalanceOperationStatus.AWAITING_CALLBACK)
+        .length,
     });
 
     return {
@@ -327,12 +323,13 @@ const handleGetRequest = async (
 
     case HttpPaths.GetRebalanceOperations: {
       const queryParams = event.queryStringParameters;
+      const { limit, offset } = validatePagination(queryParams);
       const filter = validateOperationFilter(queryParams);
 
-      const operations = await context.database.getRebalanceOperations(filter);
+      const result = await context.database.getRebalanceOperations(limit, offset, filter);
       return {
         statusCode: 200,
-        body: JSON.stringify({ operations }),
+        body: JSON.stringify({ operations: result.operations, total: result.total }),
       };
     }
 
@@ -345,25 +342,64 @@ const handleGetRequest = async (
         };
       }
 
-      const earmarks = await context.database
-        .queryWithClient<database.earmarks>('SELECT * FROM earmarks WHERE id = $1', [earmarkId])
-        .then((rows) => rows.map((row) => snakeToCamel(row)));
-      if (earmarks.length === 0) {
+      try {
+        const earmarks = await context.database
+          .queryWithClient<database.earmarks>('SELECT * FROM earmarks WHERE id = $1', [earmarkId])
+          .then((rows) => rows.map((row) => snakeToCamel(row)));
+        if (earmarks.length === 0) {
+          return {
+            statusCode: 404,
+            body: JSON.stringify({ message: 'Earmark not found' }),
+          };
+        }
+
+        const operations = await context.database.getRebalanceOperationsByEarmark(earmarkId);
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            earmark: earmarks[0],
+            operations,
+          }),
+        };
+      } catch {
+        // Handle invalid UUID format or other database errors
         return {
           statusCode: 404,
           body: JSON.stringify({ message: 'Earmark not found' }),
         };
       }
+    }
 
-      const operations = await context.database.getRebalanceOperationsByEarmark(earmarkId);
+    case HttpPaths.GetRebalanceOperationDetails: {
+      const operationId = event.pathParameters?.id;
+      if (!operationId) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ message: 'Operation ID required' }),
+        };
+      }
 
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          earmark: earmarks[0],
-          operations,
-        }),
-      };
+      try {
+        const operation = await context.database.getRebalanceOperationById(operationId);
+        if (!operation) {
+          return {
+            statusCode: 404,
+            body: JSON.stringify({ message: 'Rebalance operation not found' }),
+          };
+        }
+
+        return {
+          statusCode: 200,
+          body: JSON.stringify({ operation }),
+        };
+      } catch {
+        // Handle invalid UUID format or other database errors
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ message: 'Rebalance operation not found' }),
+        };
+      }
     }
 
     default:
@@ -375,7 +411,7 @@ const handleGetRequest = async (
 };
 
 const unpauseIfNeeded = async (
-  type: 'rebalance' | 'purchase',
+  type: 'rebalance' | 'purchase' | 'ondemand',
   _store: Database | PurchaseCache,
   context: AdminContext,
 ) => {
@@ -388,6 +424,13 @@ const unpauseIfNeeded = async (
       throw new Error(`Rebalance is not paused`);
     }
     return db.setPause('rebalance', false);
+  } else if (type === 'ondemand') {
+    const db = _store as Database;
+    logger.debug('Unpausing on-demand rebalance', { requestId });
+    if (!(await db.isPaused('ondemand'))) {
+      throw new Error(`On-demand rebalance is not paused`);
+    }
+    return db.setPause('ondemand', false);
   } else {
     const store = _store as PurchaseCache;
     logger.debug('Unpausing purchase cache', { requestId });
@@ -399,7 +442,7 @@ const unpauseIfNeeded = async (
 };
 
 const pauseIfNeeded = async (
-  type: 'rebalance' | 'purchase',
+  type: 'rebalance' | 'purchase' | 'ondemand',
   _store: Database | PurchaseCache,
   context: AdminContext,
 ) => {
@@ -412,6 +455,13 @@ const pauseIfNeeded = async (
       throw new Error(`Rebalance is already paused`);
     }
     return db.setPause('rebalance', true);
+  } else if (type === 'ondemand') {
+    const db = _store as Database;
+    logger.debug('Pausing on-demand rebalance', { requestId });
+    if (await db.isPaused('ondemand')) {
+      throw new Error(`On-demand rebalance is already paused`);
+    }
+    return db.setPause('ondemand', true);
   } else {
     const store = _store as PurchaseCache;
     logger.debug('Pausing purchase cache', { requestId });
@@ -436,6 +486,12 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
   // Handle earmark detail path with ID parameter
   if (httpMethod === 'GET' && path.includes('/rebalance/earmark/')) {
     return HttpPaths.GetEarmarkDetails;
+  }
+
+  // Handle rebalance operation detail path with ID parameter
+  // Must check this before the cancel operation check
+  if (httpMethod === 'GET' && path.match(/\/rebalance\/operation\/[^/]+$/)) {
+    return HttpPaths.GetRebalanceOperationDetails;
   }
 
   // Handle cancel earmark

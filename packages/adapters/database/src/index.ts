@@ -13,7 +13,7 @@ export * from './utils';
 export {
   createEarmark,
   getEarmarks,
-  getEarmarkForInvoice,
+  getActiveEarmarkForInvoice,
   removeEarmark,
   updateEarmarkStatus,
   getActiveEarmarksForChain,
@@ -21,6 +21,7 @@ export {
   updateRebalanceOperation,
   getRebalanceOperationsByEarmark,
   getRebalanceOperations,
+  getRebalanceOperationById,
   getTransactionsForRebalanceOperations,
   getRebalanceOperationByTransactionHash,
   createCexWithdrawalRecord,

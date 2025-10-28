@@ -195,7 +195,7 @@ describe('executeDestinationCallbacks', () => {
 
     // Create mock database module with all required exports
     mockDatabase = {
-      getRebalanceOperations: stub().resolves([]),
+      getRebalanceOperations: stub().resolves({ operations: [], total: 0 }),
       updateRebalanceOperation: stub().resolves(),
       queryWithClient: stub().resolves(),
       initializeDatabase: stub(),
@@ -205,7 +205,7 @@ describe('executeDestinationCallbacks', () => {
       gracefulShutdown: stub().resolves(),
       createEarmark: stub().resolves(),
       getEarmarks: stub().resolves([]),
-      getEarmarkForInvoice: stub().resolves(null),
+      getActiveEarmarkForInvoice: stub().resolves(null),
       removeEarmark: stub().resolves(),
       updateEarmarkStatus: stub().resolves(),
       getActiveEarmarksForChain: stub().resolves([]),
@@ -287,7 +287,7 @@ describe('executeDestinationCallbacks', () => {
     await executeDestinationCallbacks(mockContext);
     expect(mockLogger.info.calledWith('Executing destination callbacks', { requestId: MOCK_REQUEST_ID })).toBe(true);
     expect(
-      (mockDatabase.getRebalanceOperations as SinonStub).calledWith({
+      (mockDatabase.getRebalanceOperations as SinonStub).calledWith(undefined, undefined, {
         status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
       }),
     ).toBe(true);
@@ -296,7 +296,7 @@ describe('executeDestinationCallbacks', () => {
 
   it('should log and continue if transaction receipt is not found for an action', async () => {
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, false); // No receipt in metadata
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
 
     await executeDestinationCallbacks(mockContext);
 
@@ -325,7 +325,7 @@ describe('executeDestinationCallbacks', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
 
     await executeDestinationCallbacks(mockContext);
 
@@ -341,7 +341,7 @@ describe('executeDestinationCallbacks', () => {
 
   it('should log info if readyOnDestination returns false', async () => {
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
     mockSpecificBridgeAdapter.readyOnDestination.resolves(false);
 
     await executeDestinationCallbacks(mockContext);
@@ -358,7 +358,7 @@ describe('executeDestinationCallbacks', () => {
 
   it('should log error and continue if readyOnDestination fails', async () => {
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
 
     const error = new Error('Bridge error');
     mockSpecificBridgeAdapter.readyOnDestination.rejects(error);
@@ -379,7 +379,7 @@ describe('executeDestinationCallbacks', () => {
   it('should mark as completed if destinationCallback returns no transaction', async () => {
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
     mockSpecificBridgeAdapter.destinationCallback.resolves(undefined);
 
     await executeDestinationCallbacks(mockContext);
@@ -401,7 +401,7 @@ describe('executeDestinationCallbacks', () => {
   it('should log error and continue if destinationCallback fails', async () => {
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
 
     const error = new Error('Callback error');
     mockSpecificBridgeAdapter.destinationCallback.rejects(error);
@@ -422,7 +422,7 @@ describe('executeDestinationCallbacks', () => {
   it('should successfully execute destination callback and mark as completed', async () => {
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
     mockSpecificBridgeAdapter.destinationCallback.resolves(mockCallbackTx);
 
     await executeDestinationCallbacks(mockContext);
@@ -450,7 +450,7 @@ describe('executeDestinationCallbacks', () => {
   it('should log error and continue if submitAndMonitor fails', async () => {
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
     mockSpecificBridgeAdapter.destinationCallback.resolves(mockCallbackTx);
 
     const error = new Error('Submit failed');
@@ -494,7 +494,7 @@ describe('executeDestinationCallbacks', () => {
 
     const dbOperation1 = createDbOperation(mockAction1, mockAction1Id, false); // No receipt for first
     const dbOperation2 = createDbOperation(mockAction2, mockAction2Id, true); // Has receipt for second
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation1, dbOperation2]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation1, dbOperation2], total: 2 });
 
     // First action fails to get receipt
     mockChainService.getTransactionReceipt
@@ -543,7 +543,7 @@ describe('executeDestinationCallbacks', () => {
 
   it('should update operation to awaiting callback when ready', async () => {
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, true); // Include receipt
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
     mockChainService.getTransactionReceipt
       .withArgs(mockAction1.origin, mockAction1.transaction)
       .resolves(toITransactionReceipt(mockReceipt1));
@@ -569,7 +569,7 @@ describe('executeDestinationCallbacks', () => {
   it('should skip operation with missing bridge type', async () => {
     const dbOperationNoBridge = createDbOperation(mockAction1, mockAction1Id);
     dbOperationNoBridge.bridge = null as unknown as SupportedBridge;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperationNoBridge]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperationNoBridge], total: 1 });
 
     await executeDestinationCallbacks(mockContext);
 
@@ -586,7 +586,7 @@ describe('executeDestinationCallbacks', () => {
   it('should skip operation with missing origin transaction hash', async () => {
     const dbOperationNoTxHash = createDbOperation(mockAction1, mockAction1Id);
     dbOperationNoTxHash.transactions = {}; // Empty transactions object
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperationNoTxHash]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperationNoTxHash], total: 1 });
 
     await executeDestinationCallbacks(mockContext);
 
@@ -612,7 +612,7 @@ describe('executeDestinationCallbacks', () => {
 
     const dbOperation = createDbOperation(mockAction1, mockAction1Id, true); // Include receipt
     dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
-    (mockDatabase.getRebalanceOperations as SinonStub).resolves([dbOperation]);
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
     mockChainService.getTransactionReceipt.resolves(toITransactionReceipt(mockReceipt1));
     mockRebalanceAdapter.getAdapter.callsFake(() => {
       // Return the same mock adapter for all bridges

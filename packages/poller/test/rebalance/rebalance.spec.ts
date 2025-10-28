@@ -14,8 +14,9 @@ jest.mock('@mark/database', () => ({
   createEarmark: jest.fn(),
   updateRebalanceOperation: jest.fn(),
   updateEarmarkStatus: jest.fn(),
-  getEarmarkForInvoice: jest.fn(),
+  getActiveEarmarkForInvoice: jest.fn(),
   getActiveEarmarksForChain: jest.fn(),
+  getRebalanceOperations: jest.fn().mockResolvedValue({ operations: [], total: 0 }),
   getRebalanceOperationsByEarmark: jest.fn(),
   initializeDatabase: jest.fn(),
   getPool: jest.fn(),
@@ -120,7 +121,7 @@ describe('rebalanceInventory', () => {
     });
     (database.updateRebalanceOperation as jest.Mock).mockResolvedValue(undefined);
     (database.updateEarmarkStatus as jest.Mock).mockResolvedValue(undefined);
-    (database.getEarmarkForInvoice as jest.Mock).mockResolvedValue(null);
+    (database.getActiveEarmarkForInvoice as jest.Mock).mockResolvedValue(null);
     (database.getActiveEarmarksForChain as jest.Mock).mockResolvedValue([]);
     (database.getRebalanceOperationsByEarmark as jest.Mock).mockResolvedValue([]);
 
@@ -403,7 +404,7 @@ describe('rebalanceInventory', () => {
     expect(executeDestinationCallbacksStub.calledOnceWith(mockContext)).toBe(true);
   });
 
-  it('should NOT execute callbacks when purchase cache is not paused', async () => {
+  it('should always execute callbacks regardless of purchase cache pause status', async () => {
     // Ensure purchase cache is not paused (default)
     mockPurchaseCache.isPaused.resolves(false);
 
@@ -415,8 +416,8 @@ describe('rebalanceInventory', () => {
 
     await rebalanceInventory(mockContext);
 
-    // Should NOT execute callbacks when purchase cache is not paused
-    expect(executeDestinationCallbacksStub.called).toBe(false);
+    // Should always execute callbacks to ensure operations complete
+    expect(executeDestinationCallbacksStub.calledOnceWith(mockContext)).toBe(true);
   });
 
   it('should return early if rebalance is paused', async () => {

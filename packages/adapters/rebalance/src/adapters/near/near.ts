@@ -189,9 +189,18 @@ export class NearBridgeAdapter implements BridgeAdapter {
         throw new Error(`Transaction (depositAddress: ${depositAddress}}) is not yet filled`);
       }
 
-      const fillTx = statusData?.swapDetails.destinationChainTxHashes[0].hash;
+      // Extract fillTx if available - it might not be immediately available even for SUCCESS status
+      const destinationTxHashes = statusData?.swapDetails.destinationChainTxHashes;
+      const fillTx = destinationTxHashes && destinationTxHashes.length > 0 ? destinationTxHashes[0].hash : undefined;
+
       if (!fillTx) {
-        throw new Error(`No fill transaction found for deposit address: ${depositAddress}`);
+        // If no fill transaction hash is available but status is SUCCESS,
+        // we can skip the callback check as the bridge has completed
+        this.logger.info('Transaction succeeded but no fill transaction hash available, skipping callback', {
+          depositAddress,
+          status: statusData.status,
+        });
+        return;
       }
 
       const callbackInfo = await this.requiresCallback(
@@ -314,8 +323,10 @@ export class NearBridgeAdapter implements BridgeAdapter {
       // Finding the deposit value
       const provider = this.chains[route.origin]?.providers?.[0];
       const value = await this.getTransactionValue(provider, originTransaction);
-      if (!value) {
-        this.logger.warn('No value found in transaction receipt', {
+      // Note: value can be 0n for ERC20 token transfers (USDC, USDT, etc.)
+      // Only warn if value retrieval fails completely (null/undefined)
+      if (value === null || value === undefined) {
+        this.logger.warn('Failed to retrieve transaction value', {
           transactionHash: originTransaction.transactionHash,
         });
         return undefined;
@@ -355,6 +366,32 @@ export class NearBridgeAdapter implements BridgeAdapter {
       });
 
       const destinationTxHashes = statusData.swapDetails.destinationChainTxHashes;
+
+      // If status is SUCCESS, return the status data even if destination hashes aren't available yet
+      if (statusData.status === GetExecutionStatusResponse.status.SUCCESS) {
+        const fillTx = destinationTxHashes && destinationTxHashes.length > 0 ? destinationTxHashes[0].hash : undefined;
+
+        if (!fillTx) {
+          this.logger.warn('NEAR reports SUCCESS but no destination transaction hashes available yet', {
+            status: statusData.status,
+            depositAddress,
+            originTxHash: originTransaction.transactionHash,
+            note: 'Transaction completed successfully, fill hash will be available later',
+          });
+        }
+
+        return {
+          status: statusData.status,
+          originChainId: route.origin,
+          depositId: depositAddress,
+          depositTxHash: originTransaction.transactionHash,
+          fillTx: fillTx || '', // Empty string if not yet available
+          destinationChainId: route.destination,
+          depositRefundTxHash: '',
+        };
+      }
+
+      // For non-SUCCESS statuses, require destination hashes
       if (!destinationTxHashes || destinationTxHashes.length === 0) {
         this.logger.debug('No destination transaction hashes available yet', {
           status: statusData.status,
@@ -593,9 +630,37 @@ export class NearBridgeAdapter implements BridgeAdapter {
 
   protected async getDepositStatusFromApi(depositAddress: string): Promise<GetExecutionStatusResponse | undefined> {
     try {
-      return await OneClickService.getExecutionStatus(depositAddress);
+      // The SDK's getExecutionStatus uses the wrong endpoint
+      // We need to call /v0/status?depositAddress={address} directly
+      const url = `${this.baseUrl}/v0/status?depositAddress=${depositAddress}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${this.jwtToken}`,
+          Accept: 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          this.logger.debug('Deposit not found', { depositAddress, status: response.status });
+          return undefined;
+        }
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Transform the response to match the expected format
+      // The /v0/status endpoint returns the data directly with status at the top level
+      return data as GetExecutionStatusResponse;
     } catch (error) {
-      this.logger.error('Failed to get deposit status', { error: jsonifyError(error) });
+      this.logger.error('Failed to get deposit status', {
+        error: jsonifyError(error),
+        depositAddress,
+        endpoint: '/v0/status',
+      });
       return undefined;
     }
   }

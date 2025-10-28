@@ -74,9 +74,10 @@ export function meetsMinimumWithdrawal(amount: string, mapping: BinanceAssetMapp
   const amountBN = BigInt(amount);
   const minBN = BigInt(mapping.minWithdrawalAmount);
   const feeBN = BigInt(mapping.withdrawalFee);
+  const requiredMinimum = minBN + feeBN;
 
   // Amount must be greater than minimum + fee
-  return amountBN >= minBN + feeBN;
+  return amountBN >= requiredMinimum;
 }
 
 /**

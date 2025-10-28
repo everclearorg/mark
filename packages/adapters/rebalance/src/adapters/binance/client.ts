@@ -10,6 +10,8 @@ import {
   WithdrawRecord,
   WithdrawQuotaResponse,
   TickerPrice,
+  CoinConfig,
+  AccountInfo,
   BINANCE_BASE_URL,
 } from './types';
 import { BINANCE_ENDPOINTS, BINANCE_RATE_LIMITS } from './constants';
@@ -466,10 +468,10 @@ export class BinanceClient {
   /**
    * Get asset configuration
    */
-  async getAssetConfig(): Promise<unknown[]> {
+  async getAssetConfig(): Promise<CoinConfig[]> {
     this.logger.debug('Getting asset configuration');
 
-    const result = await this.request<unknown[]>('GET', BINANCE_ENDPOINTS.ASSET_CONFIG, {}, true);
+    const result = await this.request<CoinConfig[]>('GET', BINANCE_ENDPOINTS.ASSET_CONFIG, {}, true);
 
     this.logger.debug('Asset configuration retrieved', {
       assetCount: result.length,
@@ -542,5 +544,43 @@ export class BinanceClient {
     });
 
     return result;
+  }
+
+  /**
+   * Get account balance for all assets
+   * Private endpoint - requires authentication
+   */
+  async getAccountBalance(): Promise<Record<string, string>> {
+    this.logger.debug('Getting account balance');
+
+    const result = await this.request<AccountInfo>('GET', BINANCE_ENDPOINTS.ACCOUNT_BALANCE, {}, true);
+
+    // Validate response structure
+    if (!result || !Array.isArray(result.balances)) {
+      const resultAsRecord = result as unknown as Record<string, unknown>;
+      this.logger.error('Invalid response structure from account balance endpoint', {
+        result,
+        hasResult: !!result,
+        hasBalances: !!resultAsRecord?.balances,
+        balancesType: typeof resultAsRecord?.balances,
+      });
+      throw new Error(
+        'Invalid response structure from Binance account balance endpoint: balances field is missing or not an array',
+      );
+    }
+
+    this.logger.debug('Account balance retrieved', {
+      balances: result.balances,
+    });
+
+    const balances: Record<string, string> = {};
+    for (const balance of result.balances) {
+      const totalBalance = (parseFloat(balance.free) + parseFloat(balance.locked)).toString();
+      if (parseFloat(totalBalance) > 0) {
+        balances[balance.asset] = totalBalance;
+      }
+    }
+
+    return balances;
   }
 }

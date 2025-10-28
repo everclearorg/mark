@@ -23,8 +23,9 @@ import {
   meetsMinimumWithdrawal,
   checkWithdrawQuota,
 } from './utils';
-import { getDestinationAssetAddress, findAssetByAddress } from '../../shared/asset';
+import { getDestinationAssetAddress, findAssetByAddress, validateExchangeAssetBalance } from '../../shared/asset';
 import { generateWithdrawOrderId } from '../../shared/withdrawals';
+import { cancelRebalanceOperation } from '../../shared/operations';
 
 const wethAbi = [
   ...erc20Abi,
@@ -78,9 +79,9 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
       return coinPrecision[network];
     }
 
-    // Default fallback to 8 decimal places
+    // Default fallback to 6 decimal places
     this.logger.warn(`No precision mapping found for ${coin} on ${network}, using default precision`);
-    return 8;
+    return 6;
   }
 
   /**
@@ -156,7 +157,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       // Check if amount meets minimum requirements
       if (!meetsMinimumWithdrawal(amount, originMapping)) {
-        throw new Error('Amount is too low for Binance withdrawal');
+        const requiredMin = BigInt(originMapping.minWithdrawalAmount) + BigInt(originMapping.withdrawalFee);
+        throw new Error(
+          `Amount ${amount} is too low for Binance withdrawal. ` +
+            `Minimum required: ${requiredMin.toString()} (min: ${originMapping.minWithdrawalAmount} + fee: ${originMapping.withdrawalFee}) ` +
+            `for ${originMapping.binanceSymbol} on ${originMapping.network}`,
+        );
       }
 
       // Get decimals for precision checking
@@ -222,8 +228,11 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
 
       // Check minimum amount requirements
       if (!meetsMinimumWithdrawal(amount, assetMapping)) {
+        const requiredMin = BigInt(assetMapping.minWithdrawalAmount) + BigInt(assetMapping.withdrawalFee);
         throw new Error(
-          `Amount ${amount} does not meet minimum withdrawal requirement of ${assetMapping.minWithdrawalAmount}`,
+          `Amount ${amount} does not meet minimum withdrawal requirement. ` +
+            `Minimum required: ${requiredMin.toString()} (min: ${assetMapping.minWithdrawalAmount} + fee: ${assetMapping.withdrawalFee}) ` +
+            `for ${assetMapping.binanceSymbol} on ${assetMapping.network}`,
         );
       }
 
@@ -592,12 +601,14 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         txId: currentWithdrawal.txId || undefined,
       };
     } catch (error) {
-      this.logger.error('Failed to get withdrawal status', {
+      this.logger.error('Failed to get or initiate withdrawal', {
         error: jsonifyError(error),
         route,
         transactionHash: originTransaction.transactionHash,
       });
-      throw error;
+      // Return undefined to indicate withdrawal is not ready or failed
+      // This allows the system to retry later
+      return undefined;
     }
   }
 
@@ -722,6 +733,16 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
+      // Validate Binance account balance before withdrawal
+      await validateExchangeAssetBalance(
+        () => this.client.getAccountBalance(),
+        this.logger,
+        'Binance',
+        assetMapping.binanceSymbol,
+        withdrawAmount,
+        decimals,
+      );
+
       // Convert amount from wei to standard unit for Binance API
       // Get the proper withdrawal precision from Binance API configuration
       const withdrawAmountInUnits = parseFloat(formatUnits(BigInt(withdrawAmount), decimals));
@@ -763,6 +784,12 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         transactionHash: originTransaction.transactionHash,
         assetMapping,
       });
+
+      // Cancel the rebalance operation if this is an insufficient funds error
+      if (error instanceof Error && error.message.includes('Insufficient funds')) {
+        await cancelRebalanceOperation(this.db, this.logger, route, originTransaction, error);
+      }
+
       throw error;
     }
   }

@@ -52,7 +52,8 @@ CREATE TABLE public.admin_actions (
     updated_at timestamp with time zone DEFAULT now(),
     description text,
     rebalance_paused boolean DEFAULT false,
-    purchase_paused boolean DEFAULT false
+    purchase_paused boolean DEFAULT false,
+    ondemand_rebalance_paused boolean DEFAULT false
 );
 
 
@@ -462,6 +463,13 @@ CREATE INDEX idx_rebalance_operations_status ON public.rebalance_operations USIN
 
 
 --
+-- Name: idx_rebalance_operations_status_earmark_dest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rebalance_operations_status_earmark_dest ON public.rebalance_operations USING btree (destination_chain_id, status, earmark_id) WHERE (earmark_id IS NOT NULL);
+
+
+--
 -- Name: idx_transactions_chain; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -568,4 +576,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20250722213145'),
     ('20250902175116'),
     ('20250903171904'),
-    ('20250911');
+    ('20250911'),
+    ('20251016000000'),
+    ('20251021000000');

@@ -53,7 +53,7 @@ export function createDatabaseMock(): typeof DatabaseModule {
       updatedAt: new Date(),
     }),
     getEarmarks: stub().resolves([]),
-    getEarmarkForInvoice: stub().resolves(null),
+    getActiveEarmarkForInvoice: stub().resolves(null),
     removeEarmark: stub().resolves(),
     updateEarmarkStatus: stub().resolves({
       id: 'mock-earmark-id',
@@ -96,10 +96,16 @@ export function createDatabaseMock(): typeof DatabaseModule {
       createdAt: new Date(),
       updatedAt: new Date(),
     } as MockRebalanceOperation),
-    getRebalanceOperations: stub().resolves([]),
+    getRebalanceOperations: stub().resolves({ operations: [], total: 0 }),
     getRebalanceOperationById: stub().resolves(null),
     getRebalanceOperationsByStatus: stub().resolves([]),
     getRebalanceOperationsByEarmark: stub().resolves([]),
+    getTransactionsForRebalanceOperations: stub().resolves({}),
+    getRebalanceOperationByTransactionHash: stub().resolves(undefined),
+
+    // Admin operations
+    setPause: stub().resolves(),
+    isPaused: stub().resolves(false),
 
     // Connection functions
     getDatabaseUrl: stub().returns('postgresql://mock@localhost/test'),
@@ -162,6 +168,6 @@ export function createMinimalDatabaseMock(): typeof DatabaseModule {
     createEarmark: stub().rejects(new Error('Database mock not configured for this test')),
     getEarmarks: stub().rejects(new Error('Database mock not configured for this test')),
     createRebalanceOperation: stub().rejects(new Error('Database mock not configured for this test')),
-    getRebalanceOperations: stub().rejects(new Error('Database mock not configured for this test')),
+    getRebalanceOperations: stub().resolves({ operations: [], total: 0 }),
   } as unknown as typeof DatabaseModule;
 }

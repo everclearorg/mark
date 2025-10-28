@@ -29,11 +29,14 @@ export enum HttpPaths {
   ClearRebalance = '/clear/rebalance',
   PausePurchase = '/pause/purchase',
   PauseRebalance = '/pause/rebalance',
+  PauseOnDemandRebalance = '/pause/ondemand-rebalance',
   UnpausePurchase = '/unpause/purchase',
   UnpauseRebalance = '/unpause/rebalance',
+  UnpauseOnDemandRebalance = '/unpause/ondemand-rebalance',
   GetEarmarks = '/rebalance/earmarks',
   GetRebalanceOperations = '/rebalance/operations',
   GetEarmarkDetails = '/rebalance/earmark',
+  GetRebalanceOperationDetails = '/rebalance/operation',
   CancelEarmark = '/rebalance/cancel',
   CancelRebalanceOperation = '/rebalance/operation/cancel',
 }
@@ -53,4 +56,5 @@ export interface OperationFilter {
   status?: string;
   chainId?: number;
   earmarkId?: string;
+  invoiceId?: string;
 }
