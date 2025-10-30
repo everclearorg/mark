@@ -135,8 +135,7 @@ export interface CoinbaseTx {
   };
 }
 
-
-export interface CoinbaseApiResponse<T = any> {
+export interface CoinbaseApiResponse<T> {
   data: T;
   pagination?: {
     ending_before?: string;

@@ -1,12 +1,22 @@
-import { TransactionReceipt, parseUnits, encodeFunctionData, zeroAddress, erc20Abi, formatUnits, createPublicClient, http, PublicClient } from 'viem';
-import { SupportedBridge, RebalanceRoute, MarkConfiguration, AssetConfiguration } from '@mark/core';
+import {
+  TransactionReceipt,
+  parseUnits,
+  encodeFunctionData,
+  zeroAddress,
+  erc20Abi,
+  formatUnits,
+  createPublicClient,
+  http,
+  PublicClient,
+} from 'viem';
+import { SupportedBridge, RebalanceRoute, MarkConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import * as database from '@mark/database';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
-import { findAssetByAddress, findMatchingDestinationAsset, getDestinationAssetAddress } from '../../shared/asset';
+import { findAssetByAddress, findMatchingDestinationAsset } from '../../shared/asset';
 import { CoinbaseClient } from './client';
-import * as chains from 'viem/chains'
-import { CoinbaseDepositAccount, CoinbaseTx } from './types';
+import * as chains from 'viem/chains';
+import { CoinbaseDepositAccount } from './types';
 import { getRebalanceOperationByTransactionHash } from '@mark/database';
 
 const wethAbi = [
@@ -29,11 +39,11 @@ const wethAbi = [
 
 function getViemChain(id: number) {
   for (const chain of Object.values(chains)) {
-      if ('id' in chain) {
-          if (chain.id === id) {
-              return chain;
-          }
+    if ('id' in chain) {
+      if (chain.id === id) {
+        return chain;
       }
+    }
   }
 }
 
@@ -62,7 +72,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
     if (this.allowedRecipients.length === 0) {
       throw new Error('CoinbaseBridgeAdapter requires at least one allowed recipient');
     }
-    
+
     this.logger.debug('CoinbaseBridgeAdapter initialized', {
       hasapiKey: true,
       hasapiSecret: true,
@@ -106,7 +116,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       apiKey: this.config.coinbase?.apiKey as string,
       apiSecret: this.config.coinbase?.apiSecret as string,
       allowedRecipients: this.allowedRecipients,
-      baseUrl: 'https://api.coinbase.com'
+      baseUrl: 'https://api.coinbase.com',
     });
   }
 
@@ -136,11 +146,13 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
    * @param route - The rebalance route containing origin/destination chain IDs and asset address
    * @returns Object containing:
    *  - bridgeNetwork: The Coinbase network identifier (e.g. "base", "ethereum")
-   *  - bridgeAssetSymbol: The Coinbase asset symbol (e.g. "ETH", "USDC") 
+   *  - bridgeAssetSymbol: The Coinbase asset symbol (e.g. "ETH", "USDC")
    *  - depositAccount: The Coinbase deposit account & address for receiving funds of this asset+network composite
    * @throws Error if origin asset cannot be found or if route is invalid
    */
-  async mapRoute(route: RebalanceRoute): Promise<{ bridgeNetwork: string; bridgeAssetSymbol: string; depositAccount: CoinbaseDepositAccount }> {
+  async mapRoute(
+    route: RebalanceRoute,
+  ): Promise<{ bridgeNetwork: string; bridgeAssetSymbol: string; depositAccount: CoinbaseDepositAccount }> {
     const originAsset = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
     if (!originAsset) {
       throw new Error(`Unable to find origin asset for asset ${route.asset} on chain ${route.origin}`);
@@ -181,7 +193,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       if (!nativeAsset?.isNative || nativeAsset.address !== zeroAddress) {
         throw new Error(`Native asset ${nativeAsset?.symbol} on chain ${route.origin} is not properly configured`);
       }
-      
+
       this.logger.debug('Coinbase deposit address obtained for transaction preparation', {
         asset: route.asset,
         bridgeAssetSymbol: mappedRoute.bridgeAssetSymbol,
@@ -198,48 +210,45 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       // if bridge asset is the native asset of the origin chain (as opposed to a token) then we need special handling.
       // at the very least, we will need to deposit the native asset as an intrinsic txn value.
       // we may also need to unwrap our originAsset first.
-      if(mappedRoute.bridgeAssetSymbol.toLowerCase() === nativeAsset?.symbol.toLowerCase()) 
-      {
-          let unwrapFirst = false;
+      if (mappedRoute.bridgeAssetSymbol.toLowerCase() === nativeAsset?.symbol.toLowerCase()) {
+        let unwrapFirst = false;
 
-          // if origin asset is not the native asset itself, but is a supported wrapped version of the native asset (only WETH at time of writing),
-          // then prepare it to be unwrapped first (Coinbase & most CEX's do not accept wrapped version of native assets).
-          if (
-            route.asset !== zeroAddress
-            &&
-            // confirm that native asset is an unwrapped version of the origin asset
-            mappedRoute.bridgeAssetSymbol.toLowerCase() === nativeAsset?.symbol.toLowerCase()
-          ) 
+        // if origin asset is not the native asset itself, but is a supported wrapped version of the native asset (only WETH at time of writing),
+        // then prepare it to be unwrapped first (Coinbase & most CEX's do not accept wrapped version of native assets).
+        if (
+          route.asset !== zeroAddress &&
+          // confirm that native asset is an unwrapped version of the origin asset
+          mappedRoute.bridgeAssetSymbol.toLowerCase() === nativeAsset?.symbol.toLowerCase()
+        )
           unwrapFirst = true;
 
-        if(unwrapFirst) {
-            const unwrapTx = {
-              memo: RebalanceTransactionMemo.Unwrap,
-              transaction: {
-                to: route.asset as `0x${string}`,
-                data: encodeFunctionData({
-                  abi: wethAbi,
-                  functionName: 'withdraw',
-                  args: [BigInt(amount)],
-                }) as `0x${string}`,
-                value: BigInt(0),
-                funcSig: 'withdraw(uint256)',
-              },
-            };
-
-            transactions.push(unwrapTx);
-          }
-
-          // Handle native ETH deposit
-          transactions.push({
-            memo: RebalanceTransactionMemo.Rebalance,
+        if (unwrapFirst) {
+          const unwrapTx = {
+            memo: RebalanceTransactionMemo.Unwrap,
             transaction: {
-              to: mappedRoute.depositAccount.address as `0x${string}`,
-              value: BigInt(amount),
-              data: '0x' as `0x${string}`,
+              to: route.asset as `0x${string}`,
+              data: encodeFunctionData({
+                abi: wethAbi,
+                functionName: 'withdraw',
+                args: [BigInt(amount)],
+              }) as `0x${string}`,
+              value: BigInt(0),
+              funcSig: 'withdraw(uint256)',
             },
-          });
+          };
 
+          transactions.push(unwrapTx);
+        }
+
+        // Handle native ETH deposit
+        transactions.push({
+          memo: RebalanceTransactionMemo.Rebalance,
+          transaction: {
+            to: mappedRoute.depositAccount.address as `0x${string}`,
+            value: BigInt(amount),
+            data: '0x' as `0x${string}`,
+          },
+        });
       }
 
       // if bridge asset is a token (USDC, USDT etc), then handling is much simpler than native
@@ -266,7 +275,6 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
     }
   }
 
-  
   async readyOnDestination(
     amount: string,
     route: RebalanceRoute,
@@ -295,12 +303,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
         return false;
       }
 
-      const withdrawalStatus = await this.getOrInitWithdrawal(
-        amount,
-        route,
-        originTransaction,
-        recipient,
-      );
+      const withdrawalStatus = await this.getOrInitWithdrawal(amount, route, originTransaction, recipient);
       this.logger.debug('Coinbase withdrawal status retrieved', {
         withdrawalStatus,
         deposit: originTransaction.transactionHash,
@@ -352,12 +355,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
         this.logger.debug('No withdrawal detected, submitting another', {
           originTransaction,
         });
-        withdrawal = await this.initiateWithdrawal(
-          route,
-          originTransaction,
-          amount,
-          recipient,
-        );
+        withdrawal = await this.initiateWithdrawal(route, originTransaction, amount, recipient);
         this.logger.info('Initiated withdrawal', { originTransaction, withdrawal });
       }
 
@@ -368,12 +366,12 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
 
       // NOTE: coinbase will show a transaction hash here prior to them considering the withdrawal to be "completed" (confirmed on chain).
       // We can wait for them to report that they consider it confirmed, but this can take 10+ minutes.
-      // Since our only subsequent actions are a potential wrap of native asset, 
+      // Since our only subsequent actions are a potential wrap of native asset,
       // it seems low-risk to just assume its confirmed "enough" as soon as the hash appears and (in next steps) a reciept can be pulled for it.
       //
       // if this assumption becomes problematic down the road, we can implement our own confirmation logic that can be faster than coinbase's.
-      if(currentWithdrawal?.network?.hash){
-          currentWithdrawal.status = 'completed'
+      if (currentWithdrawal?.network?.hash) {
+        currentWithdrawal.status = 'completed';
       }
 
       if (!currentWithdrawal) {
@@ -385,14 +383,13 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
 
       // Verify on-chain if completed
       let onChainConfirmed = false;
-      if (
-      currentWithdrawal.status.toLowerCase() === 'completed' 
-      && 
-      currentWithdrawal.network?.hash) {
+      if (currentWithdrawal.status.toLowerCase() === 'completed' && currentWithdrawal.network?.hash) {
         const provider = this.getProvider(route.destination);
         if (provider) {
           try {
-            const hash = currentWithdrawal.network.hash.startsWith('0x') ? currentWithdrawal.network.hash : `0x${currentWithdrawal.network.hash}`;
+            const hash = currentWithdrawal.network.hash.startsWith('0x')
+              ? currentWithdrawal.network.hash
+              : `0x${currentWithdrawal.network.hash}`;
             const receipt = await provider.getTransactionReceipt({
               hash: hash as `0x${string}`,
             });
@@ -433,7 +430,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       const transaction = await client.getTransactionByHash(
         mappedRoute.depositAccount.accountId,
         mappedRoute.depositAccount.addressId,
-        originTransaction.transactionHash
+        originTransaction.transactionHash,
       );
 
       const confirmed = !!transaction && transaction.status.toLowerCase() === 'completed';
@@ -518,14 +515,14 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       // Get the rebalance operation details from the database/cache
       const rebalanceOperation = await getRebalanceOperationByTransactionHash(
         originTransaction.transactionHash,
-        route.origin
+        route.origin,
       );
 
       if (!rebalanceOperation) {
         throw new Error('No rebalance operation found for transaction');
       }
 
-      // we need decimals for the asset we are withdrawing. 
+      // we need decimals for the asset we are withdrawing.
       // however, the rebalance op always stores the raw amount of the *origin* asset, so we need origin decimals
       const originAsset = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
 
@@ -541,10 +538,12 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       // if more finessing is needed for future assets, add/tweak here.
       const withdrawPrecision = originAsset.decimals == 18 ? 8 : originAsset.decimals;
 
-      const withdrawUnits = Number(formatUnits(BigInt(rebalanceOperation.amount), originAsset.decimals)).toFixed(withdrawPrecision);
-      
+      const withdrawUnits = Number(formatUnits(BigInt(rebalanceOperation.amount), originAsset.decimals)).toFixed(
+        withdrawPrecision,
+      );
+
       const client = await this.getClient();
-      
+
       this.logger.debug('Initiating Coinbase withdrawal', {
         units: withdrawUnits,
         currency: mappedRoute.bridgeAssetSymbol,
@@ -667,7 +666,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
           `No origin asset config detected for route(origin=${route.origin},destination=${route.destination},asset=${route.asset})`,
         );
       }
-      
+
       const destinationAssetConfig = findMatchingDestinationAsset(
         route.asset,
         route.origin,
@@ -683,15 +682,16 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       }
 
       const destNativeAsset = findAssetByAddress(zeroAddress, route.destination, this.config.chains, this.logger);
-      
+
       if (!destNativeAsset?.isNative || destNativeAsset.address !== zeroAddress) {
-        throw new Error(`Destination native asset ${destNativeAsset?.symbol} on chain ${route.destination} is not properly configured`);
+        throw new Error(
+          `Destination native asset ${destNativeAsset?.symbol} on chain ${route.destination} is not properly configured`,
+        );
       }
 
-      if(
-      mappedRoute.bridgeAssetSymbol.toLowerCase() != destNativeAsset?.symbol.toLowerCase()
-      ||
-      destinationAssetConfig.symbol.toLowerCase() != 'weth'
+      if (
+        mappedRoute.bridgeAssetSymbol.toLowerCase() != destNativeAsset?.symbol.toLowerCase() ||
+        destinationAssetConfig.symbol.toLowerCase() != 'weth'
       ) {
         this.logger.debug('Destination asset does not require wrapping, no callbacks needed', {
           route,
@@ -709,7 +709,6 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       // - coinbase would have delivered native ETH
       // --> we need to wrap
 
-
       // This should never happen - but verify that transaction fee symbol matches bridge asset symbol
       // IE: Verify that the fee they charged was in the same asset as the one withdrawn (The native asset)
       // if not, just leave it unwrapped.
@@ -718,12 +717,13 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
           feeCurrency: withdrawal.network?.transaction_fee?.currency,
           bridgeAssetSymbol: mappedRoute.bridgeAssetSymbol,
           route,
-          withdrawalId: withdrawalRef.id
+          withdrawalId: withdrawalRef.id,
         });
         return;
       }
 
-      const withdrawnUnits = (Number(withdrawal.amount.amount) * -1) - Number(withdrawal.network?.transaction_fee?.amount || 0)
+      const withdrawnUnits =
+        Number(withdrawal.amount.amount) * -1 - Number(withdrawal.network?.transaction_fee?.amount || 0);
 
       // CB api formats withdrawal as negative units. Invert & convert into raw amount for wrapping.
       const wrapAmountRaw = parseUnits(withdrawnUnits.toString(), destinationAssetConfig.decimals);
@@ -742,25 +742,26 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       // Verify destination asset symbol matches contract symbol
       const destinationPublicClient = createPublicClient({
         chain: getViemChain(route.destination),
-        transport: http(this.config.chains[route.destination].providers[0])
+        transport: http(this.config.chains[route.destination].providers[0]),
       });
 
       // safety check: confirm that the target address appears to be a valid ERC20 contract of the intended asset
       try {
-        const contractSymbol = await destinationPublicClient.readContract({
+        const contractSymbol = (await destinationPublicClient.readContract({
           address: destinationAssetConfig.address as `0x${string}`,
           abi: erc20Abi,
-          functionName: 'symbol'
-        }) as string;
+          functionName: 'symbol',
+        })) as string;
 
         if (contractSymbol.toLowerCase() !== destinationAssetConfig.symbol.toLowerCase()) {
-          throw new Error(`Wrap Destination asset symbol mismatch. Expected ${destinationAssetConfig.symbol}, got ${contractSymbol} from contract`);
+          throw new Error(
+            `Wrap Destination asset symbol mismatch. Expected ${destinationAssetConfig.symbol}, got ${contractSymbol} from contract`,
+          );
         }
-
       } catch (error) {
         this.handleError(error, 'verify destination asset symbol', {
           destinationAsset: destinationAssetConfig.address,
-          expectedSymbol: destinationAssetConfig.symbol
+          expectedSymbol: destinationAssetConfig.symbol,
         });
       }
 
@@ -822,5 +823,4 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
     });
     throw new Error(`Failed to ${context}: ${(error as unknown as Error)?.message ?? 'Unknown error'}`);
   }
-
 }

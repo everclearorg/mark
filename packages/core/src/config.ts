@@ -92,7 +92,6 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
 };
 
 export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
-
   const routesLocalYaml = process.env.ROUTES_LOCAL_YAML;
   if (routesLocalYaml) {
     try {
@@ -151,7 +150,6 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
     }
   }
 
-  
   // Try to fetch from S3 first
   const s3Config = await getRebalanceConfigFromS3();
   if (s3Config) {

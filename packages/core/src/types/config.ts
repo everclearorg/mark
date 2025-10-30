@@ -115,7 +115,7 @@ export interface MarkConfiguration extends RebalanceConfig {
     apiSecret?: string;
   };
   coinbase: {
-    apiKey?: string;  
+    apiKey?: string;
     apiSecret?: string;
     allowedRecipients?: string[];
   };

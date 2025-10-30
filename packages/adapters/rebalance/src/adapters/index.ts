@@ -60,11 +60,7 @@ export class RebalanceAdapter {
         if (!this.config.coinbase?.apiKey || !this.config.coinbase?.apiSecret) {
           throw new Error(`Coinbase adapter requires API key and secret`);
         }
-        return new CoinbaseBridgeAdapter(
-          this.config,
-          this.logger,
-          this.db
-        );
+        return new CoinbaseBridgeAdapter(this.config, this.logger, this.db);
       case SupportedBridge.CCTPV1:
         return new CctpBridgeAdapter('v1', this.config.chains, this.logger);
       case SupportedBridge.CCTPV2:

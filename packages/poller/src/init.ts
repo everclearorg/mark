@@ -103,15 +103,14 @@ async function runMigration(logger: Logger): Promise<void> {
     }
 
     // default to aws lambda environment path
-    const db_migration_path = process.env.DATABASE_MIGRATION_PATH ?? '/var/task/db/migrations'
+    const db_migration_path = process.env.DATABASE_MIGRATION_PATH ?? '/var/task/db/migrations';
 
-    logger.info(`Running database migrations from ${db_migration_path}...`)
+    logger.info(`Running database migrations from ${db_migration_path}...`);
 
-    const result = execSync(
-      `dbmate --url "${databaseUrl}" --migrations-dir ${db_migration_path} --no-dump-schema up`,
-      { encoding: 'utf-8' },
-    );
-    logger.info('Database migration completed', { output: result });;
+    const result = execSync(`dbmate --url "${databaseUrl}" --migrations-dir ${db_migration_path} --no-dump-schema up`, {
+      encoding: 'utf-8',
+    });
+    logger.info('Database migration completed', { output: result });
   } catch (error) {
     logger.error('Failed to run database migration', { error });
     throw new Error('Database migration failed - cannot continue with out-of-sync schema');
@@ -160,9 +159,9 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     await cleanupExpiredEarmarks(context);
     await cleanupExpiredRegularRebalanceOps(context);
 
-    let invoiceResult:any; 
+    let invoiceResult;
 
-    if(process.env.RUN_MODE !== 'rebalanceOnly') {
+    if (process.env.RUN_MODE !== 'rebalanceOnly') {
       logger.info('Starting invoice polling', {
         stage: config.stage,
         environment: config.environment,
