@@ -2547,10 +2547,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dbmate/darwin-arm64@npm:2.0.0":
+  version: 2.0.0
+  resolution: "@dbmate/darwin-arm64@npm:2.0.0"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
 "@dbmate/darwin-arm64@npm:2.28.0":
   version: 2.28.0
   resolution: "@dbmate/darwin-arm64@npm:2.28.0"
   conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@dbmate/darwin-x64@npm:2.0.0":
+  version: 2.0.0
+  resolution: "@dbmate/darwin-x64@npm:2.0.0"
+  conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
 
@@ -2561,10 +2575,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dbmate/linux-arm64@npm:2.0.0":
+  version: 2.0.0
+  resolution: "@dbmate/linux-arm64@npm:2.0.0"
+  conditions: os=linux & cpu=arm64
+  languageName: node
+  linkType: hard
+
 "@dbmate/linux-arm64@npm:2.28.0":
   version: 2.28.0
   resolution: "@dbmate/linux-arm64@npm:2.28.0"
   conditions: os=linux & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@dbmate/linux-arm@npm:2.0.0":
+  version: 2.0.0
+  resolution: "@dbmate/linux-arm@npm:2.0.0"
+  conditions: os=linux & cpu=arm
   languageName: node
   linkType: hard
 
@@ -2582,10 +2610,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dbmate/linux-x64@npm:2.0.0":
+  version: 2.0.0
+  resolution: "@dbmate/linux-x64@npm:2.0.0"
+  conditions: os=linux & cpu=x64
+  languageName: node
+  linkType: hard
+
 "@dbmate/linux-x64@npm:2.28.0":
   version: 2.28.0
   resolution: "@dbmate/linux-x64@npm:2.28.0"
   conditions: os=linux & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@dbmate/win32-x64@npm:2.0.0":
+  version: 2.0.0
+  resolution: "@dbmate/win32-x64@npm:2.0.0"
+  conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
 
@@ -4830,6 +4872,7 @@ __metadata:
     "@types/sinon": 17.0.3
     aws-lambda: 1.0.7
     datadog-lambda-js: 10.123.0
+    dbmate: 2.0.0
     dd-trace: 5.42.0
     eslint: 9.17.0
     jest: ^30.0.5
@@ -9568,6 +9611,35 @@ __metadata:
     serialize-error: ^8.1.0
     shimmer: 1.2.1
   checksum: 42512dcc5fcf80c5d762b9e0c8f58d945ab5c94af35928533dafa4f5be66721756c1ddc5e8d2eb39822b1b79dffbdfc10522960cbfe1b75f3957f9cc91d35232
+  languageName: node
+  linkType: hard
+
+"dbmate@npm:2.0.0":
+  version: 2.0.0
+  resolution: "dbmate@npm:2.0.0"
+  dependencies:
+    "@dbmate/darwin-arm64": 2.0.0
+    "@dbmate/darwin-x64": 2.0.0
+    "@dbmate/linux-arm": 2.0.0
+    "@dbmate/linux-arm64": 2.0.0
+    "@dbmate/linux-x64": 2.0.0
+    "@dbmate/win32-x64": 2.0.0
+  dependenciesMeta:
+    "@dbmate/darwin-arm64":
+      optional: true
+    "@dbmate/darwin-x64":
+      optional: true
+    "@dbmate/linux-arm":
+      optional: true
+    "@dbmate/linux-arm64":
+      optional: true
+    "@dbmate/linux-x64":
+      optional: true
+    "@dbmate/win32-x64":
+      optional: true
+  bin:
+    dbmate: bin/dbmate.js
+  checksum: a228cd964a17c04845cbadbeb22dd2b771c163c1665c67a6714db7e97d7c1e98a840db357eed494b9d873e7b562becff08fee52bc0cee1e29fc5b3ac5796bd24
   languageName: node
   linkType: hard
 

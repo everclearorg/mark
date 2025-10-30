@@ -102,12 +102,16 @@ async function runMigration(logger: Logger): Promise<void> {
       return;
     }
 
-    logger.info('Running database migration...');
+    // default to aws lambda environment path
+    const db_migration_path = process.env.DATABASE_MIGRATION_PATH ?? '/var/task/db/migrations'
+
+    logger.info(`Running database migrations from ${db_migration_path}...`)
+
     const result = execSync(
-      `dbmate --url "${databaseUrl}" --migrations-dir /var/task/db/migrations --no-dump-schema up`,
+      `dbmate --url "${databaseUrl}" --migrations-dir ${db_migration_path} --no-dump-schema up`,
       { encoding: 'utf-8' },
     );
-    logger.info('Database migration completed', { output: result });
+    logger.info('Database migration completed', { output: result });;
   } catch (error) {
     logger.error('Failed to run database migration', { error });
     throw new Error('Database migration failed - cannot continue with out-of-sync schema');
