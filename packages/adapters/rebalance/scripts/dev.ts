@@ -7,7 +7,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { Command } from 'commander';
 import * as chains from 'viem/chains'
 import { RebalanceAdapter } from '../src';
-import { RebalanceAction, RebalanceCache } from '@mark/cache';
+import * as database from '@mark/database';
 
 function getViemChain(id: number) {
     for (const chain of Object.values(chains)) {
@@ -27,9 +27,6 @@ const logger = new Logger({
     level: 'debug',
     service: 'mark-dev'
 });
-
-// Initialize cache
-const cache = new RebalanceCache('127.0.0.1', 6379);
 
 interface AdapterOptions {
     amount: string;
@@ -77,7 +74,7 @@ program
             chains: parsed,
             kraken: { apiSecret: process.env.KRAKEN_API_SECRET, apiKey: process.env.KRAKEN_API_KEY },
             binance: { apiSecret: process.env.BINANCE_API_SECRET, apiKey: process.env.BINANCE_API_KEY }
-        } as unknown as MarkConfiguration, logger, cache);
+        } as unknown as MarkConfiguration, logger, database);
         const adapter = rebalancer.getAdapter(type);
 
         // Test the adapter
@@ -315,23 +312,6 @@ async function testBridgeAdapter(
         throw new Error(`No ${RebalanceTransactionMemo.Rebalance} receipt found in receipts.`)
     }
 
-    // Add to the rebalance cache
-    const rebalanceAction: RebalanceAction = {
-        bridge: adapter.type(),
-        amount: amountInWei.toString(),
-        origin: route.origin,
-        destination: route.destination,
-        asset: route.asset,
-        transaction: toTrack.transactionHash,
-        recipient: account.address,
-    };
-    logger.info('Adding rebalance action to cache', {
-        rebalanceAction,
-        route,
-        toTrack,
-    });
-    await cache.addRebalances([rebalanceAction]);
-
     // Poll for transaction readiness
     await pollForTransactionReady(adapter, amountInWei, route, toTrack);
 
@@ -403,7 +383,7 @@ program
             chains: parsed,
             kraken: { apiSecret: process.env.KRAKEN_API_SECRET, apiKey: process.env.KRAKEN_API_KEY },
             binance: { apiSecret: process.env.BINANCE_API_SECRET, apiKey: process.env.BINANCE_API_KEY }
-        } as unknown as MarkConfiguration, logger, cache);
+        } as unknown as MarkConfiguration, logger, database);
         const adapter = rebalancer.getAdapter(type as SupportedBridge);
 
         // Find the asset to get decimals
@@ -426,7 +406,6 @@ program
             ...result
         });
 
-        await cache.removeWithdrawalRecord(options.hash);
     });
 
 // Parse command line arguments
