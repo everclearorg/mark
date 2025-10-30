@@ -1,13 +1,17 @@
 import { config } from 'dotenv';
 import { Logger } from '@mark/logger';
-import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute, MarkConfiguration } from '@mark/core';
+import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute, MarkConfiguration, RebalanceOperationStatus } from '@mark/core';
 import { BridgeAdapter, RebalanceTransactionMemo } from '../src/types';
 import { Account, Hash, parseUnits, TransactionReceipt, createWalletClient, http, createPublicClient, erc20Abi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { createNonceManager, jsonRpc } from 'viem/nonce'
 import { Command } from 'commander';
 import * as chains from 'viem/chains'
 import { RebalanceAdapter } from '../src';
 import * as database from '@mark/database';
+import { CoinbaseClient } from '../src/adapters/coinbase';
+
+const nonceManager = createNonceManager({ source: jsonRpc() });
 
 function getViemChain(id: number) {
     for (const chain of Object.values(chains)) {
@@ -43,42 +47,53 @@ program
     .description('Development tools for Mark protocol adapters')
     .version('0.1.0');
 
-// Add adapter command
 program
     .command('adapter')
-    .description('Test a specific adapter')
+    .description('Test a specific bridge adapter with a bridge transaction on mainnets')
     .argument('<type>', 'Adapter type (e.g. across)')
     .option('-a, --amount <amount>', 'Amount to test with (human units)', '0.01')
     .option('-o, --origin <chainId>', 'Origin chain ID', '1')
     .option('-d, --destination <chainId>', 'Destination chain ID', '10')
     .option('-t, --token <address>', 'Token address to test with')
     .action(async (type: SupportedBridge, options: AdapterOptions) => {
-        // Get private key from env
+
         const privateKey = process.env.PRIVATE_KEY;
         if (!privateKey) {
             throw new Error('PRIVATE_KEY not found in .env');
         }
 
-        // Create account from private key
-        const account = privateKeyToAccount(privateKey as `0x${string}`);
+        // database is necessary for caching and tracking rebalance operations
+        database.initializeDatabase({
+            connectionString: process.env.DATABASE_URL as string,
+            maxConnections: 10,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 5000
+        });
 
-        // Get chain configs
+        const account = privateKeyToAccount(privateKey as `0x${string}`, {nonceManager});
+
         const configs = await getEverclearConfig();
         if (!configs) {
             throw new Error('Failed to get chain configurations');
         }
         const parsed = await parseChainConfigurations(configs, ['WETH', 'USDC', 'USDT', 'ETH'], {});
 
-        // Create appropriate adapter
-        const rebalancer = new RebalanceAdapter({
+        const markConfig = {
             chains: parsed,
+            environment: 'mainnet',
             kraken: { apiSecret: process.env.KRAKEN_API_SECRET, apiKey: process.env.KRAKEN_API_KEY },
-            binance: { apiSecret: process.env.BINANCE_API_SECRET, apiKey: process.env.BINANCE_API_KEY }
-        } as unknown as MarkConfiguration, logger, database);
+            binance: { apiSecret: process.env.BINANCE_API_SECRET, apiKey: process.env.BINANCE_API_KEY },
+            coinbase: { 
+                apiKey: process.env.COINBASE_API_KEY, 
+                apiSecret: process.env.COINBASE_API_SECRET, 
+                allowedRecipients: (process.env.COINBASE_ALLOWED_RECIPIENTS || '').split(',') 
+            }
+        } as unknown as MarkConfiguration
+
+        const rebalancer = new RebalanceAdapter(markConfig, logger, database);
         const adapter = rebalancer.getAdapter(type);
 
-        // Test the adapter
-        await testBridgeAdapter(adapter, account, parsed, options);
+        await testBridgeAdapter(adapter, account, markConfig, options);
     });
 
 // Helper function to handle destination chain operations
@@ -160,8 +175,8 @@ async function pollForTransactionReady(
     logger.info('Starting to poll for transaction readiness...');
     let isReady = false;
     let attempts = 0;
-    const maxAttempts = 5; // 5 minutes with 10s intervals
-    const pollInterval = 15_000; // 10 seconds
+    const maxAttempts = 100;
+    const pollIntervalMs = 15_000; 
 
     while (!isReady && attempts < maxAttempts) {
         attempts++;
@@ -171,7 +186,7 @@ async function pollForTransactionReady(
 
         if (!isReady) {
             logger.info('Transaction not ready yet, waiting...');
-            await new Promise(resolve => setTimeout(resolve, pollInterval));
+            await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
         }
     }
 
@@ -185,7 +200,7 @@ async function pollForTransactionReady(
 async function testBridgeAdapter(
     adapter: BridgeAdapter,
     account: Account,
-    configs: Record<string, ChainConfiguration>,
+    markConfig: MarkConfiguration,
     options: AdapterOptions
 ) {
     logger.info('Starting bridge adapter test', {
@@ -204,7 +219,7 @@ async function testBridgeAdapter(
     logger.info('Created route', { route });
 
     // Find the asset in the origin chain config
-    const originChain = configs[route.origin.toString()];
+    const originChain = markConfig.chains[route.origin.toString()];
     if (!originChain) {
         throw new Error(`Origin chain ${route.origin} not found in config`);
     }
@@ -248,7 +263,7 @@ async function testBridgeAdapter(
     const walletClient = createWalletClient({
         account,
         chain: getViemChain(route.origin),
-        transport: http(originChain.providers[0])
+        transport: http(originChain.providers[0]),
     });
 
     // Get the transaction request
@@ -275,7 +290,7 @@ async function testBridgeAdapter(
         throw new Error(`${account.address} has insufficient balance of ${asset.symbol} (${asset.address}) on ${route.origin} to send via adapter. need ${amountInWei}, have ${balance}.`);
     }
 
-    let toTrack: TransactionReceipt | undefined = undefined;
+    let receiptToTrack: TransactionReceipt | undefined = undefined;
     for (const { transaction: txRequest, memo } of txRequests) {
         if (!txRequest.to || !txRequest.data) {
             throw new Error('Invalid transaction request: missing to or data');
@@ -297,8 +312,9 @@ async function testBridgeAdapter(
         const receipt = await publicClient.waitForTransactionReceipt({
             hash: txHash
         });
+
         if (memo === RebalanceTransactionMemo.Rebalance) {
-            toTrack = receipt as TransactionReceipt;
+            receiptToTrack = receipt as TransactionReceipt;
         }
 
         logger.info(`Bridge transaction confirmed [${memo}]`, {
@@ -308,18 +324,44 @@ async function testBridgeAdapter(
         });
     }
 
-    if (!toTrack) {
+    if (!receiptToTrack) {
         throw new Error(`No ${RebalanceTransactionMemo.Rebalance} receipt found in receipts.`)
     }
 
-    // Poll for transaction readiness
-    await pollForTransactionReady(adapter, amountInWei, route, toTrack);
+    // Create database record for tracking
+    const rebalanceOperation = await database.createRebalanceOperation({
+        earmarkId: null, // NULL indicates regular rebalancing
+        originChainId: route.origin,
+        destinationChainId: route.destination,
+        tickerHash: asset.tickerHash,
+        amount: amountInWei,
+        slippage: 0, // Dev script uses default slippage
+        status: RebalanceOperationStatus.PENDING,
+        bridge: adapter.type() as SupportedBridge,
+        //@ts-ignore
+        transactions: {[route.origin.toString()]: receiptToTrack as TransactionReceipt},
+        recipient: account.address,
+    });
+
+    logger.info('Successfully created rebalance operation in database', {
+        route,
+        bridge: adapter.type(),
+        originTxHash: receiptToTrack.transactionHash,
+        amount: amountInWei,
+    });
+
+    // Poll for transaction readiness (outside of a test, this would normally occur via the poller agent)
+    await pollForTransactionReady(adapter, amountInWei, route, receiptToTrack);
 
     // Handle destination chain operations
-    const result = await handleDestinationChain(adapter, account, configs, route, toTrack);
+    const result = await handleDestinationChain(adapter, account, markConfig.chains, route, receiptToTrack);
+
+    await database.updateRebalanceOperation(rebalanceOperation.id, {
+        status: RebalanceOperationStatus.COMPLETED,
+    });
 
     logger.info('Bridge transaction completed', {
-        bridgeTxHash: toTrack.transactionHash,
+        bridgeTxHash: receiptToTrack.transactionHash,
         ...result
     });
 }
@@ -339,9 +381,10 @@ program
         if (!privateKey) {
             throw new Error('PRIVATE_KEY not found in .env');
         }
+        
 
         // Create account from private key
-        const account = privateKeyToAccount(privateKey as `0x${string}`);
+        const account = privateKeyToAccount(privateKey as `0x${string}`, {nonceManager});
 
         // Get chain configs
         const configs = await getEverclearConfig();
@@ -381,8 +424,9 @@ program
         // Create adapter
         const rebalancer = new RebalanceAdapter({
             chains: parsed,
+            environment: 'mainnet',
             kraken: { apiSecret: process.env.KRAKEN_API_SECRET, apiKey: process.env.KRAKEN_API_KEY },
-            binance: { apiSecret: process.env.BINANCE_API_SECRET, apiKey: process.env.BINANCE_API_KEY }
+            binance: { apiSecret: process.env.BINANCE_API_SECRET, apiKey: process.env.BINANCE_API_KEY },
         } as unknown as MarkConfiguration, logger, database);
         const adapter = rebalancer.getAdapter(type as SupportedBridge);
 
