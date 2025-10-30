@@ -48,6 +48,14 @@ declare module 'zapatos/schema' {
       */
       id: string;
       /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused: boolean | null;
+      /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
       * - Nullable, default: `false`
@@ -85,6 +93,14 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `uuid_generate_v4()`
       */
       id: string;
+      /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused: boolean | null;
       /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
@@ -124,6 +140,14 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, string | db.Parameter<string> | db.SQLFragment | db.ParentColumn>;
       /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused?: boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn>;
+      /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
       * - Nullable, default: `false`
@@ -162,6 +186,14 @@ declare module 'zapatos/schema' {
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment;
       /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused?: boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment;
+      /**
       * **admin_actions.purchase_paused**
       * - `bool` in database
       * - Nullable, default: `false`
@@ -199,6 +231,14 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `uuid_generate_v4()`
       */
       id?: string | db.Parameter<string> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, string | db.Parameter<string> | db.DefaultType | db.SQLFragment>;
+      /**
+      * **admin_actions.ondemand_rebalance_paused**
+      *
+      * Pause flag for on-demand rebalancing operations triggered by invoice processing
+      * - `bool` in database
+      * - Nullable, default: `false`
+      */
+      ondemand_rebalance_paused?: boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment | db.SQLFragment<any, boolean | db.Parameter<boolean> | null | db.DefaultType | db.SQLFragment>;
       /**
       * **admin_actions.purchase_paused**
       * - `bool` in database

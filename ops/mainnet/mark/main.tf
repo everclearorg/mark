@@ -275,6 +275,15 @@ module "mark_admin_api" {
     REDIS_PORT                      = module.cache.redis_instance_port
     ADMIN_TOKEN                     = local.mark_config.admin_token
     DATABASE_URL                    = module.db.database_url
+    SIGNER_URL                      = "http://${module.mark_web3signer.service_url}:9000"
+    SIGNER_ADDRESS                  = local.mark_config.signerAddress
+    MARK_CONFIG_SSM_PARAMETER       = "MARK_CONFIG_MAINNET"
+    SUPPORTED_SETTLEMENT_DOMAINS    = var.supported_settlement_domains
+    SUPPORTED_ASSET_SYMBOLS         = var.supported_asset_symbols
+    ENVIRONMENT                     = var.environment
+    STAGE                           = var.stage
+    CHAIN_IDS                       = var.chain_ids
+    WHITELISTED_RECIPIENTS          = try(local.mark_config.whitelisted_recipients, "")
   }
 }
 

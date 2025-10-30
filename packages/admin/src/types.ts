@@ -1,19 +1,27 @@
 import { PurchaseCache } from '@mark/cache';
-import { LogLevel, RedisConfig, DatabaseConfig } from '@mark/core';
+import { LogLevel, RedisConfig, DatabaseConfig, MarkConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { APIGatewayEvent } from 'aws-lambda';
 import * as database from '@mark/database';
+import { ChainService } from '@mark/chainservice';
+import { RebalanceAdapter } from '@mark/rebalance';
+import { EverclearAdapter } from '@mark/everclear';
 
 export interface AdminConfig {
   logLevel: LogLevel;
   adminToken: string;
   redis: RedisConfig;
   database: DatabaseConfig;
+  whitelistedRecipients?: string[];
+  markConfig: MarkConfiguration;
 }
 
 export interface AdminAdapter {
   database: typeof database;
   purchaseCache: PurchaseCache;
+  chainService: ChainService;
+  rebalanceAdapter: RebalanceAdapter;
+  everclearAdapter: EverclearAdapter;
 }
 
 export interface AdminContext extends AdminAdapter {
@@ -25,17 +33,21 @@ export interface AdminContext extends AdminAdapter {
 }
 
 export enum HttpPaths {
-  ClearPurchase = '/clear/purchase',
-  ClearRebalance = '/clear/rebalance',
   PausePurchase = '/pause/purchase',
   PauseRebalance = '/pause/rebalance',
+  PauseOnDemandRebalance = '/pause/ondemand-rebalance',
   UnpausePurchase = '/unpause/purchase',
   UnpauseRebalance = '/unpause/rebalance',
+  UnpauseOnDemandRebalance = '/unpause/ondemand-rebalance',
   GetEarmarks = '/rebalance/earmarks',
   GetRebalanceOperations = '/rebalance/operations',
   GetEarmarkDetails = '/rebalance/earmark',
+  GetRebalanceOperationDetails = '/rebalance/operation',
   CancelEarmark = '/rebalance/cancel',
   CancelRebalanceOperation = '/rebalance/operation/cancel',
+  TriggerSend = '/trigger/send',
+  TriggerRebalance = '/trigger/rebalance',
+  TriggerIntent = '/trigger/intent',
 }
 
 export interface PaginationParams {
@@ -53,4 +65,5 @@ export interface OperationFilter {
   status?: string;
   chainId?: number;
   earmarkId?: string;
+  invoiceId?: string;
 }
