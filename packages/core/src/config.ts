@@ -33,6 +33,8 @@ export const DEFAULT_GAS_THRESHOLD = '5000000000000000'; // 0.005 eth
 export const DEFAULT_BALANCE_THRESHOLD = '0'; // 0
 export const DEFAULT_INVOICE_AGE = '1';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
+export const EVERCLEAR_MAINNET_STAGING_CONFIG_URL =
+  'https://raw.githubusercontent.com/connext/chaindata/main/everclear.mainnet.staging.json';
 export const EVERCLEAR_TESTNET_CONFIG_URL =
   'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
 export const EVERCLEAR_MAINNET_API_URL = 'https://api.everclear.org';
@@ -104,7 +106,16 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
     const environment = ((await fromEnv('ENVIRONMENT')) ?? 'local') as Environment;
-    const url = environment === 'mainnet' ? EVERCLEAR_MAINNET_CONFIG_URL : EVERCLEAR_TESTNET_CONFIG_URL;
+    const stage = ((await fromEnv('STAGE')) ?? 'development') as Stage;
+
+    // Determine config URL based on environment and stage
+    let url: string;
+    if (environment === 'mainnet') {
+      url = stage === 'staging' ? EVERCLEAR_MAINNET_STAGING_CONFIG_URL : EVERCLEAR_MAINNET_CONFIG_URL;
+    } else {
+      url = EVERCLEAR_TESTNET_CONFIG_URL;
+    }
+
     const apiUrl = environment === 'mainnet' ? EVERCLEAR_MAINNET_API_URL : EVERCLEAR_TESTNET_API_URL;
 
     const hostedConfig = await getEverclearConfig(url);
@@ -192,7 +203,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       supportedAssets,
       chains: await parseChainConfigurations(hostedConfig, supportedAssets, configJson),
       logLevel: ((await fromEnv('LOG_LEVEL')) ?? 'debug') as LogLevel,
-      stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
+      stage,
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
       routes: filteredRoutes,
