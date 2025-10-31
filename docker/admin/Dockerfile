@@ -48,7 +48,10 @@ COPY packages/adapters/database/package.json /tmp/build/packages/adapters/databa
 COPY yarn.lock /tmp/build/
 
 # Install dependencies including devDependencies
-RUN yarn install --immutable && \
+# Note: --mode=skip-build skips preinstall/postinstall scripts during install
+# This avoids the "npx only-allow pnpm" check in @eth-optimism/core-utils
+# Then we run rebuild to build native modules with our build tools
+RUN yarn install --immutable --mode=skip-build && \
     yarn workspaces foreach -A run rebuild
 
 # Copy source files
