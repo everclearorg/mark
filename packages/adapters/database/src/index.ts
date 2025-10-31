@@ -21,6 +21,7 @@ export {
   updateRebalanceOperation,
   getRebalanceOperationsByEarmark,
   getRebalanceOperations,
+  getRebalanceOperationById,
   getTransactionsForRebalanceOperations,
   getRebalanceOperationByTransactionHash,
   createCexWithdrawalRecord,

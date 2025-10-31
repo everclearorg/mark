@@ -9,3 +9,50 @@ Content-Type: application/json
 {
     "adminToken": "{{adminToken}}"
 }
+
+## Unpause rebalancing
+POST {{adminUrl}}/unpause/rebalance
+x-admin-token: {{adminToken}}
+Content-Type: application/json
+
+{
+    "adminToken": "{{adminToken}}"
+}
+
+## Pause on-demand rebalancing
+POST {{adminUrl}}/pause/ondemand-rebalance
+x-admin-token: {{adminToken}}
+Content-Type: application/json
+
+{
+    "adminToken": "{{adminToken}}"
+}
+
+## Unpause on-demand rebalancing
+POST {{adminUrl}}/unpause/ondemand-rebalance
+x-admin-token: {{adminToken}}
+Content-Type: application/json
+
+{
+    "adminToken": "{{adminToken}}"
+}
+
+## Get rebalance operations with pagination
+GET {{adminUrl}}/rebalance/operations?limit=10&offset=0
+x-admin-token: {{adminToken}}
+
+## Get rebalance operations filtered by invoice ID
+GET {{adminUrl}}/rebalance/operations?invoiceId=test-invoice-001
+x-admin-token: {{adminToken}}
+
+## Get rebalance operations with pagination and invoice ID filter
+GET {{adminUrl}}/rebalance/operations?invoiceId=test-invoice-001&limit=5&offset=0
+x-admin-token: {{adminToken}}
+
+## Get rebalance operations with multiple filters
+GET {{adminUrl}}/rebalance/operations?invoiceId=test-invoice-001&status=pending&chainId=1
+x-admin-token: {{adminToken}}
+
+## Get specific rebalance operation by ID
+GET {{adminUrl}}/rebalance/operation/91917d18-dda2-473b-bf3d-461a24520dc5
+x-admin-token: {{adminToken}}

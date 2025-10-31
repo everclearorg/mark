@@ -17,8 +17,10 @@ describe('Admin Actions - Pause Flags (integration)', () => {
   it('defaults to not paused when no records exist', async () => {
     const rebalance = await isPaused('rebalance');
     const purchase = await isPaused('purchase');
+    const ondemand = await isPaused('ondemand');
     expect(rebalance).toBe(false);
     expect(purchase).toBe(false);
+    expect(ondemand).toBe(false);
   });
 
   it('can pause and unpause rebalance independently of purchase', async () => {
@@ -63,5 +65,41 @@ describe('Admin Actions - Pause Flags (integration)', () => {
     // Latest should reflect last writes per flag
     expect(await isPaused('rebalance')).toBe(false);
     expect(await isPaused('purchase')).toBe(true);
+  });
+
+  it('can pause and unpause ondemand independently of rebalance and purchase', async () => {
+    // Pause ondemand
+    await setPause('ondemand', true);
+    expect(await isPaused('ondemand')).toBe(true);
+    expect(await isPaused('rebalance')).toBe(false);
+    expect(await isPaused('purchase')).toBe(false);
+
+    // Unpause ondemand
+    await setPause('ondemand', false);
+    expect(await isPaused('ondemand')).toBe(false);
+    expect(await isPaused('rebalance')).toBe(false);
+    expect(await isPaused('purchase')).toBe(false);
+  });
+
+  it('all pause flags can be set independently', async () => {
+    // Pause all three
+    await setPause('rebalance', true);
+    await setPause('purchase', true);
+    await setPause('ondemand', true);
+    expect(await isPaused('rebalance')).toBe(true);
+    expect(await isPaused('purchase')).toBe(true);
+    expect(await isPaused('ondemand')).toBe(true);
+
+    // Unpause only ondemand
+    await setPause('ondemand', false);
+    expect(await isPaused('rebalance')).toBe(true);
+    expect(await isPaused('purchase')).toBe(true);
+    expect(await isPaused('ondemand')).toBe(false);
+
+    // Unpause only rebalance
+    await setPause('rebalance', false);
+    expect(await isPaused('rebalance')).toBe(false);
+    expect(await isPaused('purchase')).toBe(true);
+    expect(await isPaused('ondemand')).toBe(false);
   });
 });

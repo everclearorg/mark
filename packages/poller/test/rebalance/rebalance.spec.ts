@@ -16,6 +16,7 @@ jest.mock('@mark/database', () => ({
   updateEarmarkStatus: jest.fn(),
   getActiveEarmarkForInvoice: jest.fn(),
   getActiveEarmarksForChain: jest.fn(),
+  getRebalanceOperations: jest.fn().mockResolvedValue({ operations: [], total: 0 }),
   getRebalanceOperationsByEarmark: jest.fn(),
   initializeDatabase: jest.fn(),
   getPool: jest.fn(),
