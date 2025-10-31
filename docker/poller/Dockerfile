@@ -6,7 +6,7 @@ FROM public.ecr.aws/lambda/nodejs:20 AS node
 
 FROM node AS build
 RUN dnf update -y
-RUN dnf install -y git
+RUN dnf install -y git python3 python3-pip make gcc gcc-c++ python3-devel
 
 # Install node-gyp globally
 RUN npm install --global node-gyp
