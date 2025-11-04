@@ -566,16 +566,6 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
       throw new Error(`Received amount (${received}) exceeds withdraw limits (${limit})`);
     }
 
-    // safety check: validate Kraken account balance before withdrawal
-    await validateExchangeAssetBalance(
-      () => this.client.getBalance(),
-      this.logger,
-      'Kraken',
-      destinationMapping.krakenAsset,
-      amount.toString(),
-      destinationAssetConfig.decimals,
-    );
-
     return { received, destinationAssetConfig: destinationAssetConfig!, destinationMapping };
   }
 
