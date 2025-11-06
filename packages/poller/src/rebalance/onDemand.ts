@@ -962,7 +962,7 @@ export async function executeOnDemandRebalancing(
     for (const operation of rebalanceOperations!) {
       try {
         if (operation.isSameChainSwap) {
-          const swapSucceeded = await executeSameChainSwapOperation(operation, context);
+          const swapSucceeded = await executeSameChainSwapOperation(operation, invoice.intent_id, context);
 
           if (!swapSucceeded) {
             logger.error('Failed to execute same-chain swap operation', {
@@ -994,12 +994,14 @@ export async function executeOnDemandRebalancing(
           operation.amount,
           recipient,
           operation.bridge,
+          invoice.intent_id,
           context,
         );
 
         if (result) {
           logger.info('On-demand rebalance transaction confirmed', {
             requestId,
+            invoiceId: invoice.intent_id,
             transactionHash: result.receipt.transactionHash,
             bridgeType: operation.bridge,
             originChain: operation.originChain,
@@ -1281,7 +1283,7 @@ async function handleMinAmountIncrease(
   for (const operation of additionalOperations) {
     try {
       if (operation.isSameChainSwap) {
-        const swapSucceeded = await executeSameChainSwapOperation(operation, context);
+        const swapSucceeded = await executeSameChainSwapOperation(operation, earmark.invoiceId, context);
 
         if (!swapSucceeded) {
           logger.error('Failed to execute additional same-chain swap operation', {
@@ -1313,12 +1315,14 @@ async function handleMinAmountIncrease(
         operation.amount,
         recipient,
         operation.bridge,
+        earmark.invoiceId,
         context,
       );
 
       if (result) {
         logger.info('Additional rebalance transaction confirmed', {
           requestId,
+          invoiceId: earmark.invoiceId,
           transactionHash: result.receipt.transactionHash,
           bridgeType: operation.bridge,
           originChain: operation.originChain,
@@ -1420,6 +1424,7 @@ interface RebalanceTransactionResult {
 
 async function executeSameChainSwapOperation(
   operation: PlannedRebalanceOperation,
+  invoiceId: string,
   context: ProcessingContext,
 ): Promise<boolean> {
   const { rebalance, logger, requestId, config } = context;
@@ -1429,6 +1434,7 @@ async function executeSameChainSwapOperation(
   if (!adapter || !adapter.executeSwap) {
     logger.error('Swap adapter does not support executeSwap', {
       requestId,
+      invoiceId,
       bridgeType: operation.bridge,
       originChain: operation.originChain,
     });
@@ -1463,6 +1469,7 @@ async function executeSameChainSwapOperation(
 
     logger.info('Executed same-chain swap operation', {
       requestId,
+      invoiceId,
       bridgeType: operation.bridge,
       originChain: operation.originChain,
       destinationChain: operation.destinationChain,
@@ -1477,6 +1484,7 @@ async function executeSameChainSwapOperation(
   } catch (error) {
     logger.error('Failed to execute same-chain swap operation', {
       requestId,
+      invoiceId,
       bridgeType: operation.bridge,
       originChain: operation.originChain,
       error: jsonifyError(error),
@@ -1493,6 +1501,7 @@ async function executeRebalanceTransactionWithBridge(
   amount: string,
   recipient: string,
   bridgeType: SupportedBridge,
+  invoiceId: string,
   context: ProcessingContext,
 ): Promise<RebalanceTransactionResult | undefined> {
   const { logger, rebalance, requestId, config } = context;
@@ -1506,6 +1515,7 @@ async function executeRebalanceTransactionWithBridge(
     if (!adapter) {
       logger.error('Bridge adapter not found', {
         requestId,
+        invoiceId,
         bridgeType,
       });
       return undefined;
@@ -1513,6 +1523,7 @@ async function executeRebalanceTransactionWithBridge(
 
     logger.info('Executing on-demand rebalance with pre-determined bridge', {
       requestId,
+      invoiceId,
       route,
       bridgeType,
       amount,
@@ -1530,6 +1541,7 @@ async function executeRebalanceTransactionWithBridge(
       for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
         logger.info('Submitting on-demand rebalance transaction', {
           requestId,
+          invoiceId,
           bridgeType,
           memo,
           transaction,
@@ -1550,11 +1562,12 @@ async function executeRebalanceTransactionWithBridge(
               funcSig: transaction.funcSig || '',
             },
             zodiacConfig,
-            context: { requestId, bridgeType, transactionType: memo },
+            context: { requestId, invoiceId, bridgeType, transactionType: memo },
           });
 
           logger.info('Successfully submitted on-demand rebalance transaction', {
             requestId,
+            invoiceId,
             bridgeType,
             memo,
             transactionHash: result.hash,
@@ -1568,6 +1581,7 @@ async function executeRebalanceTransactionWithBridge(
               effectiveBridgedAmount = effectiveAmount;
               logger.info('Using effective bridged amount from adapter', {
                 requestId,
+                invoiceId,
                 originalAmount: amount,
                 effectiveAmount: effectiveBridgedAmount,
                 bridgeType,
@@ -1577,6 +1591,7 @@ async function executeRebalanceTransactionWithBridge(
         } catch (txError) {
           logger.error('Failed to submit on-demand rebalance transaction', {
             requestId,
+            invoiceId,
             bridgeType,
             memo,
             error: jsonifyError(txError),
@@ -1588,6 +1603,7 @@ async function executeRebalanceTransactionWithBridge(
       if (receipt) {
         logger.info('Successfully completed on-demand rebalance transaction', {
           requestId,
+          invoiceId,
           bridgeType,
           amount: effectiveBridgedAmount,
           originalAmount: amount !== effectiveBridgedAmount ? amount : undefined,
@@ -1603,6 +1619,7 @@ async function executeRebalanceTransactionWithBridge(
   } catch (error) {
     logger.error('Failed to execute rebalance transaction with bridge', {
       requestId,
+      invoiceId,
       bridgeType,
       error: jsonifyError(error),
     });
