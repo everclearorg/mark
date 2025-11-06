@@ -12,6 +12,7 @@ import {
   SupportedBridge,
   MarkConfiguration,
   AssetConfiguration,
+  OnDemandRouteConfig,
 } from '@mark/core';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getMarkBalances, safeStringToBigInt, parseAmountWithDecimals } from '../../src/helpers';
@@ -253,7 +254,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
     rebalance: {
       getAdapters: jest.fn().mockReturnValue({
         [SupportedBridge.Across]: {
-          getReceivedAmount: jest.fn().mockResolvedValue('950'), // 5% slippage
+          getReceivedAmount: jest.fn().mockResolvedValue('960'), // ~4% slippage
         },
       }),
       getAdapter: jest.fn(() => ({
@@ -261,7 +262,7 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           // The adapter receives amounts in native decimals (6 for USDC)
           // Apply ~0.5% slippage to stay within the 500 dbps (5%) limit
           const inputBigInt = BigInt(amount);
-          const outputBigInt = (inputBigInt * 9950n) / 10000n; // 0.5% slippage
+          const outputBigInt = (inputBigInt * 9960n) / 10000n; // ~0.4% slippage
           return Promise.resolve(outputBigInt.toString());
         }),
         send: jest.fn().mockResolvedValue([
@@ -451,11 +452,169 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       // Should still be able to rebalance because we have funds on other chains
       expect(result.canRebalance).toBe(true);
     });
+
+    it('prioritizes same-chain swap routes when destination asset differs', async () => {
+      const ARB_CHAIN = '42161';
+      const USDT_TICKER = '0xusdtarb';
+      const USDC_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
+      const USDT_ADDRESS = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9';
+
+      const invoice = createMockInvoice({
+        destinations: [ARB_CHAIN],
+      });
+
+      (getMarkBalances as jest.Mock).mockResolvedValue(
+        new Map([
+          [
+            MOCK_TICKER_HASH.toLowerCase(),
+            new Map([[ARB_CHAIN, 0n]]),
+          ],
+          [
+            USDT_TICKER.toLowerCase(),
+            new Map([[ARB_CHAIN, BigInt('5000000000000000000')]]),
+          ],
+        ]),
+      );
+
+      const context = createMockContext();
+
+      (database.getActiveEarmarkForInvoice as jest.Mock).mockReset().mockImplementation(() => Promise.resolve(null));
+      (database.createEarmark as jest.Mock).mockReset().mockImplementation(() =>
+        Promise.resolve({
+          id: 'swap-earmark-id',
+          status: 'pending',
+          invoiceId: MOCK_INVOICE_ID,
+          designatedPurchaseChain: Number(ARB_CHAIN),
+          tickerHash: MOCK_TICKER_HASH,
+          minAmount: '1000000000000000000',
+        }),
+      );
+
+      (context.config as unknown as Record<string, unknown>).chains = {
+        ...context.config.chains,
+        [ARB_CHAIN]: {
+          chainId: Number(ARB_CHAIN),
+          name: 'Arbitrum',
+          rpcUrls: ['http://localhost:8547'],
+          assets: [
+            {
+              tickerHash: MOCK_TICKER_HASH,
+              address: USDC_ADDRESS,
+              symbol: 'USDC',
+              decimals: 6,
+            },
+            {
+              tickerHash: USDT_TICKER,
+              address: USDT_ADDRESS,
+              symbol: 'USDT',
+              decimals: 6,
+            },
+          ],
+        },
+      };
+
+      (context.config as unknown as Record<string, unknown>).onDemandRoutes = [
+        {
+          origin: Number(ARB_CHAIN),
+          destination: Number(ARB_CHAIN),
+          asset: USDT_ADDRESS,
+          destinationAsset: USDC_ADDRESS,
+          swapPreferences: [SupportedBridge.CowSwap],
+          preferences: [],
+          slippagesDbps: [100],
+          reserve: '0',
+        },
+      ];
+
+      const swapAdapter = {
+        getReceivedAmount: jest.fn().mockImplementation((amount: string) => amount),
+        executeSwap: jest.fn().mockResolvedValue({
+          orderUid: '0xswap',
+          sellToken: USDT_ADDRESS,
+          buyToken: USDC_ADDRESS,
+          sellAmount: '0',
+          buyAmount: '0',
+          executedSellAmount: '0',
+          executedBuyAmount: '0',
+        }),
+      };
+
+      (context.rebalance.getAdapter as jest.Mock).mockImplementation((bridge: SupportedBridge) => {
+        if (bridge === SupportedBridge.CowSwap) {
+          return swapAdapter;
+        }
+        return {
+          getReceivedAmount: jest.fn().mockResolvedValue('0'),
+          send: jest.fn(),
+        };
+      });
+
+      const minAmounts = {
+        [ARB_CHAIN]: '1000000000000000000',
+      };
+
+      const result = await evaluateOnDemandRebalancing(invoice, minAmounts, context);
+
+      expect(result.canRebalance).toBe(true);
+      expect(result.rebalanceOperations).toBeDefined();
+      expect(result.rebalanceOperations?.length).toBe(1);
+      expect(result.rebalanceOperations?.[0].isSameChainSwap).toBe(true);
+      expect(result.rebalanceOperations?.[0].bridge).toBe(SupportedBridge.CowSwap);
+    });
   });
 
   describe('executeOnDemandRebalancing', () => {
     beforeEach(() => {
       jest.clearAllMocks();
+      (database.getActiveEarmarkForInvoice as jest.Mock).mockReset().mockResolvedValue(null);
+      (database.createEarmark as jest.Mock).mockReset().mockResolvedValue({
+        id: 'mock-earmark-id',
+        status: 'pending',
+        invoiceId: MOCK_INVOICE_ID,
+        designatedPurchaseChain: 1,
+        tickerHash: MOCK_TICKER_HASH,
+        minAmount: '1000',
+      });
+
+      (getMarkBalances as jest.Mock).mockResolvedValue(
+        new Map([
+          [
+            MOCK_TICKER_HASH.toLowerCase(),
+            new Map([
+              ['1', BigInt('0')],
+              ['10', BigInt('2500000000000000000')],
+            ]),
+          ],
+        ]),
+      );
+
+      (getValidatedZodiacConfig as jest.Mock).mockReturnValue({
+        walletType: 'EOA',
+        address: '0xtest',
+      });
+
+      (getActualOwner as jest.Mock).mockReturnValue('0xtest');
+      (getActualAddress as jest.Mock).mockReturnValue('0xtest');
+
+      (submitTransactionWithLogging as jest.Mock).mockResolvedValue({
+        hash: '0xtestHash',
+        receipt: {
+          transactionHash: '0xtestHash',
+          blockNumber: 1000n,
+          blockHash: '0xblockhash',
+          from: '0xfrom',
+          to: '0xto',
+          cumulativeGasUsed: 100000n,
+          effectiveGasPrice: 1000000000n,
+          gasUsed: 50000n,
+          status: 'success',
+          contractAddress: null,
+          logs: [],
+          logsBloom: '0x',
+          transactionIndex: 0,
+          type: 'legacy',
+        },
+      });
     });
 
     it('should create earmark and execute rebalancing operations', async () => {
@@ -475,15 +634,24 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           minAmount: '1000',
         });
 
+      const routeConfig = (context.config.onDemandRoutes || [])[0] as OnDemandRouteConfig;
+
       const evaluationResult = {
         canRebalance: true,
         destinationChain: 1,
         rebalanceOperations: [
           {
-            originChain: 10,
+            originChain: routeConfig.origin,
+            destinationChain: routeConfig.destination,
             amount: '1000',
             bridge: SupportedBridge.Across,
             slippage: 5000,
+            inputAsset: routeConfig.asset,
+            outputAsset: (routeConfig.destinationAsset ?? routeConfig.asset)!,
+            inputTicker: MOCK_TICKER_HASH.toLowerCase(),
+            outputTicker: MOCK_TICKER_HASH.toLowerCase(),
+            expectedOutputAmount: '1000',
+            routeConfig,
           },
         ],
         totalAmount: '1000',
@@ -598,6 +766,261 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       const earmarkId = await executeOnDemandRebalancing(invoice, evaluationResult, context);
 
       expect(earmarkId).toBeNull();
+    });
+
+    it('executes same-chain swap without creating an earmark', async () => {
+      const ARB_CHAIN = '42161';
+      const USDT_TICKER = '0xusdtarb';
+      const USDC_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
+      const USDT_ADDRESS = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9';
+
+      const invoice = createMockInvoice({
+        destinations: [ARB_CHAIN],
+      });
+
+      (getMarkBalances as jest.Mock).mockResolvedValue(
+        new Map([
+          [MOCK_TICKER_HASH.toLowerCase(), new Map([[ARB_CHAIN, 0n]])],
+          [USDT_TICKER.toLowerCase(), new Map([[ARB_CHAIN, BigInt('5000000000000000000')]])],
+        ]),
+      );
+
+      const context = createMockContext();
+
+      (context.config as unknown as Record<string, unknown>).chains = {
+        ...context.config.chains,
+        [ARB_CHAIN]: {
+          chainId: Number(ARB_CHAIN),
+          name: 'Arbitrum',
+          rpcUrls: ['http://localhost:8547'],
+          assets: [
+            {
+              tickerHash: MOCK_TICKER_HASH,
+              address: USDC_ADDRESS,
+              symbol: 'USDC',
+              decimals: 6,
+            },
+            {
+              tickerHash: USDT_TICKER,
+              address: USDT_ADDRESS,
+              symbol: 'USDT',
+              decimals: 6,
+            },
+          ],
+        },
+      };
+
+      (context.config as unknown as Record<string, unknown>).onDemandRoutes = [
+        {
+          origin: Number(ARB_CHAIN),
+          destination: Number(ARB_CHAIN),
+          asset: USDT_ADDRESS,
+          destinationAsset: USDC_ADDRESS,
+          swapPreferences: [SupportedBridge.CowSwap],
+          preferences: [],
+          slippagesDbps: [100],
+          reserve: '0',
+        },
+      ];
+
+      const swapAdapter = {
+        getReceivedAmount: jest.fn().mockImplementation((amount: string) => amount),
+        executeSwap: jest.fn().mockResolvedValue({
+          orderUid: '0xswap',
+          sellToken: USDT_ADDRESS,
+          buyToken: USDC_ADDRESS,
+          sellAmount: '0',
+          buyAmount: '0',
+          executedSellAmount: '0',
+          executedBuyAmount: '0',
+        }),
+      };
+
+      (context.rebalance.getAdapter as jest.Mock).mockImplementation((bridge: SupportedBridge) => {
+        if (bridge === SupportedBridge.CowSwap) {
+          return swapAdapter;
+        }
+        return {
+          getReceivedAmount: jest.fn().mockResolvedValue('0'),
+          send: jest.fn(),
+        };
+      });
+
+      const minAmounts = {
+        [ARB_CHAIN]: '1000000000000000000',
+      };
+
+      const evaluation = await evaluateOnDemandRebalancing(invoice, minAmounts, context);
+
+      expect(evaluation.canRebalance).toBe(true);
+      expect(evaluation.rebalanceOperations).toBeDefined();
+      expect(evaluation.rebalanceOperations?.length).toBe(1);
+      expect(evaluation.rebalanceOperations?.[0].isSameChainSwap).toBe(true);
+
+      const earmarkId = await executeOnDemandRebalancing(invoice, evaluation, context);
+
+      expect(earmarkId).toBeNull();
+      expect(swapAdapter.executeSwap).toHaveBeenCalledTimes(1);
+      expect(database.createEarmark).not.toHaveBeenCalled();
+    });
+
+    it('executes swap+bridge flow and creates earmark', async () => {
+      const ARB_CHAIN = '42161';
+      const OPT_CHAIN = '10';
+      const USDT_TICKER = '0xusdtarb';
+      const USDC_ADDRESS_ARB = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831';
+      const USDT_ADDRESS_ARB = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9';
+      const USDC_ADDRESS_OPT = '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85';
+
+      const invoice = createMockInvoice({
+        destinations: [OPT_CHAIN],
+      });
+
+      (getMarkBalances as jest.Mock).mockResolvedValue(
+        new Map([
+          [MOCK_TICKER_HASH.toLowerCase(), new Map([[OPT_CHAIN, 0n]])],
+          [USDT_TICKER.toLowerCase(), new Map([[ARB_CHAIN, BigInt('5000000000000000000')]])],
+        ]),
+      );
+
+      const context = createMockContext();
+
+      (database.getActiveEarmarkForInvoice as jest.Mock).mockReset().mockImplementation(() => Promise.resolve(null));
+      (database.createEarmark as jest.Mock).mockReset().mockImplementation(() =>
+        Promise.resolve({
+          id: 'swap-bridge-earmark',
+          status: 'pending',
+          invoiceId: MOCK_INVOICE_ID,
+          designatedPurchaseChain: Number(OPT_CHAIN),
+          tickerHash: MOCK_TICKER_HASH,
+          minAmount: '1000000000000000000',
+        }),
+      );
+
+      (context.config as unknown as Record<string, unknown>).chains = {
+        ...context.config.chains,
+        [ARB_CHAIN]: {
+          chainId: Number(ARB_CHAIN),
+          name: 'Arbitrum',
+          rpcUrls: ['http://localhost:8547'],
+          assets: [
+            {
+              tickerHash: MOCK_TICKER_HASH,
+              address: USDC_ADDRESS_ARB,
+              symbol: 'USDC',
+              decimals: 6,
+            },
+            {
+              tickerHash: USDT_TICKER,
+              address: USDT_ADDRESS_ARB,
+              symbol: 'USDT',
+              decimals: 6,
+            },
+          ],
+        },
+        [OPT_CHAIN]: {
+          chainId: Number(OPT_CHAIN),
+          name: 'Optimism',
+          rpcUrls: ['http://localhost:8546'],
+          assets: [
+            {
+              tickerHash: MOCK_TICKER_HASH,
+              address: USDC_ADDRESS_OPT,
+              symbol: 'USDC',
+              decimals: 6,
+            },
+          ],
+        },
+      };
+
+      (context.config as unknown as Record<string, unknown>).onDemandRoutes = [
+        {
+          origin: Number(ARB_CHAIN),
+          destination: Number(OPT_CHAIN),
+          asset: USDT_ADDRESS_ARB,
+          destinationAsset: USDC_ADDRESS_ARB,
+          swapPreferences: [SupportedBridge.CowSwap],
+          preferences: [SupportedBridge.Across],
+          slippagesDbps: [100, 150],
+          reserve: '0',
+        },
+      ];
+
+      const swapAdapter = {
+        getReceivedAmount: jest.fn().mockImplementation((amount: string) => amount),
+        executeSwap: jest.fn().mockResolvedValue({
+          orderUid: '0xswap',
+          sellToken: USDT_ADDRESS_ARB,
+          buyToken: USDC_ADDRESS_ARB,
+          sellAmount: '0',
+          buyAmount: '0',
+          executedSellAmount: '0',
+          executedBuyAmount: '0',
+        }),
+      };
+
+      const bridgeAdapter = {
+        getReceivedAmount: jest.fn().mockImplementation((amount: string) => amount),
+        send: jest.fn().mockResolvedValue([
+          {
+            transaction: {
+              to: '0xbridge',
+              data: '0xdata',
+              value: 0,
+              funcSig: 'bridge',
+            },
+            memo: RebalanceTransactionMemo.Rebalance,
+          },
+        ]),
+      };
+
+      (context.rebalance.getAdapter as jest.Mock).mockImplementation((bridge: SupportedBridge) => {
+        if (bridge === SupportedBridge.CowSwap) {
+          return swapAdapter;
+        }
+        if (bridge === SupportedBridge.Across) {
+          return bridgeAdapter;
+        }
+        return {
+          getReceivedAmount: jest.fn().mockResolvedValue('0'),
+          send: jest.fn(),
+        };
+      });
+
+      const minAmounts = {
+        [OPT_CHAIN]: '1000000000000000000',
+      };
+
+      const evaluation = await evaluateOnDemandRebalancing(invoice, minAmounts, context);
+
+      expect(evaluation.canRebalance).toBe(true);
+      expect(evaluation.rebalanceOperations?.length).toBe(2);
+      expect(evaluation.rebalanceOperations?.[0].isSameChainSwap).toBe(true);
+
+      const { createEarmark } = database;
+      (createEarmark as jest.Mock).mockResolvedValue({
+        id: 'swap-bridge-earmark',
+        status: 'pending',
+        invoiceId: MOCK_INVOICE_ID,
+        designatedPurchaseChain: Number(OPT_CHAIN),
+        tickerHash: MOCK_TICKER_HASH,
+        minAmount: minAmounts[OPT_CHAIN],
+      });
+
+      (database.getActiveEarmarkForInvoice as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({
+          id: 'swap-bridge-earmark',
+          status: EarmarkStatus.PENDING,
+        });
+
+      const earmarkId = await executeOnDemandRebalancing(invoice, evaluation, context);
+
+      expect(earmarkId).toBe('swap-bridge-earmark');
+      expect(swapAdapter.executeSwap).toHaveBeenCalledTimes(1);
+      expect(bridgeAdapter.send).toHaveBeenCalledTimes(1);
+      expect(createEarmark).toHaveBeenCalled();
+      expect(database.createRebalanceOperation).toHaveBeenCalled();
     });
   });
 
