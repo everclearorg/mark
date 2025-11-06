@@ -126,6 +126,11 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       ? JSON.parse(readFileSync('config.json', 'utf8'))
       : JSON.parse(configStr ?? '{}');
 
+    // Extract web3_signer_private_key from config JSON and make it available as an environment variable
+    if (configJson.web3_signer_private_key && !process.env.WEB3_SIGNER_PRIVATE_KEY) {
+      process.env.WEB3_SIGNER_PRIVATE_KEY = configJson.web3_signer_private_key;
+    }
+
     const supportedAssets =
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
 

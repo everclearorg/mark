@@ -64,7 +64,6 @@ export class RebalanceAdapter {
         return new CowSwapBridgeAdapter(
           this.config.chains,
           this.logger,
-          this.rebalanceCache,
         );
       case SupportedBridge.Near:
         return new NearBridgeAdapter(
