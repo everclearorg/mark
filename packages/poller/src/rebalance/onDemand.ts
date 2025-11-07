@@ -871,6 +871,11 @@ async function calculateRebalancingOperations(
   };
 }
 
+/**
+ * Defensive fallback to find route for an operation if routeConfig is missing
+ * Note: routeConfig should always be set when operations are created, so this is only
+ * used as a safety fallback in unexpected scenarios
+ */
 function findRouteForOperation(
   operation: PlannedRebalanceOperation,
   routes: OnDemandRouteConfig[],
@@ -964,74 +969,38 @@ export async function executeOnDemandRebalancing(
 
   try {
     for (const operation of rebalanceOperations!) {
-      try {
+      const execResult = await executeSingleOperation(
+        operation,
+        invoice.intent_id,
+        destinationChain!,
+        context,
+        config.onDemandRoutes || [],
+      );
+
+      if (!execResult) {
+        // Error already logged in executeSingleOperation
+        // For swaps, fail fast; for bridges, continue to next operation
         if (operation.isSameChainSwap) {
-          const swapSucceeded = await executeSameChainSwapOperation(operation, invoice.intent_id, context);
-
-          if (!swapSucceeded) {
-            logger.error('Failed to execute same-chain swap operation', {
-              requestId,
-              invoiceId: invoice.intent_id,
-              operation,
-            });
-            return null;
-          }
-
-          swapSuccessCount += 1;
-          continue;
+          return null;
         }
+        continue;
+      }
 
-        bridgeOperationCount += 1;
+      if (execResult.isSwap) {
+        swapSuccessCount += 1;
+        continue;
+      }
 
-        const routeConfig = operation.routeConfig ?? findRouteForOperation(operation, config.onDemandRoutes || []);
+      bridgeOperationCount += 1;
 
-        if (!routeConfig) {
-          logger.error('Route not found for rebalancing operation', { operation });
-          continue;
-        }
-
-        const recipient = getActualAddress(operation.destinationChain, config, logger, { requestId });
-
-        const result = await executeRebalanceTransactionWithBridge(
-          routeConfig,
-          operation.amount,
-          recipient,
-          operation.bridge,
-          invoice.intent_id,
-          context,
-        );
-
-        if (result) {
-          logger.info('On-demand rebalance transaction confirmed', {
-            requestId,
-            invoiceId: invoice.intent_id,
-            transactionHash: result.receipt.transactionHash,
-            bridgeType: operation.bridge,
-            originChain: operation.originChain,
-            amount: result.effectiveAmount || operation.amount,
-            originalAmount:
-              result.effectiveAmount && result.effectiveAmount !== operation.amount ? operation.amount : undefined,
-          });
-
-          successfulOperations.push({
-            originChainId: operation.originChain,
-            amount: result.effectiveAmount || operation.amount,
-            slippage: operation.slippage,
-            bridge: operation.bridge,
-            receipt: result.receipt,
-            recipient,
-          });
-        } else {
-          logger.warn('Failed to execute rebalancing operation, no transaction returned', {
-            requestId,
-            operation,
-          });
-        }
-      } catch (error) {
-        logger.error('Failed to execute rebalancing operation', {
-          requestId,
-          operation,
-          error: jsonifyError(error),
+      if (execResult.result && execResult.recipient) {
+        successfulOperations.push({
+          originChainId: operation.originChain,
+          amount: execResult.result.effectiveAmount || operation.amount,
+          slippage: operation.slippage,
+          bridge: operation.bridge,
+          receipt: execResult.result.receipt,
+          recipient: execResult.recipient,
         });
       }
     }
@@ -1284,68 +1253,50 @@ async function handleMinAmountIncrease(
 
   // Execute additional rebalancing operations
   for (const operation of additionalOperations) {
-    try {
+    const execResult = await executeSingleOperation(
+      operation,
+      earmark.invoiceId,
+      earmark.designatedPurchaseChain,
+      context,
+      onDemandRoutes,
+    );
+
+    if (!execResult) {
+      // Error already logged in executeSingleOperation
+      // For swaps, fail fast; for bridges, continue to next operation
       if (operation.isSameChainSwap) {
-        const swapSucceeded = await executeSameChainSwapOperation(operation, earmark.invoiceId, context);
-
-        if (!swapSucceeded) {
-          logger.error('Failed to execute additional same-chain swap operation', {
-            requestId,
-            invoiceId: earmark.invoiceId,
-            operation,
-          });
-          return false;
-        }
-
-        continue;
+        return false;
       }
+      continue;
+    }
 
-      additionalBridgeCount += 1;
+    if (execResult.isSwap) {
+      continue;
+    }
 
-      const route = operation.routeConfig ?? findRouteForOperation(operation, onDemandRoutes);
+    additionalBridgeCount += 1;
 
-      if (!route) {
-        logger.error('Route not found for additional rebalancing operation', { operation });
-        continue;
-      }
-
-      const recipient = getActualAddress(earmark.designatedPurchaseChain, config, logger, { requestId });
-
-      const result = await executeRebalanceTransactionWithBridge(
-        route,
-        operation.amount,
-        recipient,
-        operation.bridge,
-        earmark.invoiceId,
-        context,
-      );
-
-      if (result) {
-        logger.info('Additional rebalance transaction confirmed', {
-          requestId,
-          invoiceId: earmark.invoiceId,
-          transactionHash: result.receipt.transactionHash,
-          bridgeType: operation.bridge,
-          originChain: operation.originChain,
-          amount: result.effectiveAmount || operation.amount,
-          originalAmount:
-            result.effectiveAmount && result.effectiveAmount !== operation.amount ? operation.amount : undefined,
-        });
-
-        successfulAdditionalOps.push({
-          originChainId: operation.originChain,
-          amount: result.effectiveAmount || operation.amount,
-          slippage: operation.slippage,
-          bridge: operation.bridge,
-          receipt: result.receipt,
-          recipient,
-        });
-      }
-    } catch (error) {
-      logger.error('Failed to execute additional rebalancing operation', {
+    if (execResult.result && execResult.recipient) {
+      logger.info('Additional rebalance transaction confirmed', {
         requestId,
-        operation,
-        error: jsonifyError(error),
+        invoiceId: earmark.invoiceId,
+        transactionHash: execResult.result.receipt.transactionHash,
+        bridgeType: operation.bridge,
+        originChain: operation.originChain,
+        amount: execResult.result.effectiveAmount || operation.amount,
+        originalAmount:
+          execResult.result.effectiveAmount && execResult.result.effectiveAmount !== operation.amount
+            ? operation.amount
+            : undefined,
+      });
+
+      successfulAdditionalOps.push({
+        originChainId: operation.originChain,
+        amount: execResult.result.effectiveAmount || operation.amount,
+        slippage: operation.slippage,
+        bridge: operation.bridge,
+        receipt: execResult.result.receipt,
+        recipient: execResult.recipient,
       });
     }
   }
@@ -1423,6 +1374,112 @@ interface RebalanceTransactionResult {
   effectiveAmount?: string;
 }
 
+interface ExecuteOperationResult {
+  success: boolean;
+  isSwap: boolean;
+  result?: RebalanceTransactionResult;
+  recipient?: string;
+}
+
+/**
+ * Get recipient address for an operation
+ */
+function getRecipientForOperation(
+  operation: PlannedRebalanceOperation,
+  config: ProcessingContext['config'],
+  logger: ProcessingContext['logger'],
+  context: { requestId: string },
+): string {
+  return getActualAddress(operation.destinationChain, config, logger, context);
+}
+
+/**
+ * Execute a single rebalancing operation (swap or bridge)
+ * Returns structured result for consistent handling by callers
+ */
+async function executeSingleOperation(
+  operation: PlannedRebalanceOperation,
+  invoiceId: string,
+  destinationChain: number,
+  context: ProcessingContext,
+  onDemandRoutes: OnDemandRouteConfig[],
+): Promise<ExecuteOperationResult | null> {
+  const { logger, requestId } = context;
+
+  try {
+    if (operation.isSameChainSwap) {
+      const swapSucceeded = await executeSameChainSwapOperation(operation, invoiceId, context);
+
+      if (!swapSucceeded) {
+        logger.error('Failed to execute same-chain swap operation', {
+          requestId,
+          invoiceId,
+          operation,
+        });
+        return null;
+      }
+
+      return {
+        success: true,
+        isSwap: true,
+      };
+    }
+
+    // Bridge operation - routeConfig should always be set when operations are created
+    // This is a defensive check in case of unexpected state
+    const routeConfig = operation.routeConfig ?? findRouteForOperation(operation, onDemandRoutes);
+
+    if (!routeConfig) {
+      logger.error('Route not found for rebalancing operation', { operation });
+      return null;
+    }
+
+    const recipient = getRecipientForOperation(operation, context.config, logger, { requestId });
+
+    const result = await executeRebalanceTransactionWithBridge(
+      routeConfig,
+      operation.amount,
+      recipient,
+      operation.bridge,
+      invoiceId,
+      context,
+    );
+
+    if (!result) {
+      logger.warn('Failed to execute rebalancing operation, no transaction returned', {
+        requestId,
+        operation,
+      });
+      return null;
+    }
+
+    logger.info('On-demand rebalance transaction confirmed', {
+      requestId,
+      invoiceId,
+      transactionHash: result.receipt.transactionHash,
+      bridgeType: operation.bridge,
+      originChain: operation.originChain,
+      amount: result.effectiveAmount || operation.amount,
+      originalAmount:
+        result.effectiveAmount && result.effectiveAmount !== operation.amount ? operation.amount : undefined,
+    });
+
+    return {
+      success: true,
+      isSwap: false,
+      result,
+      recipient,
+    };
+  } catch (error) {
+    logger.error('Failed to execute rebalancing operation', {
+      requestId,
+      operation,
+      error: jsonifyError(error),
+    });
+    return null;
+  }
+}
+
 async function executeSameChainSwapOperation(
   operation: PlannedRebalanceOperation,
   invoiceId: string,
@@ -1442,28 +1499,25 @@ async function executeSameChainSwapOperation(
     return false;
   }
 
-  const route: OnDemandRouteConfig = operation.routeConfig
-    ? {
-        ...operation.routeConfig,
-        preferences: [...(operation.routeConfig.preferences || [])],
-        swapPreferences: [...(operation.routeConfig.swapPreferences || [])],
-      }
-    : {
-        asset: operation.inputAsset,
-        origin: operation.originChain,
-        destination: operation.destinationChain,
-        destinationAsset: operation.outputAsset,
-        preferences: [],
-        slippagesDbps: [operation.slippage],
-        swapPreferences: [operation.bridge],
-      };
-
-  if (!route.swapPreferences || route.swapPreferences.length === 0) {
-    route.swapPreferences = [operation.bridge];
+  // routeConfig should always be set when operations are created
+  // This is a defensive check in case of unexpected state
+  if (!operation.routeConfig) {
+    logger.error('Route config missing for same-chain swap operation', {
+      requestId,
+      invoiceId,
+      operation,
+    });
+    return false;
   }
 
+  const route: OnDemandRouteConfig = {
+    ...operation.routeConfig,
+    preferences: [...(operation.routeConfig.preferences || [])],
+    swapPreferences: [...(operation.routeConfig.swapPreferences || [])],
+  };
+
   const sender = getActualAddress(operation.originChain, config, logger, { requestId });
-  const recipient = getActualAddress(operation.destinationChain, config, logger, { requestId });
+  const recipient = getRecipientForOperation(operation, config, logger, { requestId });
 
   try {
     const swapResult = await adapter.executeSwap(sender, recipient, operation.amount, route);
