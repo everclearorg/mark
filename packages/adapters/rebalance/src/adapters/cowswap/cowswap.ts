@@ -552,7 +552,8 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
         abi: erc20Abi,
         functionName: 'approve',
         args: [vaultRelayerAddress as Address, 0n],
-        chain: undefined,
+        account: null,
+        chain: null,
       });
 
       this.logger.info('Zero approval transaction sent for USDT', {
@@ -587,7 +588,8 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
       abi: erc20Abi,
       functionName: 'approve',
       args: [vaultRelayerAddress as Address, requiredAmount],
-      chain: undefined,
+      account: null,
+      chain: null,
     });
 
     this.logger.info('Approval transaction sent for CowSwap', {
