@@ -41,6 +41,13 @@ jest.mock('@cowprotocol/cow-sdk', () => ({
   SigningScheme: {
     EIP712: 'eip712',
   },
+  OrderKind: {
+    SELL: 'sell',
+    BUY: 'buy',
+  },
+  OrderQuoteSideKindSell: {
+    SELL: 'sell',
+  },
   COW_PROTOCOL_SETTLEMENT_CONTRACT_ADDRESS: {
     1: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41',
     100: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41',
@@ -493,14 +500,15 @@ describe('CowSwapBridgeAdapter', () => {
 
       const result = await adapter.getReceivedAmount(amount, route);
       expect(result).toBe('999000');
-      expect(mockOrderBookApi.getQuote).toHaveBeenCalledWith({
-        sellToken: USDC_USDT_PAIRS[1].usdc,
-        buyToken: USDC_USDT_PAIRS[1].usdt,
-        from: zeroAddress,
-        receiver: zeroAddress,
-        sellAmountBeforeFee: amount,
-        kind: 'sell',
-      });
+      expect(mockOrderBookApi.getQuote).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sellToken: USDC_USDT_PAIRS[1].usdc,
+          buyToken: USDC_USDT_PAIRS[1].usdt,
+          from: zeroAddress,
+          receiver: zeroAddress,
+          sellAmountBeforeFee: amount,
+        }),
+      );
     });
 
     it('should handle errors', async () => {
@@ -558,6 +566,8 @@ describe('CowSwapBridgeAdapter', () => {
         abi: erc20Abi,
         functionName: 'approve',
         args: [vaultRelayerAddress, requiredAmount],
+        account: null,
+        chain: null,
       });
     });
 
@@ -586,6 +596,8 @@ describe('CowSwapBridgeAdapter', () => {
         abi: erc20Abi,
         functionName: 'approve',
         args: [vaultRelayerAddress, 0n],
+        account: null,
+        chain: null,
       });
     });
 
