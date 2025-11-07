@@ -60,6 +60,7 @@ export enum SupportedBridge {
   Binance = 'binance',
   CCTPV1 = 'cctpv1',
   CCTPV2 = 'cctpv2',
+  CowSwap = 'cowswap',
   Kraken = 'kraken',
   Near = 'near',
 }
@@ -74,6 +75,7 @@ export interface RebalanceRoute {
   asset: string;
   origin: number;
   destination: number;
+  destinationAsset?: string;
 }
 export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum
@@ -86,6 +88,7 @@ export interface OnDemandRouteConfig extends RebalanceRoute {
   slippagesDbps: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
   preferences: SupportedBridge[]; // Priority ordered platforms
   reserve?: string; // Amount to keep on origin chain during rebalancing
+  swapPreferences?: SupportedBridge[]; // Adapter order for same-chain swap step
 }
 
 export interface RebalanceConfig {
