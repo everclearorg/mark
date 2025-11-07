@@ -1790,4 +1790,177 @@ describe('handleApiRequest', () => {
       expect(extractRequest(context)).toBe(HttpPaths.TriggerIntent);
     });
   });
+
+  describe('POST Trigger Swap', () => {
+    it('should return 400 when chainId is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/swap',
+        body: JSON.stringify({
+          inputAsset: 'USDT',
+          outputAsset: 'USDC',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('chainId is required in request body');
+    });
+
+    it('should return 400 when inputAsset is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/swap',
+        body: JSON.stringify({
+          chainId: 42161,
+          outputAsset: 'USDC',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('inputAsset is required in request body');
+    });
+
+    it('should return 400 when outputAsset is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/swap',
+        body: JSON.stringify({
+          chainId: 42161,
+          inputAsset: 'USDT',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('outputAsset is required in request body');
+    });
+
+    it('should return 400 when amount is missing', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/swap',
+        body: JSON.stringify({
+          chainId: 42161,
+          inputAsset: 'USDT',
+          outputAsset: 'USDC',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toBe('amount is required in request body');
+    });
+
+    it('should return 400 when chain is not configured', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/swap',
+        body: JSON.stringify({
+          chainId: 999999,
+          inputAsset: 'USDT',
+          outputAsset: 'USDC',
+          amount: '1000000',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toContain('Chain 999999 is not configured');
+    });
+
+    it('should return 400 when swap adapter does not support executeSwap', async () => {
+      const mockAdapterWithoutExecuteSwap = {
+        getReceivedAmount: jest.fn(),
+        send: jest.fn(),
+        // No executeSwap method
+      };
+
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/swap',
+        body: JSON.stringify({
+          chainId: 42161,
+          inputAsset: 'USDT',
+          outputAsset: 'USDC',
+          amount: '1000000',
+          swapAdapter: 'invalid',
+        }),
+      };
+
+      mockRebalanceAdapter.getAdapter.mockReturnValue(mockAdapterWithoutExecuteSwap);
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toContain('does not support executeSwap operation');
+    });
+
+    it('should return 400 when invalid swap adapter is provided', async () => {
+      const event = {
+        ...mockEvent,
+        path: '/admin/trigger/swap',
+        body: JSON.stringify({
+          chainId: 42161,
+          inputAsset: 'USDT',
+          outputAsset: 'USDC',
+          amount: '1000000',
+          swapAdapter: 'invalid_adapter',
+        }),
+      };
+
+      const result = await handleApiRequest({
+        ...mockAdminContextBase,
+        event,
+      });
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(body.message).toContain('Invalid swap adapter');
+    });
+  });
+
+  describe('extractRequest for trigger/swap', () => {
+    it('should return HttpPaths.TriggerSwap for POST /admin/trigger/swap', () => {
+      const event: APIGatewayEvent = {
+        ...mockEvent,
+        path: '/admin/trigger/swap',
+      };
+      const context: AdminContext = { ...mockAdminContextBase, event };
+      expect(extractRequest(context)).toBe(HttpPaths.TriggerSwap);
+    });
+  });
 });
