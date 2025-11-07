@@ -23,8 +23,6 @@ import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 
-const ACROSS_SLIPPAGE_HEADROOM_DBPS = 10n;
-
 interface OnDemandRebalanceResult {
   canRebalance: boolean;
   destinationChain?: number;

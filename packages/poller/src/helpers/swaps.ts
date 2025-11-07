@@ -463,7 +463,7 @@ export async function planSwapBridgeRoute(
   context: ProcessingContext,
 ): Promise<PlannedOperationPairResult | null> {
   const { route, inputTicker, outputTicker } = entry;
-  const { rebalance, config, logger } = context;
+  const { config, logger } = context;
 
   if (!route.destinationAsset || !route.swapPreferences?.length || route.preferences.length === 0) {
     return null;

@@ -4,7 +4,6 @@ import {
   createWalletClient,
   http,
   Address,
-  Hex,
   zeroAddress,
   defineChain,
   erc20Abi,
@@ -23,6 +22,8 @@ import {
   OrderQuoteResponse,
   OrderCreation,
   SigningScheme,
+  OrderKind,
+  OrderQuoteSideKindSell,
   COW_PROTOCOL_SETTLEMENT_CONTRACT_ADDRESS,
 } from '@cowprotocol/cow-sdk';
 
@@ -91,7 +92,7 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
         from: account.address,
         receiver: recipient,
         sellAmountBeforeFee: amount,
-        kind: 'sell' as any,
+        kind: OrderQuoteSideKindSell.SELL,
       };
 
       const quoteResponse: OrderQuoteResponse = await orderBookApi.getQuote(quoteRequest);
@@ -126,32 +127,38 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
         verifyingContract: COW_PROTOCOL_SETTLEMENT_CONTRACT_ADDRESS[route.origin as SupportedChainId] as Address,
       } as const;
 
-      const unsignedOrder = {
-        ...quote,
+      const unsignedOrder: OrderCreation = {
         sellToken: quote.sellToken as Address,
         buyToken: quote.buyToken as Address,
         sellAmount: totalSellAmount,
+        buyAmount: quote.buyAmount,
+        validTo: quote.validTo,
+        appData: quote.appData as `0x${string}`,
         feeAmount: '0',
+        kind: OrderKind.SELL,
+        partiallyFillable: quote.partiallyFillable,
+        sellTokenBalance: quote.sellTokenBalance,
+        buyTokenBalance: quote.buyTokenBalance,
         from: account.address as Address,
         receiver: (recipient || account.address) as Address,
         signingScheme: SigningScheme.EIP712,
         signature: '0x',
-      } as any;
+      };
 
       const orderStructForSignature = {
-        sellToken: unsignedOrder.sellToken,
-        buyToken: unsignedOrder.buyToken,
-        receiver: unsignedOrder.receiver,
-        sellAmount: unsignedOrder.sellAmount,
-        buyAmount: unsignedOrder.buyAmount,
+        sellToken: unsignedOrder.sellToken as Address,
+        buyToken: unsignedOrder.buyToken as Address,
+        receiver: (unsignedOrder.receiver ?? account.address) as Address,
+        sellAmount: BigInt(unsignedOrder.sellAmount),
+        buyAmount: BigInt(unsignedOrder.buyAmount),
         validTo: unsignedOrder.validTo,
-        appData: unsignedOrder.appData,
-        feeAmount: unsignedOrder.feeAmount,
+        appData: unsignedOrder.appData as `0x${string}`,
+        feeAmount: BigInt(unsignedOrder.feeAmount),
         kind: unsignedOrder.kind,
         partiallyFillable: unsignedOrder.partiallyFillable,
-        sellTokenBalance: unsignedOrder.sellTokenBalance,
-        buyTokenBalance: unsignedOrder.buyTokenBalance,
-      } as const;
+        sellTokenBalance: unsignedOrder.sellTokenBalance ?? 'erc20',
+        buyTokenBalance: unsignedOrder.buyTokenBalance ?? 'erc20',
+      };
 
       const orderTypes = {
         Order: [
@@ -175,7 +182,20 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
         domain,
         types: orderTypes,
         primaryType: 'Order',
-        message: orderStructForSignature,
+        message: orderStructForSignature as {
+          sellToken: Address;
+          buyToken: Address;
+          receiver: Address;
+          sellAmount: bigint;
+          buyAmount: bigint;
+          validTo: number;
+          appData: `0x${string}`;
+          feeAmount: bigint;
+          kind: string;
+          partiallyFillable: boolean;
+          sellTokenBalance: string;
+          buyTokenBalance: string;
+        },
       });
 
       const order = {
@@ -225,8 +245,9 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
       try {
         orderUid = await orderBookApi.sendOrder(order);
         this.logger.info('CowSwap order submitted successfully', { orderUid, chainId: route.origin });
-      } catch (orderError: any) {
+      } catch (orderError: unknown) {
         // Log detailed error information
+        const errorRecord = orderError as Record<string, unknown>;
         this.logger.error('Failed to submit CowSwap order', {
           chainId: route.origin,
           sellToken,
@@ -237,9 +258,9 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
           allowance: finalAllowanceCheck.toString(),
           requiredAmount: totalSellAmount,
           error: jsonifyError(orderError),
-          errorMessage: orderError?.message,
-          errorBody: orderError?.body,
-          errorResponse: orderError?.response?.data,
+          errorMessage: errorRecord?.message,
+          errorBody: errorRecord?.body,
+          errorResponse: (errorRecord?.response as { data?: unknown })?.data,
         });
         throw orderError;
       }
@@ -411,7 +432,7 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
         from: zeroAddress,
         receiver: zeroAddress,
         sellAmountBeforeFee: amount,
-        kind: 'sell' as any,
+        kind: OrderQuoteSideKindSell.SELL,
       };
 
       const quoteResponse: OrderQuoteResponse = await orderBookApi.getQuote(quoteRequest);
@@ -484,7 +505,7 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
       ownerAddress,
     });
 
-    const { publicClient, walletClient, account, chain } = await this.getWalletContext(chainId);
+    const { publicClient, walletClient } = await this.getWalletContext(chainId);
 
     // Check current allowance
     const currentAllowance = await publicClient.readContract({
@@ -531,7 +552,8 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
         abi: erc20Abi,
         functionName: 'approve',
         args: [vaultRelayerAddress as Address, 0n],
-      } as any);
+        chain: undefined,
+      });
 
       this.logger.info('Zero approval transaction sent for USDT', {
         chainId,
@@ -565,7 +587,8 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
       abi: erc20Abi,
       functionName: 'approve',
       args: [vaultRelayerAddress as Address, requiredAmount],
-    } as any);
+      chain: undefined,
+    });
 
     this.logger.info('Approval transaction sent for CowSwap', {
       chainId,
