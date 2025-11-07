@@ -61,10 +61,7 @@ export class RebalanceAdapter {
       case SupportedBridge.CCTPV2:
         return new CctpBridgeAdapter('v2', this.config.chains, this.logger);
       case SupportedBridge.CowSwap:
-        return new CowSwapBridgeAdapter(
-          this.config.chains,
-          this.logger,
-        );
+        return new CowSwapBridgeAdapter(this.config.chains, this.logger);
       case SupportedBridge.Near:
         return new NearBridgeAdapter(
           this.config.chains,

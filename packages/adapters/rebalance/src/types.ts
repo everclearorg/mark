@@ -26,12 +26,7 @@ export interface BridgeAdapter {
     originTransaction: TransactionReceipt,
   ): Promise<MemoizedTransactionRequest | void>;
   readyOnDestination(amount: string, route: RebalanceRoute, originTransaction: TransactionReceipt): Promise<boolean>;
-  executeSwap?(
-    sender: string,
-    recipient: string,
-    amount: string,
-    route: RebalanceRoute,
-  ): Promise<SwapExecutionResult>;
+  executeSwap?(sender: string, recipient: string, amount: string, route: RebalanceRoute): Promise<SwapExecutionResult>;
 }
 
 export interface SwapExecutionResult {

@@ -58,7 +58,12 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
     this.logger.debug('Initializing CowSwapBridgeAdapter with production setup');
   }
 
-  async executeSwap(sender: string, recipient: string, amount: string, route: RebalanceRoute): Promise<SwapExecutionResult> {
+  async executeSwap(
+    sender: string,
+    recipient: string,
+    amount: string,
+    route: RebalanceRoute,
+  ): Promise<SwapExecutionResult> {
     try {
       if (route.origin !== route.destination) {
         throw new Error('CowSwap executeSwap is only supported for same-chain routes');
@@ -71,10 +76,13 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
       const { account, walletClient } = await this.getWalletContext(route.origin);
 
       if (account.address.toLowerCase() !== sender.toLowerCase()) {
-        this.logger.warn('CowSwap adapter sender does not match configured account, proceeding with configured account', {
-          expectedSender: sender,
-          accountAddress: account.address,
-        });
+        this.logger.warn(
+          'CowSwap adapter sender does not match configured account, proceeding with configured account',
+          {
+            expectedSender: sender,
+            accountAddress: account.address,
+          },
+        );
       }
 
       const quoteRequest: OrderQuoteRequest = {
@@ -272,7 +280,7 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
           `Chain ${chainId} is not supported by CowSwap SDK. Supported chains: ${Object.keys(SUPPORTED_NETWORKS).join(', ')}`,
         );
       }
-      
+
       // Map chain ID to SupportedChainId enum value
       const supportedChainId = this.mapChainIdToSupportedChainId(chainId);
       if (!supportedChainId) {
@@ -280,7 +288,7 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
           `Chain ${chainId} is not supported by CowSwap SDK. Supported chains: ${Object.keys(SUPPORTED_NETWORKS).join(', ')}`,
         );
       }
-      
+
       this.logger.debug('Initializing CowSwap OrderBookApi', { chainId, supportedChainId });
       const api = new OrderBookApi({ chainId: supportedChainId });
       this.orderBookApi.set(chainId, api);
@@ -349,9 +357,7 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
         );
       }
       if (route.asset.toLowerCase() === destAssetLower) {
-        throw new Error(
-          `CowSwap adapter requires different assets for swap. Got same asset for both: ${route.asset}`,
-        );
+        throw new Error(`CowSwap adapter requires different assets for swap. Got same asset for both: ${route.asset}`);
       }
     }
   }

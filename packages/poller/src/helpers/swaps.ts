@@ -172,7 +172,7 @@ export async function planSameChainSwap(
   }
 
   const maxSwapSlippage = route.slippagesDbps?.[0] ?? 1000;
-  
+
   // Calculate the required swap input accounting for slippage upfront
   // This ensures we get at least remainingNeeded even with worst-case slippage
   const slippageDivisor = DBPS_MULTIPLIER - BigInt(maxSwapSlippage);
@@ -204,18 +204,19 @@ export async function planSameChainSwap(
   // This can happen if the actual quote is worse than the slippage-adjusted estimate
   const swapSlippage = ((inputIn18 - outputIn18) * DBPS_MULTIPLIER) / inputIn18;
   const needsMore = outputIn18 < remainingNeeded;
-  
+
   if (needsMore && swapSlippage <= BigInt(maxSwapSlippage)) {
     // Scale up proportionally: if we got outputIn18 from swapAmountNative,
     // we need scaleFactor * swapAmountNative to get remainingNeeded
     // Scale factor = remainingNeeded / outputIn18 (with some safety margin for slippage)
     const requiredOutput = (remainingNeeded * DBPS_MULTIPLIER + (slippageDivisor - 1n)) / slippageDivisor;
     const scaleFactor = (requiredOutput * DBPS_MULTIPLIER + (outputIn18 - 1n)) / outputIn18;
-    const scaledSwapAmountNative = (swapAmountNative * scaleFactor + (10n ** BigInt(originDecimals) - 1n)) / (10n ** BigInt(originDecimals));
-    
+    const scaledSwapAmountNative =
+      (swapAmountNative * scaleFactor + (10n ** BigInt(originDecimals) - 1n)) / 10n ** BigInt(originDecimals);
+
     // Cap at available balance
     const newSwapAmountNative = scaledSwapAmountNative < availableNative ? scaledSwapAmountNative : availableNative;
-    
+
     if (newSwapAmountNative > swapAmountNative && newSwapAmountNative <= availableNative) {
       // Get new quote with scaled amount
       swapQuote = await adapter.getReceivedAmount(newSwapAmountNative.toString(), route);
@@ -375,7 +376,8 @@ export async function planDirectBridgeRoute(
         const bufferDbps = ACROSS_SLIPPAGE_HEADROOM_DBPS; // 10 dbps = 0.01%
         const bufferDivisor = DBPS_MULTIPLIER - bufferDbps;
         const bufferedNativeAmount = (adjustedNativeAmount * DBPS_MULTIPLIER + (bufferDivisor - 1n)) / bufferDivisor;
-        const bufferedNativeAmountCapped = bufferedNativeAmount < nativeAmountBigInt ? bufferedNativeAmount : nativeAmountBigInt;
+        const bufferedNativeAmountCapped =
+          bufferedNativeAmount < nativeAmountBigInt ? bufferedNativeAmount : nativeAmountBigInt;
 
         if (bufferedNativeAmountCapped > 0n) {
           try {
@@ -490,7 +492,11 @@ export async function planSwapBridgeRoute(
   const destinationDecimals = getDecimalsFromConfig(invoiceTickerLower, route.destination.toString(), config);
 
   if (!postSwapDecimals || !destinationDecimals) {
-    logger.debug('Missing decimals for swap+bridge route', { route, postSwapTicker, invoiceTicker: invoiceTickerLower });
+    logger.debug('Missing decimals for swap+bridge route', {
+      route,
+      postSwapTicker,
+      invoiceTicker: invoiceTickerLower,
+    });
     return null;
   }
 
@@ -502,7 +508,7 @@ export async function planSwapBridgeRoute(
   // First, estimate how much we need on origin chain (after swap) to get remainingNeeded after bridge
   const bridgeSlippage = route.slippagesDbps?.[0] ?? 1000;
   let maxBridgeSlippage = BigInt(bridgeSlippage);
-  
+
   // Check if Across bridge (has headroom)
   const firstBridgeType = route.preferences[0];
   if (firstBridgeType === SupportedBridge.Across) {
@@ -518,7 +524,10 @@ export async function planSwapBridgeRoute(
 
   const bridgeSlippageDivisor = DBPS_MULTIPLIER - maxBridgeSlippage;
   if (bridgeSlippageDivisor <= 0n) {
-    logger.debug('Invalid bridge slippage divisor for swap+bridge route', { route, maxBridgeSlippage: maxBridgeSlippage.toString() });
+    logger.debug('Invalid bridge slippage divisor for swap+bridge route', {
+      route,
+      maxBridgeSlippage: maxBridgeSlippage.toString(),
+    });
     return null;
   }
 
@@ -555,13 +564,19 @@ export async function planSwapBridgeRoute(
   // For swap+bridge routes, we want to bridge the FULL swap output to maximize final amount
   // So we pass a very large remainingNeeded to prevent planDirectBridgeRoute from scaling down
   // We'll handle the final scaling in adjustSwapBridgeAmounts if needed
-  const bridgeResult = await planDirectBridgeRoute(bridgeEntry, swapProduced, invoiceTickerLower, swapProduced, context);
+  const bridgeResult = await planDirectBridgeRoute(
+    bridgeEntry,
+    swapProduced,
+    invoiceTickerLower,
+    swapProduced,
+    context,
+  );
   if (!bridgeResult) {
     return null;
   }
 
   const { producedAmount, operation: bridgeOperation } = bridgeResult;
-  
+
   // Use the actual bridge output (not capped) for final calculation
   // The bridgeOperation.expectedOutputAmount contains the actual quote output
   const actualBridgeOutput = BigInt(bridgeOperation.expectedOutputAmount || producedAmount.toString());

@@ -785,7 +785,13 @@ async function calculateRebalancingOperations(
         }
       }
     } else if (isDirectBridgeRoute(entry.route)) {
-      const directResult = await planDirectBridgeRoute(entry, availableOnOrigin, invoiceTicker, remainingNeeded, context);
+      const directResult = await planDirectBridgeRoute(
+        entry,
+        availableOnOrigin,
+        invoiceTicker,
+        remainingNeeded,
+        context,
+      );
 
       if (directResult) {
         operations.push(directResult.operation);
@@ -979,8 +985,7 @@ export async function executeOnDemandRebalancing(
 
         bridgeOperationCount += 1;
 
-        const routeConfig =
-          operation.routeConfig ?? findRouteForOperation(operation, config.onDemandRoutes || []);
+        const routeConfig = operation.routeConfig ?? findRouteForOperation(operation, config.onDemandRoutes || []);
 
         if (!routeConfig) {
           logger.error('Route not found for rebalancing operation', { operation });
@@ -1299,9 +1304,7 @@ async function handleMinAmountIncrease(
 
       additionalBridgeCount += 1;
 
-      const route =
-        operation.routeConfig ??
-        findRouteForOperation(operation, onDemandRoutes);
+      const route = operation.routeConfig ?? findRouteForOperation(operation, onDemandRoutes);
 
       if (!route) {
         logger.error('Route not found for additional rebalancing operation', { operation });
@@ -1443,19 +1446,19 @@ async function executeSameChainSwapOperation(
 
   const route: OnDemandRouteConfig = operation.routeConfig
     ? {
-      ...operation.routeConfig,
-      preferences: [...(operation.routeConfig.preferences || [])],
-      swapPreferences: [...(operation.routeConfig.swapPreferences || [])],
-    }
+        ...operation.routeConfig,
+        preferences: [...(operation.routeConfig.preferences || [])],
+        swapPreferences: [...(operation.routeConfig.swapPreferences || [])],
+      }
     : {
-      asset: operation.inputAsset,
-      origin: operation.originChain,
-      destination: operation.destinationChain,
-      destinationAsset: operation.outputAsset,
-      preferences: [],
-      slippagesDbps: [operation.slippage],
-      swapPreferences: [operation.bridge],
-    };
+        asset: operation.inputAsset,
+        origin: operation.originChain,
+        destination: operation.destinationChain,
+        destinationAsset: operation.outputAsset,
+        preferences: [],
+        slippagesDbps: [operation.slippage],
+        swapPreferences: [operation.bridge],
+      };
 
   if (!route.swapPreferences || route.swapPreferences.length === 0) {
     route.swapPreferences = [operation.bridge];
