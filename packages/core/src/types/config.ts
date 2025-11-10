@@ -85,10 +85,11 @@ export interface RouteRebalancingConfig extends RebalanceRoute {
 }
 
 export interface OnDemandRouteConfig extends RebalanceRoute {
-  slippagesDbps: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
-  preferences: SupportedBridge[]; // Priority ordered platforms
+  slippagesDbps: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences (bridge adapters)
+  preferences: SupportedBridge[]; // Priority ordered platforms (bridge adapters)
   reserve?: string; // Amount to keep on origin chain during rebalancing
   swapPreferences?: SupportedBridge[]; // Adapter order for same-chain swap step
+  swapSlippagesDbps?: number[]; // Slippage tolerance for swap adapters (1000 = 1%). Array indices match swapPreferences
 }
 
 export interface RebalanceConfig {

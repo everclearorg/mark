@@ -520,8 +520,9 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           asset: USDT_ADDRESS,
           destinationAsset: USDC_ADDRESS,
           swapPreferences: [SupportedBridge.CowSwap],
+          swapSlippagesDbps: [100],
           preferences: [],
-          slippagesDbps: [100],
+          slippagesDbps: [],
           reserve: '0',
         },
       ];
@@ -817,8 +818,9 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           asset: USDT_ADDRESS,
           destinationAsset: USDC_ADDRESS,
           swapPreferences: [SupportedBridge.CowSwap],
+          swapSlippagesDbps: [100],
           preferences: [],
-          slippagesDbps: [100],
+          slippagesDbps: [],
           reserve: '0',
         },
       ];
@@ -940,8 +942,9 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
           asset: USDT_ADDRESS_ARB,
           destinationAsset: USDC_ADDRESS_ARB,
           swapPreferences: [SupportedBridge.CowSwap],
+          swapSlippagesDbps: [100],
           preferences: [SupportedBridge.Across],
-          slippagesDbps: [100, 150],
+          slippagesDbps: [150],
           reserve: '0',
         },
       ];

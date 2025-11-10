@@ -171,7 +171,7 @@ export async function planSameChainSwap(
     return null;
   }
 
-  const maxSwapSlippage = route.slippagesDbps?.[0] ?? 1000;
+  const maxSwapSlippage = route.swapSlippagesDbps?.[0] ?? 1000;
 
   // Calculate the required swap input accounting for slippage upfront
   // This ensures we get at least remainingNeeded even with worst-case slippage
