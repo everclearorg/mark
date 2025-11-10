@@ -75,7 +75,7 @@ export interface RebalanceRoute {
   asset: string;
   origin: number;
   destination: number;
-  destinationAsset?: string;
+  swapOutputAsset?: string;
 }
 export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum
@@ -85,11 +85,12 @@ export interface RouteRebalancingConfig extends RebalanceRoute {
 }
 
 export interface OnDemandRouteConfig extends RebalanceRoute {
-  slippagesDbps: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences (bridge adapters)
-  preferences: SupportedBridge[]; // Priority ordered platforms (bridge adapters)
+  slippagesDbps?: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences (bridge adapters)
+  preferences?: SupportedBridge[]; // Priority ordered platforms (bridge adapters)
   reserve?: string; // Amount to keep on origin chain during rebalancing
   swapPreferences?: SupportedBridge[]; // Adapter order for same-chain swap step
   swapSlippagesDbps?: number[]; // Slippage tolerance for swap adapters (1000 = 1%). Array indices match swapPreferences
+  swapOutputAsset?: string; // Output asset address on origin chain after swap step (before bridge)
 }
 
 export interface RebalanceConfig {

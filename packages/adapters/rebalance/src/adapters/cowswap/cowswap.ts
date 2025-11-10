@@ -364,18 +364,16 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
     const pair = this.getTokenPair(route.origin);
     const validAssets = [pair.usdc.toLowerCase(), pair.usdt.toLowerCase()];
 
-    // Validate that both asset and destinationAsset (if provided) are in the USDC/USDT pair
+    // Validate that both asset and swapOutputAsset (if provided) are in the USDC/USDT pair
     if (!validAssets.includes(route.asset.toLowerCase())) {
       throw new Error(`CowSwap adapter only supports USDC/USDT swaps. Got asset: ${route.asset}`);
     }
 
-    // If destinationAsset is provided, validate it's also in the pair and different from asset
-    if (route.destinationAsset) {
-      const destAssetLower = route.destinationAsset.toLowerCase();
+    // If swapOutputAsset is provided, validate it's also in the pair and different from asset
+    if (route.swapOutputAsset) {
+      const destAssetLower = route.swapOutputAsset.toLowerCase();
       if (!validAssets.includes(destAssetLower)) {
-        throw new Error(
-          `CowSwap adapter only supports USDC/USDT swaps. Got destinationAsset: ${route.destinationAsset}`,
-        );
+        throw new Error(`CowSwap adapter only supports USDC/USDT swaps. Got swapOutputAsset: ${route.swapOutputAsset}`);
       }
       if (route.asset.toLowerCase() === destAssetLower) {
         throw new Error(`CowSwap adapter requires different assets for swap. Got same asset for both: ${route.asset}`);
@@ -387,18 +385,16 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
     const pair = this.getTokenPair(route.origin);
     const asset = route.asset.toLowerCase();
 
-    // If destinationAsset is explicitly provided, use it to determine direction
-    if (route.destinationAsset) {
-      const destAsset = route.destinationAsset.toLowerCase();
+    // If swapOutputAsset is explicitly provided, use it to determine direction
+    if (route.swapOutputAsset) {
+      const destAsset = route.swapOutputAsset.toLowerCase();
       // Validate that we have a valid USDC/USDT swap pair
       if (asset === pair.usdc.toLowerCase() && destAsset === pair.usdt.toLowerCase()) {
         return { sellToken: pair.usdc, buyToken: pair.usdt };
       } else if (asset === pair.usdt.toLowerCase() && destAsset === pair.usdc.toLowerCase()) {
         return { sellToken: pair.usdt, buyToken: pair.usdc };
       } else {
-        throw new Error(
-          `Invalid USDC/USDT swap pair: asset=${route.asset}, destinationAsset=${route.destinationAsset}`,
-        );
+        throw new Error(`Invalid USDC/USDT swap pair: asset=${route.asset}, swapOutputAsset=${route.swapOutputAsset}`);
       }
     }
 

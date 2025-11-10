@@ -405,32 +405,32 @@ describe('CowSwapBridgeAdapter', () => {
       expect(() => adapter.testValidateSameChainSwap(route)).toThrow('CowSwap adapter only supports USDC/USDT swaps');
     });
 
-    it('should validate destinationAsset when provided', () => {
+    it('should validate swapOutputAsset when provided', () => {
       const route: RebalanceRoute = {
         origin: 1,
         destination: 1,
         asset: USDC_USDT_PAIRS[1].usdc,
-        destinationAsset: USDC_USDT_PAIRS[1].usdt,
+        swapOutputAsset: USDC_USDT_PAIRS[1].usdt,
       };
       expect(() => adapter.testValidateSameChainSwap(route)).not.toThrow();
     });
 
-    it('should throw error for invalid destinationAsset', () => {
+    it('should throw error for invalid swapOutputAsset', () => {
       const route: RebalanceRoute = {
         origin: 1,
         destination: 1,
         asset: USDC_USDT_PAIRS[1].usdc,
-        destinationAsset: '0xInvalidAsset',
+        swapOutputAsset: '0xInvalidAsset',
       };
       expect(() => adapter.testValidateSameChainSwap(route)).toThrow('CowSwap adapter only supports USDC/USDT swaps');
     });
 
-    it('should throw error if asset and destinationAsset are the same', () => {
+    it('should throw error if asset and swapOutputAsset are the same', () => {
       const route: RebalanceRoute = {
         origin: 1,
         destination: 1,
         asset: USDC_USDT_PAIRS[1].usdc,
-        destinationAsset: USDC_USDT_PAIRS[1].usdc,
+        swapOutputAsset: USDC_USDT_PAIRS[1].usdc,
       };
       expect(() => adapter.testValidateSameChainSwap(route)).toThrow('CowSwap adapter requires different assets');
     });
@@ -459,12 +459,12 @@ describe('CowSwapBridgeAdapter', () => {
       expect(result.buyToken.toLowerCase()).toBe(USDC_USDT_PAIRS[1].usdc.toLowerCase());
     });
 
-    it('should use destinationAsset when provided', () => {
+    it('should use swapOutputAsset when provided', () => {
       const route: RebalanceRoute = {
         origin: 1,
         destination: 1,
         asset: USDC_USDT_PAIRS[1].usdc,
-        destinationAsset: USDC_USDT_PAIRS[1].usdt,
+        swapOutputAsset: USDC_USDT_PAIRS[1].usdt,
       };
       const result = adapter.testDetermineSwapDirection(route);
       expect(result.sellToken.toLowerCase()).toBe(USDC_USDT_PAIRS[1].usdc.toLowerCase());

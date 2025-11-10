@@ -44,21 +44,21 @@ export type PlannedOperationPairResult = {
 const ACROSS_SLIPPAGE_HEADROOM_DBPS = 10n;
 
 export function isSameChainSwapRoute(route: OnDemandRouteConfig): boolean {
-  if (!route.destinationAsset) {
+  if (!route.swapOutputAsset) {
     return false;
   }
-  return route.origin === route.destination && route.asset.toLowerCase() !== route.destinationAsset.toLowerCase();
+  return route.origin === route.destination && route.asset.toLowerCase() !== route.swapOutputAsset.toLowerCase();
 }
 
 export function isSwapBridgeRoute(route: OnDemandRouteConfig): boolean {
-  if (!route.destinationAsset) {
+  if (!route.swapOutputAsset) {
     return false;
   }
-  return route.origin !== route.destination && route.asset.toLowerCase() !== route.destinationAsset.toLowerCase();
+  return route.origin !== route.destination && route.asset.toLowerCase() !== route.swapOutputAsset.toLowerCase();
 }
 
 export function isDirectBridgeRoute(route: OnDemandRouteConfig): boolean {
-  return !route.destinationAsset || route.asset.toLowerCase() === route.destinationAsset.toLowerCase();
+  return !route.swapOutputAsset || route.asset.toLowerCase() === route.swapOutputAsset.toLowerCase();
 }
 
 export function getRoutePriority(route: OnDemandRouteConfig): number {
@@ -141,7 +141,7 @@ export async function planSameChainSwap(
   const { route, inputTicker, outputTicker } = entry;
   const { rebalance, config, logger } = context;
 
-  if (!route.destinationAsset || !route.swapPreferences?.length || !inputTicker || !outputTicker) {
+  if (!route.swapOutputAsset || !route.swapPreferences?.length || !inputTicker || !outputTicker) {
     return null;
   }
 
@@ -262,7 +262,7 @@ export async function planSameChainSwap(
     bridge: swapBridge,
     slippage: maxSwapSlippage,
     inputAsset: route.asset,
-    outputAsset: route.destinationAsset,
+    outputAsset: route.swapOutputAsset,
     inputTicker,
     outputTicker,
     isSameChainSwap: true,
@@ -297,6 +297,11 @@ export async function planDirectBridgeRoute(
 
   if (!originDecimals || !destinationDecimals) {
     logger.debug('Missing decimals for direct bridge route', { route });
+    return null;
+  }
+
+  if (!route.preferences || route.preferences.length === 0) {
+    logger.debug('No bridge preferences configured for route', { route });
     return null;
   }
 
@@ -419,9 +424,9 @@ export async function planDirectBridgeRoute(
         }
       }
 
-      const destinationAssetAddress =
+      const swapOutputAssetAddress =
         getTokenAddressFromConfig(invoiceTicker, route.destination.toString(), config) ??
-        route.destinationAsset ??
+        route.swapOutputAsset ??
         route.asset;
 
       const operation: PlannedRebalanceOperation = {
@@ -431,7 +436,7 @@ export async function planDirectBridgeRoute(
         bridge: bridgeType,
         slippage: Number(maxSlippage),
         inputAsset: route.asset,
-        outputAsset: destinationAssetAddress,
+        outputAsset: swapOutputAssetAddress,
         inputTicker,
         outputTicker: invoiceTicker,
         expectedOutputAmount: finalReceivedIn18Decimals.toString(),
@@ -465,12 +470,12 @@ export async function planSwapBridgeRoute(
   const { route, inputTicker, outputTicker } = entry;
   const { config, logger } = context;
 
-  if (!route.destinationAsset || !route.swapPreferences?.length || route.preferences.length === 0) {
+  if (!route.swapOutputAsset || !route.swapPreferences?.length || !route.preferences?.length) {
     return null;
   }
 
   const swapTicker = getTickerForAsset(route.asset, route.origin, config)?.toLowerCase();
-  const postSwapTicker = getTickerForAsset(route.destinationAsset, route.origin, config)?.toLowerCase();
+  const postSwapTicker = getTickerForAsset(route.swapOutputAsset, route.origin, config)?.toLowerCase();
   const invoiceTickerLower = invoiceTicker.toLowerCase();
 
   if (!swapTicker || !postSwapTicker || !inputTicker || !outputTicker) {
@@ -510,7 +515,7 @@ export async function planSwapBridgeRoute(
   let maxBridgeSlippage = BigInt(bridgeSlippage);
 
   // Check if Across bridge (has headroom)
-  const firstBridgeType = route.preferences[0];
+  const firstBridgeType = route.preferences?.[0];
   if (firstBridgeType === SupportedBridge.Across) {
     if (maxBridgeSlippage <= ACROSS_SLIPPAGE_HEADROOM_DBPS) {
       logger.debug('Across route skipped, insufficient slippage budget after headroom', {
@@ -546,7 +551,7 @@ export async function planSwapBridgeRoute(
   const swapProduced = BigInt(swapOperation.expectedOutputAmount || swapResult.producedAmount.toString());
 
   const bridgeRoute: OnDemandRouteConfig = {
-    asset: route.destinationAsset,
+    asset: route.swapOutputAsset,
     origin: route.origin,
     destination: route.destination,
     slippagesDbps: route.slippagesDbps,

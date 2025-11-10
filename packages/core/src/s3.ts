@@ -70,7 +70,7 @@ export const getRebalanceConfigFromS3 = async (): Promise<RebalanceConfig | null
         origin: r.origin,
         destination: r.destination,
         asset: r.asset,
-        destinationAsset: r.destinationAsset,
+        swapOutputAsset: r.swapOutputAsset,
       })),
     });
 

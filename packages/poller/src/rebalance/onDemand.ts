@@ -215,7 +215,7 @@ async function evaluateDestinationChain(
         origin: e.route.origin,
         destination: e.route.destination,
         asset: e.route.asset,
-        destinationAsset: e.route.destinationAsset,
+        swapOutputAsset: e.route.swapOutputAsset,
       },
     })),
   });
@@ -361,8 +361,8 @@ function findMatchingSwapRoute(
   routes: OnDemandRouteConfig[],
   config: ProcessingContext['config'],
 ): OnDemandRouteConfig | undefined {
-  // Must be a direct bridge route (no destinationAsset, cross-chain)
-  if (bridgeRoute.destinationAsset || bridgeRoute.origin === bridgeRoute.destination) {
+  // Must be a direct bridge route (no swapOutputAsset, cross-chain)
+  if (bridgeRoute.swapOutputAsset || bridgeRoute.origin === bridgeRoute.destination) {
     return undefined;
   }
 
@@ -378,12 +378,12 @@ function findMatchingSwapRoute(
     }
 
     // Must have swap configuration
-    if (!r.destinationAsset || !r.swapPreferences?.length) {
+    if (!r.swapOutputAsset || !r.swapPreferences?.length) {
       return false;
     }
 
     // Swap output must match bridge input
-    const swapOutputTicker = getTickerForAsset(r.destinationAsset, r.origin, config)?.toLowerCase();
+    const swapOutputTicker = getTickerForAsset(r.swapOutputAsset, r.origin, config)?.toLowerCase();
     return swapOutputTicker === bridgeInputTicker;
   });
 }
@@ -407,7 +407,7 @@ function buildRouteEntriesForDestination(
       origin: r.origin,
       destination: r.destination,
       asset: r.asset,
-      destinationAsset: r.destinationAsset,
+      swapOutputAsset: r.swapOutputAsset,
     })),
   });
 
@@ -428,7 +428,7 @@ function buildRouteEntriesForDestination(
         origin: route.origin,
         destination: route.destination,
         asset: route.asset,
-        destinationAsset: route.destinationAsset,
+        swapOutputAsset: route.swapOutputAsset,
         preferences: route.preferences,
         swapPreferences: route.swapPreferences,
       },
@@ -459,14 +459,14 @@ function buildRouteEntriesForDestination(
           origin: swapRoute.origin,
           destination: swapRoute.destination,
           asset: swapRoute.asset,
-          destinationAsset: swapRoute.destinationAsset,
+          swapOutputAsset: swapRoute.swapOutputAsset,
         },
       });
 
       combinedRoute = {
         ...route,
         asset: swapRoute.asset, // Use the swap route's input asset
-        destinationAsset: route.asset, // The bridge route's asset (output of swap, input to bridge)
+        swapOutputAsset: route.asset, // The bridge route's asset (output of swap, input to bridge)
         swapPreferences: swapRoute.swapPreferences,
         slippagesDbps: route.slippagesDbps,
       };
@@ -475,62 +475,62 @@ function buildRouteEntriesForDestination(
       logger?.debug('After combining with swap route', {
         invoiceId,
         combinedRouteAsset: combinedRoute.asset,
-        combinedRouteDestinationAsset: combinedRoute.destinationAsset,
+        combinedRouteDestinationAsset: combinedRoute.swapOutputAsset,
         inputTicker: inputTicker || 'not found',
       });
     }
 
-    // For swap+bridge routes, destinationAsset is the intermediate asset on origin chain
+    // For swap+bridge routes, swapOutputAsset is the intermediate asset on origin chain
     // We need to resolve the final output asset from the invoice ticker on destination chain
-    const isSwapBridgeRoute = combinedRoute.destinationAsset && route.origin !== route.destination;
+    const isSwapBridgeRoute = combinedRoute.swapOutputAsset && route.origin !== route.destination;
     logger?.debug('Determining output asset address', {
       invoiceId,
       isSwapBridgeRoute,
-      hasDestinationAsset: !!combinedRoute.destinationAsset,
+      hasDestinationAsset: !!combinedRoute.swapOutputAsset,
       origin: route.origin,
       destination: route.destination,
       routeAsset: route.asset,
-      combinedRouteDestinationAsset: combinedRoute.destinationAsset,
+      combinedRouteDestinationAsset: combinedRoute.swapOutputAsset,
     });
 
     // For swap+bridge routes, we must get the token address from the destination chain config
     // The fallback to route.asset would be wrong (it's on origin chain, not destination)
-    let destinationAssetAddress: string | undefined;
+    let swapOutputAssetAddress: string | undefined;
     if (isSwapBridgeRoute) {
-      destinationAssetAddress = getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config);
-      if (!destinationAssetAddress) {
+      swapOutputAssetAddress = getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config);
+      if (!swapOutputAssetAddress) {
         logger?.warn('Failed to resolve destination asset address for swap+bridge route', {
           invoiceId,
           invoiceTicker: invoiceTickerLower,
           destinationChain: route.destination,
           originChain: route.origin,
-          intermediateAsset: combinedRoute.destinationAsset,
+          intermediateAsset: combinedRoute.swapOutputAsset,
         });
       }
     } else {
-      destinationAssetAddress =
-        combinedRoute.destinationAsset ??
+      swapOutputAssetAddress =
+        combinedRoute.swapOutputAsset ??
         getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config) ??
         route.asset;
     }
 
     logger?.debug('Resolved destination asset address', {
       invoiceId,
-      destinationAssetAddress,
+      swapOutputAssetAddress,
       destinationChain: route.destination,
       invoiceTicker: invoiceTickerLower,
       tokenAddressFromConfig: getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config),
     });
 
     let outputTicker: string | undefined;
-    if (destinationAssetAddress) {
-      outputTicker = getTickerForAsset(destinationAssetAddress, route.destination, config)?.toLowerCase();
+    if (swapOutputAssetAddress) {
+      outputTicker = getTickerForAsset(swapOutputAssetAddress, route.destination, config)?.toLowerCase();
     }
 
     if (!outputTicker) {
       logger?.debug('Output ticker not found, trying fallback', {
         invoiceId,
-        destinationAssetAddress,
+        swapOutputAssetAddress,
         destinationChain: route.destination,
       });
       const fallbackAddress = getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config);
@@ -555,7 +555,7 @@ function buildRouteEntriesForDestination(
         origin: combinedRoute.origin,
         destination: combinedRoute.destination,
         asset: combinedRoute.asset,
-        destinationAsset: combinedRoute.destinationAsset,
+        swapOutputAsset: combinedRoute.swapOutputAsset,
       },
     });
 
@@ -567,7 +567,7 @@ function buildRouteEntriesForDestination(
           origin: combinedRoute.origin,
           destination: combinedRoute.destination,
           asset: combinedRoute.asset,
-          destinationAsset: combinedRoute.destinationAsset,
+          swapOutputAsset: combinedRoute.swapOutputAsset,
         },
         invoiceTicker: invoiceTickerLower,
         inputTicker: inputTicker || 'missing',
@@ -577,7 +577,7 @@ function buildRouteEntriesForDestination(
           : !outputTicker
             ? 'outputTicker not found in config'
             : 'outputTicker does not match invoice ticker',
-        destinationAssetAddress,
+        swapOutputAssetAddress,
         tokenAddressFromConfig: getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config),
       });
       continue;
@@ -895,7 +895,7 @@ function findRouteForOperation(
     }
 
     const routeInput = route.asset.toLowerCase();
-    const routeOutput = (route.destinationAsset ?? route.asset).toLowerCase();
+    const routeOutput = (route.swapOutputAsset ?? route.asset).toLowerCase();
 
     return routeInput === inputAssetLower && routeOutput === outputAssetLower;
   });
