@@ -261,16 +261,26 @@ module "mark_admin_api" {
   security_group_id  = module.sgs.lambda_sg_id
   image_uri          = var.admin_image_uri
   container_env_vars = {
-    DD_SERVICE                 = "${var.bot_name}-admin"
-    DD_LAMBDA_HANDLER          = "index.handler"
-    DD_LOGS_ENABLED            = "true"
-    DD_TRACES_ENABLED          = "true"
-    DD_RUNTIME_METRICS_ENABLED = "true"
-    DD_API_KEY                 = local.mark_config.dd_api_key
-    LOG_LEVEL                  = "debug"
-    REDIS_HOST                 = module.cache.redis_instance_address
-    REDIS_PORT                 = module.cache.redis_instance_port
-    ADMIN_TOKEN                = local.mark_config.admin_token
+    DD_SERVICE                      = "${var.bot_name}-admin"
+    DD_LAMBDA_HANDLER               = "index.handler"
+    DD_LOGS_ENABLED                 = "true"
+    DD_TRACES_ENABLED               = "true"
+    DD_RUNTIME_METRICS_ENABLED      = "true"
+    DD_API_KEY                      = local.mark_config.dd_api_key
+    LOG_LEVEL                       = "debug"
+    REDIS_HOST                      = module.cache.redis_instance_address
+    REDIS_PORT                      = module.cache.redis_instance_port
+    ADMIN_TOKEN                     = local.mark_config.admin_token
+    DATABASE_URL                    = module.db.database_url
+    SIGNER_URL                      = "http://${module.mark_web3signer.service_url}:9000"
+    SIGNER_ADDRESS                  = local.mark_config.signerAddress
+    MARK_CONFIG_SSM_PARAMETER       = "MARK_CONFIG_MAINNET"
+    SUPPORTED_SETTLEMENT_DOMAINS    = var.supported_settlement_domains
+    SUPPORTED_ASSET_SYMBOLS         = var.supported_asset_symbols
+    ENVIRONMENT                     = var.environment
+    STAGE                           = var.stage
+    CHAIN_IDS                       = var.chain_ids
+    WHITELISTED_RECIPIENTS          = try(local.mark_config.whitelisted_recipients, "")
   }
 }
 
@@ -279,6 +289,7 @@ module "db" {
 
   identifier                 = "${var.stage}-${var.environment}-mark-db"
   instance_class             = var.db_instance_class
+  engine_version             = var.db_engine_version
   allocated_storage          = var.db_allocated_storage
   db_name                    = var.db_name
   username                   = var.db_username

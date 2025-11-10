@@ -14,7 +14,6 @@ import {
   isSvmChain,
 } from '@mark/core';
 import { createPublicClient, defineChain, http, parseTransaction, zeroAddress } from 'viem';
-import { jsonRpc, createNonceManager } from 'viem/nonce';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
 export { EthWallet } from '@chimera-monorepo/chainservice';
@@ -34,29 +33,34 @@ export class ChainService {
     private readonly config: ChainServiceConfig,
     private readonly signer: EthWallet,
     private readonly logger: ILogger,
+    txService?: ChimeraChainService,
   ) {
-    // Convert chain configuration format to nxtp-txservice format
-    const nxtpChainConfig = Object.entries(config.chains).reduce(
-      (acc, [chainId, chainConfig]) => ({
-        ...acc,
-        [chainId]: {
-          providers: chainConfig.providers.map((url) => url),
-          confirmations: 2,
-          confirmationTimeout: config.retryDelay || 45000,
-          // NOTE: enable per chain pk overrides
-          privateKey: chainConfig.privateKey,
-        },
-      }),
-      {},
-    );
+    if (txService) {
+      this.txService = txService;
+    } else {
+      // Convert chain configuration format to nxtp-txservice format
+      const nxtpChainConfig = Object.entries(config.chains).reduce(
+        (acc, [chainId, chainConfig]) => ({
+          ...acc,
+          [chainId]: {
+            providers: chainConfig.providers.map((url) => url),
+            confirmations: 2,
+            confirmationTimeout: config.retryDelay || 45000,
+            // NOTE: enable per chain pk overrides
+            privateKey: chainConfig.privateKey,
+          },
+        }),
+        {},
+      );
 
-    this.txService = new ChimeraChainService(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      logger as any,
-      nxtpChainConfig,
-      signer,
-      true,
-    );
+      this.txService = new ChimeraChainService(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        logger as any,
+        nxtpChainConfig,
+        signer,
+        true,
+      );
+    }
 
     this.logger.info('Chain service initialized', {
       supportedChains: Object.keys(config.chains),
@@ -78,7 +82,7 @@ export class ChainService {
     const [url] = this.config.chains[TRON_CHAINID].providers;
     // NOTE: this works for trongrid, but may not for other providers
     const [host, key] = url.split('?apiKey=');
-    const tronWeb = new TronWeb({
+    return new TronWeb({
       fullHost: host,
       privateKey: this.config.chains[TRON_CHAINID].privateKey?.startsWith('0x')
         ? this.config.chains[TRON_CHAINID].privateKey.slice(2)
@@ -87,7 +91,35 @@ export class ChainService {
         'TRON-PRO-API-KEY': key,
       },
     });
-    return tronWeb;
+  }
+
+  private applyGasMultiplier(
+    prepared: {
+      maxFeePerGas?: bigint;
+      maxPriorityFeePerGas?: bigint;
+      gasPrice?: bigint;
+    },
+    chainId: string,
+  ) {
+    const multiplier = chainId === '59144' ? 2.0 : 1.0; // Linea 2x gas multiplier
+    if (multiplier === 1.0) return;
+
+    const scale = (value: bigint) => (value * BigInt(Math.floor(multiplier * 100))) / 100n;
+
+    if (prepared.maxFeePerGas) {
+      prepared.maxFeePerGas = scale(prepared.maxFeePerGas);
+    }
+    if (prepared.maxPriorityFeePerGas) {
+      prepared.maxPriorityFeePerGas = scale(prepared.maxPriorityFeePerGas);
+    }
+    if (prepared.gasPrice) {
+      prepared.gasPrice = scale(prepared.gasPrice);
+    }
+  }
+
+  private getTimeout(chainId: string): number {
+    // Linea needs longer timeout due to slower finality
+    return chainId === '59144' ? 300_000 : 120_000;
   }
 
   async submitAndMonitor(chainId: string, transaction: TransactionRequest): Promise<TransactionReceipt> {
@@ -119,15 +151,20 @@ export class ChainService {
           throw new Error(`Fix native asset transfer handling and use txservice methods`);
         }
 
+        // Remove the function selector because triggerSmartContract expects rawParameter to contain
+        // only the encoded parameters without the function selector, as it will prepend the function
+        // signature automatically
+        const parameterData = writeTransaction.data.startsWith('0x')
+          ? writeTransaction.data.slice(10)
+          : writeTransaction.data.slice(8);
+
         const tx = await tronWeb.transactionBuilder.triggerSmartContract(
           writeTransaction.to,
           writeTransaction.funcSig,
           {
             feeLimit: 1000000000,
             callValue: +writeTransaction.value,
-            rawParameter: writeTransaction.data.startsWith('0x')
-              ? writeTransaction.data.slice(2)
-              : writeTransaction.data,
+            rawParameter: parameterData,
           },
           [], // Empty parameters array since we're using rawParameter
           tronWeb.defaultAddress.hex as string,
@@ -191,13 +228,12 @@ export class ChainService {
       // NOTE: return txservice once gas prices / initial submission errors are fixed
       // (introduced in chainservice version 0.0.1-alpha.12)
       const addresses = await this.getAddress();
-      this.logger.debug('Sending transaction with viem + nonce manager', {
+      this.logger.debug('Sending transaction with viem', {
         chainId,
         writeTransaction,
         addresses,
         signerAddr: await this.signer.getAddress(),
       });
-      const nonceManager = createNonceManager({ source: jsonRpc() });
       const native = this.getAssetConfig(chainId, zeroAddress);
       const chain = defineChain({
         id: +chainId,
@@ -227,8 +263,11 @@ export class ChainService {
         chainId: +chainId,
         chain,
         account,
-        nonceManager,
       });
+
+      // Apply chain-specific gas price adjustments
+      this.applyGasMultiplier(prepared, chainId);
+
       this.logger.info('Transaction prepared with viem', {
         chainId,
         prepared,
@@ -261,20 +300,42 @@ export class ChainService {
         sent,
       });
 
-      let tx = await publicClient.waitForTransactionReceipt({
-        hash: sent,
-        confirmations: 2,
-        onReplaced: (res) => {
-          this.logger.warn('Transaction replaced, detected with viem', {
-            chainId,
-            sent,
-            details: res,
-            writeTransaction,
-          });
+      const timeout = this.getTimeout(chainId);
+      let tx;
+      try {
+        tx = await publicClient.waitForTransactionReceipt({
+          hash: sent,
+          confirmations: 2,
+          timeout,
+          onReplaced: (res) => {
+            this.logger.warn('Transaction replaced, detected with viem', {
+              chainId,
+              sent,
+              details: res,
+              writeTransaction,
+            });
 
-          tx = res.transactionReceipt;
-        },
-      });
+            tx = res.transactionReceipt;
+          },
+        });
+      } catch (error: unknown) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'name' in error &&
+          error.name === 'WaitForTransactionReceiptTimeoutError'
+        ) {
+          this.logger.error('Transaction timeout - may still be pending', {
+            chainId,
+            txHash: sent,
+            timeout,
+            error: jsonifyError(error),
+          });
+          throw new Error(`Transaction timeout after ${timeout}ms. Hash: ${sent}.`);
+        }
+        throw error;
+      }
+
       if (!tx) {
         throw new Error(`Could not assign transaction on waiting or replaced callback`);
       }

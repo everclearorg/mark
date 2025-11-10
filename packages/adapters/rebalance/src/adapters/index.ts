@@ -2,6 +2,7 @@ import { BridgeAdapter } from '../types';
 import { AcrossBridgeAdapter, MAINNET_ACROSS_URL, TESTNET_ACROSS_URL } from './across';
 import { BinanceBridgeAdapter, BINANCE_BASE_URL } from './binance';
 import { CoinbaseBridgeAdapter } from './coinbase';
+import { CowSwapBridgeAdapter } from './cowswap';
 import { KrakenBridgeAdapter, KRAKEN_BASE_URL } from './kraken';
 import { NearBridgeAdapter, NEAR_BASE_URL } from './near';
 import { SupportedBridge, MarkConfiguration } from '@mark/core';
@@ -65,6 +66,8 @@ export class RebalanceAdapter {
         return new CctpBridgeAdapter('v1', this.config.chains, this.logger);
       case SupportedBridge.CCTPV2:
         return new CctpBridgeAdapter('v2', this.config.chains, this.logger);
+      case SupportedBridge.CowSwap:
+        return new CowSwapBridgeAdapter(this.config.chains, this.logger);
       case SupportedBridge.Near:
         return new NearBridgeAdapter(
           this.config.chains,

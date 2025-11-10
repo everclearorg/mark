@@ -314,13 +314,41 @@ export async function getEarmarksWithOperations(
     chainId?: number;
     invoiceId?: string;
   },
-): Promise<
-  Array<
+): Promise<{
+  earmarks: Array<
     CamelCasedProperties<earmarks> & {
       operations?: Array<Record<string, string | number | Date | null>>;
     }
-  >
-> {
+  >;
+  total: number;
+}> {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  let paramCount = 1;
+
+  if (filter) {
+    if (filter.status) {
+      conditions.push(`e.status = $${paramCount++}`);
+      values.push(filter.status);
+    }
+    if (filter.chainId) {
+      conditions.push(`e.designated_purchase_chain = $${paramCount++}`);
+      values.push(filter.chainId);
+    }
+    if (filter.invoiceId) {
+      conditions.push(`e.invoice_id = $${paramCount++}`);
+      values.push(filter.invoiceId);
+    }
+  }
+
+  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+  // Get total count
+  const countQuery = `SELECT COUNT(*) FROM earmarks e ${whereClause}`;
+  const countResult = await queryWithClient<{ count: string }>(countQuery, values);
+  const total = parseInt(countResult[0].count, 10);
+
+  // Get earmarks with operations
   let query = `
     SELECT e.*,
            COALESCE(
@@ -344,32 +372,7 @@ export async function getEarmarksWithOperations(
            ) as operations
     FROM earmarks e
     LEFT JOIN rebalance_operations ro ON e.id = ro.earmark_id
-  `;
-
-  const conditions: string[] = [];
-  const values: unknown[] = [];
-  let paramCount = 1;
-
-  if (filter) {
-    if (filter.status) {
-      conditions.push(`e.status = $${paramCount++}`);
-      values.push(filter.status);
-    }
-    if (filter.chainId) {
-      conditions.push(`e.designated_purchase_chain = $${paramCount++}`);
-      values.push(filter.chainId);
-    }
-    if (filter.invoiceId) {
-      conditions.push(`e.invoice_id = $${paramCount++}`);
-      values.push(filter.invoiceId);
-    }
-  }
-
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
-  }
-
-  query += `
+    ${whereClause}
     GROUP BY e.id
     ORDER BY e.created_at DESC
     LIMIT $${paramCount++} OFFSET $${paramCount}
@@ -395,13 +398,15 @@ export async function getEarmarksWithOperations(
 
   const results = await queryWithClient<QueryResult>(query, values);
 
-  return results.map((row) => {
+  const earmarks = results.map((row) => {
     const { operations, ...earmark } = row;
     return {
       ...snakeToCamel(earmark),
       operations: operations.map((op: Record<string, string | number | Date | null>) => snakeToCamel(op)),
     };
   });
+
+  return { earmarks, total };
 }
 
 export async function createRebalanceOperation(input: {
@@ -905,7 +910,7 @@ export async function setPause(type: 'rebalance' | 'purchase' | 'ondemand', inpu
     const latestQuery = `
       SELECT rebalance_paused, purchase_paused, ondemand_rebalance_paused
       FROM admin_actions
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT 1
     `;
     const latest = await client.query(latestQuery);
@@ -943,7 +948,7 @@ export async function isPaused(type: 'rebalance' | 'purchase' | 'ondemand'): Pro
   const query = `
     SELECT ${column} AS paused
     FROM admin_actions
-    ORDER BY created_at DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT 1
   `;
   const rows = await queryWithClient<{ paused: boolean }>(query);

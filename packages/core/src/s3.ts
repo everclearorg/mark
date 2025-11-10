@@ -66,6 +66,12 @@ export const getRebalanceConfigFromS3 = async (): Promise<RebalanceConfig | null
       key,
       routeCount: config.routes?.length || 0,
       onDemandRouteCount: config.onDemandRoutes?.length || 0,
+      onDemandRoutes: config.onDemandRoutes?.map((r) => ({
+        origin: r.origin,
+        destination: r.destination,
+        asset: r.asset,
+        destinationAsset: r.destinationAsset,
+      })),
     });
 
     return config;
