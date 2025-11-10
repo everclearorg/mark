@@ -176,6 +176,10 @@ const mockConfig: MarkConfiguration = {
     apiKey: 'test-kraken-api-key',
     apiSecret: 'test-kraken-api-secret',
   },
+  coinbase: {
+    apiKey: 'test-api-key',
+    apiSecret: 'test-api-secret',
+  },
   near: {
     jwtToken: 'test-jwt-token',
   },

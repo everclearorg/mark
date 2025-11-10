@@ -40,6 +40,10 @@ export const mockConfig: MarkConfiguration = {
     apiKey: 'test-api-key',
     apiSecret: 'test-api-secret',
   },
+  coinbase: {
+    apiKey: 'test-api-key',
+    apiSecret: 'test-api-secret',
+  },
   near: {
     jwtToken: 'test-jwt-token',
   },
