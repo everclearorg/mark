@@ -868,9 +868,7 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
       }
 
       // Try to find by symbol
-      assetConfig = chainConfig.assets.find(
-        (a: AssetConfiguration) => a.symbol.toLowerCase() === asset.toLowerCase(),
-      );
+      assetConfig = chainConfig.assets.find((a: AssetConfiguration) => a.symbol.toLowerCase() === asset.toLowerCase());
       if (assetConfig) {
         return assetConfig.address;
       }
@@ -964,7 +962,7 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
       asset: inputAssetAddress,
       origin: chainId,
       destination: chainId, // Same-chain swap
-      destinationAsset: outputAssetAddress,
+      swapOutputAsset: outputAssetAddress,
     };
 
     // Get quote from adapter
@@ -986,11 +984,11 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
     if (slippage !== undefined) {
       const slippageDbps = BigInt(slippage);
       const DBPS_MULTIPLIER = 10000000n; // 1e7 for decibasis points
-      
+
       // For swaps, slippage is applied to the received amount (output)
       // Minimum acceptable = quote * (1 - slippage)
       const minimumAcceptableAmount = receivedAmount18 - (receivedAmount18 * slippageDbps) / DBPS_MULTIPLIER;
-      
+
       // Actual slippage will be determined when the order settles
       // For now, we just validate that the quote meets our minimum
       // Note: actualSlippageDbps calculation would require comparing final execution to quote,
@@ -1030,14 +1028,14 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
       // Extract order UID from error message if available
       const errorMessage = error instanceof Error ? error.message : String(error);
       const orderUidMatch = errorMessage.match(/order\s+(0x[a-f0-9]+)/i);
-      
+
       if (orderUidMatch && errorMessage.includes('Timed out waiting')) {
         logger.warn('Swap order created but settlement timed out', {
           orderUid: orderUidMatch[1],
           error: errorMessage,
           note: 'Order was successfully submitted to CowSwap but settlement is pending',
         });
-        
+
         // Return success with order UID, indicating order is pending settlement
         return {
           statusCode: 200,
