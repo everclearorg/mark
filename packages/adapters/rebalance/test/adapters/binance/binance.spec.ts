@@ -313,6 +313,7 @@ function createMockRebalanceOperation(overrides: Partial<any> = {}) {
     createdAt: new Date(),
     updatedAt: new Date(),
     transactions: {},
+    metadata: {},
     ...overrides,
   };
 }
@@ -1635,12 +1636,21 @@ describe('BinanceBridgeAdapter', () => {
       });
       
       mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue({
+        id: 'test-id',
+        earmarkId: 'test-earmark-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isOrphaned: false,
+        metadata: {},
+        slippage: 100,
+        status: 'pending',
+        bridge: SupportedBridge.Binance,
         recipient: '0x9876543210987654321098765432109876543210',
         amount: '100000000000000000',
         originChainId: 1,
         destinationChainId: 42161,
         tickerHash: '0x1234567890123456789012345678901234567890123456789012345678901234',
-        transactions: { origin: '0xtesttx123' },
+        transactions: { },
       });
     });
 
