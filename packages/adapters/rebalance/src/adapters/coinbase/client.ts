@@ -722,7 +722,7 @@ export class CoinbaseClient {
    * Validate Coinbase accounts for supported assets and prepare an account summary.
    * These are high-level checks to confirm general system liveness before client is used further.
    */
-  public async validateAccounts(): Promise<boolean> {
+  private async validateAccounts(): Promise<boolean> {
     const accountList = await this.getAccounts();
 
     // Populate accountId for each supported asset and build accounts summary
