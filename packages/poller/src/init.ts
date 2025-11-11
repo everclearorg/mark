@@ -102,11 +102,14 @@ async function runMigration(logger: Logger): Promise<void> {
       return;
     }
 
-    logger.info('Running database migration...');
-    const result = execSync(
-      `dbmate --url "${databaseUrl}" --migrations-dir /var/task/db/migrations --no-dump-schema up`,
-      { encoding: 'utf-8' },
-    );
+    // default to aws lambda environment path
+    const db_migration_path = process.env.DATABASE_MIGRATION_PATH ?? '/var/task/db/migrations';
+
+    logger.info(`Running database migrations from ${db_migration_path}...`);
+
+    const result = execSync(`dbmate --url "${databaseUrl}" --migrations-dir ${db_migration_path} --no-dump-schema up`, {
+      encoding: 'utf-8',
+    });
     logger.info('Database migration completed', { output: result });
   } catch (error) {
     logger.error('Failed to run database migration', { error });
@@ -146,12 +149,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     adapters = initializeAdapters(config, logger);
     const addresses = await adapters.chainService.getAddress();
 
-    logger.info('Starting invoice polling', {
-      stage: config.stage,
-      environment: config.environment,
-      addresses,
-    });
-
     const context: ProcessingContext = {
       ...adapters,
       config,
@@ -162,10 +159,20 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     await cleanupExpiredEarmarks(context);
     await cleanupExpiredRegularRebalanceOps(context);
 
-    const invoiceResult = await pollAndProcessInvoices(context);
-    logger.info('Successfully processed invoices', { requestId: context.requestId, invoiceResult });
+    let invoiceResult;
 
-    logFileDescriptorUsage(logger);
+    if (process.env.RUN_MODE !== 'rebalanceOnly') {
+      logger.info('Starting invoice polling', {
+        stage: config.stage,
+        environment: config.environment,
+        addresses,
+      });
+
+      invoiceResult = await pollAndProcessInvoices(context);
+      logger.info('Successfully processed invoices', { requestId: context.requestId, invoiceResult });
+
+      logFileDescriptorUsage(logger);
+    }
 
     const rebalanceOperations = await rebalanceInventory(context);
 
@@ -192,13 +199,13 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     };
   } catch (_error: unknown) {
     const error = _error as Error;
-    logger.error('Failed to poll invoices', { name: error.name, message: error.message, stack: error.stack });
+    logger.error('Failed to poll', { name: error.name, message: error.message, stack: error.stack });
 
     logFileDescriptorUsage(logger);
 
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to poll invoices: ' + error.message }),
+      body: JSON.stringify({ error: 'Failed to poll: ' + error.message }),
     };
   } finally {
     if (adapters) {

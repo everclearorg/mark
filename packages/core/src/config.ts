@@ -9,7 +9,11 @@ import {
   Stage,
   HubConfig,
   RebalanceConfig,
+  SupportedBridge,
+  RouteRebalancingConfig,
 } from './types/config';
+import yaml from 'js-yaml';
+import fs from 'fs';
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
 import { existsSync, readFileSync } from 'fs';
@@ -90,6 +94,64 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
 };
 
 export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
+  const routesLocalYaml = process.env.ROUTES_LOCAL_YAML;
+  if (routesLocalYaml) {
+    try {
+      const yamlContent = await fs.promises.readFile(routesLocalYaml, 'utf8');
+      const parsedYaml = yaml.load(yamlContent) as {
+        routes: Array<{
+          asset: string;
+          origin: number;
+          destination: number;
+          maximum: string;
+          slippagesDbps: number[];
+          preferences: string[];
+          reserve?: string;
+        }>;
+      };
+
+      console.log(parsedYaml);
+
+      const routes: RouteRebalancingConfig[] = parsedYaml.routes.reduce((acc, route) => {
+        try {
+          const preferences = route.preferences.map((pref) => {
+            const [key, value] = pref.split('.');
+            switch (key) {
+              case 'SupportedBridge':
+                const bridge = SupportedBridge[value as keyof typeof SupportedBridge];
+                if (bridge === undefined) {
+                  throw new Error(`Unsupported bridge preference: ${pref}`);
+                }
+                return bridge;
+              default:
+                throw new Error(`Unsupported preference key: ${key}`);
+            }
+          });
+
+          acc.push({
+            asset: route.asset,
+            origin: route.origin,
+            destination: route.destination,
+            maximum: route.maximum,
+            slippagesDbps: route.slippagesDbps,
+            preferences,
+            reserve: route.reserve,
+          });
+        } catch (error) {
+          console.error(`Failed to process route: ${route.asset} ${route.origin}>${route.destination}`, error);
+        }
+        return acc;
+      }, [] as RouteRebalancingConfig[]);
+
+      return {
+        routes,
+        onDemandRoutes: [],
+      };
+    } catch (error) {
+      console.error('Failed to load routes from YAML:', error);
+    }
+  }
+
   // Try to fetch from S3 first
   const s3Config = await getRebalanceConfigFromS3();
   if (s3Config) {
@@ -185,6 +247,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       binance: {
         apiKey: configJson.binance_api_key ?? (await fromEnv('BINANCE_API_KEY', true)) ?? undefined,
         apiSecret: configJson.binance_api_secret ?? (await fromEnv('BINANCE_API_SECRET', true)) ?? undefined,
+      },
+      coinbase: {
+        apiKey: configJson.coinbase_api_key ?? (await fromEnv('COINBASE_API_KEY', true)) ?? undefined,
+        apiSecret: configJson.coinbase_api_secret ?? (await fromEnv('COINBASE_API_SECRET', true)) ?? undefined,
       },
       kraken: {
         apiKey: configJson.kraken_api_key ?? (await fromEnv('KRAKEN_API_KEY', true)) ?? undefined,

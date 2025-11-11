@@ -60,6 +60,7 @@ export enum SupportedBridge {
   Binance = 'binance',
   CCTPV1 = 'cctpv1',
   CCTPV2 = 'cctpv2',
+  Coinbase = 'coinbase',
   CowSwap = 'cowswap',
   Kraken = 'kraken',
   Near = 'near',
@@ -117,6 +118,11 @@ export interface MarkConfiguration extends RebalanceConfig {
   binance: {
     apiKey?: string;
     apiSecret?: string;
+  };
+  coinbase: {
+    apiKey?: string;
+    apiSecret?: string;
+    allowedRecipients?: string[];
   };
   kraken: {
     apiKey?: string;

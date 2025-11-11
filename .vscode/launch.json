@@ -1,0 +1,134 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Poller: Dev Debug",
+      "cwd": "${workspaceFolder}/packages/poller",
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {},
+      "sourceMaps": true,
+      "autoAttachChildProcesses": true,
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "outputCapture": "console",
+      "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Rebal: Debug Bridge Adapter",
+      "cwd": "${workspaceFolder}/packages/adapters/rebalance",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd ${workspaceFolder}/packages/adapters/rebalance && yarn run dev adapter ${input:bridgeAdapter} ${input:bridgedAssetChoice} -d ${input:destinationChain}"
+      ],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {},
+      "sourceMaps": true,
+      "autoAttachChildProcesses": true,
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "outputCapture": "console",
+      "internalConsoleOptions": "openOnSessionStart"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "bridgeAdapter",
+      "description": "Select Bridge Adapter",
+      "type": "pickString",
+      "options": [
+        {
+          "label": "Coinbase",
+          "value": "coinbase"
+        },
+        {
+          "label": "Across",
+          "value": "across"
+        },
+      ]
+    },
+    {
+      "id": "bridgedAssetChoice",
+      "description": "Select Asset for Bridge Test",
+      "type": "pickString",
+      "options": [
+        {
+          "label": "WETH on Base (0.00015)",
+          "value": "-t 0x4200000000000000000000000000000000000006 -a 0.00015 -o 8453"
+        },
+        {
+          "label": "WETH on Optimism (0.00015)",
+          "value": "-t 0x4200000000000000000000000000000000000006 -a 0.00015 -o 10"
+        },
+        {
+          "label": "WETH on Unichain (0.00015)",
+          "value": "-t 0x4200000000000000000000000000000000000006 -a 0.00015 -o 130"
+        },
+        {
+          "label": "WETH on Ethereum (0.00015)",
+          "value": "-t 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 -a 0.00015 -o 1"
+        },
+        {
+          "label": "WETH on Polygon (0.00015)",
+          "value": "-t 0x7ceb23fd6bc0add59e62ac25578270cff1b9f619 -a 0.00015 -o 137"
+        },
+        {
+          "label": "USDC on Ethereum (1.50)",
+          "value": "-t 0xA0b86a33E6441b8c4C8C0E4A8D0b4b8c4C8C0E4A -a 1.5 -o 1"
+        },
+        {
+          "label": "USDC on Polygon (1.50)",
+          "value": "-t 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 -a 1.5 -o 137"
+        },
+        {
+          "label": "USDC on Base (1.50)",
+          "value": "-t 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 -a 1.5 -o 8453"
+        },
+        {
+          "label": "USDC on Optimism (1.50)",
+          "value": "-t 0x0b2c639c533813f4aa9d7837caf62653d097ff85 -a 1.5 -o 10"
+        },
+        {
+          "label": "USDC on Arbitrum (1.50)", 
+          "value": "-t 0xaf88d065e77c8cc2239327c5edb3a432268e5831 -a 1.5 -o 42161"
+        }
+      ]
+    },
+    {
+      "id": "destinationChain",
+      "description": "Select Destination Chain",
+      "type": "pickString",
+      "options": [
+        {
+          "label": "Ethereum Mainnet",
+          "value": "1"
+        },
+        {
+          "label": "Polygon",
+          "value": "137"
+        },
+        {
+          "label": "Base",
+          "value": "8453"
+        },
+        {
+          "label": "Arbitrum",
+          "value": "42161"
+        },
+        {
+          "label": "Optimism",
+          "value": "10"
+        }
+      ]
+    }
+  ]
+}
