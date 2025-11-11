@@ -330,6 +330,106 @@ describe('CoinbaseClient', () => {
     );
   });
 
+  it('getTransactionByHash stops early when condition matches on second page', async () => {
+    mockAxios
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ network: { hash: '0xnotit' } }],
+          pagination: { next_starting_after: 'cursor1' },
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        data: {
+          data: [{ network: { hash: '0xdeadbeef' } }],
+          pagination: {},
+        },
+      } as any);
+    const client = await (CoinbaseClient as any).getInstance({
+      apiKey,
+      apiSecret,
+      allowedRecipients,
+      skipValidation: true,
+    });
+    const tx = await client.getTransactionByHash('acc', 'addr', '0xdeadbeef');
+    expect(tx).not.toBeNull();
+    expect(tx?.network?.hash).toBe('0xdeadbeef');
+  });
+
+  it('makeRequest throws when GET query param is not string', async () => {
+    const client = await (CoinbaseClient as any).getInstance({
+      apiKey,
+      apiSecret,
+      allowedRecipients,
+      skipValidation: true,
+    });
+    await expect(
+      (client as any).makeRequest({
+        method: 'GET',
+        path: '/test',
+        body: { limit: 100 },
+      }),
+    ).rejects.toThrow('Query parameter "limit" must be a string');
+  });
+
+  it('getDepositAccount throws when no matching address found', async () => {
+    mockAxios
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              id: 'acc-eth',
+              name: 'ETH',
+              type: 'wallet',
+              currency: { code: 'ETH', name: 'Ethereum' },
+              balance: { amount: '1', currency: 'ETH' },
+            },
+          ],
+          pagination: {},
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        data: { data: [{ id: 'addr-1', address: '0xabc', network: 'polygon' }], pagination: {} },
+      } as any)
+      .mockResolvedValueOnce({ data: { data: { id: 'addr-1', address: '0xabc', network: 'polygon' } } } as any);
+    const client = await (CoinbaseClient as any).getInstance({
+      apiKey,
+      apiSecret,
+      allowedRecipients,
+      skipValidation: true,
+    });
+    await expect(client.getDepositAccount('ETH', 'ethereum')).rejects.toThrow(
+      'No deposit address available for ETH on ethereum',
+    );
+  });
+
+  it('getDepositAccount handles listAddresses 500 error', async () => {
+    mockAxios
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              id: 'acc-eth',
+              name: 'ETH',
+              type: 'wallet',
+              currency: { code: 'ETH', name: 'Ethereum' },
+              balance: { amount: '1', currency: 'ETH' },
+            },
+          ],
+          pagination: {},
+        },
+      } as any)
+      .mockRejectedValueOnce(new Error('500 Internal Server Error'));
+    const client = await (CoinbaseClient as any).getInstance({
+      apiKey,
+      apiSecret,
+      allowedRecipients,
+      skipValidation: true,
+    });
+    await expect(client.getDepositAccount('ETH', 'ethereum')).rejects.toThrow(
+      'No deposit address available for ETH on ethereum',
+    );
+  });
+
 });
 
 
