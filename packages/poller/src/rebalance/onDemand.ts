@@ -1816,18 +1816,15 @@ export async function cleanupStaleEarmarks(invoiceIds: string[], context: Proces
   }
 }
 
-export async function getAvailableBalanceLessEarmarks(
+export async function getEarmarkedBalance(
   chainId: number,
   tickerHash: string,
   context: ProcessingContext,
 ): Promise<bigint> {
-  const { config, chainService, prometheus } = context;
+  const { config } = context;
 
-  // Get total balance
-  const balances = await getMarkBalances(config, chainService, prometheus);
   const ticker = tickerHash.toLowerCase();
-  const totalBalance = balances.get(ticker)?.get(chainId.toString()) || 0n;
-
+  
   // Get earmarked amounts (both pending and ready)
   const earmarks = await database.getEarmarks({
     designatedPurchaseChain: chainId,
@@ -1867,5 +1864,5 @@ export async function getAvailableBalanceLessEarmarks(
       return sum + convertTo18Decimals(BigInt(op.amount), decimals);
     }, 0n);
 
-  return totalBalance - (earmarkedAmount > onDemandFunds ? earmarkedAmount : onDemandFunds);
+  return earmarkedAmount > onDemandFunds ? earmarkedAmount : onDemandFunds;
 }
