@@ -3,6 +3,7 @@ import {
   createPublicClient,
   encodeFunctionData,
   http,
+  fallback,
   zeroAddress,
   erc20Abi,
   PublicClient,
@@ -843,14 +844,17 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     }
 
     try {
+      const providers = chainConfig.providers;
+      const transports = providers.map((url) => http(url));
+      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
       return createPublicClient({
-        transport: http(chainConfig.providers[0]),
+        transport,
       });
     } catch (error) {
       this.logger.error('Failed to create provider', {
         error: jsonifyError(error),
         chainId,
-        provider: chainConfig.providers[0],
+        providers: chainConfig.providers,
       });
       return undefined;
     }
