@@ -9,3 +9,13 @@ export const BPS_MULTIPLIER = 10000n;
  * Used for percentage calculations where 1 basis point = 0.001%
  */
 export const DBPS_MULTIPLIER = 100000n;
+
+/**
+ * Mainnet chain ID
+ */
+export const MAINNET_CHAIN_ID = '1';
+
+/**
+ * Mantle chain ID
+ */
+export const MANTLE_CHAIN_ID = '5000';

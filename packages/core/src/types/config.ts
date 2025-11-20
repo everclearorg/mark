@@ -64,6 +64,7 @@ export enum SupportedBridge {
   CowSwap = 'cowswap',
   Kraken = 'kraken',
   Near = 'near',
+  Mantle = 'mantle',
 }
 
 export enum GasType {
