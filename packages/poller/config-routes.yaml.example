@@ -14,9 +14,9 @@ routes:
     asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
     origin: 8453
     destination: 42161
-    maximum: '50000000' # 50 USDC
+    maximum: '50000000000000000000' # 50 USDC (intentionally standardized to 18 decimals in this config)
     slippagesDbps:
       - 1000
     preferences:
       - "SupportedBridge.Across"
-    reserve: '25000000' # 25 USDC
+    reserve: '25000000000000000000' # 25 USDC (intentionally standardized to 18 decimals in this config)
