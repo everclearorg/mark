@@ -137,7 +137,9 @@ export class CctpBridgeAdapter implements BridgeAdapter {
     if (!providers.length) {
       throw new Error(`No providers found for origin chain ${route.origin}`);
     }
-    const client = createPublicClient({ transport: fallback(providers.map((p: string) => http(p))) });
+    const transports = providers.map((p: string) => http(p));
+    const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
+    const client = createPublicClient({ transport });
     const allowance = await client.readContract({
       address: route.asset as `0x${string}`,
       abi: erc20Abi,
