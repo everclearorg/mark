@@ -42,6 +42,7 @@ describe('Contracts Module', () => {
 
   afterEach(() => {
     sinon.restore();
+    contractModule.cleanupViemClients();
   });
 
   describe('getMulticallAddress', () => {
@@ -57,15 +58,43 @@ describe('Contracts Module', () => {
     });
   });
 
-  describe('getProviderUrl', () => {
-    it('should return the provider URL for a valid chainId', () => {
-      const url = contractModule.getProviderUrl('1', mockConfig as MarkConfiguration);
-      expect(url).toBe('https://mainnet.infura.io/v3/test');
+  describe('getProviderUrls', () => {
+    it('should return all provider URLs for a valid chainId', () => {
+      const configWithMultipleProviders: MockContractConfig = {
+        ...mockConfig,
+        chains: {
+          '1': {
+            providers: [
+              'https://mainnet.infura.io/v3/test1',
+              'https://mainnet.infura.io/v3/test2',
+              'https://mainnet.infura.io/v3/test3',
+            ],
+          },
+        },
+      };
+      const urls = contractModule.getProviderUrls('1', configWithMultipleProviders as MarkConfiguration);
+      expect(urls).toEqual([
+        'https://mainnet.infura.io/v3/test1',
+        'https://mainnet.infura.io/v3/test2',
+        'https://mainnet.infura.io/v3/test3',
+      ]);
     });
 
-    it('should return undefined for an invalid chainId', () => {
-      const url = contractModule.getProviderUrl('999', mockConfig as MarkConfiguration);
-      expect(url).toBeUndefined();
+    it('should return hub providers when chainId matches hub domain', () => {
+      const configWithHubProviders: MockContractConfig = {
+        ...mockConfig,
+        hub: {
+          domain: 'hub_domain',
+          providers: ['https://hub.provider1.com', 'https://hub.provider2.com'],
+        },
+      };
+      const urls = contractModule.getProviderUrls('hub_domain', configWithHubProviders as MarkConfiguration);
+      expect(urls).toEqual(['https://hub.provider1.com', 'https://hub.provider2.com']);
+    });
+
+    it('should return empty array for an invalid chainId', () => {
+      const urls = contractModule.getProviderUrls('999', mockConfig as MarkConfiguration);
+      expect(urls).toEqual([]);
     });
   });
 

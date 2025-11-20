@@ -3,6 +3,7 @@ import {
   createPublicClient,
   createWalletClient,
   http,
+  fallback,
   Address,
   zeroAddress,
   defineChain,
@@ -639,7 +640,8 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
       throw new Error(`No providers configured for chain ${chainId}`);
     }
 
-    const rpcUrl = chainConfig.providers[0];
+    const providers = chainConfig.providers;
+    const rpcUrl = providers[0];
     const privateKey = await this.resolvePrivateKey(chainId);
     const account = privateKeyToAccount(privateKey);
 
@@ -649,12 +651,13 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
       network: `chain-${chainId}`,
       nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
       rpcUrls: {
-        default: { http: [rpcUrl] },
-        public: { http: [rpcUrl] },
+        default: { http: providers },
+        public: { http: providers },
       },
     });
 
-    const transport = http(rpcUrl);
+    const transports = providers.map((url) => http(url));
+    const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
 
     const walletClient = createWalletClient({
       account,
@@ -724,7 +727,9 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
         return false;
       }
 
-      const client = createPublicClient({ transport: http(providers[0]) });
+      const transports = providers.map((url) => http(url));
+      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
+      const client = createPublicClient({ transport });
 
       // Check if the trading transaction was successful
       const receipt = await client.getTransactionReceipt({

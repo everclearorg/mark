@@ -30,8 +30,8 @@ class TestNearBridgeAdapter extends NearBridgeAdapter {
         return super.requiresCallback(route, depositAddress, inputAmount, fillTxHash);
     }
 
-    public getTransactionValue(provider: string, originTransaction: TransactionReceipt): Promise<bigint> {
-        return super.getTransactionValue(provider, originTransaction);
+    public getTransactionValue(providers: string[], originTransaction: TransactionReceipt, route: RebalanceRoute): Promise<bigint> {
+        return super.getTransactionValue(providers, originTransaction, route);
     }
 }
 

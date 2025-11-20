@@ -84,7 +84,9 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
         if (!providers.length) {
           throw new Error(`No providers found for origin chain ${route.origin}`);
         }
-        const client = createPublicClient({ transport: fallback(providers.map((p: string) => http(p))) });
+        const transports = providers.map((p: string) => http(p));
+        const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
+        const client = createPublicClient({ transport });
         const allowance = await client.readContract({
           address: route.asset as `0x${string}`,
           abi: erc20Abi,
@@ -348,12 +350,14 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
       return { needsCallback: false };
     }
 
-    const provider = this.chains[route.destination]?.providers?.[0];
-    if (!provider) {
+    const providers = this.chains[route.destination]?.providers ?? [];
+    if (!providers.length) {
       return { needsCallback: false };
     }
 
-    const client = createPublicClient({ transport: http(provider) });
+    const transports = providers.map((url) => http(url));
+    const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
+    const client = createPublicClient({ transport });
     const fillReceipt = await client.getTransactionReceipt({ hash: fillTxHash as `0x${string}` });
     const hasWithdrawn = fillReceipt.logs.find((l: { topics: string[] }) => l.topics[0] === WETH_WITHDRAWAL_TOPIC);
 

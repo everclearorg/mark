@@ -2,7 +2,7 @@ import { config } from 'dotenv';
 import { Logger } from '@mark/logger';
 import { getEverclearConfig, ChainConfiguration, parseChainConfigurations, SupportedBridge, RebalanceRoute, MarkConfiguration, RebalanceOperationStatus } from '@mark/core';
 import { BridgeAdapter, RebalanceTransactionMemo } from '../src/types';
-import { Account, Hash, parseUnits, TransactionReceipt, createWalletClient, http, createPublicClient, erc20Abi } from 'viem';
+import { Account, Hash, parseUnits, TransactionReceipt, createWalletClient, http, fallback, createPublicClient, erc20Abi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createNonceManager, jsonRpc } from 'viem/nonce'
 import { Command } from 'commander';
@@ -124,16 +124,20 @@ async function handleDestinationChain(
         throw new Error(`Destination chain ${route.destination} not found in config`);
     }
 
+    const destinationProviders = destinationChain.providers ?? [];
+    const destinationTransports = destinationProviders.map((url) => http(url));
+    const destinationTransport = destinationTransports.length === 1 ? destinationTransports[0] : fallback(destinationTransports, { rank: true });
+
     const destinationWalletClient = createWalletClient({
         account,
         chain: getViemChain(route.destination),
-        transport: http(destinationChain.providers[0])
+        transport: destinationTransport
     });
 
     // Create public client for destination chain
     const destinationPublicClient = createPublicClient({
         chain: getViemChain(route.destination),
-        transport: http(destinationChain.providers[0])
+        transport: destinationTransport
     });
 
     // Send callback transaction
@@ -260,10 +264,14 @@ async function testBridgeAdapter(
     });
 
     // Create wallet client for the origin chain
+    const originProviders = originChain.providers ?? [];
+    const originTransports = originProviders.map((url) => http(url));
+    const originTransport = originTransports.length === 1 ? originTransports[0] : fallback(originTransports, { rank: true });
+
     const walletClient = createWalletClient({
         account,
         chain: getViemChain(route.origin),
-        transport: http(originChain.providers[0]),
+        transport: originTransport,
     });
 
     // Get the transaction request
@@ -278,7 +286,7 @@ async function testBridgeAdapter(
     // Create public client for contract interactions
     const publicClient = createPublicClient({
         chain: getViemChain(route.origin),
-        transport: http(originChain.providers[0])
+        transport: originTransport
     });
 
 
@@ -406,9 +414,12 @@ program
             throw new Error(`Origin chain ${route.origin} not found in config`);
         }
 
+        const originProviders = originChain.providers ?? [];
+        const originTransports = originProviders.map((url) => http(url));
+        const originTransport = originTransports.length === 1 ? originTransports[0] : fallback(originTransports, { rank: true });
         const publicClient = createPublicClient({
             chain: getViemChain(route.origin),
-            transport: http(originChain.providers[0]) // TODO: use multiple providers if included
+            transport: originTransport
         });
 
         // Get transaction receipt

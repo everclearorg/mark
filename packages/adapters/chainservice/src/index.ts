@@ -13,7 +13,7 @@ import {
   TRON_CHAINID,
   isSvmChain,
 } from '@mark/core';
-import { createPublicClient, defineChain, http, parseTransaction, zeroAddress } from 'viem';
+import { createPublicClient, defineChain, http, fallback, parseTransaction, zeroAddress } from 'viem';
 import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from '@solana/addresses';
 
 export { EthWallet } from '@chimera-monorepo/chainservice';
@@ -245,7 +245,9 @@ export class ChainService {
           decimals: native?.decimals ?? 18,
         },
       });
-      const transport = http(this.config.chains[chainId].providers[0]);
+      const providers = this.config.chains[chainId].providers ?? [];
+      const transports = providers.map((url) => http(url));
+      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
       const publicClient = createPublicClient({
         transport,
         chain,
