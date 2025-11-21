@@ -513,6 +513,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
         continue;
       }
 
+      let amountToBridge = operation.amount.toString();
       if (!callback) {
         // No callback needed, mark as completed
         logger.info('No destination callback required, marking as completed', logContext);
@@ -526,7 +527,6 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           receipt: serializeBigInt(receipt),
         });
   
-       
         // Try to execute the destination callback
         try {
           const tx = await submitTransactionWithLogging({
@@ -568,6 +568,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 [route.destination.toString()]: tx.receipt as TransactionReceipt,
               },
             });
+            amountToBridge = (callback.transaction.value as bigint).toString();
           } catch (dbError) {
             logger.error('Failed to update database with destination transaction', {
               ...logContext,
@@ -600,17 +601,16 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           }
           
           // TODO: get filled amount from withdrawal transaction. Not the amount we bridged.
-          const amountToStake = operation.amount.toString();
           const sender = getActualAddress(route.origin, config, logger, { requestId });
           // Step 1: Get Quote
           let receivedAmountStr: string;
           try {
-            receivedAmountStr = await mantleAdapter.getReceivedAmount(amountToStake, route);
+            receivedAmountStr = await mantleAdapter.getReceivedAmount(amountToBridge, route);
             logger.info('Received quote from mantle adapter', {
               requestId,
               route,
               bridgeType,
-              amountToBridge: amountToStake,
+              amountToBridge: amountToBridge,
               receivedAmount: receivedAmountStr,
             });
           } catch (quoteError) {
@@ -618,7 +618,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
               requestId,
               route,
               bridgeType,
-              amountToBridge: amountToStake,
+              amountToBridge: amountToBridge,
               error: jsonifyError(quoteError),
             });
             continue; // Skip to next bridge preference
@@ -627,13 +627,13 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           // Step 2: Get Bridge Transaction Requests
           let bridgeTxRequests: MemoizedTransactionRequest[] = [];
           try {
-            bridgeTxRequests = await mantleAdapter.send(sender, sender, amountToStake, route);
+            bridgeTxRequests = await mantleAdapter.send(sender, sender, amountToBridge, route);
             logger.info('Prepared bridge transaction request from adapter', {
               requestId,
               route,
               bridgeType,
               bridgeTxRequests,
-              amountToStake: amountToStake,
+              amountToBridge: amountToBridge,
               receiveAmount: receivedAmountStr,
               transactionCount: bridgeTxRequests.length,
               sender,
@@ -647,7 +647,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
               requestId,
               route,
               bridgeType,
-              amountToStake: amountToStake,
+              amountToBridge: amountToBridge,
               error: jsonifyError(sendError),
             });
             continue; 
@@ -655,7 +655,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
 
           // Step 3: Submit the bridge transactions in order
           let idx = -1;
-          let effectiveBridgedAmount = amountToStake.toString(); // Default to original amount
+          let effectiveBridgedAmount = amountToBridge.toString(); // Default to original amount
           try {
             let receipt: TransactionReceipt | undefined = undefined;
             for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
@@ -668,7 +668,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 totalTransactions: bridgeTxRequests.length,
                 transaction,
                 memo,
-                amountToBridge: amountToStake
+                amountToBridge: amountToBridge
               });
               const result = await submitTransactionWithLogging({
                 chainService,
@@ -696,7 +696,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 totalTransactions: bridgeTxRequests.length,
                 transactionHash: result.hash,
                 memo,
-                amountToBridge: amountToStake
+                amountToBridge: amountToBridge
               });
 
               if (memo !== RebalanceTransactionMemo.Rebalance) {
@@ -708,7 +708,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 effectiveBridgedAmount = effectiveAmount;
                 logger.info('Using effective bridged amount from adapter', {
                   requestId,
-                  originalAmount: amountToStake.toString(),
+                  originalAmount: amountToBridge.toString(),
                   effectiveAmount: effectiveBridgedAmount,
                   bridgeType,
                 });
@@ -736,7 +736,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 bridgeType,
                 originTxHash: receipt?.transactionHash,
                 amountToBridge: effectiveBridgedAmount,
-                originalRequestedAmount: amountToStake.toString(),
+                originalRequestedAmount: amountToBridge.toString(),
                 receiveAmount: receivedAmountStr,
               });
 
