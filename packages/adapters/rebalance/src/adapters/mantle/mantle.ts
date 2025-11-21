@@ -186,7 +186,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
               METH_ON_MANTLE_ADDRESS, // _l2Token
               recipient, // _to
               BigInt(mEthAmount), // _amount
-              BigInt(0), // _l2Gas
+              BigInt(200000), // _l2Gas
               '0x', // _data
             ],
           }),
