@@ -1,42 +1,4 @@
-// WETH withdrawal event
-export const WETH_WITHDRAWAL_EVENT = 'Withdrawal(address,uint256)';
-export const WETH_WITHDRAWAL_TOPIC = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65';
-
-export const MAINNET_ACROSS_URL = 'https://app.across.to/api';
-export const TESTNET_ACROSS_URL = 'https://testnet.across.to/api';
-
-export interface SuggestedFeesResponse {
-  totalRelayFee: {
-    pct: string;
-    total: string;
-  };
-  relayerCapitalFee: {
-    pct: string;
-    total: string;
-  };
-  relayerGasFee: {
-    pct: string;
-    total: string;
-  };
-  lpFee: {
-    pct: string;
-    total: string;
-  };
-  isAmountTooLow: boolean;
-  spokePoolAddress: `0x${string}`;
-  outputAmount: bigint;
-  timestamp: number;
-  fillDeadline: number;
-  exclusiveRelayer: `0x${string}`;
-  exclusivityDeadline: `0x${string}`;
-}
-
-export interface DepositStatusResponse {
-  status: 'filled' | 'pending' | 'unfilled';
-  originChainId: number;
-  depositId: string;
-  depositTxHash: string;
-  fillTx?: string;
-  destinationChainId: number;
-  depositRefundTxHash?: string;
-}
+export const METH_STAKING_CONTRACT_ADDRESS = '0xe3cBd06D7dadB3F4e6557bAb7EdD924CD1489E8f';
+export const METH_ON_ETH_ADDRESS = '0xd5f7838f5c461feff7fe49ea5ebaf7728bb0adfa';
+export const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
+export const MANTLE_BRIDGE_CONTRACT_ADDRESS = '0x95fC37A27a2f68e3A647CDc081F0A89bb47c3012';
