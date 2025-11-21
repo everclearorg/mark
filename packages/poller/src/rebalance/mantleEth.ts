@@ -25,6 +25,102 @@ const WETH_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b
 
 const MIN_STAKING_AMOUNT = 20000000000000000n; // 0.02 ETH in 18 decimals
 
+type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
+
+interface ExecuteBridgeParams {
+  context: ExecuteBridgeContext;
+  route: {
+    origin: number;
+    destination: number;
+    asset: string;
+  };
+  bridgeType: SupportedBridge;
+  bridgeTxRequests: MemoizedTransactionRequest[];
+  amountToBridge: bigint;
+}
+
+interface ExecuteBridgeResult {
+  receipt?: TransactionReceipt;
+  effectiveBridgedAmount: string;
+}
+
+// Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
+async function executeBridgeTransactions({
+  context,
+  route,
+  bridgeType,
+  bridgeTxRequests,
+  amountToBridge,
+}: ExecuteBridgeParams): Promise<ExecuteBridgeResult> {
+  const { logger, chainService, config, requestId } = context;
+
+  // TODO: Use multisend for zodiac-enabled origin transactions
+  let idx = -1;
+  let effectiveBridgedAmount = amountToBridge.toString(); // Default to original amount
+  let receipt: TransactionReceipt | undefined;
+
+  for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
+    idx++;
+    logger.info('Submitting bridge transaction', {
+      requestId,
+      route,
+      bridgeType,
+      transactionIndex: idx,
+      totalTransactions: bridgeTxRequests.length,
+      transaction,
+      memo,
+      amountToBridge,
+    });
+
+    const result = await submitTransactionWithLogging({
+      chainService,
+      logger,
+      chainId: route.origin.toString(),
+      txRequest: {
+        to: transaction.to!,
+        data: transaction.data!,
+        value: (transaction.value || 0).toString(),
+        chainId: route.origin,
+        from: config.ownAddress,
+        funcSig: transaction.funcSig || '',
+      },
+      zodiacConfig: {
+        walletType: WalletType.EOA,
+      },
+      context: { requestId, route, bridgeType, transactionType: memo },
+    });
+
+    logger.info('Successfully submitted and confirmed origin bridge transaction', {
+      requestId,
+      route,
+      bridgeType,
+      transactionIndex: idx,
+      totalTransactions: bridgeTxRequests.length,
+      transactionHash: result.hash,
+      memo,
+      amountToBridge,
+      useZodiac: WalletType.EOA,
+    });
+
+    if (memo !== RebalanceTransactionMemo.Rebalance) {
+      continue;
+    }
+
+    receipt = result.receipt! as unknown as TransactionReceipt;
+    // Use the effective bridged amount if provided (e.g., for Near caps or Binance rounding)
+    if (effectiveAmount) {
+      effectiveBridgedAmount = effectiveAmount;
+      logger.info('Using effective bridged amount from adapter', {
+        requestId,
+        originalAmount: amountToBridge.toString(),
+        effectiveAmount: effectiveBridgedAmount,
+        bridgeType,
+      });
+    }
+  }
+
+  return { receipt, effectiveBridgedAmount };
+}
 
 export async function rebalanceMantleEth(context: ProcessingContext): Promise<RebalanceAction[]> {
   const { logger, requestId, config, chainService, everclear, rebalance } = context;
@@ -44,40 +140,37 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
   // Get all of mark balances
   const balances = await getMarkBalancesForTicker(WETH_TICKER_HASH, config, chainService, context.prometheus);
   logger.debug('Retrieved all mark balances for WETH', { balances: jsonifyMap(balances) });
-  if(!balances) {
+  if (!balances) {
     logger.warn('No balances found for WETH, skipping', { requestId });
     return rebalanceOperations;
   }
   // Get all intents to mantle
   // add parameters to filter intents: status: IntentStatus.SETTLED_AND_COMPLETED, origin: any, destination: MANTLE_CHAINID
   // TODO: check startDate to avoid processing duplicates
-  const intents = await everclear.fetchIntents({ 
+  const intents = await everclear.fetchIntents({
     limit: 20,
-    statuses: [ IntentStatus.SETTLED_AND_COMPLETED ],
+    statuses: [IntentStatus.SETTLED_AND_COMPLETED],
     destinations: [MANTLE_CHAIN_ID],
     outputAsset: METH_ON_MANTLE_ADDRESS.toLowerCase(),
     tickerHash: WETH_TICKER_HASH,
     isFastPath: true,
   });
 
-
   // For each intent to mantle chain
   for (const intent of intents) {
     logger.info('Processing intent', { requestId, intent });
 
-    if(!intent.hub_settlement_domain) {
+    if (!intent.hub_settlement_domain) {
       logger.warn('Intent does not have a hub settlement domain, skipping', { requestId, intent });
       continue;
     }
 
-    if(intent.destinations.length !== 1 || intent.destinations[0] !== MANTLE_CHAIN_ID) {
+    if (intent.destinations.length !== 1 || intent.destinations[0] !== MANTLE_CHAIN_ID) {
       logger.warn('Intent does not have exactly one destination, skipping', { requestId, intent });
       continue;
     }
 
-
     const origin = Number(intent.hub_settlement_domain);
-    const destination = Number(intent.destinations[0]);
 
     // --- Route Level Checks (Synchronous or handled internally) ---
     const ticker = getTickerForAsset(intent.input_asset, origin, config);
@@ -89,18 +182,23 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
       continue;
     }
 
-    if(ticker.toLowerCase() !== WETH_TICKER_HASH.toLowerCase()) {
+    if (ticker.toLowerCase() !== WETH_TICKER_HASH.toLowerCase()) {
       logger.warn('Ticker is not WETH, skipping', { requestId, intent, ticker });
       continue;
     }
 
     const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
-    
+
     // Convert min staking amount and intent amount from standardized 18 decimals to asset's native decimals
     const minAmount = convertToNativeUnits(BigInt(MIN_STAKING_AMOUNT), decimals);
     const intentAmount = convertToNativeUnits(BigInt(intent.amount_out_min), decimals);
-    if(intentAmount < minAmount) {
-      logger.warn('Intent amount is less than min staking amount, skipping', { requestId, intent, intentAmount: intentAmount.toString(), minAmount: minAmount.toString() });
+    if (intentAmount < minAmount) {
+      logger.warn('Intent amount is less than min staking amount, skipping', {
+        requestId,
+        intent,
+        intentAmount: intentAmount.toString(),
+        minAmount: minAmount.toString(),
+      });
       continue;
     }
 
@@ -121,12 +219,12 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 
     // Calculate amount to bridge (min(currentBalance, intentAmount))
     const amountToBridge = currentBalance < intentAmount ? currentBalance : intentAmount;
-    
+
     // --- Bridge Preference Loop ---
     let rebalanceSuccessful = false;
-    
+
     // Send WETH to Mainnet first
-    const preferences = [  SupportedBridge.Across, SupportedBridge.Binance, SupportedBridge.Coinbase ];
+    const preferences = [SupportedBridge.Across, SupportedBridge.Binance, SupportedBridge.Coinbase];
     const route = {
       asset: intent.input_asset,
       origin: origin,
@@ -134,9 +232,9 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
       maximum: amountToBridge.toString(),
       slippagesDbps: [1000], // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
       preferences: preferences, // Priority ordered platforms
-      reserve: '0' // Amount to keep on origin chain during rebalancing
-    }
-    
+      reserve: '0', // Amount to keep on origin chain during rebalancing
+    };
+
     for (let bridgeIndex = 0; bridgeIndex < preferences.length; bridgeIndex++) {
       const bridgeType = preferences[bridgeIndex];
       logger.info('Attempting to bridge', {
@@ -153,13 +251,13 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
           bridgeType,
         });
         continue; // Skip to next bridge preference
-      } 
+      }
 
       let bridgeTxRequests: MemoizedTransactionRequest[] = [];
       let receivedAmount: bigint = amountToBridge;
       const sender = getActualAddress(route.origin, config, logger, { requestId });
 
-      if(String(origin) !== MAINNET_CHAIN_ID) {
+      if (String(origin) !== MAINNET_CHAIN_ID) {
         // Step 1: Get Quote
         let receivedAmountStr: string;
         try {
@@ -228,7 +326,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
             receiveAmount: receivedAmount,
             transactionCount: bridgeTxRequests.length,
             sender,
-            recipient: sender
+            recipient: sender,
           });
           if (!bridgeTxRequests.length) {
             throw new Error(`Failed to retrieve any bridge transaction requests`);
@@ -245,69 +343,15 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
         }
       }
 
-      // Step 4: Submit the bridge transactions in order
-      // TODO: Use multisend for zodiac-enabled origin transactions
-      let idx = -1;
-      let effectiveBridgedAmount = amountToBridge.toString(); // Default to original amount
+      // Step 4: Submit the bridge transactions in order and create DB record
       try {
-        let receipt: TransactionReceipt | undefined = undefined;
-        for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
-          idx++;
-          logger.info('Submitting bridge transaction', {
-            requestId,
-            route,
-            bridgeType,
-            transactionIndex: idx,
-            totalTransactions: bridgeTxRequests.length,
-            transaction,
-            memo,
-            amountToBridge: amountToBridge
-          });
-          const result = await submitTransactionWithLogging({
-            chainService,
-            logger,
-            chainId: route.origin.toString(),
-            txRequest: {
-              to: transaction.to!,
-              data: transaction.data!,
-              value: (transaction.value || 0).toString(),
-              chainId: route.origin,
-              from: config.ownAddress,
-              funcSig: transaction.funcSig || '',
-            },
-            zodiacConfig: {
-              walletType: WalletType.EOA,
-            },
-            context: { requestId, route, bridgeType, transactionType: memo },
-          });
-
-          logger.info('Successfully submitted and confirmed origin bridge transaction', {
-            requestId,
-            route,
-            bridgeType,
-            transactionIndex: idx,
-            totalTransactions: bridgeTxRequests.length,
-            transactionHash: result.hash,
-            memo,
-            amountToBridge: amountToBridge,
-            useZodiac: WalletType.EOA,
-          });
-
-          if (memo !== RebalanceTransactionMemo.Rebalance) {
-            continue;
-          }
-          receipt = result.receipt! as unknown as TransactionReceipt;
-          // Use the effective bridged amount if provided (e.g., for Near caps or Binance rounding)
-          if (effectiveAmount) {
-            effectiveBridgedAmount = effectiveAmount;
-            logger.info('Using effective bridged amount from adapter', {
-              requestId,
-              originalAmount: amountToBridge.toString(),
-              effectiveAmount: effectiveBridgedAmount,
-              bridgeType,
-            });
-          }
-        }
+        const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
+          context: { requestId, logger, chainService, config },
+          route,
+          bridgeType,
+          bridgeTxRequests,
+          amountToBridge,
+        });
 
         // Step 5: Create database record
         try {
@@ -368,8 +412,6 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
           requestId,
           route,
           bridgeType,
-          transaction: bridgeTxRequests[idx],
-          transactionIndex: idx,
           amountToBridge: amountToBridge,
           error: jsonifyError(sendError),
         });
@@ -398,7 +440,6 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
   logger.info('Completed rebalancing inventory', { requestId });
   return rebalanceOperations;
 }
-
 
 export const executeMethCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, chainService, database: db } = context;
@@ -429,7 +470,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       continue;
     }
 
-    const bridgeType =  operation.bridge.split('-')[0];
+    const bridgeType = operation.bridge.split('-')[0];
     const isToMainnetBridge = operation.bridge.split('-').length === 2 && operation.bridge.split('-')[1] === 'mantle';
 
     if (bridgeType !== SupportedBridge.Mantle && !isToMainnetBridge) {
@@ -443,7 +484,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
     const originTx = txHashes?.[operation.originChainId] as
       | TransactionEntry<{ receipt: TransactionReceipt }>
       | undefined;
-    
+
     if (!originTx) {
       logger.warn('Operation missing origin transaction', { ...logContext, operation });
       continue;
@@ -525,7 +566,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           callback: serializeBigInt(callback),
           receipt: serializeBigInt(receipt),
         });
-  
+
         // Try to execute the destination callback
         try {
           const tx = await submitTransactionWithLogging({
@@ -545,7 +586,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             },
             context: { ...logContext, callbackType: `destination: ${callback.memo}` },
           });
-  
+
           logger.info('Successfully submitted destination callback', {
             ...logContext,
             callback: serializeBigInt(callback),
@@ -553,13 +594,13 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             destinationTx: tx.hash,
             walletType: WalletType.EOA,
           });
-  
+
           // Update operation as completed with destination tx hash
           if (!tx || !tx.receipt) {
             logger.error('Destination transaction receipt not found', { ...logContext, tx });
             continue;
           }
-  
+
           try {
             await db.updateRebalanceOperation(operation.id, {
               status: RebalanceOperationStatus.COMPLETED,
@@ -586,10 +627,10 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             receipt: serializeBigInt(receipt),
             error: jsonifyError(e),
           });
-          continue
+          continue;
         }
       }
-      
+
       try {
         if (isToMainnetBridge) {
           // Stake WETH / ETH on mainnet to get mETH and bridge to Mantle using the Mantle adapter
@@ -655,67 +696,15 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             continue;
           }
 
-          // Step 3: Submit the bridge transactions in order
-          let idx = -1;
-          let effectiveBridgedAmount = amountToBridge.toString(); // Default to original amount
+          // Step 3: Submit the bridge transactions in order and create database record
           try {
-            let receipt: TransactionReceipt | undefined = undefined;
-            for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
-              idx++;
-              logger.info('Submitting Mantle bridge transaction', {
-                requestId,
-                route,
-                bridgeType: mantleBridgeType,
-                transactionIndex: idx,
-                totalTransactions: bridgeTxRequests.length,
-                transaction,
-                memo,
-                amountToBridge,
-              });
-              const result = await submitTransactionWithLogging({
-                chainService,
-                logger,
-                chainId: route.origin.toString(),
-                txRequest: {
-                  to: transaction.to!,
-                  data: transaction.data!,
-                  value: (transaction.value || 0).toString(),
-                  chainId: route.origin,
-                  from: config.ownAddress,
-                  funcSig: transaction.funcSig || '',
-                },
-                zodiacConfig: {
-                  walletType: WalletType.EOA,
-                },
-                context: { requestId, route, bridgeType: mantleBridgeType, transactionType: memo },
-              });
-
-              logger.info('Successfully submitted and confirmed origin Mantle bridge transaction', {
-                requestId,
-                route,
-                bridgeType: mantleBridgeType,
-                transactionIndex: idx,
-                totalTransactions: bridgeTxRequests.length,
-                transactionHash: result.hash,
-                memo,
-                amountToBridge,
-              });
-
-              if (memo !== RebalanceTransactionMemo.Rebalance) {
-                continue;
-              }
-              receipt = result.receipt! as unknown as TransactionReceipt;
-              // Use the effective bridged amount if provided (e.g., for Near caps or Binance rounding)
-              if (effectiveAmount) {
-                effectiveBridgedAmount = effectiveAmount;
-                logger.info('Using effective bridged amount from Mantle adapter', {
-                  requestId,
-                  originalAmount: amountToBridge.toString(),
-                  effectiveAmount: effectiveBridgedAmount,
-                  bridgeType: mantleBridgeType,
-                });
-              }
-            }
+            const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
+              context: { requestId, logger, chainService, config },
+              route,
+              bridgeType: mantleBridgeType,
+              bridgeTxRequests,
+              amountToBridge: BigInt(amountToBridge),
+            });
 
             // Step 4: Create database record for the Mantle bridge leg
             try {
@@ -761,8 +750,6 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
               requestId,
               route,
               bridgeType: mantleBridgeType,
-              transaction: bridgeTxRequests[idx],
-              transactionIndex: idx,
               error: jsonifyError(sendError),
             });
             continue;

@@ -103,7 +103,6 @@ export const getMarkBalances = async (
   return markBalances;
 };
 
-
 /**
  * Returns all of the balances for specific tickerHash across all chains.
  * @returns Mapping of balances for tickerHash - chain - amount in 18 decimal units
@@ -115,7 +114,7 @@ export const getMarkBalancesForTicker = async (
   prometheus: PrometheusAdapter,
 ): Promise<Map<string, bigint>> => {
   const { chains } = config;
-  
+
   const balancePromises: Array<{
     domain: string;
     promise: Promise<bigint>;
@@ -149,7 +148,6 @@ export const getMarkBalancesForTicker = async (
   for (let i = 0; i < balancePromises.length; i++) {
     const { domain } = balancePromises[i];
     const result = results[i];
-
 
     const balance = result.status === 'fulfilled' ? result.value : 0n;
     markBalances.set(domain, balance);

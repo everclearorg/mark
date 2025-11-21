@@ -1824,7 +1824,7 @@ export async function getEarmarkedBalance(
   const { config } = context;
 
   const ticker = tickerHash.toLowerCase();
-  
+
   // Get earmarked amounts (both pending and ready)
   const earmarks = await database.getEarmarks({
     designatedPurchaseChain: chainId,
