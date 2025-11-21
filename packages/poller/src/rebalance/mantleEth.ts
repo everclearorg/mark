@@ -21,7 +21,6 @@ import { createRebalanceOperation, TransactionEntry, TransactionReceipt } from '
 import { IntentStatus } from '@mark/everclear';
 
 const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
-const METH_ON_ETH_ADDRESS = '0xd5f7838f5c461feff7fe49ea5ebaf7728bb0adfa';
 const WETH_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
 
 const MIN_STAKING_AMOUNT = 20000000000000000n; // 0.02 ETH in 18 decimals

@@ -7,6 +7,7 @@ export enum RebalanceTransactionMemo {
   Wrap = 'Wrap',
   Unwrap = 'Unwrap',
   Mint = 'Mint',
+  Stake = 'Stake',
 }
 
 export interface MemoizedTransactionRequest {
