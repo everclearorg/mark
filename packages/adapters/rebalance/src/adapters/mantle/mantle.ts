@@ -7,14 +7,18 @@ import {
   fallback,
   type PublicClient,
 } from 'viem';
-import { CrossChainMessenger, MessageStatus } from '@mantlenetworkio/sdk'
+import { CrossChainMessenger, MessageStatus } from '@mantlenetworkio/sdk';
 import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { MANTLE_BRIDGE_ABI, MANTLE_STAKING_ABI } from './abi';
 import { findMatchingDestinationAsset } from '../../shared/asset';
-import { METH_STAKING_CONTRACT_ADDRESS, METH_ON_ETH_ADDRESS, METH_ON_MANTLE_ADDRESS, MANTLE_BRIDGE_CONTRACT_ADDRESS } from './types';
-
+import {
+  METH_STAKING_CONTRACT_ADDRESS,
+  METH_ON_ETH_ADDRESS,
+  METH_ON_MANTLE_ADDRESS,
+  MANTLE_BRIDGE_CONTRACT_ADDRESS,
+} from './types';
 
 const wethAbi = [
   ...erc20Abi,
@@ -34,13 +38,6 @@ const wethAbi = [
   },
 ] as const;
 
-
-// Represents whether an on-chain fill requires a follow-up callback
-interface CallbackInfo {
-  needsCallback: boolean;
-  amount?: bigint;
-  recipient?: string;
-}
 export class MantleBridgeAdapter implements BridgeAdapter {
   protected readonly publicClients = new Map<number, PublicClient>();
 
@@ -63,23 +60,22 @@ export class MantleBridgeAdapter implements BridgeAdapter {
     const client = this.getPublicClient(route.origin);
 
     try {
-      const minimumStakeBound = await client.readContract({
+      const minimumStakeBound = (await client.readContract({
         address: METH_STAKING_CONTRACT_ADDRESS,
         abi: MANTLE_STAKING_ABI,
         functionName: 'minimumStakeBound',
-      }) as bigint;
+      })) as bigint;
 
       if (minimumStakeBound > BigInt(amount)) {
         throw new Error(`Amount: ${amount} is less than minimum stake bound: ${minimumStakeBound.toString()}`);
       }
 
-      const mEthAmount = await client.readContract({
+      const mEthAmount = (await client.readContract({
         address: METH_STAKING_CONTRACT_ADDRESS,
         abi: MANTLE_STAKING_ABI,
         functionName: 'ethToMETH',
         args: [BigInt(amount)],
-      }) as bigint;
-
+      })) as bigint;
 
       this.logger.debug('Mantle staking contract quote obtained', {
         ethAmount: amount,
@@ -114,7 +110,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       if (!outputToken) {
         throw new Error('Could not find matching destination asset');
       }
-      
+
       // Unwrap WETH to ETH before staking
       const unwrapTx = {
         memo: RebalanceTransactionMemo.Unwrap,
@@ -147,7 +143,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
           value: BigInt(0),
           funcSig: 'stake(uint256)',
         },
-      }
+      };
 
       let approvalTx: MemoizedTransactionRequest | undefined;
       const client = this.getPublicClient(route.origin);
@@ -173,7 +169,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
           },
         };
       }
-      
+
       const bridgeTx: MemoizedTransactionRequest = {
         memo: RebalanceTransactionMemo.Rebalance,
         transaction: {
@@ -191,8 +187,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
             ],
           }),
           value: BigInt(0),
-          funcSig:
-            'depositERC20To(address,address,address,uint256,uint32,bytes)',
+          funcSig: 'depositERC20To(address,address,address,uint256,uint32,bytes)',
         },
       };
 
@@ -270,7 +265,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
         l1SignerOrProvider: this.chains[route.origin.toString()]?.providers[0],
         l2SignerOrProvider: this.chains[route.destination.toString()]?.providers[0],
       });
-      
+
       const status = await crossChainMessenger.getMessageStatus(originTransaction.transactionHash);
 
       if (status === MessageStatus.RELAYED) {
@@ -288,11 +283,6 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       });
       throw error;
     }
-  }
-
-  /** Mantle bridge currently never requires callbacks, but keep hook for parity with interface */
-  protected async requiresCallback(route: RebalanceRoute, fillTxHash: string): Promise<CallbackInfo> {
-    return { needsCallback: false };
   }
 
   /** Logs and rethrows errors with consistent context */

@@ -741,7 +741,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
 
       // Verify destination asset symbol matches contract symbol
       // Skip in test environment to avoid external HTTP calls
-      if (this.config.coinbase?.apiKey!='test-coinbase-api-key') {
+      if (this.config.coinbase?.apiKey != 'test-coinbase-api-key') {
         const destinationPublicClient = createPublicClient({
           chain: getViemChain(route.destination),
           transport: http(this.config.chains[route.destination].providers[0]),

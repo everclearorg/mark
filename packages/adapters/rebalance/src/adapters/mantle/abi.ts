@@ -32,57 +32,57 @@ export const MANTLE_STAKING_ABI = [
     type: 'function',
   },
   {
-    inputs:[],
-    name:'minimumStakeBound',
-    outputs:[
+    inputs: [],
+    name: 'minimumStakeBound',
+    outputs: [
       {
-        'internalType':'uint256',
-        'name':'',
-        'type':'uint256'
-      }
+        internalType: 'uint256',
+        name: '',
+        type: 'uint256',
+      },
     ],
-    stateMutability:'view',
-    type:'function'
-  }
+    stateMutability: 'view',
+    type: 'function',
+  },
 ];
 
 export const MANTLE_BRIDGE_ABI = [
   {
-    inputs:[
+    inputs: [
       {
-        internalType:'address',
-        name:'_l1Token',
-        type:'address'
+        internalType: 'address',
+        name: '_l1Token',
+        type: 'address',
       },
       {
-        internalType:'address',
-        name:'_l2Token',
-        type:'address'
+        internalType: 'address',
+        name: '_l2Token',
+        type: 'address',
       },
       {
-        internalType:'address',
-        name:'_to',
-        type:'address'
+        internalType: 'address',
+        name: '_to',
+        type: 'address',
       },
       {
-        internalType:'uint256',
-        name:'_amount',
-        type:'uint256'
+        internalType: 'uint256',
+        name: '_amount',
+        type: 'uint256',
       },
       {
-        internalType:'uint32',
-        name:'_l2Gas',
-        type:'uint32'
+        internalType: 'uint32',
+        name: '_l2Gas',
+        type: 'uint32',
       },
       {
-        internalType:'bytes',
-        name:'_data',
-        type:'bytes'
-      }
+        internalType: 'bytes',
+        name: '_data',
+        type: 'bytes',
+      },
     ],
-    name:'depositERC20To',
-    outputs:[],
-    stateMutability:'nonpayable',
-    type:'function'
-  }
-]
+    name: 'depositERC20To',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+];

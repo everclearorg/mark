@@ -128,13 +128,13 @@ export class EverclearAdapter {
     const { data } = await axiosGet<{ invoices: Invoice[] }>(url, { params });
     return data.invoices;
   }
-  
+
   // TODO: add parameters to filter intents
   async fetchIntents(params: GetIntentsParams | undefined = undefined): Promise<Intent[]> {
     const url = `${this.apiUrl}/intents`;
 
     const { data } = await axiosGet<{ intents: Intent[] }>(url, { params });
-    
+
     return data.intents;
   }
 

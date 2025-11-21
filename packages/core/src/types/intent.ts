@@ -43,7 +43,23 @@ export interface NewIntentWithPermit2Params {
   permit2Params: Permit2Params;
 }
 
-export type IntentStatus = "NONE" | "ADDED" | "ADDED_SPOKE" | "ADDED_HUB" | "DEPOSIT_PROCESSED" | "FILLED" | "ADDED_AND_FILLED" | "INVOICED" | "SETTLED" | "SETTLED_AND_COMPLETED" | "SETTLED_AND_MANUALLY_EXECUTED" | "UNSUPPORTED" | "UNSUPPORTED_RETURNED" | "DISPATCHED_HUB" | "DISPATCHED_SPOKE" | "DISPATCHED_UNSUPPORTED";
+export type IntentStatus =
+  | 'NONE'
+  | 'ADDED'
+  | 'ADDED_SPOKE'
+  | 'ADDED_HUB'
+  | 'DEPOSIT_PROCESSED'
+  | 'FILLED'
+  | 'ADDED_AND_FILLED'
+  | 'INVOICED'
+  | 'SETTLED'
+  | 'SETTLED_AND_COMPLETED'
+  | 'SETTLED_AND_MANUALLY_EXECUTED'
+  | 'UNSUPPORTED'
+  | 'UNSUPPORTED_RETURNED'
+  | 'DISPATCHED_HUB'
+  | 'DISPATCHED_SPOKE'
+  | 'DISPATCHED_UNSUPPORTED';
 export interface GetIntentsParams {
   statuses: IntentStatus[];
   destinations: string[];
