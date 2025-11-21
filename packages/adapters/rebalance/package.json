@@ -20,6 +20,7 @@
     "dependencies": {
         "@cowprotocol/cow-sdk": "^7.1.2-beta.0",
         "@defuse-protocol/one-click-sdk-typescript": "^0.1.5",
+        "@mantlenetworkio/sdk": "^2.1.1",
         "@mark/core": "workspace:*",
         "@mark/database": "workspace:*",
         "@mark/logger": "workspace:*",
