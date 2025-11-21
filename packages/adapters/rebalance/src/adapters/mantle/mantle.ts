@@ -64,7 +64,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
 
     try {
       const minimumStakeBound = await client.readContract({
-        address: METH_STAKING_CONTRACT_ADDRESS as `0x${string}`,
+        address: METH_STAKING_CONTRACT_ADDRESS,
         abi: MANTLE_STAKING_ABI,
         functionName: 'minimumStakeBound',
       }) as bigint;
@@ -74,7 +74,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       }
 
       const mEthAmount = await client.readContract({
-        address: METH_STAKING_CONTRACT_ADDRESS as `0x${string}`,
+        address: METH_STAKING_CONTRACT_ADDRESS,
         abi: MANTLE_STAKING_ABI,
         functionName: 'ethToMETH',
         args: [BigInt(amount)],
@@ -138,7 +138,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
         memo: RebalanceTransactionMemo.Stake,
         effectiveAmount: mEthAmount,
         transaction: {
-          to: METH_STAKING_CONTRACT_ADDRESS as `0x${string}`,
+          to: METH_STAKING_CONTRACT_ADDRESS,
           data: encodeFunctionData({
             abi: MANTLE_STAKING_ABI,
             functionName: 'stake',
@@ -162,11 +162,11 @@ export class MantleBridgeAdapter implements BridgeAdapter {
         approvalTx = {
           memo: RebalanceTransactionMemo.Approval,
           transaction: {
-            to: METH_ON_ETH_ADDRESS as `0x${string}`,
+            to: METH_ON_ETH_ADDRESS,
             data: encodeFunctionData({
               abi: erc20Abi,
               functionName: 'approve',
-              args: [MANTLE_BRIDGE_CONTRACT_ADDRESS as `0x${string}`, BigInt(mEthAmount)],
+              args: [MANTLE_BRIDGE_CONTRACT_ADDRESS, BigInt(mEthAmount)],
             }),
             value: BigInt(0),
             funcSig: 'approve(address,uint256)',
@@ -184,7 +184,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
             args: [
               METH_ON_ETH_ADDRESS, // _l1Token
               METH_ON_MANTLE_ADDRESS, // _l2Token
-              recipient, // _to
+              recipient as `0x${string}`, // _to
               BigInt(mEthAmount), // _amount
               BigInt(200000), // _l2Gas
               '0x', // _data

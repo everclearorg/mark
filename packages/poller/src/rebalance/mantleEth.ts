@@ -6,9 +6,9 @@ import {
   RebalanceOperationStatus,
   DBPS_MULTIPLIER,
   RebalanceAction,
-  MANTLE_CHAIN_ID,
   SupportedBridge,
   MAINNET_CHAIN_ID,
+  MANTLE_CHAIN_ID,
   getTokenAddressFromConfig,
   WalletType,
   serializeBigInt,
@@ -591,16 +591,19 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       }
       
       try {
-        if(isToMainnetBridge) {
-          // Stake WETH / ETH to get mEth and bridge to mantle
+        if (isToMainnetBridge) {
+          // Stake WETH / ETH on mainnet to get mETH and bridge to Mantle using the Mantle adapter
           const mantleAdapter = rebalance.getAdapter(SupportedBridge.Mantle);
-          if(!mantleAdapter) {
+          if (!mantleAdapter) {
             logger.error('Mantle adapter not found', { ...logContext });
             continue;
           }
-          
+
+          const mantleBridgeType = SupportedBridge.Mantle;
+
           // TODO: get filled amount from withdrawal transaction. Not the amount we bridged.
           const sender = getActualAddress(route.origin, config, logger, { requestId });
+
           // Step 1: Get Quote
           let receivedAmountStr: string;
           try {
@@ -608,48 +611,48 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             logger.info('Received quote from mantle adapter', {
               requestId,
               route,
-              bridgeType,
-              amountToBridge: amountToBridge,
+              bridgeType: mantleBridgeType,
+              amountToBridge,
               receivedAmount: receivedAmountStr,
             });
           } catch (quoteError) {
-            logger.error('Failed to get quote from adapter, trying next preference', {
+            logger.error('Failed to get quote from Mantle adapter', {
               requestId,
               route,
-              bridgeType,
-              amountToBridge: amountToBridge,
+              bridgeType: mantleBridgeType,
+              amountToBridge,
               error: jsonifyError(quoteError),
             });
-            continue; // Skip to next bridge preference
+            continue;
           }
 
           // Step 2: Get Bridge Transaction Requests
           let bridgeTxRequests: MemoizedTransactionRequest[] = [];
           try {
             bridgeTxRequests = await mantleAdapter.send(sender, sender, amountToBridge, route);
-            logger.info('Prepared bridge transaction request from adapter', {
+            logger.info('Prepared bridge transaction request from Mantle adapter', {
               requestId,
               route,
-              bridgeType,
+              bridgeType: mantleBridgeType,
               bridgeTxRequests,
-              amountToBridge: amountToBridge,
+              amountToBridge,
               receiveAmount: receivedAmountStr,
               transactionCount: bridgeTxRequests.length,
               sender,
-              recipient: sender
+              recipient: sender,
             });
             if (!bridgeTxRequests.length) {
               throw new Error(`Failed to retrieve any bridge transaction requests`);
             }
           } catch (sendError) {
-            logger.error('Failed to get bridge transaction request from adapter', {
+            logger.error('Failed to get bridge transaction request from Mantle adapter', {
               requestId,
               route,
-              bridgeType,
-              amountToBridge: amountToBridge,
+              bridgeType: mantleBridgeType,
+              amountToBridge,
               error: jsonifyError(sendError),
             });
-            continue; 
+            continue;
           }
 
           // Step 3: Submit the bridge transactions in order
@@ -659,15 +662,15 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             let receipt: TransactionReceipt | undefined = undefined;
             for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
               idx++;
-              logger.info('Submitting bridge transaction', {
+              logger.info('Submitting Mantle bridge transaction', {
                 requestId,
                 route,
-                bridgeType,
+                bridgeType: mantleBridgeType,
                 transactionIndex: idx,
                 totalTransactions: bridgeTxRequests.length,
                 transaction,
                 memo,
-                amountToBridge: amountToBridge
+                amountToBridge,
               });
               const result = await submitTransactionWithLogging({
                 chainService,
@@ -684,18 +687,18 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 zodiacConfig: {
                   walletType: WalletType.EOA,
                 },
-                context: { requestId, route, bridgeType, transactionType: memo },
+                context: { requestId, route, bridgeType: mantleBridgeType, transactionType: memo },
               });
 
-              logger.info('Successfully submitted and confirmed origin bridge transaction', {
+              logger.info('Successfully submitted and confirmed origin Mantle bridge transaction', {
                 requestId,
                 route,
-                bridgeType,
+                bridgeType: mantleBridgeType,
                 transactionIndex: idx,
                 totalTransactions: bridgeTxRequests.length,
                 transactionHash: result.hash,
                 memo,
-                amountToBridge: amountToBridge
+                amountToBridge,
               });
 
               if (memo !== RebalanceTransactionMemo.Rebalance) {
@@ -705,16 +708,16 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
               // Use the effective bridged amount if provided (e.g., for Near caps or Binance rounding)
               if (effectiveAmount) {
                 effectiveBridgedAmount = effectiveAmount;
-                logger.info('Using effective bridged amount from adapter', {
+                logger.info('Using effective bridged amount from Mantle adapter', {
                   requestId,
                   originalAmount: amountToBridge.toString(),
                   effectiveAmount: effectiveBridgedAmount,
-                  bridgeType,
+                  bridgeType: mantleBridgeType,
                 });
               }
             }
 
-            // Step 5: Create database record
+            // Step 4: Create database record for the Mantle bridge leg
             try {
               await createRebalanceOperation({
                 earmarkId: null, // NULL indicates regular rebalancing
@@ -724,15 +727,15 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 amount: effectiveBridgedAmount,
                 slippage: 1000, // 1% slippage
                 status: RebalanceOperationStatus.PENDING,
-                bridge: bridgeType,
+                bridge: mantleBridgeType,
                 transactions: receipt ? { [route.origin]: receipt } : undefined,
                 recipient: sender,
               });
 
-              logger.info('Successfully created rebalance operation in database', {
+              logger.info('Successfully created Mantle rebalance operation in database', {
                 requestId,
                 route,
-                bridgeType,
+                bridgeType: mantleBridgeType,
                 originTxHash: receipt?.transactionHash,
                 amountToBridge: effectiveBridgedAmount,
                 originalRequestedAmount: amountToBridge.toString(),
@@ -740,29 +743,29 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
               });
 
               // If we got here, the rebalance for this route was successful with this bridge.
-              break; // Exit the bridge preference loop for this route
+              break;
             } catch (error) {
-              logger.error('Failed to confirm transaction or create database record', {
+              logger.error('Failed to confirm transaction or create Mantle database record', {
                 requestId,
                 route,
-                bridgeType,
+                bridgeType: mantleBridgeType,
                 transactionHash: receipt?.transactionHash,
                 error: jsonifyError(error),
               });
 
               // Don't consider this a success if we can't confirm or record it
-              continue; // Try next bridge
+              continue;
             }
           } catch (sendError) {
-            logger.error('Failed to send or monitor bridge transaction, trying next preference', {
+            logger.error('Failed to send or monitor Mantle bridge transaction', {
               requestId,
               route,
-              bridgeType,
+              bridgeType: mantleBridgeType,
               transaction: bridgeTxRequests[idx],
               transactionIndex: idx,
               error: jsonifyError(sendError),
             });
-            continue; // Skip to next bridge preference
+            continue;
           }
         }
       } catch (dbError) {
