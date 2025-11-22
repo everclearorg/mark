@@ -17,7 +17,7 @@ import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
-import { createRebalanceOperation, TransactionEntry, TransactionReceipt } from '@mark/database';
+import { createRebalanceOperation, getRebalanceOperationsByEarmark, TransactionEntry, TransactionReceipt } from '@mark/database';
 import { IntentStatus } from '@mark/everclear';
 
 const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
@@ -170,6 +170,13 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
       continue;
     }
 
+    // check if the intent is already in the database
+    const operations = await getRebalanceOperationsByEarmark(intent.intent_id);
+    if (operations.length > 0) {
+      logger.info('Intent is already in the database, skipping', { requestId, intent });
+      continue;
+    }
+  
     const origin = Number(intent.hub_settlement_domain);
 
     // --- Route Level Checks (Synchronous or handled internally) ---
