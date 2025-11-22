@@ -356,7 +356,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
         // Step 5: Create database record
         try {
           await createRebalanceOperation({
-            earmarkId: null, // NULL indicates regular rebalancing
+            earmarkId: intent.intent_id, 
             originChainId: route.origin,
             destinationChainId: route.destination,
             tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
@@ -368,7 +368,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
             recipient: sender,
           });
 
-          logger.info('Successfully created rebalance operation in database', {
+          logger.info('Successfully created meth rebalance operation in database', {
             requestId,
             route,
             bridgeType,
@@ -437,20 +437,20 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     }
   } // End of route loop
 
-  logger.info('Completed rebalancing inventory', { requestId });
+  logger.info('Completed rebalancing meth', { requestId });
   return rebalanceOperations;
 }
 
 export const executeMethCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, chainService, database: db } = context;
-  logger.info('Executing destination callbacks', { requestId });
+  logger.info('Executing destination callbacks for meth rebalance', { requestId });
 
   // Get all pending operations from database
   const { operations } = await db.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
   });
 
-  logger.debug('Found rebalance operations', {
+  logger.debug('Found meth rebalance operations', {
     count: operations.length,
     requestId,
     statuses: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
