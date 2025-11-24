@@ -1,4 +1,4 @@
-import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
+import { pad, size, TransactionReceipt as ViemTransactionReceipt } from 'viem';
 import { getTickerForAsset, convertToNativeUnits, getMarkBalancesForTicker } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
@@ -12,16 +12,18 @@ import {
   getTokenAddressFromConfig,
   WalletType,
   serializeBigInt,
+  EarmarkStatus,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
-import { createRebalanceOperation, getRebalanceOperationsByEarmark, TransactionEntry, TransactionReceipt } from '@mark/database';
+import { createEarmark, createRebalanceOperation, Earmark, getActiveEarmarkForInvoice, TransactionEntry, TransactionReceipt } from '@mark/database';
 import { IntentStatus } from '@mark/everclear';
+import { bytes32ToAddress } from '@mark/rebalance/src/adapters/across/utils';
 
 const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
-const WETH_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
+const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
 
 const MIN_STAKING_AMOUNT = 20000000000000000n; // 0.02 ETH in 18 decimals
 
@@ -147,14 +149,24 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
   // Get all intents to mantle
   // add parameters to filter intents: status: IntentStatus.SETTLED_AND_COMPLETED, origin: any, destination: MANTLE_CHAINID
   // TODO: check startDate to avoid processing duplicates
-  const intents = await everclear.fetchIntents({
-    limit: 20,
-    statuses: [IntentStatus.SETTLED_AND_COMPLETED],
-    destinations: [MANTLE_CHAIN_ID],
-    outputAsset: METH_ON_MANTLE_ADDRESS.toLowerCase(),
-    tickerHash: WETH_TICKER_HASH,
-    isFastPath: true,
-  });
+  // const intents = await everclear.fetchIntents({
+  //   limit: 20,
+  //   statuses: [IntentStatus.SETTLED_AND_COMPLETED],
+  //   destinations: [MANTLE_CHAIN_ID],
+  //   outputAsset: pad(METH_ON_MANTLE_ADDRESS.toLowerCase() as `0x${string}`, {size: 32}),
+  //   tickerHash: WETH_TICKER_HASH,
+  //   isFastPath: true,
+  // });
+  // For test
+  const intents = [
+    {
+      intent_id: '0xb42258437440a37b4c723f1b3f49f4a79c38a7cc5d88d01e7eb349bba67f5177',
+      hub_settlement_domain: '42161', //arb
+      destinations: [MANTLE_CHAIN_ID.toString()],
+      amount_out_min: '21000000000000000',
+      settlement_asset: pad('0x82af49447d8a07e3bd95bd0d56f35241523fbab1' as `0x${string}`, {size: 32}), 
+    },
+  ]
 
   // For each intent to mantle chain
   for (const intent of intents) {
@@ -170,17 +182,24 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
       continue;
     }
 
-    // check if the intent is already in the database
-    const operations = await getRebalanceOperationsByEarmark(intent.intent_id);
-    if (operations.length > 0) {
-      logger.info('Intent is already in the database, skipping', { requestId, intent });
+    // Check if an active earmark already exists for this intent before executing operations
+    const existingActive = await getActiveEarmarkForInvoice(intent.intent_id);
+
+    if (existingActive) {
+      logger.warn('Active earmark already exists for intent, skipping rebalance operations', {
+        requestId,
+        invoiceId: intent.intent_id,
+        existingEarmarkId: existingActive.id,
+        existingStatus: existingActive.status,
+      });
       continue;
     }
-  
+
     const origin = Number(intent.hub_settlement_domain);
+    const destination = MANTLE_CHAIN_ID;
 
     // --- Route Level Checks (Synchronous or handled internally) ---
-    const ticker = getTickerForAsset(intent.input_asset, origin, config);
+    const ticker = getTickerForAsset(bytes32ToAddress(intent.settlement_asset), origin, config);
     if (!ticker) {
       logger.error(`Ticker not found for asset, check config`, {
         config: config.chains[origin],
@@ -227,13 +246,33 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     // Calculate amount to bridge (min(currentBalance, intentAmount))
     const amountToBridge = currentBalance < intentAmount ? currentBalance : intentAmount;
 
+    let earmark: Earmark;
+    try {
+      earmark = await createEarmark({
+        invoiceId: intent.intent_id,
+        designatedPurchaseChain: Number(destination),
+        tickerHash: ticker,
+        minAmount: amountToBridge.toString(),
+        status: EarmarkStatus.PENDING,
+      });
+    } catch (error: unknown) {
+      throw error;
+    }
+
+    logger.info('Created earmark for intent', {
+      requestId,
+      earmarkId: earmark.id,
+      invoiceId: intent.intent_id,
+      status: earmark.status,
+    });
+
     // --- Bridge Preference Loop ---
     let rebalanceSuccessful = false;
 
     // Send WETH to Mainnet first
     const preferences = [SupportedBridge.Across, SupportedBridge.Binance, SupportedBridge.Coinbase];
     const route = {
-      asset: intent.input_asset,
+      asset: bytes32ToAddress(intent.settlement_asset),
       origin: origin,
       destination: Number(MAINNET_CHAIN_ID),
       maximum: amountToBridge.toString(),
@@ -363,7 +402,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
         // Step 5: Create database record
         try {
           await createRebalanceOperation({
-            earmarkId: intent.intent_id, 
+            earmarkId: earmark.id, 
             originChainId: route.origin,
             destinationChainId: route.destination,
             tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
@@ -515,7 +554,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       continue;
     }
 
-    const route = {
+    let route = {
       origin: operation.originChainId,
       destination: operation.destinationChainId,
       asset: assetAddress,
@@ -561,12 +600,12 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       }
 
       let amountToBridge = operation.amount.toString();
+      let successToMainnet = false;
+      let txHashes: { [key: string]: TransactionReceipt } = {};
       if (!callback) {
         // No callback needed, mark as completed
         logger.info('No destination callback required, marking as completed', logContext);
-        await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.COMPLETED,
-        });
+        successToMainnet = true;
       } else {
         logger.info('Retrieved destination callback', {
           ...logContext,
@@ -608,25 +647,9 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             continue;
           }
 
-          try {
-            await db.updateRebalanceOperation(operation.id, {
-              status: RebalanceOperationStatus.COMPLETED,
-              txHashes: {
-                [route.destination.toString()]: tx.receipt as TransactionReceipt,
-              },
-            });
-            amountToBridge = (callback.transaction.value as bigint).toString();
-          } catch (dbError) {
-            logger.error('Failed to update database with destination transaction', {
-              ...logContext,
-              destinationTx: tx.hash,
-              receipt: serializeBigInt(tx.receipt),
-              error: jsonifyError(dbError),
-              errorMessage: (dbError as Error)?.message,
-              errorStack: (dbError as Error)?.stack,
-            });
-            throw dbError;
-          }
+          successToMainnet = true;
+          txHashes[route.destination.toString()] = tx.receipt as TransactionReceipt;
+          amountToBridge = (callback.transaction.value as bigint).toString();
         } catch (e) {
           logger.error('Failed to execute destination callback', {
             ...logContext,
@@ -648,7 +671,12 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           }
 
           const mantleBridgeType = SupportedBridge.Mantle;
-
+          
+          route = {
+            origin: Number(MAINNET_CHAIN_ID),
+            destination: Number(MANTLE_CHAIN_ID),
+            asset: getTokenAddressFromConfig(WETH_TICKER_HASH, MAINNET_CHAIN_ID.toString(), config) || '',
+          };
           // TODO: get filled amount from withdrawal transaction. Not the amount we bridged.
           const sender = getActualAddress(route.origin, config, logger, { requestId });
 
@@ -737,9 +765,6 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 originalRequestedAmount: amountToBridge.toString(),
                 receiveAmount: receivedAmountStr,
               });
-
-              // If we got here, the rebalance for this route was successful with this bridge.
-              break;
             } catch (error) {
               logger.error('Failed to confirm transaction or create Mantle database record', {
                 requestId,
@@ -762,8 +787,35 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             continue;
           }
         }
+
+        if(successToMainnet) {
+          try {
+            await db.updateRebalanceOperation(operation.id, {
+              status: RebalanceOperationStatus.COMPLETED,
+              txHashes: txHashes,
+            });
+
+            if(operation.earmarkId) {
+              await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.COMPLETED);
+            }
+            logger.info('Successfully updated database with destination transaction', {
+              operationId: operation.id,
+              earmarkId: operation.earmarkId,
+              status: RebalanceOperationStatus.COMPLETED,
+              txHashes: txHashes,
+            });
+          } catch (dbError) {
+            logger.error('Failed to update database with destination transaction', {
+              ...logContext,
+              error: jsonifyError(dbError),
+              errorMessage: (dbError as Error)?.message,
+              errorStack: (dbError as Error)?.stack,
+            });
+            throw dbError;
+          }
+        }
       } catch (dbError) {
-        logger.error('Failed to update database with destination transaction', {
+        logger.error('Failed to send to matle', {
           ...logContext,
           error: jsonifyError(dbError),
           errorMessage: (dbError as Error)?.message,
