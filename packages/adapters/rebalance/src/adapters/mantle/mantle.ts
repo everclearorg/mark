@@ -1,17 +1,18 @@
 import {
   TransactionReceipt,
   createPublicClient,
+  decodeEventLog,
   encodeFunctionData,
+  keccak256,
   http,
   erc20Abi,
   fallback,
   type PublicClient,
 } from 'viem';
-import { CrossChainMessenger, MessageStatus } from '@mantlenetworkio/sdk';
 import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
-import { MANTLE_BRIDGE_ABI, MANTLE_STAKING_ABI } from './abi';
+import { L2CrossDomainMessenger_ABI, MANTLE_BRIDGE_ABI, MANTLE_STAKING_ABI, WETH_ABI } from './abi';
 import { findMatchingDestinationAsset } from '../../shared/asset';
 import {
   METH_STAKING_CONTRACT_ADDRESS,
@@ -20,33 +21,34 @@ import {
   MANTLE_BRIDGE_CONTRACT_ADDRESS,
 } from './types';
 
-const wethAbi = [
-  ...erc20Abi,
-  {
-    type: 'function',
-    name: 'withdraw',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'wad', type: 'uint256' }],
-    outputs: [],
+const MANTLE_MESSENGER_ADDRESSES: Record<
+  number,
+  { l1: `0x${string}`; l2: `0x${string}` }
+> = {
+  5000: {
+    l1: '0x676A795fe6E43C17c668de16730c3F690FEB7120',
+    l2: '0x4200000000000000000000000000000000000007',
   },
-  {
-    type: 'function',
-    name: 'deposit',
-    stateMutability: 'payable',
-    inputs: [],
-    outputs: [],
-  },
-] as const;
+};
+
+type MantleMessage = {
+  target: `0x${string}`;
+  sender: `0x${string}`;
+  message: `0x${string}`;
+  messageNonce: bigint;
+  mntValue: bigint;
+  ethValue: bigint;
+  gasLimit: bigint;
+};
 
 export class MantleBridgeAdapter implements BridgeAdapter {
   protected readonly publicClients = new Map<number, PublicClient>();
 
   constructor(
-    protected readonly url: string,
     protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
   ) {
-    this.logger.debug('Initializing MantleBridgeAdapter', { url });
+    this.logger.debug('Initializing MantleBridgeAdapter');
   }
 
   type(): SupportedBridge {
@@ -109,7 +111,9 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       );
       if (!outputToken) {
         throw new Error('Could not find matching destination asset');
-      }
+      } 
+
+      const client = this.getPublicClient(route.origin);
 
       // Unwrap WETH to ETH before staking
       const unwrapTx = {
@@ -118,7 +122,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
         transaction: {
           to: route.asset as `0x${string}`,
           data: encodeFunctionData({
-            abi: wethAbi,
+            abi: WETH_ABI,
             functionName: 'withdraw',
             args: [BigInt(amount)],
           }) as `0x${string}`,
@@ -128,11 +132,10 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       };
 
       const mEthAmount = await this.getReceivedAmount(amount, route);
-
+      
       // Stake ETH to get mETH
       const stakeTx: MemoizedTransactionRequest = {
         memo: RebalanceTransactionMemo.Stake,
-        effectiveAmount: mEthAmount,
         transaction: {
           to: METH_STAKING_CONTRACT_ADDRESS,
           data: encodeFunctionData({
@@ -140,13 +143,13 @@ export class MantleBridgeAdapter implements BridgeAdapter {
             functionName: 'stake',
             args: [BigInt(mEthAmount)],
           }) as `0x${string}`,
-          value: BigInt(0),
+          value: BigInt(amount),
           funcSig: 'stake(uint256)',
         },
       };
 
       let approvalTx: MemoizedTransactionRequest | undefined;
-      const client = this.getPublicClient(route.origin);
+      
       const allowance = await client.readContract({
         address: METH_ON_ETH_ADDRESS,
         abi: erc20Abi,
@@ -238,6 +241,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       const isReady = statusData.status === 'filled';
       this.logger.debug('Deposit ready status determined', {
         isReady,
+        transactionHash: originTransaction.transactionHash,
         statusData,
       });
 
@@ -253,28 +257,24 @@ export class MantleBridgeAdapter implements BridgeAdapter {
     }
   }
 
-  /** Helper method to get deposit status from the Mantle SDK */
+  /** Helper method to get deposit status by inspecting Mantle messenger contracts via viem */
   protected async getDepositStatus(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
   ): Promise<{ status: 'filled' | 'pending' | 'unfilled' } | undefined> {
     try {
-      const crossChainMessenger = new CrossChainMessenger({
-        l1ChainId: route.origin,
-        l2ChainId: route.destination,
-        l1SignerOrProvider: this.chains[route.origin.toString()]?.providers[0],
-        l2SignerOrProvider: this.chains[route.destination.toString()]?.providers[0],
-      });
+      const addresses = this.getMessengerAddresses(route.destination);
+      const message = this.extractMantleMessage(originTransaction, addresses.l1);
+      const messageHash = this.computeMessageHash(message);
+      const l2Client = this.getPublicClient(route.destination);
 
-      const status = await crossChainMessenger.getMessageStatus(originTransaction.transactionHash);
-
-      if (status === MessageStatus.RELAYED) {
+      const wasRelayed = await this.isMessageRelayed(l2Client, addresses.l2, messageHash);
+      if (wasRelayed) {
         return { status: 'filled' };
-      } else if (status === MessageStatus.UNCONFIRMED_L1_TO_L2_MESSAGE) {
-        return { status: 'pending' };
-      } else {
-        return { status: 'unfilled' };
       }
+
+      const failed = await this.wasMessageFailed(l2Client, addresses.l2, messageHash);
+      return { status: failed ? 'unfilled' : 'pending' };
     } catch (error) {
       this.logger.error('Failed to get deposit status', {
         error: jsonifyError(error),
@@ -312,5 +312,140 @@ export class MantleBridgeAdapter implements BridgeAdapter {
 
     this.publicClients.set(chainId, client);
     return client;
+  }
+
+  protected getMessengerAddresses(chainId: number): { l1: `0x${string}`; l2: `0x${string}` } {
+    const addresses = MANTLE_MESSENGER_ADDRESSES[chainId];
+    if (!addresses) {
+      throw new Error(`Unsupported Mantle chain id ${chainId}`);
+    }
+    return addresses;
+  }
+
+  protected extractMantleMessage(
+    receipt: TransactionReceipt,
+    messengerAddress: `0x${string}`,
+  ): MantleMessage {
+    const messenger = messengerAddress.toLowerCase();
+    let baseMessage: MantleMessage | undefined;
+
+    for (const log of receipt.logs) {
+      if (log.address?.toLowerCase() !== messenger) {
+        continue;
+      }
+      try {
+        const topics = log.topics as [`0x${string}`, ...`0x${string}`[]];
+        const decoded = decodeEventLog({
+          abi: L2CrossDomainMessenger_ABI,
+          eventName: undefined,
+          data: log.data as `0x${string}`,
+          topics,
+        });
+        if (decoded.eventName === 'SentMessage') {
+          const args = decoded.args as {
+            target: `0x${string}`;
+            sender: `0x${string}`;
+            message: `0x${string}`;
+            messageNonce: bigint;
+            gasLimit: bigint;
+          };
+          baseMessage = {
+            target: args.target,
+            sender: args.sender,
+            message: args.message,
+            messageNonce: BigInt(args.messageNonce),
+            gasLimit: BigInt(args.gasLimit),
+            // Default to zero; for ERC20 deposits there is no L2 native value.
+            mntValue: 0n,
+            ethValue: 0n,
+          };
+        } else if (decoded.eventName === 'SentMessageExtension1' && baseMessage) {
+          const args = decoded.args as {
+            sender: `0x${string}`;
+            mntValue: bigint;
+            ethValue: bigint;
+          };
+          // Sanity check that extension sender matches base sender
+          if (args.sender.toLowerCase() === baseMessage.sender.toLowerCase()) {
+            baseMessage.mntValue = BigInt(args.mntValue);
+            baseMessage.ethValue = BigInt(args.ethValue);
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!baseMessage) {
+      throw new Error('Mantle SentMessage event not found in origin transaction logs');
+    }
+
+    return baseMessage;
+  }
+
+  protected computeMessageHash(message: MantleMessage): `0x${string}` {
+    const encoded = encodeFunctionData({
+      abi: L2CrossDomainMessenger_ABI,
+      functionName: 'relayMessage',
+      args: [
+        message.messageNonce,
+        message.sender,
+        message.target,
+        message.mntValue,
+        message.ethValue,
+        message.gasLimit,
+        message.message,
+      ],
+    });
+    return keccak256(encoded);
+  }
+
+  protected async isMessageRelayed(
+    client: PublicClient,
+    messengerAddress: `0x${string}`,
+    messageHash: `0x${string}`,
+  ): Promise<boolean> {
+    try {
+      return await client.readContract({
+        abi: L2CrossDomainMessenger_ABI,
+        address: messengerAddress,
+        functionName: 'successfulMessages',
+        args: [messageHash],
+      });
+    } catch (error) {
+      this.logger.error('Failed to read successfulMessages', {
+        error: jsonifyError(error),
+        messengerAddress,
+        messageHash,
+      });
+      throw error;
+    }
+  }
+
+  protected async wasMessageFailed(
+    client: PublicClient,
+    messengerAddress: `0x${string}`,
+    messageHash: `0x${string}`,
+  ): Promise<boolean> {
+    try {
+      const logs = await client.getLogs({
+        address: messengerAddress,
+        event: {
+          type: 'event',
+          name: 'FailedRelayedMessage',
+          inputs: [{ indexed: true, name: 'msgHash', type: 'bytes32' }],
+        } as const,
+        args: { msgHash: messageHash },
+        fromBlock: 0n,
+      });
+      return logs.length > 0;
+    } catch (error) {
+      this.logger.error('Failed to read FailedRelayedMessage logs', {
+        error: jsonifyError(error),
+        messengerAddress,
+        messageHash,
+      });
+      throw error;
+    }
   }
 }

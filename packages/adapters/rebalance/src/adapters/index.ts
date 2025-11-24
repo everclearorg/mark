@@ -9,6 +9,7 @@ import { SupportedBridge, MarkConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { CctpBridgeAdapter } from './cctp/cctp';
 import * as database from '@mark/database';
+import { MantleBridgeAdapter } from './mantle';
 
 export class RebalanceAdapter {
   constructor(
@@ -73,6 +74,11 @@ export class RebalanceAdapter {
           this.config.chains,
           this.config.near?.jwtToken,
           process.env.NEAR_BASE_URL || NEAR_BASE_URL,
+          this.logger,
+        );
+      case SupportedBridge.Mantle:
+        return new MantleBridgeAdapter(
+          this.config.chains,
           this.logger,
         );
       default:
