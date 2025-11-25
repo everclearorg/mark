@@ -98,7 +98,7 @@ async function executeBridgeTransactions({
       context: { requestId, route, bridgeType, transactionType: memo },
     });
 
-    logger.info('Successfully submitted and confirmed origin bridge transaction', {
+    logger.info('Successfully submitted and confirmed bridge transaction', {
       requestId,
       route,
       bridgeType,
@@ -139,7 +139,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 
   const isPaused = await rebalance.isPaused();
   if (isPaused) {
-    logger.warn('Rebalance loop is paused', { requestId });
+    logger.warn('mETH Rebalance loop is paused', { requestId });
     return rebalanceOperations;
   }
 
@@ -147,7 +147,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 
   // Get all of mark balances
   const balances = await getMarkBalancesForTicker(WETH_TICKER_HASH, config, chainService, context.prometheus);
-  logger.debug('Retrieved all mark balances for WETH', { balances: jsonifyMap(balances) });
+  logger.debug('Retrieved all solver balances for WETH', { balances: jsonifyMap(balances) });
   if (!balances) {
     logger.warn('No balances found for WETH, skipping', { requestId });
     return rebalanceOperations;
@@ -176,7 +176,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 
   // For each intent to mantle chain
   for (const intent of intents) {
-    logger.info('Processing intent', { requestId, intent });
+    logger.info('Processing mETH intent', { requestId, intent });
 
     if (!intent.hub_settlement_domain) {
       logger.warn('Intent does not have a hub settlement domain, skipping', { requestId, intent });
@@ -184,7 +184,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     }
 
     if (intent.destinations.length !== 1 || intent.destinations[0] !== MANTLE_CHAIN_ID) {
-      logger.warn('Intent does not have exactly one destination, skipping', { requestId, intent });
+      logger.warn('Intent does not have exactly one destination - mantle, skipping', { requestId, intent });
       continue;
     }
 
@@ -204,7 +204,6 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     const origin = Number(intent.hub_settlement_domain);
     const destination = MANTLE_CHAIN_ID;
 
-    // --- Route Level Checks (Synchronous or handled internally) ---
     const ticker = getTickerForAsset(bytes32ToAddress(intent.settlement_asset), origin, config);
     if (!ticker) {
       logger.error(`Ticker not found for asset, check config`, {
@@ -238,7 +237,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 
     // Ticker balances always in 18 units, convert to proper decimals
     const currentBalance = convertToNativeUnits(availableBalance, decimals);
-    logger.debug('Current balance.', { requestId, currentBalance: currentBalance.toString() });
+    logger.debug('Current WETH balance on origin chain.', { requestId, currentBalance: currentBalance.toString() });
 
     if (currentBalance <= minAmount) {
       logger.info('Balance is at or below min staking amount, skipping route', {
@@ -262,6 +261,11 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
         status: EarmarkStatus.PENDING,
       });
     } catch (error: unknown) {
+      logger.error('Failed to create earmark for intent', {
+        requestId,
+        intent,
+        error: jsonifyError(error),
+      });
       throw error;
     }
 
@@ -269,7 +273,6 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
       requestId,
       earmarkId: earmark.id,
       invoiceId: intent.intent_id,
-      status: earmark.status,
     });
 
     // --- Bridge Preference Loop ---
@@ -278,10 +281,10 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     // Send WETH to Mainnet first
     const preferences = [SupportedBridge.Across, SupportedBridge.Binance, SupportedBridge.Coinbase];
     const route = {
-      asset: bytes32ToAddress(intent.settlement_asset),
-      origin: origin,
-      destination: Number(MAINNET_CHAIN_ID),
-      maximum: amountToBridge.toString(),
+      asset: bytes32ToAddress(intent.settlement_asset),  // WETH address on settlement domain
+      origin: origin,                                    // hub_settlement_domain
+      destination: Number(MAINNET_CHAIN_ID),             // Mainnet
+      maximum: amountToBridge.toString(),                // Maximum amount to bridge
       slippagesDbps: [1000], // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
       preferences: preferences, // Priority ordered platforms
       reserve: '0', // Amount to keep on origin chain during rebalancing
@@ -307,9 +310,11 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 
       let bridgeTxRequests: MemoizedTransactionRequest[] = [];
       let receivedAmount: bigint = amountToBridge;
-      const sender = getActualAddress(route.origin, config, logger, { requestId });
 
-      if (String(origin) !== MAINNET_CHAIN_ID) {
+      const sender = getActualAddress(route.origin, config, logger, { requestId });
+      const originIsMainnet = String(origin) === MAINNET_CHAIN_ID;
+
+      if (!originIsMainnet) {
         // Step 1: Get Quote
         let receivedAmountStr: string;
         try {
@@ -353,18 +358,6 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
           });
           continue; // Skip to next bridge preference
         }
-
-        logger.info('Quote meets slippage requirements', {
-          requestId,
-          route,
-          bridgeType,
-          amountToBridge: amountToBridge.toString(),
-          receivedAmount: receivedAmount.toString(),
-          minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-          slippageDbps: slippageDbps.toString(),
-          actualSlippageDbps: actualSlippageDbps.toString(),
-          configuredSlippageDBPS: slippageDbps.toString(),
-        });
 
         // Step 3: Get Bridge Transaction Requests
         try {
@@ -414,7 +407,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
             tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
             amount: effectiveBridgedAmount,
             slippage: route.slippagesDbps[bridgeIndex],
-            status: RebalanceOperationStatus.PENDING,
+            status: originIsMainnet ? RebalanceOperationStatus.AWAITING_CALLBACK : RebalanceOperationStatus.PENDING,
             bridge: `${bridgeType}-mantle`,
             transactions: receipt ? { [route.origin]: receipt } : undefined,
             recipient: sender,
@@ -437,7 +430,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
             origin: route.origin,
             destination: route.destination,
             asset: route.asset,
-            transaction: receipt!.transactionHash,
+            transaction: receipt?.transactionHash || "",
             recipient: sender,
           };
           rebalanceOperations.push(rebalanceAction);
@@ -596,13 +589,17 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
     }
 
     // Execute callback if awaiting
-    if (operation.status === RebalanceOperationStatus.AWAITING_CALLBACK) {
+    else if (operation.status === RebalanceOperationStatus.AWAITING_CALLBACK) {
       let callback;
-      try {
-        callback = await adapter.destinationCallback(route, receipt as unknown as ViemTransactionReceipt);
-      } catch (e: unknown) {
-        logger.error('Failed to retrieve destination callback', { ...logContext, error: jsonifyError(e) });
-        continue;
+
+      // no need to execute callback if origin is mainnet
+      if(operation.originChainId !== Number(MAINNET_CHAIN_ID)) {
+        try {
+          callback = await adapter.destinationCallback(route, receipt as unknown as ViemTransactionReceipt);
+        } catch (e: unknown) {
+          logger.error('Failed to retrieve destination callback', { ...logContext, error: jsonifyError(e) });
+          continue;
+        }
       }
 
       let amountToBridge = operation.amount.toString();
@@ -683,7 +680,6 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             destination: Number(MANTLE_CHAIN_ID),
             asset: getTokenAddressFromConfig(WETH_TICKER_HASH, MAINNET_CHAIN_ID.toString(), config) || '',
           };
-          // TODO: get filled amount from withdrawal transaction. Not the amount we bridged.
           const sender = getActualAddress(route.origin, config, logger, { requestId });
 
           // Step 1: Get Quote
