@@ -428,17 +428,39 @@ export class MantleBridgeAdapter implements BridgeAdapter {
     messageHash: `0x${string}`,
   ): Promise<boolean> {
     try {
-      const logs = await client.getLogs({
-        address: messengerAddress,
-        event: {
-          type: 'event',
-          name: 'FailedRelayedMessage',
-          inputs: [{ indexed: true, name: 'msgHash', type: 'bytes32' }],
-        } as const,
-        args: { msgHash: messageHash },
-        fromBlock: 0n,
-      });
-      return logs.length > 0;
+      const currentBlock = await client.getBlockNumber();
+      const chunkSize = 5000n;
+      const numChunks = 4;
+      
+      // Fetch logs sequentially in chunks from current block backwards to avoid RPC limits
+      // Return early if FailedRelayedMessage event is found
+      for (let i = 0; i < numChunks; i++) {
+        const chunkToBlock = currentBlock - BigInt(i) * chunkSize;
+        const chunkFromBlock = currentBlock - BigInt(i + 1) * chunkSize + 1n;
+        
+        const logs = await client.getLogs({
+          address: messengerAddress,
+          event: {
+            type: 'event',
+            name: 'FailedRelayedMessage',
+            inputs: [{ indexed: true, name: 'msgHash', type: 'bytes32' }],
+          } as const,
+          args: { msgHash: messageHash },
+          fromBlock: chunkFromBlock,
+          toBlock: chunkToBlock,
+        });
+        
+        if (logs.length > 0) {
+          this.logger.debug('FailedRelayedMessage logs found', {
+            logs,
+            fromBlock: chunkFromBlock,
+            toBlock: chunkToBlock,
+          });
+          return true;
+        }
+      }
+      
+      return false;
     } catch (error) {
       this.logger.error('Failed to read FailedRelayedMessage logs', {
         error: jsonifyError(error),
