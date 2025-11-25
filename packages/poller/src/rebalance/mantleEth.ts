@@ -1,4 +1,4 @@
-import { pad, size, TransactionReceipt as ViemTransactionReceipt } from 'viem';
+import { pad, TransactionReceipt as ViemTransactionReceipt } from 'viem';
 import { getTickerForAsset, convertToNativeUnits, getMarkBalancesForTicker } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
@@ -18,11 +18,17 @@ import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
-import { createEarmark, createRebalanceOperation, Earmark, getActiveEarmarkForInvoice, TransactionEntry, TransactionReceipt } from '@mark/database';
-import { IntentStatus } from '@mark/everclear';
+import {
+  createEarmark,
+  createRebalanceOperation,
+  Earmark,
+  getActiveEarmarkForInvoice,
+  TransactionEntry,
+  TransactionReceipt,
+} from '@mark/database';
 import { bytes32ToAddress } from '@mark/rebalance/src/adapters/across/utils';
 
-const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
+//const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
 const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
 
 const MIN_STAKING_AMOUNT = 20000000000000000n; // 0.02 ETH in 18 decimals
@@ -125,7 +131,7 @@ async function executeBridgeTransactions({
 }
 
 export async function rebalanceMantleEth(context: ProcessingContext): Promise<RebalanceAction[]> {
-  const { logger, requestId, config, chainService, everclear, rebalance } = context;
+  const { logger, requestId, config, chainService, rebalance } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
   // Always check destination callbacks to ensure operations complete
@@ -164,9 +170,9 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
       hub_settlement_domain: '42161', //arb
       destinations: [MANTLE_CHAIN_ID.toString()],
       amount_out_min: '21000000000000000',
-      settlement_asset: pad('0x82af49447d8a07e3bd95bd0d56f35241523fbab1' as `0x${string}`, {size: 32}), 
+      settlement_asset: pad('0x82af49447d8a07e3bd95bd0d56f35241523fbab1' as `0x${string}`, { size: 32 }),
     },
-  ]
+  ];
 
   // For each intent to mantle chain
   for (const intent of intents) {
@@ -402,7 +408,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
         // Step 5: Create database record
         try {
           await createRebalanceOperation({
-            earmarkId: earmark.id, 
+            earmarkId: earmark.id,
             originChainId: route.origin,
             destinationChainId: route.destination,
             tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
@@ -671,7 +677,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           }
 
           const mantleBridgeType = SupportedBridge.Mantle;
-          
+
           route = {
             origin: Number(MAINNET_CHAIN_ID),
             destination: Number(MANTLE_CHAIN_ID),
@@ -788,14 +794,14 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           }
         }
 
-        if(successToMainnet) {
+        if (successToMainnet) {
           try {
             await db.updateRebalanceOperation(operation.id, {
               status: RebalanceOperationStatus.COMPLETED,
               txHashes: txHashes,
             });
 
-            if(operation.earmarkId) {
+            if (operation.earmarkId) {
               await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.COMPLETED);
             }
             logger.info('Successfully updated database with destination transaction', {

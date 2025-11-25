@@ -105,7 +105,6 @@ async function runMigration(logger: Logger): Promise<void> {
       return;
     }
 
-
     // default to aws lambda environment path
     const db_migration_path = process.env.DATABASE_MIGRATION_PATH ?? '/var/task/db/migrations';
 
@@ -120,16 +119,12 @@ async function runMigration(logger: Logger): Promise<void> {
 
     logger.info(`Running database migrations from ${db_migration_path}...`);
 
-    const result = execSync(
-      `dbmate --url "${databaseUrl}" --migrations-dir ${db_migration_path} --no-dump-schema up`,
-      {
-        encoding: 'utf-8',
-        ...cwdOption,
-      }
-    );
+    const result = execSync(`dbmate --url "${databaseUrl}" --migrations-dir ${db_migration_path} --no-dump-schema up`, {
+      encoding: 'utf-8',
+      ...cwdOption,
+    });
 
-      logger.info('Database migration completed', { output: result });
-
+    logger.info('Database migration completed', { output: result });
   } catch (error) {
     logger.error('Failed to run database migration', { error });
     throw new Error('Database migration failed - cannot continue with out-of-sync schema');
@@ -175,7 +170,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       startTime: Math.floor(Date.now() / 1000),
     };
 
-    if(process.env.RUN_MODE === 'methOnly') {
+    if (process.env.RUN_MODE === 'methOnly') {
       logger.info('Starting meth rebalancing', {
         stage: config.stage,
         environment: config.environment,

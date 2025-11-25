@@ -21,10 +21,7 @@ import {
   MANTLE_BRIDGE_CONTRACT_ADDRESS,
 } from './types';
 
-const MANTLE_MESSENGER_ADDRESSES: Record<
-  number,
-  { l1: `0x${string}`; l2: `0x${string}` }
-> = {
+const MANTLE_MESSENGER_ADDRESSES: Record<number, { l1: `0x${string}`; l2: `0x${string}` }> = {
   5000: {
     l1: '0x676A795fe6E43C17c668de16730c3F690FEB7120',
     l2: '0x4200000000000000000000000000000000000007',
@@ -111,7 +108,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       );
       if (!outputToken) {
         throw new Error('Could not find matching destination asset');
-      } 
+      }
 
       const client = this.getPublicClient(route.origin);
 
@@ -132,7 +129,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       };
 
       const mEthAmount = await this.getReceivedAmount(amount, route);
-      
+
       // Stake ETH to get mETH
       const stakeTx: MemoizedTransactionRequest = {
         memo: RebalanceTransactionMemo.Stake,
@@ -149,7 +146,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       };
 
       let approvalTx: MemoizedTransactionRequest | undefined;
-      
+
       const allowance = await client.readContract({
         address: METH_ON_ETH_ADDRESS,
         abi: erc20Abi,
@@ -322,10 +319,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
     return addresses;
   }
 
-  protected extractMantleMessage(
-    receipt: TransactionReceipt,
-    messengerAddress: `0x${string}`,
-  ): MantleMessage {
+  protected extractMantleMessage(receipt: TransactionReceipt, messengerAddress: `0x${string}`): MantleMessage {
     const messenger = messengerAddress.toLowerCase();
     let baseMessage: MantleMessage | undefined;
 
@@ -431,13 +425,13 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       const currentBlock = await client.getBlockNumber();
       const chunkSize = 5000n;
       const numChunks = 4;
-      
+
       // Fetch logs sequentially in chunks from current block backwards to avoid RPC limits
       // Return early if FailedRelayedMessage event is found
       for (let i = 0; i < numChunks; i++) {
         const chunkToBlock = currentBlock - BigInt(i) * chunkSize;
         const chunkFromBlock = currentBlock - BigInt(i + 1) * chunkSize + 1n;
-        
+
         const logs = await client.getLogs({
           address: messengerAddress,
           event: {
@@ -449,7 +443,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
           fromBlock: chunkFromBlock,
           toBlock: chunkToBlock,
         });
-        
+
         if (logs.length > 0) {
           this.logger.debug('FailedRelayedMessage logs found', {
             logs,
@@ -459,7 +453,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
           return true;
         }
       }
-      
+
       return false;
     } catch (error) {
       this.logger.error('Failed to read FailedRelayedMessage logs', {

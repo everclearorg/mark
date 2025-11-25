@@ -77,10 +77,7 @@ export class RebalanceAdapter {
           this.logger,
         );
       case SupportedBridge.Mantle:
-        return new MantleBridgeAdapter(
-          this.config.chains,
-          this.logger,
-        );
+        return new MantleBridgeAdapter(this.config.chains, this.logger);
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }

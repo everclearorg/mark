@@ -1,4 +1,4 @@
-import { erc20Abi } from "viem";
+import { erc20Abi } from 'viem';
 
 export const WETH_ABI = [
   ...erc20Abi,
