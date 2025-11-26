@@ -33,7 +33,7 @@ const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fc
 
 const MIN_STAKING_AMOUNT = 20000000000000000n; // 0.02 ETH in 18 decimals
 
- type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
+type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
 
 interface ExecuteBridgeParams {
   context: ExecuteBridgeContext;
@@ -59,8 +59,8 @@ async function executeBridgeTransactions({
   bridgeType,
   bridgeTxRequests,
   amountToBridge,
- }: ExecuteBridgeParams): Promise<ExecuteBridgeResult> {
-   const { logger, chainService, config, requestId } = context;
+}: ExecuteBridgeParams): Promise<ExecuteBridgeResult> {
+  const { logger, chainService, config, requestId } = context;
 
   // TODO: Use multisend for zodiac-enabled origin transactions
   let idx = -1;
@@ -159,11 +159,11 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     limit: 20,
     statuses: [IntentStatus.SETTLED_AND_COMPLETED],
     destinations: [MANTLE_CHAIN_ID],
-    outputAsset: pad(METH_ON_MANTLE_ADDRESS.toLowerCase() as `0x${string}`, {size: 32}),
+    outputAsset: pad(METH_ON_MANTLE_ADDRESS.toLowerCase() as `0x${string}`, { size: 32 }),
     tickerHash: WETH_TICKER_HASH,
     isFastPath: true,
   });
-  
+
   // For each intent to mantle chain
   for (const intent of intents) {
     logger.info('Processing mETH intent', { requestId, intent });
@@ -259,10 +259,10 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     // Send WETH to Mainnet first
     const preferences = [SupportedBridge.Across, SupportedBridge.Binance, SupportedBridge.Coinbase];
     const route = {
-      asset: getTokenAddressFromConfig(WETH_TICKER_HASH, origin.toString(), config)!,  // WETH address on settlement domain
-      origin: origin,                                    // hub_settlement_domain
-      destination: Number(MAINNET_CHAIN_ID),             // Mainnet
-      maximum: amountToBridge.toString(),                // Maximum amount to bridge
+      asset: getTokenAddressFromConfig(WETH_TICKER_HASH, origin.toString(), config)!, // WETH address on settlement domain
+      origin: origin, // hub_settlement_domain
+      destination: Number(MAINNET_CHAIN_ID), // Mainnet
+      maximum: amountToBridge.toString(), // Maximum amount to bridge
       slippagesDbps: [1000], // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
       preferences: preferences, // Priority ordered platforms
       reserve: '0', // Amount to keep on origin chain during rebalancing
@@ -368,8 +368,8 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 
       // Step 4: Submit the bridge transactions in order and create DB record
       try {
-         const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-           context: { requestId, logger, chainService, config },
+        const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
+          context: { requestId, logger, chainService, config },
           route,
           bridgeType,
           bridgeTxRequests,
@@ -408,7 +408,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
             origin: route.origin,
             destination: route.destination,
             asset: route.asset,
-            transaction: receipt?.transactionHash || "",
+            transaction: receipt?.transactionHash || '',
             recipient: sender,
           };
           rebalanceOperations.push(rebalanceAction);
@@ -465,7 +465,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 }
 
 export const executeMethCallbacks = async (context: ProcessingContext): Promise<void> => {
-  const { logger, requestId, config, rebalance, chainService, database: db, everclear } = context;
+  const { logger, requestId, config, rebalance, chainService, database: db } = context;
   logger.info('Executing destination callbacks for meth rebalance', { requestId });
 
   // Get all pending operations from database
@@ -572,7 +572,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       let callback;
 
       // no need to execute callback if origin is mainnet
-      if(!isFromMainnetBridge) {
+      if (!isFromMainnetBridge) {
         try {
           callback = await adapter.destinationCallback(route, receipt as unknown as ViemTransactionReceipt);
         } catch (e: unknown) {
@@ -715,7 +715,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           // Step 3: Submit the bridge transactions in order and create database record
           try {
             const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-               context: { requestId, logger, chainService, config },
+              context: { requestId, logger, chainService, config },
               route,
               bridgeType: mantleBridgeType,
               bridgeTxRequests,
