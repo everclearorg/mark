@@ -26,14 +26,14 @@ import {
   TransactionEntry,
   TransactionReceipt,
 } from '@mark/database';
-import { bytes32ToAddress } from '@mark/rebalance/src/adapters/across/utils';
+import { IntentStatus } from '@mark/everclear';
 
-//const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
+const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
 const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
 
 const MIN_STAKING_AMOUNT = 20000000000000000n; // 0.02 ETH in 18 decimals
 
-type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
+ type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
 
 interface ExecuteBridgeParams {
   context: ExecuteBridgeContext;
@@ -59,8 +59,8 @@ async function executeBridgeTransactions({
   bridgeType,
   bridgeTxRequests,
   amountToBridge,
-}: ExecuteBridgeParams): Promise<ExecuteBridgeResult> {
-  const { logger, chainService, config, requestId } = context;
+ }: ExecuteBridgeParams): Promise<ExecuteBridgeResult> {
+   const { logger, chainService, config, requestId } = context;
 
   // TODO: Use multisend for zodiac-enabled origin transactions
   let idx = -1;
@@ -131,7 +131,7 @@ async function executeBridgeTransactions({
 }
 
 export async function rebalanceMantleEth(context: ProcessingContext): Promise<RebalanceAction[]> {
-  const { logger, requestId, config, chainService, rebalance } = context;
+  const { logger, requestId, config, chainService, rebalance, everclear } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
   // Always check destination callbacks to ensure operations complete
@@ -155,25 +155,15 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
   // Get all intents to mantle
   // add parameters to filter intents: status: IntentStatus.SETTLED_AND_COMPLETED, origin: any, destination: MANTLE_CHAINID
   // TODO: check startDate to avoid processing duplicates
-  // const intents = await everclear.fetchIntents({
-  //   limit: 20,
-  //   statuses: [IntentStatus.SETTLED_AND_COMPLETED],
-  //   destinations: [MANTLE_CHAIN_ID],
-  //   outputAsset: pad(METH_ON_MANTLE_ADDRESS.toLowerCase() as `0x${string}`, {size: 32}),
-  //   tickerHash: WETH_TICKER_HASH,
-  //   isFastPath: true,
-  // });
-  // For test
-  const intents = [
-    {
-      intent_id: '0xb42258437440a37b4c723f1b3f49f4a79c38a7cc5d88d01e7eb349bba67f5177',
-      hub_settlement_domain: '42161', //arb
-      destinations: [MANTLE_CHAIN_ID.toString()],
-      amount_out_min: '21000000000000000',
-      settlement_asset: pad('0x82af49447d8a07e3bd95bd0d56f35241523fbab1' as `0x${string}`, { size: 32 }),
-    },
-  ];
-
+  const intents = await everclear.fetchIntents({
+    limit: 20,
+    statuses: [IntentStatus.SETTLED_AND_COMPLETED],
+    destinations: [MANTLE_CHAIN_ID],
+    outputAsset: pad(METH_ON_MANTLE_ADDRESS.toLowerCase() as `0x${string}`, {size: 32}),
+    tickerHash: WETH_TICKER_HASH,
+    isFastPath: true,
+  });
+  
   // For each intent to mantle chain
   for (const intent of intents) {
     logger.info('Processing mETH intent', { requestId, intent });
@@ -204,20 +194,8 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     const origin = Number(intent.hub_settlement_domain);
     const destination = MANTLE_CHAIN_ID;
 
-    const ticker = getTickerForAsset(bytes32ToAddress(intent.settlement_asset), origin, config);
-    if (!ticker) {
-      logger.error(`Ticker not found for asset, check config`, {
-        config: config.chains[origin],
-        intent,
-      });
-      continue;
-    }
-
-    if (ticker.toLowerCase() !== WETH_TICKER_HASH.toLowerCase()) {
-      logger.warn('Ticker is not WETH, skipping', { requestId, intent, ticker });
-      continue;
-    }
-
+    // WETH -> mETH intent should be settled with WETH address on settlement domain
+    const ticker = WETH_TICKER_HASH;
     const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
 
     // Convert min staking amount and intent amount from standardized 18 decimals to asset's native decimals
@@ -281,7 +259,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
     // Send WETH to Mainnet first
     const preferences = [SupportedBridge.Across, SupportedBridge.Binance, SupportedBridge.Coinbase];
     const route = {
-      asset: bytes32ToAddress(intent.settlement_asset),  // WETH address on settlement domain
+      asset: getTokenAddressFromConfig(WETH_TICKER_HASH, origin.toString(), config)!,  // WETH address on settlement domain
       origin: origin,                                    // hub_settlement_domain
       destination: Number(MAINNET_CHAIN_ID),             // Mainnet
       maximum: amountToBridge.toString(),                // Maximum amount to bridge
@@ -390,8 +368,8 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 
       // Step 4: Submit the bridge transactions in order and create DB record
       try {
-        const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-          context: { requestId, logger, chainService, config },
+         const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
+           context: { requestId, logger, chainService, config },
           route,
           bridgeType,
           bridgeTxRequests,
@@ -487,7 +465,7 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
 }
 
 export const executeMethCallbacks = async (context: ProcessingContext): Promise<void> => {
-  const { logger, requestId, config, rebalance, chainService, database: db } = context;
+  const { logger, requestId, config, rebalance, chainService, database: db, everclear } = context;
   logger.info('Executing destination callbacks for meth rebalance', { requestId });
 
   // Get all pending operations from database
@@ -517,6 +495,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
 
     const bridgeType = operation.bridge.split('-')[0];
     const isToMainnetBridge = operation.bridge.split('-').length === 2 && operation.bridge.split('-')[1] === 'mantle';
+    const isFromMainnetBridge = operation.originChainId === Number(MAINNET_CHAIN_ID);
 
     if (bridgeType !== SupportedBridge.Mantle && !isToMainnetBridge) {
       logger.warn('Operation is not a mantle bridge', logContext);
@@ -530,14 +509,14 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       | TransactionEntry<{ receipt: TransactionReceipt }>
       | undefined;
 
-    if (!originTx) {
+    if (!originTx && !isFromMainnetBridge) {
       logger.warn('Operation missing origin transaction', { ...logContext, operation });
       continue;
     }
 
     // Get the transaction receipt from origin chain
     const receipt = originTx?.metadata?.receipt;
-    if (!receipt) {
+    if (!receipt && !isFromMainnetBridge) {
       logger.info('Origin transaction receipt not found for operation', { ...logContext, operation });
       continue;
     }
@@ -593,7 +572,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       let callback;
 
       // no need to execute callback if origin is mainnet
-      if(operation.originChainId !== Number(MAINNET_CHAIN_ID)) {
+      if(!isFromMainnetBridge) {
         try {
           callback = await adapter.destinationCallback(route, receipt as unknown as ViemTransactionReceipt);
         } catch (e: unknown) {
@@ -603,12 +582,12 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       }
 
       let amountToBridge = operation.amount.toString();
-      let successToMainnet = false;
+      let successCallback = false;
       let txHashes: { [key: string]: TransactionReceipt } = {};
       if (!callback) {
         // No callback needed, mark as completed
         logger.info('No destination callback required, marking as completed', logContext);
-        successToMainnet = true;
+        successCallback = true;
       } else {
         logger.info('Retrieved destination callback', {
           ...logContext,
@@ -650,7 +629,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             continue;
           }
 
-          successToMainnet = true;
+          successCallback = true;
           txHashes[route.destination.toString()] = tx.receipt as TransactionReceipt;
           amountToBridge = (callback.transaction.value as bigint).toString();
         } catch (e) {
@@ -736,7 +715,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           // Step 3: Submit the bridge transactions in order and create database record
           try {
             const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-              context: { requestId, logger, chainService, config },
+               context: { requestId, logger, chainService, config },
               route,
               bridgeType: mantleBridgeType,
               bridgeTxRequests,
@@ -790,7 +769,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           }
         }
 
-        if (successToMainnet) {
+        if (successCallback) {
           try {
             await db.updateRebalanceOperation(operation.id, {
               status: RebalanceOperationStatus.COMPLETED,

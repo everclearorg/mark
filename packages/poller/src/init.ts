@@ -170,6 +170,9 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       startTime: Math.floor(Date.now() / 1000),
     };
 
+    await cleanupExpiredEarmarks(context);
+    await cleanupExpiredRegularRebalanceOps(context);
+
     if (process.env.RUN_MODE === 'methOnly') {
       logger.info('Starting meth rebalancing', {
         stage: config.stage,
@@ -199,9 +202,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         }),
       };
     }
-
-    await cleanupExpiredEarmarks(context);
-    await cleanupExpiredRegularRebalanceOps(context);
 
     let invoiceResult;
 
