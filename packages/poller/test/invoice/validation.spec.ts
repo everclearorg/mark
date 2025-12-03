@@ -245,5 +245,27 @@ describe('isValidInvoice', () => {
       sinon.stub(assetHelpers, 'getTickers').returns([validInvoice.ticker_hash]);
       expect(isValidInvoice(validInvoice, validConfig, Math.floor(Date.now() / 1000))).toBeUndefined();
     });
+
+    it('should return undefined if ticker is supported (case-insensitive)', () => {
+      // getTickers returns lowercase tickers, but invoice might have mixed case
+      const lowercaseTicker = validInvoice.ticker_hash.toLowerCase();
+      sinon.stub(assetHelpers, 'getTickers').returns([lowercaseTicker]);
+      const invoiceWithUpperCase = {
+        ...validInvoice,
+        ticker_hash: validInvoice.ticker_hash.toUpperCase(),
+      };
+      expect(isValidInvoice(invoiceWithUpperCase, validConfig, Math.floor(Date.now() / 1000))).toBeUndefined();
+    });
+
+    it('should return undefined if ticker is supported (whitespace trimmed)', () => {
+      // getTickers returns lowercase tickers, invoice might have leading/trailing whitespace
+      const lowercaseTicker = validInvoice.ticker_hash.toLowerCase();
+      sinon.stub(assetHelpers, 'getTickers').returns([lowercaseTicker]);
+      const invoiceWithWhitespace = {
+        ...validInvoice,
+        ticker_hash: `  ${validInvoice.ticker_hash}  `,
+      };
+      expect(isValidInvoice(invoiceWithWhitespace, validConfig, Math.floor(Date.now() / 1000))).toBeUndefined();
+    });
   });
 });

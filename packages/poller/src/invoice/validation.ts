@@ -49,7 +49,7 @@ export function isValidInvoice(
 
   // Check that the ticker hash is supported
   const tickers = getTickers(config);
-  if (!tickers.includes(invoice.ticker_hash)) {
+  if (!tickers.includes(invoice.ticker_hash.trim().toLowerCase())) {
     return InvalidPurchaseReasons.InvalidTickers;
   }
 
