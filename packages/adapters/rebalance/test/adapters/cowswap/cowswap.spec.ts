@@ -226,6 +226,20 @@ describe('CowSwapBridgeAdapter', () => {
     });
   });
 
+  describe('getMinimumAmount', () => {
+    const sampleRoute: RebalanceRoute = {
+      origin: 1,
+      destination: 1,
+      asset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+    };
+
+    it('should return null (no minimum requirement)', async () => {
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('type', () => {
     it('should return cowswap as the bridge type', () => {
       expect(adapter.type()).toBe('cowswap');
