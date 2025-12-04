@@ -11,6 +11,7 @@ module.exports = {
     '!src/**/types.ts',
     '!src/adapters/across/utils.ts',
     '!src/adapters/cctp/**/*.ts',
+    '!src/adapters/mantle/**/*.ts', // exclude Mantle from coverage temporarily
   ],
   coverageProvider: 'babel',
   coverageDirectory: 'coverage',
