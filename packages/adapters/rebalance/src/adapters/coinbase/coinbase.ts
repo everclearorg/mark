@@ -124,6 +124,11 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
     return SupportedBridge.Coinbase;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    return null;
+  }
+
   /**
    * Calculate the amount that would be received on the destination chain
    * For now, this is a placeholder implementation

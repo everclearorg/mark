@@ -45,6 +45,12 @@ export class CctpBridgeAdapter implements BridgeAdapter {
   type(): SupportedBridge {
     return this.version === 'v1' ? SupportedBridge.CCTPV1 : SupportedBridge.CCTPV2;
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    return null;
+  }
+
   // Fees: https://developers.circle.com/cctp
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     if (

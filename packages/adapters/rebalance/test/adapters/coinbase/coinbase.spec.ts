@@ -293,6 +293,20 @@ describe('CoinbaseBridgeAdapter Unit', () => {
     });
   });
 
+  describe('getMinimumAmount()', () => {
+    const sampleRoute: RebalanceRoute = {
+      origin: 1,
+      destination: 8453,
+      asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+    };
+
+    it('should return null (no minimum requirement)', async () => {
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('type()', () => {
     it('returns SupportedBridge.Coinbase', () => {
       expect(adapter.type()).toBe(SupportedBridge.Coinbase);
