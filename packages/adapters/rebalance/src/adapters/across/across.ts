@@ -38,6 +38,11 @@ export class AcrossBridgeAdapter implements BridgeAdapter {
     return SupportedBridge.Across;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    return null;
+  }
+
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
       const feesData = await this.getSuggestedFees(route, amount);

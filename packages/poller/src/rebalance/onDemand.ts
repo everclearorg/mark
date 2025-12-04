@@ -1,5 +1,5 @@
 import { ProcessingContext } from '../init';
-import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge } from '@mark/core';
+import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { OnDemandRouteConfig } from '@mark/core';
 import * as database from '@mark/database';
 import type { earmarks, Earmark } from '@mark/database';
@@ -22,6 +22,8 @@ import { jsonifyError } from '@mark/logger';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
+
+const MIN_REBALANCE_AMOUNT_FACTOR = 2n;
 
 interface OnDemandRebalanceResult {
   canRebalance: boolean;
@@ -256,7 +258,7 @@ async function evaluateDestinationChain(
     destinationBalance > earmarkedOnDestination ? destinationBalance - earmarkedOnDestination : 0n;
 
   // Calculate the amount needed to fulfill the invoice (both values now in 18 decimals)
-  const amountNeeded = requiredAmount > availableOnDestination ? requiredAmount - availableOnDestination : 0n;
+  let amountNeeded = requiredAmount > availableOnDestination ? requiredAmount - availableOnDestination : 0n;
 
   logger.info('Balance check for destination', {
     requestId,
@@ -280,6 +282,22 @@ async function evaluateDestinationChain(
       availableOnDestination: availableOnDestination.toString(),
     });
     return { canRebalance: false };
+  }
+
+  // Validate and adjust amountNeeded to meet bridge minimum requirements
+  // This ensures we don't try to rebalance amounts that are too small for bridges
+  const bridgeMinimum = await getRebalanceMinimum(routeEntries, context);
+  if (bridgeMinimum > 0n && amountNeeded < bridgeMinimum) {
+    const adjustedAmountNeeded = bridgeMinimum * MIN_REBALANCE_AMOUNT_FACTOR;
+    logger.info('Amount needed is below bridge minimum, adjusting to minimum', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      destination,
+      adjustedAmountNeeded: adjustedAmountNeeded.toString(),
+      originalAmountNeeded: amountNeeded.toString(),
+      bridgeMinimum: bridgeMinimum.toString(),
+    });
+    amountNeeded = adjustedAmountNeeded;
   }
 
   // Calculate rebalancing operations
@@ -634,6 +652,70 @@ function getAvailableBalance(
 
   const available = balance - earmarked - reserveAmount;
   return available > 0n ? available : 0n;
+}
+
+/**
+ * Get the minimum amount required across all bridge routes for a destination.
+ * Returns the minimum in 18 decimals.
+ */
+async function getRebalanceMinimum(routeEntries: RouteEntry[], context: ProcessingContext): Promise<bigint> {
+  const { logger, requestId, rebalance, config } = context;
+  let minAmount = 0n;
+
+  // Check all route entries and their bridge preferences
+  for (const entry of routeEntries) {
+    if (!entry.inputTicker || !entry.route.preferences) {
+      continue;
+    }
+
+    for (const bridgeType of entry.route.preferences) {
+      try {
+        const adapter = rebalance.getAdapter(bridgeType);
+        if (!adapter) {
+          continue;
+        }
+
+        // Create a test route for getting minimum
+        const testRoute: RebalanceRoute = {
+          asset: entry.route.asset,
+          origin: entry.route.origin,
+          destination: entry.route.destination,
+        };
+
+        const minNativeStr = await adapter.getMinimumAmount(testRoute);
+        if (minNativeStr !== null && minNativeStr !== '') {
+          const minNative = BigInt(minNativeStr);
+          if (minNative > 0n) {
+            // Convert to 18 decimals
+            const originDecimals = getDecimalsFromConfig(entry.inputTicker, entry.route.origin.toString(), config);
+            if (originDecimals) {
+              const minIn18 = convertTo18Decimals(minNative, originDecimals);
+              if (minIn18 > minAmount) {
+                minAmount = minIn18;
+                logger.debug('Found new bridge minimum', {
+                  requestId,
+                  bridgeType,
+                  route: entry.route,
+                  minNative: minNative.toString(),
+                  minIn18: minIn18.toString(),
+                  minAmount: minAmount.toString(),
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        logger.debug('Failed to get bridge minimum', {
+          requestId,
+          bridgeType,
+          route: entry.route,
+          error: jsonifyError(error),
+        });
+      }
+    }
+  }
+
+  return minAmount;
 }
 
 function calculateEarmarkedFunds(earmarks: database.CamelCasedProperties<earmarks>[]): EarmarkedFunds[] {
@@ -1824,7 +1906,7 @@ export async function getEarmarkedBalance(
   const { config } = context;
 
   const ticker = tickerHash.toLowerCase();
-  
+
   // Get earmarked amounts (both pending and ready)
   const earmarks = await database.getEarmarks({
     designatedPurchaseChain: chainId,
