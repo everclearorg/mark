@@ -341,6 +341,11 @@ export class CowSwapBridgeAdapter implements BridgeAdapter {
     return 'cowswap' as SupportedBridge;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    return null;
+  }
+
   private getTokenPair(chainId: number): { usdc: string; usdt: string } {
     const pair = USDC_USDT_PAIRS[chainId];
     if (!pair) {

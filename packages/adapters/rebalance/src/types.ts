@@ -20,6 +20,7 @@ export interface MemoizedTransactionRequest {
 export interface BridgeAdapter {
   type(): SupportedBridge;
   getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string>;
+  getMinimumAmount(route: RebalanceRoute): Promise<string | null>;
   send(sender: string, recipient: string, amount: string, route: RebalanceRoute): Promise<MemoizedTransactionRequest[]>;
   destinationCallback(
     route: RebalanceRoute,
