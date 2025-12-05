@@ -7,6 +7,7 @@ import {
   zeroAddress,
   TransactionRequestBase,
   http,
+  fallback,
   createPublicClient,
 } from 'viem';
 import { AssetConfiguration, ChainConfiguration, RebalanceRoute, SupportedBridge } from '@mark/core';
@@ -182,8 +183,8 @@ export class NearBridgeAdapter implements BridgeAdapter {
     originTransaction: TransactionReceipt,
   ): Promise<MemoizedTransactionRequest | void> {
     try {
-      const provider = this.chains[route.origin]?.providers?.[0];
-      const value = await this.getTransactionValue(provider, originTransaction);
+      const providers = this.chains[route.origin]?.providers ?? [];
+      const value = await this.getTransactionValue(providers, originTransaction, route);
       const depositAddress = this.extractDepositAddress(route.origin, originTransaction, value);
       if (!depositAddress) {
         throw new Error('No deposit address found in transaction receipt');
@@ -312,8 +313,17 @@ export class NearBridgeAdapter implements BridgeAdapter {
       return false;
     }
   }
-  protected async getTransactionValue(provider: string, originTransaction: TransactionReceipt): Promise<bigint> {
-    const client = createPublicClient({ transport: http(provider) });
+  protected async getTransactionValue(
+    providers: string[],
+    originTransaction: TransactionReceipt,
+    route: RebalanceRoute,
+  ): Promise<bigint> {
+    if (!providers.length) {
+      throw new Error(`No providers configured for origin chain ${route.origin}`);
+    }
+    const transports = providers.map((url) => http(url));
+    const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
+    const client = createPublicClient({ transport });
     const transaction = await client.getTransaction({
       hash: originTransaction.transactionHash as `0x${string}`,
     });
@@ -326,8 +336,8 @@ export class NearBridgeAdapter implements BridgeAdapter {
   ): Promise<DepositStatusResponse | undefined> {
     try {
       // Finding the deposit value
-      const provider = this.chains[route.origin]?.providers?.[0];
-      const value = await this.getTransactionValue(provider, originTransaction);
+      const providers = this.chains[route.origin]?.providers ?? [];
+      const value = await this.getTransactionValue(providers, originTransaction, route);
       // Note: value can be 0n for ERC20 token transfers (USDC, USDT, etc.)
       // Only warn if value retrieval fails completely (null/undefined)
       if (value === null || value === undefined) {
@@ -537,12 +547,14 @@ export class NearBridgeAdapter implements BridgeAdapter {
       return { needsCallback: false };
     }
 
-    const provider = this.chains[route.destination]?.providers?.[0];
-    if (!provider) {
+    const providers = this.chains[route.destination]?.providers ?? [];
+    if (!providers.length) {
       return { needsCallback: false };
     }
 
-    const client = createPublicClient({ transport: http(provider) });
+    const transports = providers.map((url) => http(url));
+    const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
+    const client = createPublicClient({ transport });
 
     const fillTransaction = await client.getTransaction({
       hash: fillTxHash as `0x${string}`,

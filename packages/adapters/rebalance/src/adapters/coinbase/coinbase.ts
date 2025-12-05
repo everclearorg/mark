@@ -7,6 +7,7 @@ import {
   formatUnits,
   createPublicClient,
   http,
+  fallback,
   PublicClient,
 } from 'viem';
 import { SupportedBridge, RebalanceRoute, MarkConfiguration } from '@mark/core';
@@ -606,14 +607,17 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
     }
 
     try {
+      const providers = chainConfig.providers;
+      const transports = providers.map((url) => http(url));
+      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
       return createPublicClient({
-        transport: http(chainConfig.providers[0]),
+        transport,
       });
     } catch (error) {
       this.logger.error('Failed to create provider', {
         error: jsonifyError(error),
         chainId,
-        provider: chainConfig.providers[0],
+        providers: chainConfig.providers,
       });
       return undefined;
     }
@@ -747,9 +751,12 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
       // Verify destination asset symbol matches contract symbol
       // Skip in test environment to avoid external HTTP calls
       if (this.config.coinbase?.apiKey!='test-coinbase-api-key') {
+        const providers = this.config.chains[route.destination]?.providers ?? [];
+        const transports = providers.map((url) => http(url));
+        const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
         const destinationPublicClient = createPublicClient({
           chain: getViemChain(route.destination),
-          transport: http(this.config.chains[route.destination].providers[0]),
+          transport,
         });
 
         // safety check: confirm that the target address appears to be a valid ERC20 contract of the intended asset

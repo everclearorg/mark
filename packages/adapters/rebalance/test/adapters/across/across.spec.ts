@@ -674,6 +674,208 @@ describe('AcrossBridgeAdapter', () => {
       // Assert
       expect(result).toBeUndefined();
     });
+
+    it('should return void when asset is not WETH', async () => {
+      const route: RebalanceRoute = {
+        asset: mockAssets['USDC'].address,
+        origin: 1,
+        destination: 10,
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        blockHash: '0xmockblockhash',
+        logs: [],
+        logsBloom: '0x',
+        blockNumber: BigInt(1234),
+        contractAddress: null,
+        effectiveGasPrice: BigInt(0),
+        from: '0xsender',
+        to: '0xSpokePoolAddress',
+        gasUsed: BigInt(0),
+        cumulativeGasUsed: BigInt(0),
+        status: 'success',
+        type: 'eip1559',
+        transactionIndex: 1,
+      };
+
+      jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
+      (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+        data: mockStatusResponse,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {} as any,
+      });
+      jest.spyOn(adapter, 'requiresCallback').mockResolvedValue({
+        needsCallback: true,
+        amount: BigInt('1000000000000000000'),
+        recipient: '0xRecipient',
+      });
+      (findAssetByAddress as jest.MockedFunction<typeof findAssetByAddress>).mockReturnValue(mockAssets['USDC']);
+
+      const result = await adapter.destinationCallback(route, mockReceipt as TransactionReceipt);
+      expect(result).toBeUndefined();
+      expect(mockLogger.debug).toHaveBeenCalledWith('Asset is not WETH, no callback needed', expect.any(Object));
+    });
+
+    it('should throw error when deposit status is not filled', async () => {
+      const route: RebalanceRoute = {
+        asset: mockAssets['WETH'].address,
+        origin: 1,
+        destination: 10,
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        blockHash: '0xmockblockhash',
+        logs: [],
+        logsBloom: '0x',
+        blockNumber: BigInt(1234),
+        contractAddress: null,
+        effectiveGasPrice: BigInt(0),
+        from: '0xsender',
+        to: '0xSpokePoolAddress',
+        gasUsed: BigInt(0),
+        cumulativeGasUsed: BigInt(0),
+        status: 'success',
+        type: 'eip1559',
+        transactionIndex: 1,
+      };
+
+      jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
+      (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+        data: { ...mockStatusResponse, status: 'pending' },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {} as any,
+      });
+
+      await expect(adapter.destinationCallback(route, mockReceipt as TransactionReceipt)).rejects.toThrow(
+        /is not yet filled/,
+      );
+    });
+
+    it('should throw error when origin asset not found', async () => {
+      const route: RebalanceRoute = {
+        asset: mockAssets['WETH'].address,
+        origin: 1,
+        destination: 10,
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        blockHash: '0xmockblockhash',
+        logs: [],
+        logsBloom: '0x',
+        blockNumber: BigInt(1234),
+        contractAddress: null,
+        effectiveGasPrice: BigInt(0),
+        from: '0xsender',
+        to: '0xSpokePoolAddress',
+        gasUsed: BigInt(0),
+        cumulativeGasUsed: BigInt(0),
+        status: 'success',
+        type: 'eip1559',
+        transactionIndex: 1,
+      };
+
+      jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
+      (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+        data: mockStatusResponse,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {} as any,
+      });
+      jest.spyOn(adapter, 'requiresCallback').mockResolvedValue({
+        needsCallback: true,
+        amount: BigInt('1000000000000000000'),
+        recipient: '0xRecipient',
+      });
+      (findAssetByAddress as jest.MockedFunction<typeof findAssetByAddress>).mockReturnValue(undefined);
+
+      await expect(adapter.destinationCallback(route, mockReceipt as TransactionReceipt)).rejects.toThrow(
+        'Could not find origin asset',
+      );
+    });
+
+    it('should throw error when destination WETH not found', async () => {
+      const route: RebalanceRoute = {
+        asset: mockAssets['WETH'].address,
+        origin: 1,
+        destination: 10,
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        blockHash: '0xmockblockhash',
+        logs: [],
+        logsBloom: '0x',
+        blockNumber: BigInt(1234),
+        contractAddress: null,
+        effectiveGasPrice: BigInt(0),
+        from: '0xsender',
+        to: '0xSpokePoolAddress',
+        gasUsed: BigInt(0),
+        cumulativeGasUsed: BigInt(0),
+        status: 'success',
+        type: 'eip1559',
+        transactionIndex: 1,
+      };
+
+      jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
+      (axiosGet as jest.MockedFunction<typeof axiosGet>).mockResolvedValueOnce({
+        data: mockStatusResponse,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {} as any,
+      });
+      jest.spyOn(adapter, 'requiresCallback').mockResolvedValue({
+        needsCallback: true,
+        amount: BigInt('1000000000000000000'),
+        recipient: '0xRecipient',
+      });
+      (findAssetByAddress as jest.MockedFunction<typeof findAssetByAddress>).mockReturnValue(mockAssets['WETH']);
+      (findMatchingDestinationAsset as jest.MockedFunction<typeof findMatchingDestinationAsset>).mockReturnValue(undefined);
+
+      await expect(adapter.destinationCallback(route, mockReceipt as TransactionReceipt)).rejects.toThrow(
+        'Failed to find destination WETH',
+      );
+    });
+
+    it('should handle errors gracefully', async () => {
+      const route: RebalanceRoute = {
+        asset: mockAssets['WETH'].address,
+        origin: 1,
+        destination: 10,
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        blockHash: '0xmockblockhash',
+        logs: [],
+        logsBloom: '0x',
+        blockNumber: BigInt(1234),
+        contractAddress: null,
+        effectiveGasPrice: BigInt(0),
+        from: '0xsender',
+        to: '0xSpokePoolAddress',
+        gasUsed: BigInt(0),
+        cumulativeGasUsed: BigInt(0),
+        status: 'success',
+        type: 'eip1559',
+        transactionIndex: 1,
+      };
+
+      jest.spyOn(adapter, 'extractDepositId').mockReturnValue(291);
+      (axiosGet as jest.MockedFunction<typeof axiosGet>).mockRejectedValueOnce(new Error('API error'));
+
+      await expect(adapter.destinationCallback(route, mockReceipt as TransactionReceipt)).rejects.toThrow();
+      expect(mockLogger.error).toHaveBeenCalledWith('destinationCallback failed', expect.any(Object));
+    });
   });
 
   describe('readyOnDestination', () => {
