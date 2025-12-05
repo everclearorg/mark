@@ -110,6 +110,12 @@ variable "db_instance_class" {
   default     = "db.t3.micro"
 }
 
+variable "db_engine_version" {
+  description = "PostgreSQL engine version for this environment"
+  type        = string
+  default     = "16.10"
+}
+
 variable "db_allocated_storage" {
   description = "The allocated storage in gibibytes"
   type        = string

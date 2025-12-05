@@ -80,7 +80,7 @@ locals {
     DD_MERGE_XRAY_TRACES         = true
     DD_TRACE_OTEL_ENABLED        = false
     MARK_CONFIG_SSM_PARAMETER    = "MASON_CONFIG_MAINNET"
-    EVERCLEAR_API_URL            = "https://api.staging.everclear.org"
+    EVERCLEAR_API_URL            = "https://api.staging.everclear.org"  # Mainnet prod API - change to "https://api.staging.everclear.org" for staging
 
     REBALANCE_CONFIG_S3_BUCKET = local.rebalanceConfig.bucket
     REBALANCE_CONFIG_S3_KEY    = local.rebalanceConfig.key

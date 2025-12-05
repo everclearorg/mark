@@ -48,6 +48,7 @@ export enum HttpPaths {
   TriggerSend = '/trigger/send',
   TriggerRebalance = '/trigger/rebalance',
   TriggerIntent = '/trigger/intent',
+  TriggerSwap = '/trigger/swap',
 }
 
 export interface PaginationParams {

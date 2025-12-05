@@ -70,7 +70,7 @@ describe('rebalanceInventory', () => {
   let getERC20ContractStub: SinonStub;
   let checkAndApproveERC20Stub: SinonStub;
   let submitTransactionWithLoggingStub: SinonStub;
-  let getAvailableBalanceLessEarmarksStub: SinonStub;
+  let getEarmarkedBalanceStub: SinonStub;
   let getTickerForAssetStub: SinonStub;
 
   const MOCK_REQUEST_ID = 'rebalance-request-id';
@@ -164,9 +164,7 @@ describe('rebalanceInventory', () => {
         effectiveGasPrice: '1000000000',
       },
     });
-    getAvailableBalanceLessEarmarksStub = stub(onDemand, 'getAvailableBalanceLessEarmarks').resolves(
-      BigInt('20000000000000000000'),
-    );
+    getEarmarkedBalanceStub = stub(onDemand, 'getEarmarkedBalance').resolves(0n);
     getTickerForAssetStub = stub(assetHelpers, 'getTickerForAsset').returns(MOCK_ERC20_TICKER_HASH);
 
     const mockERC20RouteValues: RouteRebalancingConfig = {
@@ -285,7 +283,7 @@ describe('rebalanceInventory', () => {
       },
     ]);
 
-    // Additional stub setup is done in the existing getAvailableBalanceLessEarmarksStub above
+    // Additional stub setup is done in the existing getEarmarkedBalanceStub above
 
     // Mock chainService return
     mockChainService.submitAndMonitor.resolves({
@@ -349,7 +347,7 @@ describe('rebalanceInventory', () => {
     );
 
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(originBalance);
+    getEarmarkedBalanceStub.resolves(0n);
     getTickerForAssetStub.returns(MOCK_ERC20_TICKER_HASH);
 
     // Mock adapter that returns transaction without value field
@@ -394,9 +392,9 @@ describe('rebalanceInventory', () => {
 
     // Ensure the test doesn't proceed with rebalancing logic by setting balance below maximum
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('5000000000000000000')]])); // 5 tokens, below 10 token maximum
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', BigInt('5000000000000000000')]])); // 5 tokens, below 10 token maximum
     getMarkBalancesStub.resolves(balances);
-    getAvailableBalanceLessEarmarksStub.resolves(BigInt('5000000000000000000'));
+    getEarmarkedBalanceStub.resolves(0n);
 
     await rebalanceInventory(mockContext);
 
@@ -410,9 +408,9 @@ describe('rebalanceInventory', () => {
 
     // Ensure the test doesn't proceed with rebalancing logic by setting balance below maximum
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('5000000000000000000')]])); // 5 tokens, below 10 token maximum
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', BigInt('5000000000000000000')]])); // 5 tokens, below 10 token maximum
     getMarkBalancesStub.resolves(balances);
-    getAvailableBalanceLessEarmarksStub.resolves(BigInt('5000000000000000000'));
+    getEarmarkedBalanceStub.resolves(0n);
 
     await rebalanceInventory(mockContext);
 
@@ -459,9 +457,9 @@ describe('rebalanceInventory', () => {
     // Set up a balance that needs rebalancing
     const currentBalance = BigInt('20000000000000000000'); // 20 tokens
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Return null for the adapter to simulate adapter not found
     mockRebalanceAdapter.getAdapter.returns(null as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
@@ -475,9 +473,9 @@ describe('rebalanceInventory', () => {
     // Set up a balance that needs rebalancing
     const currentBalance = BigInt('20000000000000000000');
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Mock adapter to return empty transaction requests
     const mockBridgeAdapter = {
@@ -515,7 +513,7 @@ describe('rebalanceInventory', () => {
       ]),
     );
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(originBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Ensure ticker is found
     getTickerForAssetStub.returns(MOCK_ERC20_TICKER_HASH);
@@ -571,7 +569,7 @@ describe('rebalanceInventory', () => {
       ]),
     );
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Mock successful adapter response
     const mockBridgeAdapter = {
@@ -607,9 +605,9 @@ describe('rebalanceInventory', () => {
     // Set up a balance that needs rebalancing
     const currentBalance = BigInt('20000000000000000000');
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Configure route with multiple bridge preferences
     const routeWithMultipleBridges = {
@@ -673,7 +671,7 @@ describe('rebalanceInventory', () => {
       ]),
     );
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(originBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Ensure ticker is found
     getTickerForAssetStub.returns(MOCK_ERC20_TICKER_HASH);
@@ -735,7 +733,7 @@ describe('rebalanceInventory', () => {
       ]),
     );
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(originBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Ensure ticker is found
     getTickerForAssetStub.returns(MOCK_ERC20_TICKER_HASH);
@@ -779,9 +777,9 @@ describe('rebalanceInventory', () => {
     // Set up a balance equal to reserve amount
     const currentBalance = BigInt('5000000000000000000'); // 5 tokens
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Configure route with a reserve amount equal to current balance
     const routeWithHighReserve = {
@@ -810,7 +808,7 @@ describe('rebalanceInventory', () => {
     const balances = new Map<string, Map<string, bigint>>();
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]])); // Use Zodiac chain
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Configure route to use Zodiac-enabled chain as origin
     const zodiacRoute = {
@@ -853,8 +851,8 @@ describe('rebalanceInventory', () => {
     );
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Override the getAvailableBalanceLessEarmarks to return the same low balance
-    getAvailableBalanceLessEarmarksStub.resolves(atMaximumBalance - 1n);
+    // Override the getEarmarkedBalance to return the same low balance
+    getEarmarkedBalanceStub.resolves(0n);
 
     await rebalanceInventory({ ...mockContext, config: { ...mockContext.config, routes: [routeToCheck] } });
 
@@ -895,8 +893,8 @@ describe('rebalanceInventory', () => {
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Update the getAvailableBalanceLessEarmarks stub to return the currentBalance
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    // Update the getEarmarkedBalance stub to return the currentBalance
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Mock approval transaction and bridge transaction returned serially
     const mockApprovalTxRequest: MemoizedTransactionRequest = {
@@ -985,7 +983,7 @@ describe('rebalanceInventory', () => {
     const currentBalance = BigInt(routeToTest.maximum) + 100n; // Ensure balance is above maximum
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
     getMarkBalancesStub.resolves(balances);
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // First preference (Across) returns no adapter
     mockRebalanceAdapter.getAdapter
@@ -1038,7 +1036,7 @@ describe('rebalanceInventory', () => {
     // Corrected key for the inner map to use routeToTest.origin.toString()
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), balanceForRoute]]));
     getMarkBalancesStub.resolves(balances);
-    getAvailableBalanceLessEarmarksStub.resolves(balanceForRoute);
+    getEarmarkedBalanceStub.resolves(0n);
 
     const mockAdapterA = { ...mockSpecificBridgeAdapter, getReceivedAmount: stub().rejects(new Error('Quote failed')) };
     const mockAdapterB = {
@@ -1097,7 +1095,7 @@ describe('rebalanceInventory', () => {
     const balances = new Map<string, Map<string, bigint>>();
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), balanceForRoute]]));
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(balanceForRoute);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // First adapter returns quote with > 1% slippage (receiving 18 tokens when sending 20)
     const mockAdapterA = {
@@ -1171,7 +1169,7 @@ describe('rebalanceInventory', () => {
     const balances = new Map<string, Map<string, bigint>>();
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), balanceForRoute]]));
     getMarkBalancesStub.callsFake(async () => balances);
-    getAvailableBalanceLessEarmarksStub.resolves(balanceForRoute);
+    getEarmarkedBalanceStub.resolves(0n);
 
     // First adapter returns quote with acceptable slippage (receiving 19.9 tokens when sending 20)
     const mockAdapterA = {
@@ -1227,8 +1225,8 @@ describe('rebalanceInventory', () => {
     getMarkBalancesStub.reset();
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Also set up getAvailableBalanceLessEarmarksStub
-    getAvailableBalanceLessEarmarksStub.resolves(balanceForRoute);
+    // Also set up getEarmarkedBalanceStub
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Adjust getReceivedAmount to pass slippage check
     const receivedAmountForSlippagePass = balanceForRoute.toString();
@@ -1295,8 +1293,8 @@ describe('rebalanceInventory', () => {
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([[routeToTest.origin.toString(), currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Also set up getAvailableBalanceLessEarmarksStub to return the current balance
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    // Also set up getEarmarkedBalanceStub to return the current balance
+    getEarmarkedBalanceStub.resolves(0n);
 
     const mockTxRequest: MemoizedTransactionRequest = {
       transaction: {
@@ -1384,6 +1382,7 @@ describe('Zodiac Address Validation', () => {
 
     // Stub helper functions
     getMarkBalancesStub = stub(balanceHelpers, 'getMarkBalances').callsFake(async () => new Map());
+    stub(onDemand, 'getEarmarkedBalance').resolves(0n);
 
     // Default configuration with two chains - one with Zodiac, one without
     const mockConfig: MarkConfiguration = {
@@ -1499,7 +1498,7 @@ describe('Zodiac Address Validation', () => {
       effectiveGasPrice: '1000000000',
     });
 
-    // Additional stub setup is done in the existing getAvailableBalanceLessEarmarksStub in beforeEach
+    // Additional stub setup is done in the existing getEarmarkedBalanceStub in beforeEach
 
     // Set up default balances that exceed maximum to trigger rebalancing
     const defaultBalances = new Map<string, Map<string, bigint>>();
@@ -1517,6 +1516,12 @@ describe('Zodiac Address Validation', () => {
 
   it('should use Safe address as sender for Zodiac-enabled origin chain', async () => {
     // Uses default route: Arbitrum (Zodiac) -> Ethereum (EOA)
+    mockContext.config.routes = [
+      {
+        ...mockContext.config.routes[0],
+        maximum: '0',
+      },
+    ];
     const currentBalance = BigInt('20000000000000000000'); // 20 tokens, above maximum
     const balances = new Map<string, Map<string, bigint>>();
     balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
@@ -1592,7 +1597,7 @@ describe('Zodiac Address Validation', () => {
         origin: 42161, // Arbitrum (with Zodiac)
         destination: 10, // Optimism (with Zodiac)
         asset: MOCK_ASSET_ERC20,
-        maximum: '10000000000000000000',
+        maximum: '0',
         slippagesDbps: [1000], // 1% in decibasis points // 1% in basis points
         preferences: [MOCK_BRIDGE_TYPE],
       },
@@ -1676,7 +1681,7 @@ describe('Reserve Amount Functionality', () => {
   // Stubs for module functions used in this describe block
   let getMarkBalancesStub: SinonStub;
   let submitTransactionWithLoggingStub: SinonStub;
-  let getAvailableBalanceLessEarmarksStub: SinonStub;
+  let getEarmarkedBalanceStub: SinonStub;
 
   // Stubs for module functions
   // Using stubs from parent scope
@@ -1717,9 +1722,7 @@ describe('Reserve Amount Functionality', () => {
         effectiveGasPrice: '1000000000',
       },
     });
-    getAvailableBalanceLessEarmarksStub = stub(onDemand, 'getAvailableBalanceLessEarmarks').resolves(
-      BigInt('20000000000000000000'),
-    );
+    getEarmarkedBalanceStub = stub(onDemand, 'getEarmarkedBalance').resolves(0n);
 
     mockContext = {
       logger: mockLogger,
@@ -1793,7 +1796,7 @@ describe('Reserve Amount Functionality', () => {
       .returns(mockSpecificBridgeAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
     mockSpecificBridgeAdapter.type.returns(MOCK_BRIDGE_TYPE);
 
-    // Additional stub setup is done in the existing getAvailableBalanceLessEarmarksStub in beforeEach
+    // Additional stub setup is done in the existing getEarmarkedBalanceStub in beforeEach
   });
 
   afterEach(() => {
@@ -1816,11 +1819,11 @@ describe('Reserve Amount Functionality', () => {
     const currentBalance = BigInt('20000000000000000000'); // 20 tokens
     const expectedAmountToBridge = BigInt('17000000000000000000'); // 20 - 3 = 17 tokens
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Ensure getAvailableBalanceLessEarmarks returns the current balance
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    // Ensure getEarmarkedBalance returns the current balance
+    getEarmarkedBalanceStub.resolves(0n);
 
     const mockTxRequest: MemoizedTransactionRequest = {
       transaction: {
@@ -1863,11 +1866,11 @@ describe('Reserve Amount Functionality', () => {
 
     const currentBalance = BigInt('15000000000000000000'); // 15 tokens (same as reserve)
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Ensure getAvailableBalanceLessEarmarks returns the current balance
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    // Ensure getEarmarkedBalance returns the current balance
+    getEarmarkedBalanceStub.resolves(0n);
 
     await rebalanceInventory(mockContext);
 
@@ -1896,11 +1899,11 @@ describe('Reserve Amount Functionality', () => {
 
     const currentBalance = BigInt('20000000000000000000'); // 20 tokens (less than reserve)
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Ensure getAvailableBalanceLessEarmarks returns the current balance
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    // Ensure getEarmarkedBalance returns the current balance
+    getEarmarkedBalanceStub.resolves(0n);
 
     await rebalanceInventory(mockContext);
 
@@ -1929,11 +1932,11 @@ describe('Reserve Amount Functionality', () => {
 
     const currentBalance = BigInt('20000000000000000000'); // 20 tokens
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Ensure getAvailableBalanceLessEarmarks returns the current balance
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    // Ensure getEarmarkedBalance returns the current balance
+    getEarmarkedBalanceStub.resolves(0n);
 
     const mockTxRequest: MemoizedTransactionRequest = {
       transaction: {
@@ -1978,11 +1981,11 @@ describe('Reserve Amount Functionality', () => {
     const currentBalance = BigInt('20000000000000000000'); // 20 tokens
     const amountToBridge = BigInt('15000000000000000000'); // 20 - 5 = 15 tokens
     const balances = new Map<string, Map<string, bigint>>();
-    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['42161', currentBalance]]));
+    balances.set(MOCK_ERC20_TICKER_HASH.toLowerCase(), new Map([['1', currentBalance]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Ensure getAvailableBalanceLessEarmarks returns the current balance
-    getAvailableBalanceLessEarmarksStub.resolves(currentBalance);
+    // Ensure getEarmarkedBalance returns the current balance
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Quote should be slightly less than amountToBridge to test slippage logic
     const receivedAmount = BigInt('14850000000000000000'); // 14.85 tokens (1% slippage exactly)
@@ -2013,9 +2016,7 @@ describe('Reserve Amount Functionality', () => {
 describe('Decimal Handling', () => {
   it('should handle USDC (6 decimals) correctly when comparing balances and calling adapters', async () => {
     // Setup stubs for this test
-    const getAvailableBalanceLessEarmarksStub = stub(onDemand, 'getAvailableBalanceLessEarmarks').resolves(
-      BigInt('1000000000000000000'),
-    );
+    const getEarmarkedBalanceStub = stub(onDemand, 'getEarmarkedBalance').resolves(0n);
 
     // Setup for 6-decimal USDC testing
     const MOCK_USDC_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as `0x${string}`;
@@ -2124,8 +2125,8 @@ describe('Decimal Handling', () => {
     balances.set(MOCK_USDC_TICKER_HASH.toLowerCase(), new Map([['42161', balanceValue]]));
     getMarkBalancesStub.resolves(balances);
 
-    // Ensure getAvailableBalanceLessEarmarks returns the balance value
-    getAvailableBalanceLessEarmarksStub.resolves(balanceValue);
+    // Ensure getEarmarkedBalance returns the balance value
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Expected: 48796999 - 47000000 = 1796999 (in 6-decimal USDC format)
     const expectedAmountToBridge = '1796999';
@@ -2169,9 +2170,7 @@ describe('Decimal Handling', () => {
 
   it('should skip USDC route when balance is at maximum', async () => {
     // Setup stubs for this test
-    const getAvailableBalanceLessEarmarksStub = stub(onDemand, 'getAvailableBalanceLessEarmarks').resolves(
-      BigInt('1000000000000000000'),
-    );
+    const getEarmarkedBalanceStub = stub(onDemand, 'getEarmarkedBalance').resolves(0n);
 
     const MOCK_USDC_ADDRESS = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as `0x${string}`;
     const MOCK_USDC_TICKER_HASH = '0xusdctickerhashtest' as `0x${string}`;
@@ -2242,8 +2241,8 @@ describe('Decimal Handling', () => {
     balances.set(MOCK_USDC_TICKER_HASH.toLowerCase(), new Map([['42161', BigInt('1000000000000000000')]]));
     getMarkBalancesStub.callsFake(async () => balances);
 
-    // Ensure getAvailableBalanceLessEarmarks returns the same balance
-    getAvailableBalanceLessEarmarksStub.resolves(BigInt('1000000000000000000'));
+    // Ensure getEarmarkedBalance returns the same balance
+    getEarmarkedBalanceStub.resolves(0n);
 
     // Mock getDecimalsFromConfig to return 6 for USDC
     const getDecimalsFromConfigMock = getDecimalsFromConfig as jest.Mock;
