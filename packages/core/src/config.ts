@@ -9,7 +9,11 @@ import {
   Stage,
   HubConfig,
   RebalanceConfig,
+  SupportedBridge,
+  RouteRebalancingConfig,
 } from './types/config';
+import yaml from 'js-yaml';
+import fs from 'fs';
 import { LogLevel } from './types/logging';
 import { getSsmParameter } from './ssm';
 import { existsSync, readFileSync } from 'fs';
@@ -33,6 +37,8 @@ export const DEFAULT_GAS_THRESHOLD = '5000000000000000'; // 0.005 eth
 export const DEFAULT_BALANCE_THRESHOLD = '0'; // 0
 export const DEFAULT_INVOICE_AGE = '1';
 export const EVERCLEAR_MAINNET_CONFIG_URL = 'https://raw.githubusercontent.com/connext/chaindata/main/everclear.json';
+export const EVERCLEAR_MAINNET_STAGING_CONFIG_URL =
+  'https://raw.githubusercontent.com/connext/chaindata/main/everclear.mainnet.staging.json';
 export const EVERCLEAR_TESTNET_CONFIG_URL =
   'https://raw.githubusercontent.com/connext/chaindata/main/everclear.testnet.json';
 export const EVERCLEAR_MAINNET_API_URL = 'https://api.everclear.org';
@@ -88,6 +94,64 @@ export const getEverclearConfig = async (_configUrl?: string): Promise<Everclear
 };
 
 export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
+  const routesLocalYaml = process.env.ROUTES_LOCAL_YAML;
+  if (routesLocalYaml) {
+    try {
+      const yamlContent = await fs.promises.readFile(routesLocalYaml, 'utf8');
+      const parsedYaml = yaml.load(yamlContent) as {
+        routes: Array<{
+          asset: string;
+          origin: number;
+          destination: number;
+          maximum: string;
+          slippagesDbps: number[];
+          preferences: string[];
+          reserve?: string;
+        }>;
+      };
+
+      console.log(parsedYaml);
+
+      const routes: RouteRebalancingConfig[] = parsedYaml.routes.reduce((acc, route) => {
+        try {
+          const preferences = route.preferences.map((pref) => {
+            const [key, value] = pref.split('.');
+            switch (key) {
+              case 'SupportedBridge':
+                const bridge = SupportedBridge[value as keyof typeof SupportedBridge];
+                if (bridge === undefined) {
+                  throw new Error(`Unsupported bridge preference: ${pref}`);
+                }
+                return bridge;
+              default:
+                throw new Error(`Unsupported preference key: ${key}`);
+            }
+          });
+
+          acc.push({
+            asset: route.asset,
+            origin: route.origin,
+            destination: route.destination,
+            maximum: route.maximum,
+            slippagesDbps: route.slippagesDbps,
+            preferences,
+            reserve: route.reserve,
+          });
+        } catch (error) {
+          console.error(`Failed to process route: ${route.asset} ${route.origin}>${route.destination}`, error);
+        }
+        return acc;
+      }, [] as RouteRebalancingConfig[]);
+
+      return {
+        routes,
+        onDemandRoutes: [],
+      };
+    } catch (error) {
+      console.error('Failed to load routes from YAML:', error);
+    }
+  }
+
   // Try to fetch from S3 first
   const s3Config = await getRebalanceConfigFromS3();
   if (s3Config) {
@@ -104,7 +168,16 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
     const environment = ((await fromEnv('ENVIRONMENT')) ?? 'local') as Environment;
-    const url = environment === 'mainnet' ? EVERCLEAR_MAINNET_CONFIG_URL : EVERCLEAR_TESTNET_CONFIG_URL;
+    const stage = ((await fromEnv('STAGE')) ?? 'development') as Stage;
+
+    // Determine config URL based on environment and stage
+    let url: string;
+    if (environment === 'mainnet') {
+      url = stage === 'staging' ? EVERCLEAR_MAINNET_STAGING_CONFIG_URL : EVERCLEAR_MAINNET_CONFIG_URL;
+    } else {
+      url = EVERCLEAR_TESTNET_CONFIG_URL;
+    }
+
     const apiUrl = environment === 'mainnet' ? EVERCLEAR_MAINNET_API_URL : EVERCLEAR_TESTNET_API_URL;
 
     const hostedConfig = await getEverclearConfig(url);
@@ -114,6 +187,11 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const configJson = existsSync('config.json')
       ? JSON.parse(readFileSync('config.json', 'utf8'))
       : JSON.parse(configStr ?? '{}');
+
+    // Extract web3_signer_private_key from config JSON and make it available as an environment variable
+    if (configJson.web3_signer_private_key && !process.env.WEB3_SIGNER_PRIVATE_KEY) {
+      process.env.WEB3_SIGNER_PRIVATE_KEY = configJson.web3_signer_private_key;
+    }
 
     const supportedAssets =
       configJson.supportedAssets ?? parseSupportedAssets(await requireEnv('SUPPORTED_ASSET_SYMBOLS'));
@@ -170,6 +248,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         apiKey: configJson.binance_api_key ?? (await fromEnv('BINANCE_API_KEY', true)) ?? undefined,
         apiSecret: configJson.binance_api_secret ?? (await fromEnv('BINANCE_API_SECRET', true)) ?? undefined,
       },
+      coinbase: {
+        apiKey: configJson.coinbase_api_key ?? (await fromEnv('COINBASE_API_KEY', true)) ?? undefined,
+        apiSecret: configJson.coinbase_api_secret ?? (await fromEnv('COINBASE_API_SECRET', true)) ?? undefined,
+      },
       kraken: {
         apiKey: configJson.kraken_api_key ?? (await fromEnv('KRAKEN_API_KEY', true)) ?? undefined,
         apiSecret: configJson.kraken_api_secret ?? (await fromEnv('KRAKEN_API_SECRET', true)) ?? undefined,
@@ -192,7 +274,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       supportedAssets,
       chains: await parseChainConfigurations(hostedConfig, supportedAssets, configJson),
       logLevel: ((await fromEnv('LOG_LEVEL')) ?? 'debug') as LogLevel,
-      stage: ((await fromEnv('STAGE')) ?? 'development') as Stage,
+      stage,
       environment,
       hub: configJson.hub ?? parseHubConfigurations(hostedConfig, environment),
       routes: filteredRoutes,

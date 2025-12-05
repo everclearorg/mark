@@ -176,6 +176,10 @@ const mockConfig: MarkConfiguration = {
     apiKey: 'test-kraken-api-key',
     apiSecret: 'test-kraken-api-secret',
   },
+  coinbase: {
+    apiKey: 'test-api-key',
+    apiSecret: 'test-api-secret',
+  },
   near: {
     jwtToken: 'test-jwt-token',
   },
@@ -357,6 +361,8 @@ function createMockRebalanceOperation(overrides: Partial<any> = {}) {
     slippage: 100,
     status: 'pending',
     bridge: SupportedBridge.Kraken,
+    isOrphaned: false,
+    metadata: {},
     recipient: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -571,6 +577,46 @@ describe('KrakenBridgeAdapter Unit', () => {
 
       const provider = adapterWithoutProviders.getProvider(1);
       expect(provider).toBeUndefined();
+    });
+  });
+
+  describe('getMinimumAmount()', () => {
+    const sampleRoute: RebalanceRoute = {
+      origin: 1,
+      destination: 42161,
+      asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockDynamicConfig.getAssetMapping.mockResolvedValue(mockETHMainnetKrakenMapping);
+      mockKrakenClient.isSystemOperational.mockResolvedValue(true);
+    });
+
+    it('should return deposit minimum for valid route', async () => {
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      // Should return deposit minimum in native units
+      // mockETHMainnetKrakenMapping has depositMethod.minimum = '0.0001' which is 100000000000000 wei
+      expect(result).toBeTruthy();
+      expect(result).toBe('100000000000000'); // 0.0001 ETH minimum
+    });
+
+    it('should return null when asset mapping is not found', async () => {
+      mockDynamicConfig.getAssetMapping.mockRejectedValueOnce(new Error('No mapping found'));
+
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when asset config is not found', async () => {
+      const { findAssetByAddress } = require('../../../src/shared/asset');
+      jest.spyOn(require('../../../src/shared/asset'), 'findAssetByAddress').mockReturnValueOnce(undefined);
+
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
     });
   });
 
@@ -1990,12 +2036,21 @@ describe('KrakenBridgeAdapter Unit', () => {
       });
       
       mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue({
+        id: 'test-id',
+        earmarkId: 'test-earmark-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isOrphaned: false,
+        metadata: {},
+        slippage: 100,
+        status: 'pending',
+        bridge: SupportedBridge.Kraken,
         recipient: '0x9876543210987654321098765432109876543210',
         amount: '100000000000000000',
         originChainId: 1,
         destinationChainId: 42161,
         tickerHash: '0x1234567890123456789012345678901234567890123456789012345678901234',
-        transactions: { origin: '0xtesttx123' },
+        transactions: { },
       });
     });
 
