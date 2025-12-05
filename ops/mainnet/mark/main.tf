@@ -45,6 +45,9 @@ locals {
     chains = local.mark_config_json.chains
     db_password = local.mark_config_json.db_password
     admin_token = local.mark_config_json.admin_token
+    # TAC/TON configuration (optional - for TAC USDT rebalancing)
+    tonSignerAddress = try(local.mark_config_json.tonSignerAddress, "")
+    ton_mnemonic     = try(local.mark_config_json.ton.mnemonic, "")
   }
 }
 
