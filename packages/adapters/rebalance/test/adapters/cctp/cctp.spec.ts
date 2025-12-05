@@ -78,6 +78,10 @@ describe('CctpBridgeAdapter', () => {
     expect(adapter.type()).toBe('cctpv1');
   });
 
+  it('getMinimumAmount returns null (no minimum requirement)', async () => {
+    expect(await adapter.getMinimumAmount(route)).toBeNull();
+  });
+
   it('getReceivedAmount returns input amount', async () => {
     expect(await adapter.getReceivedAmount('123', route)).toBe('123');
   });

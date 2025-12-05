@@ -806,6 +806,163 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /trigger/swap:
+    post:
+      tags:
+        - Trigger Operations
+      summary: Trigger swap operation
+      description: Manually execute a same-chain swap operation using the configured swap adapter (e.g., CowSwap).
+      operationId: triggerSwap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - chainId
+                - inputAsset
+                - outputAsset
+                - amount
+              properties:
+                chainId:
+                  type: number
+                  description: Chain ID to execute swap on
+                  example: 42161
+                inputAsset:
+                  type: string
+                  description: Input asset address or ticker (e.g., USDT address or "USDT")
+                  example: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+                outputAsset:
+                  type: string
+                  description: Output asset address or ticker (e.g., USDC address or "USDC")
+                  example: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+                amount:
+                  type: string
+                  description: Amount to swap (in 18 decimals or native units)
+                  example: "1000000000000000000"
+                slippage:
+                  type: number
+                  description: Optional slippage tolerance in DBPS (decibasis points, 1e7 = 100%)
+                  example: 100
+                swapAdapter:
+                  type: string
+                  description: Optional swap adapter name (defaults to "cowswap")
+                  example: "cowswap"
+                recipient:
+                  type: string
+                  description: Optional recipient address (defaults to own address)
+                  example: "0x1234567890123456789012345678901234567890"
+      responses:
+        '200':
+          description: Swap operation triggered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                  - swap
+                properties:
+                  message:
+                    type: string
+                    example: Swap operation triggered successfully
+                  swap:
+                    type: object
+                    required:
+                      - orderUid
+                      - chainId
+                      - inputAsset
+                      - outputAsset
+                      - inputTicker
+                      - outputTicker
+                      - sellAmount
+                      - buyAmount
+                    properties:
+                      orderUid:
+                        type: string
+                        description: Swap order UID from the swap adapter
+                        example: "0xabc123..."
+                      chainId:
+                        type: number
+                        description: Chain ID where swap was executed
+                        example: 42161
+                      inputAsset:
+                        type: string
+                        description: Input asset address
+                        example: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+                      outputAsset:
+                        type: string
+                        description: Output asset address
+                        example: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+                      inputTicker:
+                        type: string
+                        description: Input asset ticker
+                        example: "USDT"
+                      outputTicker:
+                        type: string
+                        description: Output asset ticker
+                        example: "USDC"
+                      sellAmount:
+                        type: string
+                        description: Amount sold (input amount)
+                        example: "1000000000000000000"
+                      buyAmount:
+                        type: string
+                        description: Amount bought (expected output amount)
+                        example: "990000000000000000"
+                      executedSellAmount:
+                        type: string
+                        description: Actual executed sell amount (if available)
+                        example: "1000000000000000000"
+                      executedBuyAmount:
+                        type: string
+                        description: Actual executed buy amount (if available)
+                        example: "990000000000000000"
+                      slippage:
+                        type: string
+                        description: Actual slippage in DBPS (if slippage validation was performed)
+                        example: "100"
+        '400':
+          description: Invalid request - missing fields, validation failure, or slippage exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingField:
+                  summary: Missing required field
+                  value:
+                    message: "chainId is required in request body"
+                chainNotConfigured:
+                  summary: Chain not configured
+                  value:
+                    message: "Chain 999 is not configured"
+                assetNotFound:
+                  summary: Asset not found
+                  value:
+                    message: "Input asset USDT not found on chain 42161"
+                invalidAdapter:
+                  summary: Invalid swap adapter
+                  value:
+                    message: "Invalid swap adapter: invalid_adapter. Supported: cowswap, ..."
+                adapterNotSupported:
+                  summary: Adapter does not support executeSwap
+                  value:
+                    message: "Swap adapter invalid does not support executeSwap operation"
+                slippageExceeded:
+                  summary: Slippage tolerance exceeded
+                  value:
+                    message: "Slippage tolerance exceeded"
+                    providedSlippageDbps: 100
+                    actualSlippageDbps: "150"
+                    sentAmount: "1000000000000000000"
+                    receivedAmount: "0.985"
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     AdminToken:

@@ -1,24 +1,34 @@
 import { ProcessingContext } from '../init';
-import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge, DBPS_MULTIPLIER } from '@mark/core';
+import { Invoice, EarmarkStatus, RebalanceOperationStatus, SupportedBridge, RebalanceRoute } from '@mark/core';
 import { OnDemandRouteConfig } from '@mark/core';
 import * as database from '@mark/database';
 import type { earmarks, Earmark } from '@mark/database';
-import { getMarkBalances, convertToNativeUnits, convertTo18Decimals, getTickerForAsset } from '../helpers';
-import { getDecimalsFromConfig } from '@mark/core';
+import {
+  convertTo18Decimals,
+  getMarkBalances,
+  getTickerForAsset,
+  planSameChainSwap,
+  planDirectBridgeRoute,
+  planSwapBridgeRoute,
+  isSameChainSwapRoute,
+  isSwapBridgeRoute,
+  isDirectBridgeRoute,
+  getRoutePriority,
+  PlannedRebalanceOperation,
+  RouteEntry,
+} from '../helpers';
+import { getDecimalsFromConfig, getTokenAddressFromConfig } from '@mark/core';
 import { jsonifyError } from '@mark/logger';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 
+const MIN_REBALANCE_AMOUNT_FACTOR = 2n;
+
 interface OnDemandRebalanceResult {
   canRebalance: boolean;
   destinationChain?: number;
-  rebalanceOperations?: {
-    originChain: number;
-    amount: string;
-    bridge: SupportedBridge;
-    slippage: number;
-  }[];
+  rebalanceOperations?: PlannedRebalanceOperation[];
   totalAmount?: string;
   minAmount?: string;
 }
@@ -63,18 +73,36 @@ export async function evaluateOnDemandRebalancing(
   // For each potential destination chain, evaluate if we can aggregate enough funds
   const evaluationResults: Map<number, OnDemandRebalanceResult & { minAmount: string }> = new Map();
 
+  logger.info('Evaluating all invoice destinations for on-demand rebalancing', {
+    requestId,
+    invoiceId: invoice.intent_id,
+    invoiceTicker: invoice.ticker_hash.toLowerCase(),
+    destinations: invoice.destinations,
+    minAmounts,
+    onDemandRoutesCount: onDemandRoutes.length,
+  });
+
   for (const destinationStr of invoice.destinations) {
     const destination = parseInt(destinationStr);
 
     // Skip if no minAmount for this destination
     if (!minAmounts[destinationStr]) {
-      logger.debug('No minAmount for destination, skipping', {
+      logger.warn('No minAmount for destination, skipping', {
         requestId,
         invoiceId: invoice.intent_id,
         destination,
+        destinationStr,
+        availableMinAmounts: Object.keys(minAmounts),
       });
       continue;
     }
+
+    logger.info('Evaluating destination chain', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      destination,
+      minAmount: minAmounts[destinationStr],
+    });
 
     const result = await evaluateDestinationChain(
       invoice,
@@ -86,22 +114,61 @@ export async function evaluateOnDemandRebalancing(
       context,
     );
 
+    logger.info('Destination chain evaluation result', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      destination,
+      canRebalance: result.canRebalance,
+      hasOperations: !!result.rebalanceOperations && result.rebalanceOperations.length > 0,
+      operationsCount: result.rebalanceOperations?.length || 0,
+    });
+
     if (result.canRebalance) {
       evaluationResults.set(destination, { ...result, minAmount: minAmounts[destinationStr] });
+      logger.info('Destination chain can be rebalanced', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        destination,
+        operationsCount: result.rebalanceOperations?.length || 0,
+      });
+    } else {
+      logger.warn('Destination chain cannot be rebalanced', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        destination,
+      });
     }
   }
+
+  logger.info('Finished evaluating all destinations', {
+    requestId,
+    invoiceId: invoice.intent_id,
+    totalDestinations: invoice.destinations.length,
+    viableDestinations: evaluationResults.size,
+    viableDestinationChains: Array.from(evaluationResults.keys()),
+  });
 
   // Select the best destination
   const bestDestination = selectBestDestination(evaluationResults);
 
   if (!bestDestination) {
-    logger.info('No viable destination found for on-demand rebalancing', {
+    logger.warn('No viable destination found for on-demand rebalancing', {
       requestId,
       invoiceId: invoice.intent_id,
       evaluatedDestinations: evaluationResults.size,
+      invoiceDestinations: invoice.destinations,
+      invoiceTicker: invoice.ticker_hash.toLowerCase(),
+      onDemandRoutesCount: onDemandRoutes.length,
     });
     return { canRebalance: false };
   }
+
+  logger.info('Selected best destination for on-demand rebalancing', {
+    requestId,
+    invoiceId: invoice.intent_id,
+    destinationChain: bestDestination.destinationChain,
+    operationsCount: bestDestination.rebalanceOperations?.length || 0,
+  });
 
   return bestDestination;
 }
@@ -115,26 +182,68 @@ async function evaluateDestinationChain(
   earmarkedFunds: EarmarkedFunds[],
   context: ProcessingContext,
 ): Promise<OnDemandRebalanceResult> {
-  const { logger, config } = context;
+  const { logger, config, requestId } = context;
 
-  // Find routes that can send to this destination
-  const applicableRoutes = routes.filter((route) => {
-    if (route.destination !== destination) return false;
-    const routeTickerHash = getTickerForAsset(route.asset, route.origin, config);
-    return routeTickerHash && routeTickerHash.toLowerCase() === invoice.ticker_hash.toLowerCase();
+  const invoiceTickerLower = invoice.ticker_hash.toLowerCase();
+
+  logger.info('Evaluating destination chain for on-demand rebalancing', {
+    requestId,
+    invoiceId: invoice.intent_id,
+    destination,
+    invoiceTicker: invoiceTickerLower,
+    minAmount,
+    availableRoutes: routes.length,
   });
 
-  if (applicableRoutes.length === 0) {
+  const routeEntries = buildRouteEntriesForDestination(
+    destination,
+    routes,
+    invoiceTickerLower,
+    invoice.intent_id,
+    config,
+    logger,
+  );
+
+  logger.info('Route entries built for destination', {
+    requestId,
+    invoiceId: invoice.intent_id,
+    destination,
+    routeEntriesCount: routeEntries.length,
+    routeEntries: routeEntries.map((e) => ({
+      inputTicker: e.inputTicker,
+      outputTicker: e.outputTicker,
+      priority: e.priority,
+      route: {
+        origin: e.route.origin,
+        destination: e.route.destination,
+        asset: e.route.asset,
+        swapOutputAsset: e.route.swapOutputAsset,
+      },
+    })),
+  });
+
+  if (routeEntries.length === 0) {
+    logger.warn('No route entries found for destination', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      destination,
+      invoiceTicker: invoiceTickerLower,
+    });
     return { canRebalance: false };
   }
 
-  const ticker = invoice.ticker_hash.toLowerCase();
+  const ticker = invoiceTickerLower;
 
   // minAmount from API is already in standardized 18 decimals
   const requiredAmount = BigInt(minAmount);
 
   if (!requiredAmount) {
-    logger.error('Invalid minAmount', { minAmount, destination });
+    logger.error('Invalid minAmount', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      minAmount,
+      destination,
+    });
     return { canRebalance: false };
   }
 
@@ -149,26 +258,91 @@ async function evaluateDestinationChain(
     destinationBalance > earmarkedOnDestination ? destinationBalance - earmarkedOnDestination : 0n;
 
   // Calculate the amount needed to fulfill the invoice (both values now in 18 decimals)
-  const amountNeeded = requiredAmount > availableOnDestination ? requiredAmount - availableOnDestination : 0n;
+  let amountNeeded = requiredAmount > availableOnDestination ? requiredAmount - availableOnDestination : 0n;
+
+  logger.info('Balance check for destination', {
+    requestId,
+    invoiceId: invoice.intent_id,
+    destination,
+    ticker,
+    requiredAmount: requiredAmount.toString(),
+    destinationBalance: destinationBalance.toString(),
+    earmarkedOnDestination: earmarkedOnDestination.toString(),
+    availableOnDestination: availableOnDestination.toString(),
+    amountNeeded: amountNeeded.toString(),
+  });
 
   // If destination already has enough, no need to rebalance
   if (amountNeeded <= 0n) {
+    logger.info('Destination already has sufficient balance, no rebalancing needed', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      destination,
+      requiredAmount: requiredAmount.toString(),
+      availableOnDestination: availableOnDestination.toString(),
+    });
     return { canRebalance: false };
   }
 
+  // Validate and adjust amountNeeded to meet bridge minimum requirements
+  // This ensures we don't try to rebalance amounts that are too small for bridges
+  const bridgeMinimum = await getRebalanceMinimum(routeEntries, context);
+  if (bridgeMinimum > 0n && amountNeeded < bridgeMinimum) {
+    const adjustedAmountNeeded = bridgeMinimum * MIN_REBALANCE_AMOUNT_FACTOR;
+    logger.info('Amount needed is below bridge minimum, adjusting to minimum', {
+      requestId,
+      invoiceId: invoice.intent_id,
+      destination,
+      adjustedAmountNeeded: adjustedAmountNeeded.toString(),
+      originalAmountNeeded: amountNeeded.toString(),
+      bridgeMinimum: bridgeMinimum.toString(),
+    });
+    amountNeeded = adjustedAmountNeeded;
+  }
+
   // Calculate rebalancing operations
+  logger.info('Calculating rebalancing operations', {
+    requestId,
+    invoiceId: invoice.intent_id,
+    destination,
+    amountNeeded: amountNeeded.toString(),
+    routeEntriesCount: routeEntries.length,
+  });
+
   const { operations, canFulfill, totalAchievable } = await calculateRebalancingOperations(
     amountNeeded,
-    applicableRoutes,
+    routeEntries,
     balances,
     earmarkedFunds,
-    invoice.ticker_hash,
+    invoiceTickerLower,
+    invoice.intent_id,
     context,
   );
 
+  logger.info('Rebalancing operations calculated', {
+    requestId,
+    invoiceId: invoice.intent_id,
+    destination,
+    operationsCount: operations.length,
+    canFulfill,
+    totalAchievable: totalAchievable.toString(),
+    amountNeeded: amountNeeded.toString(),
+    operations: operations.map((op) => ({
+      originChain: op.originChain,
+      destinationChain: op.destinationChain,
+      amount: op.amount,
+      bridge: op.bridge,
+      isSameChainSwap: op.isSameChainSwap,
+      inputAsset: op.inputAsset,
+      outputAsset: op.outputAsset,
+    })),
+  });
+
   // Check if we can fulfill the invoice after all rebalancing
   if (canFulfill) {
-    logger.debug('Can fulfill invoice for destination', {
+    logger.info('Can fulfill invoice for destination', {
+      requestId,
+      invoiceId: invoice.intent_id,
       destination,
       requiredAmount: requiredAmount.toString(),
       operations: operations.length,
@@ -182,7 +356,9 @@ async function evaluateDestinationChain(
     };
   }
 
-  logger.debug('Cannot fulfill invoice for destination', {
+  logger.warn('Cannot fulfill invoice for destination', {
+    requestId,
+    invoiceId: invoice.intent_id,
     destination,
     requiredAmount: requiredAmount.toString(),
     destinationBalance: destinationBalance.toString(),
@@ -193,6 +369,267 @@ async function evaluateDestinationChain(
     totalAchievable: totalAchievable.toString(),
   });
   return { canRebalance: false };
+}
+
+/**
+ * Finds a same-chain swap route that produces the given asset on the origin chain
+ */
+function findMatchingSwapRoute(
+  bridgeRoute: OnDemandRouteConfig,
+  routes: OnDemandRouteConfig[],
+  config: ProcessingContext['config'],
+): OnDemandRouteConfig | undefined {
+  // Must be a direct bridge route (no swapOutputAsset, cross-chain)
+  if (bridgeRoute.swapOutputAsset || bridgeRoute.origin === bridgeRoute.destination) {
+    return undefined;
+  }
+
+  const bridgeInputTicker = getTickerForAsset(bridgeRoute.asset, bridgeRoute.origin, config)?.toLowerCase();
+  if (!bridgeInputTicker) {
+    return undefined;
+  }
+
+  return routes.find((r) => {
+    // Must be same-chain swap on the same origin
+    if (r.origin !== r.destination || r.origin !== bridgeRoute.origin) {
+      return false;
+    }
+
+    // Must have swap configuration
+    if (!r.swapOutputAsset || !r.swapPreferences?.length) {
+      return false;
+    }
+
+    // Swap output must match bridge input
+    const swapOutputTicker = getTickerForAsset(r.swapOutputAsset, r.origin, config)?.toLowerCase();
+    return swapOutputTicker === bridgeInputTicker;
+  });
+}
+
+function buildRouteEntriesForDestination(
+  destination: number,
+  routes: OnDemandRouteConfig[],
+  invoiceTickerLower: string,
+  invoiceId: string,
+  config: ProcessingContext['config'],
+  logger?: ProcessingContext['logger'],
+): RouteEntry[] {
+  const entries: RouteEntry[] = [];
+
+  logger?.info('Building route entries for destination', {
+    destination,
+    invoiceId,
+    invoiceTicker: invoiceTickerLower,
+    totalRoutes: routes.length,
+    routes: routes.map((r) => ({
+      origin: r.origin,
+      destination: r.destination,
+      asset: r.asset,
+      swapOutputAsset: r.swapOutputAsset,
+    })),
+  });
+
+  for (const route of routes) {
+    if (route.destination !== destination) {
+      logger?.debug('Route destination does not match, skipping', {
+        invoiceId,
+        routeDestination: route.destination,
+        targetDestination: destination,
+      });
+      continue;
+    }
+
+    logger?.debug('Processing route for destination', {
+      invoiceId,
+      destination,
+      route: {
+        origin: route.origin,
+        destination: route.destination,
+        asset: route.asset,
+        swapOutputAsset: route.swapOutputAsset,
+        preferences: route.preferences,
+        swapPreferences: route.swapPreferences,
+      },
+    });
+
+    // Check if this bridge route can be combined with a same-chain swap route
+    let combinedRoute = route;
+    let inputTicker = getTickerForAsset(route.asset, route.origin, config)?.toLowerCase();
+
+    logger?.debug('Initial route ticker resolution', {
+      invoiceId,
+      routeAsset: route.asset,
+      routeOrigin: route.origin,
+      inputTicker: inputTicker || 'not found',
+    });
+
+    const swapRoute = findMatchingSwapRoute(route, routes, config);
+    if (swapRoute) {
+      logger?.info('Found matching swap route for bridge route, combining into swap+bridge pattern', {
+        invoiceId,
+        destination,
+        bridgeRoute: {
+          origin: route.origin,
+          destination: route.destination,
+          asset: route.asset,
+        },
+        swapRoute: {
+          origin: swapRoute.origin,
+          destination: swapRoute.destination,
+          asset: swapRoute.asset,
+          swapOutputAsset: swapRoute.swapOutputAsset,
+        },
+      });
+
+      combinedRoute = {
+        ...route,
+        asset: swapRoute.asset, // Use the swap route's input asset
+        swapOutputAsset: route.asset, // The bridge route's asset (output of swap, input to bridge)
+        swapPreferences: swapRoute.swapPreferences,
+        slippagesDbps: route.slippagesDbps,
+      };
+
+      inputTicker = getTickerForAsset(swapRoute.asset, swapRoute.origin, config)?.toLowerCase();
+      logger?.debug('After combining with swap route', {
+        invoiceId,
+        combinedRouteAsset: combinedRoute.asset,
+        combinedRouteDestinationAsset: combinedRoute.swapOutputAsset,
+        inputTicker: inputTicker || 'not found',
+      });
+    }
+
+    // For swap+bridge routes, swapOutputAsset is the intermediate asset on origin chain
+    // We need to resolve the final output asset from the invoice ticker on destination chain
+    const isSwapBridgeRoute = combinedRoute.swapOutputAsset && route.origin !== route.destination;
+    logger?.debug('Determining output asset address', {
+      invoiceId,
+      isSwapBridgeRoute,
+      hasDestinationAsset: !!combinedRoute.swapOutputAsset,
+      origin: route.origin,
+      destination: route.destination,
+      routeAsset: route.asset,
+      combinedRouteDestinationAsset: combinedRoute.swapOutputAsset,
+    });
+
+    // For swap+bridge routes, we must get the token address from the destination chain config
+    // The fallback to route.asset would be wrong (it's on origin chain, not destination)
+    let swapOutputAssetAddress: string | undefined;
+    if (isSwapBridgeRoute) {
+      swapOutputAssetAddress = getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config);
+      if (!swapOutputAssetAddress) {
+        logger?.warn('Failed to resolve destination asset address for swap+bridge route', {
+          invoiceId,
+          invoiceTicker: invoiceTickerLower,
+          destinationChain: route.destination,
+          originChain: route.origin,
+          intermediateAsset: combinedRoute.swapOutputAsset,
+        });
+      }
+    } else {
+      swapOutputAssetAddress =
+        combinedRoute.swapOutputAsset ??
+        getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config) ??
+        route.asset;
+    }
+
+    logger?.debug('Resolved destination asset address', {
+      invoiceId,
+      swapOutputAssetAddress,
+      destinationChain: route.destination,
+      invoiceTicker: invoiceTickerLower,
+      tokenAddressFromConfig: getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config),
+    });
+
+    let outputTicker: string | undefined;
+    if (swapOutputAssetAddress) {
+      outputTicker = getTickerForAsset(swapOutputAssetAddress, route.destination, config)?.toLowerCase();
+    }
+
+    if (!outputTicker) {
+      logger?.debug('Output ticker not found, trying fallback', {
+        invoiceId,
+        swapOutputAssetAddress,
+        destinationChain: route.destination,
+      });
+      const fallbackAddress = getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config);
+      if (fallbackAddress) {
+        outputTicker = getTickerForAsset(fallbackAddress, route.destination, config)?.toLowerCase();
+        logger?.debug('Fallback ticker resolution', {
+          invoiceId,
+          fallbackAddress,
+          outputTicker: outputTicker || 'still not found',
+        });
+      }
+    }
+
+    logger?.info('Route entry validation', {
+      invoiceId,
+      destination,
+      inputTicker: inputTicker || 'missing',
+      outputTicker: outputTicker || 'missing',
+      invoiceTicker: invoiceTickerLower,
+      outputTickerMatches: outputTicker === invoiceTickerLower,
+      route: {
+        origin: combinedRoute.origin,
+        destination: combinedRoute.destination,
+        asset: combinedRoute.asset,
+        swapOutputAsset: combinedRoute.swapOutputAsset,
+      },
+    });
+
+    if (!inputTicker || !outputTicker || outputTicker !== invoiceTickerLower) {
+      logger?.warn('Route skipped during route entry building', {
+        invoiceId,
+        destination,
+        route: {
+          origin: combinedRoute.origin,
+          destination: combinedRoute.destination,
+          asset: combinedRoute.asset,
+          swapOutputAsset: combinedRoute.swapOutputAsset,
+        },
+        invoiceTicker: invoiceTickerLower,
+        inputTicker: inputTicker || 'missing',
+        outputTicker: outputTicker || 'missing',
+        reason: !inputTicker
+          ? 'inputTicker not found in config'
+          : !outputTicker
+            ? 'outputTicker not found in config'
+            : 'outputTicker does not match invoice ticker',
+        swapOutputAssetAddress,
+        tokenAddressFromConfig: getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config),
+      });
+      continue;
+    }
+
+    logger?.info('Route entry created successfully', {
+      invoiceId,
+      destination,
+      inputTicker,
+      outputTicker,
+      priority: getRoutePriority(combinedRoute),
+    });
+
+    entries.push({
+      route: combinedRoute,
+      inputTicker,
+      outputTicker,
+      priority: getRoutePriority(combinedRoute),
+    });
+  }
+
+  logger?.info('Finished building route entries', {
+    invoiceId,
+    destination,
+    invoiceTicker: invoiceTickerLower,
+    entriesCreated: entries.length,
+    entries: entries.map((e) => ({
+      inputTicker: e.inputTicker,
+      outputTicker: e.outputTicker,
+      priority: e.priority,
+    })),
+  });
+
+  return entries;
 }
 
 function getAvailableBalance(
@@ -215,6 +652,70 @@ function getAvailableBalance(
 
   const available = balance - earmarked - reserveAmount;
   return available > 0n ? available : 0n;
+}
+
+/**
+ * Get the minimum amount required across all bridge routes for a destination.
+ * Returns the minimum in 18 decimals.
+ */
+async function getRebalanceMinimum(routeEntries: RouteEntry[], context: ProcessingContext): Promise<bigint> {
+  const { logger, requestId, rebalance, config } = context;
+  let minAmount = 0n;
+
+  // Check all route entries and their bridge preferences
+  for (const entry of routeEntries) {
+    if (!entry.inputTicker || !entry.route.preferences) {
+      continue;
+    }
+
+    for (const bridgeType of entry.route.preferences) {
+      try {
+        const adapter = rebalance.getAdapter(bridgeType);
+        if (!adapter) {
+          continue;
+        }
+
+        // Create a test route for getting minimum
+        const testRoute: RebalanceRoute = {
+          asset: entry.route.asset,
+          origin: entry.route.origin,
+          destination: entry.route.destination,
+        };
+
+        const minNativeStr = await adapter.getMinimumAmount(testRoute);
+        if (minNativeStr !== null && minNativeStr !== '') {
+          const minNative = BigInt(minNativeStr);
+          if (minNative > 0n) {
+            // Convert to 18 decimals
+            const originDecimals = getDecimalsFromConfig(entry.inputTicker, entry.route.origin.toString(), config);
+            if (originDecimals) {
+              const minIn18 = convertTo18Decimals(minNative, originDecimals);
+              if (minIn18 > minAmount) {
+                minAmount = minIn18;
+                logger.debug('Found new bridge minimum', {
+                  requestId,
+                  bridgeType,
+                  route: entry.route,
+                  minNative: minNative.toString(),
+                  minIn18: minIn18.toString(),
+                  minAmount: minAmount.toString(),
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        logger.debug('Failed to get bridge minimum', {
+          requestId,
+          bridgeType,
+          route: entry.route,
+          error: jsonifyError(error),
+        });
+      }
+    }
+  }
+
+  return minAmount;
 }
 
 function calculateEarmarkedFunds(earmarks: database.CamelCasedProperties<earmarks>[]): EarmarkedFunds[] {
@@ -253,148 +754,192 @@ function calculateEarmarkedFunds(earmarks: database.CamelCasedProperties<earmark
  */
 async function calculateRebalancingOperations(
   amountNeeded: bigint,
-  routes: OnDemandRouteConfig[],
+  routeEntries: RouteEntry[],
   balances: Map<string, Map<string, bigint>>,
   earmarkedFunds: EarmarkedFunds[],
-  tickerHash: string,
+  invoiceTicker: string,
+  invoiceId: string,
   context: ProcessingContext,
 ): Promise<{
-  operations: { originChain: number; amount: string; bridge: SupportedBridge; slippage: number }[];
+  operations: PlannedRebalanceOperation[];
   totalAchievable: bigint;
   canFulfill: boolean;
 }> {
-  const { logger, rebalance, config } = context;
-  const ticker = tickerHash.toLowerCase();
-  const operations: { originChain: number; amount: string; bridge: SupportedBridge; slippage: number }[] = [];
+  const { logger, requestId } = context;
+  const operations: PlannedRebalanceOperation[] = [];
   let remainingNeeded = amountNeeded;
   let totalAchievable = 0n;
 
-  // Sort routes by available balance (descending) to minimize number of operations
-  const sortedRoutes = routes.sort((a, b) => {
-    const balanceA = getAvailableBalance(a.origin, ticker, balances, earmarkedFunds, a.reserve || '0');
-    const balanceB = getAvailableBalance(b.origin, ticker, balances, earmarkedFunds, b.reserve || '0');
+  const availabilityByKey = new Map<string, bigint>();
+  const availabilityKey = (chainId: number, ticker: string) => `${chainId}:${ticker.toLowerCase()}`;
+  const getAvailableForEntry = (entry: RouteEntry): bigint => {
+    if (!entry.inputTicker) {
+      return 0n;
+    }
+
+    const key = availabilityKey(entry.route.origin, entry.inputTicker);
+
+    if (availabilityByKey.has(key)) {
+      return availabilityByKey.get(key)!;
+    }
+
+    const available = getAvailableBalance(
+      entry.route.origin,
+      entry.inputTicker,
+      balances,
+      earmarkedFunds,
+      entry.route.reserve || '0',
+    );
+
+    availabilityByKey.set(key, available);
+    return available;
+  };
+
+  const reduceAvailabilityForEntry = (entry: RouteEntry, amountIn18: bigint) => {
+    if (!entry.inputTicker) {
+      return;
+    }
+
+    const key = availabilityKey(entry.route.origin, entry.inputTicker);
+    const current = getAvailableForEntry(entry);
+    const next = current > amountIn18 ? current - amountIn18 : 0n;
+    availabilityByKey.set(key, next);
+  };
+
+  const sortedEntries = [...routeEntries].sort((a, b) => {
+    if (a.priority !== b.priority) {
+      return a.priority - b.priority;
+    }
+
+    const balanceA = getAvailableForEntry(a);
+    const balanceB = getAvailableForEntry(b);
+
+    if (balanceA === balanceB) {
+      return 0;
+    }
+
     return balanceB > balanceA ? 1 : -1;
   });
 
-  for (const route of sortedRoutes) {
-    if (remainingNeeded <= 0n) break;
+  for (const entry of sortedEntries) {
+    if (remainingNeeded <= 0n) {
+      break;
+    }
 
-    const availableOnOrigin = getAvailableBalance(route.origin, ticker, balances, earmarkedFunds, route.reserve || '0');
+    const availableOnOrigin = getAvailableForEntry(entry);
 
-    if (availableOnOrigin <= 0n) continue;
+    if (availableOnOrigin <= 0n) {
+      logger.debug('Route skipped during planning due to zero available balance', {
+        requestId,
+        invoiceId,
+        route: entry.route,
+        inputTicker: entry.inputTicker,
+      });
+      continue;
+    }
 
-    // Try each bridge preference to find one that works
-    let operationAdded = false;
+    let planned = false;
 
-    for (let bridgeIndex = 0; bridgeIndex < route.preferences.length; bridgeIndex++) {
-      const bridgeType = route.preferences[bridgeIndex];
-      const adapter = rebalance.getAdapter(bridgeType);
+    if (isSameChainSwapRoute(entry.route)) {
+      const sameChainResult = await planSameChainSwap(entry, availableOnOrigin, remainingNeeded, context);
 
-      if (!adapter) {
-        logger.debug('Adapter not found for bridge type during planning', {
-          bridgeType,
-          route,
-        });
-        continue;
-      }
+      if (sameChainResult) {
+        operations.push(sameChainResult.operation);
 
-      try {
-        // Calculate how much to send - we need to account for slippage
-        // so that we receive at least remainingNeeded after slippage
-        // If we need X and slippage is S%, we need to send X / (1 - S/100000)
-        const maxSlippageDbps = route.slippagesDbps?.[bridgeIndex] ?? 1000; // Default 1% = 1000 DBPS
-        const slippageDivisor = DBPS_MULTIPLIER - BigInt(maxSlippageDbps);
-        const estimatedAmountToSend = (remainingNeeded * DBPS_MULTIPLIER) / slippageDivisor;
+        const produced = sameChainResult.producedAmount;
+        totalAchievable += produced;
+        remainingNeeded = remainingNeeded > produced ? remainingNeeded - produced : 0n;
+        planned = true;
 
-        // Use the minimum of our estimate and what's available
-        const amountToTry = estimatedAmountToSend < availableOnOrigin ? estimatedAmountToSend : availableOnOrigin;
-
-        // Convert from 18 decimals to native decimals for the quote
-        const originDecimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);
-        const destDecimals = getDecimalsFromConfig(ticker, route.destination.toString(), config);
-        const nativeAmountBigInt = convertToNativeUnits(amountToTry, originDecimals);
-        const nativeAmount = nativeAmountBigInt.toString();
-
-        // Get quote from adapter
-        const receivedAmountStr = await adapter.getReceivedAmount(nativeAmount, route);
-
-        // Check if quote meets slippage requirements
-        const sentIn18Decimals = convertTo18Decimals(nativeAmountBigInt, originDecimals);
-        const receivedIn18Decimals = convertTo18Decimals(BigInt(receivedAmountStr), destDecimals);
-        const slippageDbps = ((sentIn18Decimals - receivedIn18Decimals) * DBPS_MULTIPLIER) / sentIn18Decimals;
-
-        logger.debug('Quote evaluation during planning', {
-          bridgeType,
-          bridgeIndex,
-          sentAmount: nativeAmount,
-          receivedAmount: receivedAmountStr,
-          sentIn18Decimals: sentIn18Decimals.toString(),
-          receivedIn18Decimals: receivedIn18Decimals.toString(),
-          slippageDbps: slippageDbps.toString(),
-          maxSlippageDbps: maxSlippageDbps,
-          passesSlippage: slippageDbps <= BigInt(maxSlippageDbps),
-        });
-
-        if (slippageDbps > BigInt(maxSlippageDbps)) {
-          continue;
-        }
-
-        // Quote is acceptable, add this operation
-        operations.push({
-          originChain: route.origin,
-          amount: nativeAmount,
-          bridge: bridgeType,
-          slippage: maxSlippageDbps,
-        });
-
-        // Update remaining needed and total achievable
-        remainingNeeded -= receivedIn18Decimals;
-        totalAchievable += receivedIn18Decimals;
-        operationAdded = true;
-        break; // Found a working bridge for this route
-      } catch (error) {
-        // Check if it's an Axios error and extract useful information
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        const isAxiosError = errorMessage.includes('AxiosError') || errorMessage.includes('status code');
-
-        if (isAxiosError) {
-          // Extract status code if available
-          const statusMatch = errorMessage.match(/status code (\d+)/);
-          const statusCode = statusMatch ? statusMatch[1] : 'unknown';
-
-          logger.debug('Bridge API request failed', {
-            bridgeType,
-            origin: route.origin,
-            destination: route.destination,
-            statusCode,
-            errorType: 'API_ERROR',
-            message: `Failed to get quote from ${bridgeType} bridge (HTTP ${statusCode})`,
-          });
+        const decimals = getDecimalsFromConfig(entry.inputTicker!, entry.route.origin.toString(), context.config);
+        if (decimals) {
+          const consumed = convertTo18Decimals(BigInt(sameChainResult.operation.amount), decimals);
+          reduceAvailabilityForEntry(entry, consumed);
         } else {
-          logger.debug('Failed to get quote during planning', {
-            bridgeType,
-            route,
-            error: jsonifyError(error),
+          logger.debug('Missing decimals while reducing availability for same-chain swap', {
+            requestId,
+            invoiceId,
+            route: entry.route,
+            ticker: entry.inputTicker,
           });
         }
-        continue;
+      }
+    } else if (isDirectBridgeRoute(entry.route)) {
+      const directResult = await planDirectBridgeRoute(
+        entry,
+        availableOnOrigin,
+        invoiceTicker,
+        remainingNeeded,
+        context,
+      );
+
+      if (directResult) {
+        operations.push(directResult.operation);
+
+        const produced = directResult.producedAmount;
+        totalAchievable += produced;
+        remainingNeeded = remainingNeeded > produced ? remainingNeeded - produced : 0n;
+        planned = true;
+
+        const decimals = getDecimalsFromConfig(entry.inputTicker!, entry.route.origin.toString(), context.config);
+        if (decimals) {
+          const consumed = convertTo18Decimals(BigInt(directResult.operation.amount), decimals);
+          reduceAvailabilityForEntry(entry, consumed);
+        } else {
+          logger.debug('Missing decimals while reducing availability for direct bridge', {
+            requestId,
+            invoiceId,
+            route: entry.route,
+            ticker: entry.inputTicker,
+          });
+        }
+      }
+    } else if (isSwapBridgeRoute(entry.route)) {
+      const pairResult = await planSwapBridgeRoute(entry, availableOnOrigin, invoiceTicker, remainingNeeded, context);
+
+      if (pairResult) {
+        operations.push(...pairResult.operations);
+
+        const produced = pairResult.producedAmount;
+        totalAchievable += produced;
+        remainingNeeded = remainingNeeded > produced ? remainingNeeded - produced : 0n;
+        planned = true;
+
+        const swapOperation = pairResult.operations.find((op) => op.isSameChainSwap);
+        if (swapOperation && entry.inputTicker) {
+          const decimals = getDecimalsFromConfig(entry.inputTicker!, entry.route.origin.toString(), context.config);
+          if (decimals) {
+            const consumed = convertTo18Decimals(BigInt(swapOperation.amount), decimals);
+            reduceAvailabilityForEntry(entry, consumed);
+          } else {
+            logger.debug('Missing decimals while reducing availability for swap+bridge swap leg', {
+              requestId,
+              invoiceId,
+              route: entry.route,
+              ticker: entry.inputTicker,
+            });
+          }
+        }
       }
     }
 
-    if (!operationAdded) {
-      logger.debug('No viable bridge found for route during planning', {
-        route,
-        availableBalance: availableOnOrigin.toString(),
+    if (!planned) {
+      logger.debug('Route entry did not yield viable operation during planning', {
+        requestId,
+        invoiceId,
+        route: entry.route,
+        inputTicker: entry.inputTicker,
+        outputTicker: entry.outputTicker,
       });
     }
   }
 
-  // Allow for tiny rounding errors (1 unit in native decimals)
-  // This is 0.000001 USDC for 6-decimal tokens, 0.00000001 for 8-decimal tokens
   const roundingTolerance = BigInt(10 ** 12); // 1 unit in 6 decimals = 1e12 in 18 decimals
   const canFulfill = remainingNeeded <= roundingTolerance;
 
   logger.debug('calculateRebalancingOperations result', {
+    requestId,
+    invoiceId,
     operations: operations.length,
     totalAchievable: totalAchievable.toString(),
     remainingNeeded: remainingNeeded.toString(),
@@ -406,6 +951,36 @@ async function calculateRebalancingOperations(
     totalAchievable,
     canFulfill,
   };
+}
+
+/**
+ * Defensive fallback to find route for an operation if routeConfig is missing
+ * Note: routeConfig should always be set when operations are created, so this is only
+ * used as a safety fallback in unexpected scenarios
+ */
+function findRouteForOperation(
+  operation: PlannedRebalanceOperation,
+  routes: OnDemandRouteConfig[],
+): OnDemandRouteConfig | undefined {
+  if (!operation.inputAsset || !operation.outputAsset) {
+    return undefined;
+  }
+
+  const origin = operation.originChain;
+  const destination = operation.destinationChain;
+  const inputAssetLower = operation.inputAsset.toLowerCase();
+  const outputAssetLower = operation.outputAsset.toLowerCase();
+
+  return routes.find((route) => {
+    if (route.origin !== origin || route.destination !== destination) {
+      return false;
+    }
+
+    const routeInput = route.asset.toLowerCase();
+    const routeOutput = (route.swapOutputAsset ?? route.asset).toLowerCase();
+
+    return routeInput === inputAssetLower && routeOutput === outputAssetLower;
+  });
 }
 
 function selectBestDestination(
@@ -471,98 +1046,88 @@ export async function executeOnDemandRebalancing(
     receipt: database.TransactionReceipt;
     recipient: string;
   }> = [];
+  let bridgeOperationCount = 0;
+  let swapSuccessCount = 0;
 
   try {
-    // Execute all rebalancing operations first
     for (const operation of rebalanceOperations!) {
-      try {
-        // Find the appropriate route config
-        const route = (config.onDemandRoutes || []).find((r) => {
-          if (r.origin !== operation.originChain || r.destination !== destinationChain) return false;
-          const routeTickerHash = getTickerForAsset(r.asset, r.origin, config);
-          return routeTickerHash && routeTickerHash.toLowerCase() === invoice.ticker_hash.toLowerCase();
-        });
+      const execResult = await executeSingleOperation(
+        operation,
+        invoice.intent_id,
+        destinationChain!,
+        context,
+        config.onDemandRoutes || [],
+      );
 
-        if (!route) {
-          logger.error('Route not found for rebalancing operation', { operation });
-          continue;
+      if (!execResult) {
+        // Error already logged in executeSingleOperation
+        // For swaps, fail fast; for bridges, continue to next operation
+        if (operation.isSameChainSwap) {
+          return null;
         }
+        continue;
+      }
 
-        // Get recipient address (could be different for Zodiac setup)
-        const recipient = getActualAddress(destinationChain!, config, logger, { requestId });
+      if (execResult.isSwap) {
+        swapSuccessCount += 1;
+        continue;
+      }
 
-        // Execute the rebalancing with the pre-determined bridge
-        const result = await executeRebalanceTransactionWithBridge(
-          route,
-          operation.amount,
-          recipient,
-          operation.bridge,
-          context,
-        );
+      bridgeOperationCount += 1;
 
-        if (result) {
-          logger.info('On-demand rebalance transaction confirmed', {
-            requestId,
-            transactionHash: result.receipt.transactionHash,
-            bridgeType: operation.bridge,
-            originChain: operation.originChain,
-            amount: result.effectiveAmount || operation.amount,
-            originalAmount:
-              result.effectiveAmount && result.effectiveAmount !== operation.amount ? operation.amount : undefined,
-          });
-
-          // Track successful operation for later database insertion
-          successfulOperations.push({
-            originChainId: operation.originChain,
-            amount: result.effectiveAmount || operation.amount, // Use effective amount if adjusted
-            slippage: operation.slippage,
-            bridge: operation.bridge,
-            receipt: result.receipt,
-            recipient,
-          });
-        } else {
-          logger.warn('Failed to execute rebalancing operation, no transaction returned', {
-            requestId,
-            operation,
-          });
-        }
-      } catch (error) {
-        logger.error('Failed to execute rebalancing operation', {
-          requestId,
-          operation,
-          error: jsonifyError(error),
+      if (execResult.result && execResult.recipient) {
+        successfulOperations.push({
+          originChainId: operation.originChain,
+          amount: execResult.result.effectiveAmount || operation.amount,
+          slippage: operation.slippage,
+          bridge: operation.bridge,
+          receipt: execResult.result.receipt,
+          recipient: execResult.recipient,
         });
       }
     }
 
-    // Check if we have any successful operations
+    if (bridgeOperationCount === 0) {
+      if (swapSuccessCount > 0) {
+        logger.info('Same-chain swap satisfied rebalancing need without bridge operations', {
+          requestId,
+          invoiceId: invoice.intent_id,
+        });
+      } else {
+        logger.warn('No rebalance operations executed for invoice', {
+          requestId,
+          invoiceId: invoice.intent_id,
+        });
+      }
+      return null;
+    }
+
     if (successfulOperations.length === 0) {
-      logger.error('No rebalancing operations succeeded, not creating earmark', {
+      logger.error('No bridge operations succeeded, not creating earmark', {
         requestId,
         invoiceId: invoice.intent_id,
-        totalOperations: rebalanceOperations!.length,
+        totalBridgeOperations: bridgeOperationCount,
       });
       return null;
     }
 
-    const allSucceeded = successfulOperations.length === rebalanceOperations!.length;
+    const allSucceeded = successfulOperations.length === bridgeOperationCount;
     if (allSucceeded) {
-      logger.info('All rebalancing operations succeeded, creating earmark', {
+      logger.info('All bridge operations succeeded, creating earmark', {
         requestId,
         invoiceId: invoice.intent_id,
         successfulOperations: successfulOperations.length,
-        totalOperations: rebalanceOperations!.length,
+        totalBridgeOperations: bridgeOperationCount,
       });
     } else {
       logger.warn('Partial failure in rebalancing, creating FAILED earmark', {
         requestId,
         invoiceId: invoice.intent_id,
         successfulOperations: successfulOperations.length,
-        totalOperations: rebalanceOperations!.length,
+        totalBridgeOperations: bridgeOperationCount,
       });
     }
 
-    // Create earmark with appropriate status
     let earmark: Earmark;
     try {
       earmark = await database.createEarmark({
@@ -573,7 +1138,6 @@ export async function executeOnDemandRebalancing(
         status: allSucceeded ? EarmarkStatus.PENDING : EarmarkStatus.FAILED,
       });
     } catch (error: unknown) {
-      // PostgreSQL unique constraint violation error code
       const dbError = error as { code?: string; constraint?: string };
       if (dbError.code === '23505' && dbError.constraint === 'unique_active_earmark_per_invoice') {
         logger.warn('Race condition: Active earmark created by another process', {
@@ -593,7 +1157,6 @@ export async function executeOnDemandRebalancing(
       status: earmark.status,
     });
 
-    // Create rebalance operation records for all successful operations
     for (const op of successfulOperations) {
       try {
         await database.createRebalanceOperation({
@@ -617,7 +1180,6 @@ export async function executeOnDemandRebalancing(
           bridge: op.bridge,
         });
       } catch (error) {
-        // This is a critical error - we have a transaction on-chain but failed to record it
         logger.error('CRITICAL: Failed to create rebalance operation record for confirmed transaction', {
           requestId,
           earmarkId: earmark.id,
@@ -627,8 +1189,6 @@ export async function executeOnDemandRebalancing(
       }
     }
 
-    // Only return earmark ID if status is PENDING (successful)
-    // FAILED earmarks should not be processed further
     return earmark.status === EarmarkStatus.PENDING ? earmark.id : null;
   } catch (error) {
     logger.error('Failed to execute on-demand rebalancing', {
@@ -725,18 +1285,23 @@ async function handleMinAmountIncrease(
 
   // Evaluate if we can rebalance the additional amount
   const onDemandRoutes = config.onDemandRoutes || [];
-  const applicableRoutes = onDemandRoutes.filter((route) => {
-    if (route.destination !== earmark.designatedPurchaseChain) return false;
-    const routeTickerHash = getTickerForAsset(route.asset, route.origin, config);
-    return routeTickerHash && routeTickerHash.toLowerCase() === earmark.tickerHash.toLowerCase();
-  });
+  const invoiceTickerLower = invoice.ticker_hash.toLowerCase();
+  const additionalRouteEntries = buildRouteEntriesForDestination(
+    earmark.designatedPurchaseChain,
+    onDemandRoutes,
+    invoiceTickerLower,
+    earmark.invoiceId,
+    config,
+    logger,
+  );
 
   const { operations: additionalOperations, canFulfill: canRebalanceAdditional } = await calculateRebalancingOperations(
     additionalAmount,
-    applicableRoutes,
+    additionalRouteEntries,
     balances,
     earmarkedFunds,
-    earmark.tickerHash,
+    invoice.ticker_hash.toLowerCase(),
+    earmark.invoiceId,
     context,
   );
 
@@ -766,59 +1331,65 @@ async function handleMinAmountIncrease(
     recipient: string;
   }> = [];
 
+  let additionalBridgeCount = 0;
+
   // Execute additional rebalancing operations
   for (const operation of additionalOperations) {
-    try {
-      const route = onDemandRoutes.find((r) => {
-        if (r.origin !== operation.originChain || r.destination !== earmark.designatedPurchaseChain) return false;
-        const routeTickerHash = getTickerForAsset(r.asset, r.origin, config);
-        return routeTickerHash && routeTickerHash.toLowerCase() === invoice.ticker_hash.toLowerCase();
+    const execResult = await executeSingleOperation(
+      operation,
+      earmark.invoiceId,
+      earmark.designatedPurchaseChain,
+      context,
+      onDemandRoutes,
+    );
+
+    if (!execResult) {
+      // Error already logged in executeSingleOperation
+      // For swaps, fail fast; for bridges, continue to next operation
+      if (operation.isSameChainSwap) {
+        return false;
+      }
+      continue;
+    }
+
+    if (execResult.isSwap) {
+      continue;
+    }
+
+    additionalBridgeCount += 1;
+
+    if (execResult.result && execResult.recipient) {
+      logger.info('Additional rebalance transaction confirmed', {
+        requestId,
+        invoiceId: earmark.invoiceId,
+        transactionHash: execResult.result.receipt.transactionHash,
+        bridgeType: operation.bridge,
+        originChain: operation.originChain,
+        amount: execResult.result.effectiveAmount || operation.amount,
+        originalAmount:
+          execResult.result.effectiveAmount && execResult.result.effectiveAmount !== operation.amount
+            ? operation.amount
+            : undefined,
       });
 
-      if (!route) {
-        logger.error('Route not found for additional rebalancing operation', { operation });
-        continue;
-      }
-
-      const recipient = getActualAddress(earmark.designatedPurchaseChain, config, logger, { requestId });
-
-      // Execute the additional rebalancing with pre-determined bridge
-      const result = await executeRebalanceTransactionWithBridge(
-        route,
-        operation.amount,
-        recipient,
-        operation.bridge,
-        context,
-      );
-
-      if (result) {
-        logger.info('Additional rebalance transaction confirmed', {
-          requestId,
-          transactionHash: result.receipt.transactionHash,
-          bridgeType: operation.bridge,
-          originChain: operation.originChain,
-          amount: result.effectiveAmount || operation.amount,
-          originalAmount:
-            result.effectiveAmount && result.effectiveAmount !== operation.amount ? operation.amount : undefined,
-        });
-
-        // Track successful operation
-        successfulAdditionalOps.push({
-          originChainId: operation.originChain,
-          amount: result.effectiveAmount || operation.amount, // Use effective amount if adjusted
-          slippage: operation.slippage,
-          bridge: operation.bridge,
-          receipt: result.receipt,
-          recipient,
-        });
-      }
-    } catch (error) {
-      logger.error('Failed to execute additional rebalancing operation', {
-        requestId,
-        operation,
-        error: jsonifyError(error),
+      successfulAdditionalOps.push({
+        originChainId: operation.originChain,
+        amount: execResult.result.effectiveAmount || operation.amount,
+        slippage: operation.slippage,
+        bridge: operation.bridge,
+        receipt: execResult.result.receipt,
+        recipient: execResult.recipient,
       });
     }
+  }
+
+  if (additionalBridgeCount > 0 && successfulAdditionalOps.length === 0) {
+    logger.error('No additional bridge operations succeeded for increased minAmount', {
+      requestId,
+      invoiceId: earmark.invoiceId,
+      additionalBridgeCount,
+    });
+    return false;
   }
 
   // Create database records for successful additional operations
@@ -885,6 +1456,180 @@ interface RebalanceTransactionResult {
   effectiveAmount?: string;
 }
 
+interface ExecuteOperationResult {
+  success: boolean;
+  isSwap: boolean;
+  result?: RebalanceTransactionResult;
+  recipient?: string;
+}
+
+/**
+ * Get recipient address for an operation
+ */
+function getRecipientForOperation(
+  operation: PlannedRebalanceOperation,
+  config: ProcessingContext['config'],
+  logger: ProcessingContext['logger'],
+  context: { requestId: string },
+): string {
+  return getActualAddress(operation.destinationChain, config, logger, context);
+}
+
+/**
+ * Execute a single rebalancing operation (swap or bridge)
+ * Returns structured result for consistent handling by callers
+ */
+async function executeSingleOperation(
+  operation: PlannedRebalanceOperation,
+  invoiceId: string,
+  destinationChain: number,
+  context: ProcessingContext,
+  onDemandRoutes: OnDemandRouteConfig[],
+): Promise<ExecuteOperationResult | null> {
+  const { logger, requestId } = context;
+
+  try {
+    if (operation.isSameChainSwap) {
+      const swapSucceeded = await executeSameChainSwapOperation(operation, invoiceId, context);
+
+      if (!swapSucceeded) {
+        logger.error('Failed to execute same-chain swap operation', {
+          requestId,
+          invoiceId,
+          operation,
+        });
+        return null;
+      }
+
+      return {
+        success: true,
+        isSwap: true,
+      };
+    }
+
+    // Bridge operation - routeConfig should always be set when operations are created
+    // This is a defensive check in case of unexpected state
+    const routeConfig = operation.routeConfig ?? findRouteForOperation(operation, onDemandRoutes);
+
+    if (!routeConfig) {
+      logger.error('Route not found for rebalancing operation', { operation });
+      return null;
+    }
+
+    const recipient = getRecipientForOperation(operation, context.config, logger, { requestId });
+
+    const result = await executeRebalanceTransactionWithBridge(
+      routeConfig,
+      operation.amount,
+      recipient,
+      operation.bridge,
+      invoiceId,
+      context,
+    );
+
+    if (!result) {
+      logger.warn('Failed to execute rebalancing operation, no transaction returned', {
+        requestId,
+        operation,
+      });
+      return null;
+    }
+
+    logger.info('On-demand rebalance transaction confirmed', {
+      requestId,
+      invoiceId,
+      transactionHash: result.receipt.transactionHash,
+      bridgeType: operation.bridge,
+      originChain: operation.originChain,
+      amount: result.effectiveAmount || operation.amount,
+      originalAmount:
+        result.effectiveAmount && result.effectiveAmount !== operation.amount ? operation.amount : undefined,
+    });
+
+    return {
+      success: true,
+      isSwap: false,
+      result,
+      recipient,
+    };
+  } catch (error) {
+    logger.error('Failed to execute rebalancing operation', {
+      requestId,
+      operation,
+      error: jsonifyError(error),
+    });
+    return null;
+  }
+}
+
+async function executeSameChainSwapOperation(
+  operation: PlannedRebalanceOperation,
+  invoiceId: string,
+  context: ProcessingContext,
+): Promise<boolean> {
+  const { rebalance, logger, requestId, config } = context;
+
+  const adapter = rebalance.getAdapter(operation.bridge);
+
+  if (!adapter || !adapter.executeSwap) {
+    logger.error('Swap adapter does not support executeSwap', {
+      requestId,
+      invoiceId,
+      bridgeType: operation.bridge,
+      originChain: operation.originChain,
+    });
+    return false;
+  }
+
+  // routeConfig should always be set when operations are created
+  // This is a defensive check in case of unexpected state
+  if (!operation.routeConfig) {
+    logger.error('Route config missing for same-chain swap operation', {
+      requestId,
+      invoiceId,
+      operation,
+    });
+    return false;
+  }
+
+  const route: OnDemandRouteConfig = {
+    ...operation.routeConfig,
+    preferences: [...(operation.routeConfig.preferences || [])],
+    swapPreferences: [...(operation.routeConfig.swapPreferences || [])],
+  };
+
+  const sender = getActualAddress(operation.originChain, config, logger, { requestId });
+  const recipient = getRecipientForOperation(operation, config, logger, { requestId });
+
+  try {
+    const swapResult = await adapter.executeSwap(sender, recipient, operation.amount, route);
+
+    logger.info('Executed same-chain swap operation', {
+      requestId,
+      invoiceId,
+      bridgeType: operation.bridge,
+      originChain: operation.originChain,
+      destinationChain: operation.destinationChain,
+      amount: operation.amount,
+      executedSellAmount: swapResult.executedSellAmount,
+      executedBuyAmount: swapResult.executedBuyAmount,
+      expectedOutputAmount: operation.expectedOutputAmount,
+      orderUid: swapResult.orderUid,
+    });
+
+    return true;
+  } catch (error) {
+    logger.error('Failed to execute same-chain swap operation', {
+      requestId,
+      invoiceId,
+      bridgeType: operation.bridge,
+      originChain: operation.originChain,
+      error: jsonifyError(error),
+    });
+    return false;
+  }
+}
+
 /**
  * Execute rebalance transaction with a pre-determined bridge
  */
@@ -893,6 +1638,7 @@ async function executeRebalanceTransactionWithBridge(
   amount: string,
   recipient: string,
   bridgeType: SupportedBridge,
+  invoiceId: string,
   context: ProcessingContext,
 ): Promise<RebalanceTransactionResult | undefined> {
   const { logger, rebalance, requestId, config } = context;
@@ -906,6 +1652,7 @@ async function executeRebalanceTransactionWithBridge(
     if (!adapter) {
       logger.error('Bridge adapter not found', {
         requestId,
+        invoiceId,
         bridgeType,
       });
       return undefined;
@@ -913,6 +1660,7 @@ async function executeRebalanceTransactionWithBridge(
 
     logger.info('Executing on-demand rebalance with pre-determined bridge', {
       requestId,
+      invoiceId,
       route,
       bridgeType,
       amount,
@@ -930,6 +1678,7 @@ async function executeRebalanceTransactionWithBridge(
       for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
         logger.info('Submitting on-demand rebalance transaction', {
           requestId,
+          invoiceId,
           bridgeType,
           memo,
           transaction,
@@ -950,11 +1699,12 @@ async function executeRebalanceTransactionWithBridge(
               funcSig: transaction.funcSig || '',
             },
             zodiacConfig,
-            context: { requestId, bridgeType, transactionType: memo },
+            context: { requestId, invoiceId, bridgeType, transactionType: memo },
           });
 
           logger.info('Successfully submitted on-demand rebalance transaction', {
             requestId,
+            invoiceId,
             bridgeType,
             memo,
             transactionHash: result.hash,
@@ -968,6 +1718,7 @@ async function executeRebalanceTransactionWithBridge(
               effectiveBridgedAmount = effectiveAmount;
               logger.info('Using effective bridged amount from adapter', {
                 requestId,
+                invoiceId,
                 originalAmount: amount,
                 effectiveAmount: effectiveBridgedAmount,
                 bridgeType,
@@ -977,6 +1728,7 @@ async function executeRebalanceTransactionWithBridge(
         } catch (txError) {
           logger.error('Failed to submit on-demand rebalance transaction', {
             requestId,
+            invoiceId,
             bridgeType,
             memo,
             error: jsonifyError(txError),
@@ -988,6 +1740,7 @@ async function executeRebalanceTransactionWithBridge(
       if (receipt) {
         logger.info('Successfully completed on-demand rebalance transaction', {
           requestId,
+          invoiceId,
           bridgeType,
           amount: effectiveBridgedAmount,
           originalAmount: amount !== effectiveBridgedAmount ? amount : undefined,
@@ -1003,6 +1756,7 @@ async function executeRebalanceTransactionWithBridge(
   } catch (error) {
     logger.error('Failed to execute rebalance transaction with bridge', {
       requestId,
+      invoiceId,
       bridgeType,
       error: jsonifyError(error),
     });
@@ -1144,17 +1898,14 @@ export async function cleanupStaleEarmarks(invoiceIds: string[], context: Proces
   }
 }
 
-export async function getAvailableBalanceLessEarmarks(
+export async function getEarmarkedBalance(
   chainId: number,
   tickerHash: string,
   context: ProcessingContext,
 ): Promise<bigint> {
-  const { config, chainService, prometheus } = context;
+  const { config } = context;
 
-  // Get total balance
-  const balances = await getMarkBalances(config, chainService, prometheus);
   const ticker = tickerHash.toLowerCase();
-  const totalBalance = balances.get(ticker)?.get(chainId.toString()) || 0n;
 
   // Get earmarked amounts (both pending and ready)
   const earmarks = await database.getEarmarks({
@@ -1195,5 +1946,5 @@ export async function getAvailableBalanceLessEarmarks(
       return sum + convertTo18Decimals(BigInt(op.amount), decimals);
     }, 0n);
 
-  return totalBalance - (earmarkedAmount > onDemandFunds ? earmarkedAmount : onDemandFunds);
+  return earmarkedAmount > onDemandFunds ? earmarkedAmount : onDemandFunds;
 }

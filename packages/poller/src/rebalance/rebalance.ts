@@ -12,7 +12,7 @@ import { executeDestinationCallbacks } from './callbacks';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
-import { getAvailableBalanceLessEarmarks } from './onDemand';
+import { getEarmarkedBalance } from './onDemand';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<RebalanceAction[]> {
@@ -91,7 +91,8 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
     }
 
     // Get balance minus earmarked funds
-    const availableBalance = await getAvailableBalanceLessEarmarks(route.origin, ticker, context);
+    const earmarkedBalance = await getEarmarkedBalance(route.origin, ticker, context);
+    const availableBalance = (tickerBalances.get(route.origin.toString()) || 0n) - earmarkedBalance;
 
     // Ticker balances always in 18 units, convert to proper decimals
     const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);

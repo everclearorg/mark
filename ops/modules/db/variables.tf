@@ -15,6 +15,12 @@ variable "instance_class" {
   default     = "db.t3.micro"
 }
 
+variable "engine_version" {
+  description = "PostgreSQL engine version to deploy"
+  type        = string
+  default     = "16.3"
+}
+
 variable "db_name" {
   description = "The DB name to create"
   type        = string
