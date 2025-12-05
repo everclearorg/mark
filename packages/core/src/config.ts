@@ -259,6 +259,18 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       near: {
         jwtToken: configJson.near_jwt_token ?? (await fromEnv('NEAR_JWT_TOKEN', true)) ?? undefined,
       },
+      stargate: {
+        apiUrl: configJson.stargate?.apiUrl ?? (await fromEnv('STARGATE_API_URL', true)) ?? undefined,
+      },
+      tac: {
+        tonRpcUrl: configJson.tac?.tonRpcUrl ?? (await fromEnv('TAC_TON_RPC_URL', true)) ?? undefined,
+        network: configJson.tac?.network ?? ((await fromEnv('TAC_NETWORK', true)) as 'mainnet' | 'testnet' | undefined) ?? undefined,
+      },
+      ton: {
+        mnemonic: configJson.ton?.mnemonic ?? (await fromEnv('TON_MNEMONIC', true)) ?? undefined,
+        rpcUrl: configJson.ton?.rpcUrl ?? (await fromEnv('TON_RPC_URL', true)) ?? undefined,
+        apiKey: configJson.ton?.apiKey ?? (await fromEnv('TON_API_KEY', true)) ?? undefined,
+      },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),

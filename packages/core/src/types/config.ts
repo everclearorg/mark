@@ -65,6 +65,8 @@ export enum SupportedBridge {
   Kraken = 'kraken',
   Near = 'near',
   Mantle = 'mantle',
+  Stargate = 'stargate',
+  TacInner = 'tac-inner',
 }
 
 export enum GasType {
@@ -132,10 +134,23 @@ export interface MarkConfiguration extends RebalanceConfig {
   near: {
     jwtToken?: string;
   };
+  stargate: {
+    apiUrl?: string;
+  };
+  tac: {
+    tonRpcUrl?: string;           // Optional: TON RPC endpoint for balance checks
+    network?: 'mainnet' | 'testnet';
+  };
+  ton: {
+    mnemonic?: string;          // TON wallet mnemonic for TAC bridge operations
+    rpcUrl?: string;            // TON RPC endpoint
+    apiKey?: string;            // TON API key (for tonapi.io)
+  };
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;
   ownSolAddress: string;
+  ownTonAddress?: string;      // TON wallet address for TAC bridge operations
   stage: Stage;
   environment: Environment;
   logLevel: LogLevel;

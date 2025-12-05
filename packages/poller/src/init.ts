@@ -20,6 +20,7 @@ import * as database from '@mark/database';
 import { execSync } from 'child_process';
 import { bytesToHex, WalletClient } from 'viem';
 import { rebalanceMantleEth } from './rebalance/mantleEth';
+import { rebalanceTacUsdt } from './rebalance/tacUsdt';
 import { randomBytes } from 'crypto';
 import { resolve } from 'path';
 
@@ -187,6 +188,36 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         });
       } else {
         logger.info('Successfully completed meth rebalancing operations', {
+          requestId: context.requestId,
+          numOperations: rebalanceOperations.length,
+          operations: rebalanceOperations,
+        });
+      }
+
+      logFileDescriptorUsage(logger);
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          rebalanceOperations: rebalanceOperations ?? [],
+        }),
+      };
+    }
+
+    if (process.env.RUN_MODE === 'tacOnly') {
+      logger.info('Starting TAC USDT rebalancing', {
+        stage: config.stage,
+        environment: config.environment,
+        addresses,
+      });
+
+      const rebalanceOperations = await rebalanceTacUsdt(context);
+      if (rebalanceOperations.length === 0) {
+        logger.info('TAC USDT Rebalancing completed: no operations needed', {
+          requestId: context.requestId,
+        });
+      } else {
+        logger.info('Successfully completed TAC USDT rebalancing operations', {
           requestId: context.requestId,
           numOperations: rebalanceOperations.length,
           operations: rebalanceOperations,

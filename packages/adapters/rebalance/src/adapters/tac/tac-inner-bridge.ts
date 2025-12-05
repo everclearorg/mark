@@ -1,0 +1,636 @@
+import {
+  TransactionReceipt,
+  createPublicClient,
+  http,
+  fallback,
+  type PublicClient,
+  erc20Abi,
+} from 'viem';
+import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
+import { jsonifyError, Logger } from '@mark/logger';
+import { BridgeAdapter, MemoizedTransactionRequest } from '../../types';
+import {
+  TAC_CHAIN_ID,
+  TAC_BRIDGE_SUPPORTED_ASSETS,
+  USDT_TAC,
+  TAC_RPC_PROVIDERS,
+  TacNetwork,
+  TacOperationStatus,
+  TacAssetLike,
+  TacEvmProxyMsg,
+  TacTransactionLinker,
+  USDT_TON_JETTON,
+  TacSdkConfig,
+} from './types';
+
+/**
+ * TAC Inner Bridge Adapter
+ * 
+ * Handles Leg 2 of TAC USDT rebalancing:
+ * TON → TAC via the TAC Bridge (lock and mint)
+ * 
+ * Architecture:
+ * - Uses TAC SDK (@tonappchain/sdk) for cross-chain transactions
+ * - TAC SDK provides RawSender for backend/server-side operations
+ * - Supports mnemonic-based TON wallet signing
+ * 
+ * Reference:
+ * - TAC SDK Docs: https://docs.tac.build/build/sdk/introduction
+ * - TAC SDK GitHub: https://github.com/TacBuild/tac-sdk
+ * - TAC Bridge: https://docs.tac.build/build/tooling/bridge
+ */
+export class TacInnerBridgeAdapter implements BridgeAdapter {
+  protected readonly publicClients = new Map<number, PublicClient>();
+  protected tacSdk: unknown = null; // TacSdk instance (dynamically imported)
+  protected sdkInitialized = false;
+
+  constructor(
+    protected readonly chains: Record<string, ChainConfiguration>,
+    protected readonly logger: Logger,
+    protected readonly sdkConfig?: TacSdkConfig,
+  ) {
+    this.logger.debug('Initializing TacInnerBridgeAdapter', { 
+      tacChainId: TAC_CHAIN_ID,
+      usdtOnTac: USDT_TAC,
+      hasSdkConfig: !!sdkConfig,
+      network: sdkConfig?.network || 'mainnet',
+    });
+  }
+
+  type(): SupportedBridge {
+    return SupportedBridge.TacInner;
+  }
+
+  /**
+   * Initialize the TAC SDK for cross-chain operations
+   * This is done lazily on first use
+   */
+  protected async initializeSdk(): Promise<void> {
+    if (this.sdkInitialized) return;
+
+    try {
+      // Dynamically import TAC SDK to avoid issues if not installed
+      const { TacSdk, Network } = await import('@tonappchain/sdk');
+      
+      const network = this.sdkConfig?.network === TacNetwork.TESTNET 
+        ? Network.TESTNET 
+        : Network.MAINNET;
+
+      this.tacSdk = await TacSdk.create({ network });
+      this.sdkInitialized = true;
+      
+      this.logger.info('TAC SDK initialized successfully', { network });
+    } catch (error) {
+      this.logger.warn('Failed to initialize TAC SDK, will use fallback methods', {
+        error: jsonifyError(error),
+        note: 'Install @tonappchain/sdk for full TAC bridge support',
+      });
+    }
+  }
+
+  /**
+   * Get the expected amount received after bridging via TAC Inner Bridge
+   * 
+   * TAC Inner Bridge is a 1:1 lock-and-mint bridge with no fees.
+   * Assets locked on TON are minted 1:1 on TAC EVM.
+   */
+  async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
+    // TAC Inner Bridge is 1:1 - no fees for lock-and-mint
+    this.logger.debug('TAC Inner Bridge quote (1:1)', {
+      amount,
+      route,
+      note: 'TAC Inner Bridge is a 1:1 lock-and-mint bridge',
+    });
+    return amount;
+  }
+
+  /**
+   * Build transactions needed to bridge via TAC Inner Bridge
+   * 
+   * Note: For TON → TAC, this uses the TAC SDK which handles:
+   * 1. Creating the cross-chain message
+   * 2. Signing with TON wallet (via RawSender)
+   * 3. Submitting to the TAC sequencer
+   * 
+   * Returns empty array - the actual bridge is executed via executeTacBridge()
+   */
+  async send(
+    sender: string,
+    recipient: string,
+    amount: string,
+    route: RebalanceRoute,
+  ): Promise<MemoizedTransactionRequest[]> {
+    try {
+      this.logger.info('TAC Inner Bridge send requested', {
+        sender,
+        recipient,
+        amount,
+        route,
+        note: 'TON → TAC bridging uses TAC SDK sendCrossChainTransaction',
+      });
+
+      // Return empty array - the actual bridge is triggered via executeTacBridge()
+      // This is because TON transactions are not EVM transactions
+      return [];
+    } catch (error) {
+      this.handleError(error, 'prepare TAC Inner Bridge transaction', { amount, route });
+    }
+  }
+
+  /**
+   * Execute the TAC Inner Bridge transfer using TAC SDK
+   * 
+   * This method uses the TAC SDK's sendCrossChainTransaction method
+   * with RawSender for backend/server-side operations.
+   * 
+   * Architecture:
+   * - TAC SDK handles asset bridging from TON to TAC EVM
+   * - Assets are locked on TON and minted on TAC
+   * - For simple bridging (no EVM contract call), we use ERC20 transfer to send
+   *   the bridged assets to the desired recipient
+   * - The sender's TAC address receives the bridged tokens first, then transfers them
+   * 
+   * Flow:
+   * 1. TON jettons are locked on TON
+   * 2. TAC sequencer mints equivalent tokens to the sender's TAC address
+   * 3. The evmProxyMsg triggers ERC20 transfer to the final recipient
+   * 
+   * @param tonMnemonic - TON wallet mnemonic for signing
+   * @param recipient - TAC EVM address to receive tokens (must be EVM format 0x...)
+   * @param amount - Amount to bridge (in jetton units - 6 decimals for USDT)
+   * @param asset - TON jetton address (e.g., USDT_TON_JETTON)
+   */
+  async executeTacBridge(
+    tonMnemonic: string,
+    recipient: string,
+    amount: string,
+    asset: string = USDT_TON_JETTON,
+  ): Promise<TacTransactionLinker | null> {
+    try {
+      await this.initializeSdk();
+
+      if (!this.tacSdk) {
+        this.logger.error('TAC SDK not initialized, cannot execute bridge');
+        return null;
+      }
+
+      // Import SDK components
+      const { SenderFactory, Network } = await import('@tonappchain/sdk');
+      const { Interface } = await import('ethers');
+
+      // Determine network based on config
+      const network = this.sdkConfig?.network === TacNetwork.TESTNET 
+        ? Network.TESTNET 
+        : Network.MAINNET;
+
+      // Create RawSender for backend operations (server-side signing)
+      // TAC SDK v0.7.x requires network, version, and mnemonic
+      const sender = await SenderFactory.getSender({
+        network,
+        version: 'V4',  // TON wallet V4 is the standard wallet version
+        mnemonic: tonMnemonic,
+      });
+
+      this.logger.debug('TAC bridge addresses', {
+        finalRecipient: recipient,
+      });
+
+      // Build the EVM proxy message
+      // TAC SDK bridges assets from TON to TAC EVM. We use sendCrossChainTransaction
+      // which allows us to specify an EVM call to execute after bridging.
+      //
+      // For USDT bridging to a specific recipient, we call ERC20.transfer
+      // to send the bridged tokens to the desired recipient address.
+      //
+      // The evmProxyMsg specifies what EVM call to make on TAC after assets arrive.
+      const erc20Interface = new Interface([
+        'function transfer(address to, uint256 amount) returns (bool)',
+      ]);
+      const transferCalldata = erc20Interface.encodeFunctionData('transfer', [
+        recipient,
+        BigInt(amount),
+      ]);
+
+      const evmProxyMsg: TacEvmProxyMsg = {
+        evmTargetAddress: USDT_TAC,
+        methodName: 'transfer(address,uint256)',
+        encodedParameters: transferCalldata,
+      };
+
+      // Prepare assets to bridge
+      // TAC SDK will lock these on TON and mint on TAC
+      const assets: TacAssetLike[] = [
+        {
+          address: asset,  // TON jetton address
+          amount: BigInt(amount),
+        },
+      ];
+
+      this.logger.info('Executing TAC SDK bridge', {
+        recipient,
+        amount,
+        asset,
+        evmTarget: evmProxyMsg.evmTargetAddress,
+        methodName: evmProxyMsg.methodName,
+      });
+
+      // Send cross-chain transaction via TAC SDK
+      // The SDK will:
+      // 1. Create the cross-chain message on TON
+      // 2. Sign with the sender's TON wallet
+      // 3. Submit to the TAC sequencer network
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const transactionLinker = await (this.tacSdk as any).sendCrossChainTransaction(
+        evmProxyMsg,
+        sender,
+        assets,
+      );
+
+      this.logger.info('TAC bridge transaction sent successfully', {
+        recipient,
+        amount,
+        asset,
+        transactionLinker,
+      });
+
+      return transactionLinker as TacTransactionLinker;
+    } catch (error) {
+      this.logger.error('Failed to execute TAC bridge', {
+        error: jsonifyError(error),
+        recipient,
+        amount,
+        asset,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Execute simple asset bridging with no EVM proxy call
+   * 
+   * This method attempts to bridge assets using TAC SDK methods that
+   * don't require specifying an EVM call (assets go to default address).
+   * 
+   * Falls back to sendCrossChainTransaction with minimal config.
+   * 
+   * @param tonMnemonic - TON wallet mnemonic for signing
+   * @param amount - Amount to bridge (in jetton units - 6 decimals for USDT)
+   * @param asset - TON jetton address (e.g., USDT_TON_JETTON)
+   */
+  async executeSimpleBridge(
+    tonMnemonic: string,
+    amount: string,
+    asset: string = USDT_TON_JETTON,
+  ): Promise<TacTransactionLinker | null> {
+    try {
+      await this.initializeSdk();
+
+      if (!this.tacSdk) {
+        this.logger.error('TAC SDK not initialized, cannot execute bridge');
+        return null;
+      }
+
+      const { SenderFactory, Network } = await import('@tonappchain/sdk');
+      
+      // Determine network based on config
+      const network = this.sdkConfig?.network === TacNetwork.TESTNET 
+        ? Network.TESTNET 
+        : Network.MAINNET;
+        
+      const sender = await SenderFactory.getSender({ 
+        network,
+        version: 'V4',  // TON wallet V4 is the standard wallet version
+        mnemonic: tonMnemonic,
+      });
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sdk = this.tacSdk as any;
+
+      // Try to use bridgeAssets method if available (depends on SDK version)
+      if (typeof sdk.bridgeAssets === 'function') {
+        this.logger.info('Using TAC SDK bridgeAssets method', { amount, asset });
+        
+        const result = await sdk.bridgeAssets(
+          sender,
+          [{ address: asset, amount: BigInt(amount) }],
+        );
+        
+        return result as TacTransactionLinker;
+      }
+
+      // Try startBridging method (alternative TAC SDK method)
+      if (typeof sdk.startBridging === 'function') {
+        this.logger.info('Using TAC SDK startBridging method', { amount, asset });
+        
+        const result = await sdk.startBridging(
+          sender,
+          [{ address: asset, amount: BigInt(amount) }],
+        );
+        
+        return result as TacTransactionLinker;
+      }
+
+      // Use sendCrossChainTransaction with minimal evmProxyMsg
+      // This will bridge assets but requires an EVM proxy call
+      this.logger.info('Using sendCrossChainTransaction with minimal config', { amount, asset });
+      
+      // Minimal proxy message - just targets the token contract with no action
+      const evmProxyMsg: TacEvmProxyMsg = {
+        evmTargetAddress: USDT_TAC,
+        methodName: '',
+        encodedParameters: '0x',
+      };
+
+      const transactionLinker = await sdk.sendCrossChainTransaction(
+        evmProxyMsg,
+        sender,
+        [{ address: asset, amount: BigInt(amount) }],
+      );
+
+      return transactionLinker as TacTransactionLinker;
+    } catch (error) {
+      this.logger.error('Failed to execute simple bridge', {
+        error: jsonifyError(error),
+        amount,
+        asset,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Track the status of a TAC cross-chain operation
+   * 
+   * Uses TAC SDK's OperationTracker to check the status of a pending bridge.
+   * 
+   * Status values:
+   * - PENDING: Operation is in progress
+   * - SUCCESSFUL: Operation completed successfully
+   * - FAILED: Operation failed
+   * - NOT_FOUND: Operation not found (may not have been indexed yet)
+   * 
+   * @param transactionLinker - The transaction linker from sendCrossChainTransaction
+   */
+  async trackOperation(transactionLinker: TacTransactionLinker): Promise<TacOperationStatus> {
+    try {
+      const { OperationTracker, Network } = await import('@tonappchain/sdk');
+      
+      // Initialize tracker with network configuration
+      const network = this.sdkConfig?.network === TacNetwork.TESTNET 
+        ? Network.TESTNET 
+        : Network.MAINNET;
+        
+      const tracker = new OperationTracker(network);
+      
+      this.logger.debug('Tracking TAC operation', {
+        transactionLinker,
+        network: this.sdkConfig?.network || 'mainnet',
+      });
+      
+      // Get simplified status (PENDING, SUCCESSFUL, FAILED, NOT_FOUND)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const status = await tracker.getSimplifiedOperationStatus(transactionLinker as any);
+
+      this.logger.debug('TAC operation status retrieved', {
+        transactionLinker,
+        status,
+      });
+
+      // Map SDK status to our enum
+      switch (status) {
+        case 'SUCCESSFUL':
+          return TacOperationStatus.SUCCESSFUL;
+        case 'FAILED':
+          return TacOperationStatus.FAILED;
+        case 'PENDING':
+          return TacOperationStatus.PENDING;
+        case 'OPERATION_ID_NOT_FOUND':
+        default:
+          return TacOperationStatus.NOT_FOUND;
+      }
+    } catch (error) {
+      this.logger.error('Failed to track TAC operation', {
+        error: jsonifyError(error),
+        transactionLinker,
+      });
+      return TacOperationStatus.NOT_FOUND;
+    }
+  }
+
+  /**
+   * Wait for a TAC operation to complete with polling
+   * 
+   * @param transactionLinker - The transaction linker from sendCrossChainTransaction
+   * @param timeoutMs - Maximum time to wait (default 10 minutes)
+   * @param pollIntervalMs - Polling interval (default 10 seconds)
+   */
+  async waitForOperation(
+    transactionLinker: TacTransactionLinker,
+    timeoutMs: number = 600000, // 10 minutes
+    pollIntervalMs: number = 10000, // 10 seconds
+  ): Promise<TacOperationStatus> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeoutMs) {
+      const status = await this.trackOperation(transactionLinker);
+      
+      if (status === TacOperationStatus.SUCCESSFUL || status === TacOperationStatus.FAILED) {
+        return status;
+      }
+      
+      // Wait before next poll
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+    }
+    
+    this.logger.warn('TAC operation tracking timed out', {
+      transactionLinker,
+      timeoutMs,
+    });
+    
+    return TacOperationStatus.PENDING;
+  }
+
+  /**
+   * TAC Inner Bridge doesn't require destination callbacks
+   * Tokens are minted automatically by the TAC sequencer
+   */
+  async destinationCallback(
+    route: RebalanceRoute,
+    originTransaction: TransactionReceipt,
+  ): Promise<MemoizedTransactionRequest | void> {
+    this.logger.debug('TAC Inner Bridge destinationCallback invoked - no action required', {
+      transactionHash: originTransaction.transactionHash,
+      route,
+    });
+    return;
+  }
+
+  /**
+   * Check if the TAC Inner Bridge transfer is complete
+   * 
+   * Strategy:
+   * 1. If we have a transactionLinker, use TAC SDK OperationTracker
+   * 2. Otherwise, check USDT balance on TAC for the recipient
+   * 
+   * @param amount - Amount expected to be received
+   * @param route - Bridge route (origin, destination, asset)
+   * @param originTransaction - Origin transaction receipt (may be empty for TON transactions)
+   * @param recipientOverride - Optional recipient address to check (preferred over originTransaction.to)
+   */
+  async readyOnDestination(
+    amount: string,
+    route: RebalanceRoute,
+    originTransaction: TransactionReceipt,
+    recipientOverride?: string,
+  ): Promise<boolean> {
+    this.logger.debug('Checking if TAC Inner Bridge transfer is ready', {
+      amount,
+      route,
+      transactionHash: originTransaction?.transactionHash,
+      recipientOverride,
+    });
+
+    try {
+      // Get TAC EVM client
+      const tacClient = this.getPublicClient(TAC_CHAIN_ID);
+      
+      // Get the TAC asset address for the bridged asset
+      const tacAsset = this.getTacAssetAddress(route.asset);
+      
+      if (!tacAsset) {
+        this.logger.warn('Could not find TAC asset address', {
+          sourceAsset: route.asset,
+          supportedAssets: Object.keys(TAC_BRIDGE_SUPPORTED_ASSETS),
+        });
+        return false;
+      }
+
+      // Get recipient address - prefer override, then originTransaction.to
+      let recipient: `0x${string}` | undefined;
+      if (recipientOverride && recipientOverride.startsWith('0x')) {
+        recipient = recipientOverride as `0x${string}`;
+      } else if (originTransaction?.to) {
+        recipient = originTransaction.to as `0x${string}`;
+      }
+      
+      if (!recipient) {
+        this.logger.warn('No recipient address available for balance check', {
+          recipientOverride,
+          originTransactionTo: originTransaction?.to,
+        });
+        return false;
+      }
+
+      // Check balance on TAC
+      const balance = await tacClient.readContract({
+        address: tacAsset,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [recipient],
+      });
+
+      // Note: This is a simple balance threshold check. It may return true if
+      // the recipient already had sufficient balance before the operation.
+      // For more accurate tracking, use TAC SDK OperationTracker instead.
+      const isReady = balance >= BigInt(amount);
+      this.logger.debug('TAC balance check (fallback method)', {
+        tacAsset,
+        recipient,
+        balance: balance.toString(),
+        requiredAmount: amount,
+        isReady,
+        note: 'This is a fallback check; prefer TAC SDK OperationTracker for accuracy',
+      });
+
+      return isReady;
+    } catch (error) {
+      this.logger.error('Failed to check TAC Inner Bridge status', {
+        error: jsonifyError(error),
+        amount,
+        route,
+        transactionHash: originTransaction?.transactionHash,
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Get the TAC asset address for a given source asset
+   * Maps from TON asset address to TAC EVM address
+   */
+  protected getTacAssetAddress(asset: string): `0x${string}` | undefined {
+    // First check if it's already a TAC address (EVM format)
+    if (asset.startsWith('0x') && asset.length === 42) {
+      // Check if this is the known USDT address on TAC
+      if (asset.toLowerCase() === USDT_TAC.toLowerCase()) {
+        return USDT_TAC;
+      }
+      // Check against supported assets
+      for (const [, addresses] of Object.entries(TAC_BRIDGE_SUPPORTED_ASSETS)) {
+        if (addresses.tac.toLowerCase() === asset.toLowerCase()) {
+          return addresses.tac as `0x${string}`;
+        }
+      }
+    }
+
+    // Check if it's a TON address - map to TAC address
+    for (const [symbol, addresses] of Object.entries(TAC_BRIDGE_SUPPORTED_ASSETS)) {
+      if (addresses.ton.toLowerCase() === asset.toLowerCase()) {
+        this.logger.debug('Mapped TON asset to TAC', { 
+          symbol, 
+          tonAddress: asset, 
+          tacAddress: addresses.tac 
+        });
+        return addresses.tac as `0x${string}`;
+      }
+    }
+
+    // Default to USDT on TAC if asset looks like USDT
+    if (asset.toLowerCase().includes('usdt')) {
+      return USDT_TAC;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Get or create a public client for a chain
+   * Falls back to TAC RPC providers if chain config is missing
+   */
+  protected getPublicClient(chainId: number): PublicClient {
+    if (this.publicClients.has(chainId)) {
+      return this.publicClients.get(chainId)!;
+    }
+
+    let providers = this.chains[chainId.toString()]?.providers ?? [];
+    
+    // Fall back to hardcoded TAC providers if not in config
+    if (!providers.length && chainId === TAC_CHAIN_ID) {
+      providers = TAC_RPC_PROVIDERS;
+      this.logger.debug('Using fallback TAC RPC providers', { providers });
+    }
+
+    if (!providers.length) {
+      throw new Error(`No providers found for chain ${chainId}`);
+    }
+
+    const client = createPublicClient({
+      transport: fallback(providers.map((provider: string) => http(provider))),
+    });
+
+    this.publicClients.set(chainId, client);
+    return client;
+  }
+
+  /**
+   * Logs and rethrows errors with consistent context
+   */
+  protected handleError(error: Error | unknown, context: string, metadata: Record<string, unknown>): never {
+    this.logger.error(`Failed to ${context}`, {
+      error: jsonifyError(error),
+      ...metadata,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    throw new Error(`Failed to ${context}: ${(error as any)?.message ?? ''}`);
+  }
+}
