@@ -280,6 +280,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       },
       ownAddress: configJson.signerAddress ?? (await requireEnv('SIGNER_ADDRESS')),
       ownSolAddress: configJson.solSignerAddress ?? (await requireEnv('SOL_SIGNER_ADDRESS')),
+      ownTonAddress: configJson.tonSignerAddress ?? (await fromEnv('TON_SIGNER_ADDRESS', true)) ?? undefined,
       supportedSettlementDomains:
         configJson.supportedSettlementDomains ??
         parseSettlementDomains(await requireEnv('SUPPORTED_SETTLEMENT_DOMAINS')),
