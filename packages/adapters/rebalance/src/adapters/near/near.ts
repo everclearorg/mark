@@ -102,6 +102,11 @@ export class NearBridgeAdapter implements BridgeAdapter {
     return amount;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    return null;
+  }
+
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     let _amount = amount;
     try {

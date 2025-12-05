@@ -20,10 +20,22 @@ export interface MemoizedTransactionRequest {
 export interface BridgeAdapter {
   type(): SupportedBridge;
   getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string>;
+  getMinimumAmount(route: RebalanceRoute): Promise<string | null>;
   send(sender: string, recipient: string, amount: string, route: RebalanceRoute): Promise<MemoizedTransactionRequest[]>;
   destinationCallback(
     route: RebalanceRoute,
     originTransaction: TransactionReceipt,
   ): Promise<MemoizedTransactionRequest | void>;
   readyOnDestination(amount: string, route: RebalanceRoute, originTransaction: TransactionReceipt): Promise<boolean>;
+  executeSwap?(sender: string, recipient: string, amount: string, route: RebalanceRoute): Promise<SwapExecutionResult>;
+}
+
+export interface SwapExecutionResult {
+  orderUid: string;
+  sellToken: string;
+  buyToken: string;
+  sellAmount: string;
+  buyAmount: string;
+  executedSellAmount: string;
+  executedBuyAmount: string;
 }

@@ -289,6 +289,7 @@ module "db" {
 
   identifier                 = "${var.stage}-${var.environment}-mark-db"
   instance_class             = var.db_instance_class
+  engine_version             = var.db_engine_version
   allocated_storage          = var.db_allocated_storage
   db_name                    = var.db_name
   username                   = var.db_username

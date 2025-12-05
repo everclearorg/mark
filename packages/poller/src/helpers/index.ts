@@ -4,3 +4,4 @@ export * from './contracts';
 export * from './intent';
 export * from './monitor';
 export * from './splitIntent';
+export * from './swaps';

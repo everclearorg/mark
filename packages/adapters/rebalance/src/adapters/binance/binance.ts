@@ -145,6 +145,26 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     }
   }
 
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    try {
+      const originMapping = await validateAssetMapping(
+        this.client,
+        route,
+        `route from chain ${route.origin}`,
+        this.config.chains,
+      );
+      // Minimum is minWithdrawalAmount + withdrawalFee
+      const minimum = BigInt(originMapping.minWithdrawalAmount) + BigInt(originMapping.withdrawalFee);
+      return minimum.toString();
+    } catch (error) {
+      this.logger.debug('Could not get minimum amount for Binance route', {
+        route,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
       const originMapping = await validateAssetMapping(

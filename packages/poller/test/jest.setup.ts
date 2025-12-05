@@ -8,12 +8,17 @@ import '@jest/globals';
 // Import shared console suppression
 import '../../../jest.setup.shared.js';
 
-// Set test database URL if not provided
-if (!process.env.TEST_DATABASE_URL) {
+const skipDbSetup = process.env.SKIP_DB_SETUP === 'true';
+
+// Set test database URL if not provided (unless skipping DB entirely)
+if (!skipDbSetup && !process.env.TEST_DATABASE_URL) {
   process.env.TEST_DATABASE_URL = 'postgresql://postgres:postgres@localhost:5433/mark_test?sslmode=disable';
 }
 
 beforeAll(async () => {
+  if (skipDbSetup) {
+    return;
+  }
   const config = {
     connectionString: process.env.TEST_DATABASE_URL!,
     maxConnections: 5,
@@ -31,5 +36,8 @@ afterEach(() => {
 });
 
 afterAll(async () => {
+  if (skipDbSetup) {
+    return;
+  }
   await closeDatabase();
 });

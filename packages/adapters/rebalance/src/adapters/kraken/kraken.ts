@@ -99,6 +99,30 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     }
   }
 
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    try {
+      const originMapping = await getValidAssetMapping(this.dynamicConfig, route, `route from chain ${route.origin}`);
+      if (!originMapping) {
+        return null;
+      }
+
+      const originAssetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+      if (!originAssetConfig) {
+        return null;
+      }
+
+      // Minimum is the deposit minimum
+      const depositMin = parseUnits(originMapping.depositMethod.minimum, originAssetConfig.decimals);
+      return depositMin.toString();
+    } catch (error) {
+      this.logger.debug('Could not get minimum amount for Kraken route', {
+        route,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
       const { received, originMapping, destinationMapping } = await this.validateRebalanceRequest(
