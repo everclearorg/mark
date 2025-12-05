@@ -610,6 +610,24 @@ describe('BinanceBridgeAdapter', () => {
       await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(/Amount too small after rounding/);
     });
 
+    it('should throw error when amount does not meet minimum withdrawal requirement', async () => {
+      const amount = '5000000000000000'; // 0.005 ETH, below minimum (0.01 ETH) + fee (0.04 ETH)
+      jest.mocked(utils.meetsMinimumWithdrawal).mockReturnValueOnce(false);
+
+      await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(
+        /Amount .* is too low for Binance withdrawal/,
+      );
+    });
+
+    it('should throw error when asset config not found', async () => {
+      const amount = '1000000000000000000';
+      jest.mocked(assetUtils.findAssetByAddress).mockReturnValueOnce(null as any);
+
+      await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(
+        /Unable to find asset config for asset/,
+      );
+    });
+
     it('should throw error for unsupported asset', async () => {
       const unsupportedRoute: RebalanceRoute = {
         ...sampleRoute,
