@@ -1,5 +1,5 @@
 import { MarkConfiguration } from '@mark/core';
-import { createPublicClient, getContract, http, Abi, Chain, Address } from 'viem';
+import { createPublicClient, getContract, http, fallback, Abi, Chain, Address } from 'viem';
 
 const erc20Abi = [
   {
@@ -385,8 +385,9 @@ export const getMulticallAddress = (chainId: string, config: MarkConfiguration):
   return chainConfig.deployments.multicall3 as Address;
 };
 
-export const getProviderUrl = (chainId: string, config: MarkConfiguration): string | undefined => {
-  return chainId === config.hub.domain ? config.hub.providers[0] : config.chains[chainId]?.providers[0];
+export const getProviderUrls = (chainId: string, config: MarkConfiguration): string[] => {
+  const providers = chainId === config.hub.domain ? config.hub.providers : config.chains[chainId]?.providers;
+  return providers ?? [];
 };
 
 // Singleton map for viem clients
@@ -397,14 +398,13 @@ export const createClient = (chainId: string, config: MarkConfiguration) => {
     return viemClients.get(chainId)!;
   }
 
-  const providerURL = getProviderUrl(chainId, config);
-  if (!providerURL) {
+  const providerUrls = getProviderUrls(chainId, config);
+  if (providerUrls.length === 0) {
     throw new Error(`No RPC configured for given domain: ${chainId}`);
   }
 
-  const client = createPublicClient({
-    chain: chainId as unknown as Chain,
-    transport: http(providerURL, {
+  const transports = providerUrls.map((url) =>
+    http(url, {
       batch: {
         wait: 200,
       },
@@ -412,6 +412,18 @@ export const createClient = (chainId: string, config: MarkConfiguration) => {
         keepalive: true,
       },
     }),
+  );
+
+  const transport =
+    transports.length === 1
+      ? transports[0]
+      : fallback(transports, {
+          rank: true, // Enable automatic ranking based on latency and stability
+        });
+
+  const client = createPublicClient({
+    chain: chainId as unknown as Chain,
+    transport,
     batch: { multicall: { wait: 200 } },
   });
 

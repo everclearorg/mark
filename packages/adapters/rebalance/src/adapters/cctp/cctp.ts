@@ -45,6 +45,12 @@ export class CctpBridgeAdapter implements BridgeAdapter {
   type(): SupportedBridge {
     return this.version === 'v1' ? SupportedBridge.CCTPV1 : SupportedBridge.CCTPV2;
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    return null;
+  }
+
   // Fees: https://developers.circle.com/cctp
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     if (
@@ -137,7 +143,9 @@ export class CctpBridgeAdapter implements BridgeAdapter {
     if (!providers.length) {
       throw new Error(`No providers found for origin chain ${route.origin}`);
     }
-    const client = createPublicClient({ transport: fallback(providers.map((p: string) => http(p))) });
+    const transports = providers.map((p: string) => http(p));
+    const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
+    const client = createPublicClient({ transport });
     const allowance = await client.readContract({
       address: route.asset as `0x${string}`,
       abi: erc20Abi,

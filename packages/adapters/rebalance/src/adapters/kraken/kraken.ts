@@ -3,6 +3,7 @@ import {
   createPublicClient,
   encodeFunctionData,
   http,
+  fallback,
   zeroAddress,
   erc20Abi,
   PublicClient,
@@ -96,6 +97,30 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
         action: 'withdraw_will_fail_without_recipient',
       });
       return undefined;
+    }
+  }
+
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    try {
+      const originMapping = await getValidAssetMapping(this.dynamicConfig, route, `route from chain ${route.origin}`);
+      if (!originMapping) {
+        return null;
+      }
+
+      const originAssetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
+      if (!originAssetConfig) {
+        return null;
+      }
+
+      // Minimum is the deposit minimum
+      const depositMin = parseUnits(originMapping.depositMethod.minimum, originAssetConfig.decimals);
+      return depositMin.toString();
+    } catch (error) {
+      this.logger.debug('Could not get minimum amount for Kraken route', {
+        route,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     }
   }
 
@@ -843,14 +868,17 @@ export class KrakenBridgeAdapter implements BridgeAdapter {
     }
 
     try {
+      const providers = chainConfig.providers;
+      const transports = providers.map((url) => http(url));
+      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
       return createPublicClient({
-        transport: http(chainConfig.providers[0]),
+        transport,
       });
     } catch (error) {
       this.logger.error('Failed to create provider', {
         error: jsonifyError(error),
         chainId,
-        provider: chainConfig.providers[0],
+        providers: chainConfig.providers,
       });
       return undefined;
     }
