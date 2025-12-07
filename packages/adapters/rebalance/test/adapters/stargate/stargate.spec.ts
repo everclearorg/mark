@@ -12,21 +12,26 @@ import {
   STARGATE_CHAIN_NAMES,
   USDT_TON_STARGATE,
   USDT_TON_JETTON,
+  STARGATE_API_URL,
 } from '../../../src/adapters/stargate/types';
 
-// Mock the external dependencies
+// Mock viem functions
+const mockReadContract = jest.fn();
+const mockSimulateContract = jest.fn();
+
 jest.mock('viem', () => {
   const actual = jest.requireActual('viem') as any;
   return {
     ...actual,
     createPublicClient: jest.fn(() => ({
       getBalance: jest.fn().mockResolvedValue(1000000n as never),
-      readContract: jest.fn().mockResolvedValue(1000000n as never),
+      readContract: mockReadContract,
       getTransactionReceipt: jest.fn(),
       getTransaction: jest.fn(),
-      simulateContract: jest.fn().mockResolvedValue({ request: {} } as never),
+      simulateContract: mockSimulateContract,
     })),
     encodeFunctionData: jest.fn().mockReturnValue('0x' as never),
+    pad: jest.fn().mockReturnValue('0x' + '0'.repeat(64) as never),
   };
 });
 
@@ -62,6 +67,18 @@ class TestStargateBridgeAdapter extends StargateBridgeAdapter {
 
   public getPublicClients() {
     return this.publicClients;
+  }
+
+  public async callGetApiQuote(amount: string, route: RebalanceRoute) {
+    return this.getApiQuote(amount, route);
+  }
+
+  public async callGetOnChainQuote(amount: string, route: RebalanceRoute) {
+    return this.getOnChainQuote(amount, route);
+  }
+
+  public callGetPublicClient(chainId: number) {
+    return this.getPublicClient(chainId);
   }
 }
 
@@ -399,6 +416,269 @@ describe('StargateBridgeAdapter', () => {
 
       const result = await adapter.destinationCallback(route, mockReceipt as TransactionReceipt);
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('getReceivedAmount', () => {
+    beforeEach(() => {
+      mockReadContract.mockReset();
+    });
+
+    it('should return API quote when available', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // Mock successful API response
+      const mockApiResponse = {
+        quotes: [{
+          route: { bridgeName: 'stargate' },
+          dstAmount: '990000', // 0.99 USDT after fees
+        }],
+      };
+      (axiosGet as jest.Mock).mockResolvedValue({ data: mockApiResponse } as never);
+
+      const result = await adapter.getReceivedAmount('1000000', route);
+      expect(result).toBe('990000');
+    });
+
+    it('should fallback to on-chain quote when API fails', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // Mock API failure
+      (axiosGet as jest.Mock).mockRejectedValue(new Error('API error') as never);
+
+      // Mock on-chain quote (quoteSend)
+      mockReadContract.mockResolvedValue({ nativeFee: 100000n, lzTokenFee: 0n } as never);
+
+      const result = await adapter.getReceivedAmount('1000000', route);
+      // Should return amount minus estimated fee (0.1%)
+      expect(BigInt(result)).toBeLessThan(1000000n);
+    });
+  });
+
+  describe('getApiQuote', () => {
+    it('should return quote from Stargate API', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826, // TON
+        asset: USDT_ETH,
+      };
+
+      const mockApiResponse = {
+        quotes: [{
+          route: { bridgeName: 'stargate' },
+          dstAmount: '995000',
+        }],
+      };
+      (axiosGet as jest.Mock).mockResolvedValue({ data: mockApiResponse } as never);
+
+      const result = await adapter.callGetApiQuote('1000000', route);
+      expect(result).toBe('995000');
+      expect(axiosGet).toHaveBeenCalledWith(expect.stringContaining(STARGATE_API_URL));
+    });
+
+    it('should return null for unsupported chain', async () => {
+      const route: RebalanceRoute = {
+        origin: 99999, // Unknown chain
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      const result = await adapter.callGetApiQuote('1000000', route);
+      expect(result).toBeNull();
+      expect(mockLogger.warn).toHaveBeenCalledWith('Chain not supported in Stargate API', expect.any(Object));
+    });
+
+    it('should return null when API returns error', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      (axiosGet as jest.Mock).mockResolvedValue({ data: { error: 'Rate limit exceeded' } } as never);
+
+      const result = await adapter.callGetApiQuote('1000000', route);
+      expect(result).toBeNull();
+    });
+
+    it('should return null when no quotes available', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      (axiosGet as jest.Mock).mockResolvedValue({ data: { quotes: [] } } as never);
+
+      const result = await adapter.callGetApiQuote('1000000', route);
+      expect(result).toBeNull();
+    });
+
+    it('should return null when quote has no route', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      (axiosGet as jest.Mock).mockResolvedValue({ 
+        data: { quotes: [{ dstAmount: '1000', route: null }] } 
+      } as never);
+
+      const result = await adapter.callGetApiQuote('1000000', route);
+      expect(result).toBeNull();
+    });
+
+    it('should handle API request errors', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      (axiosGet as jest.Mock).mockRejectedValue(new Error('Network error') as never);
+
+      const result = await adapter.callGetApiQuote('1000000', route);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getOnChainQuote', () => {
+    beforeEach(() => {
+      mockReadContract.mockReset();
+    });
+
+    it('should use quoteOFT when available', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // Mock quoteOFT response
+      mockReadContract.mockResolvedValue({
+        amountSentLD: 1000000n,
+        amountReceivedLD: 999000n,
+      } as never);
+
+      const result = await adapter.callGetOnChainQuote('1000000', route);
+      expect(result).toBe('999000');
+    });
+
+    it('should fallback to quoteSend with fee estimate when quoteOFT not available', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // First call (quoteOFT) throws, second call (quoteSend) succeeds
+      mockReadContract
+        .mockRejectedValueOnce(new Error('quoteOFT not available') as never)
+        .mockResolvedValueOnce({ nativeFee: 100000n, lzTokenFee: 0n } as never);
+
+      const result = await adapter.callGetOnChainQuote('1000000', route);
+      // Amount minus 0.1% fee estimate
+      expect(result).toBe('999000');
+    });
+  });
+
+  describe('send', () => {
+    beforeEach(() => {
+      mockReadContract.mockReset();
+      mockSimulateContract.mockReset();
+    });
+
+    it('should build transaction with correct parameters for TON destination', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826, // TON
+        asset: USDT_ETH,
+      };
+
+      // Mock API quote (getReceivedAmount uses API first)
+      const mockApiResponse = {
+        quotes: [{
+          route: { bridgeName: 'stargate' },
+          dstAmount: '995000',
+        }],
+      };
+      (axiosGet as jest.Mock).mockResolvedValue({ data: mockApiResponse } as never);
+
+      // Mock quoteSend for messaging fee
+      mockReadContract.mockResolvedValue({
+        nativeFee: 50000000000000000n, // 0.05 ETH
+        lzTokenFee: 0n,
+      } as never);
+
+      // Mock simulateContract
+      mockSimulateContract.mockResolvedValue({ request: { data: '0x' } } as never);
+
+      const result = await adapter.send(
+        '0xSender',
+        'EQD4FPq-PRDieyQKkizFTRtSDyucUIqrj0v_zXJmqaDp6_0t', // TON address
+        '1000000',
+        route,
+      );
+
+      expect(result).toBeDefined();
+      // Verify it attempted to get quote
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Fetching Stargate API quote',
+        expect.any(Object)
+      );
+    });
+
+    it('should handle errors when building transaction', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 99999, // Unknown
+        asset: USDT_ETH,
+      };
+
+      // Should throw due to unsupported destination
+      await expect(adapter.send('0xSender', '0xRecipient', '1000000', route)).rejects.toThrow();
+    });
+  });
+
+  describe('getPublicClient', () => {
+    it('should create and cache public clients', () => {
+      const client1 = adapter.callGetPublicClient(1);
+      const client2 = adapter.callGetPublicClient(1);
+
+      expect(client1).toBe(client2);
+      expect(adapter.getPublicClients().size).toBe(1);
+    });
+
+    it('should throw error for chain without providers', () => {
+      expect(() => adapter.callGetPublicClient(99999)).toThrow(
+        'No providers found for chain 99999'
+      );
+    });
+  });
+
+  describe('STARGATE_API_URL', () => {
+    it('should be defined', () => {
+      expect(STARGATE_API_URL).toBeDefined();
+      expect(STARGATE_API_URL).toContain('stargate');
+    });
+  });
+
+  describe('STARGATE_CHAIN_NAMES', () => {
+    it('should have mapping for ethereum', () => {
+      expect(STARGATE_CHAIN_NAMES[1]).toBe('ethereum');
+    });
+
+    it('should have mapping for TON', () => {
+      expect(STARGATE_CHAIN_NAMES[30826]).toBe('ton');
     });
   });
 });
