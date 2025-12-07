@@ -1,6 +1,7 @@
 import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
-import { getTickerForAsset, convertToNativeUnits, getMarkBalancesForTicker } from '../helpers';
+import { getTickerForAsset, convertToNativeUnits, getMarkBalancesForTicker, getTonAssetAddress } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
+import { MarkConfiguration } from '@mark/core';
 import {
   getDecimalsFromConfig,
   RebalanceOperationStatus,
@@ -34,9 +35,6 @@ const USDT_ON_ETH_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_ON_TAC_ADDRESS = '0xAF988C3f7CB2AceAbB15f96b19388a259b6C438f';
 const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
 
-// TON USDT jetton master address (Tether official)
-const USDT_TON_JETTON = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
-
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
 
@@ -46,17 +44,19 @@ const MIN_REBALANCE_AMOUNT = 1000000n; // 1 USDT in 6 decimals
 /**
  * Query TON wallet USDT balance from TONCenter API
  * @param walletAddress - TON wallet address (user-friendly format)
+ * @param jettonAddress - TON jetton master address (from config.ton.assets)
  * @param apiKey - TONCenter API key
  * @param rpcUrl - TONCenter API base URL (optional)
  * @returns USDT balance in micro-units (6 decimals), or 0 if query fails
  */
 async function getTonUsdtBalance(
   walletAddress: string,
+  jettonAddress: string,
   apiKey?: string,
   rpcUrl: string = 'https://toncenter.com',
 ): Promise<bigint> {
   try {
-    const url = `${rpcUrl}/api/v3/jetton/wallets?owner_address=${walletAddress}&jetton_address=${USDT_TON_JETTON}`;
+    const url = `${rpcUrl}/api/v3/jetton/wallets?owner_address=${walletAddress}&jetton_address=${jettonAddress}`;
     const headers: Record<string, string> = {};
     if (apiKey) {
       headers['X-API-Key'] = apiKey;
@@ -632,11 +632,20 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
       continue;
     }
 
-    // For TAC Inner Bridge (TON → TAC), use the known USDT jetton address
-    // since TON (chain 30826) isn't in our EVM config
+    // For TAC Inner Bridge (TON → TAC), get jetton address from config.ton.assets
+    // since TON (chain 30826) isn't in the EVM chains config block
     let assetAddress: string;
     if (isTacInnerBridge) {
-      assetAddress = USDT_TON_JETTON; // TON USDT jetton master address
+      const tonAsset = getTonAssetAddress(operation.tickerHash, config);
+      if (!tonAsset) {
+        logger.error('Could not find TON jetton address in config.ton.assets', {
+          ...logContext,
+          tickerHash: operation.tickerHash,
+          note: 'Add asset to config.ton.assets with jettonAddress',
+        });
+        continue;
+      }
+      assetAddress = tonAsset;
     } else {
       const configAsset = getTokenAddressFromConfig(operation.tickerHash, operation.originChainId.toString(), config);
       if (!configAsset) {
@@ -744,6 +753,17 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
               continue;
             }
             
+            // Get jetton address from config
+            const jettonAddress = getTonAssetAddress(operation.tickerHash, config);
+            if (!jettonAddress) {
+              logger.error('TON jetton address not found in config.ton.assets', {
+                ...logContext,
+                tickerHash: operation.tickerHash,
+                note: 'Add asset to config.ton.assets with jettonAddress',
+              });
+              continue;
+            }
+            
             // Check TON native balance for gas
             const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
             if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
@@ -758,7 +778,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             }
             
             // Get actual USDT balance (may be less than operation.amount due to Stargate fees)
-            const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, tonApiKey);
+            const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, jettonAddress, tonApiKey);
             
             // Use the actual balance, not the expected amount
             // This accounts for Stargate bridge fees
@@ -859,10 +879,21 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             const tonMnemonic = config.ton?.mnemonic;
             const tonWalletAddress = config.ownTonAddress;
             const tonApiKey = config.ton?.apiKey;
+            
+            // Get jetton address from config
+            const jettonAddress = getTonAssetAddress(operation.tickerHash, config);
+            if (!jettonAddress) {
+              logger.error('TON jetton address not found in config.ton.assets', {
+                ...logContext,
+                tickerHash: operation.tickerHash,
+                note: 'Add asset to config.ton.assets with jettonAddress',
+              });
+              continue;
+            }
 
             if (tonMnemonic && tonWalletAddress) {
               // Get actual USDT balance on TON
-              const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, tonApiKey);
+              const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, jettonAddress, tonApiKey);
               
               if (actualUsdtBalance === 0n) {
                 // No USDT on TON - bridge might have already succeeded!

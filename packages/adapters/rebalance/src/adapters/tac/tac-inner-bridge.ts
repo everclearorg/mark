@@ -19,7 +19,6 @@ import {
   TacAssetLike,
   TacEvmProxyMsg,
   TacTransactionLinker,
-  USDT_TON_JETTON,
   TacSdkConfig,
 } from './types';
 
@@ -199,13 +198,13 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
    * @param tonMnemonic - TON wallet mnemonic for signing
    * @param recipient - TAC EVM address to receive tokens (must be EVM format 0x...)
    * @param amount - Amount to bridge (in jetton units - 6 decimals for USDT)
-   * @param asset - TON jetton address (e.g., USDT_TON_JETTON)
+   * @param asset - TON jetton address (from config.ton.assets)
    */
   async executeTacBridge(
     tonMnemonic: string,
     recipient: string,
     amount: string,
-    asset: string = USDT_TON_JETTON,
+    asset: string,
   ): Promise<TacTransactionLinker | null> {
     try {
       await this.initializeSdk();
@@ -318,12 +317,12 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
    * 
    * @param tonMnemonic - TON wallet mnemonic for signing
    * @param amount - Amount to bridge (in jetton units - 6 decimals for USDT)
-   * @param asset - TON jetton address (e.g., USDT_TON_JETTON)
+   * @param asset - TON jetton address (from config.ton.assets)
    */
   async executeSimpleBridge(
     tonMnemonic: string,
     amount: string,
-    asset: string = USDT_TON_JETTON,
+    asset: string,
   ): Promise<TacTransactionLinker | null> {
     try {
       await this.initializeSdk();
