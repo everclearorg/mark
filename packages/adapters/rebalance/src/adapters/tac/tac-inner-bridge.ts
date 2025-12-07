@@ -71,15 +71,47 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
     try {
       // Dynamically import TAC SDK to avoid issues if not installed
       const { TacSdk, Network } = await import('@tonappchain/sdk');
+      const { TonClient } = await import('@ton/ton');
       
       const network = this.sdkConfig?.network === TacNetwork.TESTNET 
         ? Network.TESTNET 
         : Network.MAINNET;
 
-      this.tacSdk = await TacSdk.create({ network });
+      // Create custom TonClient with paid RPC to avoid rate limits
+      // The default SDK uses Orbs endpoints which can be rate-limited
+      // Use DRPC paid endpoint for reliable access
+      const tonRpcUrl = this.sdkConfig?.tonRpcUrl || 'https://toncenter.com/api/v2/jsonRPC';
+      
+      this.logger.debug('Initializing TonClient', { tonRpcUrl });
+      
+      const tonClient = new TonClient({
+        endpoint: tonRpcUrl,
+        // Note: DRPC includes API key in URL, no separate apiKey param needed
+      });
+
+      // Create custom contractOpener using TonClient
+      const contractOpener = {
+        open: <T extends object>(contract: T) => tonClient.open(contract as any),
+        getContractState: async (address: any) => {
+          const state = await tonClient.getContractState(address);
+          return {
+            balance: state.balance,
+            state: state.state === 'active' ? 'active' : 
+                   state.state === 'frozen' ? 'frozen' : 'uninitialized',
+            code: state.code ?? null,
+          };
+        },
+      };
+
+      this.tacSdk = await TacSdk.create({ 
+        network,
+        TONParams: {
+          contractOpener: contractOpener as any,
+        },
+      });
       this.sdkInitialized = true;
       
-      this.logger.info('TAC SDK initialized successfully', { network });
+      this.logger.info('TAC SDK initialized successfully', { network, tonRpcUrl });
     } catch (error) {
       this.logger.warn('Failed to initialize TAC SDK, will use fallback methods', {
         error: jsonifyError(error),
@@ -102,6 +134,15 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
       note: 'TAC Inner Bridge is a 1:1 lock-and-mint bridge',
     });
     return amount;
+  }
+
+  /**
+   * Returns the minimum rebalance amount for TAC Inner Bridge.
+   * TAC Inner Bridge doesn't have a strict minimum.
+   */
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    // TAC Inner Bridge has no strict minimum
+    return null;
   }
 
   /**
@@ -176,7 +217,6 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
 
       // Import SDK components
       const { SenderFactory, Network } = await import('@tonappchain/sdk');
-      const { Interface } = await import('ethers');
 
       // Determine network based on config
       const network = this.sdkConfig?.network === TacNetwork.TESTNET 
@@ -185,44 +225,47 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
 
       // Create RawSender for backend operations (server-side signing)
       // TAC SDK v0.7.x requires network, version, and mnemonic
+      // Use V4 which matches the wallet derived from the 12-word mnemonic
       const sender = await SenderFactory.getSender({
         network,
-        version: 'V4',  // TON wallet V4 is the standard wallet version
+        version: 'V4',  // V4 wallet - standard TON wallet
         mnemonic: tonMnemonic,
       });
 
-      this.logger.debug('TAC bridge addresses', {
+      // Get the sender's wallet address for debugging
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const senderAny = sender as any;
+      const senderAddress = typeof senderAny.getSenderAddress === 'function' 
+        ? senderAny.getSenderAddress()
+        : senderAny.wallet?.address?.toString?.() || 'unknown';
+      
+      // Log for debugging (V4 wallet derived from mnemonic)
+      this.logger.info('TAC bridge sender wallet', {
+        senderTonWallet: senderAddress,
         finalRecipient: recipient,
       });
 
       // Build the EVM proxy message
-      // TAC SDK bridges assets from TON to TAC EVM. We use sendCrossChainTransaction
-      // which allows us to specify an EVM call to execute after bridging.
-      //
-      // For USDT bridging to a specific recipient, we call ERC20.transfer
-      // to send the bridged tokens to the desired recipient address.
-      //
-      // The evmProxyMsg specifies what EVM call to make on TAC after assets arrive.
-      const erc20Interface = new Interface([
-        'function transfer(address to, uint256 amount) returns (bool)',
-      ]);
-      const transferCalldata = erc20Interface.encodeFunctionData('transfer', [
-        recipient,
-        BigInt(amount),
-      ]);
-
+      // For simple bridging (TON → TAC) without calling a contract,
+      // we just specify the recipient address as evmTargetAddress.
+      // The TAC SDK will bridge tokens directly to this address.
+      // 
+      // See TAC SDK docs: for TON-TAC transactions, when no methodName
+      // is provided, tokens are sent directly to evmTargetAddress.
       const evmProxyMsg: TacEvmProxyMsg = {
-        evmTargetAddress: USDT_TAC,
-        methodName: 'transfer(address,uint256)',
-        encodedParameters: transferCalldata,
+        evmTargetAddress: recipient,  // Tokens go directly to recipient
+        // No methodName or encodedParameters needed for simple transfer
       };
 
       // Prepare assets to bridge
       // TAC SDK will lock these on TON and mint on TAC
+      // IMPORTANT: Use rawAmount (not amount) since we're already passing the raw token units
+      // 'amount' expects human-readable values (e.g., 1.99) which get multiplied by 10^decimals
+      // 'rawAmount' expects raw units (e.g., 1999400 for 1.9994 USDT with 6 decimals)
       const assets: TacAssetLike[] = [
         {
           address: asset,  // TON jetton address
-          amount: BigInt(amount),
+          rawAmount: BigInt(amount),  // Already in raw units (6 decimals for USDT)
         },
       ];
 
@@ -231,7 +274,7 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
         amount,
         asset,
         evmTarget: evmProxyMsg.evmTargetAddress,
-        methodName: evmProxyMsg.methodName,
+        note: 'Simple bridge - tokens go directly to recipient',
       });
 
       // Send cross-chain transaction via TAC SDK
@@ -299,7 +342,7 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
         
       const sender = await SenderFactory.getSender({ 
         network,
-        version: 'V4',  // TON wallet V4 is the standard wallet version
+        version: 'V4',  // V4 wallet - standard TON wallet
         mnemonic: tonMnemonic,
       });
       
@@ -529,20 +572,68 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
         args: [recipient],
       });
 
-      // Note: This is a simple balance threshold check. It may return true if
+      // IMPORTANT: Don't use simple balance check - it may return true if
       // the recipient already had sufficient balance before the operation.
-      // For more accurate tracking, use TAC SDK OperationTracker instead.
-      const isReady = balance >= BigInt(amount);
-      this.logger.debug('TAC balance check (fallback method)', {
+      // Instead, check for actual Transfer events to the recipient.
+      
+      // Check for Transfer events to recipient in the last ~1000 blocks
+      const currentBlock = await tacClient.getBlockNumber();
+      const fromBlock = currentBlock - 1000n > 0n ? currentBlock - 1000n : 0n;
+      
+      // Transfer event signature: Transfer(address,address,uint256)
+      const transferEventSignature = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      
+      const logs = await tacClient.getLogs({
+        address: tacAsset,
+        event: {
+          type: 'event',
+          name: 'Transfer',
+          inputs: [
+            { type: 'address', indexed: true, name: 'from' },
+            { type: 'address', indexed: true, name: 'to' },
+            { type: 'uint256', indexed: false, name: 'value' },
+          ],
+        },
+        args: {
+          to: recipient,
+        },
+        fromBlock,
+        toBlock: 'latest',
+      });
+      
+      // Check if any transfer matches our expected amount (within 5% tolerance for fees)
+      const expectedAmount = BigInt(amount);
+      const minAmount = (expectedAmount * 95n) / 100n; // 5% tolerance
+      
+      let matchingTransfer = false;
+      for (const log of logs) {
+        const transferAmount = log.args.value as bigint;
+        if (transferAmount >= minAmount) {
+          matchingTransfer = true;
+          this.logger.info('Found matching Transfer event on TAC', {
+            tacAsset,
+            recipient,
+            transferAmount: transferAmount.toString(),
+            expectedAmount: amount,
+            txHash: log.transactionHash,
+            blockNumber: log.blockNumber?.toString(),
+          });
+          break;
+        }
+      }
+      
+      this.logger.debug('TAC transfer event check', {
         tacAsset,
         recipient,
-        balance: balance.toString(),
+        currentBalance: balance.toString(),
         requiredAmount: amount,
-        isReady,
-        note: 'This is a fallback check; prefer TAC SDK OperationTracker for accuracy',
+        transferEventsFound: logs.length,
+        matchingTransferFound: matchingTransfer,
+        fromBlock: fromBlock.toString(),
+        note: 'Checking for actual Transfer events, not just balance >= required',
       });
 
-      return isReady;
+      return matchingTransfer;
     } catch (error) {
       this.logger.error('Failed to check TAC Inner Bridge status', {
         error: jsonifyError(error),

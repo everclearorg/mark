@@ -89,6 +89,25 @@ export class MantleBridgeAdapter implements BridgeAdapter {
   }
 
   /**
+   * Returns the minimum rebalance amount for this bridge.
+   * For Mantle, we use the minimum stake bound from the staking contract.
+   */
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    try {
+      const client = this.getPublicClient(route.origin);
+      const minimumStakeBound = (await client.readContract({
+        address: METH_STAKING_CONTRACT_ADDRESS,
+        abi: MANTLE_STAKING_ABI,
+        functionName: 'minimumStakeBound',
+      })) as bigint;
+      return minimumStakeBound.toString();
+    } catch (error) {
+      this.logger.warn('Failed to get minimum stake bound for Mantle', { error });
+      return null;
+    }
+  }
+
+  /**
    * Builds the set of transactions required to unwrap WETH, stake into mETH,
    * approve the bridge (when needed), and finally bridge funds to Mantle.
    */
