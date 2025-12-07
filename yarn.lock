@@ -1548,11 +1548,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/chainservice@npm:0.0.1-alpha.14":
-  version: 0.0.1-alpha.14
-  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.14"
+"@chimera-monorepo/chainservice@npm:0.0.1-alpha.16":
+  version: 0.0.1-alpha.16
+  resolution: "@chimera-monorepo/chainservice@npm:0.0.1-alpha.16"
   dependencies:
-    "@chimera-monorepo/utils": 0.0.1-alpha.12
+    "@chimera-monorepo/utils": 0.0.1-alpha.13
     "@safe-global/api-kit": ^2.5.6
     "@safe-global/protocol-kit": ^5.1.1
     "@safe-global/types-kit": ^1.0.1
@@ -1564,7 +1564,7 @@ __metadata:
     interval-promise: 1.4.0
     p-queue: 6.6.2
     tronweb: ^6.0.3
-  checksum: 92c1f1236d3ce793151e148f239a581766ba1339a310983072fb4027dee6e05cce4787602f63473c7df4b83a9733bbbe7f7d3b5b0c78b3a2cb3ec4555a80a0f3
+  checksum: c98d8e0bcb01d742d2289cef85be0d6d25f62534b12789e17b824c874586c3697b6edc15b397b8fec92e10f40780068d865dc60aa360d4bc54b712d65d0f95f7
   languageName: node
   linkType: hard
 
@@ -1587,9 +1587,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chimera-monorepo/utils@npm:0.0.1-alpha.12":
-  version: 0.0.1-alpha.12
-  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.12"
+"@chimera-monorepo/utils@npm:0.0.1-alpha.13":
+  version: 0.0.1-alpha.13
+  resolution: "@chimera-monorepo/utils@npm:0.0.1-alpha.13"
   dependencies:
     "@aws-sdk/client-ssm": ^3.735.0
     "@chimera-monorepo/contracts": 0.0.1-alpha.12
@@ -1606,7 +1606,7 @@ __metadata:
     secp256k1: 4.0.3
     sinon-chai: 3.7.0
     tronweb: ^6.0.3
-  checksum: 1e9a91593f6bd8f94c89e133eaaddca2c0574683f4e1b659f9de5ed3ebf7c70de12b9b97a2e6654d6067c47ac93507d7794e26c5f2ef4cd3c48960bcf81e04cd
+  checksum: 6e179f27b0b3623ea30ea772051ec4e2abf56426ce6db88544e5f24762cff72bab8a670ebb760e9263a1f79ef0ac6cca51d53321ca8108d40e905b254c4b32ec
   languageName: node
   linkType: hard
 
@@ -4484,7 +4484,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/chainservice@workspace:packages/adapters/chainservice"
   dependencies:
-    "@chimera-monorepo/chainservice": 0.0.1-alpha.14
+    "@chimera-monorepo/chainservice": 0.0.1-alpha.16
     "@connext/nxtp-txservice": 2.5.0-alpha.6
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
@@ -6662,6 +6662,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@ton/core@npm:^0.62.0":
+  version: 0.62.0
+  resolution: "@ton/core@npm:0.62.0"
+  dependencies:
+    symbol.inspect: 1.0.1
+  peerDependencies:
+    "@ton/crypto": ">=3.2.0"
+  checksum: d1e4810a7b312e828e017411ca57d832aadc3a085f570ddb131522ff651370a2ef531bd3e57a0e19255eb5cc252d033ca8db308dfa7d8ab136861762dbaf277b
+  languageName: node
+  linkType: hard
+
 "@ton/crypto-primitives@npm:2.1.0":
   version: 2.1.0
   resolution: "@ton/crypto-primitives@npm:2.1.0"
@@ -6711,6 +6722,22 @@ __metadata:
     "@ton/core": ">=0.62.0 <1.0.0"
     "@ton/crypto": ">=3.2.0"
   checksum: 36e59fbe3e3cf5c05cd22b2a1b72c7526f7dbca7c9f40a1335ca0b243469c70f78fa9ae8553a23cbbddeefcc5e589eda9c10548e11d76bb09f966f738aec4524
+  languageName: node
+  linkType: hard
+
+"@ton/ton@npm:^16.1.0":
+  version: 16.1.0
+  resolution: "@ton/ton@npm:16.1.0"
+  dependencies:
+    axios: ^1.6.7
+    dataloader: ^2.0.0
+    symbol.inspect: 1.0.1
+    teslabot: ^1.3.0
+    zod: ^3.21.4
+  peerDependencies:
+    "@ton/core": ">=0.62.0 <1.0.0"
+    "@ton/crypto": ">=3.2.0"
+  checksum: cc08c3aea7a3722436fe801a2f9f15b314e83bb7534fc7a2a6e9d590b6d7791e8a47e7f930f4ee3f683933e4470d5575fe23d2dab7bfcf718bc8641c9574210f
   languageName: node
   linkType: hard
 
@@ -14818,6 +14845,9 @@ __metadata:
     "@commitlint/config-conventional": 19.6.0
     "@istanbuljs/nyc-config-typescript": 1.0.2
     "@jtbennett/ts-project-scripts": 1.0.0-rc.4
+    "@ton/core": ^0.62.0
+    "@ton/crypto": ^3.3.0
+    "@ton/ton": ^16.1.0
     "@types/node": 20.17.12
     "@typescript-eslint/eslint-plugin": 8.19.1
     "@typescript-eslint/parser": 8.19.1

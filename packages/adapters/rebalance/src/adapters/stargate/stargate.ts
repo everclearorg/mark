@@ -31,7 +31,7 @@ import {
 
 
 // LayerZero Scan API base URL
-const LZ_SCAN_API_URL = 'https://api.layerzero-scan.com';
+const LZ_SCAN_API_URL = 'https://scan.layerzero-api.com';
 
 /**
  * Stargate Bridge Adapter for bridging assets via LayerZero OFT
@@ -223,6 +223,25 @@ export class StargateBridgeAdapter implements BridgeAdapter {
     } catch (error) {
       this.handleError(error, 'get Stargate on-chain quote', { amount, route });
     }
+  }
+
+  /**
+   * Returns the minimum rebalance amount for Stargate.
+   * Stargate doesn't have a strict minimum, but we use a reasonable default.
+   */
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    // Stargate has no strict minimum but very small amounts are not economical
+    // Return null to use the caller's default minimum
+    // Stargate minimums are not contract enforced but depend on pool/chain realities.
+    // For most cases, returning null is fine to defer to the caller's config,
+    // but edge cases exist: if the route token or chain has unusual dust-limits or
+    // constraints, it is safer to enforce a low minimum, e.g. 1 unit, to avoid
+    // zero-amount or dust transactions that waste fees.
+
+    // If you want to be maximally defensive, you could:
+    // return '1';
+    // But by convention, return null to let the caller decide.
+    return null;
   }
 
   /**
@@ -597,6 +616,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
   /**
    * Query LayerZero Scan API for message status
+   * API docs: https://scan.layerzero-api.com
    */
   protected async getLayerZeroMessageStatus(
     txHash: string,
@@ -604,15 +624,44 @@ export class StargateBridgeAdapter implements BridgeAdapter {
   ): Promise<LzScanMessageResponse | undefined> {
     try {
       const url = `${LZ_SCAN_API_URL}/v1/messages/tx/${txHash}`;
-      const { data } = await axiosGet<{ messages: LzScanMessageResponse[] }>(url);
+      
+      // New API response format uses 'data' array with nested structure
+      interface LzScanApiResponse {
+        data: Array<{
+          pathway: { srcEid: number; dstEid: number };
+          source: { tx: { txHash: string; blockNumber: string } };
+          destination: { tx?: { txHash: string; blockNumber?: number } };
+          status: { name: string; message?: string };
+        }>;
+      }
+      
+      const { data: response } = await axiosGet<LzScanApiResponse>(url);
 
-      if (!data.messages || data.messages.length === 0) {
+      if (!response.data || response.data.length === 0) {
         return undefined;
       }
 
-      // Find the message for our source chain
-      const message = data.messages.find((m) => m.srcChainId === srcChainId);
-      return message;
+      // Get the first message (usually only one per tx)
+      const msg = response.data[0];
+      
+      // Map the new API response format to our internal type
+      const result: LzScanMessageResponse = {
+        status: msg.status.name as LzMessageStatus,
+        srcTxHash: msg.source.tx.txHash,
+        dstTxHash: msg.destination.tx?.txHash,
+        srcChainId: msg.pathway.srcEid,
+        dstChainId: msg.pathway.dstEid,
+        srcBlockNumber: parseInt(msg.source.tx.blockNumber, 10),
+        dstBlockNumber: msg.destination.tx?.blockNumber,
+      };
+      
+      this.logger.debug('LayerZero message status retrieved', {
+        txHash,
+        status: result.status,
+        dstTxHash: result.dstTxHash,
+      });
+      
+      return result;
     } catch (error) {
       this.logger.error('Failed to query LayerZero Scan API', {
         error: jsonifyError(error),
