@@ -63,7 +63,7 @@ export type IntentStatus =
 export interface GetIntentsParams {
   statuses: IntentStatus[];
   destinations: string[];
-  outputAsset: string;
+  // NOTE: outputAsset is NOT supported by the Everclear API - use tickerHash instead
   limit?: number;
   origins?: string[];
   txHash?: string;

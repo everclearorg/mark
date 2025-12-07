@@ -1,4 +1,4 @@
-import { pad, TransactionReceipt as ViemTransactionReceipt } from 'viem';
+import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
 import { getTickerForAsset, convertToNativeUnits, getMarkBalancesForTicker } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
@@ -34,7 +34,84 @@ const USDT_ON_ETH_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_ON_TAC_ADDRESS = '0xAF988C3f7CB2AceAbB15f96b19388a259b6C438f';
 const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
 
-const MIN_REBALANCE_AMOUNT = 100000000n; // 100 USDT in 6 decimals
+// TON USDT jetton master address (Tether official)
+const USDT_TON_JETTON = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
+
+// Minimum TON balance required for gas (0.5 TON in nanotons)
+const MIN_TON_GAS_BALANCE = 500000000n;
+
+// TODO: Change back to 100000000n (100 USDT) for production - temporarily set to 1 USDT for testing
+const MIN_REBALANCE_AMOUNT = 1000000n; // 1 USDT in 6 decimals
+
+/**
+ * Query TON wallet USDT balance from TONCenter API
+ * @param walletAddress - TON wallet address (user-friendly format)
+ * @param apiKey - TONCenter API key
+ * @param rpcUrl - TONCenter API base URL (optional)
+ * @returns USDT balance in micro-units (6 decimals), or 0 if query fails
+ */
+async function getTonUsdtBalance(
+  walletAddress: string,
+  apiKey?: string,
+  rpcUrl: string = 'https://toncenter.com',
+): Promise<bigint> {
+  try {
+    const url = `${rpcUrl}/api/v3/jetton/wallets?owner_address=${walletAddress}&jetton_address=${USDT_TON_JETTON}`;
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
+    
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      return 0n;
+    }
+    
+    const data = await response.json() as { jetton_wallets?: Array<{ balance: string }> };
+    if (!data.jetton_wallets || data.jetton_wallets.length === 0) {
+      return 0n;
+    }
+    
+    return BigInt(data.jetton_wallets[0].balance);
+  } catch {
+    return 0n;
+  }
+}
+
+/**
+ * Query TON wallet native balance from TONCenter API
+ * @param walletAddress - TON wallet address
+ * @param apiKey - TONCenter API key
+ * @param rpcUrl - TONCenter API base URL
+ * @returns TON balance in nanotons, or 0 if query fails
+ */
+async function getTonNativeBalance(
+  walletAddress: string,
+  apiKey?: string,
+  rpcUrl: string = 'https://toncenter.com',
+): Promise<bigint> {
+  try {
+    const url = `${rpcUrl}/api/v2/getAddressInformation?address=${walletAddress}`;
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
+    
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      return 0n;
+    }
+    
+    const data = await response.json() as { result?: { balance: string } };
+    if (!data.result?.balance) {
+      return 0n;
+    }
+    
+    return BigInt(data.result.balance);
+  } catch {
+    return 0n;
+  }
+}
 
 type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
 
@@ -166,11 +243,12 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
   }
 
   // Get intents destined for TAC
+  // Note: outputAsset is NOT supported by the Everclear API - we use tickerHash instead
+  // and filter by output_asset in the results if needed
   const intents = await everclear.fetchIntents({
     limit: 20,
     statuses: [IntentStatus.SETTLED_AND_COMPLETED],
     destinations: [TAC_CHAIN_ID],
-    outputAsset: pad(USDT_ON_TAC_ADDRESS.toLowerCase() as `0x${string}`, { size: 32 }),
     tickerHash: USDT_TICKER_HASH,
     isFastPath: true,
   });
@@ -210,9 +288,13 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     const ticker = USDT_TICKER_HASH;
     const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
 
-    // Convert amounts
-    const minAmount = convertToNativeUnits(MIN_REBALANCE_AMOUNT, decimals);
-    const intentAmount = convertToNativeUnits(BigInt(intent.amount_out_min), decimals);
+    // MIN_REBALANCE_AMOUNT is already in native units (6 decimals for USDT)
+    // No conversion needed
+    const minAmount = MIN_REBALANCE_AMOUNT;
+    
+    // intent.amount_out_min is already in native units (from the API/chain)
+    // No conversion needed
+    const intentAmount = BigInt(intent.amount_out_min);
 
     if (intentAmount < minAmount) {
       logger.warn('Intent amount is less than minimum, skipping', {
@@ -224,6 +306,8 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
       continue;
     }
 
+    // Balances from getMarkBalancesForTicker are in 18 decimals (standardized)
+    // Convert to native units (6 decimals for USDT)
     const availableBalance = balances.get(origin.toString()) || 0n;
     const currentBalance = convertToNativeUnits(availableBalance, decimals);
 
@@ -503,13 +587,21 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
       continue;
     }
 
-    const assetAddress = getTokenAddressFromConfig(operation.tickerHash, operation.originChainId.toString(), config);
-    if (!assetAddress) {
-      logger.error('Could not find asset address for ticker hash', {
-        ...logContext,
-        tickerHash: operation.tickerHash,
-      });
-      continue;
+    // For TAC Inner Bridge (TON → TAC), use the known USDT jetton address
+    // since TON (chain 30826) isn't in our EVM config
+    let assetAddress: string;
+    if (isTacInnerBridge) {
+      assetAddress = USDT_TON_JETTON; // TON USDT jetton master address
+    } else {
+      const configAsset = getTokenAddressFromConfig(operation.tickerHash, operation.originChainId.toString(), config);
+      if (!configAsset) {
+        logger.error('Could not find asset address for ticker hash', {
+          ...logContext,
+          tickerHash: operation.tickerHash,
+        });
+        continue;
+      }
+      assetAddress = configAsset;
     }
 
     const route = {
@@ -598,27 +690,63 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
               recipient: recipient,
             });
           } else {
-            // Execute the TAC bridge via SDK
+            // Query actual USDT balance on TON (Stargate may have taken fees)
+            const tonWalletAddress = config.ownTonAddress;
+            const tonApiKey = config.ton?.apiKey;
+            
+            if (!tonWalletAddress) {
+              logger.error('TON wallet address not configured, cannot query balance', logContext);
+              continue;
+            }
+            
+            // Check TON native balance for gas
+            const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
+            if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
+              logger.error('Insufficient TON balance for gas', {
+                ...logContext,
+                tonWalletAddress,
+                tonBalance: tonNativeBalance.toString(),
+                minRequired: MIN_TON_GAS_BALANCE.toString(),
+                note: 'Fund the TON wallet with at least 0.5 TON for gas',
+              });
+              continue;
+            }
+            
+            // Get actual USDT balance (may be less than operation.amount due to Stargate fees)
+            const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, tonApiKey);
+            
+            // Use the actual balance, not the expected amount
+            // This accounts for Stargate bridge fees
+            const amountToBridge = actualUsdtBalance > 0n 
+              ? actualUsdtBalance.toString() 
+              : operation.amount;
+            
             logger.info('Executing TAC SDK bridge transaction', {
               ...logContext,
               recipient,
-              amount: operation.amount,
+              originalAmount: operation.amount,
+              actualUsdtBalance: actualUsdtBalance.toString(),
+              amountToBridge,
+              note: actualUsdtBalance.toString() !== operation.amount 
+                ? 'Using actual balance (Stargate took fees)' 
+                : 'Using original amount',
             });
 
             const transactionLinker = await tacInnerAdapter.executeTacBridge(
               tonMnemonic,
               recipient,
-              operation.amount,
+              amountToBridge,
             );
 
             // Create Leg 2 operation record with transaction info
             // Link to the same earmark as Leg 1 for proper tracking
+            // Use actual bridged amount (accounts for Stargate fees)
             await createRebalanceOperation({
               earmarkId: operation.earmarkId,
               originChainId: Number(TON_LZ_CHAIN_ID),
               destinationChainId: Number(TAC_CHAIN_ID),
               tickerHash: operation.tickerHash,
-              amount: operation.amount,
+              amount: amountToBridge, // Use actual amount, not original
               slippage: 100,
               status: RebalanceOperationStatus.PENDING,
               bridge: SupportedBridge.TacInner,
@@ -664,16 +792,89 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
           recipientOverride?: string,
         ) => Promise<boolean>;
         trackOperation: (transactionLinker: unknown) => Promise<string>;
+        executeTacBridge: (
+          tonMnemonic: string,
+          recipient: string,
+          amount: string,
+          asset?: string,
+        ) => Promise<unknown>;
       };
 
       if (operation.status === RebalanceOperationStatus.PENDING) {
         try {
           // Check if we have a transaction linker from TAC SDK
           const tonTxData = operation.transactions?.[TON_LZ_CHAIN_ID] as { transactionLinker?: unknown } | undefined;
-          const transactionLinker = tonTxData?.transactionLinker;
+          let transactionLinker = tonTxData?.transactionLinker;
           
           // Get the stored recipient from operation
           const storedRecipient = operation.recipient;
+
+          // If no transactionLinker, the bridge was never executed - try to execute it now
+          if (!transactionLinker && storedRecipient) {
+            const tonMnemonic = config.ton?.mnemonic;
+            const tonWalletAddress = config.ownTonAddress;
+            const tonApiKey = config.ton?.apiKey;
+
+            if (tonMnemonic && tonWalletAddress) {
+              // Check TON gas balance
+              const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
+              if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
+                logger.error('Insufficient TON balance for gas (retry)', {
+                  ...logContext,
+                  tonBalance: tonNativeBalance.toString(),
+                  minRequired: MIN_TON_GAS_BALANCE.toString(),
+                });
+                continue;
+              }
+
+              // Get actual USDT balance on TON
+              const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, tonApiKey);
+              if (actualUsdtBalance === 0n) {
+                logger.warn('No USDT balance on TON, cannot execute bridge', logContext);
+                continue;
+              }
+
+              const amountToBridge = actualUsdtBalance.toString();
+              
+              logger.info('Retrying TAC SDK bridge execution (no transactionLinker)', {
+                ...logContext,
+                recipient: storedRecipient,
+                actualUsdtBalance: amountToBridge,
+              });
+
+              try {
+                transactionLinker = await tacInnerAdapter.executeTacBridge(
+                  tonMnemonic,
+                  storedRecipient,
+                  amountToBridge,
+                );
+
+                // Log success - transaction linker tracking done via TAC SDK
+                if (transactionLinker) {
+                  logger.info('TAC SDK bridge executed successfully', {
+                    ...logContext,
+                    transactionLinker,
+                    note: 'Bridge submitted, will verify completion on next cycle',
+                  });
+                  // Don't mark as complete yet - let it be verified on next cycle
+                  continue;
+                }
+              } catch (bridgeError) {
+                logger.error('Failed to execute TAC bridge (retry)', {
+                  ...logContext,
+                  error: jsonifyError(bridgeError),
+                });
+                continue;
+              }
+            } else {
+              logger.warn('Missing TON config for bridge retry', {
+                ...logContext,
+                hasMnemonic: !!tonMnemonic,
+                hasWalletAddress: !!tonWalletAddress,
+              });
+              continue;
+            }
+          }
 
           let ready = false;
 

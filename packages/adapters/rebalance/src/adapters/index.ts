@@ -92,6 +92,7 @@ export class RebalanceAdapter {
           {
             network: this.config.tac?.network === 'testnet' ? TacNetwork.TESTNET : TacNetwork.MAINNET,
             tonMnemonic: this.config.ton?.mnemonic,
+            tonRpcUrl: this.config.tac?.tonRpcUrl || this.config.ton?.rpcUrl,
           },
         );
       default:
