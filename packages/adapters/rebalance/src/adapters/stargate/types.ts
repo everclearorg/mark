@@ -220,7 +220,11 @@ export interface TonAddressInfo {
 
 /**
  * USDT on TON (Tether's official USDT jetton)
- * This is the address where Stargate delivers USDT on TON
+ * This is the address where Stargate delivers USDT on TON.
+ * 
+ * @deprecated Use config.ton.assets instead. This constant is kept for reference only.
+ * The jetton address should be loaded from config.ton.assets[].jettonAddress
+ * to allow for environment-specific configuration.
  */
 export const USDT_TON_JETTON = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
 
