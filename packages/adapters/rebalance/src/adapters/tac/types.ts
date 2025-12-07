@@ -88,20 +88,34 @@ export enum TacOperationStatus {
 
 /**
  * Asset specification for TAC SDK cross-chain operations
+ * 
+ * Use either:
+ * - 'amount': Human-readable amount (e.g., 1.9994) - SDK multiplies by 10^decimals
+ * - 'rawAmount': Raw token units (e.g., 1999400 for 1.9994 USDT with 6 decimals)
  */
 export interface TacAssetLike {
   address?: string;  // Token address (omit for native TON)
-  amount: number | string | bigint;
+  amount?: number | string | bigint;    // Human-readable amount
+  rawAmount?: bigint;                   // Raw token units (preferred for precision)
 }
 
 /**
  * EVM Proxy Message for TAC SDK
  * Defines the target EVM call details
+ * 
+ * For simple bridging (tokens go directly to evmTargetAddress):
+ * - Only set evmTargetAddress (the recipient address)
+ * - Omit methodName and encodedParameters
+ * 
+ * For calling a dApp proxy:
+ * - Set evmTargetAddress to the TacProxyV1-based contract
+ * - Set methodName (just the function name, not full signature)
+ * - Set encodedParameters to the ABI-encoded call data
  */
 export interface TacEvmProxyMsg {
-  evmTargetAddress: string;      // Target contract on TAC EVM
-  methodName: string;            // Method to call
-  encodedParameters: string;     // ABI-encoded parameters
+  evmTargetAddress: string;       // Target address on TAC EVM (recipient or proxy)
+  methodName?: string;            // Method to call (optional for simple bridge)
+  encodedParameters?: string;     // ABI-encoded parameters (optional for simple bridge)
 }
 
 /**
@@ -138,6 +152,8 @@ export interface TacSdkConfig {
   network: TacNetwork;
   tonMnemonic?: string;      // TON wallet mnemonic for RawSender
   tonPrivateKey?: string;    // TON wallet private key (alternative to mnemonic)
+  tonRpcUrl?: string;        // TON RPC URL (default: toncenter mainnet) - use paid RPC for reliability
+  apiKey?: string;           // API key for paid RPC endpoints
 }
 
 /**
