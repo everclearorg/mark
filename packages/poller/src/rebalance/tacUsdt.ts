@@ -816,55 +816,58 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             const tonApiKey = config.ton?.apiKey;
 
             if (tonMnemonic && tonWalletAddress) {
-              // Check TON gas balance
-              const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
-              if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
-                logger.error('Insufficient TON balance for gas (retry)', {
-                  ...logContext,
-                  tonBalance: tonNativeBalance.toString(),
-                  minRequired: MIN_TON_GAS_BALANCE.toString(),
-                });
-                continue;
-              }
-
               // Get actual USDT balance on TON
               const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, tonApiKey);
-              if (actualUsdtBalance === 0n) {
-                logger.warn('No USDT balance on TON, cannot execute bridge', logContext);
-                continue;
-              }
-
-              const amountToBridge = actualUsdtBalance.toString();
               
-              logger.info('Retrying TAC SDK bridge execution (no transactionLinker)', {
-                ...logContext,
-                recipient: storedRecipient,
-                actualUsdtBalance: amountToBridge,
-              });
-
-              try {
-                transactionLinker = await tacInnerAdapter.executeTacBridge(
-                  tonMnemonic,
-                  storedRecipient,
-                  amountToBridge,
-                );
-
-                // Log success - transaction linker tracking done via TAC SDK
-                if (transactionLinker) {
-                  logger.info('TAC SDK bridge executed successfully', {
+              if (actualUsdtBalance === 0n) {
+                // No USDT on TON - bridge might have already succeeded!
+                // Fall through to readyOnDestination check below
+                logger.info('No USDT on TON - checking if funds already arrived on TAC', logContext);
+              } else {
+                // TON has USDT - try to execute the bridge
+                // First check TON gas balance
+                const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
+                if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
+                  logger.error('Insufficient TON balance for gas (retry)', {
                     ...logContext,
-                    transactionLinker,
-                    note: 'Bridge submitted, will verify completion on next cycle',
+                    tonBalance: tonNativeBalance.toString(),
+                    minRequired: MIN_TON_GAS_BALANCE.toString(),
                   });
-                  // Don't mark as complete yet - let it be verified on next cycle
                   continue;
                 }
-              } catch (bridgeError) {
-                logger.error('Failed to execute TAC bridge (retry)', {
+
+                const amountToBridge = actualUsdtBalance.toString();
+                
+                logger.info('Retrying TAC SDK bridge execution (no transactionLinker)', {
                   ...logContext,
-                  error: jsonifyError(bridgeError),
+                  recipient: storedRecipient,
+                  actualUsdtBalance: amountToBridge,
                 });
-                continue;
+
+                try {
+                  transactionLinker = await tacInnerAdapter.executeTacBridge(
+                    tonMnemonic,
+                    storedRecipient,
+                    amountToBridge,
+                  );
+
+                  // Log success - transaction linker tracking done via TAC SDK
+                  if (transactionLinker) {
+                    logger.info('TAC SDK bridge executed successfully', {
+                      ...logContext,
+                      transactionLinker,
+                      note: 'Bridge submitted, will verify completion on next cycle',
+                    });
+                    // Don't mark as complete yet - let it be verified on next cycle
+                    continue;
+                  }
+                } catch (bridgeError) {
+                  logger.error('Failed to execute TAC bridge (retry)', {
+                    ...logContext,
+                    error: jsonifyError(bridgeError),
+                  });
+                  continue;
+                }
               }
             } else {
               logger.warn('Missing TON config for bridge retry', {
@@ -872,7 +875,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
                 hasMnemonic: !!tonMnemonic,
                 hasWalletAddress: !!tonWalletAddress,
               });
-              continue;
+              // Still fall through to readyOnDestination check
             }
           }
 
