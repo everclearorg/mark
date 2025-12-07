@@ -308,22 +308,67 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
 
     // Balances from getMarkBalancesForTicker are in 18 decimals (standardized)
     // Convert to native units (6 decimals for USDT)
-    const availableBalance = balances.get(origin.toString()) || 0n;
-    const currentBalance = convertToNativeUnits(availableBalance, decimals);
+    const availableOriginBalance = balances.get(origin.toString()) || 0n;
+    const currentOriginBalance = convertToNativeUnits(availableOriginBalance, decimals);
 
-    logger.debug('Current USDT balance on Ethereum', { requestId, currentBalance: currentBalance.toString() });
+    // CRITICAL: Check if TAC (destination) already has sufficient balance
+    // On-demand rebalancing should ONLY trigger when the destination lacks funds
+    const availableDestBalance = balances.get(destination.toString()) || 0n;
+    const currentDestBalance = convertToNativeUnits(availableDestBalance, decimals);
 
-    if (currentBalance <= minAmount) {
-      logger.info('Balance is at or below minimum, skipping', {
+    logger.debug('Current USDT balances', { 
+      requestId, 
+      originBalance: currentOriginBalance.toString(),
+      destinationBalance: currentDestBalance.toString(),
+      intentAmount: intentAmount.toString(),
+    });
+
+    // If TAC already has enough to fulfill the intent, no rebalance needed
+    if (currentDestBalance >= intentAmount) {
+      logger.info('TAC already has sufficient balance for intent, skipping rebalance', {
         requestId,
-        currentBalance: currentBalance.toString(),
+        intentId: intent.intent_id,
+        currentDestBalance: currentDestBalance.toString(),
+        intentAmount: intentAmount.toString(),
+        note: 'On-demand rebalancing only triggers when destination lacks funds',
+      });
+      continue;
+    }
+
+    if (currentOriginBalance <= minAmount) {
+      logger.info('Origin balance is at or below minimum, skipping', {
+        requestId,
+        currentOriginBalance: currentOriginBalance.toString(),
         minAmount: minAmount.toString(),
       });
       continue;
     }
 
-    // Calculate amount to bridge
-    const amountToBridge = currentBalance < intentAmount ? currentBalance : intentAmount;
+    // Calculate amount to bridge - only bridge what's needed
+    // (intentAmount - currentDestBalance) = shortfall that needs to be filled
+    const shortfall = intentAmount - currentDestBalance;
+    
+    // Don't bridge if shortfall is below minimum threshold
+    if (shortfall < minAmount) {
+      logger.info('Shortfall is below minimum rebalance threshold, skipping', {
+        requestId,
+        intentId: intent.intent_id,
+        shortfall: shortfall.toString(),
+        minAmount: minAmount.toString(),
+      });
+      continue;
+    }
+    
+    const amountToBridge = currentOriginBalance < shortfall ? currentOriginBalance : shortfall;
+
+    logger.info('On-demand rebalancing triggered - destination lacks funds', {
+      requestId,
+      intentId: intent.intent_id,
+      intentAmount: intentAmount.toString(),
+      currentDestBalance: currentDestBalance.toString(),
+      shortfall: shortfall.toString(),
+      amountToBridge: amountToBridge.toString(),
+    });
 
     // Create earmark
     let earmark: Earmark;
