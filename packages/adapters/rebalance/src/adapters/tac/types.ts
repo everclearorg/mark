@@ -50,8 +50,14 @@ export const TAC_RPC_PROVIDERS = [
 // TON Configuration
 // ============================================================================
 
-// USDT on TON (Tether's official USDT jetton)
-// This is the address where Stargate delivers USDT on TON
+/**
+ * USDT on TON (Tether's official USDT jetton)
+ * This is the address where Stargate delivers USDT on TON.
+ * 
+ * @deprecated Use config.ton.assets instead. This constant is kept for reference only.
+ * The jetton address should be loaded from config.ton.assets[].jettonAddress
+ * to allow for environment-specific configuration.
+ */
 export const USDT_TON_JETTON = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
 
 // TON RPC endpoints
@@ -130,12 +136,15 @@ export interface TacTransactionLinker {
 }
 
 /**
- * TAC Bridge supported assets
- * Maps asset symbols to their addresses on TON and TAC
+ * TAC Bridge supported assets reference table.
+ * Maps asset symbols to their addresses on TON and TAC.
+ * 
+ * @deprecated Use config.ton.assets for jetton addresses instead.
+ * This constant is kept for reference/documentation purposes only.
  */
 export const TAC_BRIDGE_SUPPORTED_ASSETS: Record<string, { ton: string; tac: string; tickerHash: string }> = {
   USDT: {
-    ton: USDT_TON_JETTON,
+    ton: USDT_TON_JETTON,  // Should come from config.ton.assets[].jettonAddress
     tac: USDT_TAC,
     tickerHash: USDT_TICKER_HASH,
   },

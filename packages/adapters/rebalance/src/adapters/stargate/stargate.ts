@@ -25,7 +25,6 @@ import {
   StargateApiQuoteResponse,
   STARGATE_CHAIN_NAMES,
   tonAddressToBytes32,
-  USDT_TON_JETTON,
   USDT_TON_STARGATE,
 } from './types';
 

@@ -20,6 +20,17 @@ export interface AssetConfiguration {
   //   price: PriceConfiguration;
 }
 
+/**
+ * TON asset configuration for non-EVM chain assets.
+ * TON uses jetton contracts instead of ERC20-style addresses.
+ */
+export interface TonAssetConfiguration {
+  symbol: string;
+  jettonAddress: string;  // TON jetton master address (e.g., EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs)
+  decimals: number;
+  tickerHash: string;     // Same ticker hash as used on EVM chains for cross-chain asset matching
+}
+
 export interface ChainConfiguration {
   providers: string[];
   assets: AssetConfiguration[];
@@ -144,7 +155,8 @@ export interface MarkConfiguration extends RebalanceConfig {
   ton: {
     mnemonic?: string;          // TON wallet mnemonic for TAC bridge operations
     rpcUrl?: string;            // TON RPC endpoint
-    apiKey?: string;            // TON API key (for tonapi.io)
+    apiKey?: string;            // TON API key (for tonapi.io or DRPC)
+    assets?: TonAssetConfiguration[];  // TON assets with jetton addresses
   };
   redis: RedisConfig;
   database: DatabaseConfig;
