@@ -14,6 +14,8 @@ import {
   getAssetConfig,
   convertHubAmountToLocalDecimals,
   getSupportedDomainsForTicker,
+  getTonAssetAddress,
+  getTonAssetDecimals,
 } from '../../src/helpers/asset';
 import * as assetFns from '../../src/helpers/asset';
 import * as contractFns from '../../src/helpers/contracts';
@@ -496,6 +498,199 @@ describe('Asset Helper Functions', () => {
       };
       const result = getSupportedDomainsForTicker('0xhash1', configWithMissingChain as MarkConfiguration);
       expect(result).toEqual(['1']);
+    });
+  });
+
+  describe('getTonAssetAddress', () => {
+    // Mock config with TON assets
+    interface MockTonAsset {
+      symbol: string;
+      jettonAddress: string;
+      decimals: number;
+      tickerHash: string;
+    }
+
+    interface MockTonConfig {
+      chains: Record<string, MockChainConfig>;
+      ton?: {
+        mnemonic?: string;
+        rpcUrl?: string;
+        apiKey?: string;
+        assets?: MockTonAsset[];
+      };
+    }
+
+    const mockTonConfig: MockTonConfig = {
+      chains: {},
+      ton: {
+        mnemonic: 'test mnemonic',
+        rpcUrl: 'https://test.rpc.url',
+        apiKey: 'test-api-key',
+        assets: [
+          {
+            symbol: 'USDT',
+            jettonAddress: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+            decimals: 6,
+            tickerHash: '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+          },
+          {
+            symbol: 'USDC',
+            jettonAddress: 'EQDcBkGHmC4pTf34x3Gm05XvepO5w60DNxZ-XT4I6-UGG5L5',
+            decimals: 6,
+            tickerHash: '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
+          },
+        ],
+      },
+    };
+
+    it('should return jetton address for matching tickerHash', () => {
+      const result = getTonAssetAddress(
+        '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+        mockTonConfig as MarkConfiguration,
+      );
+      expect(result).toBe('EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs');
+    });
+
+    it('should return undefined when config.ton is undefined', () => {
+      const configWithoutTon: MockTonConfig = {
+        chains: {},
+      };
+      const result = getTonAssetAddress(
+        '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+        configWithoutTon as MarkConfiguration,
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when config.ton.assets is undefined', () => {
+      const configWithoutAssets: MockTonConfig = {
+        chains: {},
+        ton: {
+          mnemonic: 'test',
+        },
+      };
+      const result = getTonAssetAddress(
+        '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+        configWithoutAssets as MarkConfiguration,
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when tickerHash is not found', () => {
+      const result = getTonAssetAddress('0xnonexistent', mockTonConfig as MarkConfiguration);
+      expect(result).toBeUndefined();
+    });
+
+    it('should handle case insensitive tickerHash matching', () => {
+      // Test with uppercase tickerHash
+      const result = getTonAssetAddress(
+        '0x8B1A1D9C2B109E527C9134B25B1A1833B16B6594F92DAA9F6D9B7A6024BCE9D0',
+        mockTonConfig as MarkConfiguration,
+      );
+      expect(result).toBe('EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs');
+    });
+
+    it('should return correct address for different assets', () => {
+      // Test USDC
+      const result = getTonAssetAddress(
+        '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa',
+        mockTonConfig as MarkConfiguration,
+      );
+      expect(result).toBe('EQDcBkGHmC4pTf34x3Gm05XvepO5w60DNxZ-XT4I6-UGG5L5');
+    });
+  });
+
+  describe('getTonAssetDecimals', () => {
+    interface MockTonAsset {
+      symbol: string;
+      jettonAddress: string;
+      decimals: number;
+      tickerHash: string;
+    }
+
+    interface MockTonConfig {
+      chains: Record<string, MockChainConfig>;
+      ton?: {
+        mnemonic?: string;
+        rpcUrl?: string;
+        apiKey?: string;
+        assets?: MockTonAsset[];
+      };
+    }
+
+    const mockTonConfig: MockTonConfig = {
+      chains: {},
+      ton: {
+        assets: [
+          {
+            symbol: 'USDT',
+            jettonAddress: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+            decimals: 6,
+            tickerHash: '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+          },
+          {
+            symbol: 'WETH',
+            jettonAddress: 'EQExampleWETHAddress',
+            decimals: 18,
+            tickerHash: '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8',
+          },
+        ],
+      },
+    };
+
+    it('should return decimals for matching tickerHash', () => {
+      const result = getTonAssetDecimals(
+        '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+        mockTonConfig as MarkConfiguration,
+      );
+      expect(result).toBe(6);
+    });
+
+    it('should return undefined when config.ton is undefined', () => {
+      const configWithoutTon: MockTonConfig = {
+        chains: {},
+      };
+      const result = getTonAssetDecimals(
+        '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+        configWithoutTon as MarkConfiguration,
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when config.ton.assets is undefined', () => {
+      const configWithoutAssets: MockTonConfig = {
+        chains: {},
+        ton: {
+          mnemonic: 'test',
+        },
+      };
+      const result = getTonAssetDecimals(
+        '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+        configWithoutAssets as MarkConfiguration,
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it('should return undefined when tickerHash is not found', () => {
+      const result = getTonAssetDecimals('0xnonexistent', mockTonConfig as MarkConfiguration);
+      expect(result).toBeUndefined();
+    });
+
+    it('should handle case insensitive tickerHash matching', () => {
+      const result = getTonAssetDecimals(
+        '0x8B1A1D9C2B109E527C9134B25B1A1833B16B6594F92DAA9F6D9B7A6024BCE9D0',
+        mockTonConfig as MarkConfiguration,
+      );
+      expect(result).toBe(6);
+    });
+
+    it('should return different decimals for different assets', () => {
+      // Test WETH which has 18 decimals
+      const result = getTonAssetDecimals(
+        '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8',
+        mockTonConfig as MarkConfiguration,
+      );
+      expect(result).toBe(18);
     });
   });
 });
