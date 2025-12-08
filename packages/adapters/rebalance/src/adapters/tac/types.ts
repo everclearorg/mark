@@ -41,10 +41,7 @@ export const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92da
 // TAC RPC Providers
 // ============================================================================
 
-export const TAC_RPC_PROVIDERS = [
-  'https://rpc.ankr.com/tac',
-  'https://rpc.tac.build',
-];
+export const TAC_RPC_PROVIDERS = ['https://rpc.ankr.com/tac', 'https://rpc.tac.build'];
 
 // ============================================================================
 // TON Configuration
@@ -53,7 +50,7 @@ export const TAC_RPC_PROVIDERS = [
 /**
  * USDT on TON (Tether's official USDT jetton)
  * This is the address where Stargate delivers USDT on TON.
- * 
+ *
  * @deprecated Use config.ton.assets instead. This constant is kept for reference only.
  * The jetton address should be loaded from config.ton.assets[].jettonAddress
  * to allow for environment-specific configuration.
@@ -61,10 +58,7 @@ export const TAC_RPC_PROVIDERS = [
 export const USDT_TON_JETTON = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
 
 // TON RPC endpoints
-export const TON_RPC_ENDPOINTS = [
-  'https://toncenter.com/api/v2/jsonRPC',
-  'https://ton.drpc.org/rest',
-];
+export const TON_RPC_ENDPOINTS = ['https://toncenter.com/api/v2/jsonRPC', 'https://ton.drpc.org/rest'];
 
 // TON API endpoints (for advanced operations)
 export const TON_API_ENDPOINT = 'https://tonapi.io';
@@ -94,34 +88,34 @@ export enum TacOperationStatus {
 
 /**
  * Asset specification for TAC SDK cross-chain operations
- * 
+ *
  * Use either:
  * - 'amount': Human-readable amount (e.g., 1.9994) - SDK multiplies by 10^decimals
  * - 'rawAmount': Raw token units (e.g., 1999400 for 1.9994 USDT with 6 decimals)
  */
 export interface TacAssetLike {
-  address?: string;  // Token address (omit for native TON)
-  amount?: number | string | bigint;    // Human-readable amount
-  rawAmount?: bigint;                   // Raw token units (preferred for precision)
+  address?: string; // Token address (omit for native TON)
+  amount?: number | string | bigint; // Human-readable amount
+  rawAmount?: bigint; // Raw token units (preferred for precision)
 }
 
 /**
  * EVM Proxy Message for TAC SDK
  * Defines the target EVM call details
- * 
+ *
  * For simple bridging (tokens go directly to evmTargetAddress):
  * - Only set evmTargetAddress (the recipient address)
  * - Omit methodName and encodedParameters
- * 
+ *
  * For calling a dApp proxy:
  * - Set evmTargetAddress to the TacProxyV1-based contract
  * - Set methodName (just the function name, not full signature)
  * - Set encodedParameters to the ABI-encoded call data
  */
 export interface TacEvmProxyMsg {
-  evmTargetAddress: string;       // Target address on TAC EVM (recipient or proxy)
-  methodName?: string;            // Method to call (optional for simple bridge)
-  encodedParameters?: string;     // ABI-encoded parameters (optional for simple bridge)
+  evmTargetAddress: string; // Target address on TAC EVM (recipient or proxy)
+  methodName?: string; // Method to call (optional for simple bridge)
+  encodedParameters?: string; // ABI-encoded parameters (optional for simple bridge)
 }
 
 /**
@@ -138,13 +132,13 @@ export interface TacTransactionLinker {
 /**
  * TAC Bridge supported assets reference table.
  * Maps asset symbols to their addresses on TON and TAC.
- * 
+ *
  * @deprecated Use config.ton.assets for jetton addresses instead.
  * This constant is kept for reference/documentation purposes only.
  */
 export const TAC_BRIDGE_SUPPORTED_ASSETS: Record<string, { ton: string; tac: string; tickerHash: string }> = {
   USDT: {
-    ton: USDT_TON_JETTON,  // Should come from config.ton.assets[].jettonAddress
+    ton: USDT_TON_JETTON, // Should come from config.ton.assets[].jettonAddress
     tac: USDT_TAC,
     tickerHash: USDT_TICKER_HASH,
   },
@@ -159,10 +153,10 @@ export const TAC_BRIDGE_SUPPORTED_ASSETS: Record<string, { ton: string; tac: str
  */
 export interface TacSdkConfig {
   network: TacNetwork;
-  tonMnemonic?: string;      // TON wallet mnemonic for RawSender
-  tonPrivateKey?: string;    // TON wallet private key (alternative to mnemonic)
-  tonRpcUrl?: string;        // TON RPC URL (default: toncenter mainnet) - use paid RPC for reliability
-  apiKey?: string;           // API key for paid RPC endpoints
+  tonMnemonic?: string; // TON wallet mnemonic for RawSender
+  tonPrivateKey?: string; // TON wallet private key (alternative to mnemonic)
+  tonRpcUrl?: string; // TON RPC URL (default: toncenter mainnet) - use paid RPC for reliability
+  apiKey?: string; // API key for paid RPC endpoints
 }
 
 /**
@@ -172,5 +166,5 @@ export interface TacSdkConfig {
 export interface TonWalletConfig {
   mnemonic?: string;
   privateKey?: string;
-  workchain?: number;  // 0 for basechain, -1 for masterchain
+  workchain?: number; // 0 for basechain, -1 for masterchain
 }
