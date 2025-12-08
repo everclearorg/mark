@@ -81,20 +81,13 @@ export class RebalanceAdapter {
       case SupportedBridge.Mantle:
         return new MantleBridgeAdapter(this.config.chains, this.logger);
       case SupportedBridge.Stargate:
-        return new StargateBridgeAdapter(
-          this.config.chains,
-          this.logger,
-        );
+        return new StargateBridgeAdapter(this.config.chains, this.logger);
       case SupportedBridge.TacInner:
-        return new TacInnerBridgeAdapter(
-          this.config.chains,
-          this.logger,
-          {
-            network: this.config.tac?.network === 'testnet' ? TacNetwork.TESTNET : TacNetwork.MAINNET,
-            tonMnemonic: this.config.ton?.mnemonic,
-            tonRpcUrl: this.config.tac?.tonRpcUrl || this.config.ton?.rpcUrl,
-          },
-        );
+        return new TacInnerBridgeAdapter(this.config.chains, this.logger, {
+          network: this.config.tac?.network === 'testnet' ? TacNetwork.TESTNET : TacNetwork.MAINNET,
+          tonMnemonic: this.config.ton?.mnemonic,
+          tonRpcUrl: this.config.tac?.tonRpcUrl || this.config.ton?.rpcUrl,
+        });
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }

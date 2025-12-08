@@ -28,16 +28,15 @@ import {
   USDT_TON_STARGATE,
 } from './types';
 
-
 // LayerZero Scan API base URL
 const LZ_SCAN_API_URL = 'https://scan.layerzero-api.com';
 
 /**
  * Stargate Bridge Adapter for bridging assets via LayerZero OFT
- * 
+ *
  * This adapter handles Leg 1 of TAC USDT rebalancing:
  * Ethereum Mainnet → TON via Stargate OFT
- * 
+ *
  * Reference:
  * - Stargate Docs: https://stargateprotocol.gitbook.io/stargate/v2/
  * - Stargate API: https://docs.stargate.finance/developers/api-docs/overview
@@ -59,7 +58,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
   /**
    * Get the expected amount received after bridging via Stargate
-   * 
+   *
    * First tries the Stargate API, falls back to on-chain quote
    */
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
@@ -119,7 +118,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
       });
 
       const url = `${STARGATE_API_URL}/quotes?${params.toString()}`;
-      
+
       this.logger.debug('Fetching Stargate API quote', { url });
 
       const response = await axiosGet<StargateApiQuoteResponse>(url);
@@ -152,7 +151,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
   /**
    * Get quote from on-chain contract
-   * 
+   *
    * Uses quoteOFT to get the expected received amount after fees.
    * Falls back to assuming 1:1 if quoteOFT is not available.
    */
@@ -174,13 +173,13 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
       // Try to get actual received amount via quoteOFT (if available on the contract)
       try {
-        const oftQuote = await client.readContract({
+        const oftQuote = (await client.readContract({
           address: poolAddress,
           abi: STARGATE_OFT_ABI,
           functionName: 'quoteOFT',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           args: [sendParam] as any,
-        }) as { amountSentLD: bigint; amountReceivedLD: bigint };
+        })) as { amountSentLD: bigint; amountReceivedLD: bigint };
 
         this.logger.debug('Stargate OFT quote obtained', {
           amount,
@@ -196,13 +195,13 @@ export class StargateBridgeAdapter implements BridgeAdapter {
       }
 
       // Call quoteSend on the Stargate pool (for messaging fee calculation)
-      const result = await client.readContract({
+      const result = (await client.readContract({
         address: poolAddress,
         abi: STARGATE_OFT_ABI,
         functionName: 'quoteSend',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         args: [sendParam, false] as any,
-      }) as { nativeFee: bigint; lzTokenFee: bigint };
+      })) as { nativeFee: bigint; lzTokenFee: bigint };
 
       this.logger.debug('Stargate on-chain quote obtained', {
         amount,
@@ -217,7 +216,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
       // Apply a conservative 0.1% fee estimate if quoteOFT is not available
       const estimatedFeeRate = 10n; // 0.1% in basis points
       const estimatedReceived = BigInt(amount) - (BigInt(amount) * estimatedFeeRate) / 10000n;
-      
+
       return estimatedReceived.toString();
     } catch (error) {
       this.handleError(error, 'get Stargate on-chain quote', { amount, route });
@@ -247,7 +246,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
    * Build transactions needed to bridge via Stargate
    * Uses the Stargate API to get optimal routing and transaction data
    * Falls back to manual contract calls if API fails
-   * 
+   *
    * @param sender - Address sending the tokens
    * @param recipient - Address receiving on TON (can be TON address format)
    * @param amount - Amount to bridge
@@ -323,7 +322,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
     });
 
     const url = `${STARGATE_API_URL}/quotes?${params.toString()}`;
-    
+
     this.logger.debug('Fetching Stargate API quote', { url, params: Object.fromEntries(params) });
 
     const response = await axiosGet<StargateApiQuoteResponse>(url);
@@ -343,7 +342,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
     const quote = quotes[0];
     if (!quote.route || quote.error) {
-      this.logger.warn('Stargate API quote has no route', { 
+      this.logger.warn('Stargate API quote has no route', {
         error: quote.error,
         quote,
       });
@@ -431,13 +430,13 @@ export class StargateBridgeAdapter implements BridgeAdapter {
       };
 
       // Get quote for messaging fee
-      const fee = await client.readContract({
+      const fee = (await client.readContract({
         address: poolAddress,
         abi: STARGATE_OFT_ABI,
         functionName: 'quoteSend',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         args: [sendParam, false] as any,
-      }) as { nativeFee: bigint; lzTokenFee: bigint };
+      })) as { nativeFee: bigint; lzTokenFee: bigint };
 
       // Build transactions
       const transactions: MemoizedTransactionRequest[] = [];
@@ -547,7 +546,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
       // Check LayerZero message status via API
       const status = await this.getLayerZeroMessageStatus(originTransaction.transactionHash, route.origin);
-      
+
       if (!status) {
         this.logger.debug('LayerZero message status not found', {
           transactionHash: originTransaction.transactionHash,
@@ -623,7 +622,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
   ): Promise<LzScanMessageResponse | undefined> {
     try {
       const url = `${LZ_SCAN_API_URL}/v1/messages/tx/${txHash}`;
-      
+
       // New API response format uses 'data' array with nested structure
       interface LzScanApiResponse {
         data: Array<{
@@ -633,7 +632,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
           status: { name: string; message?: string };
         }>;
       }
-      
+
       const { data: response } = await axiosGet<LzScanApiResponse>(url);
 
       if (!response.data || response.data.length === 0) {
@@ -642,7 +641,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
       // Get the first message (usually only one per tx)
       const msg = response.data[0];
-      
+
       // Map the new API response format to our internal type
       const result: LzScanMessageResponse = {
         status: msg.status.name as LzMessageStatus,
@@ -653,13 +652,13 @@ export class StargateBridgeAdapter implements BridgeAdapter {
         srcBlockNumber: parseInt(msg.source.tx.blockNumber, 10),
         dstBlockNumber: msg.destination.tx?.blockNumber,
       };
-      
+
       this.logger.debug('LayerZero message status retrieved', {
         txHash,
         status: result.status,
         dstTxHash: result.dstTxHash,
       });
-      
+
       return result;
     } catch (error) {
       this.logger.error('Failed to query LayerZero Scan API', {

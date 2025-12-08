@@ -4636,7 +4636,7 @@ __metadata:
     "@mark/database": "workspace:*"
     "@mark/logger": "workspace:*"
     "@ton/crypto": ^3.3.0
-    "@ton/ton": ^15.0.0
+    "@ton/ton": ^16.1.0
     "@tonappchain/sdk": ^0.7.1
     "@types/jest": 29.5.12
     "@types/jsonwebtoken": 9.0.7
@@ -6709,7 +6709,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@ton/ton@npm:^15.0.0, @ton/ton@npm:^15.2.1":
+"@ton/ton@npm:^15.2.1":
   version: 15.4.0
   resolution: "@ton/ton@npm:15.4.0"
   dependencies:
