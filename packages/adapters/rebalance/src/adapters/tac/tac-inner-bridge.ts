@@ -80,10 +80,12 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
       });
 
       // Create custom contractOpener using TonClient
-      const contractOpener = {
-        open: <T extends object>(contract: T) =>
-          tonClient.open(contract as unknown as Parameters<typeof tonClient.open>[0]),
-        getContractState: async (address: Parameters<typeof tonClient.getContractState>[0]) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contractOpener: any = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        open: <T extends object>(contract: T) => tonClient.open(contract as any),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        getContractState: async (address: any) => {
           const state = await tonClient.getContractState(address);
           return {
             balance: state.balance,
@@ -96,7 +98,7 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
       this.tacSdk = await TacSdk.create({
         network,
         TONParams: {
-          contractOpener: contractOpener as Parameters<typeof TacSdk.create>[0]['TONParams']['contractOpener'],
+          contractOpener,
         },
       });
       this.sdkInitialized = true;
@@ -558,7 +560,8 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
         toBlock: currentBlock.toString(),
       });
 
-      let logs: { args: { from: string; to: string; value: bigint }; transactionHash: string }[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let logs: any[] = [];
       try {
         logs = await tacClient.getLogs({
           address: tacAsset,
