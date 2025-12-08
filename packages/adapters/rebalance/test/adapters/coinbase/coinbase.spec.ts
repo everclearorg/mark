@@ -162,6 +162,9 @@ const mockConfig: MarkConfiguration = {
   near: {
     jwtToken: 'test-jwt-token',
   },
+  stargate: {},
+  tac: {},
+  ton: {},
   redis: {
     host: 'localhost',
     port: 6379,
@@ -293,6 +296,20 @@ describe('CoinbaseBridgeAdapter Unit', () => {
     });
   });
 
+  describe('getMinimumAmount()', () => {
+    const sampleRoute: RebalanceRoute = {
+      origin: 1,
+      destination: 8453,
+      asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+    };
+
+    it('should return null (no minimum requirement)', async () => {
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('type()', () => {
     it('returns SupportedBridge.Coinbase', () => {
       expect(adapter.type()).toBe(SupportedBridge.Coinbase);
@@ -375,6 +392,13 @@ describe('CoinbaseBridgeAdapter Unit', () => {
       const res = await adapter.checkDepositConfirmed(route, originTx);
       expect(res.confirmed).toBe(false);
     });
+
+    it('returns confirmed=false when error occurs', async () => {
+      mockClient.getTransactionByHash.mockRejectedValue(new Error('API error'));
+      const res = await adapter.checkDepositConfirmed(route, originTx);
+      expect(res.confirmed).toBe(false);
+      expect(mockLogger.error).toHaveBeenCalledWith('Failed to check deposit confirmation', expect.any(Object));
+    });
   });
 
   describe('readyOnDestination()', () => {
@@ -421,6 +445,26 @@ describe('CoinbaseBridgeAdapter Unit', () => {
       });
       const res = await adapter.readyOnDestination(amount, route, originTx);
       expect(res).toBe(false);
+    });
+
+    it('returns false when recipient is missing', async () => {
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue(undefined as any);
+      const res = await adapter.readyOnDestination(amount, route, originTx);
+      expect(res).toBe(false);
+      expect(mockLogger.error).toHaveBeenCalledWith('Cannot check withdrawal readiness - recipient missing from cache', expect.any(Object));
+    });
+
+    it('returns false when getOrInitWithdrawal returns undefined', async () => {
+      jest.spyOn(adapter, 'getOrInitWithdrawal').mockResolvedValue(undefined);
+      const res = await adapter.readyOnDestination(amount, route, originTx);
+      expect(res).toBe(false);
+    });
+
+    it('returns false when getOrInitWithdrawal throws error', async () => {
+      jest.spyOn(adapter, 'getOrInitWithdrawal').mockRejectedValue(new Error('Test error'));
+      const res = await adapter.readyOnDestination(amount, route, originTx);
+      expect(res).toBe(false);
+      expect(mockLogger.error).toHaveBeenCalledWith('Failed to check if transaction is ready on destination', expect.any(Object));
     });
   });
 
@@ -518,6 +562,16 @@ describe('CoinbaseBridgeAdapter Unit', () => {
       mockClient.getWithdrawalById.mockResolvedValue({
         id: 'wd-1',
         status: 'pending',
+        network: {},
+      } as any);
+      await expect(adapter.destinationCallback(route, originTx)).rejects.toThrow('is not successful/completed');
+    });
+
+    it('throws when withdrawal network hash is missing', async () => {
+      jest.spyOn(adapter, 'findExistingWithdrawal').mockResolvedValue({ id: 'wd-1' });
+      mockClient.getWithdrawalById.mockResolvedValue({
+        id: 'wd-1',
+        status: 'completed',
         network: {},
       } as any);
       await expect(adapter.destinationCallback(route, originTx)).rejects.toThrow('is not successful/completed');
@@ -716,6 +770,137 @@ describe('CoinbaseBridgeAdapter Unit', () => {
       expect(res).toBeUndefined();
     });
 
+    it('handles errors when creating provider', () => {
+      // Mock createPublicClient to throw an error
+      const originalCreatePublicClient = require('viem').createPublicClient;
+      jest.spyOn(require('viem'), 'createPublicClient').mockImplementationOnce(() => {
+        throw new Error('Failed to create client');
+      });
+      
+      const cfgInvalidProvider = {
+        ...mockConfig,
+        chains: {
+          '1': { ...mockConfig.chains['1'], providers: ['invalid-url'] },
+        },
+      };
+      const adapterInvalid = new TestCoinbaseBridgeAdapter(cfgInvalidProvider, mockLogger, mockDatabase);
+      const res = adapterInvalid.getProvider(1);
+      expect(res).toBeUndefined();
+      expect(mockLogger.error).toHaveBeenCalledWith('Failed to create provider', expect.any(Object));
+      
+      // Restore original implementation
+      jest.restoreAllMocks();
+    });
+  });
+
+  describe('getOrInitWithdrawal()', () => {
+    const route: RebalanceRoute = { origin: 1, destination: 42161, asset: mockAssets.WETH.address };
+    const originTx: TransactionReceipt = {
+      blockHash: '0xabc',
+      blockNumber: BigInt(1),
+      contractAddress: null,
+      cumulativeGasUsed: BigInt(0),
+      effectiveGasPrice: BigInt(0),
+      from: '0x1',
+      gasUsed: BigInt(0),
+      logs: [],
+      logsBloom: '0x',
+      status: 'success',
+      to: '0x2',
+      transactionHash: '0xgetorinit',
+      transactionIndex: 0,
+      type: 'eip1559',
+    };
+    const recipient = '0x9876543210987654321098765432109876543210';
+    const amount = parseUnits('0.1', 18).toString();
+
+    beforeEach(() => {
+      mockDatabase.getRebalanceOperationByTransactionHash.mockResolvedValue({
+        id: 'rebalance-1',
+        recipient,
+      } as any);
+    });
+
+    it('returns undefined when deposit not confirmed', async () => {
+      jest.spyOn(adapter, 'checkDepositConfirmed').mockResolvedValue({ confirmed: false });
+      const res = await adapter.getOrInitWithdrawal(amount, route, originTx, recipient);
+      expect(res).toBeUndefined();
+      expect(mockLogger.debug).toHaveBeenCalledWith('Deposit not yet confirmed', expect.any(Object));
+    });
+
+    it('initiates withdrawal when not found', async () => {
+      jest.spyOn(adapter, 'checkDepositConfirmed').mockResolvedValue({ confirmed: true });
+      jest.spyOn(adapter, 'findExistingWithdrawal').mockResolvedValue(undefined);
+      jest.spyOn(adapter, 'initiateWithdrawal').mockResolvedValue({ id: 'wd-new' });
+      mockClient.getWithdrawalById.mockResolvedValue({
+        id: 'wd-new',
+        status: 'pending',
+        network: {},
+      } as any);
+      const res = await adapter.getOrInitWithdrawal(amount, route, originTx, recipient);
+      expect(res).toBeDefined();
+      expect(adapter.initiateWithdrawal).toHaveBeenCalled();
+    });
+
+    it('returns pending status when withdrawal not found by client', async () => {
+      jest.spyOn(adapter, 'checkDepositConfirmed').mockResolvedValue({ confirmed: true });
+      jest.spyOn(adapter, 'findExistingWithdrawal').mockResolvedValue({ id: 'wd-1' });
+      mockClient.getWithdrawalById.mockResolvedValue(undefined as any);
+      const res = await adapter.getOrInitWithdrawal(amount, route, originTx, recipient);
+      expect(res).toEqual({ status: 'pending', onChainConfirmed: false });
+    });
+
+    it('handles on-chain confirmation when provider is undefined', async () => {
+      jest.spyOn(adapter, 'checkDepositConfirmed').mockResolvedValue({ confirmed: true });
+      jest.spyOn(adapter, 'findExistingWithdrawal').mockResolvedValue({ id: 'wd-1' });
+      jest.spyOn(adapter, 'getProvider').mockReturnValue(undefined);
+      mockClient.getWithdrawalById.mockResolvedValue({
+        id: 'wd-1',
+        status: 'completed',
+        network: { hash: '0xhash' },
+      } as any);
+      const res = await adapter.getOrInitWithdrawal(amount, route, originTx, recipient);
+      expect(res).toBeDefined();
+      expect(res?.onChainConfirmed).toBe(false);
+    });
+
+    it('handles on-chain confirmation error gracefully', async () => {
+      jest.spyOn(adapter, 'checkDepositConfirmed').mockResolvedValue({ confirmed: true });
+      jest.spyOn(adapter, 'findExistingWithdrawal').mockResolvedValue({ id: 'wd-1' });
+      const getTransactionReceiptMock = jest.fn<() => Promise<any>>().mockRejectedValue(new Error('RPC error'));
+      const provider = {
+        getTransactionReceipt: getTransactionReceiptMock,
+      };
+      jest.spyOn(adapter, 'getProvider').mockReturnValue(provider as any);
+      mockClient.getWithdrawalById.mockResolvedValue({
+        id: 'wd-1',
+        status: 'completed',
+        network: { hash: '0xhash' },
+      } as any);
+      const res = await adapter.getOrInitWithdrawal(amount, route, originTx, recipient);
+      expect(res).toBeDefined();
+      expect(res?.onChainConfirmed).toBe(false);
+      expect(mockLogger.debug).toHaveBeenCalledWith('Could not verify on-chain confirmation', expect.any(Object));
+    });
+
+    it('marks withdrawal as completed when network hash exists', async () => {
+      jest.spyOn(adapter, 'checkDepositConfirmed').mockResolvedValue({ confirmed: true });
+      jest.spyOn(adapter, 'findExistingWithdrawal').mockResolvedValue({ id: 'wd-1' });
+      jest.spyOn(adapter, 'getProvider').mockReturnValue(undefined);
+      mockClient.getWithdrawalById.mockResolvedValue({
+        id: 'wd-1',
+        status: 'pending',
+        network: { hash: '0xhash' },
+      } as any);
+      const res = await adapter.getOrInitWithdrawal(amount, route, originTx, recipient);
+      expect(res?.status).toBe('completed');
+    });
+
+    it('handles errors and throws', async () => {
+      jest.spyOn(adapter, 'checkDepositConfirmed').mockRejectedValue(new Error('Test error'));
+      await expect(adapter.getOrInitWithdrawal(amount, route, originTx, recipient)).rejects.toThrow('Test error');
+      expect(mockLogger.error).toHaveBeenCalledWith('Failed to get withdrawal status', expect.any(Object));
+    });
   });
 
   describe('getAccounts()', () => {

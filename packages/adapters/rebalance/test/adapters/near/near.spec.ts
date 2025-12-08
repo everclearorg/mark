@@ -111,8 +111,8 @@ class TestNearBridgeAdapter extends NearBridgeAdapter {
     return super.requiresCallback(route, depositAddress, inputAmount, fillTxHash);
   }
 
-  public getTransactionValue(provider: string, originTransaction: TransactionReceipt): Promise<bigint> {
-    return super.getTransactionValue(provider, originTransaction);
+  public getTransactionValue(providers: string[], originTransaction: TransactionReceipt, route: RebalanceRoute): Promise<bigint> {
+    return super.getTransactionValue(providers, originTransaction, route);
   }
 }
 
@@ -344,6 +344,20 @@ describe('NearBridgeAdapter', () => {
           mockLogger,
         );
       }).toThrow('NEAR JWT token is required. Please set NEAR_JWT_TOKEN environment variable.');
+    });
+  });
+
+  describe('getMinimumAmount', () => {
+    const sampleRoute: RebalanceRoute = {
+      origin: 1,
+      destination: 42161,
+      asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+    };
+
+    it('should return null (no minimum requirement)', async () => {
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
     });
   });
 
@@ -1221,7 +1235,13 @@ describe('NearBridgeAdapter', () => {
         transactionHash: '0xmocktxhash' as `0x${string}`,
       };
 
-      const result = await adapter.getTransactionValue('https://provider.example', mockReceipt as TransactionReceipt);
+      const route: RebalanceRoute = {
+        asset: mockAssets['USDC_ETH'].address,
+        origin: 1,
+        destination: 10,
+      };
+
+      const result = await adapter.getTransactionValue(['https://provider.example'], mockReceipt as TransactionReceipt, route);
 
       expect(result).toBe(BigInt('1000000000000000000'));
       expect(mockGetTransaction).toHaveBeenCalledWith({

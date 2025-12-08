@@ -183,6 +183,9 @@ const mockConfig: MarkConfiguration = {
   near: {
     jwtToken: 'test-jwt-token',
   },
+  stargate: {},
+  tac: {},
+  ton: {},
   redis: {
     host: 'localhost',
     port: 6379,
@@ -577,6 +580,46 @@ describe('KrakenBridgeAdapter Unit', () => {
 
       const provider = adapterWithoutProviders.getProvider(1);
       expect(provider).toBeUndefined();
+    });
+  });
+
+  describe('getMinimumAmount()', () => {
+    const sampleRoute: RebalanceRoute = {
+      origin: 1,
+      destination: 42161,
+      asset: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockDynamicConfig.getAssetMapping.mockResolvedValue(mockETHMainnetKrakenMapping);
+      mockKrakenClient.isSystemOperational.mockResolvedValue(true);
+    });
+
+    it('should return deposit minimum for valid route', async () => {
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      // Should return deposit minimum in native units
+      // mockETHMainnetKrakenMapping has depositMethod.minimum = '0.0001' which is 100000000000000 wei
+      expect(result).toBeTruthy();
+      expect(result).toBe('100000000000000'); // 0.0001 ETH minimum
+    });
+
+    it('should return null when asset mapping is not found', async () => {
+      mockDynamicConfig.getAssetMapping.mockRejectedValueOnce(new Error('No mapping found'));
+
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when asset config is not found', async () => {
+      const { findAssetByAddress } = require('../../../src/shared/asset');
+      jest.spyOn(require('../../../src/shared/asset'), 'findAssetByAddress').mockReturnValueOnce(undefined);
+
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
     });
   });
 
