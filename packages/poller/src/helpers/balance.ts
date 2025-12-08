@@ -91,53 +91,66 @@ export const getMarkBalances = async (
   chainService: ChainService,
   prometheus: PrometheusAdapter,
 ): Promise<Map<string, Map<string, bigint>>> => {
-  const { chains } = config;
   const tickers = getTickers(config);
 
+  const markBalances = new Map<string, Map<string, bigint>>();
+
+  for (const ticker of tickers) {
+    const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus);
+    markBalances.set(ticker, tickerBalances);
+  }
+
+  return markBalances;
+};
+
+/**
+ * Returns all of the balances for specific tickerHash across all chains.
+ * @returns Mapping of balances for tickerHash - chain - amount in 18 decimal units
+ */
+export const getMarkBalancesForTicker = async (
+  ticker: string,
+  config: MarkConfiguration,
+  chainService: ChainService,
+  prometheus: PrometheusAdapter,
+): Promise<Map<string, bigint>> => {
+  const { chains } = config;
+
   const balancePromises: Array<{
-    ticker: string;
     domain: string;
     promise: Promise<bigint>;
   }> = [];
 
-  for (const ticker of tickers) {
-    for (const domain of Object.keys(chains)) {
-      const isSvm = isSvmChain(domain);
-      const isTvm = isTvmChain(domain);
-      const format = isSvm ? AddressFormat.Base58 : AddressFormat.Hex;
-      const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
-      const decimals = getDecimalsFromConfig(ticker, domain, config);
+  for (const domain of Object.keys(chains)) {
+    const isSvm = isSvmChain(domain);
+    const isTvm = isTvmChain(domain);
+    const format = isSvm ? AddressFormat.Base58 : AddressFormat.Hex;
+    const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
+    const decimals = getDecimalsFromConfig(ticker, domain, config);
 
-      if (!tokenAddr || !decimals) {
-        continue;
-      }
-      const balancePromise = isSvm
-        ? getSvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
-        : isTvm
-          ? getTvmBalance(chainService, domain, tokenAddr, decimals, prometheus)
-          : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
-
-      balancePromises.push({
-        ticker,
-        domain,
-        promise: balancePromise,
-      });
+    if (!tokenAddr || !decimals) {
+      continue;
     }
+    const balancePromise = isSvm
+      ? getSvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
+      : isTvm
+        ? getTvmBalance(chainService, domain, tokenAddr, decimals, prometheus)
+        : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
+
+    balancePromises.push({
+      domain,
+      promise: balancePromise,
+    });
   }
 
   const results = await Promise.allSettled(balancePromises.map((p) => p.promise));
-  const markBalances = new Map<string, Map<string, bigint>>();
+  const markBalances = new Map<string, bigint>();
 
   for (let i = 0; i < balancePromises.length; i++) {
-    const { ticker, domain } = balancePromises[i];
+    const { domain } = balancePromises[i];
     const result = results[i];
 
-    if (!markBalances.has(ticker)) {
-      markBalances.set(ticker, new Map());
-    }
-
     const balance = result.status === 'fulfilled' ? result.value : 0n;
-    markBalances.get(ticker)!.set(domain, balance);
+    markBalances.set(domain, balance);
   }
 
   return markBalances;

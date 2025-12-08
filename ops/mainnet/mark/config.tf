@@ -103,6 +103,16 @@ locals {
     WETH_42161_THRESHOLD          = "1600000000000000000"
     USDC_42161_THRESHOLD          = "4000000000"
     USDT_42161_THRESHOLD          = "1000000000"
+
+    # TAC Chain (239) configuration
+    USDT_239_THRESHOLD = "100000000"  # 100 USDT threshold on TAC
+    
+    # TAC Network configuration (loaded from SSM if available)
+    TAC_NETWORK = "mainnet"
+    
+    # TON wallet configuration for TAC bridge (from SSM)
+    TON_SIGNER_ADDRESS = local.mark_config.tonSignerAddress
+    TON_MNEMONIC       = local.mark_config.ton.mnemonic
   }
 
   web3signer_env_vars = [

@@ -207,6 +207,9 @@ const mockConfig: MarkConfiguration = {
   near: {
     jwtToken: 'test-jwt-token',
   },
+  stargate: {},
+  tac: {},
+  ton: {},
   redis: {
     host: 'localhost',
     port: 6379,

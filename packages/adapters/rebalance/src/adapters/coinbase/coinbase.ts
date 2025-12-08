@@ -750,7 +750,7 @@ export class CoinbaseBridgeAdapter implements BridgeAdapter {
 
       // Verify destination asset symbol matches contract symbol
       // Skip in test environment to avoid external HTTP calls
-      if (this.config.coinbase?.apiKey!='test-coinbase-api-key') {
+      if (this.config.coinbase?.apiKey != 'test-coinbase-api-key') {
         const providers = this.config.chains[route.destination]?.providers ?? [];
         const transports = providers.map((url) => http(url));
         const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
