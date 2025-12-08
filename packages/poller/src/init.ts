@@ -19,6 +19,9 @@ import { cleanupViemClients } from './helpers/contracts';
 import * as database from '@mark/database';
 import { execSync } from 'child_process';
 import { bytesToHex, WalletClient } from 'viem';
+import { rebalanceMantleEth } from './rebalance/mantleEth';
+import { rebalanceTacUsdt } from './rebalance/tacUsdt';
+import { randomBytes } from 'crypto';
 import { resolve } from 'path';
 
 export interface MarkAdapters {
@@ -103,7 +106,6 @@ async function runMigration(logger: Logger): Promise<void> {
       return;
     }
 
-
     // default to aws lambda environment path
     const db_migration_path = process.env.DATABASE_MIGRATION_PATH ?? '/var/task/db/migrations';
 
@@ -118,16 +120,12 @@ async function runMigration(logger: Logger): Promise<void> {
 
     logger.info(`Running database migrations from ${db_migration_path}...`);
 
-    const result = execSync(
-      `dbmate --url "${databaseUrl}" --migrations-dir ${db_migration_path} --no-dump-schema up`,
-      {
-        encoding: 'utf-8',
-        ...cwdOption,
-      }
-    );
+    const result = execSync(`dbmate --url "${databaseUrl}" --migrations-dir ${db_migration_path} --no-dump-schema up`, {
+      encoding: 'utf-8',
+      ...cwdOption,
+    });
 
-      logger.info('Database migration completed', { output: result });
-
+    logger.info('Database migration completed', { output: result });
   } catch (error) {
     logger.error('Failed to run database migration', { error });
     throw new Error('Database migration failed - cannot continue with out-of-sync schema');
@@ -169,12 +167,72 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     const context: ProcessingContext = {
       ...adapters,
       config,
-      requestId: bytesToHex(crypto.getRandomValues(new Uint8Array(32))),
+      requestId: bytesToHex(randomBytes(32)),
       startTime: Math.floor(Date.now() / 1000),
     };
 
     await cleanupExpiredEarmarks(context);
     await cleanupExpiredRegularRebalanceOps(context);
+
+    if (process.env.RUN_MODE === 'methOnly') {
+      logger.info('Starting meth rebalancing', {
+        stage: config.stage,
+        environment: config.environment,
+        addresses,
+      });
+
+      const rebalanceOperations = await rebalanceMantleEth(context);
+      if (rebalanceOperations.length === 0) {
+        logger.info('Meth Rebalancing completed: no operations needed', {
+          requestId: context.requestId,
+        });
+      } else {
+        logger.info('Successfully completed meth rebalancing operations', {
+          requestId: context.requestId,
+          numOperations: rebalanceOperations.length,
+          operations: rebalanceOperations,
+        });
+      }
+
+      logFileDescriptorUsage(logger);
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          rebalanceOperations: rebalanceOperations ?? [],
+        }),
+      };
+    }
+
+    if (process.env.RUN_MODE === 'tacOnly') {
+      logger.info('Starting TAC USDT rebalancing', {
+        stage: config.stage,
+        environment: config.environment,
+        addresses,
+      });
+
+      const rebalanceOperations = await rebalanceTacUsdt(context);
+      if (rebalanceOperations.length === 0) {
+        logger.info('TAC USDT Rebalancing completed: no operations needed', {
+          requestId: context.requestId,
+        });
+      } else {
+        logger.info('Successfully completed TAC USDT rebalancing operations', {
+          requestId: context.requestId,
+          numOperations: rebalanceOperations.length,
+          operations: rebalanceOperations,
+        });
+      }
+
+      logFileDescriptorUsage(logger);
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          rebalanceOperations: rebalanceOperations ?? [],
+        }),
+      };
+    }
 
     let invoiceResult;
 

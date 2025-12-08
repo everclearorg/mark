@@ -9,6 +9,9 @@ import { SupportedBridge, MarkConfiguration } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { CctpBridgeAdapter } from './cctp/cctp';
 import * as database from '@mark/database';
+import { MantleBridgeAdapter } from './mantle';
+import { StargateBridgeAdapter } from './stargate';
+import { TacInnerBridgeAdapter, TacNetwork } from './tac';
 
 export class RebalanceAdapter {
   constructor(
@@ -75,6 +78,16 @@ export class RebalanceAdapter {
           process.env.NEAR_BASE_URL || NEAR_BASE_URL,
           this.logger,
         );
+      case SupportedBridge.Mantle:
+        return new MantleBridgeAdapter(this.config.chains, this.logger);
+      case SupportedBridge.Stargate:
+        return new StargateBridgeAdapter(this.config.chains, this.logger);
+      case SupportedBridge.TacInner:
+        return new TacInnerBridgeAdapter(this.config.chains, this.logger, {
+          network: this.config.tac?.network === 'testnet' ? TacNetwork.TESTNET : TacNetwork.MAINNET,
+          tonMnemonic: this.config.ton?.mnemonic,
+          tonRpcUrl: this.config.tac?.tonRpcUrl || this.config.ton?.rpcUrl,
+        });
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }

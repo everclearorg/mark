@@ -1,10 +1,11 @@
 import { jsonifyError, Logger } from '@mark/logger';
-import { axiosPost, axiosGet } from '@mark/core';
+import { axiosPost, axiosGet, GetIntentsParams } from '@mark/core';
 import {
   ChainConfiguration,
   NewIntentParams,
   TransactionRequest,
   Invoice,
+  Intent,
   NewIntentWithPermit2Params,
   CreateLookupTableParams,
 } from '@mark/core';
@@ -126,6 +127,15 @@ export class EverclearAdapter {
 
     const { data } = await axiosGet<{ invoices: Invoice[] }>(url, { params });
     return data.invoices;
+  }
+
+  // TODO: add parameters to filter intents
+  async fetchIntents(params: GetIntentsParams | undefined = undefined): Promise<Intent[]> {
+    const url = `${this.apiUrl}/intents`;
+
+    const { data } = await axiosGet<{ intents: Intent[] }>(url, { params });
+
+    return data.intents;
   }
 
   async createNewIntent(

@@ -180,3 +180,39 @@ export function getSupportedDomainsForTicker(ticker: string, config: MarkConfigu
     return tickers.includes(ticker.toLowerCase());
   });
 }
+
+/**
+ * Gets the TON jetton address for a given ticker hash from config.
+ * TON is not an EVM chain, so assets are stored separately in config.ton.assets
+ * instead of the chains block.
+ *
+ * @param tickerHash The ticker hash to look up
+ * @param config The Mark configuration
+ * @returns The TON jetton address or undefined if not found
+ */
+export function getTonAssetAddress(tickerHash: string, config: MarkConfiguration): string | undefined {
+  if (!config.ton?.assets) {
+    return undefined;
+  }
+
+  const asset = config.ton.assets.find((a) => a.tickerHash.toLowerCase() === tickerHash.toLowerCase());
+
+  return asset?.jettonAddress;
+}
+
+/**
+ * Gets the TON asset decimals for a given ticker hash from config.
+ *
+ * @param tickerHash The ticker hash to look up
+ * @param config The Mark configuration
+ * @returns The decimals or undefined if not found
+ */
+export function getTonAssetDecimals(tickerHash: string, config: MarkConfiguration): number | undefined {
+  if (!config.ton?.assets) {
+    return undefined;
+  }
+
+  const asset = config.ton.assets.find((a) => a.tickerHash.toLowerCase() === tickerHash.toLowerCase());
+
+  return asset?.decimals;
+}
