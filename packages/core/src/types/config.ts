@@ -26,9 +26,9 @@ export interface AssetConfiguration {
  */
 export interface TonAssetConfiguration {
   symbol: string;
-  jettonAddress: string;  // TON jetton master address (e.g., EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs)
+  jettonAddress: string; // TON jetton master address (e.g., EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs)
   decimals: number;
-  tickerHash: string;     // Same ticker hash as used on EVM chains for cross-chain asset matching
+  tickerHash: string; // Same ticker hash as used on EVM chains for cross-chain asset matching
 }
 
 export interface ChainConfiguration {
@@ -149,20 +149,20 @@ export interface MarkConfiguration extends RebalanceConfig {
     apiUrl?: string;
   };
   tac: {
-    tonRpcUrl?: string;           // Optional: TON RPC endpoint for balance checks
+    tonRpcUrl?: string; // Optional: TON RPC endpoint for balance checks
     network?: 'mainnet' | 'testnet';
   };
   ton: {
-    mnemonic?: string;          // TON wallet mnemonic for TAC bridge operations
-    rpcUrl?: string;            // TON RPC endpoint
-    apiKey?: string;            // TON API key (for tonapi.io or DRPC)
-    assets?: TonAssetConfiguration[];  // TON assets with jetton addresses
+    mnemonic?: string; // TON wallet mnemonic for TAC bridge operations
+    rpcUrl?: string; // TON RPC endpoint
+    apiKey?: string; // TON API key (for tonapi.io or DRPC)
+    assets?: TonAssetConfiguration[]; // TON assets with jetton addresses
   };
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;
   ownSolAddress: string;
-  ownTonAddress?: string;      // TON wallet address for TAC bridge operations
+  ownTonAddress?: string; // TON wallet address for TAC bridge operations
   stage: Stage;
   environment: Environment;
   logLevel: LogLevel;

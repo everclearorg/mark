@@ -61,17 +61,17 @@ async function getTonUsdtBalance(
     if (apiKey) {
       headers['X-API-Key'] = apiKey;
     }
-    
+
     const response = await fetch(url, { headers });
     if (!response.ok) {
       return 0n;
     }
-    
-    const data = await response.json() as { jetton_wallets?: Array<{ balance: string }> };
+
+    const data = (await response.json()) as { jetton_wallets?: Array<{ balance: string }> };
     if (!data.jetton_wallets || data.jetton_wallets.length === 0) {
       return 0n;
     }
-    
+
     return BigInt(data.jetton_wallets[0].balance);
   } catch {
     return 0n;
@@ -96,17 +96,17 @@ async function getTonNativeBalance(
     if (apiKey) {
       headers['X-API-Key'] = apiKey;
     }
-    
+
     const response = await fetch(url, { headers });
     if (!response.ok) {
       return 0n;
     }
-    
-    const data = await response.json() as { result?: { balance: string } };
+
+    const data = (await response.json()) as { result?: { balance: string } };
     if (!data.result?.balance) {
       return 0n;
     }
-    
+
     return BigInt(data.result.balance);
   } catch {
     return 0n;
@@ -211,7 +211,7 @@ async function executeBridgeTransactions({
 
 /**
  * Main TAC USDT rebalancing function
- * 
+ *
  * Workflow:
  * 1. Check for settled invoices destined for TAC with USDT output
  * 2. If USDT balance on TAC is insufficient, initiate rebalancing
@@ -291,7 +291,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     // MIN_REBALANCE_AMOUNT is already in native units (6 decimals for USDT)
     // No conversion needed
     const minAmount = MIN_REBALANCE_AMOUNT;
-    
+
     // intent.amount_out_min is already in native units (from the API/chain)
     // No conversion needed
     const intentAmount = BigInt(intent.amount_out_min);
@@ -316,8 +316,8 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     const availableDestBalance = balances.get(destination.toString()) || 0n;
     const currentDestBalance = convertToNativeUnits(availableDestBalance, decimals);
 
-    logger.debug('Current USDT balances', { 
-      requestId, 
+    logger.debug('Current USDT balances', {
+      requestId,
       originBalance: currentOriginBalance.toString(),
       destinationBalance: currentDestBalance.toString(),
       intentAmount: intentAmount.toString(),
@@ -347,7 +347,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     // Calculate amount to bridge - only bridge what's needed
     // (intentAmount - currentDestBalance) = shortfall that needs to be filled
     const shortfall = intentAmount - currentDestBalance;
-    
+
     // Don't bridge if shortfall is below minimum threshold
     if (shortfall < minAmount) {
       logger.info('Shortfall is below minimum rebalance threshold, skipping', {
@@ -358,7 +358,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
       });
       continue;
     }
-    
+
     const amountToBridge = currentOriginBalance < shortfall ? currentOriginBalance : shortfall;
 
     logger.info('On-demand rebalancing triggered - destination lacks funds', {
@@ -402,10 +402,10 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     // Get addresses for the bridging flow
     // evmSender: The Ethereum address that holds USDT and will initiate the bridge
     const evmSender = getActualAddress(origin, config, logger, { requestId });
-    
+
     // tonRecipient: TON wallet address that receives USDT on TON (intermediate step)
     const tonRecipient = config.ownTonAddress;
-    
+
     // tacRecipient: Final EVM address on TAC that should receive USDT
     // CRITICAL: This MUST be the same as evmSender to satisfy the "same address" requirement
     // Both Ethereum and TAC are EVM chains, so the same address can receive on both
@@ -514,9 +514,11 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
         slippage: route.slippagesDbps[0],
         status: RebalanceOperationStatus.PENDING,
         bridge: 'stargate-tac', // Tagged for TAC flow
-        transactions: receipt ? { 
-          [route.origin]: receipt,
-        } : undefined,
+        transactions: receipt
+          ? {
+              [route.origin]: receipt,
+            }
+          : undefined,
         recipient: tacRecipient, // Final TAC recipient
       });
 
@@ -572,7 +574,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
 
 /**
  * Execute callbacks for pending TAC rebalance operations
- * 
+ *
  * This handles:
  * - Checking if Leg 1 (Stargate) is complete
  * - Executing Leg 2 (TAC Inner Bridge) when Leg 1 completes
@@ -707,13 +709,13 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
               asset?: string,
             ) => Promise<unknown>;
           };
-          
+
           // Get recipient address (TAC EVM address)
           // CRITICAL: Use the stored recipient from Leg 1 operation to ensure consistency
           // This is the same address as the original Ethereum sender
           const storedRecipient = operation.recipient;
           const recipient = storedRecipient || config.ownAddress;
-          
+
           logger.debug('Leg 2 recipient address', {
             ...logContext,
             storedRecipient,
@@ -723,13 +725,13 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
 
           // Check if TON mnemonic is configured
           const tonMnemonic = config.ton?.mnemonic;
-          
+
           if (!tonMnemonic) {
             logger.warn('TON mnemonic not configured, cannot execute Leg 2 via TAC SDK', {
               ...logContext,
               note: 'Add ton.mnemonic to config to enable TAC bridge execution',
             });
-            
+
             // Still create the operation record for tracking
             // Link to the same earmark as Leg 1 for proper tracking
             await createRebalanceOperation({
@@ -747,12 +749,12 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             // Query actual USDT balance on TON (Stargate may have taken fees)
             const tonWalletAddress = config.ownTonAddress;
             const tonApiKey = config.ton?.apiKey;
-            
+
             if (!tonWalletAddress) {
               logger.error('TON wallet address not configured, cannot query balance', logContext);
               continue;
             }
-            
+
             // Get jetton address from config
             const jettonAddress = getTonAssetAddress(operation.tickerHash, config);
             if (!jettonAddress) {
@@ -763,7 +765,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
               });
               continue;
             }
-            
+
             // Check TON native balance for gas
             const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
             if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
@@ -776,32 +778,27 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
               });
               continue;
             }
-            
+
             // Get actual USDT balance (may be less than operation.amount due to Stargate fees)
             const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, jettonAddress, tonApiKey);
-            
+
             // Use the actual balance, not the expected amount
             // This accounts for Stargate bridge fees
-            const amountToBridge = actualUsdtBalance > 0n 
-              ? actualUsdtBalance.toString() 
-              : operation.amount;
-            
+            const amountToBridge = actualUsdtBalance > 0n ? actualUsdtBalance.toString() : operation.amount;
+
             logger.info('Executing TAC SDK bridge transaction', {
               ...logContext,
               recipient,
               originalAmount: operation.amount,
               actualUsdtBalance: actualUsdtBalance.toString(),
               amountToBridge,
-              note: actualUsdtBalance.toString() !== operation.amount 
-                ? 'Using actual balance (Stargate took fees)' 
-                : 'Using original amount',
+              note:
+                actualUsdtBalance.toString() !== operation.amount
+                  ? 'Using actual balance (Stargate took fees)'
+                  : 'Using original amount',
             });
 
-            const transactionLinker = await tacInnerAdapter.executeTacBridge(
-              tonMnemonic,
-              recipient,
-              amountToBridge,
-            );
+            const transactionLinker = await tacInnerAdapter.executeTacBridge(tonMnemonic, recipient, amountToBridge);
 
             // Create Leg 2 operation record with transaction info
             // Link to the same earmark as Leg 1 for proper tracking
@@ -857,12 +854,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
           recipientOverride?: string,
         ) => Promise<boolean>;
         trackOperation: (transactionLinker: unknown) => Promise<string>;
-        executeTacBridge: (
-          tonMnemonic: string,
-          recipient: string,
-          amount: string,
-          asset?: string,
-        ) => Promise<unknown>;
+        executeTacBridge: (tonMnemonic: string, recipient: string, amount: string, asset?: string) => Promise<unknown>;
       };
 
       if (operation.status === RebalanceOperationStatus.PENDING) {
@@ -870,7 +862,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
           // Check if we have a transaction linker from TAC SDK
           const tonTxData = operation.transactions?.[TON_LZ_CHAIN_ID] as { transactionLinker?: unknown } | undefined;
           let transactionLinker = tonTxData?.transactionLinker;
-          
+
           // Get the stored recipient from operation
           const storedRecipient = operation.recipient;
 
@@ -879,7 +871,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             const tonMnemonic = config.ton?.mnemonic;
             const tonWalletAddress = config.ownTonAddress;
             const tonApiKey = config.ton?.apiKey;
-            
+
             // Get jetton address from config
             const jettonAddress = getTonAssetAddress(operation.tickerHash, config);
             if (!jettonAddress) {
@@ -894,7 +886,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             if (tonMnemonic && tonWalletAddress) {
               // Get actual USDT balance on TON
               const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, jettonAddress, tonApiKey);
-              
+
               if (actualUsdtBalance === 0n) {
                 // No USDT on TON - bridge might have already succeeded!
                 // Fall through to readyOnDestination check below
@@ -913,7 +905,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
                 }
 
                 const amountToBridge = actualUsdtBalance.toString();
-                
+
                 logger.info('Retrying TAC SDK bridge execution (no transactionLinker)', {
                   ...logContext,
                   recipient: storedRecipient,
@@ -962,7 +954,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             try {
               const status = await tacInnerAdapter.trackOperation(transactionLinker);
               ready = status === 'SUCCESSFUL';
-              
+
               if (status === 'FAILED') {
                 logger.error('TAC SDK operation failed', {
                   ...logContext,
@@ -974,7 +966,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
                 });
                 continue;
               }
-              
+
               logger.debug('TAC SDK operation status', {
                 ...logContext,
                 status,
@@ -1024,4 +1016,3 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
     }
   }
 };
-
