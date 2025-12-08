@@ -264,13 +264,16 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       },
       tac: {
         tonRpcUrl: configJson.tac?.tonRpcUrl ?? (await fromEnv('TAC_TON_RPC_URL', true)) ?? undefined,
-        network: configJson.tac?.network ?? ((await fromEnv('TAC_NETWORK', true)) as 'mainnet' | 'testnet' | undefined) ?? undefined,
+        network:
+          configJson.tac?.network ??
+          ((await fromEnv('TAC_NETWORK', true)) as 'mainnet' | 'testnet' | undefined) ??
+          undefined,
       },
       ton: {
         mnemonic: configJson.ton?.mnemonic ?? (await fromEnv('TON_MNEMONIC', true)) ?? undefined,
         rpcUrl: configJson.ton?.rpcUrl ?? (await fromEnv('TON_RPC_URL', true)) ?? undefined,
         apiKey: configJson.ton?.apiKey ?? (await fromEnv('TON_API_KEY', true)) ?? undefined,
-        assets: configJson.ton?.assets ?? undefined,  // TON assets with jetton addresses
+        assets: configJson.ton?.assets ?? undefined, // TON assets with jetton addresses
       },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),

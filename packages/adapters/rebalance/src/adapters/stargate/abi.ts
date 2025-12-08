@@ -167,4 +167,3 @@ export const LZ_ENDPOINT_ABI = [
 
 // Re-export ERC20 ABI for approvals
 export { erc20Abi };
-
