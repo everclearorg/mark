@@ -1,4 +1,4 @@
-import { pad, TransactionReceipt as ViemTransactionReceipt } from 'viem';
+import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
 import { getTickerForAsset, convertToNativeUnits, getMarkBalancesForTicker } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
@@ -28,7 +28,6 @@ import {
 } from '@mark/database';
 import { IntentStatus } from '@mark/everclear';
 
-const METH_ON_MANTLE_ADDRESS = '0xcda86a272531e8640cd7f1a92c01839911b90bb0';
 const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
 
 const MIN_STAKING_AMOUNT = 20000000000000000n; // 0.02 ETH in 18 decimals
@@ -155,11 +154,11 @@ export async function rebalanceMantleEth(context: ProcessingContext): Promise<Re
   // Get all intents to mantle
   // add parameters to filter intents: status: IntentStatus.SETTLED_AND_COMPLETED, origin: any, destination: MANTLE_CHAINID
   // TODO: check startDate to avoid processing duplicates
+  // Note: outputAsset is NOT supported by the Everclear API - we use tickerHash instead
   const intents = await everclear.fetchIntents({
     limit: 20,
     statuses: [IntentStatus.SETTLED_AND_COMPLETED],
     destinations: [MANTLE_CHAIN_ID],
-    outputAsset: pad(METH_ON_MANTLE_ADDRESS.toLowerCase() as `0x${string}`, { size: 32 }),
     tickerHash: WETH_TICKER_HASH,
     isFastPath: true,
   });

@@ -3,6 +3,7 @@ import {
   createPublicClient,
   encodeFunctionData,
   http,
+  fallback,
   zeroAddress,
   erc20Abi,
   PublicClient,
@@ -142,6 +143,26 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         transactionHash,
       });
       return undefined;
+    }
+  }
+
+  async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
+    try {
+      const originMapping = await validateAssetMapping(
+        this.client,
+        route,
+        `route from chain ${route.origin}`,
+        this.config.chains,
+      );
+      // Minimum is minWithdrawalAmount + withdrawalFee
+      const minimum = BigInt(originMapping.minWithdrawalAmount) + BigInt(originMapping.withdrawalFee);
+      return minimum.toString();
+    } catch (error) {
+      this.logger.debug('Could not get minimum amount for Binance route', {
+        route,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     }
   }
 
@@ -805,14 +826,17 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
     }
 
     try {
+      const providers = chainConfig.providers;
+      const transports = providers.map((url) => http(url));
+      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
       return createPublicClient({
-        transport: http(chainConfig.providers[0]),
+        transport,
       });
     } catch (error) {
       this.logger.error('Failed to create provider', {
         error: jsonifyError(error),
         chainId,
-        provider: chainConfig.providers[0],
+        providers: chainConfig.providers,
       });
       return undefined;
     }

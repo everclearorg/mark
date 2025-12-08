@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { beforeEach, describe, expect, it, jest, afterEach } from '@jest/globals';
-import { SupportedBridge, RebalanceRoute, AssetConfiguration, MarkConfiguration } from '@mark/core';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { AssetConfiguration, MarkConfiguration, RebalanceRoute, SupportedBridge } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import * as database from '@mark/database';
-import { TransactionReceipt, parseUnits } from 'viem';
+import { TransactionReceipt } from 'viem';
 import { BinanceBridgeAdapter } from '../../../src/adapters/binance/binance';
 import { BinanceClient } from '../../../src/adapters/binance/client';
 import { DynamicAssetConfig } from '../../../src/adapters/binance/dynamic-config';
-import { DepositAddress, WithdrawResponse, BinanceAssetMapping } from '../../../src/adapters/binance/types';
+import { BinanceAssetMapping, DepositAddress, WithdrawResponse } from '../../../src/adapters/binance/types';
 import { RebalanceTransactionMemo } from '../../../src/types';
 import { RebalanceAdapter } from '../../../src/adapters';
 import * as utils from '../../../src/adapters/binance/utils';
@@ -207,6 +207,9 @@ const mockConfig: MarkConfiguration = {
   near: {
     jwtToken: 'test-jwt-token',
   },
+  stargate: {},
+  tac: {},
+  ton: {},
   redis: {
     host: 'localhost',
     port: 6379,
@@ -454,7 +457,7 @@ describe('BinanceBridgeAdapter', () => {
 
     // Setup asset utility mocks
     (assetUtils.findAssetByAddress as jest.Mock).mockImplementation((address: any, chainId: any, chains: any) => {
-      const chain = chains[chainId];
+      const chain = chains[chainId?.toString()];
       if (!chain) return undefined;
       return chain.assets.find((a: any) => a.address.toLowerCase() === address.toLowerCase());
     });
@@ -549,7 +552,52 @@ describe('BinanceBridgeAdapter', () => {
     });
   });
 
+  describe('getMinimumAmount', () => {
+    it('should return minimum amount for valid route', async () => {
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      // Should return minWithdrawalAmount + withdrawalFee
+      // mockETHMapping has minWithdrawalAmount: '10000000000000000' (0.01 ETH) + withdrawalFee: '40000000000000000' (0.04 ETH) = 50000000000000000 (0.05 ETH)
+      expect(result).toBeTruthy();
+      expect(result).toBe('50000000000000000'); // 0.01 ETH min + 0.04 ETH fee = 0.05 ETH
+    });
+
+    it('should return null for unsupported asset', async () => {
+      const unsupportedRoute: RebalanceRoute = {
+        ...sampleRoute,
+        asset: '0xUnsupportedAsset',
+      };
+
+      // Mock dynamic config to throw error for unsupported asset
+      mockDynamicAssetConfig.getAssetMapping.mockRejectedValueOnce(new Error('No mapping found'));
+
+      const result = await adapter.getMinimumAmount(unsupportedRoute);
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when validateAssetMapping fails', async () => {
+      // Mock validateAssetMapping to throw an error
+      (utils.validateAssetMapping as jest.MockedFunction<typeof utils.validateAssetMapping>).mockRejectedValueOnce(
+        new Error('Asset mapping not found'),
+      );
+
+      const result = await adapter.getMinimumAmount(sampleRoute);
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('getReceivedAmount', () => {
+    beforeEach(() => {
+      // Ensure findAssetByAddress returns the WETH asset for getReceivedAmount tests
+      (assetUtils.findAssetByAddress as jest.Mock).mockImplementation((address: any, chainId: any, chains: any) => {
+        const chain = chains[chainId?.toString()];
+        if (!chain) return undefined;
+        return chain.assets.find((a: any) => a.address.toLowerCase() === address.toLowerCase());
+      });
+    });
+
     it('should calculate received amount correctly for WETH after subtracting withdrawal fees', async () => {
       const amount = '1000000000000000000'; // 1 ETH in wei
 
@@ -563,6 +611,24 @@ describe('BinanceBridgeAdapter', () => {
       const amount = '1000'; // Very small amount below minimum
 
       await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(/Amount too small after rounding/);
+    });
+
+    it('should throw error when amount does not meet minimum withdrawal requirement', async () => {
+      const amount = '5000000000000000'; // 0.005 ETH, below minimum (0.01 ETH) + fee (0.04 ETH)
+      jest.mocked(utils.meetsMinimumWithdrawal).mockReturnValueOnce(false);
+
+      await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(
+        /Amount .* is too low for Binance withdrawal/,
+      );
+    });
+
+    it('should throw error when asset config not found', async () => {
+      const amount = '1000000000000000000';
+      jest.mocked(assetUtils.findAssetByAddress).mockReturnValueOnce(null as any);
+
+      await expect(adapter.getReceivedAmount(amount, sampleRoute)).rejects.toThrow(
+        /Unable to find asset config for asset/,
+      );
     });
 
     it('should throw error for unsupported asset', async () => {
