@@ -45,6 +45,21 @@ locals {
     chains = local.mark_config_json.chains
     db_password = local.mark_config_json.db_password
     admin_token = local.mark_config_json.admin_token
+    # TAC/TON configuration (optional - for TAC USDT rebalancing)
+    tonSignerAddress = try(local.mark_config_json.tonSignerAddress, "")
+    # Full TON configuration including assets with jetton addresses
+    ton = {
+      mnemonic = try(local.mark_config_json.ton.mnemonic, "")
+      rpcUrl   = try(local.mark_config_json.ton.rpcUrl, "")
+      apiKey   = try(local.mark_config_json.ton.apiKey, "")
+      assets   = try(local.mark_config_json.ton.assets, [])
+    }
+    # TAC SDK configuration
+    tac = {
+      tonRpcUrl = try(local.mark_config_json.tac.tonRpcUrl, "")
+      network   = try(local.mark_config_json.tac.network, "mainnet")
+      apiKey    = try(local.mark_config_json.tac.apiKey, "")
+    }
   }
 }
 
