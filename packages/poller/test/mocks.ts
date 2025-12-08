@@ -47,6 +47,18 @@ export const mockConfig: MarkConfiguration = {
   near: {
     jwtToken: 'test-jwt-token',
   },
+  stargate: {
+    apiUrl: undefined,
+  },
+  tac: {
+    tonRpcUrl: undefined,
+    network: undefined,
+  },
+  ton: {
+    mnemonic: undefined,
+    rpcUrl: undefined,
+    apiKey: undefined,
+  },
   redis: {
     host: 'localhost',
     port: 6379,
