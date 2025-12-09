@@ -155,9 +155,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     };
   }
 
-  // TODO: sanitize sensitive vars
-  logger.debug('Created config', { config });
-
   let adapters: MarkAdapters | undefined;
 
   try {
