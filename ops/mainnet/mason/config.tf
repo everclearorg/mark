@@ -113,7 +113,7 @@ locals {
     
     # TON wallet configuration for TAC bridge (from SSM)
     TON_SIGNER_ADDRESS = local.mark_config.tonSignerAddress
-    TON_MNEMONIC       = local.mark_config.ton_mnemonic
+    TON_MNEMONIC       = local.mark_config.ton.mnemonic
   }
 
   web3signer_env_vars = [
