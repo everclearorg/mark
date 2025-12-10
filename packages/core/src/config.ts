@@ -275,6 +275,27 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         apiKey: configJson.ton?.apiKey ?? (await fromEnv('TON_API_KEY', true)) ?? undefined,
         assets: configJson.ton?.assets ?? undefined, // TON assets with jetton addresses
       },
+      tacRebalance: {
+        enabled: configJson.tacRebalance?.enabled ?? (await fromEnv('TAC_REBALANCE_ENABLED', true)) ?? false, 
+        marketMaker: {
+          address: configJson.tacRebalance?.marketMaker?.address ?? (await fromEnv('TAC_REBALANCE_MARKET_MAKER_ADDRESS', true)) ?? undefined,
+          onDemandEnabled: configJson.tacRebalance?.marketMaker?.onDemandEnabled ?? (await fromEnv('TAC_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ?? false,
+          thresholdEnabled: configJson.tacRebalance?.marketMaker?.thresholdEnabled ?? (await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ?? false,
+          threshold: configJson.tacRebalance?.marketMaker?.threshold ?? (await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ?? undefined,
+          targetBalance: configJson.tacRebalance?.marketMaker?.targetBalance ?? (await fromEnv('TAC_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ?? undefined,
+        },
+        fillService: {
+          address: configJson.tacRebalance?.fillService?.address ?? (await fromEnv('TAC_REBALANCE_FILL_SERVICE_ADDRESS', true)) ?? undefined,
+          thresholdEnabled: configJson.tacRebalance?.fillService?.thresholdEnabled ?? (await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ?? false,
+          threshold: configJson.tacRebalance?.fillService?.threshold ?? (await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ?? undefined,
+          targetBalance: configJson.tacRebalance?.fillService?.targetBalance ?? (await fromEnv('TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ?? undefined,
+        },
+        bridge: {
+          slippageDbps: configJson.tacRebalance?.bridge?.slippageDbps ?? (await fromEnv('TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? 50,
+          minRebalanceAmount: configJson.tacRebalance?.bridge?.minRebalanceAmount ?? (await fromEnv('TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ?? undefined,
+          maxRebalanceAmount: configJson.tacRebalance?.bridge?.maxRebalanceAmount ?? (await fromEnv('TAC_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ?? undefined,      // Max amount per operation (optional cap)  
+        }
+      },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),

@@ -112,6 +112,31 @@ export interface RebalanceConfig {
   routes: RouteRebalancingConfig[];
   onDemandRoutes?: OnDemandRouteConfig[];
 }
+
+export interface TacRebalanceConfig {
+  enabled: boolean; 
+  // Market Maker receiver configuration  
+  marketMaker: {
+    address: string;                    // EVM address on TAC for MM    
+    onDemandEnabled: boolean;           // Enable invoice-triggered rebalancing    
+    thresholdEnabled: boolean;          // Enable balance-threshold rebalancing   
+    threshold?: string;                 // Min USDT balance (6 decimals)    
+    targetBalance?: string;             // Target after threshold-triggered rebalance  
+  };  
+  // Fill Service receiver configuration  
+  fillService: {
+    address: string;                    // EVM address on TAC for FS    
+    thresholdEnabled: boolean;          // Enable balance-threshold rebalancing    
+    threshold: string;                  // Min USDT balance (6 decimals)    
+    targetBalance: string;              // Target after threshold-triggered rebalance  
+  };  
+  // Shared bridge configuration  
+  bridge: {
+    slippageDbps: number;                // Slippage for Stargate (default: 50 = 0.5%)    
+    minRebalanceAmount: string;         // Min amount per operation (6 decimals)    
+    maxRebalanceAmount?: string;        // Max amount per operation (optional cap)  
+  };
+}
 export interface RedisConfig {
   host: string;
   port: number;
@@ -158,6 +183,7 @@ export interface MarkConfiguration extends RebalanceConfig {
     apiKey?: string; // TON API key (for tonapi.io or DRPC)
     assets?: TonAssetConfiguration[]; // TON assets with jetton addresses
   };
+  tacRebalance?: TacRebalanceConfig;
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;
