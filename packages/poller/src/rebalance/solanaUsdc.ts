@@ -1,9 +1,8 @@
-import { convertToNativeUnits, getMarkBalancesForTicker } from '../helpers';
-import { jsonifyMap, jsonifyError } from '@mark/logger';
+import { convertToNativeUnits } from '../helpers';
+import { jsonifyError } from '@mark/logger';
 import {
   getDecimalsFromConfig,
   RebalanceOperationStatus,
-  DBPS_MULTIPLIER,
   RebalanceAction,
   SupportedBridge,
   MAINNET_CHAIN_ID,
@@ -50,6 +49,7 @@ const CCIP_ROUTER_PROGRAM_ID = new PublicKey('Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApM
 const SOLANA_CHAIN_SELECTOR = '124615329519749607';
 const ETHEREUM_CHAIN_SELECTOR = '5009297550715157269';
 const USDC_SOLANA_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const PTUSDE_SOLANA_MINT = new PublicKey('...'); // TODO: Add actual ptUSDe SPL token mint address on Solana
 
 // Solana RPC configuration
 const getSolanaConnection = (config: any): Connection => {
@@ -274,7 +274,49 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
 
   logger.info('Starting to rebalance Solana USDC', { requestId });
 
-  // Get Solana USDC balance directly from Solana network
+  // Check solver's ptUSDe balance directly on Solana to determine if rebalancing is needed
+  let solanaPtUsdeBalance: bigint = 0n;
+  try {
+    const connection = getSolanaConnection(config);
+    const wallet = getSolanaWallet(config);
+    const walletPublicKey = wallet.publicKey;
+
+    const ptUsdeTokenAccount = await getAssociatedTokenAddress(
+      PTUSDE_SOLANA_MINT,
+      walletPublicKey
+    );
+
+    try {
+      const ptUsdeAccountInfo = await getAccount(connection, ptUsdeTokenAccount);
+      solanaPtUsdeBalance = ptUsdeAccountInfo.amount;
+    } catch (accountError) {
+      // Account might not exist if no ptUSDe has been received yet
+      logger.info('ptUSDe token account does not exist or is empty', {
+        requestId,
+        walletAddress: walletPublicKey.toBase58(),
+        ptUsdeTokenAccount: ptUsdeTokenAccount.toBase58(),
+        error: jsonifyError(accountError),
+      });
+      solanaPtUsdeBalance = 0n;
+    }
+
+    logger.info('Retrieved Solana ptUSDe balance', {
+      requestId,
+      walletAddress: walletPublicKey.toBase58(),
+      ptUsdeTokenAccount: ptUsdeTokenAccount.toBase58(),
+      balance: solanaPtUsdeBalance.toString(),
+      balanceInPtUsde: (Number(solanaPtUsdeBalance) / 1e18).toFixed(6) // ptUSDe has 18 decimals
+    });
+  } catch (error) {
+    logger.error('Failed to retrieve Solana ptUSDe balance', {
+      requestId,
+      error: jsonifyError(error),
+    });
+    // Continue with 0 balance - this will trigger rebalancing if USDC is available
+    solanaPtUsdeBalance = 0n;
+  }
+
+  // Get Solana USDC balance - this is what we'll bridge if ptUSDe is low
   let solanaUsdcBalance: bigint = 0n;
   try {
     const connection = getSolanaConnection(config);
@@ -289,12 +331,12 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     const tokenAccountInfo = await getAccount(connection, sourceTokenAccount);
     solanaUsdcBalance = tokenAccountInfo.amount;
 
-    logger.info('Retrieved Solana USDC balance', {
+    logger.info('Retrieved Solana USDC balance for potential bridging', {
       requestId,
       walletAddress: walletPublicKey.toBase58(),
       tokenAccount: sourceTokenAccount.toBase58(),
       balance: solanaUsdcBalance.toString(),
-      balanceInUsdc: (Number(solanaUsdcBalance) / 1_000_000).toFixed(6) // Convert to USDC (6 decimals)
+      balanceInUsdc: (Number(solanaUsdcBalance) / 1_000_000).toFixed(6)
     });
   } catch (error) {
     logger.error('Failed to retrieve Solana USDC balance', {
@@ -305,7 +347,7 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   }
 
   if (solanaUsdcBalance === 0n) {
-    logger.info('No Solana USDC balance available, skipping rebalancing', { requestId });
+    logger.info('No Solana USDC balance available for bridging, skipping rebalancing', { requestId });
     return rebalanceOperations;
   }
 
@@ -364,28 +406,107 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
       continue;
     }
 
-    // Use Solana USDC balance for rebalancing calculations
-    const currentBalance = solanaUsdcBalance; // Already in native USDC units (6 decimals)
-    logger.info('Current Solana USDC balance for intent processing', {
+    // Check if ptUSDe balance is below threshold to trigger rebalancing
+    // The logic is: if ptUSDe is low, we bridge USDC from Solana to eventually get more ptUSDe
+    const ptUsdeBalance = solanaPtUsdeBalance; // Use direct Solana ptUSDe balance
+    const ptUsdeThreshold = convertToNativeUnits(MIN_REBALANCING_AMOUNT * 10n, 18); // ptUSDe has 18 decimals, use 10x threshold
+
+    logger.info('Checking ptUSDe balance threshold for rebalancing decision', {
       requestId,
       intentId: intent.intent_id,
-      currentBalance: currentBalance.toString(),
-      currentBalanceInUsdc: (Number(currentBalance) / 1_000_000).toFixed(6),
-      intentAmount: intentAmount.toString(),
-      intentAmountInUsdc: (Number(intentAmount) / 1_000_000).toFixed(6)
+      ptUsdeBalance: ptUsdeBalance.toString(),
+      ptUsdeBalanceFormatted: (Number(ptUsdeBalance) / 1e18).toFixed(6),
+      ptUsdeThreshold: ptUsdeThreshold.toString(),
+      ptUsdeThresholdFormatted: (Number(ptUsdeThreshold) / 1e18).toFixed(6),
+      shouldTriggerRebalance: ptUsdeBalance < ptUsdeThreshold,
+      availableSolanaUsdc: solanaUsdcBalance.toString(),
+      availableSolanaUsdcFormatted: (Number(solanaUsdcBalance) / 1_000_000).toFixed(6)
     });
 
-    if (currentBalance <= minAmount) {
-      logger.info('Balance is at or below min rebalancing amount, skipping route', {
+    if (ptUsdeBalance >= ptUsdeThreshold) {
+      logger.info('ptUSDe balance is above threshold, no rebalancing needed', {
         requestId,
-        currentBalance: currentBalance.toString(),
-        minAmount: minAmount.toString(),
+        intentId: intent.intent_id,
+        ptUsdeBalance: ptUsdeBalance.toString(),
+        ptUsdeThreshold: ptUsdeThreshold.toString(),
       });
       continue;
     }
 
-    // Calculate amount to bridge (min(currentBalance, intentAmount))
-    const amountToBridge = currentBalance < intentAmount ? currentBalance : intentAmount;
+    // Calculate how much USDC to bridge based on ptUSDe deficit and available Solana USDC
+    const ptUsdeDeficit = ptUsdeThreshold - ptUsdeBalance;
+    // Approximate 1:1 ratio between USDC and ptUSDe for initial calculation
+    const usdcNeeded = convertToNativeUnits(ptUsdeDeficit, 6); // Convert to USDC decimals (6)
+    const currentBalance = solanaUsdcBalance;
+
+    if (currentBalance <= minAmount) {
+      logger.warn('Solana USDC balance is below minimum rebalancing threshold, skipping intent', {
+        requestId,
+        intentId: intent.intent_id,
+        currentBalance: currentBalance.toString(),
+        currentBalanceFormatted: (Number(currentBalance) / 1_000_000).toFixed(6),
+        minAmount: minAmount.toString(),
+        minAmountFormatted: (Number(minAmount) / 1_000_000).toFixed(6),
+        reason: 'Insufficient balance for rebalancing'
+      });
+      continue;
+    }
+
+    // Check if we have enough USDC to meaningfully address the ptUSDe deficit
+    if (currentBalance < usdcNeeded) {
+      logger.warn('Solana USDC balance is insufficient to fully cover ptUSDe deficit', {
+        requestId,
+        intentId: intent.intent_id,
+        currentBalance: currentBalance.toString(),
+        currentBalanceFormatted: (Number(currentBalance) / 1_000_000).toFixed(6),
+        usdcNeeded: usdcNeeded.toString(),
+        usdcNeededFormatted: (Number(usdcNeeded) / 1_000_000).toFixed(6),
+        shortfall: (usdcNeeded - currentBalance).toString(),
+        shortfallFormatted: (Number(usdcNeeded - currentBalance) / 1_000_000).toFixed(6),
+        decision: 'Will bridge all available USDC (partial rebalancing)'
+      });
+    }
+
+    // Calculate amount to bridge based on ptUSDe deficit and available Solana USDC
+    // Bridge the minimum of: what we need, what we have available, and the intent amount
+    const amountToBridge = currentBalance < usdcNeeded
+      ? currentBalance  // Bridge all available if insufficient
+      : (usdcNeeded < intentAmount ? usdcNeeded : intentAmount); // Otherwise bridge what's needed or intent amount
+
+    // Final validation - ensure we're bridging a meaningful amount
+    if (amountToBridge < minAmount) {
+      logger.warn('Calculated bridge amount is below minimum threshold, skipping intent', {
+        requestId,
+        intentId: intent.intent_id,
+        calculatedAmount: amountToBridge.toString(),
+        calculatedAmountFormatted: (Number(amountToBridge) / 1_000_000).toFixed(6),
+        minAmount: minAmount.toString(),
+        minAmountFormatted: (Number(minAmount) / 1_000_000).toFixed(6),
+        reason: 'Calculated bridge amount too small to be effective'
+      });
+      continue;
+    }
+
+    logger.info('Calculated bridge amount based on ptUSDe deficit and available balance', {
+      requestId,
+      intentId: intent.intent_id,
+      balanceChecks: {
+        ptUsdeDeficit: ptUsdeDeficit.toString(),
+        usdcNeeded: usdcNeeded.toString(),
+        usdcNeededFormatted: (Number(usdcNeeded) / 1_000_000).toFixed(6),
+        availableSolanaUsdc: currentBalance.toString(),
+        availableSolanaUsdcFormatted: (Number(currentBalance) / 1_000_000).toFixed(6),
+        hasSufficientBalance: currentBalance >= usdcNeeded,
+        intentAmount: intentAmount.toString(),
+        intentAmountFormatted: (Number(intentAmount) / 1_000_000).toFixed(6),
+      },
+      bridgeDecision: {
+        finalAmountToBridge: amountToBridge.toString(),
+        finalAmountToBridgeFormatted: (Number(amountToBridge) / 1_000_000).toFixed(6),
+        isPartialBridge: currentBalance < usdcNeeded,
+        utilizationPercentage: ((Number(amountToBridge) / Number(currentBalance)) * 100).toFixed(2) + '%'
+      }
+    });
 
     let earmark: Earmark;
     try {
@@ -558,6 +679,10 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   }
 
   logger.info('Completed rebalancing Solana USDC', { requestId });
+
+  // TODO: other two legs
+  // Leg 2: Use pendle adapter to get ptUSDe, 
+  // further bridge to solana for ptUSDe is added in destinationCallback in pendle handler @preetham
   return rebalanceOperations;
 }
 
