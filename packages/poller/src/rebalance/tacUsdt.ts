@@ -1,5 +1,11 @@
 import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
-import { getTickerForAsset, getMarkBalancesForTicker, getTonAssetAddress, getEvmBalance } from '../helpers';
+import {
+  getTickerForAsset,
+  getMarkBalancesForTicker,
+  getTonAssetAddress,
+  getEvmBalance,
+  convertToNativeUnits,
+} from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
   RebalanceOperationStatus,
@@ -12,12 +18,19 @@ import {
   getTokenAddressFromConfig,
   WalletType,
   EarmarkStatus,
+  getDecimalsFromConfig,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
-import { createRebalanceOperation, TransactionEntry, TransactionReceipt } from '@mark/database';
+import {
+  createRebalanceOperation,
+  Earmark,
+  getActiveEarmarkForInvoice,
+  TransactionEntry,
+  TransactionReceipt,
+} from '@mark/database';
 
 // USDT token addresses
 // Reference: https://raw.githubusercontent.com/connext/chaindata/main/everclear.json
@@ -267,7 +280,324 @@ const processOnDemandRebalancing = async (
   // Key change: use recipientAddress instead of config.ownAddress
   // Create earmark linked to invoice
   // Execute bridge with earmarkId
-  return [];
+  const { config, chainService, everclear, database, rebalance, logger, requestId } = context;
+  let invoices = await everclear.fetchInvoices({ [TAC_CHAIN_ID]: config.chains[TAC_CHAIN_ID] });
+
+  // Filter invoices for USDT
+  invoices = invoices.filter((invoice) => invoice.ticker_hash === USDT_TICKER_HASH);
+
+  if (invoices.length === 0) {
+    logger.info('No invoices destined for TAC with USDT output', { requestId });
+    return [];
+  }
+
+  // Get USDT balances across all chains
+  const balances = await getMarkBalancesForTicker(USDT_TICKER_HASH, config, chainService, context.prometheus);
+  logger.debug('Retrieved USDT balances', { balances: jsonifyMap(balances) });
+
+  if (!balances) {
+    logger.warn('No USDT balances found, skipping', { requestId });
+    return [];
+  }
+
+  const actions: RebalanceAction[] = [];
+
+  for (const invoice of invoices) {
+    // Check if earmark already exists
+    const existingActive = await getActiveEarmarkForInvoice(invoice.intent_id);
+    if (existingActive) {
+      logger.warn('Active earmark already exists for invoice, skipping', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        existingEarmarkId: existingActive.id,
+      });
+      continue;
+    }
+
+    const origin = Number(MAINNET_CHAIN_ID); // Always start from Ethereum mainnet
+    const destination = Number(TAC_CHAIN_ID);
+    const ticker = USDT_TICKER_HASH;
+    const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
+
+    // intent.amount_out_min is already in native units (from the API/chain)
+    // No conversion needed
+    const intentAmount = BigInt(invoice.amount);
+    const minRebalanceAmount = BigInt(config.tacRebalance!.bridge.minRebalanceAmount);
+
+    if (intentAmount < minRebalanceAmount) {
+      logger.warn('Invoice amount is less than minimum rebalance amount, skipping', {
+        requestId,
+        invoiceId: invoice.intent_id.toString(),
+        invoiceAmount: invoice.amount,
+        minRebalanceAmount: minRebalanceAmount.toString(),
+      });
+      continue;
+    }
+
+    // Balances from getMarkBalancesForTicker are in 18 decimals (standardized)
+    // Convert to native units (6 decimals for USDT)
+    const availableOriginBalance = balances.get(origin.toString()) || 0n;
+    const currentOriginBalance = convertToNativeUnits(availableOriginBalance, decimals);
+
+    // CRITICAL: Check if TAC (destination) already has sufficient balance
+    // On-demand rebalancing should ONLY trigger when the destination lacks funds
+    const availableDestBalance = balances.get(destination.toString()) || 0n;
+    const currentDestBalance = convertToNativeUnits(availableDestBalance, decimals);
+
+    logger.debug('Current USDT balances', {
+      requestId,
+      originBalance: currentOriginBalance.toString(),
+      destinationBalance: currentDestBalance.toString(),
+      intentAmount: intentAmount.toString(),
+    });
+
+    // If TAC already has enough to fulfill the intent, no rebalance needed
+    if (currentDestBalance >= intentAmount) {
+      logger.info('TAC already has sufficient balance for intent, skipping rebalance', {
+        requestId,
+        invoiceId: invoice.intent_id.toString(),
+        currentDestBalance: currentDestBalance.toString(),
+        intentAmount: intentAmount.toString(),
+        note: 'On-demand rebalancing only triggers when destination lacks funds',
+      });
+      continue;
+    }
+
+    if (currentOriginBalance <= minRebalanceAmount) {
+      logger.info('Origin balance is at or below minimum, skipping', {
+        requestId,
+        currentOriginBalance: currentOriginBalance.toString(),
+        minRebalanceAmount: minRebalanceAmount.toString(),
+      });
+      continue;
+    }
+
+    // Calculate amount to bridge - only bridge what's needed
+    // (intentAmount - currentDestBalance) = shortfall that needs to be filled
+    const shortfall = intentAmount - currentDestBalance;
+
+    // Don't bridge if shortfall is below minimum threshold
+    if (shortfall < minRebalanceAmount) {
+      logger.info('Shortfall is below minimum rebalance threshold, skipping', {
+        requestId,
+        invoiceId: invoice.intent_id.toString(),
+        shortfall: shortfall.toString(),
+        minRebalanceAmount: minRebalanceAmount.toString(),
+      });
+      continue;
+    }
+
+    const amountToBridge = currentOriginBalance < shortfall ? currentOriginBalance : shortfall;
+
+    logger.info('On-demand rebalancing triggered - destination lacks funds', {
+      requestId,
+      invoiceId: invoice.intent_id.toString(),
+      intentAmount: intentAmount.toString(),
+      currentDestBalance: currentDestBalance.toString(),
+      shortfall: shortfall.toString(),
+      amountToBridge: amountToBridge.toString(),
+    });
+
+    // Create earmark
+    let earmark: Earmark;
+    try {
+      earmark = await database.createEarmark({
+        invoiceId: invoice.intent_id.toString(),
+        designatedPurchaseChain: destination,
+        tickerHash: ticker,
+        minAmount: amountToBridge.toString(),
+        status: EarmarkStatus.PENDING,
+      });
+    } catch (error: unknown) {
+      logger.error('Failed to create earmark for TAC intent', {
+        requestId,
+        invoice,
+        error: jsonifyError(error),
+      });
+      throw error;
+    }
+
+    logger.info('Created earmark for TAC intent', {
+      requestId,
+      earmarkId: earmark.id,
+      invoiceId: invoice.intent_id.toString(),
+    });
+
+    // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
+    let rebalanceSuccessful = false;
+    const bridgeType = SupportedBridge.Stargate;
+
+    // Get addresses for the bridging flow
+    // evmSender: The Ethereum address that holds USDT and will initiate the bridge
+    const evmSender = getActualAddress(origin, config, logger, { requestId });
+
+    // tonRecipient: TON wallet address that receives USDT on TON (intermediate step)
+    const tonRecipient = config.ownTonAddress;
+
+    // tacRecipient: Final EVM address on TAC that should receive USDT
+    // CRITICAL: This MUST be the same as evmSender to satisfy the "same address" requirement
+    // Both Ethereum and TAC are EVM chains, so the same address can receive on both
+    // TODO confirm
+    const tacRecipient = recipientAddress;
+
+    // Validate TON address is configured
+    if (!tonRecipient) {
+      logger.error('TON address not configured (config.ownTonAddress), cannot execute Stargate bridge', {
+        requestId,
+        note: 'Add ownTonAddress to config to enable TAC rebalancing',
+      });
+      continue;
+    }
+
+    logger.debug('Address flow for two-leg bridge', {
+      requestId,
+      evmSender,
+      tonRecipient,
+      tacRecipient,
+      sameAddressOnEthAndTac: evmSender === tacRecipient,
+    });
+
+    const route = {
+      asset: USDT_ON_ETH_ADDRESS,
+      origin: origin,
+      destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
+      maximum: amountToBridge.toString(),
+      slippagesDbps: [500], // 0.5% slippage
+      preferences: [bridgeType],
+      reserve: '0',
+    };
+
+    logger.info('Attempting Leg 1: Ethereum to TON via Stargate', {
+      requestId,
+      bridgeType,
+      amountToBridge: amountToBridge.toString(),
+      evmSender,
+      tonRecipient,
+      tacRecipient,
+    });
+
+    const adapter = rebalance.getAdapter(bridgeType);
+    if (!adapter) {
+      logger.error('Stargate adapter not found', { requestId });
+      continue;
+    }
+
+    try {
+      // Get quote
+      const receivedAmountStr = await adapter.getReceivedAmount(amountToBridge.toString(), route);
+      logger.info('Received Stargate quote', {
+        requestId,
+        route,
+        amountToBridge: amountToBridge.toString(),
+        receivedAmount: receivedAmountStr,
+      });
+
+      // Check slippage
+      const receivedAmount = BigInt(receivedAmountStr);
+      const slippageDbps = BigInt(route.slippagesDbps[0]);
+      const minimumAcceptableAmount = amountToBridge - (amountToBridge * slippageDbps) / DBPS_MULTIPLIER;
+
+      if (receivedAmount < minimumAcceptableAmount) {
+        logger.warn('Stargate quote does not meet slippage requirements', {
+          requestId,
+          route,
+          amountToBridge: amountToBridge.toString(),
+          receivedAmount: receivedAmount.toString(),
+          minimumAcceptableAmount: minimumAcceptableAmount.toString(),
+        });
+        continue;
+      }
+
+      // Get bridge transactions
+      // Sender is EVM address, recipient is TON address (for Stargate to deliver to)
+      const bridgeTxRequests = await adapter.send(evmSender, tonRecipient, amountToBridge.toString(), route);
+
+      if (!bridgeTxRequests.length) {
+        logger.error('No bridge transactions returned from Stargate adapter', { requestId });
+        continue;
+      }
+
+      logger.info('Prepared Stargate bridge transactions', {
+        requestId,
+        route,
+        transactionCount: bridgeTxRequests.length,
+      });
+
+      // Execute bridge transactions
+      const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
+        context: { requestId, logger, chainService, config },
+        route,
+        bridgeType,
+        bridgeTxRequests,
+        amountToBridge,
+      });
+
+      // Create database record for Leg 1
+      // Store both TON recipient (for Stargate) and TAC recipient (for Leg 2)
+      await createRebalanceOperation({
+        earmarkId: earmark.id,
+        originChainId: route.origin,
+        destinationChainId: route.destination,
+        tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
+        amount: effectiveBridgedAmount,
+        slippage: route.slippagesDbps[0],
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'stargate-tac', // Tagged for TAC flow
+        transactions: receipt
+          ? {
+              [route.origin]: receipt,
+            }
+          : undefined,
+        recipient: tacRecipient, // Final TAC recipient
+      });
+
+      logger.info('Successfully created TAC Leg 1 rebalance operation', {
+        requestId,
+        route,
+        bridgeType,
+        originTxHash: receipt?.transactionHash,
+        amountToBridge: effectiveBridgedAmount,
+      });
+
+      // Track the operation
+      const rebalanceAction: RebalanceAction = {
+        bridge: adapter.type(),
+        amount: amountToBridge.toString(),
+        origin: route.origin,
+        destination: route.destination,
+        asset: route.asset,
+        transaction: receipt?.transactionHash || '',
+        recipient: tacRecipient, // Final TAC destination
+      };
+      actions.push(rebalanceAction as RebalanceAction);
+
+      rebalanceSuccessful = true;
+    } catch (error) {
+      logger.error('Failed to execute Stargate bridge', {
+        requestId,
+        route,
+        bridgeType,
+        error: jsonifyError(error),
+      });
+      continue;
+    }
+
+    if (rebalanceSuccessful) {
+      logger.info('Leg 1 rebalance successful', {
+        requestId,
+        route,
+        amountToBridge: amountToBridge.toString(),
+      });
+    } else {
+      logger.warn('Failed to complete Leg 1 rebalance', {
+        requestId,
+        route,
+        amountToBridge: amountToBridge.toString(),
+      });
+    }
+  }
+
+  return actions;
 };
 
 const processThresholdRebalancing = async (
