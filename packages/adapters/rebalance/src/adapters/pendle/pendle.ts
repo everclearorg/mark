@@ -16,16 +16,20 @@ const CCIP_ROUTER_ABI = [
   {
     inputs: [
       { name: 'destinationChainSelector', type: 'uint64' },
-      { name: 'message', type: 'tuple', components: [
-        { name: 'receiver', type: 'bytes' },
-        { name: 'data', type: 'bytes' },
-        { name: 'tokenAmounts', type: 'tuple[]', components: [
-          { name: 'token', type: 'address' },
-          { name: 'amount', type: 'uint256' }
-        ]},
-        { name: 'extraArgs', type: 'bytes' },
-        { name: 'feeToken', type: 'address' }
-      ]}
+      {
+        name: 'message', type: 'tuple', components: [
+          { name: 'receiver', type: 'bytes' },
+          { name: 'data', type: 'bytes' },
+          {
+            name: 'tokenAmounts', type: 'tuple[]', components: [
+              { name: 'token', type: 'address' },
+              { name: 'amount', type: 'uint256' }
+            ]
+          },
+          { name: 'extraArgs', type: 'bytes' },
+          { name: 'feeToken', type: 'address' }
+        ]
+      }
     ],
     name: 'getFee',
     outputs: [{ name: 'fee', type: 'uint256' }],
@@ -35,16 +39,20 @@ const CCIP_ROUTER_ABI = [
   {
     inputs: [
       { name: 'destinationChainSelector', type: 'uint64' },
-      { name: 'message', type: 'tuple', components: [
-        { name: 'receiver', type: 'bytes' },
-        { name: 'data', type: 'bytes' },
-        { name: 'tokenAmounts', type: 'tuple[]', components: [
-          { name: 'token', type: 'address' },
-          { name: 'amount', type: 'uint256' }
-        ]},
-        { name: 'extraArgs', type: 'bytes' },
-        { name: 'feeToken', type: 'address' }
-      ]}
+      {
+        name: 'message', type: 'tuple', components: [
+          { name: 'receiver', type: 'bytes' },
+          { name: 'data', type: 'bytes' },
+          {
+            name: 'tokenAmounts', type: 'tuple[]', components: [
+              { name: 'token', type: 'address' },
+              { name: 'amount', type: 'uint256' }
+            ]
+          },
+          { name: 'extraArgs', type: 'bytes' },
+          { name: 'feeToken', type: 'address' }
+        ]
+      }
     ],
     name: 'ccipSend',
     outputs: [{ name: 'messageId', type: 'bytes32' }],
@@ -381,7 +389,7 @@ export class PendleBridgeAdapter implements BridgeAdapter {
 
       const chainId = route.origin;
       const ccipRouterAddress = CCIP_ROUTER_ADDRESSES[chainId];
-      
+
       if (!ccipRouterAddress) {
         this.logger.warn('CCIP Router not available for chain, skipping cross-chain bridge', {
           chainId,
@@ -393,7 +401,7 @@ export class PendleBridgeAdapter implements BridgeAdapter {
       // Get ptUSDe token address and amount from the swap
       const { tokensOut } = this.determineSwapDirection(route);
       const ptUsdeAddress = tokensOut as `0x${string}`;
-      
+
       // Extract ptUSDe amount from transaction receipt logs
       const ptUsdeAmount = await this.extractTokenAmountFromLogs(
         originTransaction,
@@ -422,14 +430,14 @@ export class PendleBridgeAdapter implements BridgeAdapter {
 
       // Create CCIP message
       const ccipMessage: EVM2AnyMessage = {
-        receiver: this.encodeSolanaAddress(solanaRecipient), // Encode Solana address to bytes
-        data: '0x', // No additional data needed
+        receiver: this.encodeSolanaAddress(solanaRecipient) as `0x${string}`, // Encode Solana address to bytes
+        data: '0x' as `0x${string}`, // No additional data needed
         tokenAmounts: [{
           token: ptUsdeAddress,
-          amount: ptUsdeAmount.toString(),
+          amount: ptUsdeAmount,
         }],
-        extraArgs: '0x', // Default extra args
-        feeToken: '0x0000000000000000000000000000000000000000', // Pay fees in native token
+        extraArgs: '0x' as `0x${string}`, // Default extra args
+        feeToken: '0x0000000000000000000000000000000000000000' as `0x${string}`, // Pay fees in native token
       };
 
       // Get CCIP fee estimate
@@ -446,7 +454,13 @@ export class PendleBridgeAdapter implements BridgeAdapter {
         address: ccipRouterAddress as `0x${string}`,
         abi: CCIP_ROUTER_ABI,
         functionName: 'getFee',
-        args: [BigInt(SOLANA_CHAIN_SELECTOR), ccipMessage],
+        args: [BigInt(SOLANA_CHAIN_SELECTOR), {
+          receiver: ccipMessage.receiver,
+          data: ccipMessage.data,
+          tokenAmounts: ccipMessage.tokenAmounts,
+          extraArgs: ccipMessage.extraArgs,
+          feeToken: ccipMessage.feeToken,
+        }],
       });
 
       this.logger.info('CCIP fee calculated', {
@@ -454,20 +468,38 @@ export class PendleBridgeAdapter implements BridgeAdapter {
         chainId,
       });
 
-      // Create CCIP approval transaction for ptUSDe
-      const approvalTx: MemoizedTransactionRequest = {
-        transaction: {
-          to: ptUsdeAddress,
-          data: encodeFunctionData({
-            abi: erc20Abi,
-            functionName: 'approve',
-            args: [ccipRouterAddress as `0x${string}`, ptUsdeAmount],
-          }),
-          value: BigInt(0),
-          funcSig: 'approve(address,uint256)',
-        },
-        memo: RebalanceTransactionMemo.Approval,
-      };
+      // Check current allowance for CCIP router
+      const currentAllowance = await client.readContract({
+        address: ptUsdeAddress,
+        abi: erc20Abi,
+        functionName: 'allowance',
+        args: [this.chains[chainId].gnosisSafeAddress as `0x${string}`, ccipRouterAddress as `0x${string}`], // need to verify address here
+      });
+
+      // If allowance is insufficient, we need approval first
+      if (currentAllowance < ptUsdeAmount) {
+        this.logger.info('Insufficient allowance for CCIP router, approval needed', {
+          currentAllowance: currentAllowance.toString(),
+          requiredAmount: ptUsdeAmount.toString(),
+          ccipRouter: ccipRouterAddress,
+        });
+
+        // Return approval transaction first - CCIP send will happen on next callback
+        const approvalTx: MemoizedTransactionRequest = {
+          transaction: {
+            to: ptUsdeAddress,
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: 'approve',
+              args: [ccipRouterAddress as `0x${string}`, ptUsdeAmount],
+            }),
+            value: BigInt(0),
+            funcSig: 'approve(address,uint256)',
+          },
+          memo: RebalanceTransactionMemo.Approval,
+        };
+        return approvalTx;
+      }
 
       // Create CCIP bridge transaction
       const ccipTx: MemoizedTransactionRequest = {
@@ -476,7 +508,13 @@ export class PendleBridgeAdapter implements BridgeAdapter {
           data: encodeFunctionData({
             abi: CCIP_ROUTER_ABI,
             functionName: 'ccipSend',
-            args: [BigInt(SOLANA_CHAIN_SELECTOR), ccipMessage],
+            args: [BigInt(SOLANA_CHAIN_SELECTOR), {
+              receiver: ccipMessage.receiver,
+              data: ccipMessage.data,
+              tokenAmounts: ccipMessage.tokenAmounts,
+              extraArgs: ccipMessage.extraArgs,
+              feeToken: ccipMessage.feeToken,
+            }],
           }),
           value: ccipFee,
           funcSig: 'ccipSend(uint64,(bytes,bytes,(address,uint256)[],bytes,address))',
@@ -510,10 +548,10 @@ export class PendleBridgeAdapter implements BridgeAdapter {
   /**
    * Encode Solana address for CCIP message
    */
-  private encodeSolanaAddress(solanaAddress: string): string {
+  private encodeSolanaAddress(solanaAddress: string): `0x${string}` {
     // For now, return the address as hex bytes
     // You might need to implement proper Solana address encoding based on CCIP specs
-    return `0x${Buffer.from(solanaAddress, 'utf8').toString('hex')}`;
+    return `0x${Buffer.from(solanaAddress, 'utf8').toString('hex')}` as `0x${string}`;
   }
 
   /**
@@ -522,21 +560,12 @@ export class PendleBridgeAdapter implements BridgeAdapter {
   private async extractTokenAmountFromLogs(
     receipt: TransactionReceipt,
     tokenAddress: string,
-    chainId: number
+    _chainId: number
   ): Promise<bigint> {
     try {
-      const providers = this.chains[chainId.toString()]?.providers ?? [];
-      if (!providers.length) {
-        throw new Error(`No providers found for chain ${chainId}`);
-      }
-
-      const transports = providers.map((p: string) => http(p));
-      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
-      const client = createPublicClient({ transport });
-
       // Look for Transfer events in the receipt logs
       const logs = receipt.logs || [];
-      
+
       for (const log of logs) {
         if (log.address?.toLowerCase() === tokenAddress.toLowerCase()) {
           // This is a Transfer event from the ptUSDe token

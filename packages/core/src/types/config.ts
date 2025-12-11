@@ -79,6 +79,7 @@ export enum SupportedBridge {
   Pendle = 'pendle',
   Stargate = 'stargate',
   TacInner = 'tac-inner',
+  CCIP = 'chainlink-ccip'
 }
 
 export enum GasType {

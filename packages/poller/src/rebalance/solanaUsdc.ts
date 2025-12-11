@@ -1,0 +1,642 @@
+import { convertToNativeUnits, getMarkBalancesForTicker } from '../helpers';
+import { jsonifyMap, jsonifyError } from '@mark/logger';
+import {
+  getDecimalsFromConfig,
+  RebalanceOperationStatus,
+  DBPS_MULTIPLIER,
+  RebalanceAction,
+  SupportedBridge,
+  MAINNET_CHAIN_ID,
+  SOLANA_CHAINID,
+  getTokenAddressFromConfig,
+  EarmarkStatus,
+} from '@mark/core';
+import { ProcessingContext } from '../init';
+import {
+  Connection,
+  PublicKey,
+  Transaction,
+  TransactionInstruction,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+  sendAndConfirmTransaction,
+  Keypair,
+} from '@solana/web3.js';
+import {
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddress,
+  createTransferInstruction,
+  getAccount,
+} from '@solana/spl-token';
+import * as bs58 from 'bs58';
+import {
+  createEarmark,
+  createRebalanceOperation,
+  Earmark,
+  getActiveEarmarkForInvoice,
+  TransactionReceipt,
+} from '@mark/database';
+import { IntentStatus } from '@mark/everclear';
+
+// USDC ticker hash
+const USDC_TICKER_HASH = '0xa0b86991c431e59e3a13bdc4b0a7f6e4bb95f2d7d4f5a7f3a75e8b6e0e7b9f9a7';
+
+// Minimum rebalancing amount (1 USDC in 6 decimals)
+const MIN_REBALANCING_AMOUNT = 1000000n;
+
+// Chainlink CCIP constants for Solana
+const CCIP_ROUTER_PROGRAM_ID = new PublicKey('Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C');
+const SOLANA_CHAIN_SELECTOR = '124615329519749607';
+const ETHEREUM_CHAIN_SELECTOR = '5009297550715157269';
+const USDC_SOLANA_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+
+// Solana RPC configuration
+const getSolanaConnection = (config: any): Connection => {
+  const rpcUrl = config.chains[SOLANA_CHAINID]?.providers?.[0] || 'https://api.mainnet-beta.solana.com';
+  return new Connection(rpcUrl, 'confirmed');
+};
+
+// Get Solana wallet keypair from private key
+const getSolanaWallet = (config: any): Keypair => {
+  // Assuming the private key is stored in config.solanaPrivateKey as base58 string
+  const privateKeyBase58 = config.solanaPrivateKey;
+  if (!privateKeyBase58) {
+    throw new Error('Solana private key not found in configuration');
+  }
+  const privateKeyBytes = bs58.default.decode(privateKeyBase58);
+  return Keypair.fromSecretKey(privateKeyBytes);
+};
+
+type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
+
+interface SolanaToMainnetBridgeParams {
+  context: ExecuteBridgeContext;
+  route: {
+    origin: number;
+    destination: number;
+    asset: string;
+  };
+  amountToBridge: bigint;
+  recipientAddress: string;
+}
+
+interface SolanaToMainnetBridgeResult {
+  receipt?: TransactionReceipt;
+  effectiveBridgedAmount: string;
+}
+
+// CCIP Message structure for Solana to EVM (placeholder for future implementation)
+// interface SVM2AnyMessage {
+//   receiver: Uint8Array; // EVM address (32 bytes)
+//   data: Uint8Array; // Empty for token-only transfers
+//   tokenAmounts: Array<{
+//     token: string; // SPL token mint address
+//     amount: bigint; // Amount in base units
+//   }>;
+//   feeToken: string; // Zero address for native SOL payment
+//   extraArgs: Uint8Array; // CCIP execution parameters
+// }
+
+// Execute CCIP bridge transaction from Solana to Ethereum Mainnet
+async function executeSolanaToMainnetBridge({
+  context,
+  route,
+  amountToBridge,
+  recipientAddress,
+}: SolanaToMainnetBridgeParams): Promise<SolanaToMainnetBridgeResult> {
+  const { logger, config, requestId } = context;
+
+  try {
+    logger.info('Preparing Solana to Mainnet CCIP bridge', {
+      requestId,
+      route,
+      amountToBridge: amountToBridge.toString(),
+      recipient: recipientAddress,
+      solanaChainSelector: SOLANA_CHAIN_SELECTOR,
+      ethereumChainSelector: ETHEREUM_CHAIN_SELECTOR,
+    });
+
+    // Initialize Solana connection and wallet
+    const connection = getSolanaConnection(config);
+    const wallet = getSolanaWallet(config);
+    const walletPublicKey = wallet.publicKey;
+
+    logger.info('Solana wallet and connection initialized', {
+      requestId,
+      walletAddress: walletPublicKey.toBase58(),
+      rpcUrl: connection.rpcEndpoint,
+    });
+
+    // Get associated token accounts
+    const sourceTokenAccount = await getAssociatedTokenAddress(
+      USDC_SOLANA_MINT,
+      walletPublicKey
+    );
+
+    // Verify USDC balance
+    try {
+      const tokenAccountInfo = await getAccount(connection, sourceTokenAccount);
+      if (tokenAccountInfo.amount < amountToBridge) {
+        throw new Error(
+          `Insufficient USDC balance. Required: ${amountToBridge}, Available: ${tokenAccountInfo.amount}`
+        );
+      }
+      logger.info('USDC balance verified', {
+        requestId,
+        required: amountToBridge.toString(),
+        available: tokenAccountInfo.amount.toString(),
+      });
+    } catch (error) {
+      logger.error('Failed to verify USDC balance', {
+        requestId,
+        error: jsonifyError(error),
+        sourceTokenAccount: sourceTokenAccount.toBase58(),
+      });
+      throw error;
+    }
+
+    // Convert EVM recipient address to bytes for CCIP message
+    const evmRecipientBytes = Buffer.from(recipientAddress.slice(2), 'hex');
+    if (evmRecipientBytes.length !== 20) {
+      throw new Error(`Invalid EVM address format: ${recipientAddress}`);
+    }
+
+    // Build CCIP send instruction data
+    const ccipMessageData = {
+      destinationChainSelector: BigInt(ETHEREUM_CHAIN_SELECTOR),
+      receiver: evmRecipientBytes,
+      tokenAmounts: [{
+        token: USDC_SOLANA_MINT.toBytes(),
+        amount: amountToBridge,
+      }],
+      extraArgs: Buffer.from([1, 0, 0, 0]), // Enable out-of-order execution
+      feeToken: PublicKey.default.toBytes(), // Pay with SOL
+    };
+
+    logger.info('CCIP message prepared', {
+      requestId,
+      destinationChain: ETHEREUM_CHAIN_SELECTOR,
+      tokenAmount: amountToBridge.toString(),
+      recipient: recipientAddress,
+    });
+
+    // Create CCIP send instruction
+    // Note: This is a simplified instruction format - actual CCIP instruction would be more complex
+    const ccipSendInstruction = new TransactionInstruction({
+      keys: [
+        { pubkey: walletPublicKey, isSigner: true, isWritable: true },
+        { pubkey: sourceTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: USDC_SOLANA_MINT, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: CCIP_ROUTER_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ],
+      programId: CCIP_ROUTER_PROGRAM_ID,
+      data: Buffer.from(JSON.stringify(ccipMessageData)), // Simplified data encoding
+    });
+
+    // Create and send transaction
+    const transaction = new Transaction().add(ccipSendInstruction);
+
+    // Get recent blockhash
+    const { blockhash } = await connection.getLatestBlockhash();
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = walletPublicKey;
+
+    logger.info('Sending CCIP transaction to Solana', {
+      requestId,
+      transaction: {
+        feePayer: walletPublicKey.toBase58(),
+        blockhash,
+        instructionCount: transaction.instructions.length,
+      },
+    });
+
+    // Sign and send transaction
+    const signature = await sendAndConfirmTransaction(connection, transaction, [wallet], {
+      commitment: 'confirmed',
+      maxRetries: 3,
+    });
+
+    logger.info('CCIP bridge transaction successful', {
+      requestId,
+      signature,
+      amountBridged: amountToBridge.toString(),
+      recipient: recipientAddress,
+    });
+
+    // Get transaction details
+    const confirmedTx = await connection.getTransaction(signature, {
+      commitment: 'confirmed',
+    });
+
+    // Create transaction receipt
+    const receipt: TransactionReceipt = {
+      transactionHash: signature,
+      status: confirmedTx?.meta?.err ? 0 : 1,
+      blockNumber: confirmedTx?.slot || 0,
+      logs: confirmedTx?.meta?.logMessages || [],
+      cumulativeGasUsed: confirmedTx?.meta?.fee?.toString() || '0',
+      effectiveGasPrice: '0',
+      from: '',
+      to: '',
+      confirmations: undefined
+    };
+
+    return {
+      receipt,
+      effectiveBridgedAmount: amountToBridge.toString(),
+    };
+  } catch (error) {
+    logger.error('Failed to execute Solana CCIP bridge', {
+      requestId,
+      route,
+      amountToBridge: amountToBridge.toString(),
+      error: jsonifyError(error),
+    });
+    throw error;
+  }
+}
+
+export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<RebalanceAction[]> {
+  const { logger, requestId, config, chainService, rebalance, everclear } = context;
+  const rebalanceOperations: RebalanceAction[] = [];
+
+  // Always check destination callbacks to ensure operations complete
+  await executeSolanaUsdcCallbacks(context);
+
+  const isPaused = await rebalance.isPaused();
+  if (isPaused) {
+    logger.warn('Solana USDC Rebalance loop is paused', { requestId });
+    return rebalanceOperations;
+  }
+
+  logger.info('Starting to rebalance Solana USDC', { requestId });
+
+  // Get Solana USDC balance directly from Solana network
+  let solanaUsdcBalance: bigint = 0n;
+  try {
+    const connection = getSolanaConnection(config);
+    const wallet = getSolanaWallet(config);
+    const walletPublicKey = wallet.publicKey;
+
+    const sourceTokenAccount = await getAssociatedTokenAddress(
+      USDC_SOLANA_MINT,
+      walletPublicKey
+    );
+
+    const tokenAccountInfo = await getAccount(connection, sourceTokenAccount);
+    solanaUsdcBalance = tokenAccountInfo.amount;
+
+    logger.info('Retrieved Solana USDC balance', {
+      requestId,
+      walletAddress: walletPublicKey.toBase58(),
+      tokenAccount: sourceTokenAccount.toBase58(),
+      balance: solanaUsdcBalance.toString(),
+      balanceInUsdc: (Number(solanaUsdcBalance) / 1_000_000).toFixed(6) // Convert to USDC (6 decimals)
+    });
+  } catch (error) {
+    logger.error('Failed to retrieve Solana USDC balance', {
+      requestId,
+      error: jsonifyError(error),
+    });
+    return rebalanceOperations;
+  }
+
+  if (solanaUsdcBalance === 0n) {
+    logger.info('No Solana USDC balance available, skipping rebalancing', { requestId });
+    return rebalanceOperations;
+  }
+
+  // Get all intents to Solana for USDC
+  const intents = await everclear.fetchIntents({
+    limit: 20,
+    statuses: [IntentStatus.SETTLED_AND_COMPLETED],
+    destinations: [SOLANA_CHAINID],
+    tickerHash: USDC_TICKER_HASH,
+    isFastPath: true,
+  });
+
+  // Process each intent to Solana
+  for (const intent of intents) {
+    logger.info('Processing Solana USDC intent', { requestId, intent });
+
+    if (!intent.hub_settlement_domain) {
+      logger.warn('Intent does not have a hub settlement domain, skipping', { requestId, intent });
+      continue;
+    }
+
+    if (intent.destinations.length !== 1 || intent.destinations[0] !== SOLANA_CHAINID) {
+      logger.warn('Intent does not have exactly one destination - Solana, skipping', { requestId, intent });
+      continue;
+    }
+
+    // Check if an active earmark already exists for this intent
+    const existingActive = await getActiveEarmarkForInvoice(intent.intent_id);
+    if (existingActive) {
+      logger.warn('Active earmark already exists for intent, skipping rebalance operations', {
+        requestId,
+        invoiceId: intent.intent_id,
+        existingEarmarkId: existingActive.id,
+        existingStatus: existingActive.status,
+      });
+      continue;
+    }
+
+    const origin = Number(intent.hub_settlement_domain);
+    const destination = SOLANA_CHAINID;
+
+    // USDC intent should be settled with USDC address on settlement domain
+    const ticker = USDC_TICKER_HASH;
+    const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
+
+    // Convert min amount and intent amount from standardized decimals to asset's native decimals
+    const minAmount = convertToNativeUnits(BigInt(MIN_REBALANCING_AMOUNT), decimals);
+    const intentAmount = convertToNativeUnits(BigInt(intent.amount_out_min), decimals);
+    if (intentAmount < minAmount) {
+      logger.warn('Intent amount is less than min rebalancing amount, skipping', {
+        requestId,
+        intent,
+        intentAmount: intentAmount.toString(),
+        minAmount: minAmount.toString(),
+      });
+      continue;
+    }
+
+    // Use Solana USDC balance for rebalancing calculations
+    const currentBalance = solanaUsdcBalance; // Already in native USDC units (6 decimals)
+    logger.info('Current Solana USDC balance for intent processing', {
+      requestId,
+      intentId: intent.intent_id,
+      currentBalance: currentBalance.toString(),
+      currentBalanceInUsdc: (Number(currentBalance) / 1_000_000).toFixed(6),
+      intentAmount: intentAmount.toString(),
+      intentAmountInUsdc: (Number(intentAmount) / 1_000_000).toFixed(6)
+    });
+
+    if (currentBalance <= minAmount) {
+      logger.info('Balance is at or below min rebalancing amount, skipping route', {
+        requestId,
+        currentBalance: currentBalance.toString(),
+        minAmount: minAmount.toString(),
+      });
+      continue;
+    }
+
+    // Calculate amount to bridge (min(currentBalance, intentAmount))
+    const amountToBridge = currentBalance < intentAmount ? currentBalance : intentAmount;
+
+    let earmark: Earmark;
+    try {
+      earmark = await createEarmark({
+        invoiceId: intent.intent_id,
+        designatedPurchaseChain: Number(destination),
+        tickerHash: ticker,
+        minAmount: amountToBridge.toString(),
+        status: EarmarkStatus.PENDING,
+      });
+    } catch (error: unknown) {
+      logger.error('Failed to create earmark for intent', {
+        requestId,
+        intent,
+        error: jsonifyError(error),
+      });
+      throw error;
+    }
+
+    logger.info('Created earmark for intent', {
+      requestId,
+      earmarkId: earmark.id,
+      invoiceId: intent.intent_id,
+    });
+
+    let rebalanceSuccessful = false;
+
+    // Prepare route for Solana to Mainnet bridge
+    const solanaToMainnetRoute = {
+      origin: Number(SOLANA_CHAINID),
+      destination: Number(MAINNET_CHAIN_ID),
+      asset: USDC_SOLANA_MINT.toString()
+    };
+
+    logger.info('Starting Leg 1: Solana to Mainnet CCIP bridge', {
+      requestId,
+      intentId: intent.intent_id,
+      earmarkId: earmark.id,
+      route: solanaToMainnetRoute,
+      amountToBridge: amountToBridge.toString(),
+      amountToBridgeInUsdc: (Number(amountToBridge) / 1_000_000).toFixed(6),
+      recipientAddress: config.ownAddress,
+    });
+
+    try {
+      // Pre-flight checks
+      logger.info('Performing pre-bridge validation checks', {
+        requestId,
+        intentId: intent.intent_id,
+        checks: {
+          solanaBalance: currentBalance.toString(),
+          requiredAmount: amountToBridge.toString(),
+          hasSufficientBalance: currentBalance >= amountToBridge,
+          recipientValid: !!config.ownAddress,
+        }
+      });
+
+      if (currentBalance < amountToBridge) {
+        throw new Error(
+          `Insufficient Solana USDC balance. Required: ${amountToBridge}, Available: ${currentBalance}`
+        );
+      }
+
+      if (!config.ownAddress) {
+        throw new Error('Recipient address (config.ownAddress) not configured');
+      }
+
+      // Execute Leg 1: Solana to Mainnet bridge
+      const bridgeResult = await executeSolanaToMainnetBridge({
+        context: { requestId, logger, config, chainService },
+        route: solanaToMainnetRoute,
+        amountToBridge,
+        recipientAddress: config.ownAddress
+      });
+
+      if (!bridgeResult.receipt || bridgeResult.receipt.status !== 1) {
+        throw new Error(
+          `Bridge transaction failed: ${bridgeResult.receipt?.transactionHash || 'Unknown transaction'}`
+        );
+      }
+
+      logger.info('Leg 1 bridge completed successfully', {
+        requestId,
+        intentId: intent.intent_id,
+        earmarkId: earmark.id,
+        transactionHash: bridgeResult.receipt.transactionHash,
+        effectiveAmount: bridgeResult.effectiveBridgedAmount,
+        blockNumber: bridgeResult.receipt.blockNumber,
+        solanaSlot: bridgeResult.receipt.blockNumber,
+      });
+
+      // Create rebalance operation record for tracking
+      try {
+        await createRebalanceOperation({
+          earmarkId: earmark.id,
+          originChainId: Number(SOLANA_CHAINID),
+          destinationChainId: Number(MAINNET_CHAIN_ID),
+          tickerHash: ticker,
+          amount: bridgeResult.effectiveBridgedAmount,
+          slippage: 1000, // 1% slippage
+          status: RebalanceOperationStatus.COMPLETED, // Mark as completed for Leg 1
+          bridge: 'ccip-solana-mainnet',
+          transactions: { [SOLANA_CHAINID]: bridgeResult.receipt },
+          recipient: config.ownAddress,
+        });
+
+        logger.info('Rebalance operation record created for Leg 1', {
+          requestId,
+          intentId: intent.intent_id,
+          earmarkId: earmark.id,
+          operationStatus: RebalanceOperationStatus.COMPLETED,
+        });
+
+        const rebalanceAction: RebalanceAction = {
+          bridge: SupportedBridge.CCIP,
+          amount: bridgeResult.effectiveBridgedAmount,
+          origin: Number(SOLANA_CHAINID),
+          destination: Number(MAINNET_CHAIN_ID),
+          asset: USDC_SOLANA_MINT.toString(),
+          transaction: bridgeResult.receipt.transactionHash,
+          recipient: config.ownAddress,
+        };
+        rebalanceOperations.push(rebalanceAction);
+
+        rebalanceSuccessful = true;
+
+        logger.info('Leg 1 rebalance completed successfully', {
+          requestId,
+          intentId: intent.intent_id,
+          earmarkId: earmark.id,
+          bridgedAmount: bridgeResult.effectiveBridgedAmount,
+          bridgedAmountInUsdc: (Number(bridgeResult.effectiveBridgedAmount) / 1_000_000).toFixed(6),
+          transactionHash: bridgeResult.receipt.transactionHash,
+        });
+
+      } catch (dbError) {
+        logger.error('Failed to create rebalance operation record', {
+          requestId,
+          intentId: intent.intent_id,
+          earmarkId: earmark.id,
+          error: jsonifyError(dbError),
+        });
+        // Don't throw here - the bridge was successful, just the record creation failed
+      }
+
+    } catch (bridgeError) {
+      logger.error('Leg 1 bridge operation failed', {
+        requestId,
+        intentId: intent.intent_id,
+        earmarkId: earmark.id,
+        route: solanaToMainnetRoute,
+        amountToBridge: amountToBridge.toString(),
+        error: jsonifyError(bridgeError),
+        errorMessage: (bridgeError as Error)?.message,
+        errorStack: (bridgeError as Error)?.stack,
+      });
+
+      // Continue to next intent instead of throwing to allow processing other intents
+      continue;
+    }
+
+    if (!rebalanceSuccessful) {
+      logger.warn('Failed to complete Leg 1 rebalance for intent', {
+        requestId,
+        intentId: intent.intent_id,
+        route: solanaToMainnetRoute,
+        amountToBridge: amountToBridge.toString(),
+      });
+    }
+  }
+
+  logger.info('Completed rebalancing Solana USDC', { requestId });
+  return rebalanceOperations;
+}
+
+export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Promise<void> => {
+  const { logger, requestId, config, rebalance, chainService, database: db } = context;
+  logger.info('Executing destination callbacks for Solana USDC rebalance', { requestId });
+
+  // Get all pending operations from database
+  const { operations } = await db.getRebalanceOperations(undefined, undefined, {
+    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+  });
+
+  logger.debug('Found Solana USDC rebalance operations', {
+    count: operations.length,
+    requestId,
+    statuses: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+  });
+
+  for (const operation of operations) {
+    const logContext = {
+      requestId,
+      operationId: operation.id,
+      earmarkId: operation.earmarkId,
+      originChain: operation.originChainId,
+      destinationChain: operation.destinationChainId,
+    };
+
+    if (!operation.bridge || !operation.bridge.startsWith('ccip-solana')) {
+      continue; // Skip non-Solana CCIP operations
+    }
+
+    // Execute callback if awaiting and funds are on mainnet
+    if (operation.status === RebalanceOperationStatus.AWAITING_CALLBACK &&
+      operation.destinationChainId === Number(MAINNET_CHAIN_ID)) {
+
+      const usdcAddress = getTokenAddressFromConfig(USDC_TICKER_HASH, MAINNET_CHAIN_ID.toString(), config);
+      if (!usdcAddress) {
+        logger.error('Could not find USDC address for mainnet', logContext);
+        continue;
+      }
+
+      const solanaRoute = {
+        origin: Number(MAINNET_CHAIN_ID),
+        destination: Number(SOLANA_CHAINID),
+        asset: usdcAddress,
+      };
+
+      try {
+        // Execute CCIP bridge from Mainnet to Solana
+        const { receipt, effectiveBridgedAmount } = await executeSolanaToMainnetBridge({
+          context: { requestId, logger, chainService, config },
+          route: solanaRoute,
+          amountToBridge: BigInt(operation.amount),
+          recipientAddress: config.ownSolAddress,
+        });
+
+        // Update operation as completed
+        if (receipt) {
+          await db.updateRebalanceOperation(operation.id, {
+            status: RebalanceOperationStatus.COMPLETED,
+            txHashes: { [SOLANA_CHAINID]: receipt },
+          });
+
+          if (operation.earmarkId) {
+            await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.COMPLETED);
+          }
+
+          logger.info('Successfully completed Solana USDC rebalance via CCIP', {
+            ...logContext,
+            transactionHash: receipt.transactionHash,
+            effectiveBridgedAmount,
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to execute Solana CCIP bridge', {
+          ...logContext,
+          error: jsonifyError(error),
+        });
+      }
+    }
+  }
+};
