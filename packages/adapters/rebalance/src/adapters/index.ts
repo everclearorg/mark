@@ -19,7 +19,7 @@ export class RebalanceAdapter {
     protected readonly config: MarkConfiguration,
     protected readonly logger: Logger,
     protected readonly db: typeof database,
-  ) {}
+  ) { }
 
   public getAdapter(type: SupportedBridge): BridgeAdapter {
     switch (type) {
