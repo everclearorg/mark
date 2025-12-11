@@ -32,7 +32,6 @@ import { IntentStatus } from '@mark/everclear';
 // USDT token addresses
 // Reference: https://raw.githubusercontent.com/connext/chaindata/main/everclear.json
 const USDT_ON_ETH_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
-const USDT_ON_TAC_ADDRESS = '0xAF988C3f7CB2AceAbB15f96b19388a259b6C438f';
 const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
 
 // Minimum TON balance required for gas (0.5 TON in nanotons)
@@ -581,7 +580,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
  * - Checking if Leg 2 is complete
  */
 export const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
-  const { logger, requestId, config, rebalance, chainService, database: db } = context;
+  const { logger, requestId, config, rebalance, database: db } = context;
   logger.info('Executing TAC USDT rebalance callbacks', { requestId });
 
   // Get all pending TAC operations

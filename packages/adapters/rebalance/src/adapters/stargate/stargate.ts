@@ -227,6 +227,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
    * Returns the minimum rebalance amount for Stargate.
    * Stargate doesn't have a strict minimum, but we use a reasonable default.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
     // Stargate has no strict minimum but very small amounts are not economical
     // Return null to use the caller's default minimum

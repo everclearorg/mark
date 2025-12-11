@@ -80,8 +80,11 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
       });
 
       // Create custom contractOpener using TonClient
-      const contractOpener = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contractOpener: any = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         open: <T extends object>(contract: T) => tonClient.open(contract as any),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         getContractState: async (address: any) => {
           const state = await tonClient.getContractState(address);
           return {
@@ -129,6 +132,7 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
    * Returns the minimum rebalance amount for TAC Inner Bridge.
    * TAC Inner Bridge doesn't have a strict minimum.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
     // TAC Inner Bridge has no strict minimum
     return null;
@@ -556,6 +560,7 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
         toBlock: currentBlock.toString(),
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let logs: any[] = [];
       try {
         logs = await tacClient.getLogs({
