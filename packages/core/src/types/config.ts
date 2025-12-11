@@ -114,27 +114,27 @@ export interface RebalanceConfig {
 }
 
 export interface TacRebalanceConfig {
-  enabled: boolean; 
-  // Market Maker receiver configuration  
+  enabled: boolean;
+  // Market Maker receiver configuration
   marketMaker: {
-    address: string;                    // EVM address on TAC for MM    
-    onDemandEnabled: boolean;           // Enable invoice-triggered rebalancing    
-    thresholdEnabled: boolean;          // Enable balance-threshold rebalancing   
-    threshold?: string;                 // Min USDT balance (6 decimals)    
-    targetBalance?: string;             // Target after threshold-triggered rebalance  
-  };  
-  // Fill Service receiver configuration  
+    address: string; // EVM address on TAC for MM
+    onDemandEnabled: boolean; // Enable invoice-triggered rebalancing
+    thresholdEnabled: boolean; // Enable balance-threshold rebalancing
+    threshold?: string; // Min USDT balance (6 decimals)
+    targetBalance?: string; // Target after threshold-triggered rebalance
+  };
+  // Fill Service receiver configuration
   fillService: {
-    address: string;                    // EVM address on TAC for FS    
-    thresholdEnabled: boolean;          // Enable balance-threshold rebalancing    
-    threshold: string;                  // Min USDT balance (6 decimals)    
-    targetBalance: string;              // Target after threshold-triggered rebalance  
-  };  
-  // Shared bridge configuration  
+    address: string; // EVM address on TAC for FS
+    thresholdEnabled: boolean; // Enable balance-threshold rebalancing
+    threshold: string; // Min USDT balance (6 decimals)
+    targetBalance: string; // Target after threshold-triggered rebalance
+  };
+  // Shared bridge configuration
   bridge: {
-    slippageDbps: number;                // Slippage for Stargate (default: 50 = 0.5%)    
-    minRebalanceAmount: string;         // Min amount per operation (6 decimals)    
-    maxRebalanceAmount?: string;        // Max amount per operation (optional cap)  
+    slippageDbps: number; // Slippage for Stargate (default: 50 = 0.5%)
+    minRebalanceAmount: string; // Min amount per operation (6 decimals)
+    maxRebalanceAmount?: string; // Max amount per operation (optional cap)
   };
 }
 export interface RedisConfig {
