@@ -1,6 +1,7 @@
 import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
 import { getTickerForAsset, convertToNativeUnits, getMarkBalancesForTicker, getTonAssetAddress } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
+import { MarkConfiguration } from '@mark/core';
 import {
   getDecimalsFromConfig,
   RebalanceOperationStatus,

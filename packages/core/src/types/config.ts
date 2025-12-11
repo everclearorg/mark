@@ -76,8 +76,10 @@ export enum SupportedBridge {
   Kraken = 'kraken',
   Near = 'near',
   Mantle = 'mantle',
+  Pendle = 'pendle',
   Stargate = 'stargate',
   TacInner = 'tac-inner',
+  CCIP = 'chainlink-ccip'
 }
 
 export enum GasType {

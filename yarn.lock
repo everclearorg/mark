@@ -4591,6 +4591,7 @@ __metadata:
     "@types/node": 20.17.12
     "@types/sinon": 17.0.3
     aws-lambda: 1.0.7
+    bs58: ^6.0.0
     datadog-lambda-js: 10.123.0
     dbmate: 2.0.0
     dd-trace: 5.42.0

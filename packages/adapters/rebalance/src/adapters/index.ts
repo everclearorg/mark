@@ -12,13 +12,14 @@ import * as database from '@mark/database';
 import { MantleBridgeAdapter } from './mantle';
 import { StargateBridgeAdapter } from './stargate';
 import { TacInnerBridgeAdapter, TacNetwork } from './tac';
+import { PendleBridgeAdapter } from './pendle';
 
 export class RebalanceAdapter {
   constructor(
     protected readonly config: MarkConfiguration,
     protected readonly logger: Logger,
     protected readonly db: typeof database,
-  ) {}
+  ) { }
 
   public getAdapter(type: SupportedBridge): BridgeAdapter {
     switch (type) {
@@ -88,6 +89,8 @@ export class RebalanceAdapter {
           tonMnemonic: this.config.ton?.mnemonic,
           tonRpcUrl: this.config.tac?.tonRpcUrl || this.config.ton?.rpcUrl,
         });
+      case SupportedBridge.Pendle:
+        return new PendleBridgeAdapter(this.config.chains, this.logger);
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }

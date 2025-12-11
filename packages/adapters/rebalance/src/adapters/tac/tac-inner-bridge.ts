@@ -98,7 +98,7 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
       this.tacSdk = await TacSdk.create({
         network,
         TONParams: {
-          contractOpener,
+          contractOpener: contractOpener as any,
         },
       });
       this.sdkInitialized = true;
