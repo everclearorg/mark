@@ -166,6 +166,21 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<CamelCas
   });
 }
 
+export async function getEarmarkById(earmarkId: string): Promise<CamelCasedProperties<earmarks> | null> {
+  const query = `
+    SELECT * FROM earmarks
+    WHERE "id" = $1
+    LIMIT 1
+  `;
+  const result = await queryWithClient<earmarks>(query, [earmarkId]);
+
+  if (result.length === 0) {
+    return null;
+  }
+
+  return snakeToCamel(result[0]);
+}
+
 export async function getEarmarks(filter?: GetEarmarksFilter): Promise<CamelCasedProperties<earmarks>[]> {
   let query = 'SELECT * FROM earmarks';
   const values: unknown[] = [];
