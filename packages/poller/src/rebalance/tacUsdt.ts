@@ -1161,13 +1161,11 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
           }
 
           // Mark Leg 1 as completed
+          // Note: Earmark stays PENDING until Leg 2 completes (funds arrive on TAC)
+          // The earmark will be updated to READY in the isTacInnerBridge section below
           await db.updateRebalanceOperation(operation.id, {
             status: RebalanceOperationStatus.COMPLETED,
           });
-
-          if (operation.earmarkId) {
-            await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.READY);
-          }
 
           logger.info('Leg 2 operation created, Leg 1 marked complete', {
             ...logContext,
@@ -1334,6 +1332,17 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             await db.updateRebalanceOperation(operation.id, {
               status: RebalanceOperationStatus.COMPLETED,
             });
+
+            // Update earmark to READY now that Leg 2 is complete (funds arrived on TAC)
+            // This is the correct timing per spec: PENDING → (Leg 2 complete) → READY
+            if (operation.earmarkId) {
+              await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.READY);
+              logger.info('Earmark marked READY - funds arrived on TAC', {
+                ...logContext,
+                earmarkId: operation.earmarkId,
+              });
+            }
+
             logger.info('TAC Inner Bridge transfer complete', {
               ...logContext,
               recipient: storedRecipient,
