@@ -55,12 +55,12 @@ export interface CCIPMessage {
 
 // CCIP EVM2AnyMessage structure (from docs)
 export interface EVM2AnyMessage {
-  receiver: string; // abi.encode of receiver address
-  data: string; // bytes
+  receiver: `0x${string}`; // abi.encode of receiver address
+  data: `0x${string}`; // bytes
   tokenAmounts: Array<{
-    token: string;
-    amount: string;
+    token: `0x${string}`;
+    amount: bigint;
   }>;
-  extraArgs: string; // bytes
-  feeToken: string; // address
+  extraArgs: `0x${string}`; // bytes
+  feeToken: `0x${string}`; // address
 }
