@@ -170,11 +170,14 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
 
   // Initialize fill service chain service if FS signer URL is configured
   // This allows TAC rebalancing to use a separate sender address for FS
+  // senderAddress defaults to fillService.address if not explicitly set (same key = same address)
   let fillServiceChainService: ChainService | undefined;
-  if (config.fillServiceSignerUrl && config.tacRebalance?.fillService?.senderAddress) {
+  const fsSenderAddress =
+    config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
+  if (config.fillServiceSignerUrl && fsSenderAddress) {
     logger.info('Initializing Fill Service chain service for TAC rebalancing', {
       signerUrl: config.fillServiceSignerUrl,
-      senderAddress: config.tacRebalance.fillService.senderAddress,
+      senderAddress: fsSenderAddress,
     });
 
     const fillServiceSigner = config.fillServiceSignerUrl.startsWith('http')

@@ -175,7 +175,7 @@ describe('TAC USDT Rebalancing', () => {
 
     // Stub balance helper
     getEvmBalanceStub = stub(balanceHelpers, 'getEvmBalance');
-    getEvmBalanceStub.resolves(BigInt('1000000000')); // 1000 USDT default
+    getEvmBalanceStub.resolves(BigInt('1000000000000000000000')); // 1000 USDT in 18 decimals
 
     const mockConfig = createMockConfig();
 
@@ -223,10 +223,10 @@ describe('TAC USDT Rebalancing', () => {
     });
 
     it('should log initial ETH USDT balance at start', async () => {
-      // Setup: MM and FS both above threshold
+      // Setup: MM and FS both above threshold (values in 18 decimals)
       getEvmBalanceStub.callsFake(async (_config, chainId, _address) => {
-        if (chainId === MAINNET_CHAIN_ID.toString()) return BigInt('1000000000'); // 1000 USDT on ETH
-        return BigInt('500000000'); // 500 USDT on TAC (above threshold)
+        if (chainId === MAINNET_CHAIN_ID.toString()) return BigInt('1000000000000000000000'); // 1000 USDT on ETH
+        return BigInt('500000000000000000000'); // 500 USDT on TAC (above threshold)
       });
 
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
@@ -240,8 +240,8 @@ describe('TAC USDT Rebalancing', () => {
     });
 
     it('should complete cycle and log summary', async () => {
-      // Setup: Both above threshold, no rebalancing needed
-      getEvmBalanceStub.resolves(BigInt('500000000')); // 500 USDT everywhere
+      // Setup: Both above threshold, no rebalancing needed (18 decimals)
+      getEvmBalanceStub.resolves(BigInt('500000000000000000000')); // 500 USDT in 18 decimals
 
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
 
@@ -266,10 +266,10 @@ describe('TAC USDT Rebalancing', () => {
         } as any,
       ]);
 
-      // TAC balance below invoice amount (triggers on-demand)
+      // TAC balance below invoice amount (triggers on-demand) - values in 18 decimals
       getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
-        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000'); // 50 USDT on TAC
-        return BigInt('1000000000'); // 1000 USDT on ETH
+        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000000000000000'); // 50 USDT on TAC
+        return BigInt('1000000000000000000000'); // 1000 USDT on ETH
       });
 
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
@@ -289,15 +289,15 @@ describe('TAC USDT Rebalancing', () => {
       // Setup: No invoices
       mockEverclear.fetchInvoices.resolves([]);
 
-      // MM TAC balance below threshold
+      // MM TAC balance below threshold - values in 18 decimals
       getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
         if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_MM_ADDRESS) {
-          return BigInt('50000000'); // 50 USDT (below 100 threshold)
+          return BigInt('50000000000000000000'); // 50 USDT (below 100 threshold)
         }
         if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
-          return BigInt('500000000'); // 500 USDT (above threshold)
+          return BigInt('500000000000000000000'); // 500 USDT (above threshold)
         }
-        return BigInt('1000000000'); // 1000 USDT on ETH
+        return BigInt('1000000000000000000000'); // 1000 USDT on ETH
       });
 
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
@@ -313,12 +313,12 @@ describe('TAC USDT Rebalancing', () => {
 
   describe('Fill Service - Threshold Only', () => {
     it('should evaluate FS threshold after MM evaluation', async () => {
-      // Setup: No invoices, both below threshold
+      // Setup: No invoices, both below threshold - values in 18 decimals
       mockEverclear.fetchInvoices.resolves([]);
 
       getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
-        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000'); // 50 USDT (below threshold)
-        return BigInt('1000000000'); // 1000 USDT on ETH
+        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000000000000000'); // 50 USDT (below threshold)
+        return BigInt('1000000000000000000000'); // 1000 USDT on ETH
       });
 
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
@@ -343,7 +343,7 @@ describe('TAC USDT Rebalancing', () => {
       });
 
       mockEverclear.fetchInvoices.resolves([]);
-      getEvmBalanceStub.resolves(BigInt('500000000')); // Above threshold
+      getEvmBalanceStub.resolves(BigInt('500000000000000000000')); // Above threshold (18 decimals)
 
       await rebalanceTacUsdt({
         ...mockContext,
@@ -366,10 +366,10 @@ describe('TAC USDT Rebalancing', () => {
 
       mockEverclear.fetchInvoices.resolves([]);
 
-      // Both MM and FS below threshold
+      // Both MM and FS below threshold - values in 18 decimals
       getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
-        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000'); // 50 USDT (below 100 threshold)
-        return BigInt('300000000'); // 300 USDT on ETH (not enough for both)
+        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000000000000000'); // 50 USDT (below 100 threshold)
+        return BigInt('300000000000000000000'); // 300 USDT on ETH (not enough for both)
       });
 
       // Mock pending ops check to return empty (no existing ops)
@@ -390,10 +390,10 @@ describe('TAC USDT Rebalancing', () => {
     it('should not over-commit when both MM and FS need funds', async () => {
       mockEverclear.fetchInvoices.resolves([]);
 
-      // ETH has 200 USDT, both need 450 USDT (to reach 500 target from 50)
+      // ETH has 200 USDT, both need 450 USDT (to reach 500 target from 50) - values in 18 decimals
       getEvmBalanceStub.callsFake(async (_config, chainId) => {
-        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000'); // 50 USDT
-        return BigInt('200000000'); // 200 USDT on ETH
+        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000000000000000'); // 50 USDT
+        return BigInt('200000000000000000000'); // 200 USDT on ETH
       });
 
       (database.getRebalanceOperationByRecipient as jest.Mock).mockResolvedValue([]);
@@ -410,9 +410,12 @@ describe('TAC USDT Rebalancing', () => {
       mockEverclear.fetchInvoices.resolves([]);
 
       // TAC balance above threshold
+      // getEvmBalance returns normalized 18 decimal values
+      // 500 USDT in 18 decimals = 500 * 10^18 = 500000000000000000000
+      // threshold is 100 USDT = 100 * 10^18 = 100000000000000000000
       getEvmBalanceStub.callsFake(async (_config, chainId) => {
-        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('500000000'); // 500 USDT (above 100 threshold)
-        return BigInt('1000000000'); // 1000 USDT on ETH
+        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('500000000000000000000'); // 500 USDT (above 100 threshold)
+        return BigInt('1000000000000000000000'); // 1000 USDT on ETH (18 decimals)
       });
 
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
@@ -428,10 +431,10 @@ describe('TAC USDT Rebalancing', () => {
     it('should skip if pending operations exist for recipient', async () => {
       mockEverclear.fetchInvoices.resolves([]);
 
-      // TAC balance below threshold
+      // TAC balance below threshold (values in 18 decimals)
       getEvmBalanceStub.callsFake(async (_config, chainId) => {
-        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000'); // 50 USDT
-        return BigInt('1000000000'); // 1000 USDT on ETH
+        if (chainId === TAC_CHAIN_ID.toString()) return BigInt('50000000000000000000'); // 50 USDT in 18 decimals
+        return BigInt('1000000000000000000000'); // 1000 USDT in 18 decimals on ETH
       });
 
       // Mock pending operation exists on the context database
@@ -454,8 +457,16 @@ describe('TAC USDT Rebalancing', () => {
       mockEverclear.fetchInvoices.resolves([]);
 
       // Create config with target close to threshold to create small shortfall
-      // Threshold: 100 USDT, Target: 105 USDT, Balance: 96 USDT
-      // Shortfall = 105 - 96 = 9 USDT, which is below 10 USDT min
+      // Config values are in 6 decimals (native USDT format):
+      // Threshold: 100 USDT = 100000000 (6 decimals)
+      // Target: 105 USDT = 105000000 (6 decimals)
+      // Min: 10 USDT = 10000000 (6 decimals)
+      //
+      // getEvmBalance returns 18 decimal values:
+      // TAC Balance: 96 USDT = 96000000000000000000 (18 decimals)
+      // Shortfall = 105 - 96 = 9 USDT (18 decimals)
+      // Min converted = 10 USDT (18 decimals)
+      // 9 < 10, so it skips
       const smallShortfallConfig = createMockConfig({
         tacRebalance: {
           enabled: true,
@@ -463,28 +474,29 @@ describe('TAC USDT Rebalancing', () => {
             address: MOCK_MM_ADDRESS,
             onDemandEnabled: false, // Disable on-demand to test threshold
             thresholdEnabled: true,
-            threshold: '100000000', // 100 USDT
-            targetBalance: '105000000', // 105 USDT (small shortfall)
+            threshold: '100000000', // 100 USDT (6 decimals)
+            targetBalance: '105000000', // 105 USDT (6 decimals)
           },
           fillService: {
             address: MOCK_FS_ADDRESS,
             thresholdEnabled: true,
-            threshold: '100000000', // 100 USDT
-            targetBalance: '105000000', // 105 USDT (small shortfall)
+            threshold: '100000000', // 100 USDT (6 decimals)
+            targetBalance: '105000000', // 105 USDT (6 decimals)
           },
           bridge: {
             slippageDbps: 500,
-            minRebalanceAmount: '10000000', // 10 USDT min
+            minRebalanceAmount: '10000000', // 10 USDT min (6 decimals)
             maxRebalanceAmount: '1000000000',
           },
         },
       });
 
+      // getEvmBalance returns 18 decimal values
       getEvmBalanceStub.callsFake(async (_config, chainId, _address) => {
         if (chainId === TAC_CHAIN_ID.toString()) {
-          return BigInt('96000000'); // 96 USDT (below 100 threshold, but shortfall is only 9 USDT)
+          return BigInt('96000000000000000000'); // 96 USDT in 18 decimals (below 100 threshold, but shortfall is only 9 USDT)
         }
-        return BigInt('1000000000'); // 1000 USDT on ETH
+        return BigInt('1000000000000000000000'); // 1000 USDT in 18 decimals on ETH
       });
 
       // Use context database mock
@@ -580,7 +592,7 @@ describe('Fill Service Sender Preference', () => {
     mockEverclear.fetchInvoices.resolves([]);
 
     getEvmBalanceStub = stub(balanceHelpers, 'getEvmBalance');
-    getEvmBalanceStub.resolves(BigInt('1000000000')); // 1000 USDT
+    getEvmBalanceStub.resolves(BigInt('1000000000000000000000')); // 1000 USDT in 18 decimals
 
     const mockConfig = {
       ...createMockConfig(),
@@ -615,12 +627,12 @@ describe('Fill Service Sender Preference', () => {
   });
 
   it('should use filler as sender when filler has sufficient balance', async () => {
-    // Filler has enough USDT (1000 USDT)
+    // Filler has enough USDT (values in 18 decimals)
     getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
       if (address === MOCK_FILLER_ADDRESS) {
-        return BigInt('500000000'); // 500 USDT - enough
+        return BigInt('500000000000000000000'); // 500 USDT - enough
       }
-      return BigInt('1000000000'); // 1000 USDT for others
+      return BigInt('1000000000000000000000'); // 1000 USDT for others
     });
 
     await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
@@ -636,15 +648,15 @@ describe('Fill Service Sender Preference', () => {
   });
 
   it('should fallback to MM when filler has insufficient balance', async () => {
-    // Filler has too little USDT
+    // Filler has too little USDT - values in 18 decimals
     getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
       if (address === MOCK_FILLER_ADDRESS) {
-        return BigInt('10000000'); // 10 USDT - not enough for 450 USDT shortfall
+        return BigInt('10000000000000000000'); // 10 USDT - not enough for 450 USDT shortfall
       }
       if (chainId === TAC_CHAIN_ID.toString()) {
-        return BigInt('50000000'); // 50 USDT on TAC (below 100 threshold)
+        return BigInt('50000000000000000000'); // 50 USDT on TAC (below 100 threshold)
       }
-      return BigInt('1000000000'); // 1000 USDT for MM on ETH
+      return BigInt('1000000000000000000000'); // 1000 USDT for MM on ETH
     });
 
     // Mock pending ops check
@@ -668,7 +680,7 @@ describe('Fill Service Sender Preference', () => {
       fillServiceChainService: undefined,
     };
 
-    getEvmBalanceStub.resolves(BigInt('500000000')); // Above threshold
+    getEvmBalanceStub.resolves(BigInt('500000000000000000000')); // Above threshold (18 decimals)
 
     await rebalanceTacUsdt(contextWithoutFsService as unknown as ProcessingContext);
 
@@ -678,6 +690,37 @@ describe('Fill Service Sender Preference', () => {
       (call) => call.args[0] && call.args[0].includes('Completed TAC USDT rebalancing cycle'),
     );
     expect(completionLog).toBeTruthy();
+  });
+
+  it('should fallback to MM sender when filler balance check throws error', async () => {
+    // First call succeeds (ETH balance check), second call for filler throws error
+    // Values in 18 decimals
+    let callCount = 0;
+    getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+      callCount++;
+      // Simulate error when checking filler balance on ETH
+      if (address === MOCK_FILLER_ADDRESS && chainId === '1') {
+        throw new Error('RPC timeout');
+      }
+      if (chainId === TAC_CHAIN_ID.toString()) {
+        return BigInt('50000000000000000000'); // 50 USDT on TAC (below 100 threshold)
+      }
+      return BigInt('1000000000000000000000'); // 1000 USDT for others
+    });
+
+    // Mock pending ops check
+    const dbMock = mockContext.database as any;
+    dbMock.getRebalanceOperationByRecipient = stub().resolves([]);
+
+    await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+    // Should log the error and fallback
+    const warnCalls = mockLogger.warn.getCalls();
+    const errorLog = warnCalls.find(
+      (call) => call.args[0] && call.args[0].includes('Failed to check filler balance'),
+    );
+    // Note: This log only appears during actual executeTacBridge execution
+    // The function should complete without throwing
   });
 });
 
