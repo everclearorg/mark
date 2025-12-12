@@ -6,6 +6,7 @@ import {
   getEvmBalance,
   convertToNativeUnits,
   convertTo18Decimals,
+  safeParseBigInt,
 } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
@@ -93,7 +94,8 @@ async function getTonUsdtBalance(
       return 0n;
     }
 
-    return BigInt(data.jetton_wallets[0].balance);
+    // Use safeParseBigInt for robust parsing of API response
+    return safeParseBigInt(data.jetton_wallets[0].balance);
   } catch {
     return 0n;
   }
@@ -128,7 +130,8 @@ async function getTonNativeBalance(
       return 0n;
     }
 
-    return BigInt(data.result.balance);
+    // Use safeParseBigInt for robust parsing of API response
+    return safeParseBigInt(data.result.balance);
   } catch {
     return 0n;
   }
@@ -425,8 +428,9 @@ const evaluateMarketMakerRebalance = async (
   // B) Threshold-based: Balance check (only if no invoice-triggered rebalancing)
   if (mmConfig.thresholdEnabled) {
     // Convert config values from native decimals (6) to normalized (18)
-    const thresholdNative = BigInt(mmConfig.threshold!);
-    const targetNative = BigInt(mmConfig.targetBalance!);
+    // Use safeParseBigInt for robust parsing of config strings
+    const thresholdNative = safeParseBigInt(mmConfig.threshold);
+    const targetNative = safeParseBigInt(mmConfig.targetBalance);
     const threshold18 = convertTo18Decimals(thresholdNative, usdtInfo.tacDecimals);
     const target18 = convertTo18Decimals(targetNative, usdtInfo.tacDecimals);
 
@@ -505,9 +509,9 @@ const processOnDemandRebalancing = async (
     const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
 
     // intent.amount_out_min is already in native units (from the API/chain)
-    // No conversion needed
-    const intentAmount = BigInt(invoice.amount);
-    const minRebalanceAmount = BigInt(config.tacRebalance!.bridge.minRebalanceAmount);
+    // No conversion needed - use safeParseBigInt for robust parsing
+    const intentAmount = safeParseBigInt(invoice.amount);
+    const minRebalanceAmount = safeParseBigInt(config.tacRebalance!.bridge.minRebalanceAmount);
 
     if (intentAmount < minRebalanceAmount) {
       logger.warn('Invoice amount is less than minimum rebalance amount, skipping', {
@@ -683,9 +687,9 @@ const processOnDemandRebalancing = async (
         receivedAmount: receivedAmountStr,
       });
 
-      // Check slippage
-      const receivedAmount = BigInt(receivedAmountStr);
-      const slippageDbps = BigInt(route.slippagesDbps[0]);
+      // Check slippage - use safeParseBigInt for adapter response
+      const receivedAmount = safeParseBigInt(receivedAmountStr);
+      const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
       const minimumAcceptableAmount = amountToBridge - (amountToBridge * slippageDbps) / DBPS_MULTIPLIER;
 
       if (receivedAmount < minimumAcceptableAmount) {
@@ -765,7 +769,7 @@ const processOnDemandRebalancing = async (
       rebalanceSuccessful = true;
 
       // Track committed funds to prevent over-committing in subsequent operations
-      const bridgedAmount = BigInt(effectiveBridgedAmount);
+      const bridgedAmount = safeParseBigInt(effectiveBridgedAmount);
       runState.committedEthUsdt += bridgedAmount;
       remainingEthUsdt -= bridgedAmount;
 
@@ -871,9 +875,10 @@ const processThresholdRebalancing = async ({
   // shortfall is in 18 decimals (targetBalance and tacBalance are both normalized)
   const shortfall = targetBalance - tacBalance;
   // Convert bridge config amounts from native (6 decimals) to normalized (18 decimals)
-  const minAmountNative = BigInt(bridgeConfig.minRebalanceAmount);
+  // Use safeParseBigInt for robust parsing of config strings
+  const minAmountNative = safeParseBigInt(bridgeConfig.minRebalanceAmount);
   const minAmount = convertTo18Decimals(minAmountNative, tacUsdtDecimals);
-  const maxAmountNative = bridgeConfig.maxRebalanceAmount ? BigInt(bridgeConfig.maxRebalanceAmount) : 0n;
+  const maxAmountNative = safeParseBigInt(bridgeConfig.maxRebalanceAmount);
   const maxAmount = maxAmountNative > 0n ? convertTo18Decimals(maxAmountNative, tacUsdtDecimals) : shortfall;
 
   if (shortfall < minAmount) {
@@ -1145,9 +1150,9 @@ const executeTacBridge = async (
       receivedAmount: receivedAmountStr,
     });
 
-    // Check slippage
-    const receivedAmount = BigInt(receivedAmountStr);
-    const slippageDbps = BigInt(route.slippagesDbps[0]);
+    // Check slippage - use safeParseBigInt for adapter response
+    const receivedAmount = safeParseBigInt(receivedAmountStr);
+    const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
     const minimumAcceptableAmount = amount - (amount * slippageDbps) / DBPS_MULTIPLIER;
 
     if (receivedAmount < minimumAcceptableAmount) {
@@ -1268,8 +1273,9 @@ const evaluateFillServiceRebalance = async (
   }
 
   // Convert config values from native decimals (6) to normalized (18)
-  const thresholdNative = BigInt(fsConfig.threshold);
-  const targetNative = BigInt(fsConfig.targetBalance);
+  // Use safeParseBigInt for robust parsing of config strings
+  const thresholdNative = safeParseBigInt(fsConfig.threshold);
+  const targetNative = safeParseBigInt(fsConfig.targetBalance);
   const threshold18 = convertTo18Decimals(thresholdNative, usdtInfo.tacDecimals);
   const target18 = convertTo18Decimals(targetNative, usdtInfo.tacDecimals);
 
