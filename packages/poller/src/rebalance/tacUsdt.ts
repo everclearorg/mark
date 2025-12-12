@@ -678,25 +678,40 @@ const processOnDemandRebalancing = async (
     }
 
     try {
+      // CRITICAL: Convert amount from 18 decimals to native USDT decimals (6)
+      // The Stargate API expects amounts in native token units, not normalized 18 decimals
+      // Without this conversion, amounts like "10000000000000000000" (10 USDT in 18 decimals)
+      // are interpreted as 10 trillion USDT, exceeding pool liquidity and causing "Failed to get route"
+      const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, origin.toString(), config) ?? 6;
+      const amountInNativeUnits = convertToNativeUnits(amountToBridge, ethUsdtDecimals);
+
+      logger.debug('Converting amount to native units for Stargate', {
+        requestId,
+        amountIn18Decimals: amountToBridge.toString(),
+        amountInNativeUnits: amountInNativeUnits.toString(),
+        decimals: ethUsdtDecimals,
+      });
+
       // Get quote
-      const receivedAmountStr = await adapter.getReceivedAmount(amountToBridge.toString(), route);
+      const receivedAmountStr = await adapter.getReceivedAmount(amountInNativeUnits.toString(), route);
       logger.info('Received Stargate quote', {
         requestId,
         route,
-        amountToBridge: amountToBridge.toString(),
+        amountToBridge: amountInNativeUnits.toString(),
         receivedAmount: receivedAmountStr,
       });
 
       // Check slippage - use safeParseBigInt for adapter response
+      // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
       const receivedAmount = safeParseBigInt(receivedAmountStr);
       const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
-      const minimumAcceptableAmount = amountToBridge - (amountToBridge * slippageDbps) / DBPS_MULTIPLIER;
+      const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageDbps) / DBPS_MULTIPLIER;
 
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Stargate quote does not meet slippage requirements', {
           requestId,
           route,
-          amountToBridge: amountToBridge.toString(),
+          amountToBridge: amountInNativeUnits.toString(),
           receivedAmount: receivedAmount.toString(),
           minimumAcceptableAmount: minimumAcceptableAmount.toString(),
         });
@@ -705,7 +720,7 @@ const processOnDemandRebalancing = async (
 
       // Get bridge transactions
       // Sender is EVM address, recipient is TON address (for Stargate to deliver to)
-      const bridgeTxRequests = await adapter.send(evmSender, tonRecipient, amountToBridge.toString(), route);
+      const bridgeTxRequests = await adapter.send(evmSender, tonRecipient, amountInNativeUnits.toString(), route);
 
       if (!bridgeTxRequests.length) {
         logger.error('No bridge transactions returned from Stargate adapter', { requestId });
@@ -729,11 +744,12 @@ const processOnDemandRebalancing = async (
 
       // Create database record for Leg 1
       // Store both TON recipient (for Stargate) and TAC recipient (for Leg 2)
+      // Note: Use USDT_TICKER_HASH as fallback to ensure we store ticker hash, not address
       await createRebalanceOperation({
         earmarkId: earmark.id,
         originChainId: route.origin,
         destinationChainId: route.destination,
-        tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
+        tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
         amount: effectiveBridgedAmount,
         slippage: route.slippagesDbps[0],
         status: RebalanceOperationStatus.PENDING,
@@ -1141,25 +1157,40 @@ const executeTacBridge = async (
   }
 
   try {
+    // CRITICAL: Convert amount from 18 decimals to native USDT decimals (6)
+    // The Stargate API expects amounts in native token units, not normalized 18 decimals
+    // Without this conversion, amounts like "10000000000000000000" (10 USDT in 18 decimals)
+    // are interpreted as 10 trillion USDT, exceeding pool liquidity and causing "Failed to get route"
+    const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, origin.toString(), config) ?? 6;
+    const amountInNativeUnits = convertToNativeUnits(amount, ethUsdtDecimals);
+
+    logger.debug('Converting amount to native units for Stargate', {
+      requestId,
+      amountIn18Decimals: amount.toString(),
+      amountInNativeUnits: amountInNativeUnits.toString(),
+      decimals: ethUsdtDecimals,
+    });
+
     // Get quote
-    const receivedAmountStr = await adapter.getReceivedAmount(amount.toString(), route);
+    const receivedAmountStr = await adapter.getReceivedAmount(amountInNativeUnits.toString(), route);
     logger.info('Received Stargate quote', {
       requestId,
       route,
-      amountToBridge: amount.toString(),
+      amountToBridge: amountInNativeUnits.toString(),
       receivedAmount: receivedAmountStr,
     });
 
     // Check slippage - use safeParseBigInt for adapter response
+    // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
     const receivedAmount = safeParseBigInt(receivedAmountStr);
     const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
-    const minimumAcceptableAmount = amount - (amount * slippageDbps) / DBPS_MULTIPLIER;
+    const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageDbps) / DBPS_MULTIPLIER;
 
     if (receivedAmount < minimumAcceptableAmount) {
       logger.warn('Stargate quote does not meet slippage requirements', {
         requestId,
         route,
-        amountToBridge: amount.toString(),
+        amountToBridge: amountInNativeUnits.toString(),
         receivedAmount: receivedAmount.toString(),
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
       });
@@ -1168,7 +1199,7 @@ const executeTacBridge = async (
 
     // Get bridge transactions
     // Sender is EVM address, recipient is TON address (for Stargate to deliver to)
-    const bridgeTxRequests = await adapter.send(evmSender, tonRecipient, amount.toString(), route);
+    const bridgeTxRequests = await adapter.send(evmSender, tonRecipient, amountInNativeUnits.toString(), route);
 
     if (!bridgeTxRequests.length) {
       logger.error('No bridge transactions returned from Stargate adapter', { requestId });
@@ -1193,11 +1224,12 @@ const executeTacBridge = async (
 
     // Create database record for Leg 1
     // Store both TON recipient (for Stargate) and TAC recipient (for Leg 2)
+    // Note: Use USDT_TICKER_HASH as fallback to ensure we store ticker hash, not address
     await createRebalanceOperation({
       earmarkId: earmarkId,
       originChainId: route.origin,
       destinationChainId: route.destination,
-      tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
+      tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
       amount: effectiveBridgedAmount,
       slippage: route.slippagesDbps[0],
       status: RebalanceOperationStatus.PENDING,
