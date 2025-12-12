@@ -457,6 +457,13 @@ export const parseChainConfigurations = async (
       ? (await fromEnv('CHAIN_IDS'))!.split(',').map((id) => id.trim())
       : Object.keys(config.chains);
 
+  // Parse supported settlement domains for validation
+  const supportedSettlementDomains: number[] =
+    configJson.supportedSettlementDomains ??
+    (process.env.SUPPORTED_SETTLEMENT_DOMAINS
+      ? process.env.SUPPORTED_SETTLEMENT_DOMAINS.split(',').map((d) => parseInt(d.trim(), 10))
+      : []);
+
   const chains: Record<string, ChainConfiguration> = {};
 
   for (const chainId of chainIds) {
@@ -524,10 +531,18 @@ export const parseChainConfigurations = async (
     // Extract Everclear spoke address from the config (prefer hosted, fall back to local)
     const everclear = chainConfig?.deployments?.everclear ?? localChainConfig?.deployments?.everclear;
 
+    // Check if this chain is a settlement domain (requires spoke address)
+    const isSettlementDomain = supportedSettlementDomains.includes(parseInt(chainId, 10));
+
     if (!everclear) {
-      throw new ConfigurationError(
-        `No spoke address found for chain ${chainId}. Make sure it's defined in the config under chains.${chainId}.deployments.everclear`,
-      );
+      if (isSettlementDomain) {
+        throw new ConfigurationError(
+          `No spoke address found for chain ${chainId}. Make sure it's defined in the config under chains.${chainId}.deployments.everclear`,
+        );
+      }
+      // Skip non-settlement chains without spoke addresses - they may only be used for RPC access
+      console.log(`Chain ${chainId} has no spoke address and is not a settlement domain, skipping`);
+      continue;
     }
 
     // Get chain-specific contract addresses or use config values if provided (prefer hosted, fall back to local)
