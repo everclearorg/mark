@@ -124,6 +124,8 @@ locals {
     TAC_REBALANCE_FILL_SERVICE_THRESHOLD           = local.mark_config.tacRebalance.fillService.threshold
     TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE      = local.mark_config.tacRebalance.fillService.targetBalance
     # Fill Service signer URL (only set if FS signer is deployed)
+    # Note: URL is constructed here because module output isn't available at locals evaluation time
+    # Service discovery name = ${container_family}-${environment}-${stage}.mark.internal
     FILL_SERVICE_SIGNER_URL                        = local.mark_config.web3_fastfill_signer_private_key != "" ? "http://${var.bot_name}-fillservice-web3signer-${var.environment}-${var.stage}.mark.internal:9000" : ""
     FILL_SERVICE_SIGNER_ADDRESS                    = local.mark_config.fillServiceSignerAddress
     TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS             = tostring(local.mark_config.tacRebalance.bridge.slippageDbps)
