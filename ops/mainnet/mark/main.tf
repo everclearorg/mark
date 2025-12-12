@@ -45,6 +45,9 @@ locals {
     chains                  = local.mark_config_json.chains
     db_password             = local.mark_config_json.db_password
     admin_token             = local.mark_config_json.admin_token
+    # Fill Service signer configuration (optional - for TAC FS rebalancing with separate sender)
+    web3_fastfill_signer_private_key = try(local.mark_config_json.web3_fastfill_signer_private_key, "")
+    fillServiceSignerAddress         = try(local.mark_config_json.fillServiceSignerAddress, "")
     # TAC/TON configuration (optional - for TAC USDT rebalancing)
     tonSignerAddress = try(local.mark_config_json.tonSignerAddress, "")
     # Full TON configuration including assets with jetton addresses
@@ -66,6 +69,7 @@ locals {
       }
       fillService = {
         address          = try(local.mark_config_json.tacRebalance.fillService.address, "")
+        senderAddress    = try(local.mark_config_json.tacRebalance.fillService.senderAddress, "") # Filler's ETH sender address
         thresholdEnabled = try(local.mark_config_json.tacRebalance.fillService.thresholdEnabled, false)
         threshold        = try(local.mark_config_json.tacRebalance.fillService.threshold, "")
         targetBalance    = try(local.mark_config_json.tacRebalance.fillService.targetBalance, "")
@@ -154,6 +158,39 @@ module "mark_web3signer" {
   instance_count      = 1
   service_security_groups = [module.sgs.web3signer_sg_id]
   container_env_vars  = local.web3signer_env_vars
+  zone_id             = var.zone_id
+  private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
+}
+
+# Fill Service Web3Signer - separate signer for FS sender on TAC rebalancing
+# Uses a different private key (web3_fastfill_signer_private_key)
+# Internal port is 9000 (same as MM signer), but they're separate services with different DNS names:
+# - MM:  mark-web3signer-mainnet-production.mark.internal:9000
+# - FS:  mark-fillservice-web3signer-mainnet-production.mark.internal:9000
+module "mark_fillservice_web3signer" {
+  count               = local.mark_config.web3_fastfill_signer_private_key != "" ? 1 : 0
+  source              = "../../modules/service"
+  stage               = var.stage
+  environment         = var.environment
+  domain              = var.domain
+  region              = var.region
+  dd_api_key          = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
+  execution_role_arn  = data.aws_iam_role.ecr_admin_role.arn
+  cluster_id          = module.ecs.ecs_cluster_id
+  vpc_id              = module.network.vpc_id
+  lb_subnets          = module.network.private_subnets
+  task_subnets        = module.network.private_subnets
+  efs_id              = module.efs.mark_efs_id
+  docker_image        = "ghcr.io/connext/web3signer:latest"
+  container_family    = "${var.bot_name}-fillservice-web3signer"
+  container_port      = 9000 # Internal port is same, service discovery handles routing
+  cpu                 = 256
+  memory              = 512
+  instance_count      = 1
+  service_security_groups = [module.sgs.web3signer_sg_id]
+  container_env_vars  = local.fillservice_web3signer_env_vars
   zone_id             = var.zone_id
   private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
   depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]

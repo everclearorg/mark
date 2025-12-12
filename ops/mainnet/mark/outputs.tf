@@ -13,6 +13,11 @@ output "prometheus_service_url" {
   value       = module.mark_prometheus.service_url
 }
 
+output "fillservice_web3signer_service_url" {
+  description = "URL of the fill service web3signer (if deployed)"
+  value       = try(module.mark_fillservice_web3signer[0].service_url, null)
+}
+
 output "pushgateway_service_url" {
   description = "URL of the Prometheus Pushgateway service"
   value       = module.mark_pushgateway.service_url

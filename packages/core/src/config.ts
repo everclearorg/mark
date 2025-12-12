@@ -239,6 +239,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
       web3SignerUrl: configJson.web3SignerUrl ?? (await requireEnv('SIGNER_URL')),
+      fillServiceSignerUrl:
+        configJson.fillServiceSignerUrl ??
+        (await fromEnv('FILL_SERVICE_SIGNER_URL', true)) ??
+        undefined,
       everclearApiUrl: configJson.everclearApiUrl ?? (await fromEnv('EVERCLEAR_API_URL')) ?? apiUrl,
       relayer: {
         url: configJson?.relayer?.url ?? (await fromEnv('RELAYER_URL')) ?? undefined,
@@ -304,6 +308,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
             configJson.tacRebalance?.fillService?.address ??
             (await fromEnv('TAC_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
             undefined,
+          senderAddress:
+            configJson.tacRebalance?.fillService?.senderAddress ??
+            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
+            undefined, // Filler's ETH address for sending from mainnet
           thresholdEnabled:
             configJson.tacRebalance?.fillService?.thresholdEnabled ??
             (await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
