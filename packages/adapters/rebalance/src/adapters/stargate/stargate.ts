@@ -355,22 +355,43 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
     for (const step of quote.steps) {
       if (step.type === 'approve') {
+        // For Mainnet USDT: The API may return a spender address different from the pool address
+        // (e.g., a router or aggregator). USDT's non-standard ERC20 requires setting allowance
+        // to 0 before setting a new non-zero amount when current allowance > 0.
+        // We need to check the spender address FROM THE API STEP, not just the pool address.
         if (
           route.origin === Number(MAINNET_CHAIN_ID) &&
           route.asset.toLowerCase() === USDT_ETH.toLowerCase()
         ) {
-          const client = this.getPublicClient(route.origin);
+          // Decode the API-provided approval to get the actual spender address
+          const approvalData = step.transaction.data as `0x${string}`;
           const tokenAddress = route.asset as `0x${string}`;
-          const poolAddress = this.getPoolAddress(tokenAddress, route.origin);
-          const allowance = await client.readContract({
+
+          // Extract spender from approval calldata (first 32 bytes after 4-byte selector)
+          // approve(address,uint256) = 0x095ea7b3 + 32-byte spender + 32-byte amount
+          const spenderFromApi = ('0x' + approvalData.slice(34, 74)) as `0x${string}`;
+
+          const client = this.getPublicClient(route.origin);
+          const currentAllowance = await client.readContract({
             address: tokenAddress,
             abi: erc20Abi,
             functionName: 'allowance',
-            args: [sender as `0x${string}`, poolAddress],
+            args: [sender as `0x${string}`, spenderFromApi],
           });
-          
+
+          this.logger.debug('Checking USDT allowance for API spender', {
+            sender,
+            spender: spenderFromApi,
+            currentAllowance: currentAllowance.toString(),
+          });
+
           // Mainnet USDT requires zero allowance before setting to new amount
-          if (allowance > 0n) {
+          if (currentAllowance > 0n) {
+            this.logger.info('USDT has non-zero allowance, adding zero-approval first', {
+              sender,
+              spender: spenderFromApi,
+              currentAllowance: currentAllowance.toString(),
+            });
             transactions.push({
               memo: RebalanceTransactionMemo.Approval,
               transaction: {
@@ -378,7 +399,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
                 data: encodeFunctionData({
                   abi: erc20Abi,
                   functionName: 'approve',
-                  args: [poolAddress, 0n],
+                  args: [spenderFromApi, 0n],
                 }),
                 value: BigInt(0),
                 funcSig: 'approve(address,uint256)',
