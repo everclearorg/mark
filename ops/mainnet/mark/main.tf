@@ -39,12 +39,43 @@ locals {
 
   mark_config_json = jsondecode(data.aws_ssm_parameter.mark_config_mainnet.value)
   mark_config = {
-    dd_api_key = local.mark_config_json.dd_api_key
+    dd_api_key              = local.mark_config_json.dd_api_key
     web3_signer_private_key = local.mark_config_json.web3_signer_private_key
-    signerAddress = local.mark_config_json.signerAddress
-    chains = local.mark_config_json.chains
-    db_password = local.mark_config_json.db_password
-    admin_token = local.mark_config_json.admin_token
+    signerAddress           = local.mark_config_json.signerAddress
+    chains                  = local.mark_config_json.chains
+    db_password             = local.mark_config_json.db_password
+    admin_token             = local.mark_config_json.admin_token
+    # TAC/TON configuration (optional - for TAC USDT rebalancing)
+    tonSignerAddress = try(local.mark_config_json.tonSignerAddress, "")
+    # Full TON configuration including assets with jetton addresses
+    ton = {
+      mnemonic = try(local.mark_config_json.ton.mnemonic, "")
+      rpcUrl   = try(local.mark_config_json.ton.rpcUrl, "")
+      apiKey   = try(local.mark_config_json.ton.apiKey, "")
+      assets   = try(local.mark_config_json.ton.assets, [])
+    }
+    # TAC Rebalance configuration
+    tacRebalance = {
+      enabled = try(local.mark_config_json.tacRebalance.enabled, false)
+      marketMaker = {
+        address           = try(local.mark_config_json.tacRebalance.marketMaker.address, "")
+        onDemandEnabled   = try(local.mark_config_json.tacRebalance.marketMaker.onDemandEnabled, false)
+        thresholdEnabled  = try(local.mark_config_json.tacRebalance.marketMaker.thresholdEnabled, false)
+        threshold         = try(local.mark_config_json.tacRebalance.marketMaker.threshold, "")
+        targetBalance     = try(local.mark_config_json.tacRebalance.marketMaker.targetBalance, "")
+      }
+      fillService = {
+        address          = try(local.mark_config_json.tacRebalance.fillService.address, "")
+        thresholdEnabled = try(local.mark_config_json.tacRebalance.fillService.thresholdEnabled, false)
+        threshold        = try(local.mark_config_json.tacRebalance.fillService.threshold, "")
+        targetBalance    = try(local.mark_config_json.tacRebalance.fillService.targetBalance, "")
+      }
+      bridge = {
+        slippageDbps       = try(local.mark_config_json.tacRebalance.bridge.slippageDbps, 500) # 5% default
+        minRebalanceAmount = try(local.mark_config_json.tacRebalance.bridge.minRebalanceAmount, "")
+        maxRebalanceAmount = try(local.mark_config_json.tacRebalance.bridge.maxRebalanceAmount, "")
+      }
+    }
   }
 }
 

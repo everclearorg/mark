@@ -321,7 +321,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
           slippageDbps:
             configJson.tacRebalance?.bridge?.slippageDbps ??
             (await fromEnv('TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ??
-            50,
+            500, // 5% slippage - matches original hardcoded value
           minRebalanceAmount:
             configJson.tacRebalance?.bridge?.minRebalanceAmount ??
             (await fromEnv('TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
