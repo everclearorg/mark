@@ -103,6 +103,28 @@ locals {
     WETH_42161_THRESHOLD          = "1600000000000000000"
     USDC_42161_THRESHOLD          = "4000000000"
     USDT_42161_THRESHOLD          = "1000000000"
+
+    # TAC Chain (239) configuration
+    USDT_239_THRESHOLD = "100000000"  # 100 USDT threshold on TAC
+
+    # TON wallet configuration for TAC bridge (from SSM)
+    TON_SIGNER_ADDRESS = local.mark_config.tonSignerAddress
+    TON_MNEMONIC       = local.mark_config.ton.mnemonic
+
+    # TAC Rebalance configuration
+    TAC_REBALANCE_ENABLED                          = tostring(local.mark_config.tacRebalance.enabled)
+    TAC_REBALANCE_MARKET_MAKER_ADDRESS             = local.mark_config.tacRebalance.marketMaker.address
+    TAC_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED   = tostring(local.mark_config.tacRebalance.marketMaker.onDemandEnabled)
+    TAC_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED   = tostring(local.mark_config.tacRebalance.marketMaker.thresholdEnabled)
+    TAC_REBALANCE_MARKET_MAKER_THRESHOLD           = local.mark_config.tacRebalance.marketMaker.threshold
+    TAC_REBALANCE_MARKET_MAKER_TARGET_BALANCE      = local.mark_config.tacRebalance.marketMaker.targetBalance
+    TAC_REBALANCE_FILL_SERVICE_ADDRESS             = local.mark_config.tacRebalance.fillService.address
+    TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED   = tostring(local.mark_config.tacRebalance.fillService.thresholdEnabled)
+    TAC_REBALANCE_FILL_SERVICE_THRESHOLD           = local.mark_config.tacRebalance.fillService.threshold
+    TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE      = local.mark_config.tacRebalance.fillService.targetBalance
+    TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS             = tostring(local.mark_config.tacRebalance.bridge.slippageDbps)
+    TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT      = local.mark_config.tacRebalance.bridge.minRebalanceAmount
+    TAC_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT      = local.mark_config.tacRebalance.bridge.maxRebalanceAmount
   }
 
   web3signer_env_vars = [

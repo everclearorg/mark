@@ -208,16 +208,28 @@ const executeBridgeTransactions = async ({
 };
 
 /**
+ * Shared state for tracking ETH USDT that has been committed in this run
+ * This prevents over-committing when both MM and FS need rebalancing simultaneously
+ */
+interface RebalanceRunState {
+  committedEthUsdt: bigint; // Amount of ETH USDT committed in this run (not yet confirmed on-chain)
+}
+
+/**
  * Main TAC USDT rebalancing function
  *
  * Workflow:
- * 1. Check for settled invoices destined for TAC with USDT output
- * 2. If USDT balance on TAC is insufficient, initiate rebalancing
- * 3. Leg 1: Bridge USDT from Ethereum to TON via Stargate
- * 4. Leg 2: Bridge USDT from TON to TAC via TAC Inner Bridge
+ * 1. Process any pending callbacks (Leg 1 → Leg 2 transitions)
+ * 2. Evaluate Market Maker rebalancing needs (invoice-triggered OR threshold-based)
+ * 3. Evaluate Fill Service rebalancing needs (threshold-based only)
+ * 4. Handle simultaneous MM+FS by tracking committed funds within the run
+ *
+ * Bridge flow:
+ * - Leg 1: USDT Ethereum → TON via Stargate
+ * - Leg 2: USDT TON → TAC via TAC Inner Bridge
  */
 export async function rebalanceTacUsdt(context: ProcessingContext): Promise<RebalanceAction[]> {
-  const { logger, requestId, config, rebalance } = context;
+  const { logger, requestId, config, rebalance, prometheus } = context;
   const actions: RebalanceAction[] = [];
 
   // Always check destination callbacks to ensure operations complete
@@ -235,36 +247,110 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     return actions;
   }
 
-  logger.info('Starting TAC USDT rebalancing', { requestId });
+  // Get initial ETH USDT balance (shared pool for both MM and FS)
+  const initialEthUsdtBalance = await getEvmBalance(
+    config,
+    MAINNET_CHAIN_ID.toString(),
+    config.ownAddress,
+    USDT_TICKER_HASH,
+    6,
+    prometheus,
+  );
 
-  // 3. Evaluate Market Maker path
-  const mmActions = await evaluateMarketMakerRebalance(context);
+  logger.info('Starting TAC USDT rebalancing', {
+    requestId,
+    initialEthUsdtBalance: initialEthUsdtBalance.toString(),
+    mmConfig: {
+      address: tacRebalanceConfig.marketMaker.address,
+      onDemandEnabled: tacRebalanceConfig.marketMaker.onDemandEnabled,
+      thresholdEnabled: tacRebalanceConfig.marketMaker.thresholdEnabled,
+    },
+    fsConfig: {
+      address: tacRebalanceConfig.fillService.address,
+      thresholdEnabled: tacRebalanceConfig.fillService.thresholdEnabled,
+    },
+  });
+
+  // Track committed funds to prevent over-committing in this run
+  const runState: RebalanceRunState = {
+    committedEthUsdt: 0n,
+  };
+
+  // Calculate available balance for MM (no deductions yet)
+  const mmAvailableBalance = initialEthUsdtBalance;
+
+  // Evaluate Market Maker path first (invoice-triggered takes priority)
+  const mmActions = await evaluateMarketMakerRebalance(context, mmAvailableBalance, runState);
   actions.push(...mmActions);
 
-  // 4. Evaluate Fill Service path
-  const fsActions = await evaluateFillServiceRebalance(context);
+  // Calculate remaining balance for FS (deduct MM committed amount)
+  const fsAvailableBalance = initialEthUsdtBalance - runState.committedEthUsdt;
+
+  if (runState.committedEthUsdt > 0n) {
+    logger.info('MM committed funds, reducing available balance for FS', {
+      requestId,
+      mmCommitted: runState.committedEthUsdt.toString(),
+      fsAvailable: fsAvailableBalance.toString(),
+    });
+  }
+
+  // Evaluate Fill Service path (threshold-based only)
+  const fsActions = await evaluateFillServiceRebalance(context, fsAvailableBalance, runState);
   actions.push(...fsActions);
 
-  logger.info('Completed TAC USDT rebalancing cycle', { requestId });
+  logger.info('Completed TAC USDT rebalancing cycle', {
+    requestId,
+    totalActions: actions.length,
+    mmActions: mmActions.length,
+    fsActions: fsActions.length,
+    totalCommitted: runState.committedEthUsdt.toString(),
+  });
+
   return actions;
 }
 
-const evaluateMarketMakerRebalance = async (context: ProcessingContext): Promise<RebalanceAction[]> => {
-  const { config } = context;
+const evaluateMarketMakerRebalance = async (
+  context: ProcessingContext,
+  availableEthUsdt: bigint,
+  runState: RebalanceRunState,
+): Promise<RebalanceAction[]> => {
+  const { config, logger, requestId } = context;
   const mmConfig = config.tacRebalance!.marketMaker;
   const actions: RebalanceAction[] = [];
-  // A) On-demand: Invoice-triggered (existing logic, modified)
+
+  // MM uses EITHER invoice-triggered OR threshold-based rebalancing, NOT BOTH
+  // Priority: Invoice-triggered takes precedence (funds needed for specific intents)
+  // Only fall back to threshold-based if no invoices require rebalancing
+
+  // A) On-demand: Invoice-triggered (higher priority)
   if (mmConfig.onDemandEnabled) {
-    const invoiceActions = await processOnDemandRebalancing(context, mmConfig.address);
-    actions.push(...invoiceActions);
+    const invoiceActions = await processOnDemandRebalancing(context, mmConfig.address, availableEthUsdt, runState);
+    if (invoiceActions.length > 0) {
+      logger.info('MM rebalancing triggered by invoices, skipping threshold check', {
+        requestId,
+        invoiceActionsCount: invoiceActions.length,
+        note: 'Invoice-triggered rebalancing takes priority over threshold-based',
+      });
+      actions.push(...invoiceActions);
+      return actions; // Exit early - invoice-triggered takes priority
+    }
   }
-  // B) Threshold-based: Balance check
+
+  // B) Threshold-based: Balance check (only if no invoice-triggered rebalancing)
   if (mmConfig.thresholdEnabled) {
+    logger.debug('No invoice-triggered rebalancing needed, checking MM threshold', {
+      requestId,
+      threshold: mmConfig.threshold,
+      targetBalance: mmConfig.targetBalance,
+      availableEthUsdt: availableEthUsdt.toString(),
+    });
     const thresholdActions = await processThresholdRebalancing(
       context,
       mmConfig.address,
       BigInt(mmConfig.threshold!),
       BigInt(mmConfig.targetBalance!),
+      availableEthUsdt,
+      runState,
     );
     actions.push(...thresholdActions);
   }
@@ -275,11 +361,11 @@ const evaluateMarketMakerRebalance = async (context: ProcessingContext): Promise
 const processOnDemandRebalancing = async (
   context: ProcessingContext,
   recipientAddress: string,
+  availableEthUsdt: bigint,
+  runState: RebalanceRunState,
 ): Promise<RebalanceAction[]> => {
-  // Existing intent-fetching logic from current tacUsdt.ts
-  // Key change: use recipientAddress instead of config.ownAddress
-  // Create earmark linked to invoice
-  // Execute bridge with earmarkId
+  // Invoice-triggered rebalancing: creates earmarks for specific intents
+  // Uses available ETH USDT balance and tracks committed amounts
   const { config, chainService, everclear, database, rebalance, logger, requestId } = context;
   let invoices = await everclear.fetchInvoices({ [TAC_CHAIN_ID]: config.chains[TAC_CHAIN_ID] });
 
@@ -299,6 +385,9 @@ const processOnDemandRebalancing = async (
     logger.warn('No USDT balances found, skipping', { requestId });
     return [];
   }
+
+  // Track remaining available balance for this on-demand run
+  let remainingEthUsdt = availableEthUsdt - runState.committedEthUsdt;
 
   const actions: RebalanceAction[] = [];
 
@@ -363,11 +452,13 @@ const processOnDemandRebalancing = async (
       continue;
     }
 
-    if (currentOriginBalance <= minRebalanceAmount) {
-      logger.info('Origin balance is at or below minimum, skipping', {
+    // Use remaining available balance (accounts for previously committed funds in this run)
+    if (remainingEthUsdt <= minRebalanceAmount) {
+      logger.info('Remaining ETH USDT is at or below minimum, skipping', {
         requestId,
-        currentOriginBalance: currentOriginBalance.toString(),
+        remainingEthUsdt: remainingEthUsdt.toString(),
         minRebalanceAmount: minRebalanceAmount.toString(),
+        note: 'Some balance may be committed to other operations in this run',
       });
       continue;
     }
@@ -387,7 +478,8 @@ const processOnDemandRebalancing = async (
       continue;
     }
 
-    const amountToBridge = currentOriginBalance < shortfall ? currentOriginBalance : shortfall;
+    // Use remaining available balance (not the on-chain balance, which doesn't account for this run's commits)
+    const amountToBridge = remainingEthUsdt < shortfall ? remainingEthUsdt : shortfall;
 
     logger.info('On-demand rebalancing triggered - destination lacks funds', {
       requestId,
@@ -457,12 +549,15 @@ const processOnDemandRebalancing = async (
       sameAddressOnEthAndTac: evmSender === tacRecipient,
     });
 
+    // Use slippage from config (default 500 = 5%)
+    const slippageDbps = config.tacRebalance!.bridge.slippageDbps;
+
     const route = {
       asset: USDT_ON_ETH_ADDRESS,
       origin: origin,
       destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
       maximum: amountToBridge.toString(),
-      slippagesDbps: [500], // 0.5% slippage
+      slippagesDbps: [slippageDbps],
       preferences: [bridgeType],
       reserve: '0',
     };
@@ -572,6 +667,19 @@ const processOnDemandRebalancing = async (
       actions.push(rebalanceAction as RebalanceAction);
 
       rebalanceSuccessful = true;
+
+      // Track committed funds to prevent over-committing in subsequent operations
+      const bridgedAmount = BigInt(effectiveBridgedAmount);
+      runState.committedEthUsdt += bridgedAmount;
+      remainingEthUsdt -= bridgedAmount;
+
+      logger.debug('Updated committed funds after on-demand bridge', {
+        requestId,
+        invoiceId: invoice.intent_id.toString(),
+        bridgedAmount: bridgedAmount.toString(),
+        totalCommitted: runState.committedEthUsdt.toString(),
+        remainingAvailable: remainingEthUsdt.toString(),
+      });
     } catch (error) {
       logger.error('Failed to execute Stargate bridge', {
         requestId,
@@ -605,6 +713,8 @@ const processThresholdRebalancing = async (
   recipientAddress: string,
   threshold: bigint,
   targetBalance: bigint,
+  availableEthUsdt: bigint,
+  runState: RebalanceRunState,
 ): Promise<RebalanceAction[]> => {
   const { config, database: db, logger, requestId, prometheus } = context;
   const bridgeConfig = config.tacRebalance!.bridge;
@@ -655,34 +765,55 @@ const processThresholdRebalancing = async (
     return [];
   }
 
-  // 4. Check origin (ETH) balance
-  const ethUsdtBalance = await getEvmBalance(
-    config,
-    MAINNET_CHAIN_ID.toString(),
-    config.ownAddress,
-    USDT_TICKER_HASH,
-    6,
-    prometheus,
-  );
-  // const amountToBridge = min(shortfall, maxAmount, ethUsdtBalance);
+  // 4. Use available ETH balance (already accounts for committed funds in this run)
+  // This prevents over-committing when both MM and FS need rebalancing simultaneously
+  const remainingEthUsdt = availableEthUsdt - runState.committedEthUsdt;
+
+  logger.debug('Threshold rebalancing: checking available balance', {
+    requestId,
+    recipient: recipientAddress,
+    availableEthUsdt: availableEthUsdt.toString(),
+    alreadyCommitted: runState.committedEthUsdt.toString(),
+    remainingEthUsdt: remainingEthUsdt.toString(),
+    shortfall: shortfall.toString(),
+  });
+
+  // Calculate amount to bridge: min(shortfall, maxAmount, remainingEthUsdt)
   const amountToBridge =
-    shortfall < maxAmount && shortfall < ethUsdtBalance
+    shortfall < maxAmount && shortfall < remainingEthUsdt
       ? shortfall
-      : maxAmount < ethUsdtBalance
+      : maxAmount < remainingEthUsdt
         ? maxAmount
-        : ethUsdtBalance;
+        : remainingEthUsdt;
 
   if (amountToBridge < minAmount) {
-    logger.warn('Insufficient origin balance for threshold rebalance', {
+    logger.warn('Insufficient available balance for threshold rebalance', {
       requestId,
-      ethBalance: ethUsdtBalance.toString(),
-      needed: amountToBridge.toString(),
+      recipient: recipientAddress,
+      remainingEthUsdt: remainingEthUsdt.toString(),
+      minRequired: minAmount.toString(),
+      amountToBridge: amountToBridge.toString(),
+      note: 'Available balance may be reduced by other operations in this run',
     });
     return [];
   }
 
   // 5. Execute bridge (no earmark for threshold-based)
-  return executeTacBridge(context, recipientAddress, amountToBridge, null);
+  // Pass runState to track committed funds
+  const actions = await executeTacBridge(context, recipientAddress, amountToBridge, null);
+
+  // Track committed funds if bridge was successful
+  if (actions.length > 0) {
+    runState.committedEthUsdt += amountToBridge;
+    logger.debug('Updated committed funds after threshold bridge', {
+      requestId,
+      recipient: recipientAddress,
+      bridgedAmount: amountToBridge.toString(),
+      totalCommitted: runState.committedEthUsdt.toString(),
+    });
+  }
+
+  return actions;
 };
 
 const executeTacBridge = async (
@@ -714,22 +845,31 @@ const executeTacBridge = async (
   const bridgeType = SupportedBridge.Stargate;
 
   // Get addresses for the bridging flow
-  // evmSender: The Ethereum address that holds USDT and will initiate the bridge
+  // evmSender: The Ethereum address that holds USDT and will initiate the bridge (Leg 1)
   const evmSender = getActualAddress(origin, config, logger, { requestId });
 
   // tonRecipient: TON wallet address that receives USDT on TON (intermediate step)
+  // This wallet will sign Leg 2 using config.ton.mnemonic
   const tonRecipient = config.ownTonAddress;
 
   // tacRecipient: Final EVM address on TAC that should receive USDT
-  // CRITICAL: This MUST be the same as evmSender to satisfy the "same address" requirement
-  // Both Ethereum and TAC are EVM chains, so the same address can receive on both
-  const tacRecipient = evmSender;
+  // The TAC SDK allows sending to any EVM address via evmProxyMsg.evmTargetAddress
+  // SECURITY: We restrict recipients to ONLY the configured MM or FS addresses
+  // This prevents funds from being sent to arbitrary/malicious addresses
+  const tacRecipient = recipientAddress;
 
-  if (tacRecipient !== recipientAddress) {
-    logger.error('Recipient Address is not same as config.ownAddress, cannot execute Stargate bridge', {
+  // Security validation: Ensure recipient is one of the configured TAC receivers
+  const allowedRecipients = [
+    config.tacRebalance?.marketMaker?.address?.toLowerCase(),
+    config.tacRebalance?.fillService?.address?.toLowerCase(),
+  ].filter(Boolean);
+
+  if (!allowedRecipients.includes(recipientAddress.toLowerCase())) {
+    logger.error('Recipient address is not a configured TAC receiver (MM or FS)', {
       requestId,
-      evmSender,
       recipientAddress,
+      allowedRecipients,
+      note: 'Only tacRebalance.marketMaker.address and tacRebalance.fillService.address are allowed',
     });
     return [];
   }
@@ -743,19 +883,40 @@ const executeTacBridge = async (
     return [];
   }
 
+  // Check if recipient is MM vs FS and log appropriately
+  const isMarketMaker = tacRecipient.toLowerCase() === config.tacRebalance?.marketMaker?.address?.toLowerCase();
+  const isFillService = tacRecipient.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+
+  // IMPORTANT: If recipient is MM but doesn't match ownAddress, funds won't be usable for intent filling
+  // because intent filling always uses config.ownAddress as the source of funds
+  if (isMarketMaker && tacRecipient.toLowerCase() !== config.ownAddress.toLowerCase()) {
+    logger.warn('Market Maker address differs from ownAddress - funds will NOT be usable for intent filling!', {
+      requestId,
+      mmAddress: tacRecipient,
+      ownAddress: config.ownAddress,
+      note: 'Intent filling requires funds at ownAddress. Consider setting MM address = ownAddress.',
+    });
+  }
+
   logger.debug('Address flow for two-leg bridge', {
     requestId,
     evmSender,
     tonRecipient,
     tacRecipient,
+    isMarketMaker,
+    isFillService,
+    canUseForIntentFilling: tacRecipient.toLowerCase() === config.ownAddress.toLowerCase(),
   });
+
+  // Use slippage from config (default 500 = 5%)
+  const slippageDbps = config.tacRebalance!.bridge.slippageDbps;
 
   const route = {
     asset: USDT_ON_ETH_ADDRESS,
     origin: origin,
     destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
     maximum: amount.toString(),
-    slippagesDbps: [500], // 0.5% slippage
+    slippagesDbps: [slippageDbps],
     preferences: [bridgeType],
     reserve: '0',
   };
@@ -892,19 +1053,34 @@ const executeTacBridge = async (
   return actions;
 };
 
-const evaluateFillServiceRebalance = async (context: ProcessingContext): Promise<RebalanceAction[]> => {
-  const { config } = context;
+const evaluateFillServiceRebalance = async (
+  context: ProcessingContext,
+  availableEthUsdt: bigint,
+  runState: RebalanceRunState,
+): Promise<RebalanceAction[]> => {
+  const { config, logger, requestId } = context;
 
   const fsConfig = config.tacRebalance!.fillService; // FS only supports threshold-based rebalancing
   if (!fsConfig.thresholdEnabled) {
+    logger.debug('FS threshold rebalancing disabled', { requestId });
     return [];
   }
+
+  logger.debug('Evaluating FS threshold rebalancing', {
+    requestId,
+    fsAddress: fsConfig.address,
+    threshold: fsConfig.threshold,
+    targetBalance: fsConfig.targetBalance,
+    availableEthUsdt: availableEthUsdt.toString(),
+  });
 
   return processThresholdRebalancing(
     context,
     fsConfig.address,
     BigInt(fsConfig.threshold),
     BigInt(fsConfig.targetBalance),
+    availableEthUsdt,
+    runState,
   );
 };
 
