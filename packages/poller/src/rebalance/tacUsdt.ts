@@ -5,6 +5,8 @@ import {
   getTonAssetAddress,
   getEvmBalance,
   convertToNativeUnits,
+  convertTo18Decimals,
+  safeParseBigInt,
 } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
@@ -36,6 +38,28 @@ import {
 // Reference: https://raw.githubusercontent.com/connext/chaindata/main/everclear.json
 const USDT_ON_ETH_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
+
+/**
+ * Sender configuration for TAC rebalancing transactions.
+ * Specifies which address should sign and send from Ethereum mainnet.
+ */
+interface TacSenderConfig {
+  address: string; // Sender's Ethereum address
+  signerUrl?: string; // Web3signer URL for this sender (uses default if not specified)
+  label: 'market-maker' | 'fill-service'; // For logging
+}
+
+/**
+ * Resolved USDT token addresses and decimals for TAC rebalancing.
+ * Used to ensure correct token addresses are passed to balance checks
+ * and config values are converted to the correct decimal format.
+ */
+interface UsdtInfo {
+  tacAddress: string; // USDT address on TAC chain
+  tacDecimals: number; // USDT decimals on TAC (typically 6)
+  ethAddress: string; // USDT address on Ethereum mainnet
+  ethDecimals: number; // USDT decimals on ETH (typically 6)
+}
 
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
@@ -70,7 +94,8 @@ async function getTonUsdtBalance(
       return 0n;
     }
 
-    return BigInt(data.jetton_wallets[0].balance);
+    // Use safeParseBigInt for robust parsing of API response
+    return safeParseBigInt(data.jetton_wallets[0].balance);
   } catch {
     return 0n;
   }
@@ -105,7 +130,8 @@ async function getTonNativeBalance(
       return 0n;
     }
 
-    return BigInt(data.result.balance);
+    // Use safeParseBigInt for robust parsing of API response
+    return safeParseBigInt(data.result.balance);
   } catch {
     return 0n;
   }
@@ -123,6 +149,7 @@ interface ExecuteBridgeParams {
   bridgeType: SupportedBridge;
   bridgeTxRequests: MemoizedTransactionRequest[];
   amountToBridge: bigint;
+  senderOverride?: TacSenderConfig; // Optional: use different sender than config.ownAddress
 }
 
 interface ExecuteBridgeResult {
@@ -132,6 +159,7 @@ interface ExecuteBridgeResult {
 
 /**
  * Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
+ * @param senderOverride - If provided, uses this address as sender instead of config.ownAddress
  */
 const executeBridgeTransactions = async ({
   context,
@@ -139,8 +167,13 @@ const executeBridgeTransactions = async ({
   bridgeType,
   bridgeTxRequests,
   amountToBridge,
+  senderOverride,
 }: ExecuteBridgeParams): Promise<ExecuteBridgeResult> => {
   const { logger, chainService, config, requestId } = context;
+
+  // Use sender override if provided, otherwise default to ownAddress
+  const senderAddress = senderOverride?.address ?? config.ownAddress;
+  const senderLabel = senderOverride?.label ?? 'market-maker';
 
   let idx = -1;
   let effectiveBridgedAmount = amountToBridge.toString();
@@ -157,6 +190,8 @@ const executeBridgeTransactions = async ({
       transaction,
       memo,
       amountToBridge,
+      sender: senderAddress,
+      senderType: senderLabel,
     });
 
     const result = await submitTransactionWithLogging({
@@ -168,13 +203,13 @@ const executeBridgeTransactions = async ({
         data: transaction.data!,
         value: (transaction.value || 0).toString(),
         chainId: route.origin,
-        from: config.ownAddress,
+        from: senderAddress,
         funcSig: transaction.funcSig || '',
       },
       zodiacConfig: {
         walletType: WalletType.EOA,
       },
-      context: { requestId, route, bridgeType, transactionType: memo },
+      context: { requestId, route, bridgeType, transactionType: memo, sender: senderLabel },
     });
 
     logger.info('Successfully submitted TAC bridge transaction', {
@@ -247,19 +282,72 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     return actions;
   }
 
+  // Validate critical configuration before proceeding
+  const validationErrors: string[] = [];
+  if (!tacRebalanceConfig.marketMaker?.address) {
+    validationErrors.push('marketMaker.address is required');
+  }
+  if (!tacRebalanceConfig.fillService?.address) {
+    validationErrors.push('fillService.address is required');
+  }
+  if (!tacRebalanceConfig.bridge?.minRebalanceAmount) {
+    validationErrors.push('bridge.minRebalanceAmount is required');
+  }
+  if (validationErrors.length > 0) {
+    logger.error('TAC rebalance configuration validation failed', {
+      requestId,
+      errors: validationErrors,
+    });
+    return actions;
+  }
+
+  // Resolve USDT token addresses and decimals from config for each chain
+  const ethUsdtAddress = getTokenAddressFromConfig(USDT_TICKER_HASH, MAINNET_CHAIN_ID.toString(), config);
+  const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, MAINNET_CHAIN_ID.toString(), config) ?? 6;
+  const tacUsdtAddress = getTokenAddressFromConfig(USDT_TICKER_HASH, TAC_CHAIN_ID.toString(), config);
+  const tacUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, TAC_CHAIN_ID.toString(), config) ?? 6;
+
+  if (!ethUsdtAddress) {
+    logger.error('USDT address not configured for Ethereum mainnet', {
+      requestId,
+      tickerHash: USDT_TICKER_HASH,
+      chainId: MAINNET_CHAIN_ID,
+    });
+    return actions;
+  }
+
+  if (!tacUsdtAddress) {
+    logger.error('USDT address not configured for TAC chain', {
+      requestId,
+      tickerHash: USDT_TICKER_HASH,
+      chainId: TAC_CHAIN_ID,
+    });
+    return actions;
+  }
+
   // Get initial ETH USDT balance (shared pool for both MM and FS)
+  // Returns balance normalized to 18 decimals
   const initialEthUsdtBalance = await getEvmBalance(
     config,
     MAINNET_CHAIN_ID.toString(),
     config.ownAddress,
-    USDT_TICKER_HASH,
-    6,
+    ethUsdtAddress,
+    ethUsdtDecimals,
     prometheus,
   );
+
+  // Resolved USDT addresses and decimals for use in threshold functions
+  const usdtInfo = {
+    tacAddress: tacUsdtAddress,
+    tacDecimals: tacUsdtDecimals,
+    ethAddress: ethUsdtAddress,
+    ethDecimals: ethUsdtDecimals,
+  };
 
   logger.info('Starting TAC USDT rebalancing', {
     requestId,
     initialEthUsdtBalance: initialEthUsdtBalance.toString(),
+    usdtInfo,
     mmConfig: {
       address: tacRebalanceConfig.marketMaker.address,
       onDemandEnabled: tacRebalanceConfig.marketMaker.onDemandEnabled,
@@ -280,7 +368,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
   const mmAvailableBalance = initialEthUsdtBalance;
 
   // Evaluate Market Maker path first (invoice-triggered takes priority)
-  const mmActions = await evaluateMarketMakerRebalance(context, mmAvailableBalance, runState);
+  const mmActions = await evaluateMarketMakerRebalance(context, mmAvailableBalance, runState, usdtInfo);
   actions.push(...mmActions);
 
   // Calculate remaining balance for FS (deduct MM committed amount)
@@ -295,7 +383,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
   }
 
   // Evaluate Fill Service path (threshold-based only)
-  const fsActions = await evaluateFillServiceRebalance(context, fsAvailableBalance, runState);
+  const fsActions = await evaluateFillServiceRebalance(context, fsAvailableBalance, runState, usdtInfo);
   actions.push(...fsActions);
 
   logger.info('Completed TAC USDT rebalancing cycle', {
@@ -313,6 +401,7 @@ const evaluateMarketMakerRebalance = async (
   context: ProcessingContext,
   availableEthUsdt: bigint,
   runState: RebalanceRunState,
+  usdtInfo: UsdtInfo,
 ): Promise<RebalanceAction[]> => {
   const { config, logger, requestId } = context;
   const mmConfig = config.tacRebalance!.marketMaker;
@@ -338,20 +427,31 @@ const evaluateMarketMakerRebalance = async (
 
   // B) Threshold-based: Balance check (only if no invoice-triggered rebalancing)
   if (mmConfig.thresholdEnabled) {
+    // Convert config values from native decimals (6) to normalized (18)
+    // Use safeParseBigInt for robust parsing of config strings
+    const thresholdNative = safeParseBigInt(mmConfig.threshold);
+    const targetNative = safeParseBigInt(mmConfig.targetBalance);
+    const threshold18 = convertTo18Decimals(thresholdNative, usdtInfo.tacDecimals);
+    const target18 = convertTo18Decimals(targetNative, usdtInfo.tacDecimals);
+
     logger.debug('No invoice-triggered rebalancing needed, checking MM threshold', {
       requestId,
-      threshold: mmConfig.threshold,
-      targetBalance: mmConfig.targetBalance,
+      thresholdNative: thresholdNative.toString(),
+      threshold18: threshold18.toString(),
+      targetNative: targetNative.toString(),
+      target18: target18.toString(),
       availableEthUsdt: availableEthUsdt.toString(),
     });
-    const thresholdActions = await processThresholdRebalancing(
+    const thresholdActions = await processThresholdRebalancing({
       context,
-      mmConfig.address,
-      BigInt(mmConfig.threshold!),
-      BigInt(mmConfig.targetBalance!),
+      recipientAddress: mmConfig.address,
+      threshold: threshold18,
+      targetBalance: target18,
       availableEthUsdt,
       runState,
-    );
+      tacUsdtAddress: usdtInfo.tacAddress,
+      tacUsdtDecimals: usdtInfo.tacDecimals,
+    });
     actions.push(...thresholdActions);
   }
 
@@ -409,9 +509,9 @@ const processOnDemandRebalancing = async (
     const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
 
     // intent.amount_out_min is already in native units (from the API/chain)
-    // No conversion needed
-    const intentAmount = BigInt(invoice.amount);
-    const minRebalanceAmount = BigInt(config.tacRebalance!.bridge.minRebalanceAmount);
+    // No conversion needed - use safeParseBigInt for robust parsing
+    const intentAmount = safeParseBigInt(invoice.amount);
+    const minRebalanceAmount = safeParseBigInt(config.tacRebalance!.bridge.minRebalanceAmount);
 
     if (intentAmount < minRebalanceAmount) {
       logger.warn('Invoice amount is less than minimum rebalance amount, skipping', {
@@ -587,9 +687,9 @@ const processOnDemandRebalancing = async (
         receivedAmount: receivedAmountStr,
       });
 
-      // Check slippage
-      const receivedAmount = BigInt(receivedAmountStr);
-      const slippageDbps = BigInt(route.slippagesDbps[0]);
+      // Check slippage - use safeParseBigInt for adapter response
+      const receivedAmount = safeParseBigInt(receivedAmountStr);
+      const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
       const minimumAcceptableAmount = amountToBridge - (amountToBridge * slippageDbps) / DBPS_MULTIPLIER;
 
       if (receivedAmount < minimumAcceptableAmount) {
@@ -669,7 +769,7 @@ const processOnDemandRebalancing = async (
       rebalanceSuccessful = true;
 
       // Track committed funds to prevent over-committing in subsequent operations
-      const bridgedAmount = BigInt(effectiveBridgedAmount);
+      const bridgedAmount = safeParseBigInt(effectiveBridgedAmount);
       runState.committedEthUsdt += bridgedAmount;
       remainingEthUsdt -= bridgedAmount;
 
@@ -708,24 +808,42 @@ const processOnDemandRebalancing = async (
   return actions;
 };
 
-const processThresholdRebalancing = async (
-  context: ProcessingContext,
-  recipientAddress: string,
-  threshold: bigint,
-  targetBalance: bigint,
-  availableEthUsdt: bigint,
-  runState: RebalanceRunState,
-): Promise<RebalanceAction[]> => {
+/**
+ * Parameters for threshold-based rebalancing
+ * All bigint values should be in 18 decimal format (normalized)
+ */
+interface ThresholdRebalanceParams {
+  context: ProcessingContext;
+  recipientAddress: string;
+  threshold: bigint; // In 18 decimals
+  targetBalance: bigint; // In 18 decimals
+  availableEthUsdt: bigint; // In 18 decimals
+  runState: RebalanceRunState;
+  tacUsdtAddress: string;
+  tacUsdtDecimals: number;
+}
+
+const processThresholdRebalancing = async ({
+  context,
+  recipientAddress,
+  threshold,
+  targetBalance,
+  availableEthUsdt,
+  runState,
+  tacUsdtAddress,
+  tacUsdtDecimals,
+}: ThresholdRebalanceParams): Promise<RebalanceAction[]> => {
   const { config, database: db, logger, requestId, prometheus } = context;
   const bridgeConfig = config.tacRebalance!.bridge;
 
   // 1. Get current USDT balance on TAC for this recipient
+  // Returns balance normalized to 18 decimals
   const tacBalance = await getEvmBalance(
     config,
     TAC_CHAIN_ID.toString(),
     recipientAddress,
-    USDT_TICKER_HASH,
-    6,
+    tacUsdtAddress,
+    tacUsdtDecimals,
     prometheus,
   );
   if (tacBalance >= threshold) {
@@ -734,6 +852,7 @@ const processThresholdRebalancing = async (
       recipient: recipientAddress,
       balance: tacBalance.toString(),
       threshold: threshold.toString(),
+      note: 'Both values in 18 decimal format',
     });
     return [];
   }
@@ -753,14 +872,21 @@ const processThresholdRebalancing = async (
   }
 
   // 3. Calculate amount needed
+  // shortfall is in 18 decimals (targetBalance and tacBalance are both normalized)
   const shortfall = targetBalance - tacBalance;
-  const minAmount = BigInt(bridgeConfig.minRebalanceAmount);
-  const maxAmount = bridgeConfig.maxRebalanceAmount ? BigInt(bridgeConfig.maxRebalanceAmount) : shortfall;
+  // Convert bridge config amounts from native (6 decimals) to normalized (18 decimals)
+  // Use safeParseBigInt for robust parsing of config strings
+  const minAmountNative = safeParseBigInt(bridgeConfig.minRebalanceAmount);
+  const minAmount = convertTo18Decimals(minAmountNative, tacUsdtDecimals);
+  const maxAmountNative = safeParseBigInt(bridgeConfig.maxRebalanceAmount);
+  const maxAmount = maxAmountNative > 0n ? convertTo18Decimals(maxAmountNative, tacUsdtDecimals) : shortfall;
 
   if (shortfall < minAmount) {
     logger.debug('Shortfall below minimum, skipping', {
       requestId,
       shortfall: shortfall.toString(),
+      minAmount: minAmount.toString(),
+      note: 'Both values in 18 decimal format',
     });
     return [];
   }
@@ -822,7 +948,7 @@ const executeTacBridge = async (
   amount: bigint,
   earmarkId: string | null, // null for threshold-based
 ): Promise<RebalanceAction[]> => {
-  const { config, chainService, logger, requestId, rebalance, prometheus } = context;
+  const { config, chainService, fillServiceChainService, logger, requestId, rebalance, prometheus } = context;
   // Existing Stargate bridge logic
   // Store recipientAddress in operation.recipient
   // Store earmarkId (null for threshold-based)
@@ -844,9 +970,87 @@ const executeTacBridge = async (
   let rebalanceSuccessful = false;
   const bridgeType = SupportedBridge.Stargate;
 
-  // Get addresses for the bridging flow
-  // evmSender: The Ethereum address that holds USDT and will initiate the bridge (Leg 1)
-  const evmSender = getActualAddress(origin, config, logger, { requestId });
+  // Determine sender for the bridge based on recipient type
+  // For Fill Service recipient: prefer filler as sender, fallback to MM
+  // For Market Maker recipient: always use MM
+  const isFillServiceRecipient =
+    recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+  // Use senderAddress if explicitly set, otherwise default to address (same key = same address on ETH and TAC)
+  const fillerSenderAddress =
+    config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
+
+  let evmSender: string;
+  let senderConfig: TacSenderConfig | undefined;
+  let selectedChainService = chainService;
+
+  if (isFillServiceRecipient && fillerSenderAddress && fillServiceChainService) {
+    // Check if filler has enough USDT on ETH to send
+    // getEvmBalance returns balance in 18 decimals (normalized)
+    // amount is in 18 decimals (from getMarkBalancesForTicker which also normalizes)
+    let fillerBalance = 0n;
+    try {
+      fillerBalance = await getEvmBalance(
+        config,
+        MAINNET_CHAIN_ID.toString(),
+        fillerSenderAddress,
+        USDT_ON_ETH_ADDRESS,
+        6, // USDT native decimals - will be converted to 18 internally
+        prometheus,
+      );
+    } catch (error) {
+      logger.warn('Failed to check filler balance, falling back to MM sender', {
+        requestId,
+        fillerAddress: fillerSenderAddress,
+        error: jsonifyError(error),
+      });
+      // Fall through to MM sender below
+    }
+
+    logger.debug('Checking filler balance for FS rebalancing', {
+      requestId,
+      fillerAddress: fillerSenderAddress,
+      fillerBalance: fillerBalance.toString(),
+      requiredAmount: amount.toString(),
+      note: 'Both values are in 18 decimal format (normalized)',
+    });
+
+    if (fillerBalance >= amount) {
+      // Filler has enough - use filler as sender
+      evmSender = fillerSenderAddress;
+      senderConfig = {
+        address: fillerSenderAddress,
+        label: 'fill-service',
+      };
+      selectedChainService = fillServiceChainService;
+      logger.info('Using Fill Service sender for TAC rebalancing (filler has sufficient balance)', {
+        requestId,
+        sender: fillerSenderAddress,
+        balance: fillerBalance.toString(),
+        amount: amount.toString(),
+      });
+    } else {
+      // Filler doesn't have enough - fall back to MM
+      evmSender = getActualAddress(origin, config, logger, { requestId });
+      senderConfig = {
+        address: evmSender,
+        label: 'market-maker',
+      };
+      logger.info('Falling back to Market Maker sender for TAC rebalancing (filler has insufficient balance)', {
+        requestId,
+        fillerAddress: fillerSenderAddress,
+        fillerBalance: fillerBalance.toString(),
+        mmAddress: evmSender,
+        requiredAmount: amount.toString(),
+      });
+    }
+  } else {
+    // MM recipient or no FS sender configured - use default
+    evmSender = getActualAddress(origin, config, logger, { requestId });
+    senderConfig = {
+      address: evmSender,
+      label: 'market-maker',
+    };
+  }
 
   // tonRecipient: TON wallet address that receives USDT on TON (intermediate step)
   // This wallet will sign Leg 2 using config.ton.mnemonic
@@ -946,9 +1150,9 @@ const executeTacBridge = async (
       receivedAmount: receivedAmountStr,
     });
 
-    // Check slippage
-    const receivedAmount = BigInt(receivedAmountStr);
-    const slippageDbps = BigInt(route.slippagesDbps[0]);
+    // Check slippage - use safeParseBigInt for adapter response
+    const receivedAmount = safeParseBigInt(receivedAmountStr);
+    const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
     const minimumAcceptableAmount = amount - (amount * slippageDbps) / DBPS_MULTIPLIER;
 
     if (receivedAmount < minimumAcceptableAmount) {
@@ -977,13 +1181,14 @@ const executeTacBridge = async (
       transactionCount: bridgeTxRequests.length,
     });
 
-    // Execute bridge transactions
+    // Execute bridge transactions using the selected chain service and sender
     const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-      context: { requestId, logger, chainService, config },
+      context: { requestId, logger, chainService: selectedChainService, config },
       route,
       bridgeType,
       bridgeTxRequests,
       amountToBridge: amount,
+      senderOverride: senderConfig,
     });
 
     // Create database record for Leg 1
@@ -1057,6 +1262,7 @@ const evaluateFillServiceRebalance = async (
   context: ProcessingContext,
   availableEthUsdt: bigint,
   runState: RebalanceRunState,
+  usdtInfo: UsdtInfo,
 ): Promise<RebalanceAction[]> => {
   const { config, logger, requestId } = context;
 
@@ -1066,22 +1272,33 @@ const evaluateFillServiceRebalance = async (
     return [];
   }
 
+  // Convert config values from native decimals (6) to normalized (18)
+  // Use safeParseBigInt for robust parsing of config strings
+  const thresholdNative = safeParseBigInt(fsConfig.threshold);
+  const targetNative = safeParseBigInt(fsConfig.targetBalance);
+  const threshold18 = convertTo18Decimals(thresholdNative, usdtInfo.tacDecimals);
+  const target18 = convertTo18Decimals(targetNative, usdtInfo.tacDecimals);
+
   logger.debug('Evaluating FS threshold rebalancing', {
     requestId,
     fsAddress: fsConfig.address,
-    threshold: fsConfig.threshold,
-    targetBalance: fsConfig.targetBalance,
+    thresholdNative: thresholdNative.toString(),
+    threshold18: threshold18.toString(),
+    targetNative: targetNative.toString(),
+    target18: target18.toString(),
     availableEthUsdt: availableEthUsdt.toString(),
   });
 
-  return processThresholdRebalancing(
+  return processThresholdRebalancing({
     context,
-    fsConfig.address,
-    BigInt(fsConfig.threshold),
-    BigInt(fsConfig.targetBalance),
+    recipientAddress: fsConfig.address,
+    threshold: threshold18,
+    targetBalance: target18,
     availableEthUsdt,
     runState,
-  );
+    tacUsdtAddress: usdtInfo.tacAddress,
+    tacUsdtDecimals: usdtInfo.tacDecimals,
+  });
 };
 
 /**
