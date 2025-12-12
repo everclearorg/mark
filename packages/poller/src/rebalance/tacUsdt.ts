@@ -1,8 +1,13 @@
 import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
-import { getTickerForAsset, convertToNativeUnits, getMarkBalancesForTicker, getTonAssetAddress } from '../helpers';
+import {
+  getTickerForAsset,
+  getMarkBalancesForTicker,
+  getTonAssetAddress,
+  getEvmBalance,
+  convertToNativeUnits,
+} from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
-  getDecimalsFromConfig,
   RebalanceOperationStatus,
   DBPS_MULTIPLIER,
   RebalanceAction,
@@ -13,20 +18,19 @@ import {
   getTokenAddressFromConfig,
   WalletType,
   EarmarkStatus,
+  getDecimalsFromConfig,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
 import {
-  createEarmark,
   createRebalanceOperation,
   Earmark,
   getActiveEarmarkForInvoice,
   TransactionEntry,
   TransactionReceipt,
 } from '@mark/database';
-import { IntentStatus } from '@mark/everclear';
 
 // USDT token addresses
 // Reference: https://raw.githubusercontent.com/connext/chaindata/main/everclear.json
@@ -35,10 +39,6 @@ const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b
 
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
-
-// TODO: Change back to 100000000n (100 USDT) for production - temporarily set to 1 USDT for testing
-const MIN_REBALANCE_AMOUNT = 1000000n; // 1 USDT in 6 decimals
-
 /**
  * Query TON wallet USDT balance from TONCenter API
  * @param walletAddress - TON wallet address (user-friendly format)
@@ -133,13 +133,13 @@ interface ExecuteBridgeResult {
 /**
  * Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
  */
-async function executeBridgeTransactions({
+const executeBridgeTransactions = async ({
   context,
   route,
   bridgeType,
   bridgeTxRequests,
   amountToBridge,
-}: ExecuteBridgeParams): Promise<ExecuteBridgeResult> {
+}: ExecuteBridgeParams): Promise<ExecuteBridgeResult> => {
   const { logger, chainService, config, requestId } = context;
 
   let idx = -1;
@@ -205,20 +205,32 @@ async function executeBridgeTransactions({
   }
 
   return { receipt, effectiveBridgedAmount };
+};
+
+/**
+ * Shared state for tracking ETH USDT that has been committed in this run
+ * This prevents over-committing when both MM and FS need rebalancing simultaneously
+ */
+interface RebalanceRunState {
+  committedEthUsdt: bigint; // Amount of ETH USDT committed in this run (not yet confirmed on-chain)
 }
 
 /**
  * Main TAC USDT rebalancing function
  *
  * Workflow:
- * 1. Check for settled invoices destined for TAC with USDT output
- * 2. If USDT balance on TAC is insufficient, initiate rebalancing
- * 3. Leg 1: Bridge USDT from Ethereum to TON via Stargate
- * 4. Leg 2: Bridge USDT from TON to TAC via TAC Inner Bridge
+ * 1. Process any pending callbacks (Leg 1 → Leg 2 transitions)
+ * 2. Evaluate Market Maker rebalancing needs (invoice-triggered OR threshold-based)
+ * 3. Evaluate Fill Service rebalancing needs (threshold-based only)
+ * 4. Handle simultaneous MM+FS by tracking committed funds within the run
+ *
+ * Bridge flow:
+ * - Leg 1: USDT Ethereum → TON via Stargate
+ * - Leg 2: USDT TON → TAC via TAC Inner Bridge
  */
 export async function rebalanceTacUsdt(context: ProcessingContext): Promise<RebalanceAction[]> {
-  const { logger, requestId, config, chainService, rebalance, everclear } = context;
-  const rebalanceOperations: RebalanceAction[] = [];
+  const { logger, requestId, config, rebalance, prometheus } = context;
+  const actions: RebalanceAction[] = [];
 
   // Always check destination callbacks to ensure operations complete
   await executeTacCallbacks(context);
@@ -226,10 +238,144 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
   const isPaused = await rebalance.isPaused();
   if (isPaused) {
     logger.warn('TAC USDT Rebalance loop is paused', { requestId });
-    return rebalanceOperations;
+    return actions;
   }
 
-  logger.info('Starting TAC USDT rebalancing', { requestId });
+  const tacRebalanceConfig = config.tacRebalance;
+  if (!tacRebalanceConfig?.enabled) {
+    logger.warn('TAC USDT Rebalance is not enabled', { requestId });
+    return actions;
+  }
+
+  // Get initial ETH USDT balance (shared pool for both MM and FS)
+  const initialEthUsdtBalance = await getEvmBalance(
+    config,
+    MAINNET_CHAIN_ID.toString(),
+    config.ownAddress,
+    USDT_TICKER_HASH,
+    6,
+    prometheus,
+  );
+
+  logger.info('Starting TAC USDT rebalancing', {
+    requestId,
+    initialEthUsdtBalance: initialEthUsdtBalance.toString(),
+    mmConfig: {
+      address: tacRebalanceConfig.marketMaker.address,
+      onDemandEnabled: tacRebalanceConfig.marketMaker.onDemandEnabled,
+      thresholdEnabled: tacRebalanceConfig.marketMaker.thresholdEnabled,
+    },
+    fsConfig: {
+      address: tacRebalanceConfig.fillService.address,
+      thresholdEnabled: tacRebalanceConfig.fillService.thresholdEnabled,
+    },
+  });
+
+  // Track committed funds to prevent over-committing in this run
+  const runState: RebalanceRunState = {
+    committedEthUsdt: 0n,
+  };
+
+  // Calculate available balance for MM (no deductions yet)
+  const mmAvailableBalance = initialEthUsdtBalance;
+
+  // Evaluate Market Maker path first (invoice-triggered takes priority)
+  const mmActions = await evaluateMarketMakerRebalance(context, mmAvailableBalance, runState);
+  actions.push(...mmActions);
+
+  // Calculate remaining balance for FS (deduct MM committed amount)
+  const fsAvailableBalance = initialEthUsdtBalance - runState.committedEthUsdt;
+
+  if (runState.committedEthUsdt > 0n) {
+    logger.info('MM committed funds, reducing available balance for FS', {
+      requestId,
+      mmCommitted: runState.committedEthUsdt.toString(),
+      fsAvailable: fsAvailableBalance.toString(),
+    });
+  }
+
+  // Evaluate Fill Service path (threshold-based only)
+  const fsActions = await evaluateFillServiceRebalance(context, fsAvailableBalance, runState);
+  actions.push(...fsActions);
+
+  logger.info('Completed TAC USDT rebalancing cycle', {
+    requestId,
+    totalActions: actions.length,
+    mmActions: mmActions.length,
+    fsActions: fsActions.length,
+    totalCommitted: runState.committedEthUsdt.toString(),
+  });
+
+  return actions;
+}
+
+const evaluateMarketMakerRebalance = async (
+  context: ProcessingContext,
+  availableEthUsdt: bigint,
+  runState: RebalanceRunState,
+): Promise<RebalanceAction[]> => {
+  const { config, logger, requestId } = context;
+  const mmConfig = config.tacRebalance!.marketMaker;
+  const actions: RebalanceAction[] = [];
+
+  // MM uses EITHER invoice-triggered OR threshold-based rebalancing, NOT BOTH
+  // Priority: Invoice-triggered takes precedence (funds needed for specific intents)
+  // Only fall back to threshold-based if no invoices require rebalancing
+
+  // A) On-demand: Invoice-triggered (higher priority)
+  if (mmConfig.onDemandEnabled) {
+    const invoiceActions = await processOnDemandRebalancing(context, mmConfig.address, availableEthUsdt, runState);
+    if (invoiceActions.length > 0) {
+      logger.info('MM rebalancing triggered by invoices, skipping threshold check', {
+        requestId,
+        invoiceActionsCount: invoiceActions.length,
+        note: 'Invoice-triggered rebalancing takes priority over threshold-based',
+      });
+      actions.push(...invoiceActions);
+      return actions; // Exit early - invoice-triggered takes priority
+    }
+  }
+
+  // B) Threshold-based: Balance check (only if no invoice-triggered rebalancing)
+  if (mmConfig.thresholdEnabled) {
+    logger.debug('No invoice-triggered rebalancing needed, checking MM threshold', {
+      requestId,
+      threshold: mmConfig.threshold,
+      targetBalance: mmConfig.targetBalance,
+      availableEthUsdt: availableEthUsdt.toString(),
+    });
+    const thresholdActions = await processThresholdRebalancing(
+      context,
+      mmConfig.address,
+      BigInt(mmConfig.threshold!),
+      BigInt(mmConfig.targetBalance!),
+      availableEthUsdt,
+      runState,
+    );
+    actions.push(...thresholdActions);
+  }
+
+  return actions;
+};
+
+const processOnDemandRebalancing = async (
+  context: ProcessingContext,
+  recipientAddress: string,
+  availableEthUsdt: bigint,
+  runState: RebalanceRunState,
+): Promise<RebalanceAction[]> => {
+  // Invoice-triggered rebalancing: creates earmarks for specific intents
+  // Uses available ETH USDT balance and tracks committed amounts
+  const { config, chainService, everclear, database, rebalance, logger, requestId } = context;
+  let invoices = await everclear.fetchInvoices({ [TAC_CHAIN_ID]: config.chains[TAC_CHAIN_ID] });
+
+  // Filter invoices for USDT
+  invoices = invoices.filter((invoice) => invoice.ticker_hash === USDT_TICKER_HASH);
+
+  if (invoices.length === 0) {
+    logger.info('No invoices destined for TAC with USDT output', { requestId });
+    return [];
+  }
 
   // Get USDT balances across all chains
   const balances = await getMarkBalancesForTicker(USDT_TICKER_HASH, config, chainService, context.prometheus);
@@ -237,45 +383,21 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
 
   if (!balances) {
     logger.warn('No USDT balances found, skipping', { requestId });
-    return rebalanceOperations;
+    return [];
   }
 
-  // Get intents destined for TAC
-  // Note: outputAsset is NOT supported by the Everclear API - we use tickerHash instead
-  // and filter by output_asset in the results if needed
-  const intents = await everclear.fetchIntents({
-    limit: 20,
-    statuses: [IntentStatus.SETTLED_AND_COMPLETED],
-    destinations: [TAC_CHAIN_ID],
-    tickerHash: USDT_TICKER_HASH,
-    isFastPath: true,
-  });
+  // Track remaining available balance for this on-demand run
+  let remainingEthUsdt = availableEthUsdt - runState.committedEthUsdt;
 
-  logger.info('Fetched TAC USDT intents', {
-    requestId,
-    intentCount: intents.length,
-  });
+  const actions: RebalanceAction[] = [];
 
-  for (const intent of intents) {
-    logger.info('Processing TAC USDT intent', { requestId, intent });
-
-    // Validate intent
-    if (!intent.hub_settlement_domain) {
-      logger.warn('Intent does not have a hub settlement domain, skipping', { requestId, intent });
-      continue;
-    }
-
-    if (intent.destinations.length !== 1 || intent.destinations[0] !== TAC_CHAIN_ID) {
-      logger.warn('Intent does not have TAC as destination, skipping', { requestId, intent });
-      continue;
-    }
-
+  for (const invoice of invoices) {
     // Check if earmark already exists
-    const existingActive = await getActiveEarmarkForInvoice(intent.intent_id);
+    const existingActive = await getActiveEarmarkForInvoice(invoice.intent_id);
     if (existingActive) {
-      logger.warn('Active earmark already exists for intent, skipping', {
+      logger.warn('Active earmark already exists for invoice, skipping', {
         requestId,
-        invoiceId: intent.intent_id,
+        invoiceId: invoice.intent_id,
         existingEarmarkId: existingActive.id,
       });
       continue;
@@ -286,20 +408,17 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     const ticker = USDT_TICKER_HASH;
     const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
 
-    // MIN_REBALANCE_AMOUNT is already in native units (6 decimals for USDT)
-    // No conversion needed
-    const minAmount = MIN_REBALANCE_AMOUNT;
-
     // intent.amount_out_min is already in native units (from the API/chain)
     // No conversion needed
-    const intentAmount = BigInt(intent.amount_out_min);
+    const intentAmount = BigInt(invoice.amount);
+    const minRebalanceAmount = BigInt(config.tacRebalance!.bridge.minRebalanceAmount);
 
-    if (intentAmount < minAmount) {
-      logger.warn('Intent amount is less than minimum, skipping', {
+    if (intentAmount < minRebalanceAmount) {
+      logger.warn('Invoice amount is less than minimum rebalance amount, skipping', {
         requestId,
-        intent,
-        intentAmount: intentAmount.toString(),
-        minAmount: minAmount.toString(),
+        invoiceId: invoice.intent_id.toString(),
+        invoiceAmount: invoice.amount,
+        minRebalanceAmount: minRebalanceAmount.toString(),
       });
       continue;
     }
@@ -325,7 +444,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     if (currentDestBalance >= intentAmount) {
       logger.info('TAC already has sufficient balance for intent, skipping rebalance', {
         requestId,
-        intentId: intent.intent_id,
+        invoiceId: invoice.intent_id.toString(),
         currentDestBalance: currentDestBalance.toString(),
         intentAmount: intentAmount.toString(),
         note: 'On-demand rebalancing only triggers when destination lacks funds',
@@ -333,11 +452,13 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
       continue;
     }
 
-    if (currentOriginBalance <= minAmount) {
-      logger.info('Origin balance is at or below minimum, skipping', {
+    // Use remaining available balance (accounts for previously committed funds in this run)
+    if (remainingEthUsdt <= minRebalanceAmount) {
+      logger.info('Remaining ETH USDT is at or below minimum, skipping', {
         requestId,
-        currentOriginBalance: currentOriginBalance.toString(),
-        minAmount: minAmount.toString(),
+        remainingEthUsdt: remainingEthUsdt.toString(),
+        minRebalanceAmount: minRebalanceAmount.toString(),
+        note: 'Some balance may be committed to other operations in this run',
       });
       continue;
     }
@@ -347,21 +468,22 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     const shortfall = intentAmount - currentDestBalance;
 
     // Don't bridge if shortfall is below minimum threshold
-    if (shortfall < minAmount) {
+    if (shortfall < minRebalanceAmount) {
       logger.info('Shortfall is below minimum rebalance threshold, skipping', {
         requestId,
-        intentId: intent.intent_id,
+        invoiceId: invoice.intent_id.toString(),
         shortfall: shortfall.toString(),
-        minAmount: minAmount.toString(),
+        minRebalanceAmount: minRebalanceAmount.toString(),
       });
       continue;
     }
 
-    const amountToBridge = currentOriginBalance < shortfall ? currentOriginBalance : shortfall;
+    // Use remaining available balance (not the on-chain balance, which doesn't account for this run's commits)
+    const amountToBridge = remainingEthUsdt < shortfall ? remainingEthUsdt : shortfall;
 
     logger.info('On-demand rebalancing triggered - destination lacks funds', {
       requestId,
-      intentId: intent.intent_id,
+      invoiceId: invoice.intent_id.toString(),
       intentAmount: intentAmount.toString(),
       currentDestBalance: currentDestBalance.toString(),
       shortfall: shortfall.toString(),
@@ -371,8 +493,8 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     // Create earmark
     let earmark: Earmark;
     try {
-      earmark = await createEarmark({
-        invoiceId: intent.intent_id,
+      earmark = await database.createEarmark({
+        invoiceId: invoice.intent_id.toString(),
         designatedPurchaseChain: destination,
         tickerHash: ticker,
         minAmount: amountToBridge.toString(),
@@ -381,7 +503,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     } catch (error: unknown) {
       logger.error('Failed to create earmark for TAC intent', {
         requestId,
-        intent,
+        invoice,
         error: jsonifyError(error),
       });
       throw error;
@@ -390,7 +512,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     logger.info('Created earmark for TAC intent', {
       requestId,
       earmarkId: earmark.id,
-      invoiceId: intent.intent_id,
+      invoiceId: invoice.intent_id.toString(),
     });
 
     // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
@@ -407,7 +529,8 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     // tacRecipient: Final EVM address on TAC that should receive USDT
     // CRITICAL: This MUST be the same as evmSender to satisfy the "same address" requirement
     // Both Ethereum and TAC are EVM chains, so the same address can receive on both
-    const tacRecipient = evmSender;
+    // TODO confirm
+    const tacRecipient = recipientAddress;
 
     // Validate TON address is configured
     if (!tonRecipient) {
@@ -426,12 +549,15 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
       sameAddressOnEthAndTac: evmSender === tacRecipient,
     });
 
+    // Use slippage from config (default 500 = 5%)
+    const slippageDbps = config.tacRebalance!.bridge.slippageDbps;
+
     const route = {
       asset: USDT_ON_ETH_ADDRESS,
       origin: origin,
       destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
       maximum: amountToBridge.toString(),
-      slippagesDbps: [500], // 0.5% slippage
+      slippagesDbps: [slippageDbps],
       preferences: [bridgeType],
       reserve: '0',
     };
@@ -538,9 +664,22 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
         transaction: receipt?.transactionHash || '',
         recipient: tacRecipient, // Final TAC destination
       };
-      rebalanceOperations.push(rebalanceAction);
+      actions.push(rebalanceAction as RebalanceAction);
 
       rebalanceSuccessful = true;
+
+      // Track committed funds to prevent over-committing in subsequent operations
+      const bridgedAmount = BigInt(effectiveBridgedAmount);
+      runState.committedEthUsdt += bridgedAmount;
+      remainingEthUsdt -= bridgedAmount;
+
+      logger.debug('Updated committed funds after on-demand bridge', {
+        requestId,
+        invoiceId: invoice.intent_id.toString(),
+        bridgedAmount: bridgedAmount.toString(),
+        totalCommitted: runState.committedEthUsdt.toString(),
+        remainingAvailable: remainingEthUsdt.toString(),
+      });
     } catch (error) {
       logger.error('Failed to execute Stargate bridge', {
         requestId,
@@ -566,9 +705,384 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     }
   }
 
-  logger.info('Completed TAC USDT rebalancing cycle', { requestId });
-  return rebalanceOperations;
-}
+  return actions;
+};
+
+const processThresholdRebalancing = async (
+  context: ProcessingContext,
+  recipientAddress: string,
+  threshold: bigint,
+  targetBalance: bigint,
+  availableEthUsdt: bigint,
+  runState: RebalanceRunState,
+): Promise<RebalanceAction[]> => {
+  const { config, database: db, logger, requestId, prometheus } = context;
+  const bridgeConfig = config.tacRebalance!.bridge;
+
+  // 1. Get current USDT balance on TAC for this recipient
+  const tacBalance = await getEvmBalance(
+    config,
+    TAC_CHAIN_ID.toString(),
+    recipientAddress,
+    USDT_TICKER_HASH,
+    6,
+    prometheus,
+  );
+  if (tacBalance >= threshold) {
+    logger.debug('TAC balance above threshold, skipping', {
+      requestId,
+      recipient: recipientAddress,
+      balance: tacBalance.toString(),
+      threshold: threshold.toString(),
+    });
+    return [];
+  }
+
+  // 2. Check for in-flight operations to this recipient
+  const pendingOps = await db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), recipientAddress, [
+    RebalanceOperationStatus.PENDING,
+    RebalanceOperationStatus.AWAITING_CALLBACK,
+  ]);
+  if (pendingOps.length > 0) {
+    logger.info('Active rebalance in progress for recipient', {
+      requestId,
+      recipient: recipientAddress,
+      pendingOps: pendingOps.length,
+    });
+    return [];
+  }
+
+  // 3. Calculate amount needed
+  const shortfall = targetBalance - tacBalance;
+  const minAmount = BigInt(bridgeConfig.minRebalanceAmount);
+  const maxAmount = bridgeConfig.maxRebalanceAmount ? BigInt(bridgeConfig.maxRebalanceAmount) : shortfall;
+
+  if (shortfall < minAmount) {
+    logger.debug('Shortfall below minimum, skipping', {
+      requestId,
+      shortfall: shortfall.toString(),
+    });
+    return [];
+  }
+
+  // 4. Use available ETH balance (already accounts for committed funds in this run)
+  // This prevents over-committing when both MM and FS need rebalancing simultaneously
+  const remainingEthUsdt = availableEthUsdt - runState.committedEthUsdt;
+
+  logger.debug('Threshold rebalancing: checking available balance', {
+    requestId,
+    recipient: recipientAddress,
+    availableEthUsdt: availableEthUsdt.toString(),
+    alreadyCommitted: runState.committedEthUsdt.toString(),
+    remainingEthUsdt: remainingEthUsdt.toString(),
+    shortfall: shortfall.toString(),
+  });
+
+  // Calculate amount to bridge: min(shortfall, maxAmount, remainingEthUsdt)
+  const amountToBridge =
+    shortfall < maxAmount && shortfall < remainingEthUsdt
+      ? shortfall
+      : maxAmount < remainingEthUsdt
+        ? maxAmount
+        : remainingEthUsdt;
+
+  if (amountToBridge < minAmount) {
+    logger.warn('Insufficient available balance for threshold rebalance', {
+      requestId,
+      recipient: recipientAddress,
+      remainingEthUsdt: remainingEthUsdt.toString(),
+      minRequired: minAmount.toString(),
+      amountToBridge: amountToBridge.toString(),
+      note: 'Available balance may be reduced by other operations in this run',
+    });
+    return [];
+  }
+
+  // 5. Execute bridge (no earmark for threshold-based)
+  // Pass runState to track committed funds
+  const actions = await executeTacBridge(context, recipientAddress, amountToBridge, null);
+
+  // Track committed funds if bridge was successful
+  if (actions.length > 0) {
+    runState.committedEthUsdt += amountToBridge;
+    logger.debug('Updated committed funds after threshold bridge', {
+      requestId,
+      recipient: recipientAddress,
+      bridgedAmount: amountToBridge.toString(),
+      totalCommitted: runState.committedEthUsdt.toString(),
+    });
+  }
+
+  return actions;
+};
+
+const executeTacBridge = async (
+  context: ProcessingContext,
+  recipientAddress: string, // Final TAC recipient
+  amount: bigint,
+  earmarkId: string | null, // null for threshold-based
+): Promise<RebalanceAction[]> => {
+  const { config, chainService, logger, requestId, rebalance, prometheus } = context;
+  // Existing Stargate bridge logic
+  // Store recipientAddress in operation.recipient
+  // Store earmarkId (null for threshold-based)
+  // TODO: Get receipt from transaction submission
+  // Get USDT balances across all chains
+  const actions: RebalanceAction[] = [];
+
+  const balances = await getMarkBalancesForTicker(USDT_TICKER_HASH, config, chainService, prometheus);
+  logger.debug('Retrieved USDT balances', { balances: jsonifyMap(balances) });
+
+  if (!balances) {
+    logger.warn('No USDT balances found, skipping', { requestId });
+    return [];
+  }
+
+  const origin = Number(MAINNET_CHAIN_ID); // Always start from Ethereum mainnet
+
+  // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
+  let rebalanceSuccessful = false;
+  const bridgeType = SupportedBridge.Stargate;
+
+  // Get addresses for the bridging flow
+  // evmSender: The Ethereum address that holds USDT and will initiate the bridge (Leg 1)
+  const evmSender = getActualAddress(origin, config, logger, { requestId });
+
+  // tonRecipient: TON wallet address that receives USDT on TON (intermediate step)
+  // This wallet will sign Leg 2 using config.ton.mnemonic
+  const tonRecipient = config.ownTonAddress;
+
+  // tacRecipient: Final EVM address on TAC that should receive USDT
+  // The TAC SDK allows sending to any EVM address via evmProxyMsg.evmTargetAddress
+  // SECURITY: We restrict recipients to ONLY the configured MM or FS addresses
+  // This prevents funds from being sent to arbitrary/malicious addresses
+  const tacRecipient = recipientAddress;
+
+  // Security validation: Ensure recipient is one of the configured TAC receivers
+  const allowedRecipients = [
+    config.tacRebalance?.marketMaker?.address?.toLowerCase(),
+    config.tacRebalance?.fillService?.address?.toLowerCase(),
+  ].filter(Boolean);
+
+  if (!allowedRecipients.includes(recipientAddress.toLowerCase())) {
+    logger.error('Recipient address is not a configured TAC receiver (MM or FS)', {
+      requestId,
+      recipientAddress,
+      allowedRecipients,
+      note: 'Only tacRebalance.marketMaker.address and tacRebalance.fillService.address are allowed',
+    });
+    return [];
+  }
+
+  // Validate TON address is configured
+  if (!tonRecipient) {
+    logger.error('TON address not configured (config.ownTonAddress), cannot execute Stargate bridge', {
+      requestId,
+      note: 'Add ownTonAddress to config to enable TAC rebalancing',
+    });
+    return [];
+  }
+
+  // Check if recipient is MM vs FS and log appropriately
+  const isMarketMaker = tacRecipient.toLowerCase() === config.tacRebalance?.marketMaker?.address?.toLowerCase();
+  const isFillService = tacRecipient.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+
+  // IMPORTANT: If recipient is MM but doesn't match ownAddress, funds won't be usable for intent filling
+  // because intent filling always uses config.ownAddress as the source of funds
+  if (isMarketMaker && tacRecipient.toLowerCase() !== config.ownAddress.toLowerCase()) {
+    logger.warn('Market Maker address differs from ownAddress - funds will NOT be usable for intent filling!', {
+      requestId,
+      mmAddress: tacRecipient,
+      ownAddress: config.ownAddress,
+      note: 'Intent filling requires funds at ownAddress. Consider setting MM address = ownAddress.',
+    });
+  }
+
+  logger.debug('Address flow for two-leg bridge', {
+    requestId,
+    evmSender,
+    tonRecipient,
+    tacRecipient,
+    isMarketMaker,
+    isFillService,
+    canUseForIntentFilling: tacRecipient.toLowerCase() === config.ownAddress.toLowerCase(),
+  });
+
+  // Use slippage from config (default 500 = 5%)
+  const slippageDbps = config.tacRebalance!.bridge.slippageDbps;
+
+  const route = {
+    asset: USDT_ON_ETH_ADDRESS,
+    origin: origin,
+    destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
+    maximum: amount.toString(),
+    slippagesDbps: [slippageDbps],
+    preferences: [bridgeType],
+    reserve: '0',
+  };
+
+  logger.info('Attempting Leg 1: Ethereum to TON via Stargate', {
+    requestId,
+    bridgeType,
+    amount: amount.toString(),
+    evmSender,
+    tonRecipient,
+    tacRecipient,
+  });
+
+  const adapter = rebalance.getAdapter(bridgeType);
+  if (!adapter) {
+    logger.error('Stargate adapter not found', { requestId });
+    return [];
+  }
+
+  try {
+    // Get quote
+    const receivedAmountStr = await adapter.getReceivedAmount(amount.toString(), route);
+    logger.info('Received Stargate quote', {
+      requestId,
+      route,
+      amountToBridge: amount.toString(),
+      receivedAmount: receivedAmountStr,
+    });
+
+    // Check slippage
+    const receivedAmount = BigInt(receivedAmountStr);
+    const slippageDbps = BigInt(route.slippagesDbps[0]);
+    const minimumAcceptableAmount = amount - (amount * slippageDbps) / DBPS_MULTIPLIER;
+
+    if (receivedAmount < minimumAcceptableAmount) {
+      logger.warn('Stargate quote does not meet slippage requirements', {
+        requestId,
+        route,
+        amountToBridge: amount.toString(),
+        receivedAmount: receivedAmount.toString(),
+        minimumAcceptableAmount: minimumAcceptableAmount.toString(),
+      });
+      return [];
+    }
+
+    // Get bridge transactions
+    // Sender is EVM address, recipient is TON address (for Stargate to deliver to)
+    const bridgeTxRequests = await adapter.send(evmSender, tonRecipient, amount.toString(), route);
+
+    if (!bridgeTxRequests.length) {
+      logger.error('No bridge transactions returned from Stargate adapter', { requestId });
+      return [];
+    }
+
+    logger.info('Prepared Stargate bridge transactions', {
+      requestId,
+      route,
+      transactionCount: bridgeTxRequests.length,
+    });
+
+    // Execute bridge transactions
+    const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
+      context: { requestId, logger, chainService, config },
+      route,
+      bridgeType,
+      bridgeTxRequests,
+      amountToBridge: amount,
+    });
+
+    // Create database record for Leg 1
+    // Store both TON recipient (for Stargate) and TAC recipient (for Leg 2)
+    await createRebalanceOperation({
+      earmarkId: earmarkId,
+      originChainId: route.origin,
+      destinationChainId: route.destination,
+      tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
+      amount: effectiveBridgedAmount,
+      slippage: route.slippagesDbps[0],
+      status: RebalanceOperationStatus.PENDING,
+      bridge: 'stargate-tac', // Tagged for TAC flow
+      transactions: receipt
+        ? {
+            [route.origin]: receipt,
+          }
+        : undefined,
+      recipient: tacRecipient, // Final TAC recipient
+    });
+
+    logger.info('Successfully created TAC Leg 1 rebalance operation', {
+      requestId,
+      route,
+      bridgeType,
+      originTxHash: receipt?.transactionHash,
+      amountToBridge: effectiveBridgedAmount,
+    });
+
+    // Track the operation
+    const rebalanceAction: RebalanceAction = {
+      bridge: adapter.type(),
+      amount: amount.toString(),
+      origin: route.origin,
+      destination: route.destination,
+      asset: route.asset,
+      transaction: receipt?.transactionHash || '',
+      recipient: tacRecipient, // Final TAC destination
+    };
+    actions.push(rebalanceAction);
+
+    rebalanceSuccessful = true;
+  } catch (error) {
+    logger.error('Failed to execute Stargate bridge', {
+      requestId,
+      route,
+      bridgeType,
+      error: jsonifyError(error),
+    });
+    return [];
+  }
+
+  if (rebalanceSuccessful) {
+    logger.info('Leg 1 rebalance successful', {
+      requestId,
+      route,
+      amount: amount.toString(),
+    });
+  } else {
+    logger.warn('Failed to complete Leg 1 rebalance', {
+      requestId,
+      route,
+      amount: amount.toString(),
+    });
+  }
+
+  return actions;
+};
+
+const evaluateFillServiceRebalance = async (
+  context: ProcessingContext,
+  availableEthUsdt: bigint,
+  runState: RebalanceRunState,
+): Promise<RebalanceAction[]> => {
+  const { config, logger, requestId } = context;
+
+  const fsConfig = config.tacRebalance!.fillService; // FS only supports threshold-based rebalancing
+  if (!fsConfig.thresholdEnabled) {
+    logger.debug('FS threshold rebalancing disabled', { requestId });
+    return [];
+  }
+
+  logger.debug('Evaluating FS threshold rebalancing', {
+    requestId,
+    fsAddress: fsConfig.address,
+    threshold: fsConfig.threshold,
+    targetBalance: fsConfig.targetBalance,
+    availableEthUsdt: availableEthUsdt.toString(),
+  });
+
+  return processThresholdRebalancing(
+    context,
+    fsConfig.address,
+    BigInt(fsConfig.threshold),
+    BigInt(fsConfig.targetBalance),
+    availableEthUsdt,
+    runState,
+  );
+};
 
 /**
  * Execute callbacks for pending TAC rebalance operations
@@ -578,7 +1092,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
  * - Executing Leg 2 (TAC Inner Bridge) when Leg 1 completes
  * - Checking if Leg 2 is complete
  */
-export const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
+const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, database: db } = context;
   logger.info('Executing TAC USDT rebalance callbacks', { requestId });
 
@@ -823,13 +1337,11 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
           }
 
           // Mark Leg 1 as completed
+          // Note: Earmark stays PENDING until Leg 2 completes (funds arrive on TAC)
+          // The earmark will be updated to READY in the isTacInnerBridge section below
           await db.updateRebalanceOperation(operation.id, {
             status: RebalanceOperationStatus.COMPLETED,
           });
-
-          if (operation.earmarkId) {
-            await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.READY);
-          }
 
           logger.info('Leg 2 operation created, Leg 1 marked complete', {
             ...logContext,
@@ -996,6 +1508,17 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             await db.updateRebalanceOperation(operation.id, {
               status: RebalanceOperationStatus.COMPLETED,
             });
+
+            // Update earmark to READY now that Leg 2 is complete (funds arrived on TAC)
+            // This is the correct timing per spec: PENDING → (Leg 2 complete) → READY
+            if (operation.earmarkId) {
+              await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.READY);
+              logger.info('Earmark marked READY - funds arrived on TAC', {
+                ...logContext,
+                earmarkId: operation.earmarkId,
+              });
+            }
+
             logger.info('TAC Inner Bridge transfer complete', {
               ...logContext,
               recipient: storedRecipient,
