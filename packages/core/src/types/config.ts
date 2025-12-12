@@ -133,7 +133,7 @@ export interface TacRebalanceConfig {
   };
   // Shared bridge configuration
   bridge: {
-    slippageDbps: number; // Slippage for Stargate (default: 50 = 0.5%)
+    slippageDbps: number; // Slippage for Stargate (default: 500 = 5%)
     minRebalanceAmount: string; // Min amount per operation (6 decimals)
     maxRebalanceAmount?: string; // Max amount per operation (optional cap)
   };
