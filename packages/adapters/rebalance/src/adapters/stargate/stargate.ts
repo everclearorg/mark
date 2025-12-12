@@ -355,6 +355,52 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
     for (const step of quote.steps) {
       if (step.type === 'approve') {
+        if (
+          srcChain === MAINNET_CHAIN_ID &&
+          route.asset.toLowerCase() === USDT_ETH.toLowerCase()
+        ) {
+          const client = this.getPublicClient(route.origin);
+          const tokenAddress = route.asset as `0x${string}`;
+          const poolAddress = this.getPoolAddress(tokenAddress, route.origin);
+          const allowance = await client.readContract({
+            address: tokenAddress,
+            abi: erc20Abi,
+            functionName: 'allowance',
+            args: [sender as `0x${string}`, poolAddress],
+          });
+          
+          // Mainnet USDT requires zero allowance before setting to new amount
+          if (allowance > 0n) {
+            transactions.push({
+              memo: RebalanceTransactionMemo.Approval,
+              transaction: {
+                to: tokenAddress,
+                data: encodeFunctionData({
+                  abi: erc20Abi,
+                  functionName: 'approve',
+                  args: [poolAddress, 0n],
+                }),
+                value: BigInt(0),
+                funcSig: 'approve(address,uint256)',
+              },
+            });
+          }
+
+          transactions.push({
+            memo: RebalanceTransactionMemo.Approval,
+            transaction: {
+              to: route.asset as `0x${string}`,
+              data: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: 'approve',
+                args: [poolAddress, 0n],
+              }),
+              value: BigInt(0),
+              funcSig: 'approve(address,uint256)',
+            },
+          });
+        }
+
         transactions.push({
           memo: RebalanceTransactionMemo.Approval,
           transaction: {
