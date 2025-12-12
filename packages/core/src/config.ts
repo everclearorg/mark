@@ -460,26 +460,45 @@ export const parseChainConfigurations = async (
   const chains: Record<string, ChainConfiguration> = {};
 
   for (const chainId of chainIds) {
-    if (!config.chains[chainId]) {
-      console.log(`Chain ${chainId} not found in Everclear config, skipping`);
+    const chainConfig = config?.chains?.[chainId];
+    const localChainConfig = configJson.chains?.[chainId];
+
+    // Skip if chain is not in either hosted or local config
+    if (!chainConfig && !localChainConfig) {
+      console.log(`Chain ${chainId} not found in Everclear config or local config, skipping`);
       continue;
     }
 
-    const chainConfig = config.chains[chainId]!;
-
     const providers = (
-      configJson.chains?.[chainId]?.providers ??
+      localChainConfig?.providers ??
       ((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))
         ? parseProviders((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))!)
         : undefined) ??
       []
-    ).concat(chainConfig.providers ?? []);
+    ).concat(chainConfig?.providers ?? []);
+
+    // Load assets from hosted config if available, otherwise use local config assets
+    const hostedAssets = chainConfig?.assets ? Object.values(chainConfig.assets) : [];
+    const localAssets = localChainConfig?.assets ?? [];
+
+    // Merge assets: prefer hosted config, fall back to local config for missing assets
+    const mergedAssets = [...hostedAssets];
+    for (const localAsset of localAssets) {
+      const existsInHosted = hostedAssets.some(
+        (a: AssetConfiguration) =>
+          a.tickerHash?.toLowerCase() === localAsset.tickerHash?.toLowerCase() ||
+          a.address?.toLowerCase() === localAsset.address?.toLowerCase(),
+      );
+      if (!existsInHosted) {
+        mergedAssets.push(localAsset);
+      }
+    }
 
     const assets = await Promise.all(
-      Object.values(chainConfig.assets ?? {}).map(async (a) => {
-        const jsonThreshold = (configJson.chains?.[chainId]?.assets ?? []).find(
-          (asset: { symbol: string; balanceThreshold: string }) =>
-            a.symbol.toLowerCase() === asset.symbol.toLowerCase(),
+      mergedAssets.map(async (a: AssetConfiguration) => {
+        const jsonThreshold = (localAssets ?? []).find(
+          (asset: { symbol: string; balanceThreshold?: string }) =>
+            a.symbol.toLowerCase() === asset.symbol?.toLowerCase(),
         )?.balanceThreshold;
         const envThreshold = await fromEnv(`${a.symbol.toUpperCase()}_${chainId}_THRESHOLD`);
         return {
@@ -490,17 +509,20 @@ export const parseChainConfigurations = async (
     );
 
     // Get the invoice age
-    // First, check if there is a configured invoice age in the env
+    // First, check if there is a configured invoice age in local config or env
     const invoiceAge =
-      (await fromEnv(`CHAIN_${chainId}_INVOICE_AGE`)) ?? (await fromEnv('INVOICE_AGE')) ?? DEFAULT_INVOICE_AGE;
+      localChainConfig?.invoiceAge?.toString() ??
+      (await fromEnv(`CHAIN_${chainId}_INVOICE_AGE`)) ??
+      (await fromEnv('INVOICE_AGE')) ??
+      DEFAULT_INVOICE_AGE;
     const gasThreshold =
       configJson?.chains?.[chainId]?.gasThreshold ??
       (await fromEnv(`CHAIN_${chainId}_GAS_THRESHOLD`)) ??
       (await fromEnv(`GAS_THRESHOLD`)) ??
       DEFAULT_GAS_THRESHOLD;
 
-    // Extract Everclear spoke address from the config
-    const everclear = chainConfig.deployments?.everclear;
+    // Extract Everclear spoke address from the config (prefer hosted, fall back to local)
+    const everclear = chainConfig?.deployments?.everclear ?? localChainConfig?.deployments?.everclear;
 
     if (!everclear) {
       throw new ConfigurationError(
@@ -508,14 +530,16 @@ export const parseChainConfigurations = async (
       );
     }
 
-    // Get chain-specific contract addresses or use config values if provided
+    // Get chain-specific contract addresses or use config values if provided (prefer hosted, fall back to local)
     const permit2 =
-      chainConfig.deployments?.permit2 ||
+      chainConfig?.deployments?.permit2 ||
+      localChainConfig?.deployments?.permit2 ||
       UTILITY_CONTRACTS_OVERRIDE[chainId]?.permit2 ||
       UTILITY_CONTRACTS_DEFAULT.permit2;
 
     const multicall3 =
-      chainConfig.deployments?.multicall3 ||
+      chainConfig?.deployments?.multicall3 ||
+      localChainConfig?.deployments?.multicall3 ||
       UTILITY_CONTRACTS_OVERRIDE[chainId]?.multicall3 ||
       UTILITY_CONTRACTS_DEFAULT.multicall3;
 
