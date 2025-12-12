@@ -119,9 +119,13 @@ locals {
     TAC_REBALANCE_MARKET_MAKER_THRESHOLD           = local.mark_config.tacRebalance.marketMaker.threshold
     TAC_REBALANCE_MARKET_MAKER_TARGET_BALANCE      = local.mark_config.tacRebalance.marketMaker.targetBalance
     TAC_REBALANCE_FILL_SERVICE_ADDRESS             = local.mark_config.tacRebalance.fillService.address
+    TAC_REBALANCE_FILL_SERVICE_SENDER_ADDRESS      = local.mark_config.tacRebalance.fillService.senderAddress
     TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED   = tostring(local.mark_config.tacRebalance.fillService.thresholdEnabled)
     TAC_REBALANCE_FILL_SERVICE_THRESHOLD           = local.mark_config.tacRebalance.fillService.threshold
     TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE      = local.mark_config.tacRebalance.fillService.targetBalance
+    # Fill Service signer URL (only set if FS signer is deployed)
+    FILL_SERVICE_SIGNER_URL                        = local.mark_config.web3_fastfill_signer_private_key != "" ? "http://${var.bot_name}-fillservice-web3signer-${var.environment}-${var.stage}.mark.internal:9000" : ""
+    FILL_SERVICE_SIGNER_ADDRESS                    = local.mark_config.fillServiceSignerAddress
     TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS             = tostring(local.mark_config.tacRebalance.bridge.slippageDbps)
     TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT      = local.mark_config.tacRebalance.bridge.minRebalanceAmount
     TAC_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT      = local.mark_config.tacRebalance.bridge.maxRebalanceAmount
@@ -131,6 +135,26 @@ locals {
     {
       name  = "WEB3_SIGNER_PRIVATE_KEY"
       value = local.mark_config.web3_signer_private_key
+    },
+    {
+      name  = "WEB3SIGNER_HTTP_HOST_ALLOWLIST"
+      value = "*"
+    },
+    {
+      name  = "ENVIRONMENT"
+      value = var.environment
+    },
+    {
+      name  = "STAGE"
+      value = var.stage
+    }
+  ]
+
+  # Fill Service Web3Signer env vars - uses fastfill private key
+  fillservice_web3signer_env_vars = [
+    {
+      name  = "WEB3_SIGNER_PRIVATE_KEY"
+      value = local.mark_config.web3_fastfill_signer_private_key
     },
     {
       name  = "WEB3SIGNER_HTTP_HOST_ALLOWLIST"

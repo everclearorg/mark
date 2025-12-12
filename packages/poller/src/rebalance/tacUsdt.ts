@@ -37,6 +37,16 @@ import {
 const USDT_ON_ETH_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
 
+/**
+ * Sender configuration for TAC rebalancing transactions.
+ * Specifies which address should sign and send from Ethereum mainnet.
+ */
+interface TacSenderConfig {
+  address: string; // Sender's Ethereum address
+  signerUrl?: string; // Web3signer URL for this sender (uses default if not specified)
+  label: 'market-maker' | 'fill-service'; // For logging
+}
+
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
 /**
@@ -123,6 +133,7 @@ interface ExecuteBridgeParams {
   bridgeType: SupportedBridge;
   bridgeTxRequests: MemoizedTransactionRequest[];
   amountToBridge: bigint;
+  senderOverride?: TacSenderConfig; // Optional: use different sender than config.ownAddress
 }
 
 interface ExecuteBridgeResult {
@@ -132,6 +143,7 @@ interface ExecuteBridgeResult {
 
 /**
  * Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
+ * @param senderOverride - If provided, uses this address as sender instead of config.ownAddress
  */
 const executeBridgeTransactions = async ({
   context,
@@ -139,8 +151,13 @@ const executeBridgeTransactions = async ({
   bridgeType,
   bridgeTxRequests,
   amountToBridge,
+  senderOverride,
 }: ExecuteBridgeParams): Promise<ExecuteBridgeResult> => {
   const { logger, chainService, config, requestId } = context;
+
+  // Use sender override if provided, otherwise default to ownAddress
+  const senderAddress = senderOverride?.address ?? config.ownAddress;
+  const senderLabel = senderOverride?.label ?? 'market-maker';
 
   let idx = -1;
   let effectiveBridgedAmount = amountToBridge.toString();
@@ -157,6 +174,8 @@ const executeBridgeTransactions = async ({
       transaction,
       memo,
       amountToBridge,
+      sender: senderAddress,
+      senderType: senderLabel,
     });
 
     const result = await submitTransactionWithLogging({
@@ -168,13 +187,13 @@ const executeBridgeTransactions = async ({
         data: transaction.data!,
         value: (transaction.value || 0).toString(),
         chainId: route.origin,
-        from: config.ownAddress,
+        from: senderAddress,
         funcSig: transaction.funcSig || '',
       },
       zodiacConfig: {
         walletType: WalletType.EOA,
       },
-      context: { requestId, route, bridgeType, transactionType: memo },
+      context: { requestId, route, bridgeType, transactionType: memo, sender: senderLabel },
     });
 
     logger.info('Successfully submitted TAC bridge transaction', {
@@ -822,7 +841,7 @@ const executeTacBridge = async (
   amount: bigint,
   earmarkId: string | null, // null for threshold-based
 ): Promise<RebalanceAction[]> => {
-  const { config, chainService, logger, requestId, rebalance, prometheus } = context;
+  const { config, chainService, fillServiceChainService, logger, requestId, rebalance, prometheus } = context;
   // Existing Stargate bridge logic
   // Store recipientAddress in operation.recipient
   // Store earmarkId (null for threshold-based)
@@ -844,9 +863,75 @@ const executeTacBridge = async (
   let rebalanceSuccessful = false;
   const bridgeType = SupportedBridge.Stargate;
 
-  // Get addresses for the bridging flow
-  // evmSender: The Ethereum address that holds USDT and will initiate the bridge (Leg 1)
-  const evmSender = getActualAddress(origin, config, logger, { requestId });
+  // Determine sender for the bridge based on recipient type
+  // For Fill Service recipient: prefer filler as sender, fallback to MM
+  // For Market Maker recipient: always use MM
+  const isFillServiceRecipient =
+    recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+  // Use senderAddress if explicitly set, otherwise default to address (same key = same address on ETH and TAC)
+  const fillerSenderAddress =
+    config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
+
+  let evmSender: string;
+  let senderConfig: TacSenderConfig | undefined;
+  let selectedChainService = chainService;
+
+  if (isFillServiceRecipient && fillerSenderAddress && fillServiceChainService) {
+    // Check if filler has enough USDT on ETH to send
+    // USDT has 6 decimals
+    const fillerBalance = await getEvmBalance(
+      config,
+      MAINNET_CHAIN_ID.toString(),
+      fillerSenderAddress,
+      USDT_ON_ETH_ADDRESS,
+      6, // USDT decimals
+      prometheus,
+    );
+
+    logger.debug('Checking filler balance for FS rebalancing', {
+      requestId,
+      fillerAddress: fillerSenderAddress,
+      fillerBalance: fillerBalance.toString(),
+      requiredAmount: amount.toString(),
+    });
+
+    if (fillerBalance >= amount) {
+      // Filler has enough - use filler as sender
+      evmSender = fillerSenderAddress;
+      senderConfig = {
+        address: fillerSenderAddress,
+        label: 'fill-service',
+      };
+      selectedChainService = fillServiceChainService;
+      logger.info('Using Fill Service sender for TAC rebalancing (filler has sufficient balance)', {
+        requestId,
+        sender: fillerSenderAddress,
+        balance: fillerBalance.toString(),
+        amount: amount.toString(),
+      });
+    } else {
+      // Filler doesn't have enough - fall back to MM
+      evmSender = getActualAddress(origin, config, logger, { requestId });
+      senderConfig = {
+        address: evmSender,
+        label: 'market-maker',
+      };
+      logger.info('Falling back to Market Maker sender for TAC rebalancing (filler has insufficient balance)', {
+        requestId,
+        fillerAddress: fillerSenderAddress,
+        fillerBalance: fillerBalance.toString(),
+        mmAddress: evmSender,
+        requiredAmount: amount.toString(),
+      });
+    }
+  } else {
+    // MM recipient or no FS sender configured - use default
+    evmSender = getActualAddress(origin, config, logger, { requestId });
+    senderConfig = {
+      address: evmSender,
+      label: 'market-maker',
+    };
+  }
 
   // tonRecipient: TON wallet address that receives USDT on TON (intermediate step)
   // This wallet will sign Leg 2 using config.ton.mnemonic
@@ -977,13 +1062,14 @@ const executeTacBridge = async (
       transactionCount: bridgeTxRequests.length,
     });
 
-    // Execute bridge transactions
+    // Execute bridge transactions using the selected chain service and sender
     const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-      context: { requestId, logger, chainService, config },
+      context: { requestId, logger, chainService: selectedChainService, config },
       route,
       bridgeType,
       bridgeTxRequests,
       amountToBridge: amount,
+      senderOverride: senderConfig,
     });
 
     // Create database record for Leg 1

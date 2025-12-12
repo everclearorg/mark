@@ -27,6 +27,7 @@ import { resolve } from 'path';
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
   chainService: ChainService;
+  fillServiceChainService?: ChainService; // Optional: separate chain service for fill service sender
   everclear: EverclearAdapter;
   web3Signer: Web3Signer | WalletClient;
   logger: Logger;
@@ -167,6 +168,31 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     logger,
   );
 
+  // Initialize fill service chain service if FS signer URL is configured
+  // This allows TAC rebalancing to use a separate sender address for FS
+  let fillServiceChainService: ChainService | undefined;
+  if (config.fillServiceSignerUrl && config.tacRebalance?.fillService?.senderAddress) {
+    logger.info('Initializing Fill Service chain service for TAC rebalancing', {
+      signerUrl: config.fillServiceSignerUrl,
+      senderAddress: config.tacRebalance.fillService.senderAddress,
+    });
+
+    const fillServiceSigner = config.fillServiceSignerUrl.startsWith('http')
+      ? new Web3Signer(config.fillServiceSignerUrl)
+      : new EthWallet(config.fillServiceSignerUrl);
+
+    fillServiceChainService = new ChainService(
+      {
+        chains: config.chains,
+        maxRetries: 3,
+        retryDelay: 15000,
+        logLevel: config.logLevel,
+      },
+      fillServiceSigner as EthWallet,
+      logger,
+    );
+  }
+
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
 
   const purchaseCache = new PurchaseCache(config.redis.host, config.redis.port);
@@ -180,6 +206,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
   return {
     logger,
     chainService,
+    fillServiceChainService,
     web3Signer: web3Signer as Web3Signer,
     everclear,
     purchaseCache,
