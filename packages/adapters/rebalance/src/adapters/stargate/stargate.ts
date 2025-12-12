@@ -9,7 +9,7 @@ import {
   pad,
   decodeEventLog,
 } from 'viem';
-import { ChainConfiguration, SupportedBridge, RebalanceRoute, axiosGet } from '@mark/core';
+import { ChainConfiguration, SupportedBridge, RebalanceRoute, axiosGet, MAINNET_CHAIN_ID } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { STARGATE_OFT_ABI } from './abi';
@@ -452,6 +452,26 @@ export class StargateBridgeAdapter implements BridgeAdapter {
       });
 
       if (allowance < BigInt(amount)) {
+        if (
+          route.origin === Number(MAINNET_CHAIN_ID) &&
+          route.asset.toLowerCase() === USDT_ETH.toLowerCase() &&
+          allowance > 0n
+        ) {
+          // Mainnet USDT requires zero allowance before setting to new amount
+          transactions.push({
+            memo: RebalanceTransactionMemo.Approval,
+            transaction: {
+              to: tokenAddress,
+              data: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: 'approve',
+                args: [poolAddress, 0n],
+              }),
+              value: BigInt(0),
+              funcSig: 'approve(address,uint256)',
+            },
+          });
+        }
         transactions.push({
           memo: RebalanceTransactionMemo.Approval,
           transaction: {
