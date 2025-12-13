@@ -63,75 +63,89 @@ interface UsdtInfo {
 
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
+
+// Default TONAPI.io URL
+const TONAPI_DEFAULT_URL = 'https://tonapi.io/v2';
+
 /**
- * Query TON wallet USDT balance from TONCenter API
- * @param walletAddress - TON wallet address (user-friendly format)
- * @param jettonAddress - TON jetton master address (from config.ton.assets)
- * @param apiKey - TONCenter API key
- * @param rpcUrl - TONCenter API base URL (optional)
- * @returns USDT balance in micro-units (6 decimals), or 0 if query fails
+ * Build headers for TONAPI.io requests
+ * Uses Bearer token authentication if API key is provided
  */
-async function getTonUsdtBalance(
+function buildTonApiHeaders(apiKey?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+  return headers;
+}
+
+/**
+ * Query TON wallet native balance via TONAPI.io
+ *
+ * @param walletAddress - TON wallet address (user-friendly format)
+ * @param apiKey - TONAPI.io API key (optional for free tier, recommended for production)
+ * @param rpcUrl - TONAPI.io base URL (defaults to https://tonapi.io/v2)
+ * @returns TON balance in nanotons, or 0 if query fails
+ */
+async function getTonNativeBalance(
   walletAddress: string,
-  jettonAddress: string,
   apiKey?: string,
-  rpcUrl: string = 'https://toncenter.com',
+  rpcUrl: string = TONAPI_DEFAULT_URL,
 ): Promise<bigint> {
   try {
-    const url = `${rpcUrl}/api/v3/jetton/wallets?owner_address=${walletAddress}&jetton_address=${jettonAddress}`;
-    const headers: Record<string, string> = {};
-    if (apiKey) {
-      headers['X-API-Key'] = apiKey;
-    }
+    const url = `${rpcUrl}/accounts/${walletAddress}`;
+    const response = await fetch(url, {
+      headers: buildTonApiHeaders(apiKey),
+    });
 
-    const response = await fetch(url, { headers });
     if (!response.ok) {
       return 0n;
     }
 
-    const data = (await response.json()) as { jetton_wallets?: Array<{ balance: string }> };
-    if (!data.jetton_wallets || data.jetton_wallets.length === 0) {
+    const data = (await response.json()) as { balance?: number | string };
+    if (data.balance === undefined) {
       return 0n;
     }
 
-    // Use safeParseBigInt for robust parsing of API response
-    return safeParseBigInt(data.jetton_wallets[0].balance);
+    return safeParseBigInt(data.balance.toString());
   } catch {
     return 0n;
   }
 }
 
 /**
- * Query TON wallet native balance from TONCenter API
- * @param walletAddress - TON wallet address
- * @param apiKey - TONCenter API key
- * @param rpcUrl - TONCenter API base URL
- * @returns TON balance in nanotons, or 0 if query fails
+ * Query TON wallet jetton (token) balance via TONAPI.io
+ *
+ * @param walletAddress - TON wallet address (user-friendly format)
+ * @param jettonAddress - TON jetton master address (from config.ton.assets)
+ * @param apiKey - TONAPI.io API key (optional for free tier, recommended for production)
+ * @param rpcUrl - TONAPI.io base URL (defaults to https://tonapi.io/v2)
+ * @returns Jetton balance in native units, or 0 if query fails
  */
-async function getTonNativeBalance(
+async function getTonJettonBalance(
   walletAddress: string,
+  jettonAddress: string,
   apiKey?: string,
-  rpcUrl: string = 'https://toncenter.com',
+  rpcUrl: string = TONAPI_DEFAULT_URL,
 ): Promise<bigint> {
   try {
-    const url = `${rpcUrl}/api/v2/getAddressInformation?address=${walletAddress}`;
-    const headers: Record<string, string> = {};
-    if (apiKey) {
-      headers['X-API-Key'] = apiKey;
-    }
+    const url = `${rpcUrl}/accounts/${walletAddress}/jettons/${jettonAddress}`;
+    const response = await fetch(url, {
+      headers: buildTonApiHeaders(apiKey),
+    });
 
-    const response = await fetch(url, { headers });
     if (!response.ok) {
       return 0n;
     }
 
-    const data = (await response.json()) as { result?: { balance: string } };
-    if (!data.result?.balance) {
+    const data = (await response.json()) as { balance?: string };
+    if (data.balance === undefined) {
       return 0n;
     }
 
-    // Use safeParseBigInt for robust parsing of API response
-    return safeParseBigInt(data.result.balance);
+    return safeParseBigInt(data.balance);
   } catch {
     return 0n;
   }
@@ -1541,7 +1555,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             }
 
             // Get actual USDT balance (may be less than operation.amount due to Stargate fees)
-            const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, jettonAddress, tonApiKey);
+            const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
 
             // Use the actual balance, not the expected amount
             // This accounts for Stargate bridge fees
@@ -1644,7 +1658,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             if (tonMnemonic && tonWalletAddress) {
               // Get actual USDT balance on TON
-              const actualUsdtBalance = await getTonUsdtBalance(tonWalletAddress, jettonAddress, tonApiKey);
+              const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
 
               if (actualUsdtBalance === 0n) {
                 // No USDT on TON - bridge might have already succeeded!
