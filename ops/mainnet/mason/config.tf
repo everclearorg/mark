@@ -127,6 +127,7 @@ locals {
     TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED   = tostring(local.mark_config.tacRebalance.fillService.thresholdEnabled)
     TAC_REBALANCE_FILL_SERVICE_THRESHOLD           = local.mark_config.tacRebalance.fillService.threshold
     TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE      = local.mark_config.tacRebalance.fillService.targetBalance
+    TAC_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET  = tostring(local.mark_config.tacRebalance.fillService.allowCrossWalletRebalancing)
     # Fill Service signer URL (only set if FS signer is deployed)
     # Note: URL is constructed here because module output isn't available at locals evaluation time
     # Service discovery name = ${container_family}-${environment}-${stage}.mark.internal

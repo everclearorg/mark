@@ -323,10 +323,10 @@ describe('TAC USDT Rebalancing', () => {
 
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
 
-      // Should log FS evaluation
-      const debugCalls = mockLogger.debug.getCalls();
-      const fsEvalLog = debugCalls.find(
-        (call) => call.args[0] && call.args[0].includes('Evaluating FS threshold rebalancing'),
+      // Should log FS evaluation (new log message is 'Evaluating FS rebalancing options')
+      const infoCalls = mockLogger.info.getCalls();
+      const fsEvalLog = infoCalls.find(
+        (call) => call.args[0] && call.args[0].includes('Evaluating FS rebalancing options'),
       );
       expect(fsEvalLog).toBeTruthy();
     });
@@ -980,6 +980,366 @@ describe('TAC Callback Flow - TransactionLinker Storage', () => {
 
       // Should not throw - errors are handled internally
       await expect(rebalanceTacUsdt(mockContext as unknown as ProcessingContext)).resolves.not.toThrow();
+    });
+  });
+});
+
+describe('FS Rebalancing Priority Flow', () => {
+  const MOCK_FILLER_ADDRESS = '0x4444444444444444444444444444444444444444';
+
+  let mockContext: SinonStubbedInstance<ProcessingContext>;
+  let mockLogger: SinonStubbedInstance<Logger>;
+  let mockChainService: SinonStubbedInstance<ChainService>;
+  let mockFsChainService: SinonStubbedInstance<ChainService>;
+  let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
+  let mockPrometheus: SinonStubbedInstance<PrometheusAdapter>;
+  let mockEverclear: SinonStubbedInstance<EverclearAdapter>;
+  let mockPurchaseCache: SinonStubbedInstance<PurchaseCache>;
+  let getEvmBalanceStub: SinonStub;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (database.getRebalanceOperations as jest.Mock).mockResolvedValue({
+      operations: [],
+      total: 0,
+    });
+    (database.getRebalanceOperationByRecipient as jest.Mock).mockResolvedValue([]);
+
+    mockLogger = createStubInstance(Logger);
+    mockChainService = createStubInstance(ChainService);
+    mockFsChainService = createStubInstance(ChainService);
+    mockRebalanceAdapter = createStubInstance(RebalanceAdapter);
+    mockPrometheus = createStubInstance(PrometheusAdapter);
+    mockEverclear = createStubInstance(EverclearAdapter);
+    mockPurchaseCache = createStubInstance(PurchaseCache);
+
+    mockRebalanceAdapter.isPaused.resolves(false);
+    mockEverclear.fetchInvoices.resolves([]);
+
+    getEvmBalanceStub = stub(balanceHelpers, 'getEvmBalance');
+  });
+
+  afterEach(() => {
+    restore();
+  });
+
+  const createFsTestContext = (overrides: {
+    allowCrossWalletRebalancing?: boolean;
+    fsSenderAddress?: string;
+    hasFillServiceChainService?: boolean;
+  } = {}) => {
+    const {
+      allowCrossWalletRebalancing = false,
+      fsSenderAddress = MOCK_FILLER_ADDRESS,
+      hasFillServiceChainService = true,
+    } = overrides;
+
+    const mockConfig = {
+      ...createMockConfig(),
+      fillServiceSignerUrl: hasFillServiceChainService ? 'http://localhost:9001' : undefined,
+      tacRebalance: {
+        ...createMockConfig().tacRebalance!,
+        fillService: {
+          ...createMockConfig().tacRebalance!.fillService,
+          senderAddress: fsSenderAddress,
+          allowCrossWalletRebalancing,
+        },
+      },
+    };
+
+    return {
+      config: mockConfig,
+      requestId: MOCK_REQUEST_ID,
+      startTime: Date.now(),
+      logger: mockLogger,
+      purchaseCache: mockPurchaseCache,
+      chainService: mockChainService,
+      fillServiceChainService: hasFillServiceChainService ? mockFsChainService : undefined,
+      rebalance: mockRebalanceAdapter,
+      prometheus: mockPrometheus,
+      everclear: mockEverclear,
+      web3Signer: undefined,
+      database: createDatabaseMock(),
+    } as unknown as SinonStubbedInstance<ProcessingContext>;
+  };
+
+  describe('Priority 1: Same-Account Flow (FS → FS)', () => {
+    it('should use FS sender funds when FS has sufficient balance', async () => {
+      mockContext = createFsTestContext({ allowCrossWalletRebalancing: false });
+
+      // FS TAC balance: 50 USDT (below 100 threshold)
+      // FS sender ETH balance: 500 USDT (enough for shortfall)
+      // MM ETH balance: 1000 USDT
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('50000000000000000000'); // 50 USDT on TAC
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_FILLER_ADDRESS) {
+          return BigInt('500000000000000000000'); // 500 USDT on ETH
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_OWN_ADDRESS) {
+          return BigInt('1000000000000000000000'); // 1000 USDT MM
+        }
+        return BigInt('0');
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should log Priority 1 same-account flow
+      const infoCalls = mockLogger.info.getCalls();
+      const priorityLog = infoCalls.find(
+        (call) => call.args[0] && call.args[0].includes('PRIORITY 1'),
+      );
+      expect(priorityLog).toBeTruthy();
+    });
+
+    it('should use FS funds even when cross-wallet is disabled', async () => {
+      mockContext = createFsTestContext({ allowCrossWalletRebalancing: false });
+
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('50000000000000000000'); // 50 USDT - below threshold
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_FILLER_ADDRESS) {
+          return BigInt('100000000000000000000'); // 100 USDT - enough for min rebalance
+        }
+        return BigInt('0');
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should complete using FS funds
+      const infoCalls = mockLogger.info.getCalls();
+      const completionLog = infoCalls.find(
+        (call) => call.args[0] && call.args[0].includes('Completed TAC USDT rebalancing'),
+      );
+      expect(completionLog).toBeTruthy();
+    });
+  });
+
+  describe('Priority 2: Cross-Wallet Flow (MM → FS)', () => {
+    it('should use MM funds when allowCrossWalletRebalancing=true and FS has no funds', async () => {
+      mockContext = createFsTestContext({ allowCrossWalletRebalancing: true });
+
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('50000000000000000000'); // 50 USDT - below threshold
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_FILLER_ADDRESS) {
+          return BigInt('0'); // FS has no ETH USDT
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_OWN_ADDRESS) {
+          return BigInt('1000000000000000000000'); // 1000 USDT MM
+        }
+        return BigInt('100000000000000000000'); // Default 100 USDT
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should log Priority 2 cross-wallet flow
+      const infoCalls = mockLogger.info.getCalls();
+      const priorityLog = infoCalls.find(
+        (call) => call.args[0] && call.args[0].includes('PRIORITY 2'),
+      );
+      expect(priorityLog).toBeTruthy();
+    });
+
+    it('should NOT use MM funds when allowCrossWalletRebalancing=false', async () => {
+      mockContext = createFsTestContext({ allowCrossWalletRebalancing: false });
+
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('50000000000000000000'); // 50 USDT - below threshold
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_FILLER_ADDRESS) {
+          return BigInt('0'); // FS has no ETH USDT
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_OWN_ADDRESS) {
+          return BigInt('1000000000000000000000'); // 1000 USDT MM available
+        }
+        return BigInt('0');
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should log that cross-wallet is disabled
+      const infoCalls = mockLogger.info.getCalls();
+      const disabledLog = infoCalls.find(
+        (call) => call.args[0] && call.args[0].includes('Cross-wallet rebalancing disabled'),
+      );
+      expect(disabledLog).toBeTruthy();
+    });
+
+    it('should block cross-wallet when pending FS operations exist', async () => {
+      mockContext = createFsTestContext({ allowCrossWalletRebalancing: true });
+
+      // Mock pending operation for FS - need to set up the database mock properly
+      const dbMock = mockContext.database as any;
+      dbMock.getRebalanceOperationByRecipient = stub().callsFake(
+        async (_chainId: number, address: string, _statuses: any[]) => {
+          if (address === MOCK_FS_ADDRESS) {
+            return [{
+              id: 'pending-op-001',
+              status: RebalanceOperationStatus.PENDING,
+              bridge: 'stargate-tac',
+              recipient: MOCK_FS_ADDRESS,
+            }];
+          }
+          return [];
+        },
+      );
+
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('50000000000000000000'); // 50 USDT - below threshold
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_FILLER_ADDRESS) {
+          return BigInt('0'); // FS has no ETH USDT
+        }
+        return BigInt('1000000000000000000000'); // 1000 USDT MM
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should log that cross-wallet is blocked due to pending ops
+      const infoCalls = mockLogger.info.getCalls();
+      const blockedLog = infoCalls.find(
+        (call) => call.args[0] && call.args[0].includes('Cross-wallet rebalancing blocked: pending FS operations exist'),
+      );
+      expect(blockedLog).toBeTruthy();
+    });
+
+    it('should allow cross-wallet after pending operations complete', async () => {
+      mockContext = createFsTestContext({ allowCrossWalletRebalancing: true });
+
+      // No pending operations
+      (database.getRebalanceOperationByRecipient as jest.Mock).mockResolvedValue([]);
+
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('50000000000000000000'); // 50 USDT - below threshold
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_FILLER_ADDRESS) {
+          return BigInt('0'); // FS has no ETH USDT
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_OWN_ADDRESS) {
+          return BigInt('1000000000000000000000'); // 1000 USDT MM
+        }
+        return BigInt('0');
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should proceed with cross-wallet
+      const infoCalls = mockLogger.info.getCalls();
+      const priorityLog = infoCalls.find(
+        (call) => call.args[0] && call.args[0].includes('PRIORITY 2'),
+      );
+      expect(priorityLog).toBeTruthy();
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should skip when TAC balance is above threshold', async () => {
+      mockContext = createFsTestContext({ allowCrossWalletRebalancing: true });
+
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('200000000000000000000'); // 200 USDT - above 100 threshold
+        }
+        return BigInt('1000000000000000000000');
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should log that no rebalance needed
+      const debugCalls = mockLogger.debug.getCalls();
+      const noRebalanceLog = debugCalls.find(
+        (call) => call.args[0] && call.args[0].includes('no rebalance needed'),
+      );
+      expect(noRebalanceLog).toBeTruthy();
+    });
+
+    it('should skip when shortfall is below minimum', async () => {
+      // Create context with different thresholds to create a small shortfall
+      const mockConfig = {
+        ...createMockConfig(),
+        tacRebalance: {
+          ...createMockConfig().tacRebalance!,
+          fillService: {
+            ...createMockConfig().tacRebalance!.fillService,
+            // Set threshold and target very close to create small shortfall
+            threshold: '100000000', // 100 USDT
+            targetBalance: '105000000', // 105 USDT - shortfall will be 5 USDT if balance is 100 USDT
+            senderAddress: MOCK_FILLER_ADDRESS,
+            allowCrossWalletRebalancing: true,
+          },
+          bridge: {
+            ...createMockConfig().tacRebalance!.bridge,
+            minRebalanceAmount: '10000000', // 10 USDT min
+          },
+        },
+      };
+
+      mockContext = {
+        config: mockConfig,
+        requestId: MOCK_REQUEST_ID,
+        startTime: Date.now(),
+        logger: mockLogger,
+        purchaseCache: mockPurchaseCache,
+        chainService: mockChainService,
+        fillServiceChainService: mockFsChainService,
+        rebalance: mockRebalanceAdapter,
+        prometheus: mockPrometheus,
+        everclear: mockEverclear,
+        web3Signer: undefined,
+        database: createDatabaseMock(),
+      } as unknown as SinonStubbedInstance<ProcessingContext>;
+
+      // TAC balance 99 USDT (below 100 threshold), shortfall to 105 target = 6 USDT < 10 USDT min
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('99000000000000000000'); // 99 USDT - just below 100 threshold
+        }
+        return BigInt('1000000000000000000000'); // 1000 USDT for everything else
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should log shortfall below minimum
+      const debugCalls = mockLogger.debug.getCalls();
+      const shortfallLog = debugCalls.find(
+        (call) => call.args[0] && call.args[0].includes('FS shortfall below minimum'),
+      );
+      expect(shortfallLog).toBeTruthy();
+    });
+
+    it('should handle missing fillServiceChainService gracefully', async () => {
+      mockContext = createFsTestContext({
+        allowCrossWalletRebalancing: true,
+        hasFillServiceChainService: false,
+      });
+
+      getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
+        if (chainId === TAC_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('50000000000000000000'); // 50 USDT - below threshold
+        }
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_OWN_ADDRESS) {
+          return BigInt('1000000000000000000000'); // 1000 USDT MM
+        }
+        return BigInt('0');
+      });
+
+      await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
+
+      // Should proceed with cross-wallet since FS chain service not available
+      const infoCalls = mockLogger.info.getCalls();
+      const evalLog = infoCalls.find(
+        (call) => call.args[0] && call.args[0].includes('Evaluating FS rebalancing options'),
+      );
+      expect(evalLog).toBeTruthy();
+      // hasFillServiceChainService should be false
+      expect(evalLog?.args[1]?.hasFillServiceChainService).toBe(false);
     });
   });
 });
