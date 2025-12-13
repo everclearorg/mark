@@ -68,11 +68,12 @@ locals {
         targetBalance     = try(local.mark_config_json.tacRebalance.marketMaker.targetBalance, "")
       }
       fillService = {
-        address          = try(local.mark_config_json.tacRebalance.fillService.address, "")
-        senderAddress    = try(local.mark_config_json.tacRebalance.fillService.senderAddress, "") # Filler's ETH sender address
-        thresholdEnabled = try(local.mark_config_json.tacRebalance.fillService.thresholdEnabled, false)
-        threshold        = try(local.mark_config_json.tacRebalance.fillService.threshold, "")
-        targetBalance    = try(local.mark_config_json.tacRebalance.fillService.targetBalance, "")
+        address                     = try(local.mark_config_json.tacRebalance.fillService.address, "")
+        senderAddress               = try(local.mark_config_json.tacRebalance.fillService.senderAddress, "") # Filler's ETH sender address
+        thresholdEnabled            = try(local.mark_config_json.tacRebalance.fillService.thresholdEnabled, false)
+        threshold                   = try(local.mark_config_json.tacRebalance.fillService.threshold, "")
+        targetBalance               = try(local.mark_config_json.tacRebalance.fillService.targetBalance, "")
+        allowCrossWalletRebalancing = try(local.mark_config_json.tacRebalance.fillService.allowCrossWalletRebalancing, false)
       }
       bridge = {
         slippageDbps       = try(local.mark_config_json.tacRebalance.bridge.slippageDbps, 500) # 5% default

@@ -414,16 +414,26 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
 
   logger.info('Starting TAC USDT rebalancing', {
     requestId,
+    ownAddress: config.ownAddress,
     initialEthUsdtBalance: initialEthUsdtBalance.toString(),
     usdtInfo,
-    mmConfig: {
-      address: tacRebalanceConfig.marketMaker.address,
-      onDemandEnabled: tacRebalanceConfig.marketMaker.onDemandEnabled,
-      thresholdEnabled: tacRebalanceConfig.marketMaker.thresholdEnabled,
-    },
-    fsConfig: {
-      address: tacRebalanceConfig.fillService.address,
-      thresholdEnabled: tacRebalanceConfig.fillService.thresholdEnabled,
+    wallets: {
+      marketMaker: {
+        walletType: 'market-maker',
+        address: tacRebalanceConfig.marketMaker.address,
+        onDemandEnabled: tacRebalanceConfig.marketMaker.onDemandEnabled,
+        thresholdEnabled: tacRebalanceConfig.marketMaker.thresholdEnabled,
+        threshold: tacRebalanceConfig.marketMaker.threshold,
+        targetBalance: tacRebalanceConfig.marketMaker.targetBalance,
+      },
+      fillService: {
+        walletType: 'fill-service',
+        address: tacRebalanceConfig.fillService.address,
+        senderAddress: tacRebalanceConfig.fillService.senderAddress,
+        thresholdEnabled: tacRebalanceConfig.fillService.thresholdEnabled,
+        threshold: tacRebalanceConfig.fillService.threshold,
+        targetBalance: tacRebalanceConfig.fillService.targetBalance,
+      },
     },
   });
 
@@ -545,12 +555,17 @@ const processOnDemandRebalancing = async (
     return [];
   }
 
-  // Get USDT balances across all chains
+  // Get USDT balances across all chains for Market Maker address
   const balances = await getMarkBalancesForTicker(USDT_TICKER_HASH, config, chainService, context.prometheus);
-  logger.debug('Retrieved USDT balances', { balances: jsonifyMap(balances) });
+  logger.debug('Retrieved USDT balances for Market Maker', {
+    requestId,
+    walletType: 'market-maker',
+    address: config.ownAddress,
+    balances: jsonifyMap(balances),
+  });
 
   if (!balances) {
-    logger.warn('No USDT balances found, skipping', { requestId });
+    logger.warn('No USDT balances found for Market Maker, skipping', { requestId, address: config.ownAddress });
     return [];
   }
 
@@ -920,6 +935,11 @@ const processThresholdRebalancing = async ({
   const { config, database: db, logger, requestId, prometheus } = context;
   const bridgeConfig = config.tacRebalance!.bridge;
 
+  // Determine wallet type based on recipient address
+  const isMMRecipient = recipientAddress.toLowerCase() === config.tacRebalance?.marketMaker?.address?.toLowerCase();
+  const isFSRecipient = recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+  const walletType = isMMRecipient ? 'market-maker' : isFSRecipient ? 'fill-service' : 'unknown';
+
   // 1. Get current USDT balance on TAC for this recipient
   // Returns balance normalized to 18 decimals
   const tacBalance = await getEvmBalance(
@@ -930,13 +950,24 @@ const processThresholdRebalancing = async ({
     tacUsdtDecimals,
     prometheus,
   );
+
+  logger.debug('Retrieved TAC USDT balance for threshold check', {
+    requestId,
+    walletType,
+    address: recipientAddress,
+    chainId: TAC_CHAIN_ID.toString(),
+    balance: tacBalance.toString(),
+    threshold: threshold.toString(),
+    note: 'Both values in 18 decimal format',
+  });
+
   if (tacBalance >= threshold) {
-    logger.debug('TAC balance above threshold, skipping', {
+    logger.debug('TAC balance above threshold, skipping rebalance', {
       requestId,
-      recipient: recipientAddress,
+      walletType,
+      address: recipientAddress,
       balance: tacBalance.toString(),
       threshold: threshold.toString(),
-      note: 'Both values in 18 decimal format',
     });
     return [];
   }
@@ -949,7 +980,8 @@ const processThresholdRebalancing = async ({
   if (pendingOps.length > 0) {
     logger.info('Active rebalance in progress for recipient', {
       requestId,
-      recipient: recipientAddress,
+      walletType,
+      address: recipientAddress,
       pendingOps: pendingOps.length,
     });
     return [];
@@ -1036,15 +1068,31 @@ const executeTacBridge = async (
   // Existing Stargate bridge logic
   // Store recipientAddress in operation.recipient
   // Store earmarkId (null for threshold-based)
-  // TODO: Get receipt from transaction submission
-  // Get USDT balances across all chains
   const actions: RebalanceAction[] = [];
 
+  // Determine if this is for Fill Service or Market Maker based on recipient
+  const isForFillService =
+    recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+  const walletType = isForFillService ? 'fill-service' : 'market-maker';
+
+  // Get USDT balances across all chains for Market Maker address (source of funds)
   const balances = await getMarkBalancesForTicker(USDT_TICKER_HASH, config, chainService, prometheus);
-  logger.debug('Retrieved USDT balances', { balances: jsonifyMap(balances) });
+  logger.debug('Retrieved USDT balances for Market Maker (source)', {
+    requestId,
+    walletType: 'market-maker',
+    address: config.ownAddress,
+    recipientWalletType: walletType,
+    recipientAddress,
+    balances: jsonifyMap(balances),
+  });
 
   if (!balances) {
-    logger.warn('No USDT balances found, skipping', { requestId });
+    logger.warn('No USDT balances found for Market Maker, skipping', {
+      requestId,
+      address: config.ownAddress,
+      recipientWalletType: walletType,
+      recipientAddress,
+    });
     return [];
   }
 
@@ -1057,8 +1105,6 @@ const executeTacBridge = async (
   // Determine sender for the bridge based on recipient type
   // For Fill Service recipient: prefer filler as sender, fallback to MM
   // For Market Maker recipient: always use MM
-  const isFillServiceRecipient =
-    recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
   // Use senderAddress if explicitly set, otherwise default to address (same key = same address on ETH and TAC)
   const fillerSenderAddress =
     config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
@@ -1067,7 +1113,7 @@ const executeTacBridge = async (
   let senderConfig: TacSenderConfig | undefined;
   let selectedChainService = chainService;
 
-  if (isFillServiceRecipient && fillerSenderAddress && fillServiceChainService) {
+  if (isForFillService && fillerSenderAddress && fillServiceChainService) {
     // Check if filler has enough USDT on ETH to send
     // getEvmBalance returns balance in 18 decimals (normalized)
     // amount is in 18 decimals (from getMarkBalancesForTicker which also normalizes)
@@ -1090,10 +1136,12 @@ const executeTacBridge = async (
       // Fall through to MM sender below
     }
 
-    logger.debug('Checking filler balance for FS rebalancing', {
+    logger.debug('Retrieved USDT balance for Fill Service sender', {
       requestId,
-      fillerAddress: fillerSenderAddress,
-      fillerBalance: fillerBalance.toString(),
+      walletType: 'fill-service',
+      address: fillerSenderAddress,
+      chainId: MAINNET_CHAIN_ID.toString(),
+      balance: fillerBalance.toString(),
       requiredAmount: amount.toString(),
       note: 'Both values are in 18 decimal format (normalized)',
     });
@@ -1358,35 +1406,209 @@ const executeTacBridge = async (
   return actions;
 };
 
+/**
+ * Evaluate Fill Service rebalancing with priority logic:
+ *
+ * PRIORITY 1: Same-Account Flow (FS → FS)
+ *   - Use FS sender's own ETH USDT to bridge to FS TAC address
+ *   - This is always preferred as it doesn't require cross-wallet coordination
+ *
+ * PRIORITY 2: Cross-Wallet Flow (MM → FS)
+ *   - Only if allowCrossWalletRebalancing=true
+ *   - Only if FS sender doesn't have enough funds
+ *   - Only if no pending FS rebalancing operations (both Leg1 and Leg2 must be complete)
+ *   - Uses MM's ETH USDT to bridge to FS TAC address
+ */
 const evaluateFillServiceRebalance = async (
   context: ProcessingContext,
-  availableEthUsdt: bigint,
+  mmAvailableEthUsdt: bigint,
   runState: RebalanceRunState,
   usdtInfo: UsdtInfo,
 ): Promise<RebalanceAction[]> => {
-  const { config, logger, requestId } = context;
+  const { config, database: db, logger, requestId, prometheus, fillServiceChainService } = context;
 
-  const fsConfig = config.tacRebalance!.fillService; // FS only supports threshold-based rebalancing
+  const fsConfig = config.tacRebalance!.fillService;
   if (!fsConfig.thresholdEnabled) {
     logger.debug('FS threshold rebalancing disabled', { requestId });
     return [];
   }
 
   // Convert config values from native decimals (6) to normalized (18)
-  // Use safeParseBigInt for robust parsing of config strings
   const thresholdNative = safeParseBigInt(fsConfig.threshold);
   const targetNative = safeParseBigInt(fsConfig.targetBalance);
+  const minRebalanceNative = safeParseBigInt(config.tacRebalance!.bridge.minRebalanceAmount);
   const threshold18 = convertTo18Decimals(thresholdNative, usdtInfo.tacDecimals);
   const target18 = convertTo18Decimals(targetNative, usdtInfo.tacDecimals);
+  const minRebalance18 = convertTo18Decimals(minRebalanceNative, usdtInfo.tacDecimals);
 
-  logger.debug('Evaluating FS threshold rebalancing', {
+  // Get FS sender address (used for same-account flow)
+  const fsSenderAddress = fsConfig.senderAddress ?? fsConfig.address;
+  const allowCrossWallet = fsConfig.allowCrossWalletRebalancing ?? false;
+
+  // Step 1: Check current FS balance on TAC
+  const fsTacBalance = await getEvmBalance(
+    config,
+    TAC_CHAIN_ID.toString(),
+    fsConfig.address,
+    usdtInfo.tacAddress,
+    usdtInfo.tacDecimals,
+    prometheus,
+  );
+
+  logger.debug('FS TAC balance check', {
     requestId,
+    walletType: 'fill-service',
     fsAddress: fsConfig.address,
-    thresholdNative: thresholdNative.toString(),
+    fsTacBalance: fsTacBalance.toString(),
     threshold18: threshold18.toString(),
-    targetNative: targetNative.toString(),
     target18: target18.toString(),
-    availableEthUsdt: availableEthUsdt.toString(),
+  });
+
+  // If balance is above threshold, no rebalance needed
+  if (fsTacBalance >= threshold18) {
+    logger.debug('FS TAC balance above threshold, no rebalance needed', {
+      requestId,
+      walletType: 'fill-service',
+      fsAddress: fsConfig.address,
+      balance: fsTacBalance.toString(),
+      threshold: threshold18.toString(),
+    });
+    return [];
+  }
+
+  // Calculate shortfall
+  const shortfall = target18 - fsTacBalance;
+  if (shortfall < minRebalance18) {
+    logger.debug('FS shortfall below minimum rebalance amount', {
+      requestId,
+      shortfall: shortfall.toString(),
+      minRebalance: minRebalance18.toString(),
+    });
+    return [];
+  }
+
+  // Step 2: Check for pending FS rebalancing operations
+  const pendingFsOps = await db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), fsConfig.address, [
+    RebalanceOperationStatus.PENDING,
+    RebalanceOperationStatus.AWAITING_CALLBACK,
+  ]);
+
+  // Step 3: Get FS sender's ETH USDT balance
+  let fsSenderEthBalance = 0n;
+  if (fsSenderAddress && fillServiceChainService) {
+    try {
+      fsSenderEthBalance = await getEvmBalance(
+        config,
+        MAINNET_CHAIN_ID.toString(),
+        fsSenderAddress,
+        USDT_ON_ETH_ADDRESS,
+        usdtInfo.ethDecimals,
+        prometheus,
+      );
+    } catch (error) {
+      logger.warn('Failed to check FS sender ETH balance', {
+        requestId,
+        fsSenderAddress,
+        error: jsonifyError(error),
+      });
+    }
+  }
+
+  logger.info('Evaluating FS rebalancing options', {
+    requestId,
+    walletType: 'fill-service',
+    fsAddress: fsConfig.address,
+    fsSenderAddress,
+    fsTacBalance: fsTacBalance.toString(),
+    shortfall: shortfall.toString(),
+    fsSenderEthBalance: fsSenderEthBalance.toString(),
+    mmAvailableEthUsdt: mmAvailableEthUsdt.toString(),
+    allowCrossWallet,
+    pendingFsOpsCount: pendingFsOps.length,
+    hasFillServiceChainService: !!fillServiceChainService,
+  });
+
+  // PRIORITY 1: Same-Account Flow (FS → FS)
+  // FS sender has enough funds to cover the shortfall
+  if (fsSenderEthBalance >= minRebalance18 && fillServiceChainService) {
+    const amountToBridge = fsSenderEthBalance < shortfall ? fsSenderEthBalance : shortfall;
+
+    if (amountToBridge >= minRebalance18) {
+      logger.info('PRIORITY 1: Using FS same-account flow (FS sender has funds)', {
+        requestId,
+        flowType: 'same-account',
+        sender: fsSenderAddress,
+        recipient: fsConfig.address,
+        amountToBridge: amountToBridge.toString(),
+        fsSenderEthBalance: fsSenderEthBalance.toString(),
+        shortfall: shortfall.toString(),
+      });
+
+      return processThresholdRebalancing({
+        context,
+        recipientAddress: fsConfig.address,
+        threshold: threshold18,
+        targetBalance: target18,
+        availableEthUsdt: fsSenderEthBalance, // Only FS funds for same-account flow
+        runState,
+        tacUsdtAddress: usdtInfo.tacAddress,
+        tacUsdtDecimals: usdtInfo.tacDecimals,
+      });
+    }
+  }
+
+  // PRIORITY 2: Cross-Wallet Flow (MM → FS)
+  // FS sender doesn't have enough, check if cross-wallet is allowed
+  if (!allowCrossWallet) {
+    logger.info('Cross-wallet rebalancing disabled, FS has insufficient funds', {
+      requestId,
+      fsSenderEthBalance: fsSenderEthBalance.toString(),
+      shortfall: shortfall.toString(),
+      note: 'Enable allowCrossWalletRebalancing to use MM funds for FS',
+    });
+    return [];
+  }
+
+  // Cross-wallet safety check: no pending FS operations
+  if (pendingFsOps.length > 0) {
+    logger.info('Cross-wallet rebalancing blocked: pending FS operations exist', {
+      requestId,
+      pendingOpsCount: pendingFsOps.length,
+      pendingOps: pendingFsOps.map((op) => ({
+        id: op.id,
+        status: op.status,
+        bridge: op.bridge,
+        amount: op.amount,
+      })),
+      note: 'Waiting for all Leg1 and Leg2 operations to complete before cross-wallet',
+    });
+    return [];
+  }
+
+  // Check if MM has funds available
+  const mmRemainingBalance = mmAvailableEthUsdt - runState.committedEthUsdt;
+  if (mmRemainingBalance < minRebalance18) {
+    logger.info('Cross-wallet rebalancing: MM has insufficient available funds', {
+      requestId,
+      mmAvailableEthUsdt: mmAvailableEthUsdt.toString(),
+      committed: runState.committedEthUsdt.toString(),
+      mmRemainingBalance: mmRemainingBalance.toString(),
+      minRebalance: minRebalance18.toString(),
+    });
+    return [];
+  }
+
+  // Calculate amount to bridge from MM
+  const amountFromMm = mmRemainingBalance < shortfall ? mmRemainingBalance : shortfall;
+
+  logger.info('PRIORITY 2: Using cross-wallet flow (MM → FS)', {
+    requestId,
+    flowType: 'cross-wallet',
+    sender: config.ownAddress,
+    recipient: fsConfig.address,
+    amountToBridge: amountFromMm.toString(),
+    mmRemainingBalance: mmRemainingBalance.toString(),
+    shortfall: shortfall.toString(),
   });
 
   return processThresholdRebalancing({
@@ -1394,7 +1616,7 @@ const evaluateFillServiceRebalance = async (
     recipientAddress: fsConfig.address,
     threshold: threshold18,
     targetBalance: target18,
-    availableEthUsdt,
+    availableEthUsdt: mmRemainingBalance, // MM funds for cross-wallet flow
     runState,
     tacUsdtAddress: usdtInfo.tacAddress,
     tacUsdtDecimals: usdtInfo.tacDecimals,
