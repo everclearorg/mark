@@ -181,8 +181,8 @@ export interface MarkConfiguration extends RebalanceConfig {
   };
   ton: {
     mnemonic?: string; // TON wallet mnemonic for TAC bridge operations
-    rpcUrl?: string; // TON RPC endpoint
-    apiKey?: string; // TON API key (for tonapi.io or DRPC)
+    rpcUrl?: string; // TONAPI.io base URL (defaults to https://tonapi.io/v2)
+    apiKey?: string; // TONAPI.io API key for production use
     assets?: TonAssetConfiguration[]; // TON assets with jetton addresses
   };
   tacRebalance?: TacRebalanceConfig;
