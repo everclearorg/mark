@@ -414,16 +414,26 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
 
   logger.info('Starting TAC USDT rebalancing', {
     requestId,
+    ownAddress: config.ownAddress,
     initialEthUsdtBalance: initialEthUsdtBalance.toString(),
     usdtInfo,
-    mmConfig: {
-      address: tacRebalanceConfig.marketMaker.address,
-      onDemandEnabled: tacRebalanceConfig.marketMaker.onDemandEnabled,
-      thresholdEnabled: tacRebalanceConfig.marketMaker.thresholdEnabled,
-    },
-    fsConfig: {
-      address: tacRebalanceConfig.fillService.address,
-      thresholdEnabled: tacRebalanceConfig.fillService.thresholdEnabled,
+    wallets: {
+      marketMaker: {
+        walletType: 'market-maker',
+        address: tacRebalanceConfig.marketMaker.address,
+        onDemandEnabled: tacRebalanceConfig.marketMaker.onDemandEnabled,
+        thresholdEnabled: tacRebalanceConfig.marketMaker.thresholdEnabled,
+        threshold: tacRebalanceConfig.marketMaker.threshold,
+        targetBalance: tacRebalanceConfig.marketMaker.targetBalance,
+      },
+      fillService: {
+        walletType: 'fill-service',
+        address: tacRebalanceConfig.fillService.address,
+        senderAddress: tacRebalanceConfig.fillService.senderAddress,
+        thresholdEnabled: tacRebalanceConfig.fillService.thresholdEnabled,
+        threshold: tacRebalanceConfig.fillService.threshold,
+        targetBalance: tacRebalanceConfig.fillService.targetBalance,
+      },
     },
   });
 
@@ -545,12 +555,17 @@ const processOnDemandRebalancing = async (
     return [];
   }
 
-  // Get USDT balances across all chains
+  // Get USDT balances across all chains for Market Maker address
   const balances = await getMarkBalancesForTicker(USDT_TICKER_HASH, config, chainService, context.prometheus);
-  logger.debug('Retrieved USDT balances', { balances: jsonifyMap(balances) });
+  logger.debug('Retrieved USDT balances for Market Maker', {
+    requestId,
+    walletType: 'market-maker',
+    address: config.ownAddress,
+    balances: jsonifyMap(balances),
+  });
 
   if (!balances) {
-    logger.warn('No USDT balances found, skipping', { requestId });
+    logger.warn('No USDT balances found for Market Maker, skipping', { requestId, address: config.ownAddress });
     return [];
   }
 
@@ -920,6 +935,11 @@ const processThresholdRebalancing = async ({
   const { config, database: db, logger, requestId, prometheus } = context;
   const bridgeConfig = config.tacRebalance!.bridge;
 
+  // Determine wallet type based on recipient address
+  const isMMRecipient = recipientAddress.toLowerCase() === config.tacRebalance?.marketMaker?.address?.toLowerCase();
+  const isFSRecipient = recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+  const walletType = isMMRecipient ? 'market-maker' : isFSRecipient ? 'fill-service' : 'unknown';
+
   // 1. Get current USDT balance on TAC for this recipient
   // Returns balance normalized to 18 decimals
   const tacBalance = await getEvmBalance(
@@ -930,13 +950,24 @@ const processThresholdRebalancing = async ({
     tacUsdtDecimals,
     prometheus,
   );
+
+  logger.debug('Retrieved TAC USDT balance for threshold check', {
+    requestId,
+    walletType,
+    address: recipientAddress,
+    chainId: TAC_CHAIN_ID.toString(),
+    balance: tacBalance.toString(),
+    threshold: threshold.toString(),
+    note: 'Both values in 18 decimal format',
+  });
+
   if (tacBalance >= threshold) {
-    logger.debug('TAC balance above threshold, skipping', {
+    logger.debug('TAC balance above threshold, skipping rebalance', {
       requestId,
-      recipient: recipientAddress,
+      walletType,
+      address: recipientAddress,
       balance: tacBalance.toString(),
       threshold: threshold.toString(),
-      note: 'Both values in 18 decimal format',
     });
     return [];
   }
@@ -949,7 +980,8 @@ const processThresholdRebalancing = async ({
   if (pendingOps.length > 0) {
     logger.info('Active rebalance in progress for recipient', {
       requestId,
-      recipient: recipientAddress,
+      walletType,
+      address: recipientAddress,
       pendingOps: pendingOps.length,
     });
     return [];
@@ -1036,15 +1068,31 @@ const executeTacBridge = async (
   // Existing Stargate bridge logic
   // Store recipientAddress in operation.recipient
   // Store earmarkId (null for threshold-based)
-  // TODO: Get receipt from transaction submission
-  // Get USDT balances across all chains
   const actions: RebalanceAction[] = [];
 
+  // Determine if this is for Fill Service or Market Maker based on recipient
+  const isForFillService =
+    recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+  const walletType = isForFillService ? 'fill-service' : 'market-maker';
+
+  // Get USDT balances across all chains for Market Maker address (source of funds)
   const balances = await getMarkBalancesForTicker(USDT_TICKER_HASH, config, chainService, prometheus);
-  logger.debug('Retrieved USDT balances', { balances: jsonifyMap(balances) });
+  logger.debug('Retrieved USDT balances for Market Maker (source)', {
+    requestId,
+    walletType: 'market-maker',
+    address: config.ownAddress,
+    recipientWalletType: walletType,
+    recipientAddress,
+    balances: jsonifyMap(balances),
+  });
 
   if (!balances) {
-    logger.warn('No USDT balances found, skipping', { requestId });
+    logger.warn('No USDT balances found for Market Maker, skipping', {
+      requestId,
+      address: config.ownAddress,
+      recipientWalletType: walletType,
+      recipientAddress,
+    });
     return [];
   }
 
@@ -1057,8 +1105,6 @@ const executeTacBridge = async (
   // Determine sender for the bridge based on recipient type
   // For Fill Service recipient: prefer filler as sender, fallback to MM
   // For Market Maker recipient: always use MM
-  const isFillServiceRecipient =
-    recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
   // Use senderAddress if explicitly set, otherwise default to address (same key = same address on ETH and TAC)
   const fillerSenderAddress =
     config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
@@ -1067,7 +1113,7 @@ const executeTacBridge = async (
   let senderConfig: TacSenderConfig | undefined;
   let selectedChainService = chainService;
 
-  if (isFillServiceRecipient && fillerSenderAddress && fillServiceChainService) {
+  if (isForFillService && fillerSenderAddress && fillServiceChainService) {
     // Check if filler has enough USDT on ETH to send
     // getEvmBalance returns balance in 18 decimals (normalized)
     // amount is in 18 decimals (from getMarkBalancesForTicker which also normalizes)
@@ -1090,10 +1136,12 @@ const executeTacBridge = async (
       // Fall through to MM sender below
     }
 
-    logger.debug('Checking filler balance for FS rebalancing', {
+    logger.debug('Retrieved USDT balance for Fill Service sender', {
       requestId,
-      fillerAddress: fillerSenderAddress,
-      fillerBalance: fillerBalance.toString(),
+      walletType: 'fill-service',
+      address: fillerSenderAddress,
+      chainId: MAINNET_CHAIN_ID.toString(),
+      balance: fillerBalance.toString(),
       requiredAmount: amount.toString(),
       note: 'Both values are in 18 decimal format (normalized)',
     });
