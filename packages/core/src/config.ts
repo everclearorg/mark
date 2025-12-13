@@ -33,6 +33,32 @@ export class ConfigurationError extends Error {
   }
 }
 
+/**
+ * Parses a boolean value from environment variable string or config JSON
+ * Handles string values like "true", "false", "1", "0" from environment variables
+ * @param value - The value to parse (could be boolean, string, undefined)
+ * @returns boolean value, or undefined if value is undefined
+ */
+export function parseBooleanValue(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const lower = value.toLowerCase().trim();
+    if (lower === 'true' || lower === '1') {
+      return true;
+    }
+    if (lower === 'false' || lower === '0' || lower === '') {
+      return false;
+    }
+  }
+  // For any other type, coerce to boolean
+  return Boolean(value);
+}
+
 export const DEFAULT_GAS_THRESHOLD = '5000000000000000'; // 0.005 eth
 export const DEFAULT_BALANCE_THRESHOLD = '0'; // 0
 export const DEFAULT_INVOICE_AGE = '1';
@@ -278,19 +304,22 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         assets: configJson.ton?.assets ?? undefined, // TON assets with jetton addresses
       },
       tacRebalance: {
-        enabled: configJson.tacRebalance?.enabled ?? (await fromEnv('TAC_REBALANCE_ENABLED', true)) ?? false,
+        enabled:
+          parseBooleanValue(configJson.tacRebalance?.enabled) ??
+          parseBooleanValue(await fromEnv('TAC_REBALANCE_ENABLED', true)) ??
+          false,
         marketMaker: {
           address:
             configJson.tacRebalance?.marketMaker?.address ??
             (await fromEnv('TAC_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
             undefined,
           onDemandEnabled:
-            configJson.tacRebalance?.marketMaker?.onDemandEnabled ??
-            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
+            parseBooleanValue(configJson.tacRebalance?.marketMaker?.onDemandEnabled) ??
+            parseBooleanValue(await fromEnv('TAC_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
             false,
           thresholdEnabled:
-            configJson.tacRebalance?.marketMaker?.thresholdEnabled ??
-            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
+            parseBooleanValue(configJson.tacRebalance?.marketMaker?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
             false,
           threshold:
             configJson.tacRebalance?.marketMaker?.threshold ??
@@ -311,8 +340,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
             (await fromEnv('TAC_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
             undefined, // Filler's ETH address for sending from mainnet
           thresholdEnabled:
-            configJson.tacRebalance?.fillService?.thresholdEnabled ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
+            parseBooleanValue(configJson.tacRebalance?.fillService?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
             false,
           threshold:
             configJson.tacRebalance?.fillService?.threshold ??
@@ -326,8 +355,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         bridge: {
           slippageDbps:
             configJson.tacRebalance?.bridge?.slippageDbps ??
-            (await fromEnv('TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ??
-            500, // 5% slippage - matches original hardcoded value
+            parseInt((await fromEnv('TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '500', 10),
           minRebalanceAmount:
             configJson.tacRebalance?.bridge?.minRebalanceAmount ??
             (await fromEnv('TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
