@@ -64,6 +64,60 @@ interface UsdtInfo {
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
 
+/**
+ * Type for TAC transaction metadata stored in database
+ * Used for type-safe access to transactionLinker in callbacks
+ */
+interface TacTransactionMetadata {
+  receipt?: {
+    transactionLinker?: unknown;
+    [key: string]: unknown;
+  };
+}
+
+/**
+ * Extended TransactionReceipt that includes transactionLinker for TAC operations
+ * The transactionLinker is stored in the receipt and persisted to DB metadata
+ */
+type TacPlaceholderReceipt = TransactionReceipt & {
+  transactionLinker: unknown;
+};
+
+/**
+ * Create a placeholder receipt for TAC bridge transactions
+ *
+ * TAC SDK transactions don't have EVM transaction hashes, so we create a
+ * placeholder receipt to store the transactionLinker in the database.
+ * This enables:
+ * 1. Tracking the operation status via TAC SDK OperationTracker
+ * 2. Preventing duplicate bridge executions (retry loop prevention)
+ *
+ * @param operationId - Unique identifier for this operation (prevents hash collisions)
+ * @param from - Sender address (TON wallet or fallback)
+ * @param to - Recipient address (TAC EVM address)
+ * @param transactionLinker - TAC SDK transactionLinker for status tracking
+ */
+function createTacPlaceholderReceipt(
+  operationId: string,
+  from: string,
+  to: string,
+  transactionLinker: unknown,
+): TacPlaceholderReceipt {
+  return {
+    // Use combination of operationId, timestamp, and random for uniqueness
+    transactionHash: `tac-${operationId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    from: from || 'ton-sender',
+    to,
+    cumulativeGasUsed: '0',
+    effectiveGasPrice: '0',
+    blockNumber: 0,
+    status: 1,
+    logs: [],
+    confirmations: 0,
+    // Store transactionLinker for later status tracking
+    transactionLinker,
+  };
+}
 // Default TONAPI.io URL
 const TONAPI_DEFAULT_URL = 'https://tonapi.io/v2';
 
@@ -1573,30 +1627,74 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
                   : 'Using original amount',
             });
 
-            const transactionLinker = await tacInnerAdapter.executeTacBridge(tonMnemonic, recipient, amountToBridge);
+            const transactionLinker = await tacInnerAdapter.executeTacBridge(
+              tonMnemonic,
+              recipient,
+              amountToBridge,
+              jettonAddress, // CRITICAL: Pass the TON jetton address for the asset to bridge
+            );
+
+            // Generate a unique ID for the Leg 2 operation (used in placeholder receipt)
+            const leg2OperationId = `leg2-${operation.id}-${Date.now()}`;
 
             // Create Leg 2 operation record with transaction info
-            // Link to the same earmark as Leg 1 for proper tracking
-            // Use actual bridged amount (accounts for Stargate fees)
-            await createRebalanceOperation({
-              earmarkId: operation.earmarkId,
-              originChainId: Number(TON_LZ_CHAIN_ID),
-              destinationChainId: Number(TAC_CHAIN_ID),
-              tickerHash: operation.tickerHash,
-              amount: amountToBridge, // Use actual amount, not original
-              slippage: 100,
-              status: RebalanceOperationStatus.PENDING,
-              bridge: SupportedBridge.TacInner,
-              recipient: recipient,
-              // Note: TAC SDK transactionLinker is stored in recipient field as JSON for later tracking
-              // Format: recipient|JSON(transactionLinker)
-              transactions: undefined,
-            });
+            // CRITICAL: If bridge succeeded but DB write fails, we need to handle gracefully
+            // to prevent funds from being stuck without tracking
+            try {
+              // Create placeholder receipt to store transactionLinker
+              const placeholderReceipt = transactionLinker
+                ? createTacPlaceholderReceipt(
+                    leg2OperationId,
+                    config.ownTonAddress || 'ton-sender',
+                    recipient,
+                    transactionLinker,
+                  )
+                : undefined;
 
-            logger.info('TAC SDK bridge transaction submitted', {
-              ...logContext,
-              transactionLinker,
-            });
+              await createRebalanceOperation({
+                earmarkId: operation.earmarkId,
+                originChainId: Number(TON_LZ_CHAIN_ID),
+                destinationChainId: Number(TAC_CHAIN_ID),
+                tickerHash: operation.tickerHash,
+                amount: amountToBridge, // Use actual amount, not original
+                slippage: 100,
+                // Use AWAITING_CALLBACK if we have transactionLinker (bridge submitted, awaiting completion)
+                // Use PENDING if no transactionLinker (bridge failed to submit, will retry)
+                status: transactionLinker
+                  ? RebalanceOperationStatus.AWAITING_CALLBACK
+                  : RebalanceOperationStatus.PENDING,
+                bridge: SupportedBridge.TacInner,
+                recipient: recipient,
+                // Store transactionLinker for later status tracking and to prevent duplicate executions
+                transactions: placeholderReceipt
+                  ? {
+                      [TON_LZ_CHAIN_ID]: placeholderReceipt as TransactionReceipt,
+                    }
+                  : undefined,
+              });
+
+              logger.info('TAC SDK bridge transaction submitted', {
+                ...logContext,
+                transactionLinker,
+                transactionLinkerStored: !!transactionLinker,
+                newStatus: transactionLinker
+                  ? RebalanceOperationStatus.AWAITING_CALLBACK
+                  : RebalanceOperationStatus.PENDING,
+              });
+            } catch (dbError) {
+              // CRITICAL: Bridge succeeded but DB write failed
+              // Log extensively so operators can manually reconcile if needed
+              logger.error('CRITICAL: TAC bridge executed but failed to create Leg 2 operation record', {
+                ...logContext,
+                transactionLinker,
+                recipient,
+                amountToBridge,
+                error: jsonifyError(dbError),
+                note: 'Bridge funds were sent but operation is not tracked. Manual reconciliation may be needed.',
+                recoveryHint: 'Check TON wallet and TAC recipient for the bridged funds.',
+              });
+              // Don't rethrow - we still need to mark Leg 1 complete to prevent re-execution
+            }
           }
 
           // Mark Leg 1 as completed
@@ -1630,17 +1728,24 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
         executeTacBridge: (tonMnemonic: string, recipient: string, amount: string, asset?: string) => Promise<unknown>;
       };
 
-      if (operation.status === RebalanceOperationStatus.PENDING) {
+      // Handle both PENDING (needs bridge execution or tracking) and AWAITING_CALLBACK (needs tracking only)
+      if (
+        operation.status === RebalanceOperationStatus.PENDING ||
+        operation.status === RebalanceOperationStatus.AWAITING_CALLBACK
+      ) {
         try {
           // Check if we have a transaction linker from TAC SDK
-          const tonTxData = operation.transactions?.[TON_LZ_CHAIN_ID] as { transactionLinker?: unknown } | undefined;
-          let transactionLinker = tonTxData?.transactionLinker;
+          // The transactionLinker is stored in the transaction entry's metadata.receipt.transactionLinker
+          const tonTxData = operation.transactions?.[TON_LZ_CHAIN_ID];
+          const tonTxMetadata = tonTxData?.metadata as TacTransactionMetadata | undefined;
+          let transactionLinker = tonTxMetadata?.receipt?.transactionLinker;
 
           // Get the stored recipient from operation
           const storedRecipient = operation.recipient;
 
-          // If no transactionLinker, the bridge was never executed - try to execute it now
-          if (!transactionLinker && storedRecipient) {
+          // If no transactionLinker and still PENDING, the bridge was never executed - try to execute it now
+          // Skip this for AWAITING_CALLBACK (bridge was submitted, just need to track)
+          if (!transactionLinker && storedRecipient && operation.status === RebalanceOperationStatus.PENDING) {
             const tonMnemonic = config.ton?.mnemonic;
             const tonWalletAddress = config.ownTonAddress;
             const tonApiKey = config.ton?.apiKey;
@@ -1690,16 +1795,49 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
                     tonMnemonic,
                     storedRecipient,
                     amountToBridge,
+                    jettonAddress, // CRITICAL: Pass the TON jetton address for the asset to bridge
                   );
 
-                  // Log success - transaction linker tracking done via TAC SDK
+                  // CRITICAL: If bridge executed successfully, store transactionLinker to prevent retry loops
                   if (transactionLinker) {
-                    logger.info('TAC SDK bridge executed successfully', {
-                      ...logContext,
+                    // Create placeholder receipt using helper function
+                    const placeholderReceipt = createTacPlaceholderReceipt(
+                      operation.id,
+                      tonWalletAddress || 'ton-sender',
+                      storedRecipient,
                       transactionLinker,
-                      note: 'Bridge submitted, will verify completion on next cycle',
-                    });
-                    // Don't mark as complete yet - let it be verified on next cycle
+                    );
+
+                    try {
+                      // Update operation with transactionLinker so we don't retry on next poll
+                      await db.updateRebalanceOperation(operation.id, {
+                        // Use txHashes to store the receipt with transactionLinker
+                        txHashes: {
+                          [TON_LZ_CHAIN_ID]: placeholderReceipt as TransactionReceipt,
+                        },
+                        // Change to AWAITING_CALLBACK to indicate bridge submitted, awaiting completion
+                        status: RebalanceOperationStatus.AWAITING_CALLBACK,
+                      });
+
+                      logger.info('TAC SDK bridge executed successfully, operation updated', {
+                        ...logContext,
+                        transactionLinker,
+                        newStatus: RebalanceOperationStatus.AWAITING_CALLBACK,
+                        note: 'TransactionLinker stored, will verify completion on next cycle',
+                      });
+                    } catch (dbError) {
+                      // CRITICAL: Bridge succeeded but DB update failed
+                      logger.error('CRITICAL: TAC bridge executed but failed to update operation', {
+                        ...logContext,
+                        transactionLinker,
+                        storedRecipient,
+                        amountToBridge,
+                        error: jsonifyError(dbError),
+                        note: 'Bridge funds were sent but transactionLinker not persisted. May cause retry.',
+                      });
+                      // Don't continue - fall through to readyOnDestination check
+                    }
+                    // Continue to next operation - this one is now tracked properly
                     continue;
                   }
                 } catch (bridgeError) {
