@@ -351,6 +351,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
             configJson.tacRebalance?.fillService?.targetBalance ??
             (await fromEnv('TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
             undefined,
+          allowCrossWalletRebalancing:
+            parseBooleanValue(configJson.tacRebalance?.fillService?.allowCrossWalletRebalancing) ??
+            parseBooleanValue(await fromEnv('TAC_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
+            false,
         },
         bridge: {
           slippageDbps:

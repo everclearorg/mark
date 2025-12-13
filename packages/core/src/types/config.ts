@@ -130,6 +130,7 @@ export interface TacRebalanceConfig {
     thresholdEnabled: boolean; // Enable balance-threshold rebalancing
     threshold: string; // Min USDT balance (6 decimals)
     targetBalance: string; // Target after threshold-triggered rebalance
+    allowCrossWalletRebalancing?: boolean; // Allow MM to fund FS rebalancing when FS has insufficient ETH USDT
   };
   // Shared bridge configuration
   bridge: {
