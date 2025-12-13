@@ -1412,7 +1412,7 @@ const evaluateFillServiceRebalance = async (
   runState: RebalanceRunState,
   usdtInfo: UsdtInfo,
 ): Promise<RebalanceAction[]> => {
-  const { config, logger, requestId } = context;
+  const { config, logger, requestId, prometheus, fillServiceChainService } = context;
 
   const fsConfig = config.tacRebalance!.fillService; // FS only supports threshold-based rebalancing
   if (!fsConfig.thresholdEnabled) {
@@ -1427,14 +1427,47 @@ const evaluateFillServiceRebalance = async (
   const threshold18 = convertTo18Decimals(thresholdNative, usdtInfo.tacDecimals);
   const target18 = convertTo18Decimals(targetNative, usdtInfo.tacDecimals);
 
+  // Check if FS sender has its own USDT on ETH that can be used
+  // This allows FS to rebalance even if MM has no funds on ETH
+  const fsSenderAddress = fsConfig.senderAddress ?? fsConfig.address;
+  let fsSenderEthBalance = 0n;
+
+  if (fsSenderAddress && fillServiceChainService) {
+    try {
+      fsSenderEthBalance = await getEvmBalance(
+        config,
+        MAINNET_CHAIN_ID.toString(),
+        fsSenderAddress,
+        USDT_ON_ETH_ADDRESS,
+        usdtInfo.ethDecimals,
+        prometheus,
+      );
+    } catch (error) {
+      logger.warn('Failed to check FS sender ETH balance', {
+        requestId,
+        fsSenderAddress,
+        error: jsonifyError(error),
+      });
+    }
+  }
+
+  // Total available for FS = MM's available balance + FS sender's own balance
+  // Note: If FS sender has funds, those will be used first in executeTacBridge
+  const totalAvailableForFs = availableEthUsdt + fsSenderEthBalance;
+
   logger.debug('Evaluating FS threshold rebalancing', {
     requestId,
+    walletType: 'fill-service',
     fsAddress: fsConfig.address,
+    fsSenderAddress,
     thresholdNative: thresholdNative.toString(),
     threshold18: threshold18.toString(),
     targetNative: targetNative.toString(),
     target18: target18.toString(),
-    availableEthUsdt: availableEthUsdt.toString(),
+    mmAvailableEthUsdt: availableEthUsdt.toString(),
+    fsSenderEthBalance: fsSenderEthBalance.toString(),
+    totalAvailableForFs: totalAvailableForFs.toString(),
+    hasFillServiceChainService: !!fillServiceChainService,
   });
 
   return processThresholdRebalancing({
@@ -1442,7 +1475,7 @@ const evaluateFillServiceRebalance = async (
     recipientAddress: fsConfig.address,
     threshold: threshold18,
     targetBalance: target18,
-    availableEthUsdt,
+    availableEthUsdt: totalAvailableForFs, // Use combined balance
     runState,
     tacUsdtAddress: usdtInfo.tacAddress,
     tacUsdtDecimals: usdtInfo.tacDecimals,
