@@ -157,6 +157,16 @@ export interface TacSdkConfig {
   tonPrivateKey?: string; // TON wallet private key (alternative to mnemonic)
   tonRpcUrl?: string; // TON RPC URL (default: toncenter mainnet) - use paid RPC for reliability
   apiKey?: string; // API key for paid RPC endpoints
+  customSequencerEndpoints?: string[]; // Custom TAC sequencer/data endpoints for reliability
+}
+
+/**
+ * Retry configuration for TAC SDK operations
+ */
+export interface TacRetryConfig {
+  maxRetries: number; // Maximum number of retry attempts (default: 3)
+  baseDelayMs: number; // Base delay in milliseconds (default: 2000)
+  maxDelayMs: number; // Maximum delay in milliseconds (default: 30000)
 }
 
 /**
