@@ -13,7 +13,20 @@ import {
   TacEvmProxyMsg,
   TacTransactionLinker,
   TacSdkConfig,
+  TacRetryConfig,
 } from './types';
+
+// Default TAC sequencer endpoints for reliability
+const DEFAULT_TAC_SEQUENCER_ENDPOINTS = [
+  'https://data.tac.build',
+];
+
+// Default retry configuration
+const DEFAULT_RETRY_CONFIG: TacRetryConfig = {
+  maxRetries: 3,
+  baseDelayMs: 2000,
+  maxDelayMs: 30000,
+};
 
 /**
  * TAC Inner Bridge Adapter
@@ -95,15 +108,26 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
         },
       };
 
+      // Get custom sequencer endpoints from config or use defaults
+      const customSequencerEndpoints =
+        this.sdkConfig?.customSequencerEndpoints ?? DEFAULT_TAC_SEQUENCER_ENDPOINTS;
+
       this.tacSdk = await TacSdk.create({
         network,
         TONParams: {
           contractOpener,
         },
+        // Provide custom sequencer endpoints for reliability
+        // This helps when the primary data.tac.build endpoint is down
+        customLiteSequencerEndpoints: customSequencerEndpoints,
       });
       this.sdkInitialized = true;
 
-      this.logger.info('TAC SDK initialized successfully', { network, tonRpcUrl });
+      this.logger.info('TAC SDK initialized successfully', {
+        network,
+        tonRpcUrl,
+        customSequencerEndpoints,
+      });
     } catch (error) {
       this.logger.warn('Failed to initialize TAC SDK, will use fallback methods', {
         error: jsonifyError(error),
@@ -189,111 +213,185 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
    * 2. TAC sequencer mints equivalent tokens to the sender's TAC address
    * 3. The evmProxyMsg triggers ERC20 transfer to the final recipient
    *
+   * Retry Logic:
+   * - Uses exponential backoff for transient failures (endpoint failures, network issues)
+   * - Default: 3 retries with 2s base delay, up to 30s max delay
+   *
    * @param tonMnemonic - TON wallet mnemonic for signing
    * @param recipient - TAC EVM address to receive tokens (must be EVM format 0x...)
    * @param amount - Amount to bridge (in jetton units - 6 decimals for USDT)
    * @param asset - TON jetton address (from config.ton.assets)
+   * @param retryConfig - Optional retry configuration
    */
   async executeTacBridge(
     tonMnemonic: string,
     recipient: string,
     amount: string,
     asset: string,
+    retryConfig: TacRetryConfig = DEFAULT_RETRY_CONFIG,
   ): Promise<TacTransactionLinker | null> {
-    try {
-      await this.initializeSdk();
+    const { maxRetries, baseDelayMs, maxDelayMs } = retryConfig;
 
-      if (!this.tacSdk) {
-        this.logger.error('TAC SDK not initialized, cannot execute bridge');
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.executeTacBridgeInternal(tonMnemonic, recipient, amount, asset);
+        return result;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isRetryable = this.isRetryableError(errorMessage);
+
+        if (isRetryable && attempt < maxRetries) {
+          // Calculate delay with exponential backoff: baseDelay * 2^(attempt-1)
+          const delay = Math.min(baseDelayMs * Math.pow(2, attempt - 1), maxDelayMs);
+
+          this.logger.warn(`TAC bridge attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms`, {
+            error: jsonifyError(error),
+            recipient,
+            amount,
+            asset,
+            nextAttempt: attempt + 1,
+            delayMs: delay,
+            isRetryable,
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        // Non-retryable error or max retries exceeded
+        this.logger.error('Failed to execute TAC bridge after retries', {
+          error: jsonifyError(error),
+          recipient,
+          amount,
+          asset,
+          attempts: attempt,
+          maxRetries,
+          isRetryable,
+        });
         return null;
       }
-
-      // Import SDK components
-      const { SenderFactory, Network } = await import('@tonappchain/sdk');
-
-      // Determine network based on config
-      const network = this.sdkConfig?.network === TacNetwork.TESTNET ? Network.TESTNET : Network.MAINNET;
-
-      // Create RawSender for backend operations (server-side signing)
-      // TAC SDK v0.7.x requires network, version, and mnemonic
-      // Use V4 which matches the wallet derived from the 12-word mnemonic
-      const sender = await SenderFactory.getSender({
-        network,
-        version: 'V4', // V4 wallet - standard TON wallet
-        mnemonic: tonMnemonic,
-      });
-
-      // Get the sender's wallet address for debugging
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const senderAny = sender as any;
-      const senderAddress =
-        typeof senderAny.getSenderAddress === 'function'
-          ? senderAny.getSenderAddress()
-          : senderAny.wallet?.address?.toString?.() || 'unknown';
-
-      // Log for debugging (V4 wallet derived from mnemonic)
-      this.logger.info('TAC bridge sender wallet', {
-        senderTonWallet: senderAddress,
-        finalRecipient: recipient,
-      });
-
-      // Build the EVM proxy message
-      // For simple bridging (TON → TAC) without calling a contract,
-      // we just specify the recipient address as evmTargetAddress.
-      // The TAC SDK will bridge tokens directly to this address.
-      //
-      // See TAC SDK docs: for TON-TAC transactions, when no methodName
-      // is provided, tokens are sent directly to evmTargetAddress.
-      const evmProxyMsg: TacEvmProxyMsg = {
-        evmTargetAddress: recipient, // Tokens go directly to recipient
-        // No methodName or encodedParameters needed for simple transfer
-      };
-
-      // Prepare assets to bridge
-      // TAC SDK will lock these on TON and mint on TAC
-      // IMPORTANT: Use rawAmount (not amount) since we're already passing the raw token units
-      // 'amount' expects human-readable values (e.g., 1.99) which get multiplied by 10^decimals
-      // 'rawAmount' expects raw units (e.g., 1999400 for 1.9994 USDT with 6 decimals)
-      const assets: TacAssetLike[] = [
-        {
-          address: asset, // TON jetton address
-          rawAmount: BigInt(amount), // Already in raw units (6 decimals for USDT)
-        },
-      ];
-
-      this.logger.info('Executing TAC SDK bridge', {
-        recipient,
-        amount,
-        asset,
-        evmTarget: evmProxyMsg.evmTargetAddress,
-        note: 'Simple bridge - tokens go directly to recipient',
-      });
-
-      // Send cross-chain transaction via TAC SDK
-      // The SDK will:
-      // 1. Create the cross-chain message on TON
-      // 2. Sign with the sender's TON wallet
-      // 3. Submit to the TAC sequencer network
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const transactionLinker = await (this.tacSdk as any).sendCrossChainTransaction(evmProxyMsg, sender, assets);
-
-      this.logger.info('TAC bridge transaction sent successfully', {
-        recipient,
-        amount,
-        asset,
-        transactionLinker,
-      });
-
-      return transactionLinker as TacTransactionLinker;
-    } catch (error) {
-      this.logger.error('Failed to execute TAC bridge', {
-        error: jsonifyError(error),
-        recipient,
-        amount,
-        asset,
-      });
-      return null;
     }
+
+    return null;
+  }
+
+  /**
+   * Check if an error is retryable (transient network/endpoint issues)
+   */
+  protected isRetryableError(errorMessage: string): boolean {
+    const retryablePatterns = [
+      'All endpoints failed',
+      'failed to fetch',
+      'failed to complete request',
+      'ECONNREFUSED',
+      'ETIMEDOUT',
+      'ENOTFOUND',
+      'socket hang up',
+      'network error',
+      'timeout',
+      'rate limit',
+      '503',
+      '502',
+      '504',
+      '429',
+    ];
+
+    const lowerMessage = errorMessage.toLowerCase();
+    return retryablePatterns.some((pattern) => lowerMessage.includes(pattern.toLowerCase()));
+  }
+
+  /**
+   * Internal implementation of TAC bridge execution (without retry logic)
+   */
+  protected async executeTacBridgeInternal(
+    tonMnemonic: string,
+    recipient: string,
+    amount: string,
+    asset: string,
+  ): Promise<TacTransactionLinker | null> {
+    await this.initializeSdk();
+
+    if (!this.tacSdk) {
+      throw new Error('TAC SDK not initialized, cannot execute bridge');
+    }
+
+    // Import SDK components
+    const { SenderFactory, Network } = await import('@tonappchain/sdk');
+
+    // Determine network based on config
+    const network = this.sdkConfig?.network === TacNetwork.TESTNET ? Network.TESTNET : Network.MAINNET;
+
+    // Create RawSender for backend operations (server-side signing)
+    // TAC SDK v0.7.x requires network, version, and mnemonic
+    // Use V4 which matches the wallet derived from the 12-word mnemonic
+    const sender = await SenderFactory.getSender({
+      network,
+      version: 'V4', // V4 wallet - standard TON wallet
+      mnemonic: tonMnemonic,
+    });
+
+    // Get the sender's wallet address for debugging
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const senderAny = sender as any;
+    const senderAddress =
+      typeof senderAny.getSenderAddress === 'function'
+        ? senderAny.getSenderAddress()
+        : senderAny.wallet?.address?.toString?.() || 'unknown';
+
+    // Log for debugging (V4 wallet derived from mnemonic)
+    this.logger.info('TAC bridge sender wallet', {
+      senderTonWallet: senderAddress,
+      finalRecipient: recipient,
+    });
+
+    // Build the EVM proxy message
+    // For simple bridging (TON → TAC) without calling a contract,
+    // we just specify the recipient address as evmTargetAddress.
+    // The TAC SDK will bridge tokens directly to this address.
+    //
+    // See TAC SDK docs: for TON-TAC transactions, when no methodName
+    // is provided, tokens are sent directly to evmTargetAddress.
+    const evmProxyMsg: TacEvmProxyMsg = {
+      evmTargetAddress: recipient, // Tokens go directly to recipient
+      // No methodName or encodedParameters needed for simple transfer
+    };
+
+    // Prepare assets to bridge
+    // TAC SDK will lock these on TON and mint on TAC
+    // IMPORTANT: Use rawAmount (not amount) since we're already passing the raw token units
+    // 'amount' expects human-readable values (e.g., 1.99) which get multiplied by 10^decimals
+    // 'rawAmount' expects raw units (e.g., 1999400 for 1.9994 USDT with 6 decimals)
+    const assets: TacAssetLike[] = [
+      {
+        address: asset, // TON jetton address
+        rawAmount: BigInt(amount), // Already in raw units (6 decimals for USDT)
+      },
+    ];
+
+    this.logger.info('Executing TAC SDK bridge', {
+      recipient,
+      amount,
+      asset,
+      evmTarget: evmProxyMsg.evmTargetAddress,
+      note: 'Simple bridge - tokens go directly to recipient',
+    });
+
+    // Send cross-chain transaction via TAC SDK
+    // The SDK will:
+    // 1. Create the cross-chain message on TON
+    // 2. Sign with the sender's TON wallet
+    // 3. Submit to the TAC sequencer network
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transactionLinker = await (this.tacSdk as any).sendCrossChainTransaction(evmProxyMsg, sender, assets);
+
+    this.logger.info('TAC bridge transaction sent successfully', {
+      recipient,
+      amount,
+      asset,
+      transactionLinker,
+    });
+
+    return transactionLinker as TacTransactionLinker;
   }
 
   /**
