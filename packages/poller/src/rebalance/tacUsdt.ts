@@ -591,10 +591,15 @@ const processOnDemandRebalancing = async (
     const ticker = USDT_TICKER_HASH;
     const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
 
-    // intent.amount_out_min is already in native units (from the API/chain)
-    // No conversion needed - use safeParseBigInt for robust parsing
+    // All amounts normalized to 18 decimals for consistent calculations
+    // (same pattern as threshold rebalancing)
+
+    // Invoice amounts from Everclear API are always normalized to 18 decimals
     const intentAmount = safeParseBigInt(invoice.amount);
-    const minRebalanceAmount = safeParseBigInt(config.tacRebalance!.bridge.minRebalanceAmount);
+
+    // Convert bridge config amounts from native (6 decimals) to normalized (18 decimals)
+    const minRebalanceAmountNative = safeParseBigInt(config.tacRebalance!.bridge.minRebalanceAmount);
+    const minRebalanceAmount = convertTo18Decimals(minRebalanceAmountNative, decimals);
 
     if (intentAmount < minRebalanceAmount) {
       logger.warn('Invoice amount is less than minimum rebalance amount, skipping', {
@@ -602,25 +607,25 @@ const processOnDemandRebalancing = async (
         invoiceId: invoice.intent_id.toString(),
         invoiceAmount: invoice.amount,
         minRebalanceAmount: minRebalanceAmount.toString(),
+        note: 'Both values in 18 decimal format',
       });
       continue;
     }
 
-    // Balances from getMarkBalancesForTicker are in 18 decimals (standardized)
-    // Convert to native units (6 decimals for USDT)
-    const availableOriginBalance = balances.get(origin.toString()) || 0n;
-    const currentOriginBalance = convertToNativeUnits(availableOriginBalance, decimals);
+    // Balances from getMarkBalancesForTicker are already in 18 decimals (standardized)
+    // Keep them in 18 decimals for consistent comparison with intentAmount
+    const currentOriginBalance = balances.get(origin.toString()) || 0n;
 
     // CRITICAL: Check if TAC (destination) already has sufficient balance
     // On-demand rebalancing should ONLY trigger when the destination lacks funds
-    const availableDestBalance = balances.get(destination.toString()) || 0n;
-    const currentDestBalance = convertToNativeUnits(availableDestBalance, decimals);
+    const currentDestBalance = balances.get(destination.toString()) || 0n;
 
-    logger.debug('Current USDT balances', {
+    logger.debug('Current USDT balances (18 decimals)', {
       requestId,
       originBalance: currentOriginBalance.toString(),
       destinationBalance: currentDestBalance.toString(),
       intentAmount: intentAmount.toString(),
+      decimals,
     });
 
     // If TAC already has enough to fulfill the intent, no rebalance needed
@@ -630,24 +635,26 @@ const processOnDemandRebalancing = async (
         invoiceId: invoice.intent_id.toString(),
         currentDestBalance: currentDestBalance.toString(),
         intentAmount: intentAmount.toString(),
-        note: 'On-demand rebalancing only triggers when destination lacks funds',
+        note: 'On-demand rebalancing only triggers when destination lacks funds (values in 18 decimals)',
       });
       continue;
     }
 
     // Use remaining available balance (accounts for previously committed funds in this run)
+    // remainingEthUsdt is in 18 decimals (from availableEthUsdt)
     if (remainingEthUsdt <= minRebalanceAmount) {
       logger.info('Remaining ETH USDT is at or below minimum, skipping', {
         requestId,
         remainingEthUsdt: remainingEthUsdt.toString(),
         minRebalanceAmount: minRebalanceAmount.toString(),
-        note: 'Some balance may be committed to other operations in this run',
+        note: 'Both values in 18 decimal format',
       });
       continue;
     }
 
     // Calculate amount to bridge - only bridge what's needed
     // (intentAmount - currentDestBalance) = shortfall that needs to be filled
+    // All values in 18 decimals
     const shortfall = intentAmount - currentDestBalance;
 
     // Don't bridge if shortfall is below minimum threshold
@@ -657,11 +664,13 @@ const processOnDemandRebalancing = async (
         invoiceId: invoice.intent_id.toString(),
         shortfall: shortfall.toString(),
         minRebalanceAmount: minRebalanceAmount.toString(),
+        note: 'Both values in 18 decimal format',
       });
       continue;
     }
 
     // Use remaining available balance (not the on-chain balance, which doesn't account for this run's commits)
+    // All values in 18 decimals
     const amountToBridge = remainingEthUsdt < shortfall ? remainingEthUsdt : shortfall;
 
     logger.info('On-demand rebalancing triggered - destination lacks funds', {
@@ -671,6 +680,7 @@ const processOnDemandRebalancing = async (
       currentDestBalance: currentDestBalance.toString(),
       shortfall: shortfall.toString(),
       amountToBridge: amountToBridge.toString(),
+      note: 'All values in 18 decimal format',
     });
 
     // Create earmark
