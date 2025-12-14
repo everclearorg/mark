@@ -15,6 +15,7 @@ import {
   TacSdkConfig,
   TacRetryConfig,
 } from './types';
+import { JsonRpcProvider, FallbackProvider } from 'ethers';
 
 // Default TAC sequencer endpoints for reliability
 const DEFAULT_TAC_SEQUENCER_ENDPOINTS = [
@@ -68,72 +69,134 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
 
   /**
    * Initialize the TAC SDK for cross-chain operations
-   * This is done lazily on first use
+   * This is done lazily on first use with retry logic for transient failures
    */
   protected async initializeSdk(): Promise<void> {
     if (this.sdkInitialized) return;
 
-    try {
-      // Dynamically import TAC SDK to avoid issues if not installed
-      const { TacSdk, Network } = await import('@tonappchain/sdk');
-      const { TonClient } = await import('@ton/ton');
+    const maxRetries = 3;
+    const baseDelayMs = 2000;
+    const maxDelayMs = 30000;
 
-      const network = this.sdkConfig?.network === TacNetwork.TESTNET ? Network.TESTNET : Network.MAINNET;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.initializeSdkInternal();
+        return; // Success
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isRetryable = this.isRetryableError(errorMessage);
 
-      // Create custom TonClient with paid RPC to avoid rate limits
-      // The default SDK uses Orbs endpoints which can be rate-limited
-      // Use DRPC paid endpoint for reliable access
-      const tonRpcUrl = this.sdkConfig?.tonRpcUrl || 'https://toncenter.com/api/v2/jsonRPC';
+        if (isRetryable && attempt < maxRetries) {
+          const delay = Math.min(baseDelayMs * Math.pow(2, attempt - 1), maxDelayMs);
+          this.logger.warn(`TAC SDK initialization attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms`, {
+            error: jsonifyError(error),
+            nextAttempt: attempt + 1,
+            delayMs: delay,
+            isRetryable,
+          });
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
 
-      this.logger.debug('Initializing TonClient', { tonRpcUrl });
-
-      const tonClient = new TonClient({
-        endpoint: tonRpcUrl,
-        // Note: DRPC includes API key in URL, no separate apiKey param needed
-      });
-
-      // Create custom contractOpener using TonClient
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const contractOpener: any = {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        open: <T extends object>(contract: T) => tonClient.open(contract as any),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        getContractState: async (address: any) => {
-          const state = await tonClient.getContractState(address);
-          return {
-            balance: state.balance,
-            state: state.state === 'active' ? 'active' : state.state === 'frozen' ? 'frozen' : 'uninitialized',
-            code: state.code ?? null,
-          };
-        },
-      };
-
-      // Get custom sequencer endpoints from config or use defaults
-      const customSequencerEndpoints =
-        this.sdkConfig?.customSequencerEndpoints ?? DEFAULT_TAC_SEQUENCER_ENDPOINTS;
-
-      this.tacSdk = await TacSdk.create({
-        network,
-        TONParams: {
-          contractOpener,
-        },
-        // Provide custom sequencer endpoints for reliability
-        // This helps when the primary data.tac.build endpoint is down
-        customLiteSequencerEndpoints: customSequencerEndpoints,
-      });
-      this.sdkInitialized = true;
-
-      this.logger.info('TAC SDK initialized successfully', {
-        network,
-        tonRpcUrl,
-        customSequencerEndpoints,
-      });
-    } catch (error) {
-      this.logger.warn('Failed to initialize TAC SDK, will use fallback methods', {
-        error: jsonifyError(error),
-        note: 'Install @tonappchain/sdk for full TAC bridge support',
-      });
+        // Non-retryable error or max retries exceeded
+        this.logger.warn('Failed to initialize TAC SDK, will use fallback methods', {
+          error: jsonifyError(error),
+          attempts: attempt,
+          maxRetries,
+          isRetryable,
+          note: 'Install @tonappchain/sdk for full TAC bridge support',
+        });
+        return; // Don't throw - allow fallback behavior
+      }
     }
+  }
+
+  /**
+   * Internal SDK initialization logic (without retry)
+   */
+  protected async initializeSdkInternal(): Promise<void> {
+    // Dynamically import TAC SDK to avoid issues if not installed
+    const { TacSdk, Network } = await import('@tonappchain/sdk');
+    const { TonClient } = await import('@ton/ton');
+
+    const network = this.sdkConfig?.network === TacNetwork.TESTNET ? Network.TESTNET : Network.MAINNET;
+
+    // Create custom TonClient with paid RPC to avoid rate limits
+    // The default SDK uses Orbs endpoints which can be rate-limited
+    // Use DRPC paid endpoint for reliable access
+    const tonRpcUrl = this.sdkConfig?.tonRpcUrl || 'https://toncenter.com/api/v2/jsonRPC';
+
+    this.logger.debug('Initializing TonClient', { tonRpcUrl });
+
+    const tonClient = new TonClient({
+      endpoint: tonRpcUrl,
+      // Note: DRPC includes API key in URL, no separate apiKey param needed
+    });
+
+    // Create custom contractOpener using TonClient
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const contractOpener: any = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      open: <T extends object>(contract: T) => tonClient.open(contract as any),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      getContractState: async (address: any) => {
+        const state = await tonClient.getContractState(address);
+        return {
+          balance: state.balance,
+          state: state.state === 'active' ? 'active' : state.state === 'frozen' ? 'frozen' : 'uninitialized',
+          code: state.code ?? null,
+        };
+      },
+    };
+
+    // Get custom sequencer endpoints from config or use defaults
+    const customSequencerEndpoints = this.sdkConfig?.customSequencerEndpoints ?? DEFAULT_TAC_SEQUENCER_ENDPOINTS;
+
+    // CRITICAL: Create custom TAC EVM provider to avoid rate limits on public endpoints
+    // The TAC SDK internally uses ethers to make RPC calls to the TAC chain
+    // Without this, it uses default public endpoints which are heavily rate-limited
+    const tacRpcUrls = this.sdkConfig?.tacRpcUrls ?? this.chains[TAC_CHAIN_ID.toString()]?.providers ?? TAC_RPC_PROVIDERS;
+
+    this.logger.debug('Creating TAC EVM provider', { tacRpcUrls });
+
+    // Create ethers FallbackProvider for reliability
+    // This allows automatic failover between RPC endpoints
+    let tacProvider;
+    if (tacRpcUrls.length === 1) {
+      tacProvider = new JsonRpcProvider(tacRpcUrls[0], TAC_CHAIN_ID);
+    } else {
+      // Create array of provider configs with priority (lower = higher priority)
+      const providerConfigs = tacRpcUrls.map((url, index) => ({
+        provider: new JsonRpcProvider(url, TAC_CHAIN_ID),
+        priority: index,
+        stallTimeout: 2000, // 2 second stall timeout before trying next
+        weight: 1,
+      }));
+      tacProvider = new FallbackProvider(providerConfigs);
+    }
+
+    this.tacSdk = await TacSdk.create({
+      network,
+      TONParams: {
+        contractOpener,
+      },
+      // CRITICAL: Pass custom TAC EVM provider to avoid rate-limited public endpoints
+      // This uses our configured TAC RPC URLs from config.chains["239"].providers
+      TACParams: {
+        provider: tacProvider,
+      },
+      // Provide custom sequencer endpoints for reliability
+      // This helps when the primary data.tac.build endpoint is down
+      customLiteSequencerEndpoints: customSequencerEndpoints,
+    });
+    this.sdkInitialized = true;
+
+    this.logger.info('TAC SDK initialized successfully', {
+      network,
+      tonRpcUrl,
+      tacRpcUrls,
+      customSequencerEndpoints,
+    });
   }
 
   /**
