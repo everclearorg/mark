@@ -21,6 +21,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@chainlink/ccip-js": "^0.2.6",
     "@mark/cache": "workspace:*",
     "@mark/chainservice": "workspace:*",
     "@mark/core": "workspace:*",
