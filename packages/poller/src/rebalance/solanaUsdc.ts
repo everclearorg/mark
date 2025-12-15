@@ -9,6 +9,7 @@ import {
   SOLANA_CHAINID,
   getTokenAddressFromConfig,
   EarmarkStatus,
+  WalletType,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
 import {
@@ -39,6 +40,8 @@ import { createPublicClient, http } from 'viem';
 import { mainnet } from 'viem/chains';
 import { IntentStatus } from '@mark/everclear';
 import * as CCIP from '@chainlink/ccip-js';
+import { submitTransactionWithLogging } from '../helpers/transactions';
+import { RebalanceTransactionMemo } from '@mark/rebalance';
 
 // USDC ticker hash
 const USDC_TICKER_HASH = '0xa0b86991c431e59e3a13bdc4b0a7f6e4bb95f2d7d4f5a7f3a75e8b6e0e7b9f9a7';
@@ -871,16 +874,145 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           status: RebalanceOperationStatus.AWAITING_CALLBACK,
         });
 
-        // TODO: Trigger Leg 2 - Use Pendle adapter to swap USDC → ptUSDe on Mainnet
-        // This would call the Pendle adapter's send() method to execute the swap
-        // Then Pendle's destinationCallback() would handle Leg 3: bridge ptUSDe to Solana
+        // Execute Leg 2: Mainnet USDC → ptUSDe using Pendle adapter
+        logger.info('Executing Leg 2: Mainnet USDC → ptUSDe via Pendle adapter', logContext);
 
-        logger.info('Leg 2 trigger ready - Pendle adapter integration needed', {
-          ...logContext,
-          nextStep: 'Implement Pendle adapter call for USDC → ptUSDe swap',
-          note: 'Pendle destinationCallback will handle Leg 3: ptUSDe → Solana bridge',
-          destinationTransactionHash: ccipStatus.destinationTransactionHash,
-        });
+        try {
+          const { rebalance, config: rebalanceConfig } = context;
+          
+          // Get the Pendle adapter
+          const pendleAdapter = rebalance.getAdapter(SupportedBridge.Pendle);
+          if (!pendleAdapter) {
+            logger.error('Pendle adapter not found', logContext);
+            continue;
+          }
+
+          // Get USDC address on mainnet for the swap
+          const usdcAddress = getTokenAddressFromConfig(USDC_TICKER_HASH, MAINNET_CHAIN_ID.toString(), rebalanceConfig);
+          if (!usdcAddress) {
+            logger.error('Could not find USDC address for mainnet', logContext);
+            continue;
+          }
+
+          // Use stored recipient from Leg 1 operation to ensure consistency
+          const storedRecipient = operation.recipient;
+          const recipient = storedRecipient || rebalanceConfig.ownAddress;
+
+          logger.debug('Leg 2 Pendle swap details', {
+            ...logContext,
+            storedRecipient,
+            fallbackRecipient: rebalanceConfig.ownAddress,
+            finalRecipient: recipient,
+            usdcAddress,
+            amountToSwap: operation.amount,
+          });
+
+          // Create route for USDC → ptUSDe swap on mainnet (same chain swap)
+          const pendleRoute = {
+            asset: usdcAddress,
+            origin: Number(MAINNET_CHAIN_ID),
+            destination: Number(MAINNET_CHAIN_ID), // Same chain swap
+            swapOutputAsset: 'ptUSDe', // Target ptUSDe
+          };
+
+          // Get quote from Pendle for USDC → ptUSDe
+          const receivedAmountStr = await pendleAdapter.getReceivedAmount(operation.amount, pendleRoute);
+          
+          logger.info('Received Pendle quote for USDC → ptUSDe swap', {
+            ...logContext,
+            amountToSwap: operation.amount,
+            expectedPtUsde: receivedAmountStr,
+            route: pendleRoute,
+          });
+
+          // Execute the Pendle swap transactions
+          const swapTxRequests = await pendleAdapter.send(recipient, recipient, operation.amount, pendleRoute);
+
+          if (!swapTxRequests.length) {
+            logger.error('No swap transactions returned from Pendle adapter', logContext);
+            continue;
+          }
+
+          logger.info('Executing Pendle USDC → ptUSDe swap transactions', {
+            ...logContext,
+            transactionCount: swapTxRequests.length,
+            recipient,
+          });
+
+          // Execute each transaction in the swap sequence
+          let swapReceipt: TransactionReceipt | undefined;
+          let effectivePtUsdeAmount = receivedAmountStr;
+
+          for (const { transaction, memo, effectiveAmount } of swapTxRequests) {
+            logger.info('Submitting Pendle swap transaction', {
+              requestId,
+              memo,
+              transaction,
+            });
+
+            const result = await submitTransactionWithLogging({
+              chainService: context.chainService,
+              logger,
+              chainId: MAINNET_CHAIN_ID.toString(),
+              txRequest: {
+                to: transaction.to!,
+                data: transaction.data!,
+                value: (transaction.value || 0).toString(),
+                chainId: Number(MAINNET_CHAIN_ID),
+                from: rebalanceConfig.ownAddress,
+                funcSig: transaction.funcSig || '',
+              },
+              zodiacConfig: {
+                walletType: WalletType.EOA,
+              },
+              context: { requestId, route: pendleRoute, bridgeType: SupportedBridge.Pendle, transactionType: memo },
+            });
+
+            logger.info('Successfully submitted Pendle swap transaction', {
+              requestId,
+              memo,
+              transactionHash: result.hash,
+            });
+
+            if (memo === RebalanceTransactionMemo.Rebalance) {
+              swapReceipt = result.receipt! as unknown as TransactionReceipt;
+              if (effectiveAmount) {
+                effectivePtUsdeAmount = effectiveAmount;
+              }
+            }
+          }
+
+          // Create Leg 2 operation record for USDC → ptUSDe swap
+          await createRebalanceOperation({
+            earmarkId: operation.earmarkId,
+            originChainId: Number(MAINNET_CHAIN_ID),
+            destinationChainId: Number(MAINNET_CHAIN_ID), // Same chain swap
+            tickerHash: 'ptUSDe-ticker', // ptUSDe ticker hash (would need actual value)
+            amount: effectivePtUsdeAmount,
+            slippage: 1000, // 1% slippage
+            status: RebalanceOperationStatus.PENDING, // Pendle will handle destinationCallback for Leg 3
+            bridge: SupportedBridge.Pendle,
+            transactions: swapReceipt ? { [MAINNET_CHAIN_ID]: swapReceipt } : undefined,
+            recipient: recipient,
+          });
+
+          // Mark Leg 1 as completed
+          await db.updateRebalanceOperation(operation.id, {
+            status: RebalanceOperationStatus.COMPLETED,
+          });
+
+          logger.info('Leg 2 Pendle swap operation created successfully', {
+            ...logContext,
+            ptUsdeAmount: effectivePtUsdeAmount,
+            note: 'Pendle destinationCallback will handle Leg 3: ptUSDe → Solana bridge',
+          });
+
+        } catch (pendleError) {
+          logger.error('Failed to execute Leg 2 Pendle swap', {
+            ...logContext,
+            error: jsonifyError(pendleError),
+          });
+        }
 
       } else if (ccipStatus.status === 'FAILED') {
         logger.error('CCIP bridge transaction failed', {
