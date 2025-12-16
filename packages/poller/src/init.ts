@@ -52,10 +52,10 @@ async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
 }
 
 /**
- * Validates TAC rebalance configuration for production readiness.
- * Throws if required fields are missing when TAC rebalancing is enabled.
+ * Validates token rebalance configuration for production readiness.
+ * Throws if required fields are missing when token rebalancing is enabled.
  */
-function validateTacRebalanceConfig(config: MarkConfiguration, logger: Logger): void {
+function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger): void {
   const tacConfig = config.tacRebalance;
 
   // Skip validation if TAC rebalancing is disabled
@@ -278,8 +278,8 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
   // TODO: sanitize sensitive vars
   logger.debug('Created config', { config });
 
-  // Validate TAC rebalance config if enabled (fail fast on misconfiguration)
-  validateTacRebalanceConfig(config, logger);
+  // Validate token rebalance config if enabled (fail fast on misconfiguration)
+  validateTokenRebalanceConfig(config, logger);
 
   let adapters: MarkAdapters | undefined;
 

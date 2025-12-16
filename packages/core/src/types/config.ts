@@ -113,7 +113,7 @@ export interface RebalanceConfig {
   onDemandRoutes?: OnDemandRouteConfig[];
 }
 
-export interface TacRebalanceConfig {
+export interface TokenRebalanceConfig {
   enabled: boolean;
   // Market Maker receiver configuration
   marketMaker: {
@@ -186,7 +186,8 @@ export interface MarkConfiguration extends RebalanceConfig {
     apiKey?: string; // TONAPI.io API key for production use
     assets?: TonAssetConfiguration[]; // TON assets with jetton addresses
   };
-  tacRebalance?: TacRebalanceConfig;
+  tacRebalance?: TokenRebalanceConfig;
+  methRebalance?: TokenRebalanceConfig;
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;
