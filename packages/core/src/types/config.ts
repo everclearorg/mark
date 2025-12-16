@@ -117,7 +117,7 @@ export interface TokenRebalanceConfig {
   enabled: boolean;
   // Market Maker receiver configuration
   marketMaker: {
-    address: string; // EVM address on TAC for MM
+    address?: string; // EVM address on TAC for MM
     onDemandEnabled: boolean; // Enable invoice-triggered rebalancing
     thresholdEnabled: boolean; // Enable balance-threshold rebalancing
     threshold?: string; // Min USDT balance (6 decimals)
@@ -125,11 +125,11 @@ export interface TokenRebalanceConfig {
   };
   // Fill Service receiver configuration
   fillService: {
-    address: string; // EVM address on TAC for FS (destination) - also used as sender on ETH if senderAddress not set
+    address?: string; // EVM address on TAC for FS (destination) - also used as sender on ETH if senderAddress not set
     senderAddress?: string; // Optional: ETH sender address if different from 'address' (rare - same key = same address)
     thresholdEnabled: boolean; // Enable balance-threshold rebalancing
-    threshold: string; // Min USDT balance (6 decimals)
-    targetBalance: string; // Target after threshold-triggered rebalance
+    threshold?: string; // Min USDT balance (6 decimals)
+    targetBalance?: string; // Target after threshold-triggered rebalance
     allowCrossWalletRebalancing?: boolean; // Allow MM to fund FS rebalancing when FS has insufficient ETH USDT
   };
   // Shared bridge configuration
