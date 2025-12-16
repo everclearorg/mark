@@ -14,6 +14,7 @@ import {
   isTvmChain,
   NewIntentParams,
   AssetConfiguration,
+  BPS_MULTIPLIER,
 } from '@mark/core';
 import { APIGatewayProxyEventQueryStringParameters } from 'aws-lambda';
 import { encodeFunctionData, erc20Abi, Hex, formatUnits, parseUnits } from 'viem';
@@ -654,15 +655,15 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
     });
 
     // Validate slippage if provided
+    // Slippage is in basis points where 500 = 5%
     if (slippage !== undefined) {
-      const slippageDbps = BigInt(slippage);
-      const DBPS_MULTIPLIER = 10000000n; // 1e7 for decibasis points
-      const minimumAcceptableAmount = amount18Decimals - (amount18Decimals * slippageDbps) / DBPS_MULTIPLIER;
-      const actualSlippageDbps = ((amount18Decimals - receivedAmount18) * DBPS_MULTIPLIER) / amount18Decimals;
+      const slippageBps = BigInt(slippage);
+      const minimumAcceptableAmount = amount18Decimals - (amount18Decimals * slippageBps) / BPS_MULTIPLIER;
+      const actualSlippageBps = ((amount18Decimals - receivedAmount18) * BPS_MULTIPLIER) / amount18Decimals;
 
       logger.info('Slippage validation', {
-        providedSlippageDbps: slippage,
-        actualSlippageDbps: actualSlippageDbps.toString(),
+        providedSlippageBps: slippage,
+        actualSlippageBps: actualSlippageBps.toString(),
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
         receivedAmount18: receivedAmount18.toString(),
       });
@@ -672,8 +673,8 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
           statusCode: 400,
           body: JSON.stringify({
             message: 'Slippage tolerance exceeded',
-            providedSlippageDbps: slippage,
-            actualSlippageDbps: actualSlippageDbps.toString(),
+            providedSlippageBps: slippage,
+            actualSlippageBps: actualSlippageBps.toString(),
             sentAmount: amount,
             receivedAmount: formatUnits(receivedAmount18, 18),
           }),
@@ -977,25 +978,25 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
     });
 
     // Validate slippage if provided
+    // Slippage is in basis points where 500 = 5%
     // For swaps, slippage is calculated based on the quote we received
     // The quote represents the expected output, and we validate that the actual execution
     // will meet our minimum acceptable amount based on slippage tolerance
-    let actualSlippageDbps: bigint | undefined;
+    let actualSlippageBps: bigint | undefined;
     if (slippage !== undefined) {
-      const slippageDbps = BigInt(slippage);
-      const DBPS_MULTIPLIER = 10000000n; // 1e7 for decibasis points
+      const slippageBps = BigInt(slippage);
 
       // For swaps, slippage is applied to the received amount (output)
       // Minimum acceptable = quote * (1 - slippage)
-      const minimumAcceptableAmount = receivedAmount18 - (receivedAmount18 * slippageDbps) / DBPS_MULTIPLIER;
+      const minimumAcceptableAmount = receivedAmount18 - (receivedAmount18 * slippageBps) / BPS_MULTIPLIER;
 
       // Actual slippage will be determined when the order settles
       // For now, we just validate that the quote meets our minimum
-      // Note: actualSlippageDbps calculation would require comparing final execution to quote,
+      // Note: actualSlippageBps calculation would require comparing final execution to quote,
       // which happens after order settlement, so we don't calculate it here
 
       logger.info('Slippage validation', {
-        providedSlippageDbps: slippage,
+        providedSlippageBps: slippage,
         minimumAcceptableAmount: minimumAcceptableAmount.toString(),
         receivedAmount18: receivedAmount18.toString(),
         note: 'Actual slippage will be determined when order settles',
@@ -1100,7 +1101,7 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
           buyAmount: swapResult.buyAmount,
           executedSellAmount: swapResult.executedSellAmount,
           executedBuyAmount: swapResult.executedBuyAmount,
-          slippage: actualSlippageDbps ? actualSlippageDbps.toString() : undefined,
+          slippage: actualSlippageBps ? actualSlippageBps.toString() : undefined,
         },
       }),
     };
