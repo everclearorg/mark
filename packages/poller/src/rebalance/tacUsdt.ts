@@ -491,7 +491,7 @@ const evaluateMarketMakerRebalance = async (
 
   // A) On-demand: Invoice-triggered (higher priority)
   if (mmConfig.onDemandEnabled) {
-    const invoiceActions = await processOnDemandRebalancing(context, mmConfig.address, availableEthUsdt, runState);
+    const invoiceActions = await processOnDemandRebalancing(context, mmConfig.address!, availableEthUsdt, runState);
     if (invoiceActions.length > 0) {
       logger.info('MM rebalancing triggered by invoices, skipping threshold check', {
         requestId,
@@ -522,7 +522,7 @@ const evaluateMarketMakerRebalance = async (
     });
     const thresholdActions = await processThresholdRebalancing({
       context,
-      recipientAddress: mmConfig.address,
+      recipientAddress: mmConfig.address!,
       threshold: threshold18,
       targetBalance: target18,
       availableEthUsdt,
@@ -1449,7 +1449,7 @@ const evaluateFillServiceRebalance = async (
   const fsTacBalance = await getEvmBalance(
     config,
     TAC_CHAIN_ID.toString(),
-    fsConfig.address,
+    fsConfig.address!,
     usdtInfo.tacAddress,
     usdtInfo.tacDecimals,
     prometheus,
@@ -1488,7 +1488,7 @@ const evaluateFillServiceRebalance = async (
   }
 
   // Step 2: Check for pending FS rebalancing operations
-  const pendingFsOps = await db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), fsConfig.address, [
+  const pendingFsOps = await db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), fsConfig.address!, [
     RebalanceOperationStatus.PENDING,
     RebalanceOperationStatus.AWAITING_CALLBACK,
   ]);
@@ -1546,7 +1546,7 @@ const evaluateFillServiceRebalance = async (
 
       return processThresholdRebalancing({
         context,
-        recipientAddress: fsConfig.address,
+        recipientAddress: fsConfig.address!,
         threshold: threshold18,
         targetBalance: target18,
         availableEthUsdt: fsSenderEthBalance, // Only FS funds for same-account flow
@@ -1613,7 +1613,7 @@ const evaluateFillServiceRebalance = async (
 
   return processThresholdRebalancing({
     context,
-    recipientAddress: fsConfig.address,
+    recipientAddress: fsConfig.address!,
     threshold: threshold18,
     targetBalance: target18,
     availableEthUsdt: mmRemainingBalance, // MM funds for cross-wallet flow
