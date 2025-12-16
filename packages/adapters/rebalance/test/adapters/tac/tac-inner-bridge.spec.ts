@@ -396,7 +396,7 @@ describe('TacInnerBridgeAdapter', () => {
       );
 
       expect(result).toBeNull();
-      expect(mockLogger.error).toHaveBeenCalledWith('Failed to execute TAC bridge', expect.any(Object));
+      expect(mockLogger.error).toHaveBeenCalledWith('Failed to execute TAC bridge after retries', expect.any(Object));
     });
 
     it('should log sender wallet address', async () => {
