@@ -87,6 +87,30 @@ locals {
         maxRebalanceAmount = try(local.mark_config_json.tacRebalance.bridge.maxRebalanceAmount, "")
       }
     }
+    # METH Rebalance configuration
+    methRebalance = {
+      enabled = try(local.mark_config_json.methRebalance.enabled, false)
+      marketMaker = {
+        address           = try(local.mark_config_json.methRebalance.marketMaker.address, "")
+        onDemandEnabled   = try(local.mark_config_json.methRebalance.marketMaker.onDemandEnabled, false)
+        thresholdEnabled  = try(local.mark_config_json.methRebalance.marketMaker.thresholdEnabled, false)
+        threshold         = try(local.mark_config_json.methRebalance.marketMaker.threshold, "")
+        targetBalance     = try(local.mark_config_json.methRebalance.marketMaker.targetBalance, "")
+      }
+      fillService = {
+        address                     = try(local.mark_config_json.methRebalance.fillService.address, "")
+        senderAddress               = try(local.mark_config_json.methRebalance.fillService.senderAddress, "") # Filler's ETH sender address
+        thresholdEnabled            = try(local.mark_config_json.methRebalance.fillService.thresholdEnabled, false)
+        threshold                   = try(local.mark_config_json.methRebalance.fillService.threshold, "")
+        targetBalance               = try(local.mark_config_json.methRebalance.fillService.targetBalance, "")
+        allowCrossWalletRebalancing = try(local.mark_config_json.methRebalance.fillService.allowCrossWalletRebalancing, false)
+      }
+      bridge = {
+        slippageDbps       = try(local.mark_config_json.methRebalance.bridge.slippageDbps, 500) # 5% default
+        minRebalanceAmount = try(local.mark_config_json.methRebalance.bridge.minRebalanceAmount, "")
+        maxRebalanceAmount = try(local.mark_config_json.methRebalance.bridge.maxRebalanceAmount, "")
+      }
+    }
   }
 }
 

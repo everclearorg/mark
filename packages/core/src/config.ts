@@ -370,6 +370,73 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
             undefined, // Max amount per operation (optional cap)
         },
       },
+      methRebalance: {
+        enabled:
+          parseBooleanValue(configJson.methRebalance?.enabled) ??
+          parseBooleanValue(await fromEnv('METH_REBALANCE_ENABLED', true)) ??
+          false,
+        marketMaker: {
+          address:
+            configJson.methRebalance?.marketMaker?.address ??
+            (await fromEnv('METH_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
+            undefined,
+          onDemandEnabled:
+            parseBooleanValue(configJson.methRebalance?.marketMaker?.onDemandEnabled) ??
+            parseBooleanValue(await fromEnv('METH_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
+            false,
+          thresholdEnabled:
+            parseBooleanValue(configJson.methRebalance?.marketMaker?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('METH_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.methRebalance?.marketMaker?.threshold ??
+            (await fromEnv('METH_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
+            undefined,
+          targetBalance:
+            configJson.methRebalance?.marketMaker?.targetBalance ??
+            (await fromEnv('METH_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
+            undefined,
+        },
+        fillService: {
+          address:
+            configJson.methRebalance?.fillService?.address ??
+            (await fromEnv('METH_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
+            undefined,
+          senderAddress:
+            configJson.methRebalance?.fillService?.senderAddress ??
+            (await fromEnv('METH_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
+            undefined, // Filler's ETH address for sending from mainnet
+          thresholdEnabled:
+            parseBooleanValue(configJson.methRebalance?.fillService?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('METH_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.methRebalance?.fillService?.threshold ??
+            (await fromEnv('METH_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
+            undefined,
+          targetBalance:
+            configJson.methRebalance?.fillService?.targetBalance ??
+            (await fromEnv('METH_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
+            undefined,
+          allowCrossWalletRebalancing:
+            parseBooleanValue(configJson.methRebalance?.fillService?.allowCrossWalletRebalancing) ??
+            parseBooleanValue(await fromEnv('METH_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
+            false,
+        },
+        bridge: {
+          slippageDbps:
+            configJson.methRebalance?.bridge?.slippageDbps ??
+            parseInt((await fromEnv('METH_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '500', 10),
+          minRebalanceAmount:
+            configJson.methRebalance?.bridge?.minRebalanceAmount ??
+            (await fromEnv('METH_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
+            undefined,
+          maxRebalanceAmount:
+            configJson.methRebalance?.bridge?.maxRebalanceAmount ??
+            (await fromEnv('METH_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
+            undefined, // Max amount per operation (optional cap)
+        },
+      },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),

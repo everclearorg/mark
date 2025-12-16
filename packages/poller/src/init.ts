@@ -1,6 +1,7 @@
 import { Logger } from '@mark/logger';
 import {
   MarkConfiguration,
+  TokenRebalanceConfig,
   loadConfiguration,
   cleanupHttpConnections,
   logFileDescriptorUsage,
@@ -52,15 +53,18 @@ async function cleanupAdapters(adapters: MarkAdapters): Promise<void> {
 }
 
 /**
- * Validates token rebalance configuration for production readiness.
- * Throws if required fields are missing when token rebalancing is enabled.
+ * Validates a single token rebalance configuration.
+ * Helper function used by validateTokenRebalanceConfig.
  */
-function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger): void {
-  const tacConfig = config.tacRebalance;
-
-  // Skip validation if TAC rebalancing is disabled
-  if (!tacConfig?.enabled) {
-    logger.debug('TAC rebalancing disabled, skipping config validation');
+function validateSingleTokenRebalanceConfig(
+  tokenConfig: TokenRebalanceConfig | undefined,
+  configName: 'tacRebalance' | 'methRebalance',
+  config: MarkConfiguration,
+  logger: Logger,
+): void {
+  // Skip validation if rebalancing is disabled
+  if (!tokenConfig?.enabled) {
+    logger.debug(`${configName} disabled, skipping config validation`);
     return;
   }
 
@@ -68,71 +72,73 @@ function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger)
   const warnings: string[] = [];
 
   // Validate Market Maker config
-  const mm = tacConfig.marketMaker;
+  const mm = tokenConfig.marketMaker;
   if (!mm?.address) {
-    errors.push('tacRebalance.marketMaker.address is required when TAC rebalancing is enabled');
+    errors.push(`${configName}.marketMaker.address is required when ${configName} is enabled`);
   }
 
   if (mm?.thresholdEnabled) {
     if (!mm.threshold) {
-      errors.push('tacRebalance.marketMaker.threshold is required when thresholdEnabled=true');
+      errors.push(`${configName}.marketMaker.threshold is required when thresholdEnabled=true`);
     }
     if (!mm.targetBalance) {
-      errors.push('tacRebalance.marketMaker.targetBalance is required when thresholdEnabled=true');
+      errors.push(`${configName}.marketMaker.targetBalance is required when thresholdEnabled=true`);
     }
   }
 
   // Validate Fill Service config
-  const fs = tacConfig.fillService;
+  const fs = tokenConfig.fillService;
   if (!fs?.address) {
-    errors.push('tacRebalance.fillService.address is required when TAC rebalancing is enabled');
+    errors.push(`${configName}.fillService.address is required when ${configName} is enabled`);
   }
 
   if (fs?.thresholdEnabled) {
     if (!fs.threshold) {
-      errors.push('tacRebalance.fillService.threshold is required when thresholdEnabled=true');
+      errors.push(`${configName}.fillService.threshold is required when thresholdEnabled=true`);
     }
     if (!fs.targetBalance) {
-      errors.push('tacRebalance.fillService.targetBalance is required when thresholdEnabled=true');
+      errors.push(`${configName}.fillService.targetBalance is required when thresholdEnabled=true`);
     }
   }
 
   // Validate Bridge config
-  const bridge = tacConfig.bridge;
+  const bridge = tokenConfig.bridge;
   if (!bridge?.minRebalanceAmount) {
-    errors.push('tacRebalance.bridge.minRebalanceAmount is required');
+    errors.push(`${configName}.bridge.minRebalanceAmount is required`);
   }
 
-  // Validate TON config (required for TAC bridging)
-  if (!config.ownTonAddress) {
-    errors.push('ownTonAddress (TON_SIGNER_ADDRESS) is required for TAC rebalancing');
-  }
+  // Validate TON config (required for TAC/METH bridging)
+  if (configName === 'tacRebalance') {
+    if (!config.ownTonAddress) {
+      errors.push('ownTonAddress (TON_SIGNER_ADDRESS) is required for TAC rebalancing');
+    }
 
-  if (!config.ton?.mnemonic) {
-    errors.push('ton.mnemonic (TON_MNEMONIC) is required for TAC Leg 2 signing');
+    if (!config.ton?.mnemonic) {
+      errors.push('ton.mnemonic (TON_MNEMONIC) is required for TAC Leg 2 signing');
+    }
   }
 
   // Warnings for common misconfigurations
   if (mm?.address && config.ownAddress && mm.address.toLowerCase() !== config.ownAddress.toLowerCase()) {
     warnings.push(
-      `MM address (${mm.address}) differs from ownAddress (${config.ownAddress}). ` +
+      `${configName} MM address (${mm.address}) differs from ownAddress (${config.ownAddress}). ` +
         'Funds sent to MM may not be usable for intent filling by this Mark instance.',
     );
   }
 
   // Log warnings
   for (const warning of warnings) {
-    logger.warn('TAC config warning', { warning });
+    logger.warn(`${configName} config warning`, { warning });
   }
 
   // Throw if errors
   if (errors.length > 0) {
-    const errorMessage = `TAC rebalance config validation failed:\n  - ${errors.join('\n  - ')}`;
-    logger.error('TAC config validation failed', { errors });
+    const errorMessage = `${configName} config validation failed:\n  - ${errors.join('\n  - ')}`;
+    logger.error(`${configName} config validation failed`, { errors });
     throw new Error(errorMessage);
   }
 
-  logger.info('TAC rebalance config validated successfully', {
+  logger.info(`${configName} config validated successfully`, {
     mmAddress: mm?.address,
     fsAddress: fs?.address,
     mmOnDemand: mm?.onDemandEnabled,
@@ -140,6 +146,15 @@ function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger)
     fsThreshold: fs?.thresholdEnabled,
     minRebalanceAmount: bridge?.minRebalanceAmount,
   });
+}
+
+/**
+ * Validates token rebalance configuration for production readiness.
+ * Throws if required fields are missing when token rebalancing is enabled.
+ */
+function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger): void {
+  validateSingleTokenRebalanceConfig(config.tacRebalance, 'tacRebalance', config, logger);
+  validateSingleTokenRebalanceConfig(config.methRebalance, 'methRebalance', config, logger);
 }
 
 function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdapters {
