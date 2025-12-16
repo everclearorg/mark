@@ -396,7 +396,7 @@ describe('TacInnerBridgeAdapter', () => {
       );
 
       expect(result).toBeNull();
-      expect(mockLogger.error).toHaveBeenCalledWith('Failed to execute TAC bridge', expect.any(Object));
+      expect(mockLogger.error).toHaveBeenCalledWith('Failed to execute TAC bridge after retries', expect.any(Object));
     });
 
     it('should log sender wallet address', async () => {
@@ -829,6 +829,207 @@ describe('TacInnerBridgeAdapter', () => {
     it('should have fallback providers defined', () => {
       expect(TAC_RPC_PROVIDERS).toBeDefined();
       expect(TAC_RPC_PROVIDERS.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('retry logic', () => {
+    beforeEach(() => {
+      mockSendCrossChainTransaction.mockReset();
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should retry on retryable errors', async () => {
+      // First call fails with retryable error, second succeeds
+      mockSendCrossChainTransaction
+        .mockRejectedValueOnce(new Error('All endpoints failed') as never)
+        .mockResolvedValueOnce({ operationId: 'success-after-retry' } as never);
+
+      const promise = adapter.executeTacBridge(
+        'test word one two three four five six seven eight nine ten eleven twelve',
+        '0xRecipient',
+        '1000000',
+        USDT_TON_JETTON,
+        { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1000 },
+      );
+
+      // Advance timers to trigger retry
+      await jest.advanceTimersByTimeAsync(200);
+      const result = await promise;
+
+      expect(result).toEqual({ operationId: 'success-after-retry' });
+      expect(mockSendCrossChainTransaction).toHaveBeenCalledTimes(2);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/TAC bridge attempt.*failed, retrying/),
+        expect.any(Object),
+      );
+    });
+
+    it('should not retry on non-retryable errors', async () => {
+      mockSendCrossChainTransaction.mockRejectedValue(new Error('Invalid mnemonic') as never);
+
+      const result = await adapter.executeTacBridge(
+        'test word one two three four five six seven eight nine ten eleven twelve',
+        '0xRecipient',
+        '1000000',
+        USDT_TON_JETTON,
+        { maxRetries: 3, baseDelayMs: 100, maxDelayMs: 1000 },
+      );
+
+      expect(result).toBeNull();
+      expect(mockSendCrossChainTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('should give up after max retries', async () => {
+      mockSendCrossChainTransaction.mockRejectedValue(new Error('timeout') as never);
+
+      const promise = adapter.executeTacBridge(
+        'test word one two three four five six seven eight nine ten eleven twelve',
+        '0xRecipient',
+        '1000000',
+        USDT_TON_JETTON,
+        { maxRetries: 2, baseDelayMs: 100, maxDelayMs: 1000 },
+      );
+
+      // Advance timers for all retries
+      await jest.advanceTimersByTimeAsync(500);
+      const result = await promise;
+
+      expect(result).toBeNull();
+      expect(mockSendCrossChainTransaction).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('waitForOperation timeout', () => {
+    const mockTransactionLinker = {
+      caller: '0xTestCaller',
+      shardCount: 1,
+      shardsKey: 12345,
+      timestamp: Date.now(),
+    };
+
+    beforeEach(() => {
+      mockGetSimplifiedOperationStatus.mockReset();
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should return PENDING when operation times out', async () => {
+      // Always return PENDING to trigger timeout
+      mockGetSimplifiedOperationStatus.mockResolvedValue('PENDING' as never);
+
+      const promise = adapter.waitForOperation(mockTransactionLinker, 500, 100);
+      
+      // Advance past timeout
+      await jest.advanceTimersByTimeAsync(600);
+      const result = await promise;
+
+      expect(result).toBe(TacOperationStatus.PENDING);
+      expect(mockLogger.warn).toHaveBeenCalledWith('TAC operation tracking timed out', expect.any(Object));
+    });
+  });
+
+  describe('readyOnDestination edge cases', () => {
+    beforeEach(() => {
+      mockReadContract.mockReset();
+      mockGetBlockNumber.mockReset();
+      mockGetLogs.mockReset();
+    });
+
+    it('should return false when asset address cannot be resolved', async () => {
+      const route: RebalanceRoute = {
+        origin: 30826,
+        destination: 239,
+        asset: '0xUnknownAsset1234567890123456789012345678',
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        to: '0x36BA155a8e9c45C0Af262F9e61Fff0D591472Fe5',
+        logs: [],
+      };
+
+      const result = await adapter.readyOnDestination(
+        '1000000',
+        route,
+        mockReceipt as TransactionReceipt,
+      );
+
+      expect(result).toBe(false);
+      expect(mockLogger.warn).toHaveBeenCalledWith('Could not find TAC asset address', expect.any(Object));
+    });
+
+    it('should handle getLogs error with insufficient balance fallback', async () => {
+      const route: RebalanceRoute = {
+        origin: 30826,
+        destination: 239,
+        asset: USDT_TAC,
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        to: '0x36BA155a8e9c45C0Af262F9e61Fff0D591472Fe5',
+        logs: [],
+      };
+
+      mockGetBlockNumber.mockResolvedValue(1000000n as never);
+      mockGetLogs.mockRejectedValue(new Error('RPC error') as never);
+      mockReadContract.mockResolvedValue(100000n as never); // Insufficient balance
+
+      const result = await adapter.readyOnDestination(
+        '1000000',
+        route,
+        mockReceipt as TransactionReceipt,
+      );
+
+      expect(result).toBe(false);
+      expect(mockLogger.warn).toHaveBeenCalledWith('Failed to query TAC logs, falling back to balance check', expect.any(Object));
+    });
+  });
+
+  describe('getTacAssetAddress edge cases', () => {
+    it('should check TAC addresses against supported assets', () => {
+      // Use a TAC address format that matches supported asset
+      const result = adapter.callGetTacAssetAddress(TAC_BRIDGE_SUPPORTED_ASSETS.USDT.tac);
+      expect(result).toBe(USDT_TAC);
+    });
+
+    it('should return undefined for non-USDT unknown EVM address', () => {
+      const result = adapter.callGetTacAssetAddress('0x1234567890123456789012345678901234567890');
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('multiple TAC RPC providers', () => {
+    it('should handle multiple TAC RPC URLs with FallbackProvider', async () => {
+      // Create adapter with multiple TAC RPC URLs in config
+      const multiProviderConfig: TacSdkConfig = {
+        network: TacNetwork.MAINNET,
+        tonMnemonic: 'test word one two three four five six seven eight nine ten eleven twelve',
+        tacRpcUrls: ['https://rpc1.tac.build', 'https://rpc2.tac.build', 'https://rpc3.tac.build'],
+      };
+
+      const adapterMultiRpc = new TestTacInnerBridgeAdapter(mockChains, mockLogger, multiProviderConfig);
+
+      mockSendCrossChainTransaction.mockResolvedValue({ operationId: 'multi-rpc-test' } as never);
+
+      const result = await adapterMultiRpc.executeTacBridge(
+        'test word one two three four five six seven eight nine ten eleven twelve',
+        '0xRecipient',
+        '1000000',
+        USDT_TON_JETTON,
+      );
+
+      expect(result).toEqual({ operationId: 'multi-rpc-test' });
+      expect(mockLogger.debug).toHaveBeenCalledWith('Creating TAC EVM provider', expect.objectContaining({
+        tacRpcUrls: ['https://rpc1.tac.build', 'https://rpc2.tac.build', 'https://rpc3.tac.build'],
+      }));
     });
   });
 });
