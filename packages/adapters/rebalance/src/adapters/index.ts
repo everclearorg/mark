@@ -13,6 +13,7 @@ import { MantleBridgeAdapter } from './mantle';
 import { StargateBridgeAdapter } from './stargate';
 import { TacInnerBridgeAdapter, TacNetwork } from './tac';
 import { PendleBridgeAdapter } from './pendle';
+import { CCIPBridgeAdapter } from './ccip';
 
 export class RebalanceAdapter {
   constructor(
@@ -91,6 +92,8 @@ export class RebalanceAdapter {
         });
       case SupportedBridge.Pendle:
         return new PendleBridgeAdapter(this.config.chains, this.logger);
+      case SupportedBridge.CCIP:
+        return new CCIPBridgeAdapter(this.config.chains, this.logger);
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }

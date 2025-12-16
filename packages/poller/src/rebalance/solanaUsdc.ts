@@ -39,9 +39,9 @@ import {
 import { createPublicClient, http } from 'viem';
 import { mainnet } from 'viem/chains';
 import { IntentStatus } from '@mark/everclear';
-import * as CCIP from '@chainlink/ccip-js';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
+import { USDC_PTUSDE_PAIRS } from '../../../adapters/rebalance/src/adapters/pendle/types';
 
 // USDC ticker hash
 const USDC_TICKER_HASH = '0xa0b86991c431e59e3a13bdc4b0a7f6e4bb95f2d7d4f5a7f3a75e8b6e0e7b9f9a7';
@@ -264,109 +264,6 @@ async function executeSolanaToMainnetBridge({
   }
 }
 
-// CCIP Transaction Status Types
-interface CCIPTransactionStatus {
-  status: 'PENDING' | 'SUCCESS' | 'FAILED';
-  message?: string;
-  destinationTransactionHash?: string;
-}
-
-// Check CCIP transaction status using official CCIP SDK
-async function checkCCIPTransactionStatus(
-  transactionHash: string,
-  logger: any,
-  requestId: string
-): Promise<CCIPTransactionStatus> {
-  try {
-    logger.info('Checking CCIP transaction status using SDK', {
-      requestId,
-      transactionHash,
-    });
-
-    // Create a public client for Ethereum mainnet to check destination status
-    const publicClient = createPublicClient({
-      chain: mainnet,
-      transport: http(),
-    });
-
-    // Use transaction hash directly as message ID for CCIP status check
-    // According to docs: "Transfer status: Retrieve the status of a transfer by transaction hash"
-
-    try {
-
-      const ccipClient = CCIP.createClient()
-
-      // Use official CCIP SDK to check transfer status
-      const transferStatus = await ccipClient.getTransferStatus({
-        client: publicClient as any, // Type casting for compatibility
-        destinationRouterAddress: '0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D', // Mainnet CCIP router
-        sourceChainSelector: SOLANA_CHAIN_SELECTOR,
-        messageId: transactionHash as `0x${string}`, // Use transaction hash as message ID
-      });
-
-      logger.info('CCIP SDK transfer status check', {
-        requestId,
-        transactionHash,
-        transferStatus,
-        destinationRouter: '0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D',
-        sourceChainSelector: SOLANA_CHAIN_SELECTOR,
-      });
-
-      if (transferStatus === null) {
-        return {
-          status: 'PENDING',
-          message: 'Transfer not yet found on destination chain',
-        };
-      }
-
-      // TransferStatus enum: Untouched = 0, InProgress = 1, Success = 2, Failure = 3
-      switch (transferStatus) {
-        case 2: // Success
-          return {
-            status: 'SUCCESS',
-            message: 'CCIP transfer completed successfully',
-            destinationTransactionHash: transactionHash,
-          };
-        case 3: // Failure
-          return {
-            status: 'FAILED',
-            message: 'CCIP transfer failed',
-          };
-        case 1: // InProgress
-        case 0: // Untouched
-        default:
-          return {
-            status: 'PENDING',
-            message: 'CCIP transfer in progress',
-          };
-      }
-
-    } catch (fetchError) {
-      logger.error('Failed to check CCIP transaction status', {
-        requestId,
-        transactionHash,
-        error: jsonifyError(fetchError),
-      });
-
-      return {
-        status: 'PENDING',
-        message: 'Unable to check CCIP status',
-      };
-    }
-
-  } catch (error) {
-    logger.error('Error checking CCIP transaction status', {
-      requestId,
-      transactionHash,
-      error: jsonifyError(error),
-    });
-
-    return {
-      status: 'PENDING',
-      message: 'Error checking CCIP status',
-    };
-  }
-}
 
 export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<RebalanceAction[]> {
   const { logger, requestId, config, chainService, rebalance, everclear } = context;
@@ -707,7 +604,7 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
         solanaSlot: bridgeResult.receipt.blockNumber,
       });
 
-      // Create rebalance operation record for tracking
+      // Create rebalance operation record for tracking all 3 legs
       try {
         await createRebalanceOperation({
           earmarkId: earmark.id,
@@ -846,8 +743,13 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
         continue;
       }
 
-      // Check CCIP transaction status using CCIP Explorer API
-      const ccipStatus = await checkCCIPTransactionStatus(solanaTransactionHash, logger, requestId);
+      // Use CCIP adapter to check transaction status
+      const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP) as any;
+      const ccipStatus = await ccipAdapter.getTransferStatus(
+        solanaTransactionHash,
+        Number(SOLANA_CHAINID),
+        Number(MAINNET_CHAIN_ID)
+      );
 
       const createdAt = operation.createdAt ? new Date(operation.createdAt).getTime() : Date.now();
       const timeSinceCreation = new Date().getTime() - createdAt;
@@ -879,7 +781,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
         try {
           const { rebalance, config: rebalanceConfig } = context;
-          
+
           // Get the Pendle adapter
           const pendleAdapter = rebalance.getAdapter(SupportedBridge.Pendle);
           if (!pendleAdapter) {
@@ -917,7 +819,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
           // Get quote from Pendle for USDC → ptUSDe
           const receivedAmountStr = await pendleAdapter.getReceivedAmount(operation.amount, pendleRoute);
-          
+
           logger.info('Received Pendle quote for USDC → ptUSDe swap', {
             ...logContext,
             amountToSwap: operation.amount,
@@ -940,7 +842,6 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           });
 
           // Execute each transaction in the swap sequence
-          let swapReceipt: TransactionReceipt | undefined;
           let effectivePtUsdeAmount = receivedAmountStr;
 
           for (const { transaction, memo, effectiveAmount } of swapTxRequests) {
@@ -975,36 +876,112 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
             });
 
             if (memo === RebalanceTransactionMemo.Rebalance) {
-              swapReceipt = result.receipt! as unknown as TransactionReceipt;
               if (effectiveAmount) {
                 effectivePtUsdeAmount = effectiveAmount;
               }
             }
           }
 
-          // Create Leg 2 operation record for USDC → ptUSDe swap
-          await createRebalanceOperation({
-            earmarkId: operation.earmarkId,
-            originChainId: Number(MAINNET_CHAIN_ID),
-            destinationChainId: Number(MAINNET_CHAIN_ID), // Same chain swap
-            tickerHash: 'ptUSDe-ticker', // ptUSDe ticker hash (would need actual value)
-            amount: effectivePtUsdeAmount,
-            slippage: 1000, // 1% slippage
-            status: RebalanceOperationStatus.PENDING, // Pendle will handle destinationCallback for Leg 3
-            bridge: SupportedBridge.Pendle,
-            transactions: swapReceipt ? { [MAINNET_CHAIN_ID]: swapReceipt } : undefined,
-            recipient: recipient,
-          });
+          // Execute Leg 3: ptUSDe → Solana CCIP immediately after Leg 2
+          logger.info('Executing Leg 3: Mainnet ptUSDe → Solana via CCIP adapter', logContext);
 
-          // Mark Leg 1 as completed
-          await db.updateRebalanceOperation(operation.id, {
-            status: RebalanceOperationStatus.COMPLETED,
-          });
+          const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP);
 
-          logger.info('Leg 2 Pendle swap operation created successfully', {
+          // Get ptUSDe address from the swap direction
+          const pair = USDC_PTUSDE_PAIRS[Number(MAINNET_CHAIN_ID)];
+          const ptUsdeAddress = pair?.ptUSDe;
+
+          if (!ptUsdeAddress) {
+            logger.error('ptUSDe address not found for mainnet', logContext);
+            continue;
+          }
+
+          // Create route for ptUSDe → Solana CCIP bridge  
+          const ccipRoute = {
+            asset: ptUsdeAddress,
+            origin: Number(MAINNET_CHAIN_ID),
+            destination: Number(SOLANA_CHAINID), // Back to Solana
+          };
+
+          // Execute Leg 3 CCIP transactions
+          const ccipTxRequests = await ccipAdapter.send(recipient, recipient, effectivePtUsdeAmount, ccipRoute);
+
+          let leg3CcipTxHash: string | undefined;
+
+          for (const { transaction, memo } of ccipTxRequests) {
+            logger.info('Submitting CCIP ptUSDe → Solana transaction', {
+              requestId,
+              memo,
+              transaction,
+            });
+
+            const result = await submitTransactionWithLogging({
+              chainService: context.chainService,
+              logger,
+              chainId: MAINNET_CHAIN_ID.toString(),
+              txRequest: {
+                to: transaction.to!,
+                data: transaction.data!,
+                value: (transaction.value || 0).toString(),
+                chainId: Number(MAINNET_CHAIN_ID),
+                from: rebalanceConfig.ownAddress,
+                funcSig: transaction.funcSig || '',
+              },
+              zodiacConfig: {
+                walletType: WalletType.EOA,
+              },
+              context: { requestId, route: ccipRoute, bridgeType: SupportedBridge.CCIP, transactionType: memo },
+            });
+
+            logger.info('Successfully submitted CCIP transaction', {
+              requestId,
+              memo,
+              transactionHash: result.hash,
+            });
+
+            // Store the CCIP bridge transaction hash (not approval)
+            if (memo === RebalanceTransactionMemo.Rebalance) {
+              leg3CcipTxHash = result.hash;
+            }
+          }
+
+          // Update operation with Leg 3 CCIP transaction hash for status tracking
+          if (leg3CcipTxHash) {
+            const leg3Receipt: TransactionReceipt = {
+              transactionHash: leg3CcipTxHash,
+              blockNumber: 0,
+              from: rebalanceConfig.ownAddress,
+              to: '',
+              cumulativeGasUsed: '0',
+              effectiveGasPrice: '0',
+              logs: [],
+              status: 1,
+              confirmations: 1
+            };
+
+            const updatedTransactions = {
+              ...operation.transactions,
+              [MAINNET_CHAIN_ID]: leg3Receipt
+            };
+
+            await db.updateRebalanceOperation(operation.id, {
+              txHashes: updatedTransactions,
+            });
+
+            logger.info('Stored Leg 3 CCIP transaction hash for status tracking', {
+              requestId,
+              operationId: operation.id,
+              leg3CcipTxHash,
+            });
+          }
+
+          // Keep status as AWAITING_CALLBACK - Leg 3 CCIP takes 20+ minutes 
+          // Will be checked in next callback cycle
+          logger.info('Legs 1, 2, and 3 submitted successfully', {
             ...logContext,
             ptUsdeAmount: effectivePtUsdeAmount,
-            note: 'Pendle destinationCallback will handle Leg 3: ptUSDe → Solana bridge',
+            note: 'Leg 1: Done, Leg 2: Done, Leg 3: CCIP submitted, waiting for completion',
+            status: 'AWAITING_CALLBACK',
           });
 
         } catch (pendleError) {
@@ -1014,7 +991,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           });
         }
 
-      } else if (ccipStatus.status === 'FAILED') {
+      } else if (ccipStatus.status === 'FAILURE') {
         logger.error('CCIP bridge transaction failed', {
           ...logContext,
           solanaTransactionHash,
@@ -1049,6 +1026,96 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
     } catch (error) {
       logger.error('Failed to check CCIP bridge completion status', {
+        ...logContext,
+        error: jsonifyError(error),
+      });
+    }
+  }
+
+  // Check operations in AWAITING_CALLBACK status for Leg 3 (ptUSDe → Solana CCIP) completion
+  const { operations: awaitingCallbackOps } = await db.getRebalanceOperations(undefined, undefined, {
+    status: [RebalanceOperationStatus.AWAITING_CALLBACK],
+  });
+
+  logger.debug('Found operations awaiting Leg 3 CCIP completion', {
+    count: awaitingCallbackOps.length,
+    requestId,
+    status: RebalanceOperationStatus.AWAITING_CALLBACK,
+  });
+
+  for (const operation of awaitingCallbackOps) {
+    const logContext = {
+      requestId,
+      operationId: operation.id,
+      earmarkId: operation.earmarkId,
+      originChain: operation.originChainId,
+      destinationChain: operation.destinationChainId,
+    };
+
+    // Only process operations that should have Leg 3 CCIP (ptUSDe → Solana)
+    if (operation.bridge !== 'ccip-solana-mainnet') {
+      continue;
+    }
+
+    logger.info('Checking Leg 3 CCIP completion (ptUSDe → Solana)', logContext);
+
+    try {
+      // Get Leg 3 CCIP transaction hash from mainnet transactions
+      const mainnetTransactionHash = operation.transactions?.[MAINNET_CHAIN_ID]?.transactionHash;
+      if (!mainnetTransactionHash) {
+        logger.warn('No Leg 3 CCIP transaction hash found', {
+          ...logContext,
+          transactions: operation.transactions,
+        });
+        continue;
+      }
+
+      // Check if Leg 3 CCIP (ptUSDe → Solana) is ready on destination
+      const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP) as any;
+
+      // Create a mock receipt for readyOnDestination check
+      const leg3Receipt = {
+        transactionHash: mainnetTransactionHash,
+        status: 'success' as const,
+      };
+
+      const leg3Route = {
+        origin: Number(MAINNET_CHAIN_ID),
+        destination: Number(SOLANA_CHAINID),
+        asset: '', // Will be filled by adapter
+      };
+
+      const isLeg3Ready = await ccipAdapter.readyOnDestination('0', leg3Route, leg3Receipt);
+
+      logger.info('Leg 3 CCIP readiness check', {
+        ...logContext,
+        mainnetTransactionHash,
+        isReady: isLeg3Ready,
+        route: leg3Route,
+      });
+
+      if (isLeg3Ready) {
+        // All 3 legs completed successfully
+        await db.updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.COMPLETED,
+        });
+
+        logger.info('All 3 legs completed successfully', {
+          ...logContext,
+          mainnetTransactionHash,
+          note: 'Leg 1: Solana→Mainnet CCIP ✓, Leg 2: USDC→ptUSDe ✓, Leg 3: ptUSDe→Solana CCIP ✓',
+          finalStatus: 'COMPLETED',
+        });
+      } else {
+        logger.debug('Leg 3 CCIP still pending', {
+          ...logContext,
+          mainnetTransactionHash,
+          note: 'Waiting for ptUSDe → Solana CCIP to complete',
+        });
+      }
+
+    } catch (error) {
+      logger.error('Failed to check Leg 3 CCIP completion', {
         ...logContext,
         error: jsonifyError(error),
       });
