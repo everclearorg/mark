@@ -496,7 +496,10 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
       if (typeof sdk.bridgeAssets === 'function') {
         this.logger.info('Using TAC SDK bridgeAssets method', { amount, asset });
 
-        const result = await sdk.bridgeAssets(sender, [{ address: asset, amount: BigInt(amount) }]);
+        // IMPORTANT: Use rawAmount (not amount) since we're already passing raw token units
+        // 'amount' expects human-readable values (e.g., 1.99) which get multiplied by 10^decimals
+        // 'rawAmount' expects raw units (e.g., 1999400 for 1.9994 USDT with 6 decimals)
+        const result = await sdk.bridgeAssets(sender, [{ address: asset, rawAmount: BigInt(amount) }]);
 
         return result as TacTransactionLinker;
       }
@@ -505,7 +508,8 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
       if (typeof sdk.startBridging === 'function') {
         this.logger.info('Using TAC SDK startBridging method', { amount, asset });
 
-        const result = await sdk.startBridging(sender, [{ address: asset, amount: BigInt(amount) }]);
+        // IMPORTANT: Use rawAmount for the same reason as above
+        const result = await sdk.startBridging(sender, [{ address: asset, rawAmount: BigInt(amount) }]);
 
         return result as TacTransactionLinker;
       }
@@ -521,8 +525,9 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
         encodedParameters: '0x',
       };
 
+      // IMPORTANT: Use rawAmount (not amount) since we're already passing raw token units
       const transactionLinker = await sdk.sendCrossChainTransaction(evmProxyMsg, sender, [
-        { address: asset, amount: BigInt(amount) },
+        { address: asset, rawAmount: BigInt(amount) },
       ]);
 
       return transactionLinker as TacTransactionLinker;
