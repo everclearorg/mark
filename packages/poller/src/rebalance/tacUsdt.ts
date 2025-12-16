@@ -11,7 +11,7 @@ import {
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
   RebalanceOperationStatus,
-  DBPS_MULTIPLIER,
+  BPS_MULTIPLIER,
   RebalanceAction,
   SupportedBridge,
   MAINNET_CHAIN_ID,
@@ -797,8 +797,9 @@ const processOnDemandRebalancing = async (
       // Check slippage - use safeParseBigInt for adapter response
       // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
       const receivedAmount = safeParseBigInt(receivedAmountStr);
-      const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
-      const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageDbps) / DBPS_MULTIPLIER;
+      // slippagesDbps config uses basis points (500 = 5%), not deci-basis points
+      const slippageBps = BigInt(route.slippagesDbps[0]);
+      const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageBps) / BPS_MULTIPLIER;
 
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Stargate quote does not meet slippage requirements', {
@@ -1309,8 +1310,9 @@ const executeTacBridge = async (
     // Check slippage - use safeParseBigInt for adapter response
     // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
     const receivedAmount = safeParseBigInt(receivedAmountStr);
-    const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
-    const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageDbps) / DBPS_MULTIPLIER;
+    // slippagesDbps config uses basis points (500 = 5%), not deci-basis points
+    const slippageBps = BigInt(route.slippagesDbps[0]);
+    const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageBps) / BPS_MULTIPLIER;
 
     if (receivedAmount < minimumAcceptableAmount) {
       logger.warn('Stargate quote does not meet slippage requirements', {
@@ -1636,12 +1638,12 @@ const evaluateFillServiceRebalance = async (
 /**
  * Calculate the minimum expected amount after slippage
  * @param amount - Original amount
- * @param slippageDbps - Slippage in deci-basis points (e.g., 500 = 5%)
+ * @param slippageBps - Slippage in basis points (e.g., 500 = 5%)
  * @returns Minimum expected amount after slippage
  */
-const calculateMinExpectedAmount = (amount: bigint, slippageDbps: number): bigint => {
-  const slippageBps = BigInt(slippageDbps);
-  return amount - (amount * slippageBps) / 10000n;
+const calculateMinExpectedAmount = (amount: bigint, slippageBps: number): bigint => {
+  const slippage = BigInt(slippageBps);
+  return amount - (amount * slippage) / BPS_MULTIPLIER;
 };
 
 /**
@@ -1896,8 +1898,9 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             // - If actualBalance >= expectedAmount: Use expectedAmount (don't take other flows' funds)
             // - If minExpectedAmount <= actualBalance < expectedAmount: Use actualBalance (Stargate took fees)
             const expectedAmount = safeParseBigInt(operation.amount);
-            const slippageDbps = config.tacRebalance?.bridge?.slippageDbps ?? 500; // Default 5%
-            const minExpectedAmount = calculateMinExpectedAmount(expectedAmount, slippageDbps);
+            // Config uses "slippageDbps" naming but values are actually basis points (500 = 5%)
+            const slippageBps = config.tacRebalance?.bridge?.slippageDbps ?? 500; // Default 5%
+            const minExpectedAmount = calculateMinExpectedAmount(expectedAmount, slippageBps);
 
             // Validate: TON wallet must have at least the minimum expected amount
             if (actualUsdtBalance < minExpectedAmount) {
