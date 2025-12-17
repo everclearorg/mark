@@ -1289,7 +1289,7 @@ const pauseIfNeeded = async (
   }
 };
 
-const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
+const INTENT_ADDED_TOPIC0 = '0x80eb6c87e9da127233fe2ecab8adf29403109adc6bec90147df35eeee0745991';
 
 const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
   const { logger, event, config, chainService, everclearAdapter } = context;
