@@ -498,7 +498,10 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     // Check if ptUSDe balance is below threshold to trigger rebalancing
     // The logic is: if ptUSDe is low, we bridge USDC from Solana to eventually get more ptUSDe
     const ptUsdeBalance = solanaPtUsdeBalance; // Use direct Solana ptUSDe balance
-    const ptUsdeThreshold = convertToNativeUnits(MIN_REBALANCING_AMOUNT * 10n, 18); // ptUSDe has 18 decimals, use 10x threshold
+    const ptUsdeThresholdEnv = process.env[`PTUSDE_${SOLANA_CHAINID}_THRESHOLD`];
+    const ptUsdeThreshold = ptUsdeThresholdEnv
+      ? BigInt(ptUsdeThresholdEnv)
+      : convertToNativeUnits(MIN_REBALANCING_AMOUNT * 10n, 18); // ptUSDe has 18 decimals, use 10x threshold as fallback
 
     logger.info('Checking ptUSDe balance threshold for rebalancing decision', {
       requestId,
