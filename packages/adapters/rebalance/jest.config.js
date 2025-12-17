@@ -4,9 +4,6 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/../../../jest.setup.shared.js'],
   testMatch: ['**/test/**/*.spec.ts', '**/test/**/*.integration.spec.ts'],
   testTimeout: 30000,
-  transformIgnorePatterns: [
-    '/node_modules/(?!@chainlink/ccip-js)/',
-  ],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
@@ -24,6 +21,8 @@ module.exports = {
     '^@mark/core$': '<rootDir>/../../core/src',
     '^@mark/core/(.*)$': '<rootDir>/../../core/src/$1',
     '^@mark/(.*)$': '<rootDir>/../$1/src',
+    // Mock ESM modules
+    '^@chainlink/ccip-js$': '<rootDir>/test/mocks/ccip-js.ts',
   },
   // Make Jest resolve .ts before .js
   moduleFileExtensions: [
