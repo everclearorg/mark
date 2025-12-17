@@ -1082,8 +1082,7 @@ const executeTacBridge = async (
   const actions: RebalanceAction[] = [];
 
   // Determine if this is for Fill Service or Market Maker based on recipient
-  const isForFillService =
-    recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+  const isForFillService = recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
   const walletType = isForFillService ? 'fill-service' : 'market-maker';
 
   // Get USDT balances across all chains for Market Maker address (source of funds)

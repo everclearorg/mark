@@ -359,10 +359,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
         // (e.g., a router or aggregator). USDT's non-standard ERC20 requires setting allowance
         // to 0 before setting a new non-zero amount when current allowance > 0.
         // We need to check the spender address FROM THE API STEP, not just the pool address.
-        if (
-          route.origin === Number(MAINNET_CHAIN_ID) &&
-          route.asset.toLowerCase() === USDT_ETH.toLowerCase()
-        ) {
+        if (route.origin === Number(MAINNET_CHAIN_ID) && route.asset.toLowerCase() === USDT_ETH.toLowerCase()) {
           // Decode the API-provided approval to get the actual spender address
           const approvalData = step.transaction.data as `0x${string}`;
           const tokenAddress = route.asset as `0x${string}`;

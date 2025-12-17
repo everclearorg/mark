@@ -73,11 +73,11 @@ function validateSingleTokenRebalanceConfig(
 
   // Validate Market Maker config
   const mm = tokenConfig.marketMaker;
-  if(mm.thresholdEnabled || mm.onDemandEnabled) {
+  if (mm.thresholdEnabled || mm.onDemandEnabled) {
     if (!mm?.address) {
       errors.push(`${configName}.marketMaker.address is required when ${configName} is enabled`);
     }
-  
+
     if (mm?.thresholdEnabled) {
       if (!mm.threshold) {
         errors.push(`${configName}.marketMaker.threshold is required when thresholdEnabled=true`);
@@ -94,7 +94,7 @@ function validateSingleTokenRebalanceConfig(
     if (!fs?.address) {
       errors.push(`${configName}.fillService.address is required when ${configName} is enabled`);
     }
-    
+
     if (!fs.threshold) {
       errors.push(`${configName}.fillService.threshold is required when thresholdEnabled=true`);
     }
