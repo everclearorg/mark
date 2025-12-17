@@ -2,12 +2,7 @@ import { TransactionReceipt, createPublicClient, http, fallback, encodeFunctionD
 import { SupportedBridge, RebalanceRoute, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
-import {
-  PENDLE_API_BASE_URL,
-  PENDLE_SUPPORTED_CHAINS,
-  USDC_PTUSDE_PAIRS,
-} from './types';
-
+import { PENDLE_API_BASE_URL, PENDLE_SUPPORTED_CHAINS, USDC_PTUSDE_PAIRS } from './types';
 
 export class PendleBridgeAdapter implements BridgeAdapter {
   constructor(
@@ -71,7 +66,9 @@ export class PendleBridgeAdapter implements BridgeAdapter {
       } else if (asset === pair.ptUSDe.toLowerCase() && destAsset === pair.usdc.toLowerCase()) {
         return { tokensIn: pair.ptUSDe, tokensOut: pair.usdc };
       } else {
-        throw new Error(`Invalid USDC/ptUSDe swap pair: asset=${route.asset}, swapOutputAsset=${route.swapOutputAsset}`);
+        throw new Error(
+          `Invalid USDC/ptUSDe swap pair: asset=${route.asset}, swapOutputAsset=${route.swapOutputAsset}`,
+        );
       }
     }
 
@@ -123,7 +120,12 @@ export class PendleBridgeAdapter implements BridgeAdapter {
 
       const quoteData = await response.json();
 
-      if (!quoteData.routes || quoteData.routes.length === 0 || !quoteData.routes[0].outputs || !quoteData.routes[0].outputs[0]?.amount) {
+      if (
+        !quoteData.routes ||
+        quoteData.routes.length === 0 ||
+        !quoteData.routes[0].outputs ||
+        !quoteData.routes[0].outputs[0]?.amount
+      ) {
         throw new Error('Invalid quote response from Pendle API');
       }
 
@@ -295,9 +297,13 @@ export class PendleBridgeAdapter implements BridgeAdapter {
     try {
       this.validateSameChainSwap(route);
 
-      if (!originTransaction || originTransaction.status !== 'success') {
+      // Handle both viem string status ('success') and database numeric status (1)
+      const isSuccessful =
+        originTransaction && (originTransaction.status === 'success' || (originTransaction.status as unknown) === 1);
+
+      if (!isSuccessful) {
         this.logger.debug('Transaction not successful yet', {
-          transactionHash: originTransaction.transactionHash,
+          transactionHash: originTransaction?.transactionHash,
           status: originTransaction?.status,
         });
         return false;
@@ -331,9 +337,8 @@ export class PendleBridgeAdapter implements BridgeAdapter {
       transactionHash: originTransaction.transactionHash,
       route,
     });
-    
+
     // No destination callback needed for same-chain swaps
     return;
   }
-
 }

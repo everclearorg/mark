@@ -79,7 +79,7 @@ export enum SupportedBridge {
   Pendle = 'pendle',
   Stargate = 'stargate',
   TacInner = 'tac-inner',
-  CCIP = 'chainlink-ccip'
+  CCIP = 'chainlink-ccip',
 }
 
 export enum GasType {
@@ -159,6 +159,10 @@ export interface MarkConfiguration extends RebalanceConfig {
     rpcUrl?: string; // TON RPC endpoint
     apiKey?: string; // TON API key (for tonapi.io or DRPC)
     assets?: TonAssetConfiguration[]; // TON assets with jetton addresses
+  };
+  solana?: {
+    privateKey?: string; // Solana wallet private key (base58 encoded)
+    rpcUrl?: string; // Solana RPC endpoint (defaults to mainnet-beta)
   };
   redis: RedisConfig;
   database: DatabaseConfig;

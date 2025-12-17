@@ -31,6 +31,8 @@
     "@mark/prometheus": "workspace:*",
     "@mark/rebalance": "workspace:*",
     "@mark/web3signer": "workspace:*",
+    "@solana/spl-token": "^0.4.9",
+    "@solana/web3.js": "^1.98.0",
     "aws-lambda": "1.0.7",
     "bs58": "^6.0.0",
     "datadog-lambda-js": "10.123.0",
