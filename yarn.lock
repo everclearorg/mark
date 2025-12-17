@@ -4508,7 +4508,10 @@ __metadata:
     "@mark/core": "workspace:*"
     "@mark/logger": "workspace:*"
     "@solana/addresses": ^2.1.1
+    "@solana/spl-token": ^0.4.9
+    "@solana/web3.js": ^1.98.0
     "@types/node": 20.17.12
+    bs58: ^6.0.0
     eslint: 9.17.0
     rimraf: 6.0.1
     sort-package-json: 2.12.0
@@ -4606,6 +4609,8 @@ __metadata:
     "@mark/prometheus": "workspace:*"
     "@mark/rebalance": "workspace:*"
     "@mark/web3signer": "workspace:*"
+    "@solana/spl-token": ^0.4.9
+    "@solana/web3.js": ^1.98.0
     "@types/aws-lambda": 8.10.147
     "@types/jest": ^30.0.0
     "@types/node": 20.17.12
@@ -4651,6 +4656,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/rebalance@workspace:packages/adapters/rebalance"
   dependencies:
+    "@chainlink/ccip-js": ^0.2.6
     "@cowprotocol/cow-sdk": ^7.1.2-beta.0
     "@defuse-protocol/one-click-sdk-typescript": ^0.1.5
     "@mark/core": "workspace:*"
@@ -4663,6 +4669,7 @@ __metadata:
     "@types/jsonwebtoken": 9.0.7
     "@types/node": 20.17.12
     axios: 1.9.0
+    bs58: ^6.0.0
     commander: 12.0.0
     eslint: 9.17.0
     ethers: ^6.0.0
@@ -6645,7 +6652,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@solana/spl-token@npm:^0.4.8":
+"@solana/spl-token@npm:^0.4.8, @solana/spl-token@npm:^0.4.9":
   version: 0.4.14
   resolution: "@solana/spl-token@npm:0.4.14"
   dependencies:

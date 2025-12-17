@@ -19,6 +19,15 @@ import { Address, getAddressEncoder, getProgramDerivedAddress, isAddress } from 
 export { EthWallet } from '@chimera-monorepo/chainservice';
 export type { TransactionReceipt };
 
+// Solana signing service
+export { 
+  SolanaSigner, 
+  createSolanaSigner,
+  type SolanaSignerConfig,
+  type SolanaTransactionRequest,
+  type SolanaTransactionResult,
+} from './solana';
+
 export interface ChainServiceConfig {
   chains: Record<string, ChainConfiguration>;
   maxRetries?: number;

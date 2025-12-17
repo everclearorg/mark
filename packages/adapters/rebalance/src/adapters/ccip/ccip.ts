@@ -17,8 +17,11 @@ import {
   CCIPTransferStatus,
   CHAIN_SELECTORS, 
   CCIP_ROUTER_ADDRESSES, 
-  CCIP_SUPPORTED_CHAINS
+  CCIP_SUPPORTED_CHAINS,
+  CHAIN_ID_TO_CCIP_SELECTOR,
+  SOLANA_CHAIN_ID_NUMBER,
 } from './types';
+import bs58 from 'bs58';
 
 // Chainlink CCIP Router ABI
 const CCIP_ROUTER_ABI = [
@@ -90,18 +93,25 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     return null;
   }
 
+  /**
+   * Check if a chain ID represents Solana
+   */
+  private isSolanaChain(chainId: number): boolean {
+    return chainId === SOLANA_CHAIN_ID_NUMBER;
+  }
+
   private validateCCIPRoute(route: RebalanceRoute): void {
     const originChainId = route.origin;
     const destinationChainId = route.destination;
 
-    // Check origin chain support
+    // Check origin chain support (EVM chains only for sending)
     if (!CCIP_SUPPORTED_CHAINS[originChainId as keyof typeof CCIP_SUPPORTED_CHAINS]) {
       throw new Error(`Origin chain ${originChainId} not supported by CCIP`);
     }
 
-    // For Solana destination, we allow it even though it's not in CCIP_SUPPORTED_CHAINS
-    // since CCIP supports Solana as a destination
-    if (destinationChainId !== parseInt(CHAIN_SELECTORS.SOLANA) && 
+    // For Solana destination, we allow it since CCIP supports Solana as a destination
+    // Use the numeric Solana chain ID constant to avoid BigInt overflow issues
+    if (!this.isSolanaChain(destinationChainId) && 
         !CCIP_SUPPORTED_CHAINS[destinationChainId as keyof typeof CCIP_SUPPORTED_CHAINS]) {
       throw new Error(`Destination chain ${destinationChainId} not supported by CCIP`);
     }
@@ -114,33 +124,46 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   }
 
   private getDestinationChainSelector(chainId: number): string {
-    // Special handling for Solana
-    if (chainId.toString() === CHAIN_SELECTORS.SOLANA) {
+    // Special handling for Solana using the numeric chain ID
+    if (this.isSolanaChain(chainId)) {
       return CHAIN_SELECTORS.SOLANA;
     }
 
-    // Map standard chain IDs to CCIP selectors
-    switch (chainId) {
-      case 1: return CHAIN_SELECTORS.ETHEREUM;
-      case 42161: return CHAIN_SELECTORS.ARBITRUM;
-      case 10: return CHAIN_SELECTORS.OPTIMISM;
-      case 137: return CHAIN_SELECTORS.POLYGON;
-      case 8453: return CHAIN_SELECTORS.BASE;
-      default:
-        throw new Error(`Unsupported destination chain ID: ${chainId}`);
+    // Use the chain ID to selector map
+    const selector = CHAIN_ID_TO_CCIP_SELECTOR[chainId];
+    if (selector) {
+      return selector;
+    }
+
+    throw new Error(`Unsupported destination chain ID: ${chainId}`);
+  }
+
+  /**
+   * Encode a Solana base58 address as bytes for CCIP receiver field
+   * CCIP expects Solana addresses as 32-byte public keys
+   */
+  private encodeSolanaAddress(solanaAddress: string): `0x${string}` {
+    try {
+      // Decode base58 Solana address to get the 32-byte public key
+      const publicKeyBytes = bs58.decode(solanaAddress);
+      
+      if (publicKeyBytes.length !== 32) {
+        throw new Error(`Invalid Solana address length: expected 32 bytes, got ${publicKeyBytes.length}`);
+      }
+      
+      // Return as hex-encoded bytes
+      return `0x${Buffer.from(publicKeyBytes).toString('hex')}` as `0x${string}`;
+    } catch (error) {
+      throw new Error(`Failed to encode Solana address '${solanaAddress}': ${(error as Error).message}`);
     }
   }
 
-  private encodeSolanaAddress(solanaAddress: string): `0x${string}` {
-    // Encode Solana base58 address as bytes for CCIP
-    // For now, convert string to bytes - may need refinement based on CCIP specs
-    const addressBytes = Buffer.from(solanaAddress, 'utf8');
-    return `0x${addressBytes.toString('hex')}` as `0x${string}`;
-  }
-
+  /**
+   * Encode recipient address based on destination chain type
+   */
   private encodeRecipientAddress(address: string, destinationChainId: number): `0x${string}` {
     // Check if destination is Solana
-    if (destinationChainId.toString() === CHAIN_SELECTORS.SOLANA) {
+    if (this.isSolanaChain(destinationChainId)) {
       return this.encodeSolanaAddress(address);
     }
     
@@ -149,7 +172,9 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       throw new Error(`Invalid EVM address format: ${address}`);
     }
     
-    return address as `0x${string}`;
+    // Pad EVM address to 32 bytes for CCIP receiver field
+    const addressWithoutPrefix = address.slice(2).toLowerCase();
+    return `0x000000000000000000000000${addressWithoutPrefix}` as `0x${string}`;
   }
 
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
@@ -328,7 +353,11 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     try {
       this.validateCCIPRoute(route);
 
-      if (!originTransaction || originTransaction.status !== 'success') {
+      // Handle both viem string status ('success') and database numeric status (1)
+      const isSuccessful = originTransaction && 
+        (originTransaction.status === 'success' || (originTransaction.status as unknown) === 1);
+      
+      if (!isSuccessful) {
         this.logger.debug('Origin transaction not successful yet', {
           transactionHash: originTransaction?.transactionHash,
           status: originTransaction?.status,
@@ -378,7 +407,72 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   }
 
   /**
+   * Extract CCIP message ID from transaction receipt logs
+   * The message ID is emitted in the CCIPSendRequested event
+   */
+  async extractMessageIdFromReceipt(
+    transactionHash: string,
+    originChainId: number
+  ): Promise<string | null> {
+    try {
+      const providers = this.chains[originChainId.toString()]?.providers ?? [];
+      if (!providers.length) {
+        return null;
+      }
+
+      const transports = providers.map((p: string) => http(p));
+      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
+      const client = createPublicClient({ transport });
+
+      const receipt = await client.getTransactionReceipt({
+        hash: transactionHash as `0x${string}`,
+      });
+
+      if (!receipt || !receipt.logs) {
+        return null;
+      }
+
+      // Look for CCIPSendRequested event which contains the messageId
+      // The event signature is: CCIPSendRequested(bytes32 indexed messageId, ...)
+      // The messageId is the first topic after the event signature
+      for (const log of receipt.logs) {
+        // CCIPSendRequested event has messageId as first indexed parameter (topic[1])
+        if (log.topics.length >= 2) {
+          // Check if this looks like a CCIP event (topic[1] would be messageId)
+          // The event from EVM OnRamp contract
+          const potentialMessageId = log.topics[1];
+          if (potentialMessageId && potentialMessageId.startsWith('0x') && potentialMessageId.length === 66) {
+            this.logger.debug('Found potential CCIP message ID in logs', {
+              transactionHash,
+              messageId: potentialMessageId,
+              logAddress: log.address,
+            });
+            return potentialMessageId;
+          }
+        }
+      }
+
+      this.logger.warn('Could not find CCIP message ID in transaction logs', {
+        transactionHash,
+        logsCount: receipt.logs.length,
+      });
+
+      return null;
+    } catch (error) {
+      this.logger.error('Failed to extract message ID from receipt', {
+        error: jsonifyError(error),
+        transactionHash,
+        originChainId,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Get CCIP transfer status using the official SDK
+   * 
+   * Note: The CCIP SDK's getTransferStatus requires the messageId, not the transaction hash.
+   * The messageId is emitted in the CCIPSendRequested event on the origin chain.
    */
   async getTransferStatus(
     transactionHash: string,
@@ -392,10 +486,22 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         destinationChainId,
       });
 
+      // First, try to extract the message ID from the transaction logs
+      const messageId = await this.extractMessageIdFromReceipt(transactionHash, originChainId);
+      
+      if (!messageId) {
+        this.logger.warn('Could not extract CCIP message ID, will try using transaction hash', {
+          transactionHash,
+          originChainId,
+        });
+      }
+
+      const idToCheck = messageId || transactionHash;
+
       // Create a public client for the destination chain to check status
       let destinationClient;
       
-      if (destinationChainId === parseInt(CHAIN_SELECTORS.SOLANA)) {
+      if (this.isSolanaChain(destinationChainId)) {
         // For Solana destination, use Ethereum mainnet client (CCIP hub)
         destinationClient = createPublicClient({
           chain: mainnet,
@@ -413,21 +519,28 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         destinationClient = createPublicClient({ transport });
       }
 
-      const destinationRouterAddress = CCIP_ROUTER_ADDRESSES[destinationChainId] || 
-                                     '0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D'; // Default to Ethereum router for Solana
+      // For Solana destination, use Ethereum router as the check point
+      const destinationRouterAddress = this.isSolanaChain(destinationChainId)
+        ? CCIP_ROUTER_ADDRESSES[1] // Ethereum mainnet router
+        : CCIP_ROUTER_ADDRESSES[destinationChainId];
+      
+      if (!destinationRouterAddress) {
+        throw new Error(`No router address for destination chain ${destinationChainId}`);
+      }
 
       const sourceChainSelector = this.getDestinationChainSelector(originChainId);
 
-      // Use transaction hash directly as message ID
+      // Use the CCIP SDK to check transfer status
       const transferStatus = await this.ccipClient.getTransferStatus({
         client: destinationClient as any, // Type compatibility
         destinationRouterAddress,
         sourceChainSelector,
-        messageId: transactionHash as `0x${string}`,
+        messageId: idToCheck as `0x${string}`,
       });
 
       this.logger.debug('CCIP SDK transfer status response', {
         transactionHash,
+        messageId: idToCheck,
         transferStatus,
         sourceChainSelector,
         destinationRouterAddress,
@@ -437,6 +550,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         return {
           status: 'PENDING',
           message: 'Transfer not yet found on destination chain',
+          messageId: messageId || undefined,
         };
       }
 
@@ -446,23 +560,27 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
           return {
             status: 'SUCCESS',
             message: 'CCIP transfer completed successfully',
+            messageId: messageId || undefined,
             destinationTransactionHash: transactionHash,
           };
         case 3: // Failure
           return {
             status: 'FAILURE',
             message: 'CCIP transfer failed',
+            messageId: messageId || undefined,
           };
         case 1: // InProgress
           return {
             status: 'PENDING',
             message: 'CCIP transfer in progress',
+            messageId: messageId || undefined,
           };
         case 0: // Untouched
         default:
           return {
             status: 'PENDING',
             message: 'CCIP transfer pending or not yet started',
+            messageId: messageId || undefined,
           };
       }
     } catch (error) {

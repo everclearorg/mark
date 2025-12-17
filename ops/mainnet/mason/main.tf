@@ -46,8 +46,27 @@ locals {
     db_password             = local.mark_config_json.db_password
     admin_token             = local.mark_config_json.admin_token
     # TAC/TON configuration (optional - for TAC USDT rebalancing)
-    tonSignerAddress        = try(local.mark_config_json.tonSignerAddress, "")
-    ton_mnemonic            = try(local.mark_config_json.ton.mnemonic, "")
+    tonSignerAddress = try(local.mark_config_json.tonSignerAddress, "")
+    # Full TON configuration including assets with jetton addresses
+    ton = {
+      mnemonic = try(local.mark_config_json.ton.mnemonic, "")
+      rpcUrl   = try(local.mark_config_json.ton.rpcUrl, "")
+      apiKey   = try(local.mark_config_json.ton.apiKey, "")
+      assets   = try(local.mark_config_json.ton.assets, [])
+    }
+    # TAC SDK configuration
+    tac = {
+      tonRpcUrl = try(local.mark_config_json.tac.tonRpcUrl, "")
+      network   = try(local.mark_config_json.tac.network, "mainnet")
+      apiKey    = try(local.mark_config_json.tac.apiKey, "")
+    }
+    # Solana configuration for CCIP bridge operations
+    solana = {
+      privateKey = try(local.mark_config_json.solana.privateKey, "")
+      rpcUrl     = try(local.mark_config_json.solana.rpcUrl, "https://api.mainnet-beta.solana.com")
+      ptUsdeMint = try(local.mark_config_json.solana.ptUsdeMint, "PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA")
+    }
+    solanaSignerAddress = try(local.mark_config_json.solanaSignerAddress, "")
   }
 }
 
@@ -240,6 +259,22 @@ module "mark_poller" {
   container_env_vars = local.poller_env_vars
 }
 
+# Solana USDC → ptUSDe rebalancing poller (multi-leg CCIP + Pendle)
+# Schedule: 30 min interval since CCIP bridging takes ~20 min per leg
+module "mark_solana_usdc_poller" {
+  source              = "../../modules/lambda"
+  stage               = var.stage
+  environment         = var.environment
+  container_family    = "${var.bot_name}-solana-usdc-poller"
+  execution_role_arn  = module.iam.lambda_role_arn
+  image_uri           = var.image_uri
+  subnet_ids          = module.network.private_subnets
+  security_group_id   = module.sgs.lambda_sg_id
+  container_env_vars  = local.solana_usdc_poller_env_vars
+  schedule_expression = "rate(30 minutes)"
+  # Uses module defaults: timeout=900s, memory_size=1024MB
+}
+
 module "iam" {
   source      = "../../modules/iam"
   environment = var.environment
@@ -264,26 +299,26 @@ module "mark_admin_api" {
   security_group_id  = module.sgs.lambda_sg_id
   image_uri          = var.admin_image_uri
   container_env_vars = {
-    DD_SERVICE                      = "${var.bot_name}-admin"
-    DD_LAMBDA_HANDLER               = "index.handler"
-    DD_LOGS_ENABLED                 = "true"
-    DD_TRACES_ENABLED               = "true"
-    DD_RUNTIME_METRICS_ENABLED      = "true"
-    DD_API_KEY                      = local.mark_config.dd_api_key
-    LOG_LEVEL                       = "debug"
-    REDIS_HOST                      = module.cache.redis_instance_address
-    REDIS_PORT                      = module.cache.redis_instance_port
-    ADMIN_TOKEN                     = local.mark_config.admin_token
-    DATABASE_URL                    = module.db.database_url
-    SIGNER_URL                      = "http://${module.mark_web3signer.service_url}:9000"
-    SIGNER_ADDRESS                  = local.mark_config.signerAddress
-    MARK_CONFIG_SSM_PARAMETER       = "MARK_CONFIG_MAINNET"
-    SUPPORTED_SETTLEMENT_DOMAINS    = var.supported_settlement_domains
-    SUPPORTED_ASSET_SYMBOLS         = var.supported_asset_symbols
-    ENVIRONMENT                     = var.environment
-    STAGE                           = var.stage
-    CHAIN_IDS                       = var.chain_ids
-    WHITELISTED_RECIPIENTS          = try(local.mark_config.whitelisted_recipients, "")
+    DD_SERVICE                   = "${var.bot_name}-admin"
+    DD_LAMBDA_HANDLER            = "index.handler"
+    DD_LOGS_ENABLED              = "true"
+    DD_TRACES_ENABLED            = "true"
+    DD_RUNTIME_METRICS_ENABLED   = "true"
+    DD_API_KEY                   = local.mark_config.dd_api_key
+    LOG_LEVEL                    = "debug"
+    REDIS_HOST                   = module.cache.redis_instance_address
+    REDIS_PORT                   = module.cache.redis_instance_port
+    ADMIN_TOKEN                  = local.mark_config.admin_token
+    DATABASE_URL                 = module.db.database_url
+    SIGNER_URL                   = "http://${module.mark_web3signer.service_url}:9000"
+    SIGNER_ADDRESS               = local.mark_config.signerAddress
+    MARK_CONFIG_SSM_PARAMETER    = "MARK_CONFIG_MAINNET"
+    SUPPORTED_SETTLEMENT_DOMAINS = var.supported_settlement_domains
+    SUPPORTED_ASSET_SYMBOLS      = var.supported_asset_symbols
+    ENVIRONMENT                  = var.environment
+    STAGE                        = var.stage
+    CHAIN_IDS                    = var.chain_ids
+    WHITELISTED_RECIPIENTS       = try(local.mark_config.whitelisted_recipients, "")
   }
 }
 
