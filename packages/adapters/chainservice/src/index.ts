@@ -20,8 +20,8 @@ export { EthWallet } from '@chimera-monorepo/chainservice';
 export type { TransactionReceipt };
 
 // Solana signing service
-export { 
-  SolanaSigner, 
+export {
+  SolanaSigner,
   createSolanaSigner,
   type SolanaSignerConfig,
   type SolanaTransactionRequest,

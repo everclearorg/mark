@@ -1,15 +1,15 @@
 /**
  * Solana Signing Service
- * 
+ *
  * This module provides Solana transaction signing following the same patterns
  * as the existing ChainService for EVM chains.
- * 
+ *
  * Key Management:
  * - Private keys loaded from AWS SSM Parameter Store (SecureString)
  * - Keys decoded from base58 format at runtime
  * - Signing happens in-memory using @solana/web3.js Keypair
  * - Connection pooling for RPC efficiency
- * 
+ *
  * Security:
  * - Private keys never leave the AWS environment
  * - Keys are not logged or exposed in error messages
@@ -25,8 +25,6 @@ import {
   VersionedTransaction,
   TransactionInstruction,
   sendAndConfirmTransaction,
-  SendTransactionError,
-  TransactionMessage,
   ComputeBudgetProgram,
 } from '@solana/web3.js';
 import bs58 from 'bs58';
@@ -83,14 +81,14 @@ export interface SolanaTransactionRequest {
 
 /**
  * Solana signing service
- * 
+ *
  * Usage:
  * ```typescript
  * const signer = new SolanaSigner({
  *   privateKey: config.solana.privateKey, // Loaded from SSM
  *   rpcUrl: config.solana.rpcUrl,
  * });
- * 
+ *
  * const result = await signer.signAndSendTransaction({
  *   instructions: [myInstruction],
  * });
@@ -109,19 +107,17 @@ export class SolanaSigner {
 
     try {
       const privateKeyBytes = bs58.decode(config.privateKey);
-      
+
       // Validate key length (should be 64 bytes for ed25519 keypair)
       if (privateKeyBytes.length !== 64) {
-        throw new Error(
-          `Invalid Solana private key length: expected 64 bytes, got ${privateKeyBytes.length}`
-        );
+        throw new Error(`Invalid Solana private key length: expected 64 bytes, got ${privateKeyBytes.length}`);
       }
-      
+
       this.keypair = Keypair.fromSecretKey(privateKeyBytes);
     } catch (error) {
       // Don't expose key details in error
       throw new Error(
-        `Failed to decode Solana private key: ${(error as Error).message.replace(/[A-Za-z0-9]{32,}/g, '[REDACTED]')}`
+        `Failed to decode Solana private key: ${(error as Error).message.replace(/[A-Za-z0-9]{32,}/g, '[REDACTED]')}`,
       );
     }
 
@@ -191,7 +187,7 @@ export class SolanaSigner {
       transaction.add(
         ComputeBudgetProgram.setComputeUnitLimit({
           units: computeUnitLimit,
-        })
+        }),
       );
     }
 
@@ -199,7 +195,7 @@ export class SolanaSigner {
       transaction.add(
         ComputeBudgetProgram.setComputeUnitPrice({
           microLamports: computeUnitPrice,
-        })
+        }),
       );
     }
 
@@ -210,9 +206,7 @@ export class SolanaSigner {
 
     // Set fee payer and recent blockhash
     transaction.feePayer = feePayer || this.keypair.publicKey;
-    const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash(
-      this.config.commitment
-    );
+    const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash(this.config.commitment);
     transaction.recentBlockhash = blockhash;
     transaction.lastValidBlockHeight = lastValidBlockHeight;
 
@@ -222,27 +216,20 @@ export class SolanaSigner {
   /**
    * Sign and send a transaction with automatic retry and confirmation
    */
-  async signAndSendTransaction(
-    request: SolanaTransactionRequest
-  ): Promise<SolanaTransactionResult> {
+  async signAndSendTransaction(request: SolanaTransactionRequest): Promise<SolanaTransactionResult> {
     // Build the transaction
     const transaction = await this.buildTransaction(request);
 
     // Sign and send with retries
     let lastError: Error | null = null;
-    
+
     for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
       try {
-        const signature = await sendAndConfirmTransaction(
-          this.connection,
-          transaction,
-          [this.keypair],
-          {
-            commitment: this.config.commitment,
-            skipPreflight: this.config.skipPreflight,
-            maxRetries: 0, // We handle retries ourselves
-          }
-        );
+        const signature = await sendAndConfirmTransaction(this.connection, transaction, [this.keypair], {
+          commitment: this.config.commitment,
+          skipPreflight: this.config.skipPreflight,
+          maxRetries: 0, // We handle retries ourselves
+        });
 
         // Get transaction details
         const txDetails = await this.connection.getTransaction(signature, {
@@ -264,7 +251,7 @@ export class SolanaSigner {
 
         // Check if this is a retryable error
         const isRetryable = this.isRetryableError(error);
-        
+
         if (!isRetryable || attempt >= this.config.maxRetries) {
           break;
         }
@@ -274,9 +261,7 @@ export class SolanaSigner {
         await this.delay(backoffMs);
 
         // Get fresh blockhash for retry
-        const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash(
-          this.config.commitment
-        );
+        const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash(this.config.commitment);
         transaction.recentBlockhash = blockhash;
         transaction.lastValidBlockHeight = lastValidBlockHeight;
       }
@@ -298,9 +283,7 @@ export class SolanaSigner {
   /**
    * Send a pre-signed transaction
    */
-  async sendSignedTransaction(
-    transaction: Transaction | VersionedTransaction
-  ): Promise<SolanaTransactionResult> {
+  async sendSignedTransaction(transaction: Transaction | VersionedTransaction): Promise<SolanaTransactionResult> {
     try {
       const serialized = transaction.serialize();
       const signature = await this.connection.sendRawTransaction(serialized, {
@@ -309,10 +292,7 @@ export class SolanaSigner {
       });
 
       // Wait for confirmation
-      const confirmation = await this.connection.confirmTransaction(
-        signature,
-        this.config.commitment
-      );
+      const confirmation = await this.connection.confirmTransaction(signature, this.config.commitment);
 
       if (confirmation.value.err) {
         return {
@@ -393,9 +373,7 @@ export class SolanaSigner {
       '502',
     ];
 
-    return retryablePatterns.some(pattern => 
-      errorMessage.toLowerCase().includes(pattern.toLowerCase())
-    );
+    return retryablePatterns.some((pattern) => errorMessage.toLowerCase().includes(pattern.toLowerCase()));
   }
 
   /**
@@ -408,7 +386,7 @@ export class SolanaSigner {
 
     // Redact potential private key or address patterns
     message = message.replace(/[A-Za-z0-9]{44,}/g, '[REDACTED]');
-    
+
     // Limit message length
     if (message.length > 500) {
       message = message.substring(0, 500) + '...';
@@ -421,7 +399,7 @@ export class SolanaSigner {
    * Async delay helper
    */
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
@@ -432,4 +410,3 @@ export class SolanaSigner {
 export function createSolanaSigner(config: SolanaSignerConfig): SolanaSigner {
   return new SolanaSigner(config);
 }
-
