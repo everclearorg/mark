@@ -393,6 +393,8 @@ module "mark_admin_api" {
     STAGE                           = var.stage
     CHAIN_IDS                       = var.chain_ids
     WHITELISTED_RECIPIENTS          = try(local.mark_config.whitelisted_recipients, "")
+    PUSH_GATEWAY_URL                = "http://${var.bot_name}-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL                  = "http://${var.bot_name}-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
   }
 }
 
