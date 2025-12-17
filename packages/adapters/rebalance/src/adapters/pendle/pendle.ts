@@ -295,9 +295,13 @@ export class PendleBridgeAdapter implements BridgeAdapter {
     try {
       this.validateSameChainSwap(route);
 
-      if (!originTransaction || originTransaction.status !== 'success') {
+      // Handle both viem string status ('success') and database numeric status (1)
+      const isSuccessful = originTransaction && 
+        (originTransaction.status === 'success' || (originTransaction.status as unknown) === 1);
+      
+      if (!isSuccessful) {
         this.logger.debug('Transaction not successful yet', {
-          transactionHash: originTransaction.transactionHash,
+          transactionHash: originTransaction?.transactionHash,
           status: originTransaction?.status,
         });
         return false;

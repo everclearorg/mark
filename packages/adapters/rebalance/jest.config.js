@@ -4,6 +4,9 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/../../../jest.setup.shared.js'],
   testMatch: ['**/test/**/*.spec.ts', '**/test/**/*.integration.spec.ts'],
   testTimeout: 30000,
+  transformIgnorePatterns: [
+    '/node_modules/(?!@chainlink/ccip-js)/',
+  ],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
