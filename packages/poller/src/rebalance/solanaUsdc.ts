@@ -36,7 +36,7 @@ const MIN_REBALANCING_AMOUNT = 1000000n;
 
 // Chainlink CCIP constants for Solana
 // See: https://docs.chain.link/ccip/directory/mainnet/chain/solana-mainnet
-const CCIP_ROUTER_PROGRAM_ID = new PublicKey('Ccip842gzYHhvdDkSyi2YVCoApMFzSxQroE9C');
+const CCIP_ROUTER_PROGRAM_ID = new PublicKey('Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C');
 const SOLANA_CHAIN_SELECTOR = '124615329519749607';
 const ETHEREUM_CHAIN_SELECTOR = '5009297550715157269';
 const USDC_SOLANA_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
