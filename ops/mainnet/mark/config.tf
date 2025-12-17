@@ -57,63 +57,78 @@ locals {
   ]
 
   poller_env_vars = {
-    SIGNER_URL                    = "http://${module.mark_web3signer.service_url}:9000"
-    SIGNER_ADDRESS                = local.mark_config.signerAddress
-    REDIS_HOST                    = module.cache.redis_instance_address
-    REDIS_PORT                    = module.cache.redis_instance_port
-    DATABASE_URL                  = module.db.database_url
-    SUPPORTED_SETTLEMENT_DOMAINS  = var.supported_settlement_domains
-    SUPPORTED_ASSET_SYMBOLS       = var.supported_asset_symbols
-    LOG_LEVEL                     = var.log_level
-    ENVIRONMENT                   = var.environment
-    STAGE                         = var.stage
-    CHAIN_IDS                     = var.chain_ids
-    PUSH_GATEWAY_URL              = "http://mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
-    PROMETHEUS_URL                = "http://mark-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
-    PROMETHEUS_ENABLED            = true
-    DD_LOGS_ENABLED               = true
-    DD_ENV                        = "${var.environment}-${var.stage}"
-    DD_API_KEY                    = local.mark_config.dd_api_key
-    DD_LAMBDA_HANDLER             = "index.handler"
-    DD_TRACE_ENABLED              = true
-    DD_PROFILING_ENABLED          = false
-    DD_MERGE_XRAY_TRACES          = true
-    DD_TRACE_OTEL_ENABLED         = false
-    MARK_CONFIG_SSM_PARAMETER     = "MARK_CONFIG_MAINNET"
+    SIGNER_URL                   = "http://${module.mark_web3signer.service_url}:9000"
+    SIGNER_ADDRESS               = local.mark_config.signerAddress
+    REDIS_HOST                   = module.cache.redis_instance_address
+    REDIS_PORT                   = module.cache.redis_instance_port
+    DATABASE_URL                 = module.db.database_url
+    SUPPORTED_SETTLEMENT_DOMAINS = var.supported_settlement_domains
+    SUPPORTED_ASSET_SYMBOLS      = var.supported_asset_symbols
+    LOG_LEVEL                    = var.log_level
+    ENVIRONMENT                  = var.environment
+    STAGE                        = var.stage
+    CHAIN_IDS                    = var.chain_ids
+    PUSH_GATEWAY_URL             = "http://mark-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL               = "http://mark-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+    PROMETHEUS_ENABLED           = true
+    DD_LOGS_ENABLED              = true
+    DD_ENV                       = "${var.environment}-${var.stage}"
+    DD_API_KEY                   = local.mark_config.dd_api_key
+    DD_LAMBDA_HANDLER            = "index.handler"
+    DD_TRACE_ENABLED             = true
+    DD_PROFILING_ENABLED         = false
+    DD_MERGE_XRAY_TRACES         = true
+    DD_TRACE_OTEL_ENABLED        = false
+    MARK_CONFIG_SSM_PARAMETER    = "MARK_CONFIG_MAINNET"
 
-    REBALANCE_CONFIG_S3_BUCKET    = local.rebalanceConfig.bucket
-    REBALANCE_CONFIG_S3_KEY       = local.rebalanceConfig.key
-    REBALANCE_CONFIG_S3_REGION    = local.rebalanceConfig.region
+    REBALANCE_CONFIG_S3_BUCKET = local.rebalanceConfig.bucket
+    REBALANCE_CONFIG_S3_KEY    = local.rebalanceConfig.key
+    REBALANCE_CONFIG_S3_REGION = local.rebalanceConfig.region
 
-    WETH_1_THRESHOLD              = "800000000000000000"
-    USDC_1_THRESHOLD              = "4000000000"
-    USDT_1_THRESHOLD              = "2000000000"
+    WETH_1_THRESHOLD = "800000000000000000"
+    USDC_1_THRESHOLD = "4000000000"
+    USDT_1_THRESHOLD = "2000000000"
 
-    WETH_10_THRESHOLD             = "1600000000000000000"
-    USDC_10_THRESHOLD             = "4000000000"
-    USDT_10_THRESHOLD             = "400000000"
+    WETH_10_THRESHOLD = "1600000000000000000"
+    USDC_10_THRESHOLD = "4000000000"
+    USDT_10_THRESHOLD = "400000000"
 
-    USDC_56_THRESHOLD             = "2000000000000000000000"
-    USDT_56_THRESHOLD             = "4000000000000000000000"
+    USDC_56_THRESHOLD = "2000000000000000000000"
+    USDT_56_THRESHOLD = "4000000000000000000000"
 
 
-    WETH_8453_THRESHOLD           = "1600000000000000000"
-    USDC_8453_THRESHOLD           = "4000000000"
+    WETH_8453_THRESHOLD = "1600000000000000000"
+    USDC_8453_THRESHOLD = "4000000000"
 
-    WETH_42161_THRESHOLD          = "1600000000000000000"
-    USDC_42161_THRESHOLD          = "4000000000"
-    USDT_42161_THRESHOLD          = "1000000000"
+    WETH_42161_THRESHOLD = "1600000000000000000"
+    USDC_42161_THRESHOLD = "4000000000"
+    USDT_42161_THRESHOLD = "1000000000"
 
     # TAC Chain (239) configuration
-    USDT_239_THRESHOLD = "100000000"  # 100 USDT threshold on TAC
-    
+    USDT_239_THRESHOLD = "100000000" # 100 USDT threshold on TAC
+
     # TAC Network configuration (loaded from SSM if available)
     TAC_NETWORK = "mainnet"
-    
+
     # TON wallet configuration for TAC bridge (from SSM)
     TON_SIGNER_ADDRESS = local.mark_config.tonSignerAddress
     TON_MNEMONIC       = local.mark_config.ton.mnemonic
   }
+
+  # Solana USDC → ptUSDe rebalancing poller configuration
+  # Extends base poller config with Solana-specific overrides
+  solana_usdc_poller_env_vars = merge(
+    local.poller_env_vars,
+    {
+      # Solana-specific configuration
+      RUN_MODE              = "solanaUsdcOnly"
+      SOLANA_PRIVATE_KEY    = local.mark_config.solana.privateKey
+      SOLANA_RPC_URL        = local.mark_config.solana.rpcUrl
+      SOLANA_SIGNER_ADDRESS = local.mark_config.solanaSignerAddress
+      # ptUSDe SPL token mint on Solana (from SSM config)
+      PTUSDE_SOLANA_MINT = local.mark_config.solana.ptUsdeMint
+    }
+  )
 
   web3signer_env_vars = [
     {

@@ -275,6 +275,10 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         apiKey: configJson.ton?.apiKey ?? (await fromEnv('TON_API_KEY', true)) ?? undefined,
         assets: configJson.ton?.assets ?? undefined, // TON assets with jetton addresses
       },
+      solana: {
+        privateKey: configJson.solana?.privateKey ?? (await fromEnv('SOLANA_PRIVATE_KEY', true)) ?? undefined,
+        rpcUrl: configJson.solana?.rpcUrl ?? (await fromEnv('SOLANA_RPC_URL', true)) ?? undefined,
+      },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),

@@ -14,6 +14,8 @@ module.exports = {
     '^@mark/prometheus$': '<rootDir>/../adapters/prometheus/src',
     '^@mark/web3signer$': '<rootDir>/../adapters/web3signer/src',
     '^#/(.*)$': '<rootDir>/src/$1',
+    // Mock ESM modules that cause issues
+    '^@chainlink/ccip-js$': '<rootDir>/test/mocks/ccip-js.ts',
   },
   collectCoverage: false,
   coverageDirectory: 'coverage',
