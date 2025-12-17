@@ -103,7 +103,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
         rpcUrl: config.solana.rpcUrl || 'https://api.mainnet-beta.solana.com',
       });
     } catch (error) {
-      logger.error('Failed to initialize Solana signer', { 
+      logger.error('Failed to initialize Solana signer', {
         error: (error as Error).message,
         // Don't log the actual error which might contain key info
       });

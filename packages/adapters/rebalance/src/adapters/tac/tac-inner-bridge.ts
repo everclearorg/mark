@@ -80,12 +80,12 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
       });
 
       // Create custom contractOpener using TonClient
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const contractOpener: any = {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        open: <T extends object>(contract: T) => tonClient.open(contract as any),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        getContractState: async (address: any) => {
+      // Note: Type assertion required due to SDK type incompatibility between @ton/ton and @tonappchain/sdk
+      type TonContract = Parameters<typeof tonClient.open>[0];
+      type TonAddress = Parameters<typeof tonClient.getContractState>[0];
+      const contractOpener = {
+        open: <T extends TonContract>(contract: T) => tonClient.open(contract),
+        getContractState: async (address: TonAddress) => {
           const state = await tonClient.getContractState(address);
           return {
             balance: state.balance,
@@ -95,10 +95,16 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
         },
       };
 
+      // Extract the ContractOpener type from SDK params (unwrapping optional types)
+      type SdkParams = Parameters<typeof TacSdk.create>[0];
+      type ContractOpenerType = NonNullable<NonNullable<SdkParams['TONParams']>['contractOpener']>;
+
       this.tacSdk = await TacSdk.create({
         network,
         TONParams: {
-          contractOpener: contractOpener as any,
+          // Type assertion needed: TonClient's contractOpener matches ContractOpener interface at runtime
+          // but has slight structural differences due to @ton/ton vs @tonappchain/sdk type definitions
+          contractOpener: contractOpener as unknown as ContractOpenerType,
         },
       });
       this.sdkInitialized = true;
