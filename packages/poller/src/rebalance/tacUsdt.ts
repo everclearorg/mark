@@ -11,7 +11,7 @@ import {
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
   RebalanceOperationStatus,
-  DBPS_MULTIPLIER,
+  BPS_MULTIPLIER,
   RebalanceAction,
   SupportedBridge,
   MAINNET_CHAIN_ID,
@@ -591,10 +591,15 @@ const processOnDemandRebalancing = async (
     const ticker = USDT_TICKER_HASH;
     const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
 
-    // intent.amount_out_min is already in native units (from the API/chain)
-    // No conversion needed - use safeParseBigInt for robust parsing
+    // All amounts normalized to 18 decimals for consistent calculations
+    // (same pattern as threshold rebalancing)
+
+    // Invoice amounts from Everclear API are always normalized to 18 decimals
     const intentAmount = safeParseBigInt(invoice.amount);
-    const minRebalanceAmount = safeParseBigInt(config.tacRebalance!.bridge.minRebalanceAmount);
+
+    // Convert bridge config amounts from native (6 decimals) to normalized (18 decimals)
+    const minRebalanceAmountNative = safeParseBigInt(config.tacRebalance!.bridge.minRebalanceAmount);
+    const minRebalanceAmount = convertTo18Decimals(minRebalanceAmountNative, decimals);
 
     if (intentAmount < minRebalanceAmount) {
       logger.warn('Invoice amount is less than minimum rebalance amount, skipping', {
@@ -602,25 +607,25 @@ const processOnDemandRebalancing = async (
         invoiceId: invoice.intent_id.toString(),
         invoiceAmount: invoice.amount,
         minRebalanceAmount: minRebalanceAmount.toString(),
+        note: 'Both values in 18 decimal format',
       });
       continue;
     }
 
-    // Balances from getMarkBalancesForTicker are in 18 decimals (standardized)
-    // Convert to native units (6 decimals for USDT)
-    const availableOriginBalance = balances.get(origin.toString()) || 0n;
-    const currentOriginBalance = convertToNativeUnits(availableOriginBalance, decimals);
+    // Balances from getMarkBalancesForTicker are already in 18 decimals (standardized)
+    // Keep them in 18 decimals for consistent comparison with intentAmount
+    const currentOriginBalance = balances.get(origin.toString()) || 0n;
 
     // CRITICAL: Check if TAC (destination) already has sufficient balance
     // On-demand rebalancing should ONLY trigger when the destination lacks funds
-    const availableDestBalance = balances.get(destination.toString()) || 0n;
-    const currentDestBalance = convertToNativeUnits(availableDestBalance, decimals);
+    const currentDestBalance = balances.get(destination.toString()) || 0n;
 
-    logger.debug('Current USDT balances', {
+    logger.debug('Current USDT balances (18 decimals)', {
       requestId,
       originBalance: currentOriginBalance.toString(),
       destinationBalance: currentDestBalance.toString(),
       intentAmount: intentAmount.toString(),
+      decimals,
     });
 
     // If TAC already has enough to fulfill the intent, no rebalance needed
@@ -630,24 +635,26 @@ const processOnDemandRebalancing = async (
         invoiceId: invoice.intent_id.toString(),
         currentDestBalance: currentDestBalance.toString(),
         intentAmount: intentAmount.toString(),
-        note: 'On-demand rebalancing only triggers when destination lacks funds',
+        note: 'On-demand rebalancing only triggers when destination lacks funds (values in 18 decimals)',
       });
       continue;
     }
 
     // Use remaining available balance (accounts for previously committed funds in this run)
+    // remainingEthUsdt is in 18 decimals (from availableEthUsdt)
     if (remainingEthUsdt <= minRebalanceAmount) {
       logger.info('Remaining ETH USDT is at or below minimum, skipping', {
         requestId,
         remainingEthUsdt: remainingEthUsdt.toString(),
         minRebalanceAmount: minRebalanceAmount.toString(),
-        note: 'Some balance may be committed to other operations in this run',
+        note: 'Both values in 18 decimal format',
       });
       continue;
     }
 
     // Calculate amount to bridge - only bridge what's needed
     // (intentAmount - currentDestBalance) = shortfall that needs to be filled
+    // All values in 18 decimals
     const shortfall = intentAmount - currentDestBalance;
 
     // Don't bridge if shortfall is below minimum threshold
@@ -657,11 +664,13 @@ const processOnDemandRebalancing = async (
         invoiceId: invoice.intent_id.toString(),
         shortfall: shortfall.toString(),
         minRebalanceAmount: minRebalanceAmount.toString(),
+        note: 'Both values in 18 decimal format',
       });
       continue;
     }
 
     // Use remaining available balance (not the on-chain balance, which doesn't account for this run's commits)
+    // All values in 18 decimals
     const amountToBridge = remainingEthUsdt < shortfall ? remainingEthUsdt : shortfall;
 
     logger.info('On-demand rebalancing triggered - destination lacks funds', {
@@ -671,6 +680,7 @@ const processOnDemandRebalancing = async (
       currentDestBalance: currentDestBalance.toString(),
       shortfall: shortfall.toString(),
       amountToBridge: amountToBridge.toString(),
+      note: 'All values in 18 decimal format',
     });
 
     // Create earmark
@@ -787,8 +797,9 @@ const processOnDemandRebalancing = async (
       // Check slippage - use safeParseBigInt for adapter response
       // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
       const receivedAmount = safeParseBigInt(receivedAmountStr);
-      const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
-      const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageDbps) / DBPS_MULTIPLIER;
+      // slippagesDbps config uses basis points (500 = 5%), not deci-basis points
+      const slippageBps = BigInt(route.slippagesDbps[0]);
+      const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageBps) / BPS_MULTIPLIER;
 
       if (receivedAmount < minimumAcceptableAmount) {
         logger.warn('Stargate quote does not meet slippage requirements', {
@@ -1299,8 +1310,9 @@ const executeTacBridge = async (
     // Check slippage - use safeParseBigInt for adapter response
     // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
     const receivedAmount = safeParseBigInt(receivedAmountStr);
-    const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
-    const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageDbps) / DBPS_MULTIPLIER;
+    // slippagesDbps config uses basis points (500 = 5%), not deci-basis points
+    const slippageBps = BigInt(route.slippagesDbps[0]);
+    const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageBps) / BPS_MULTIPLIER;
 
     if (receivedAmount < minimumAcceptableAmount) {
       logger.warn('Stargate quote does not meet slippage requirements', {
@@ -1624,12 +1636,28 @@ const evaluateFillServiceRebalance = async (
 };
 
 /**
+ * Calculate the minimum expected amount after slippage
+ * @param amount - Original amount
+ * @param slippageBps - Slippage in basis points (e.g., 500 = 5%)
+ * @returns Minimum expected amount after slippage
+ */
+const calculateMinExpectedAmount = (amount: bigint, slippageBps: number): bigint => {
+  const slippage = BigInt(slippageBps);
+  return amount - (amount * slippage) / BPS_MULTIPLIER;
+};
+
+/**
  * Execute callbacks for pending TAC rebalance operations
  *
  * This handles:
  * - Checking if Leg 1 (Stargate) is complete
  * - Executing Leg 2 (TAC Inner Bridge) when Leg 1 completes
  * - Checking if Leg 2 is complete
+ *
+ * IMPORTANT: Flow Isolation
+ * - Only ONE Leg 2 operation can be in-flight at a time
+ * - Each flow only bridges its own operation-specific amount
+ * - This prevents mixing funds from multiple concurrent flows
  */
 const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, database: db } = context;
@@ -1645,8 +1673,20 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
     (op) => op.bridge === 'stargate-tac' || op.bridge === SupportedBridge.TacInner,
   );
 
+  // SERIALIZATION CHECK: Only allow one Leg 2 (TacInner) operation in-flight at a time
+  // This prevents mixing funds from multiple flows when they complete close together
+  const pendingTacInnerOps = tacOperations.filter(
+    (op) =>
+      op.bridge === SupportedBridge.TacInner &&
+      (op.status === RebalanceOperationStatus.PENDING || op.status === RebalanceOperationStatus.AWAITING_CALLBACK),
+  );
+
+  const hasInFlightLeg2 = pendingTacInnerOps.length > 0;
+
   logger.debug('Found TAC rebalance operations', {
     count: tacOperations.length,
+    pendingLeg2Count: pendingTacInnerOps.length,
+    hasInFlightLeg2,
     requestId,
   });
 
@@ -1748,6 +1788,18 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
       // Execute Leg 2: TON → TAC using TAC SDK
       if (operation.status === RebalanceOperationStatus.AWAITING_CALLBACK) {
+        // SERIALIZATION: Only allow one Leg 2 in-flight at a time
+        // This prevents mixing funds from multiple flows
+        if (hasInFlightLeg2) {
+          logger.info('Skipping Leg 2 execution - another Leg 2 is already in-flight', {
+            ...logContext,
+            pendingLeg2Count: pendingTacInnerOps.length,
+            pendingLeg2Ids: pendingTacInnerOps.map((op) => op.id),
+            note: 'Will retry when current Leg 2 completes to prevent fund mixing',
+          });
+          continue;
+        }
+
         logger.info('Executing Leg 2: TON to TAC via TAC Inner Bridge (TAC SDK)', logContext);
 
         try {
@@ -1830,23 +1882,59 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               continue;
             }
 
-            // Get actual USDT balance (may be less than operation.amount due to Stargate fees)
+            // Get actual USDT balance on TON
             const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
 
-            // Use the actual balance, not the expected amount
-            // This accounts for Stargate bridge fees
-            const amountToBridge = actualUsdtBalance > 0n ? actualUsdtBalance.toString() : operation.amount;
+            // CRITICAL: Use operation-specific amount, NOT the full wallet balance
+            // This prevents mixing funds from multiple concurrent flows
+            //
+            // Logic:
+            // 1. expectedAmount = operation.amount (what we sent in Leg 1)
+            // 2. minExpectedAmount = expectedAmount * (1 - slippage) (account for Stargate fees)
+            // 3. amountToBridge = min(expectedAmount, actualBalance) - never bridge more than expected
+            //
+            // Edge cases:
+            // - If actualBalance < minExpectedAmount: Stargate might still be in transit, wait
+            // - If actualBalance >= expectedAmount: Use expectedAmount (don't take other flows' funds)
+            // - If minExpectedAmount <= actualBalance < expectedAmount: Use actualBalance (Stargate took fees)
+            const expectedAmount = safeParseBigInt(operation.amount);
+            // Config uses "slippageDbps" naming but values are actually basis points (500 = 5%)
+            const slippageBps = config.tacRebalance?.bridge?.slippageDbps ?? 500; // Default 5%
+            const minExpectedAmount = calculateMinExpectedAmount(expectedAmount, slippageBps);
+
+            // Validate: TON wallet must have at least the minimum expected amount
+            if (actualUsdtBalance < minExpectedAmount) {
+              // Not enough funds yet - Stargate might still be in transit or another flow took funds
+              logger.warn('Insufficient USDT on TON for this operation - waiting for Stargate delivery', {
+                ...logContext,
+                expectedAmount: expectedAmount.toString(),
+                minExpectedAmount: minExpectedAmount.toString(),
+                actualUsdtBalance: actualUsdtBalance.toString(),
+                shortfall: (minExpectedAmount - actualUsdtBalance).toString(),
+                note: 'Will retry when funds arrive. If persists, check Stargate bridge status.',
+              });
+              continue;
+            }
+
+            // Calculate amount to bridge: min(expectedAmount, actualBalance)
+            // NEVER bridge more than the operation's expected amount
+            const amountToBridgeBigInt = actualUsdtBalance < expectedAmount ? actualUsdtBalance : expectedAmount;
+            const amountToBridge = amountToBridgeBigInt.toString();
+
+            // Log if we're bridging less than expected (Stargate took fees)
+            const tookFees = amountToBridgeBigInt < expectedAmount;
 
             logger.info('Executing TAC SDK bridge transaction', {
               ...logContext,
               recipient,
-              originalAmount: operation.amount,
+              expectedAmount: expectedAmount.toString(),
+              minExpectedAmount: minExpectedAmount.toString(),
               actualUsdtBalance: actualUsdtBalance.toString(),
               amountToBridge,
-              note:
-                actualUsdtBalance.toString() !== operation.amount
-                  ? 'Using actual balance (Stargate took fees)'
-                  : 'Using original amount',
+              stargateFeesDeducted: tookFees,
+              note: tookFees
+                ? `Bridging ${amountToBridge} (Stargate took ${expectedAmount - amountToBridgeBigInt} in fees)`
+                : 'Bridging expected amount',
             });
 
             const transactionLinker = await tacInnerAdapter.executeTacBridge(
@@ -2004,12 +2092,35 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
                   continue;
                 }
 
-                const amountToBridge = actualUsdtBalance.toString();
+                // CRITICAL: Use operation-specific amount, NOT the full wallet balance
+                // This prevents mixing funds from multiple concurrent flows
+                const expectedAmount = safeParseBigInt(operation.amount);
+                const slippageDbps = config.tacRebalance?.bridge?.slippageDbps ?? 500; // Default 5%
+                const minExpectedAmount = calculateMinExpectedAmount(expectedAmount, slippageDbps);
+
+                // Validate: Must have at least minimum expected amount
+                if (actualUsdtBalance < minExpectedAmount) {
+                  logger.warn('Insufficient USDT on TON for this operation (retry) - waiting', {
+                    ...logContext,
+                    expectedAmount: expectedAmount.toString(),
+                    minExpectedAmount: minExpectedAmount.toString(),
+                    actualUsdtBalance: actualUsdtBalance.toString(),
+                    note: 'Another flow may have taken funds or Stargate still in transit',
+                  });
+                  continue;
+                }
+
+                // Calculate amount: min(expectedAmount, actualBalance) - never more than expected
+                const amountToBridgeBigInt = actualUsdtBalance < expectedAmount ? actualUsdtBalance : expectedAmount;
+                const amountToBridge = amountToBridgeBigInt.toString();
 
                 logger.info('Retrying TAC SDK bridge execution (no transactionLinker)', {
                   ...logContext,
                   recipient: storedRecipient,
-                  actualUsdtBalance: amountToBridge,
+                  expectedAmount: expectedAmount.toString(),
+                  actualUsdtBalance: actualUsdtBalance.toString(),
+                  amountToBridge,
+                  note: 'Using operation-specific amount to prevent fund mixing',
                 });
 
                 try {
