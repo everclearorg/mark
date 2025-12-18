@@ -5,7 +5,6 @@ import {
   getMarkBalancesForTicker,
   getEvmBalance,
   safeParseBigInt,
-  convertTo18Decimals,
 } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
@@ -30,6 +29,23 @@ import { IntentStatus } from '@mark/everclear';
 
 const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
 const METH_TICKER_HASH = '0xd5a2aecb01320815a5625da6d67fbe0b34c12b267ebb3b060c014486ec5484d8';
+
+// Default operation timeout: 24 hours (in minutes)
+const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
+
+/**
+ * Check if an operation has exceeded its TTL (time-to-live).
+ * Operations stuck in PENDING or AWAITING_CALLBACK for too long should be marked as failed.
+ *
+ * @param createdAt - Operation creation timestamp
+ * @param ttlMinutes - TTL in minutes (default: 24 hours)
+ * @returns true if operation has timed out
+ */
+function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERATION_TTL_MINUTES): boolean {
+  const maxAgeMs = ttlMinutes * 60 * 1000;
+  const operationAgeMs = Date.now() - createdAt.getTime();
+  return operationAgeMs > maxAgeMs;
+}
 
 type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
 
@@ -72,11 +88,6 @@ interface ThresholdRebalanceParams {
   earmarkId: string | null; // null for threshold-based
 }
 
-interface MethSenderConfig {
-  address: string; // Sender's Ethereum address
-  signerUrl?: string; // Web3signer URL for this sender (uses default if not specified)
-  label: 'market-maker' | 'fill-service'; // For logging
-}
 
 /**
  * Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
@@ -268,13 +279,12 @@ const evaluateFillServiceRebalance = async (
 
   const actions: RebalanceAction[] = [];
 
-  // Convert config values from native decimals (6) to normalized (18)
-  const thresholdNative = safeParseBigInt(fsConfig.threshold);
-  const targetNative = safeParseBigInt(fsConfig.targetBalance);
-  const minRebalanceNative = safeParseBigInt(bridgeConfig.minRebalanceAmount);
-  const threshold18 = convertTo18Decimals(thresholdNative, 18);
-  const target18 = convertTo18Decimals(targetNative, 18);
-  const minRebalance18 = convertTo18Decimals(minRebalanceNative, 18);
+  // WETH/mETH use 18 decimals natively, so config values are already in wei (18 decimals)
+  // Example: threshold of 1 ETH = "1000000000000000000" (18 zeros)
+  // No decimal conversion needed - we use values directly as they are in native token units
+  const threshold = safeParseBigInt(fsConfig.threshold);
+  const target = safeParseBigInt(fsConfig.targetBalance);
+  const minRebalance = safeParseBigInt(bridgeConfig.minRebalanceAmount);
 
   // Get FS sender address (used for same-account flow)
   const fsSenderAddress = fsConfig.senderAddress ?? fsConfig.address;
@@ -344,12 +354,12 @@ const evaluateFillServiceRebalance = async (
     // WETH -> mETH intent should be settled with WETH address on settlement domain
     const decimals = getDecimalsFromConfig(WETH_TICKER_HASH, origin.toString(), config);
     const intentAmount = convertToNativeUnits(safeParseBigInt(intent.amount_out_min), decimals);
-    if (intentAmount < minRebalanceNative) {
+    if (intentAmount < minRebalance) {
       logger.warn('Intent amount is less than min staking amount, skipping', {
         requestId,
         intent,
         intentAmount: intentAmount.toString(),
-        minAmount: minRebalanceNative.toString(),
+        minAmount: minRebalance.toString(),
       });
       continue;
     }
@@ -380,6 +390,23 @@ const evaluateFillServiceRebalance = async (
         status: EarmarkStatus.PENDING,
       });
     } catch (error: unknown) {
+      // Handle unique constraint violation (race condition with another instance)
+      const errorMessage = (error as Error)?.message?.toLowerCase() ?? '';
+      const isUniqueConstraintViolation =
+        errorMessage.includes('unique') ||
+        errorMessage.includes('duplicate') ||
+        errorMessage.includes('constraint') ||
+        (error as { code?: string })?.code === '23505'; // PostgreSQL unique violation code
+
+      if (isUniqueConstraintViolation) {
+        logger.info('Earmark already created by another instance, skipping', {
+          requestId,
+          invoiceId: intent.intent_id,
+          note: 'Race condition resolved - another poller instance created the earmark first',
+        });
+        continue;
+      }
+
       logger.error('Failed to create earmark for intent', {
         requestId,
         intent,
@@ -455,41 +482,65 @@ const evaluateFillServiceRebalance = async (
     }
   }
 
-  if (fsReceiverMethBalance >= threshold18) {
+  if (fsReceiverMethBalance >= threshold) {
     logger.info('FS receiver has enough mETH, no rebalance needed', {
       requestId,
       fsReceiverMethBalance: fsReceiverMethBalance.toString(),
-      thresholdMethBalance: threshold18.toString(),
+      thresholdMethBalance: threshold.toString(),
     });
 
     return actions;
   }
 
-  const shortfall = target18 - fsReceiverMethBalance;
-  if (shortfall < minRebalance18) {
+  const shortfall = target - fsReceiverMethBalance;
+  if (shortfall < minRebalance) {
     logger.debug('FS shortfall below minimum rebalance amount, skipping', {
       requestId,
       shortfall: shortfall.toString(),
-      minRebalance: minRebalance18.toString(),
+      minRebalance: minRebalance.toString(),
     });
     return actions;
   }
 
-  if (shortfall < fsSenderWethBalance) {
-    logger.info('FS sender has enough WETH to cover the shortfall, no rebalance needed', {
+  // Check if sender has enough WETH to cover the shortfall
+  // If fsSenderWethBalance < shortfall, sender doesn't have enough funds to bridge
+  if (fsSenderWethBalance < shortfall) {
+    logger.warn('FS sender has insufficient WETH to cover the full shortfall', {
       requestId,
       fsSenderWethBalance: fsSenderWethBalance.toString(),
       shortfall: shortfall.toString(),
+      note: 'Will bridge available balance if above minimum',
+    });
+    // Don't return early - we can still bridge what we have if above minimum
+  }
+
+  // Calculate amount to bridge: min(shortfall, available balance)
+  const amountFromSender = fsSenderWethBalance < shortfall ? fsSenderWethBalance : shortfall;
+
+  // Skip if available amount is below minimum
+  if (amountFromSender < minRebalance) {
+    logger.info('Available WETH below minimum rebalance threshold, skipping', {
+      requestId,
+      availableAmount: amountFromSender.toString(),
+      minRebalance: minRebalance.toString(),
     });
     return actions;
   }
+
+  logger.info('FS threshold rebalancing triggered', {
+    requestId,
+    fsSenderWethBalance: fsSenderWethBalance.toString(),
+    shortfall: shortfall.toString(),
+    amountToBridge: amountFromSender.toString(),
+    recipient: fsConfig.address,
+  });
 
   actions.push(
     ...(await processThresholdRebalancing({
       context,
       origin: MAINNET_CHAIN_ID,
       recipientAddress: fsConfig.address!,
-      amountToBridge: shortfall,
+      amountToBridge: amountFromSender,
       runState,
       earmarkId: null,
     })),
@@ -506,43 +557,25 @@ const processThresholdRebalancing = async ({
   runState,
   earmarkId,
 }: ThresholdRebalanceParams): Promise<RebalanceAction[]> => {
-  const { config, logger, requestId, prometheus } = context;
+  const { config, logger, requestId } = context;
   const bridgeConfig = config.methRebalance!.bridge;
-  const fsConfig = config.methRebalance!.fillService;
 
-  // Use safeParseBigInt for robust parsing of config strings
-  const mEthDecimals = getDecimalsFromConfig(METH_TICKER_HASH, MANTLE_CHAIN_ID.toString(), config)!;
-  const minAmountNative = safeParseBigInt(bridgeConfig.minRebalanceAmount);
-  const minAmount = convertTo18Decimals(minAmountNative, mEthDecimals);
+  // mETH/WETH use 18 decimals natively - config values are already in wei
+  // No decimal conversion needed
+  const minAmount = safeParseBigInt(bridgeConfig.minRebalanceAmount);
 
   if (amountToBridge < minAmount) {
     logger.debug('amountToBridge below minimum, skipping', {
       requestId,
       amountToBridge: amountToBridge.toString(),
       minAmount: minAmount.toString(),
-      note: 'Both values in 18 decimal format',
+      note: 'Both values in wei (18 decimals)',
     });
     return [];
   }
 
-  const fsSenderAddress = fsConfig.senderAddress ?? fsConfig.address;
-  const senderWethBalance = await getEvmBalance(
-    config,
-    origin.toString(),
-    fsSenderAddress!,
-    getTokenAddressFromConfig(WETH_TICKER_HASH, origin.toString(), config)!,
-    getDecimalsFromConfig(WETH_TICKER_HASH, origin.toString(), config)!,
-    prometheus,
-  );
-
-  if (senderWethBalance < amountToBridge) {
-    logger.info('Sender does not have enough WETH to cover the amountToBridge, skipping..', {
-      requestId,
-      senderWethBalance: senderWethBalance.toString(),
-      amountToBridge: amountToBridge.toString(),
-    });
-    return [];
-  }
+  // Note: Sender balance was already validated by the caller (evaluateFillServiceRebalance)
+  // before calling this function. No need to re-check here.
 
   // Execute bridge (no earmark for threshold-based)
   // Pass runState to track committed funds
@@ -592,7 +625,7 @@ const executeMethBridge = async (
   const originWethDecimals = getDecimalsFromConfig(WETH_TICKER_HASH, origin.toString(), config)!;
 
   let evmSender: string;
-  let senderConfig: MethSenderConfig | undefined;
+  let senderConfig: SenderConfig | undefined;
   let selectedChainService = chainService;
 
   if (isForFillService && fillerSenderAddress && fillServiceChainService) {
@@ -868,6 +901,9 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
   const { logger, requestId, config, rebalance, chainService, database: db } = context;
   logger.info('Executing destination callbacks for meth rebalance', { requestId });
 
+  // Get operation TTL from config (with default fallback)
+  const operationTtlMinutes = config.regularRebalanceOpTTLMinutes ?? DEFAULT_OPERATION_TTL_MINUTES;
+
   // Get all pending operations from database
   const { operations } = await db.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
@@ -877,6 +913,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
     count: operations.length,
     requestId,
     statuses: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    operationTtlMinutes,
   });
 
   for (const operation of operations) {
@@ -890,6 +927,39 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
 
     if (!operation.bridge) {
       logger.warn('Operation missing bridge type', logContext);
+      continue;
+    }
+
+    // Check for operation timeout - operations stuck too long should be marked as cancelled
+    if (operation.createdAt && isOperationTimedOut(operation.createdAt, operationTtlMinutes)) {
+      const operationAgeMinutes = Math.round((Date.now() - operation.createdAt.getTime()) / (60 * 1000));
+      logger.warn('Operation timed out - marking as cancelled', {
+        ...logContext,
+        createdAt: operation.createdAt.toISOString(),
+        operationAgeMinutes,
+        ttlMinutes: operationTtlMinutes,
+        status: operation.status,
+      });
+
+      try {
+        await db.updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.CANCELLED,
+        });
+
+        // Also update earmark if present
+        if (operation.earmarkId) {
+          await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.CANCELLED);
+          logger.info('Earmark cancelled due to operation timeout', {
+            ...logContext,
+            earmarkId: operation.earmarkId,
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to cancel timed-out operation', {
+          ...logContext,
+          error: jsonifyError(error),
+        });
+      }
       continue;
     }
 
