@@ -487,9 +487,6 @@ async function executeSolanaToMainnetBridge({
       lookupTable: tokenPoolLookupTable.toBase58(),
     });
 
-    // Get user's WSOL token account for fee payment (or use SOL directly)
-    const userFeeTokenAccount = await getAssociatedTokenAddress(WSOL_MINT, walletPublicKey);
-
     // Get pool's token account for USDC (where locked tokens go)
     const poolTokenAccount = await getAssociatedTokenAddress(USDC_SOLANA_MINT, tokenPoolPDAs.poolSigner, true);
 
@@ -520,9 +517,9 @@ async function executeSolanaToMainnetBridge({
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // 4: System Program
 
         // === Fee Payment Accounts (indices 5-9) ===
-        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // 5: Fee Token Program
-        { pubkey: WSOL_MINT, isSigner: false, isWritable: false }, // 6: Fee Token Mint (WSOL for SOL fees)
-        { pubkey: userFeeTokenAccount, isSigner: false, isWritable: true }, // 7: User's Fee Token Account (writable)
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // 5: Fee Token Program
+        { pubkey: WSOL_MINT, isSigner: false, isWritable: false }, // 6: Fee Token Mint (WSOL for internal accounting)
+        { pubkey: PublicKey.default, isSigner: false, isWritable: false }, // 7: User's Fee Token Account
         { pubkey: feeReceiver, isSigner: false, isWritable: true }, // 8: Fee Receiver (writable)
         { pubkey: routerPDAs.feeBillingSigner, isSigner: false, isWritable: false }, // 9: Fee Billing Signer PDA
 
