@@ -541,7 +541,7 @@ describe('TAC Config Validation', () => {
     restore();
   });
 
-  // Note: validateTacRebalanceConfig is called in init.ts
+  // Note: validateTokenRebalanceConfig is called in init.ts
   // These tests verify the validation logic through integration with initPoller
   // For unit tests, we would need to export the function or test through initPoller
 
@@ -551,7 +551,7 @@ describe('TAC Config Validation', () => {
   });
 
   it('should warn when MM address differs from ownAddress', () => {
-    // This is logged in validateTacRebalanceConfig
+    // This is logged in validateTokenRebalanceConfig
     // The warning: "MM address differs from ownAddress..."
     // is important for operators to understand fund usability
   });

@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
 import {
   getTickerForAsset,
@@ -64,6 +65,23 @@ interface UsdtInfo {
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
 
+// Default operation timeout: 24 hours (in minutes)
+const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
+
+/**
+ * Check if an operation has exceeded its TTL (time-to-live).
+ * Operations stuck in PENDING or AWAITING_CALLBACK for too long should be marked as failed.
+ *
+ * @param createdAt - Operation creation timestamp
+ * @param ttlMinutes - TTL in minutes (default: 24 hours)
+ * @returns true if operation has timed out
+ */
+function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERATION_TTL_MINUTES): boolean {
+  const maxAgeMs = ttlMinutes * 60 * 1000;
+  const operationAgeMs = Date.now() - createdAt.getTime();
+  return operationAgeMs > maxAgeMs;
+}
+
 /**
  * Type for TAC transaction metadata stored in database
  * Used for type-safe access to transactionLinker in callbacks
@@ -104,8 +122,8 @@ function createTacPlaceholderReceipt(
   transactionLinker: unknown,
 ): TacPlaceholderReceipt {
   return {
-    // Use combination of operationId, timestamp, and random for uniqueness
-    transactionHash: `tac-${operationId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    // Use crypto.randomUUID for guaranteed uniqueness (cryptographically secure)
+    transactionHash: `tac-${operationId}-${randomUUID()}`,
     from: from || 'ton-sender',
     to,
     cumulativeGasUsed: '0',
@@ -491,7 +509,7 @@ const evaluateMarketMakerRebalance = async (
 
   // A) On-demand: Invoice-triggered (higher priority)
   if (mmConfig.onDemandEnabled) {
-    const invoiceActions = await processOnDemandRebalancing(context, mmConfig.address, availableEthUsdt, runState);
+    const invoiceActions = await processOnDemandRebalancing(context, mmConfig.address!, availableEthUsdt, runState);
     if (invoiceActions.length > 0) {
       logger.info('MM rebalancing triggered by invoices, skipping threshold check', {
         requestId,
@@ -522,7 +540,7 @@ const evaluateMarketMakerRebalance = async (
     });
     const thresholdActions = await processThresholdRebalancing({
       context,
-      recipientAddress: mmConfig.address,
+      recipientAddress: mmConfig.address!,
       threshold: threshold18,
       targetBalance: target18,
       availableEthUsdt,
@@ -694,6 +712,23 @@ const processOnDemandRebalancing = async (
         status: EarmarkStatus.PENDING,
       });
     } catch (error: unknown) {
+      // Handle unique constraint violation (race condition with another instance)
+      const errorMessage = (error as Error)?.message?.toLowerCase() ?? '';
+      const isUniqueConstraintViolation =
+        errorMessage.includes('unique') ||
+        errorMessage.includes('duplicate') ||
+        errorMessage.includes('constraint') ||
+        (error as { code?: string })?.code === '23505'; // PostgreSQL unique violation code
+
+      if (isUniqueConstraintViolation) {
+        logger.info('Earmark already created by another instance, skipping', {
+          requestId,
+          invoiceId: invoice.intent_id.toString(),
+          note: 'Race condition resolved - another poller instance created the earmark first',
+        });
+        continue;
+      }
+
       logger.error('Failed to create earmark for TAC intent', {
         requestId,
         invoice,
@@ -720,9 +755,7 @@ const processOnDemandRebalancing = async (
     const tonRecipient = config.ownTonAddress;
 
     // tacRecipient: Final EVM address on TAC that should receive USDT
-    // CRITICAL: This MUST be the same as evmSender to satisfy the "same address" requirement
-    // Both Ethereum and TAC are EVM chains, so the same address can receive on both
-    // TODO confirm
+    // Both Ethereum and TAC are EVM chains, so the same address format works on both
     const tacRecipient = recipientAddress;
 
     // Validate TON address is configured
@@ -1082,8 +1115,7 @@ const executeTacBridge = async (
   const actions: RebalanceAction[] = [];
 
   // Determine if this is for Fill Service or Market Maker based on recipient
-  const isForFillService =
-    recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
+  const isForFillService = recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
   const walletType = isForFillService ? 'fill-service' : 'market-maker';
 
   // Get USDT balances across all chains for Market Maker address (source of funds)
@@ -1461,7 +1493,7 @@ const evaluateFillServiceRebalance = async (
   const fsTacBalance = await getEvmBalance(
     config,
     TAC_CHAIN_ID.toString(),
-    fsConfig.address,
+    fsConfig.address!,
     usdtInfo.tacAddress,
     usdtInfo.tacDecimals,
     prometheus,
@@ -1500,7 +1532,7 @@ const evaluateFillServiceRebalance = async (
   }
 
   // Step 2: Check for pending FS rebalancing operations
-  const pendingFsOps = await db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), fsConfig.address, [
+  const pendingFsOps = await db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), fsConfig.address!, [
     RebalanceOperationStatus.PENDING,
     RebalanceOperationStatus.AWAITING_CALLBACK,
   ]);
@@ -1558,7 +1590,7 @@ const evaluateFillServiceRebalance = async (
 
       return processThresholdRebalancing({
         context,
-        recipientAddress: fsConfig.address,
+        recipientAddress: fsConfig.address!,
         threshold: threshold18,
         targetBalance: target18,
         availableEthUsdt: fsSenderEthBalance, // Only FS funds for same-account flow
@@ -1625,7 +1657,7 @@ const evaluateFillServiceRebalance = async (
 
   return processThresholdRebalancing({
     context,
-    recipientAddress: fsConfig.address,
+    recipientAddress: fsConfig.address!,
     threshold: threshold18,
     targetBalance: target18,
     availableEthUsdt: mmRemainingBalance, // MM funds for cross-wallet flow
@@ -1662,6 +1694,9 @@ const calculateMinExpectedAmount = (amount: bigint, slippageBps: number): bigint
 const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, database: db } = context;
   logger.info('Executing TAC USDT rebalance callbacks', { requestId });
+
+  // Get operation TTL from config (with default fallback)
+  const operationTtlMinutes = config.regularRebalanceOpTTLMinutes ?? DEFAULT_OPERATION_TTL_MINUTES;
 
   // Get all pending TAC operations
   const { operations } = await db.getRebalanceOperations(undefined, undefined, {
@@ -1702,6 +1737,39 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
     if (!operation.bridge) {
       logger.warn('Operation missing bridge type', logContext);
+      continue;
+    }
+
+    // Check for operation timeout - operations stuck too long should be marked as cancelled
+    if (operation.createdAt && isOperationTimedOut(operation.createdAt, operationTtlMinutes)) {
+      const operationAgeMinutes = Math.round((Date.now() - operation.createdAt.getTime()) / (60 * 1000));
+      logger.warn('TAC operation timed out - marking as cancelled', {
+        ...logContext,
+        createdAt: operation.createdAt.toISOString(),
+        operationAgeMinutes,
+        ttlMinutes: operationTtlMinutes,
+        status: operation.status,
+      });
+
+      try {
+        await db.updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.CANCELLED,
+        });
+
+        // Also update earmark if present
+        if (operation.earmarkId) {
+          await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.CANCELLED);
+          logger.info('Earmark cancelled due to TAC operation timeout', {
+            ...logContext,
+            earmarkId: operation.earmarkId,
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to cancel timed-out TAC operation', {
+          ...logContext,
+          error: jsonifyError(error),
+        });
+      }
       continue;
     }
 

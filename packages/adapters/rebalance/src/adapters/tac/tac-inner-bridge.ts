@@ -18,9 +18,7 @@ import {
 import { JsonRpcProvider, FallbackProvider } from 'ethers';
 
 // Default TAC sequencer endpoints for reliability
-const DEFAULT_TAC_SEQUENCER_ENDPOINTS = [
-  'https://data.tac.build',
-];
+const DEFAULT_TAC_SEQUENCER_ENDPOINTS = ['https://data.tac.build'];
 
 // Default retry configuration
 const DEFAULT_RETRY_CONFIG: TacRetryConfig = {
@@ -155,7 +153,8 @@ export class TacInnerBridgeAdapter implements BridgeAdapter {
     // CRITICAL: Create custom TAC EVM provider to avoid rate limits on public endpoints
     // The TAC SDK internally uses ethers to make RPC calls to the TAC chain
     // Without this, it uses default public endpoints which are heavily rate-limited
-    const tacRpcUrls = this.sdkConfig?.tacRpcUrls ?? this.chains[TAC_CHAIN_ID.toString()]?.providers ?? TAC_RPC_PROVIDERS;
+    const tacRpcUrls =
+      this.sdkConfig?.tacRpcUrls ?? this.chains[TAC_CHAIN_ID.toString()]?.providers ?? TAC_RPC_PROVIDERS;
 
     this.logger.debug('Creating TAC EVM provider', { tacRpcUrls });
 

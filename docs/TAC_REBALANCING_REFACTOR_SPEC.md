@@ -72,7 +72,7 @@ Refactor TAC rebalancing to:
 ```typescript
 // packages/core/src/types/config.ts
 
-export interface TacRebalanceConfig {
+export interface TokenRebalanceConfig {
   enabled: boolean;
   
   // Market Maker receiver configuration
@@ -103,7 +103,7 @@ export interface TacRebalanceConfig {
 // Add to MarkConfiguration
 export interface MarkConfiguration {
   // ... existing fields
-  tacRebalance?: TacRebalanceConfig;
+  tacRebalance?: TokenRebalanceConfig;
 }
 ```
 
@@ -568,7 +568,7 @@ No schema changes required. Existing fields handle the requirements:
 
 | File | Change |
 |------|--------|
-| `packages/core/src/types/config.ts` | Add `TacRebalanceConfig` |
+| `packages/core/src/types/config.ts` | Add `TokenRebalanceConfig` |
 | `packages/poller/src/rebalance/tacUsdt.ts` | Refactor into MM/FS paths |
 | `packages/poller/config.json` | Add `tacRebalance` section |
 
