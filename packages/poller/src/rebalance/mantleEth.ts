@@ -514,7 +514,6 @@ const processThresholdRebalancing = async ({
   const mEthDecimals = getDecimalsFromConfig(METH_TICKER_HASH, MANTLE_CHAIN_ID.toString(), config)!;
   const minAmountNative = safeParseBigInt(bridgeConfig.minRebalanceAmount);
   const minAmount = convertTo18Decimals(minAmountNative, mEthDecimals);
-  const maxAmountNative = safeParseBigInt(bridgeConfig.maxRebalanceAmount);
 
   if (amountToBridge < minAmount) {
     logger.debug('amountToBridge below minimum, skipping', {
@@ -537,7 +536,7 @@ const processThresholdRebalancing = async ({
   );
 
   if (senderWethBalance < amountToBridge) {
-    logger.info('Sender has enough WETH to cover the amountToBridge, skipping..', {
+    logger.info('Sender does not have enough WETH to cover the amountToBridge, skipping..', {
       requestId,
       senderWethBalance: senderWethBalance.toString(),
       amountToBridge: amountToBridge.toString(),
@@ -604,7 +603,7 @@ const executeMethBridge = async (
     try {
       fillerBalance = await getEvmBalance(
         config,
-        MAINNET_CHAIN_ID.toString(),
+        origin.toString(),
         fillerSenderAddress,
         originWethAddress,
         originWethDecimals,
@@ -623,7 +622,7 @@ const executeMethBridge = async (
       requestId,
       walletType: 'fill-service',
       address: fillerSenderAddress,
-      chainId: MAINNET_CHAIN_ID.toString(),
+      chainId: origin.toString(),
       balance: fillerBalance.toString(),
       requiredAmount: amount.toString(),
       note: 'Both values are in 18 decimal format (normalized)',
@@ -727,7 +726,7 @@ const executeMethBridge = async (
 
   const adapter = rebalance.getAdapter(bridgeType);
   if (!adapter) {
-    logger.error('Stargate adapter not found', { requestId });
+    logger.error('Across adapter not found', { requestId });
     return [];
   }
 
@@ -748,7 +747,7 @@ const executeMethBridge = async (
       });
 
       // Check slippage - use safeParseBigInt for adapter response
-      // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
+      // Note: Both receivedAmount and minimumAcceptableAmount are in native units (18 decimals for WETH)
       receivedAmount = safeParseBigInt(receivedAmountStr);
       const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
       const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageDbps) / DBPS_MULTIPLIER;
