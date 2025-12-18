@@ -611,7 +611,7 @@ const executeMethBridge = async (
   // Determine if this is for Fill Service or Market Maker based on recipient
   const isForFillService = recipientAddress.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
 
-  // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
+  // --- Leg 1: Bridge WETH from origin chain to Mainnet via Across ---
   let rebalanceSuccessful = false;
   const bridgeType = SupportedBridge.Across;
 
