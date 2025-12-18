@@ -24,7 +24,7 @@ import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
-import { createEarmark, createRebalanceOperation, Earmark, TransactionEntry, TransactionReceipt } from '@mark/database';
+import { createEarmark, createRebalanceOperation, Earmark, removeEarmark, TransactionEntry, TransactionReceipt } from '@mark/database';
 import { IntentStatus } from '@mark/everclear';
 
 const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
@@ -421,16 +421,25 @@ const evaluateFillServiceRebalance = async (
       invoiceId: intent.intent_id,
     });
 
-    actions.push(
-      ...(await processThresholdRebalancing({
-        context,
-        origin: origin.toString(),
-        recipientAddress: fsConfig.address!,
-        amountToBridge,
-        runState,
+    const fsActions = await processThresholdRebalancing({
+      context,
+      origin: origin.toString(),
+      recipientAddress: fsConfig.address!,
+      amountToBridge,
+      runState,
+      earmarkId: earmark.id,
+    });
+
+    if(fsActions.length === 0) {
+      await removeEarmark(earmark.id);
+      logger.info('Removed earmark for intent rebalance because no operations were executed', {
+        requestId,
         earmarkId: earmark.id,
-      })),
-    );
+        invoiceId: intent.intent_id,
+      });
+    }
+
+    actions.push(...fsActions);
   }
 
   // PRIORITY 2: Threshold Rebalancing (FS → FS)
