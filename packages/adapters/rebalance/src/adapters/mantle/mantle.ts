@@ -9,7 +9,7 @@ import {
   fallback,
   type PublicClient,
 } from 'viem';
-import { ChainConfiguration, SupportedBridge, RebalanceRoute } from '@mark/core';
+import { ChainConfiguration, SupportedBridge, RebalanceRoute, MarkConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { L2CrossDomainMessenger_ABI, MANTLE_BRIDGE_ABI, MANTLE_STAKING_ABI, WETH_ABI } from './abi';
@@ -20,6 +20,20 @@ import {
   METH_ON_MANTLE_ADDRESS,
   MANTLE_BRIDGE_CONTRACT_ADDRESS,
 } from './types';
+
+// Default L2 gas limit for Mantle bridge transactions
+const DEFAULT_L2_GAS = 200000n;
+
+/**
+ * Mantle configuration resolved from MarkConfiguration.mantle with defaults
+ */
+interface ResolvedMantleConfig {
+  l2Gas: bigint;
+  stakingContractAddress: `0x${string}`;
+  methL1Address: `0x${string}`;
+  methL2Address: `0x${string}`;
+  bridgeContractAddress: `0x${string}`;
+}
 
 const MANTLE_MESSENGER_ADDRESSES: Record<number, { l1: `0x${string}`; l2: `0x${string}` }> = {
   5000: {
@@ -40,12 +54,30 @@ type MantleMessage = {
 
 export class MantleBridgeAdapter implements BridgeAdapter {
   protected readonly publicClients = new Map<number, PublicClient>();
+  protected readonly mantleConfig: ResolvedMantleConfig;
 
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
+    config?: Pick<MarkConfiguration, 'mantle'>,
   ) {
-    this.logger.debug('Initializing MantleBridgeAdapter');
+    // Resolve Mantle configuration with defaults
+    // This allows operators to override contract addresses via config if needed
+    this.mantleConfig = {
+      l2Gas: config?.mantle?.l2Gas ? BigInt(config.mantle.l2Gas) : DEFAULT_L2_GAS,
+      stakingContractAddress: (config?.mantle?.stakingContractAddress ?? METH_STAKING_CONTRACT_ADDRESS) as `0x${string}`,
+      methL1Address: (config?.mantle?.methL1Address ?? METH_ON_ETH_ADDRESS) as `0x${string}`,
+      methL2Address: (config?.mantle?.methL2Address ?? METH_ON_MANTLE_ADDRESS) as `0x${string}`,
+      bridgeContractAddress: (config?.mantle?.bridgeContractAddress ?? MANTLE_BRIDGE_CONTRACT_ADDRESS) as `0x${string}`,
+    };
+
+    this.logger.debug('Initializing MantleBridgeAdapter', {
+      l2Gas: this.mantleConfig.l2Gas.toString(),
+      stakingContract: this.mantleConfig.stakingContractAddress,
+      methL1: this.mantleConfig.methL1Address,
+      methL2: this.mantleConfig.methL2Address,
+      bridgeContract: this.mantleConfig.bridgeContractAddress,
+    });
   }
 
   type(): SupportedBridge {
@@ -57,10 +89,11 @@ export class MantleBridgeAdapter implements BridgeAdapter {
    */
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     const client = this.getPublicClient(route.origin);
+    const { stakingContractAddress } = this.mantleConfig;
 
     try {
       const minimumStakeBound = (await client.readContract({
-        address: METH_STAKING_CONTRACT_ADDRESS,
+        address: stakingContractAddress,
         abi: MANTLE_STAKING_ABI,
         functionName: 'minimumStakeBound',
       })) as bigint;
@@ -70,7 +103,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       }
 
       const mEthAmount = (await client.readContract({
-        address: METH_STAKING_CONTRACT_ADDRESS,
+        address: stakingContractAddress,
         abi: MANTLE_STAKING_ABI,
         functionName: 'ethToMETH',
         args: [BigInt(amount)],
@@ -80,6 +113,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
         ethAmount: amount,
         methAmount: mEthAmount.toString(),
         route,
+        stakingContract: stakingContractAddress,
       });
 
       return mEthAmount.toString();
@@ -95,8 +129,9 @@ export class MantleBridgeAdapter implements BridgeAdapter {
   async getMinimumAmount(route: RebalanceRoute): Promise<string | null> {
     try {
       const client = this.getPublicClient(route.origin);
+      const { stakingContractAddress } = this.mantleConfig;
       const minimumStakeBound = (await client.readContract({
-        address: METH_STAKING_CONTRACT_ADDRESS,
+        address: stakingContractAddress,
         abi: MANTLE_STAKING_ABI,
         functionName: 'minimumStakeBound',
       })) as bigint;
@@ -130,6 +165,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       }
 
       const client = this.getPublicClient(route.origin);
+      const { stakingContractAddress, methL1Address, methL2Address, bridgeContractAddress, l2Gas } = this.mantleConfig;
 
       // Unwrap WETH to ETH before staking
       const unwrapTx = {
@@ -153,7 +189,7 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       const stakeTx: MemoizedTransactionRequest = {
         memo: RebalanceTransactionMemo.Stake,
         transaction: {
-          to: METH_STAKING_CONTRACT_ADDRESS,
+          to: stakingContractAddress,
           data: encodeFunctionData({
             abi: MANTLE_STAKING_ABI,
             functionName: 'stake',
@@ -167,21 +203,21 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       let approvalTx: MemoizedTransactionRequest | undefined;
 
       const allowance = await client.readContract({
-        address: METH_ON_ETH_ADDRESS,
+        address: methL1Address,
         abi: erc20Abi,
         functionName: 'allowance',
-        args: [sender as `0x${string}`, MANTLE_BRIDGE_CONTRACT_ADDRESS],
+        args: [sender as `0x${string}`, bridgeContractAddress],
       });
 
       if (allowance < BigInt(mEthAmount)) {
         approvalTx = {
           memo: RebalanceTransactionMemo.Approval,
           transaction: {
-            to: METH_ON_ETH_ADDRESS,
+            to: methL1Address,
             data: encodeFunctionData({
               abi: erc20Abi,
               functionName: 'approve',
-              args: [MANTLE_BRIDGE_CONTRACT_ADDRESS, BigInt(mEthAmount)],
+              args: [bridgeContractAddress, BigInt(mEthAmount)],
             }),
             value: BigInt(0),
             funcSig: 'approve(address,uint256)',
@@ -192,16 +228,16 @@ export class MantleBridgeAdapter implements BridgeAdapter {
       const bridgeTx: MemoizedTransactionRequest = {
         memo: RebalanceTransactionMemo.Rebalance,
         transaction: {
-          to: MANTLE_BRIDGE_CONTRACT_ADDRESS,
+          to: bridgeContractAddress,
           data: encodeFunctionData({
             abi: MANTLE_BRIDGE_ABI,
             functionName: 'depositERC20To',
             args: [
-              METH_ON_ETH_ADDRESS, // _l1Token
-              METH_ON_MANTLE_ADDRESS, // _l2Token
+              methL1Address, // _l1Token
+              methL2Address, // _l2Token
               recipient as `0x${string}`, // _to
               BigInt(mEthAmount), // _amount
-              BigInt(200000), // _l2Gas
+              l2Gas, // _l2Gas (configurable, default 200000)
               '0x', // _data
             ],
           }),

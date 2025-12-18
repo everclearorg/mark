@@ -188,6 +188,14 @@ export interface MarkConfiguration extends RebalanceConfig {
   };
   tacRebalance?: TokenRebalanceConfig;
   methRebalance?: TokenRebalanceConfig;
+  // Mantle bridge configuration
+  mantle?: {
+    l2Gas?: number; // L2 gas limit for bridge transactions (default: 200000)
+    stakingContractAddress?: string; // Override mETH staking contract
+    methL1Address?: string; // Override mETH token on L1
+    methL2Address?: string; // Override mETH token on L2 (Mantle)
+    bridgeContractAddress?: string; // Override Mantle bridge contract
+  };
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;
