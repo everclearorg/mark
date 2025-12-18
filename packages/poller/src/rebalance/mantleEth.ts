@@ -268,7 +268,8 @@ const evaluateFillServiceRebalance = async (
 
   const actions: RebalanceAction[] = [];
 
-  // Convert config values from native decimals (6) to normalized (18)
+  // Parse config values (assumed to be in 18 decimals for WETH/mETH)
+  // convertTo18Decimals with 18 decimals is a no-op, but kept for consistency
   const thresholdNative = safeParseBigInt(fsConfig.threshold);
   const targetNative = safeParseBigInt(fsConfig.targetBalance);
   const minRebalanceNative = safeParseBigInt(bridgeConfig.minRebalanceAmount);
@@ -506,9 +507,8 @@ const processThresholdRebalancing = async ({
   runState,
   earmarkId,
 }: ThresholdRebalanceParams): Promise<RebalanceAction[]> => {
-  const { config, logger, requestId, prometheus } = context;
+  const { config, logger, requestId } = context;
   const bridgeConfig = config.methRebalance!.bridge;
-  const fsConfig = config.methRebalance!.fillService;
 
   // Use safeParseBigInt for robust parsing of config strings
   const mEthDecimals = getDecimalsFromConfig(METH_TICKER_HASH, MANTLE_CHAIN_ID.toString(), config)!;
@@ -525,24 +525,8 @@ const processThresholdRebalancing = async ({
     return [];
   }
 
-  const fsSenderAddress = fsConfig.senderAddress ?? fsConfig.address;
-  const senderWethBalance = await getEvmBalance(
-    config,
-    origin.toString(),
-    fsSenderAddress!,
-    getTokenAddressFromConfig(WETH_TICKER_HASH, origin.toString(), config)!,
-    getDecimalsFromConfig(WETH_TICKER_HASH, origin.toString(), config)!,
-    prometheus,
-  );
-
-  if (senderWethBalance < amountToBridge) {
-    logger.info('Sender does not have enough WETH to cover the amountToBridge, skipping..', {
-      requestId,
-      senderWethBalance: senderWethBalance.toString(),
-      amountToBridge: amountToBridge.toString(),
-    });
-    return [];
-  }
+  // Note: Balance check removed - executeMethBridge handles sender selection and fallback logic
+  // It will check FS sender balance and fallback to MM if insufficient
 
   // Execute bridge (no earmark for threshold-based)
   // Pass runState to track committed funds
@@ -578,7 +562,7 @@ const executeMethBridge = async (
   // Determine if this is for Fill Service or Market Maker based on recipient
   const isForFillService = recipientAddress.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
 
-  // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
+  // --- Leg 1: Bridge WETH from origin chain to Mainnet via Across ---
   let rebalanceSuccessful = false;
   const bridgeType = SupportedBridge.Across;
 
