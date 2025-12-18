@@ -113,11 +113,11 @@ export interface RebalanceConfig {
   onDemandRoutes?: OnDemandRouteConfig[];
 }
 
-export interface TacRebalanceConfig {
+export interface TokenRebalanceConfig {
   enabled: boolean;
   // Market Maker receiver configuration
   marketMaker: {
-    address: string; // EVM address on TAC for MM
+    address?: string; // EVM address on TAC for MM
     onDemandEnabled: boolean; // Enable invoice-triggered rebalancing
     thresholdEnabled: boolean; // Enable balance-threshold rebalancing
     threshold?: string; // Min USDT balance (6 decimals)
@@ -125,11 +125,11 @@ export interface TacRebalanceConfig {
   };
   // Fill Service receiver configuration
   fillService: {
-    address: string; // EVM address on TAC for FS (destination) - also used as sender on ETH if senderAddress not set
+    address?: string; // EVM address on TAC for FS (destination) - also used as sender on ETH if senderAddress not set
     senderAddress?: string; // Optional: ETH sender address if different from 'address' (rare - same key = same address)
     thresholdEnabled: boolean; // Enable balance-threshold rebalancing
-    threshold: string; // Min USDT balance (6 decimals)
-    targetBalance: string; // Target after threshold-triggered rebalance
+    threshold?: string; // Min USDT balance (6 decimals)
+    targetBalance?: string; // Target after threshold-triggered rebalance
     allowCrossWalletRebalancing?: boolean; // Allow MM to fund FS rebalancing when FS has insufficient ETH USDT
   };
   // Shared bridge configuration
@@ -186,7 +186,16 @@ export interface MarkConfiguration extends RebalanceConfig {
     apiKey?: string; // TONAPI.io API key for production use
     assets?: TonAssetConfiguration[]; // TON assets with jetton addresses
   };
-  tacRebalance?: TacRebalanceConfig;
+  tacRebalance?: TokenRebalanceConfig;
+  methRebalance?: TokenRebalanceConfig;
+  // Mantle bridge configuration
+  mantle?: {
+    l2Gas?: number; // L2 gas limit for bridge transactions (default: 200000)
+    stakingContractAddress?: string; // Override mETH staking contract
+    methL1Address?: string; // Override mETH token on L1
+    methL2Address?: string; // Override mETH token on L2 (Mantle)
+    bridgeContractAddress?: string; // Override Mantle bridge contract
+  };
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;

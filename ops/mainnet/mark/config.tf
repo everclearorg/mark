@@ -132,6 +132,23 @@ locals {
     TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS             = tostring(local.mark_config.tacRebalance.bridge.slippageDbps)
     TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT      = local.mark_config.tacRebalance.bridge.minRebalanceAmount
     TAC_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT      = local.mark_config.tacRebalance.bridge.maxRebalanceAmount
+
+    # METH Rebalance configuration
+    METH_REBALANCE_ENABLED                          = tostring(local.mark_config.methRebalance.enabled)
+    METH_REBALANCE_MARKET_MAKER_ADDRESS             = local.mark_config.methRebalance.marketMaker.address
+    METH_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED   = tostring(local.mark_config.methRebalance.marketMaker.onDemandEnabled)
+    METH_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED   = tostring(local.mark_config.methRebalance.marketMaker.thresholdEnabled)
+    METH_REBALANCE_MARKET_MAKER_THRESHOLD           = local.mark_config.methRebalance.marketMaker.threshold
+    METH_REBALANCE_MARKET_MAKER_TARGET_BALANCE      = local.mark_config.methRebalance.marketMaker.targetBalance
+    METH_REBALANCE_FILL_SERVICE_ADDRESS             = local.mark_config.methRebalance.fillService.address
+    METH_REBALANCE_FILL_SERVICE_SENDER_ADDRESS      = local.mark_config.methRebalance.fillService.senderAddress
+    METH_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED   = tostring(local.mark_config.methRebalance.fillService.thresholdEnabled)
+    METH_REBALANCE_FILL_SERVICE_THRESHOLD           = local.mark_config.methRebalance.fillService.threshold
+    METH_REBALANCE_FILL_SERVICE_TARGET_BALANCE      = local.mark_config.methRebalance.fillService.targetBalance
+    METH_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET  = tostring(local.mark_config.methRebalance.fillService.allowCrossWalletRebalancing)
+    METH_REBALANCE_BRIDGE_SLIPPAGE_DBPS             = tostring(local.mark_config.methRebalance.bridge.slippageDbps)
+    METH_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT      = local.mark_config.methRebalance.bridge.minRebalanceAmount
+    METH_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT      = local.mark_config.methRebalance.bridge.maxRebalanceAmount
   }
 
   web3signer_env_vars = [
