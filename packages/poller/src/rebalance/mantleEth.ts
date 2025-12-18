@@ -72,11 +72,6 @@ interface ThresholdRebalanceParams {
   earmarkId: string | null; // null for threshold-based
 }
 
-interface MethSenderConfig {
-  address: string; // Sender's Ethereum address
-  signerUrl?: string; // Web3signer URL for this sender (uses default if not specified)
-  label: 'market-maker' | 'fill-service'; // For logging
-}
 
 /**
  * Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
@@ -576,7 +571,7 @@ const executeMethBridge = async (
   const originWethDecimals = getDecimalsFromConfig(WETH_TICKER_HASH, origin.toString(), config)!;
 
   let evmSender: string;
-  let senderConfig: MethSenderConfig | undefined;
+  let senderConfig: SenderConfig | undefined;
   let selectedChainService = chainService;
 
   if (isForFillService && fillerSenderAddress && fillServiceChainService) {
