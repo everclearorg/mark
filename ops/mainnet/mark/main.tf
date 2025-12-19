@@ -34,7 +34,7 @@ data "aws_ssm_parameter" "mark_config_mainnet" {
 }
 
 locals {
-  account_id = data.aws_caller_identity.current.account_id
+  account_id            = data.aws_caller_identity.current.account_id
   repository_url_prefix = "${local.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com/"
 
   mark_config_json = jsondecode(data.aws_ssm_parameter.mark_config_mainnet.value)
@@ -105,15 +105,22 @@ locals {
         maxRebalanceAmount = try(local.mark_config_json.methRebalance.bridge.maxRebalanceAmount, "")
       }
     }
+    # Solana configuration for CCIP bridge operations
+    solana = {
+      privateKey = try(local.mark_config_json.solana.privateKey, "")
+      rpcUrl     = try(local.mark_config_json.solana.rpcUrl, "https://api.mainnet-beta.solana.com")
+      ptUsdeMint = try(local.mark_config_json.solana.ptUsdeMint, "PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA")
+    }
+    solanaSignerAddress = try(local.mark_config_json.solanaSignerAddress, "")
   }
 }
 
 module "network" {
-  source               = "../../modules/networking"
-  stage                = var.stage
-  environment          = var.environment
-  domain               = var.domain
-  cidr_block           = var.cidr_block
+  source                 = "../../modules/networking"
+  stage                  = var.stage
+  environment            = var.environment
+  domain                 = var.domain
+  cidr_block             = var.cidr_block
   vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
 }
 
@@ -141,11 +148,11 @@ module "sgs" {
 }
 
 module "efs" {
-  source = "../../modules/efs"
-  environment = var.environment
-  stage = var.stage
-  domain = var.domain
-  subnet_ids = module.network.private_subnets
+  source                = "../../modules/efs"
+  environment           = var.environment
+  stage                 = var.stage
+  domain                = var.domain
+  subnet_ids            = module.network.private_subnets
   efs_security_group_id = module.sgs.efs_sg_id
 }
 
@@ -162,6 +169,39 @@ module "cache" {
 }
 
 module "mark_web3signer" {
+  source                   = "../../modules/service"
+  stage                    = var.stage
+  environment              = var.environment
+  domain                   = var.domain
+  region                   = var.region
+  dd_api_key               = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn   = module.iam.vpc_flow_logs_role_arn
+  execution_role_arn       = data.aws_iam_role.ecr_admin_role.arn
+  cluster_id               = module.ecs.ecs_cluster_id
+  vpc_id                   = module.network.vpc_id
+  lb_subnets               = module.network.private_subnets
+  task_subnets             = module.network.private_subnets
+  efs_id                   = module.efs.mark_efs_id
+  docker_image             = "ghcr.io/connext/web3signer:latest"
+  container_family         = "${var.bot_name}-web3signer"
+  container_port           = 9000
+  cpu                      = 256
+  memory                   = 512
+  instance_count           = 1
+  service_security_groups  = [module.sgs.web3signer_sg_id]
+  container_env_vars       = local.web3signer_env_vars
+  zone_id                  = var.zone_id
+  private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
+  depends_on               = [aws_service_discovery_private_dns_namespace.mark_internal]
+}
+
+# Fill Service Web3Signer - separate signer for FS sender on TAC rebalancing
+# Uses a different private key (web3_fastfill_signer_private_key)
+# Internal port is 9000 (same as MM signer), but they're separate services with different DNS names:
+# - MM:  mark-web3signer-mainnet-production.mark.internal:9000
+# - FS:  mark-fillservice-web3signer-mainnet-production.mark.internal:9000
+module "mark_fillservice_web3signer" {
+  count               = local.mark_config.web3_fastfill_signer_private_key != "" ? 1 : 0
   source              = "../../modules/service"
   stage               = var.stage
   environment         = var.environment
@@ -176,13 +216,13 @@ module "mark_web3signer" {
   task_subnets        = module.network.private_subnets
   efs_id              = module.efs.mark_efs_id
   docker_image        = "ghcr.io/connext/web3signer:latest"
-  container_family    = "${var.bot_name}-web3signer"
-  container_port      = 9000
+  container_family    = "${var.bot_name}-fillservice-web3signer"
+  container_port      = 9000 # Internal port is same, service discovery handles routing
   cpu                 = 256
   memory              = 512
   instance_count      = 1
   service_security_groups = [module.sgs.web3signer_sg_id]
-  container_env_vars  = local.web3signer_env_vars
+  container_env_vars  = local.fillservice_web3signer_env_vars
   zone_id             = var.zone_id
   private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
   depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
@@ -222,28 +262,28 @@ module "mark_fillservice_web3signer" {
 }
 
 module "mark_prometheus" {
-  source                  = "../../modules/service"
-  stage                   = var.stage
-  environment             = var.environment
-  domain                  = var.domain
-  region                  = var.region
-  dd_api_key              = local.mark_config.dd_api_key
+  source                 = "../../modules/service"
+  stage                  = var.stage
+  environment            = var.environment
+  domain                 = var.domain
+  region                 = var.region
+  dd_api_key             = local.mark_config.dd_api_key
   vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
-  execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
-  cluster_id              = module.ecs.ecs_cluster_id
-  vpc_id                  = module.network.vpc_id
-  lb_subnets              = module.network.public_subnets
-  task_subnets            = module.network.private_subnets
-  efs_id                  = module.efs.mark_efs_id
-  docker_image            = "679752396206.dkr.ecr.ap-northeast-1.amazonaws.com/prometheus:v2.53.5" # 429 errors
-  container_family        = "${var.bot_name}-prometheus"
-  volume_name             = "${var.bot_name}-prometheus-data"
-  volume_container_path   = "/prometheus"
-  volume_efs_path         = "/"
-  container_port          = 9090
-  cpu                     = 512
-  memory                  = 1024
-  instance_count          = 1
+  execution_role_arn     = data.aws_iam_role.ecr_admin_role.arn
+  cluster_id             = module.ecs.ecs_cluster_id
+  vpc_id                 = module.network.vpc_id
+  lb_subnets             = module.network.public_subnets
+  task_subnets           = module.network.private_subnets
+  efs_id                 = module.efs.mark_efs_id
+  docker_image           = "679752396206.dkr.ecr.ap-northeast-1.amazonaws.com/prometheus:v2.53.5" # 429 errors
+  container_family       = "${var.bot_name}-prometheus"
+  volume_name            = "${var.bot_name}-prometheus-data"
+  volume_container_path  = "/prometheus"
+  volume_efs_path        = "/"
+  container_port         = 9090
+  cpu                    = 512
+  memory                 = 1024
+  instance_count         = 1
   deployment_configuration = {
     maximum_percent         = 100
     minimum_healthy_percent = 0
@@ -252,7 +292,7 @@ module "mark_prometheus" {
   container_user          = "65534:65534"
   init_container_enabled  = true
   init_container_commands = ["sh", "-c", "rm -rf /prometheus/lock /prometheus/wal.tmp && mkdir -p /prometheus && chown -R 65534:65534 /prometheus && chmod -R 755 /prometheus"]
-  container_env_vars      = concat(
+  container_env_vars = concat(
     local.prometheus_env_vars,
     [
       {
@@ -266,12 +306,12 @@ module "mark_prometheus" {
     "-c",
     "set -e; echo 'Setting up Prometheus...'; mkdir -p /etc/prometheus && echo 'Created config directory'; echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && echo 'Created config file'; chmod 644 /etc/prometheus/prometheus.yml && echo 'Set config permissions'; echo 'Starting Prometheus...'; exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
   ]
-  cert_arn                = var.cert_arn
-  ingress_cdir_blocks     = ["0.0.0.0/0"]
+  cert_arn                 = var.cert_arn
+  ingress_cdir_blocks      = ["0.0.0.0/0"]
   ingress_ipv6_cdir_blocks = []
-  create_alb              = true
-  zone_id                 = var.zone_id
-  health_check_settings   = {
+  create_alb               = true
+  zone_id                  = var.zone_id
+  health_check_settings = {
     path                = "/-/healthy"
     matcher             = "200"
     interval            = 30
@@ -280,7 +320,7 @@ module "mark_prometheus" {
     unhealthy_threshold = 3
   }
   private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
-  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
+  depends_on               = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_pushgateway" {
@@ -290,7 +330,7 @@ module "mark_pushgateway" {
   domain                  = var.domain
   region                  = var.region
   dd_api_key              = local.mark_config.dd_api_key
-  vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
+  vpc_flow_logs_role_arn  = module.iam.vpc_flow_logs_role_arn
   execution_role_arn      = data.aws_iam_role.ecr_admin_role.arn
   cluster_id              = module.ecs.ecs_cluster_id
   vpc_id                  = module.network.vpc_id
@@ -310,27 +350,59 @@ module "mark_pushgateway" {
     "-c",
     "exec /bin/pushgateway --persistence.file=/pushgateway/metrics.txt --persistence.interval=1m0s"
   ]
-  container_port          = 9091
-  cpu                     = 256
-  memory                  = 512
-  instance_count          = 1
-  service_security_groups = [module.sgs.prometheus_sg_id]
-  container_env_vars      = local.pushgateway_env_vars
-  zone_id                 = var.zone_id
+  container_port           = 9091
+  cpu                      = 256
+  memory                   = 512
+  instance_count           = 1
+  service_security_groups  = [module.sgs.prometheus_sg_id]
+  container_env_vars       = local.pushgateway_env_vars
+  zone_id                  = var.zone_id
   private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
-  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
+  depends_on               = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_poller" {
+  source             = "../../modules/lambda"
+  stage              = var.stage
+  environment        = var.environment
+  container_family   = "${var.bot_name}-poller"
+  execution_role_arn = module.iam.lambda_role_arn
+  image_uri          = var.image_uri
+  subnet_ids         = module.network.private_subnets
+  security_group_id  = module.sgs.lambda_sg_id
+  container_env_vars = local.poller_env_vars
+}
+
+# Solana USDC → ptUSDe rebalancing poller (multi-leg CCIP + Pendle)
+# Schedule: 30 min interval since CCIP bridging takes ~20 min per leg
+module "mark_solana_usdc_poller" {
   source              = "../../modules/lambda"
   stage               = var.stage
   environment         = var.environment
-  container_family    = "${var.bot_name}-poller"
+  container_family    = "${var.bot_name}-solana-usdc-poller"
   execution_role_arn  = module.iam.lambda_role_arn
   image_uri           = var.image_uri
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
-  container_env_vars  = local.poller_env_vars
+  container_env_vars  = local.solana_usdc_poller_env_vars
+  schedule_expression = "rate(30 minutes)"
+  # Uses module defaults: timeout=900s, memory_size=1024MB
+}
+
+# METH-only Lambda - runs Mantle ETH rebalancing every 1 minute
+module "mark_poller_meth_only" {
+  source              = "../../modules/lambda"
+  stage               = var.stage
+  environment         = var.environment
+  container_family    = "${var.bot_name}-poller-meth"
+  execution_role_arn  = module.iam.lambda_role_arn
+  image_uri           = var.image_uri
+  subnet_ids          = module.network.private_subnets
+  security_group_id   = module.sgs.lambda_sg_id
+  schedule_expression = "rate(1 minute)"
+  container_env_vars  = merge(local.poller_env_vars, {
+    RUN_MODE = "methOnly"
+  })
 }
 
 # METH-only Lambda - runs Mantle ETH rebalancing every 1 minute
@@ -350,10 +422,10 @@ module "mark_poller_meth_only" {
 }
 
 module "iam" {
-  source = "../../modules/iam"
+  source      = "../../modules/iam"
   environment = var.environment
-  stage = var.stage
-  domain = var.domain
+  stage       = var.stage
+  domain      = var.domain
 }
 
 module "ecr" {

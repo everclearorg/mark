@@ -13,6 +13,23 @@ import { RebalanceAdapter } from '../../../src/adapters';
 import * as utils from '../../../src/adapters/binance/utils';
 import * as assetUtils from '../../../src/shared/asset';
 
+// Mock @chainlink/ccip-js ESM module
+jest.mock('@chainlink/ccip-js', () => {
+  const mockGetTransferStatus = jest.fn<() => Promise<{ status: number }>>().mockResolvedValue({ status: 1 });
+  return {
+    CCIP: {
+      createClient: jest.fn(() => ({
+        getTransferStatus: mockGetTransferStatus,
+      })),
+    },
+    CCIPVersion: {
+      V1_2: 'V1_2',
+      V1_5: 'V1_5',
+      V1_6: 'V1_6',
+    },
+  };
+});
+
 // Mock the external dependencies
 jest.mock('../../../src/adapters/binance/client');
 jest.mock('../../../src/adapters/binance/dynamic-config');

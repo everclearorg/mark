@@ -63,6 +63,13 @@ locals {
       network   = try(local.mark_config_json.tac.network, "mainnet")
       apiKey    = try(local.mark_config_json.tac.apiKey, "")
     }
+    # Solana configuration for CCIP bridge operations
+    solana = {
+      privateKey = try(local.mark_config_json.solana.privateKey, "")
+      rpcUrl     = try(local.mark_config_json.solana.rpcUrl, "https://api.mainnet-beta.solana.com")
+      ptUsdeMint = try(local.mark_config_json.solana.ptUsdeMint, "PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA")
+    }
+    solanaSignerAddress = try(local.mark_config_json.solanaSignerAddress, "")
     # TAC Rebalance configuration
     tacRebalance = {
       enabled = try(local.mark_config_json.tacRebalance.enabled, false)
@@ -334,6 +341,21 @@ module "mark_poller" {
   subnet_ids         = module.network.private_subnets
   security_group_id  = module.sgs.lambda_sg_id
   container_env_vars = local.poller_env_vars
+}
+
+# Solana USDC → ptUSDe rebalancing poller (multi-leg CCIP + Pendle)
+# Schedule: 30 min interval since CCIP bridging takes ~20 min per leg
+module "mark_solana_usdc_poller" {
+  source              = "../../modules/lambda"
+  stage               = var.stage
+  environment         = var.environment
+  container_family    = "${var.bot_name}-solana-usdc-poller"
+  execution_role_arn  = module.iam.lambda_role_arn
+  image_uri           = var.image_uri
+  subnet_ids          = module.network.private_subnets
+  security_group_id   = module.sgs.lambda_sg_id
+  container_env_vars  = local.solana_usdc_poller_env_vars
+  schedule_expression = "rate(30 minutes)"
 }
 
 # TAC-only Lambda - runs TAC USDT rebalancing every 1 minute

@@ -881,9 +881,7 @@ export async function getRebalanceOperationByRecipient(
   status?: RebalanceOperationStatus | RebalanceOperationStatus[],
   earmarkId?: string | null,
   invoiceId?: string,
-): Promise<
-  (CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]
-> {
+): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]> {
   const values: unknown[] = [];
   const conditions: string[] = [];
   let paramCount = 1;
@@ -911,7 +909,7 @@ export async function getRebalanceOperationByRecipient(
     }
     paramCount++;
   }
-  
+
   if (earmarkId !== undefined) {
     if (earmarkId === null) {
       conditions.push('ro."earmark_id" IS NULL');
@@ -929,7 +927,7 @@ export async function getRebalanceOperationByRecipient(
   }
 
   const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
-  const dataQuery = `SELECT * FROM rebalance_operations ro ${whereClause} ORDER BY ro."created_at" ASC`
+  const dataQuery = `SELECT * FROM rebalance_operations ro ${whereClause} ORDER BY ro."created_at" ASC`;
 
   const operations = await queryWithClient<rebalance_operations>(dataQuery, values);
 

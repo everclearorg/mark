@@ -413,6 +413,35 @@ describe('TacInnerBridgeAdapter', () => {
         finalRecipient: '0x36BA155a8e9c45C0Af262F9e61Fff0D591472Fe5',
       }));
     });
+
+    it('should return null when SDK is not initialized', async () => {
+      // Create adapter without initializing SDK and force it to remain null
+      const freshAdapter = new TestTacInnerBridgeAdapter(mockChains, mockLogger, mockSdkConfig);
+      // Force SDK to be null but marked as "initialized" (edge case)
+      freshAdapter.setTacSdk(null);
+
+      const result = await freshAdapter.executeTacBridge(
+        'test mnemonic',
+        '0xRecipient',
+        '1000000',
+        USDT_TON_JETTON,
+      );
+
+      expect(result).toBeNull();
+      // Retry logic wraps the error - check for the wrapper message with original error inside
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to execute TAC bridge after retries',
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: 'TAC SDK not initialized, cannot execute bridge',
+          }),
+          recipient: '0xRecipient',
+          amount: '1000000',
+          asset: USDT_TON_JETTON,
+          isRetryable: false,
+        }),
+      );
+    });
   });
 
   describe('executeSimpleBridge', () => {
@@ -444,6 +473,78 @@ describe('TacInnerBridgeAdapter', () => {
 
       expect(result).toBeNull();
       expect(mockLogger.error).toHaveBeenCalledWith('Failed to execute simple bridge', expect.any(Object));
+    });
+
+    it('should return null when SDK is not initialized', async () => {
+      // Create adapter without initializing SDK
+      const freshAdapter = new TestTacInnerBridgeAdapter(mockChains, mockLogger, mockSdkConfig);
+      // Force SDK to remain null by setting sdkInitialized to true but sdk to null
+      freshAdapter.setTacSdk(null);
+
+      const result = await freshAdapter.executeSimpleBridge(
+        'test mnemonic',
+        '1000000',
+        USDT_TON_JETTON,
+      );
+
+      expect(result).toBeNull();
+      expect(mockLogger.error).toHaveBeenCalledWith('TAC SDK not initialized, cannot execute bridge');
+    });
+
+    it('should try bridgeAssets method when available', async () => {
+      const mockBridgeAssets = jest.fn().mockResolvedValue({ operationId: 'bridge-assets-op' } as never);
+      const mockSdk = {
+        bridgeAssets: mockBridgeAssets,
+        sendCrossChainTransaction: mockSendCrossChainTransaction,
+      };
+      adapter.setTacSdk(mockSdk);
+
+      const result = await adapter.executeSimpleBridge(
+        'test word one two three four five six seven eight nine ten eleven twelve',
+        '1000000',
+        USDT_TON_JETTON,
+      );
+
+      expect(result).toEqual({ operationId: 'bridge-assets-op' });
+      expect(mockBridgeAssets).toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith('Using TAC SDK bridgeAssets method', expect.any(Object));
+    });
+
+    it('should try startBridging method when bridgeAssets not available', async () => {
+      const mockStartBridging = jest.fn().mockResolvedValue({ operationId: 'start-bridging-op' } as never);
+      const mockSdk = {
+        startBridging: mockStartBridging,
+        sendCrossChainTransaction: mockSendCrossChainTransaction,
+      };
+      adapter.setTacSdk(mockSdk);
+
+      const result = await adapter.executeSimpleBridge(
+        'test word one two three four five six seven eight nine ten eleven twelve',
+        '1000000',
+        USDT_TON_JETTON,
+      );
+
+      expect(result).toEqual({ operationId: 'start-bridging-op' });
+      expect(mockStartBridging).toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith('Using TAC SDK startBridging method', expect.any(Object));
+    });
+
+    it('should fall back to sendCrossChainTransaction when other methods not available', async () => {
+      const mockTxLinker = { operationId: 'fallback-op' };
+      mockSendCrossChainTransaction.mockResolvedValue(mockTxLinker as never);
+      const mockSdk = {
+        sendCrossChainTransaction: mockSendCrossChainTransaction,
+      };
+      adapter.setTacSdk(mockSdk);
+
+      const result = await adapter.executeSimpleBridge(
+        'test word one two three four five six seven eight nine ten eleven twelve',
+        '1000000',
+        USDT_TON_JETTON,
+      );
+
+      expect(result).toEqual(mockTxLinker);
+      expect(mockLogger.info).toHaveBeenCalledWith('Using sendCrossChainTransaction with minimal config', expect.any(Object));
     });
   });
 
@@ -734,6 +835,85 @@ describe('TacInnerBridgeAdapter', () => {
       expect(result).toBe(false);
       expect(mockLogger.error).toHaveBeenCalledWith('Failed to check TAC Inner Bridge status', expect.any(Object));
     });
+
+    it('should return false when TAC asset address cannot be found', async () => {
+      const route: RebalanceRoute = {
+        origin: 30826,
+        destination: 239,
+        asset: '0x1234567890123456789012345678901234567890', // Unknown asset
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        to: '0x36BA155a8e9c45C0Af262F9e61Fff0D591472Fe5',
+        logs: [],
+      };
+
+      const result = await adapter.readyOnDestination(
+        '1000000',
+        route,
+        mockReceipt as TransactionReceipt,
+      );
+
+      expect(result).toBe(false);
+      expect(mockLogger.warn).toHaveBeenCalledWith('Could not find TAC asset address', expect.any(Object));
+    });
+
+    it('should return false when getLogs fails and balance is insufficient', async () => {
+      const route: RebalanceRoute = {
+        origin: 30826,
+        destination: 239,
+        asset: USDT_TAC,
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        to: '0x36BA155a8e9c45C0Af262F9e61Fff0D591472Fe5',
+        logs: [],
+      };
+
+      mockGetLogs.mockRejectedValue(new Error('RPC error') as never);
+      mockReadContract.mockResolvedValue(100000n as never); // Insufficient balance
+
+      const result = await adapter.readyOnDestination(
+        '1000000',
+        route,
+        mockReceipt as TransactionReceipt,
+      );
+
+      expect(result).toBe(false);
+      expect(mockLogger.warn).toHaveBeenCalledWith('Failed to query TAC logs, falling back to balance check', expect.any(Object));
+    });
+
+    it('should return false when Transfer event amount is less than minimum', async () => {
+      const route: RebalanceRoute = {
+        origin: 30826,
+        destination: 239,
+        asset: USDT_TAC,
+      };
+
+      const mockReceipt: Partial<TransactionReceipt> = {
+        transactionHash: '0xmocktxhash',
+        to: '0x36BA155a8e9c45C0Af262F9e61Fff0D591472Fe5',
+        logs: [],
+      };
+
+      // Transfer event exists but amount is too small
+      mockGetLogs.mockResolvedValue([{
+        args: { value: 100000n }, // Less than 95% of required
+        transactionHash: '0xtransfertx',
+        blockNumber: 999999n,
+      }] as never);
+      mockReadContract.mockResolvedValue(100000n as never); // Insufficient balance
+
+      const result = await adapter.readyOnDestination(
+        '1000000',
+        route,
+        mockReceipt as TransactionReceipt,
+      );
+
+      expect(result).toBe(false);
+    });
   });
 
   describe('getTacAssetAddress', () => {
@@ -755,6 +935,17 @@ describe('TacInnerBridgeAdapter', () => {
     it('should return undefined for unknown asset', () => {
       const result = adapter.callGetTacAssetAddress('0xUnknownAsset123456789012345678901234567890');
       expect(result).toBeUndefined();
+    });
+
+    it('should return TAC address when given a matching TAC EVM address from supported assets', () => {
+      // Test when asset is already in TAC format and matches a supported asset's tac address
+      const result = adapter.callGetTacAssetAddress(USDT_TAC.toLowerCase());
+      expect(result).toBe(USDT_TAC);
+    });
+
+    it('should handle case-insensitive TON address matching', () => {
+      const result = adapter.callGetTacAssetAddress(USDT_TON_JETTON.toLowerCase());
+      expect(result).toBe(USDT_TAC);
     });
   });
 

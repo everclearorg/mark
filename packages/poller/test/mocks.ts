@@ -59,6 +59,10 @@ export const mockConfig: MarkConfiguration = {
     rpcUrl: undefined,
     apiKey: undefined,
   },
+  solana: {
+    privateKey: undefined,
+    rpcUrl: undefined,
+  },
   redis: {
     host: 'localhost',
     port: 6379,
