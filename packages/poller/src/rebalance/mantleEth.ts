@@ -2,11 +2,10 @@ import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
 import {
   getTickerForAsset,
   convertToNativeUnits,
-  getMarkBalancesForTicker,
   getEvmBalance,
   safeParseBigInt,
 } from '../helpers';
-import { jsonifyMap, jsonifyError } from '@mark/logger';
+import { jsonifyError } from '@mark/logger';
 import {
   getDecimalsFromConfig,
   RebalanceOperationStatus,
@@ -26,6 +25,7 @@ import { submitTransactionWithLogging } from '../helpers/transactions';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
 import { createEarmark, createRebalanceOperation, Earmark, removeEarmark, TransactionEntry, TransactionReceipt } from '@mark/database';
 import { IntentStatus } from '@mark/everclear';
+import { ChainService } from '@mark/chainservice';
 
 const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
 const METH_TICKER_HASH = '0xd5a2aecb01320815a5625da6d67fbe0b34c12b267ebb3b060c014486ec5484d8';
@@ -310,19 +310,6 @@ const evaluateFillServiceRebalance = async (
     isFastPath: true,
   });
 
-  // Get all of mark balances
-  const balances = await getMarkBalancesForTicker(
-    WETH_TICKER_HASH,
-    config,
-    fillServiceChainService!,
-    context.prometheus,
-  );
-  logger.debug('Retrieved all solver balances for WETH', { balances: jsonifyMap(balances) });
-  if (!balances) {
-    logger.warn('No balances found for WETH, skipping', { requestId });
-    return [];
-  }
-
   for (const intent of intents) {
     logger.info('Processing mETH intent for rebalance', { requestId, intent });
 
@@ -353,6 +340,7 @@ const evaluateFillServiceRebalance = async (
 
     // WETH -> mETH intent should be settled with WETH address on settlement domain
     const decimals = getDecimalsFromConfig(WETH_TICKER_HASH, origin.toString(), config);
+    const tokenAddress = getTokenAddressFromConfig(WETH_TICKER_HASH, origin.toString(), config)!;
     const intentAmount = convertToNativeUnits(safeParseBigInt(intent.amount_out_min), decimals);
     if (intentAmount < minRebalance) {
       logger.warn('Intent amount is less than min staking amount, skipping', {
@@ -364,7 +352,14 @@ const evaluateFillServiceRebalance = async (
       continue;
     }
 
-    const availableBalance = balances.get(origin.toString()) || 0n;
+    const availableBalance = await getEvmBalance(
+      config,
+      origin.toString(),
+      fsConfig.address!,
+      tokenAddress!,
+      decimals!,
+      prometheus,
+    );
 
     // Ticker balances always in 18 units, convert to proper decimals
     const currentBalance = convertToNativeUnits(availableBalance, decimals);
@@ -468,6 +463,8 @@ const evaluateFillServiceRebalance = async (
 
   logger.info('Checking FS receiver mETH balance..', {
     requestId,
+    fillServiceAddress: fsConfig.address,
+    senderAddress: fsConfig.senderAddress,
     fsReceiverMethBalance: fsReceiverMethBalance.toString(),
     committedEthWeth: runState.committedEthWeth.toString(),
     total: (fsReceiverMethBalance + runState.committedEthWeth).toString(),
@@ -916,7 +913,7 @@ const executeMethBridge = async (
 };
 
 export const executeMethCallbacks = async (context: ProcessingContext): Promise<void> => {
-  const { logger, requestId, config, rebalance, chainService, database: db } = context;
+  const { logger, requestId, config, rebalance, chainService, fillServiceChainService, database: db } = context;
   logger.info('Executing destination callbacks for meth rebalance', { requestId });
 
   // Get operation TTL from config (with default fallback)
@@ -927,7 +924,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
   });
 
-  logger.debug('Found meth rebalance operations', {
+  logger.debug(`Found ${operations.length} meth rebalance operations`, {
     count: operations.length,
     requestId,
     statuses: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
@@ -1026,6 +1023,13 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       asset: assetAddress,
     };
 
+    // Determine if this is for Fill Service or Market Maker based on recipient
+    const isForFillService = operation.recipient!.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
+    const fillerSenderAddress =
+      config.methRebalance?.fillService?.senderAddress ?? config.methRebalance?.fillService?.address;
+    let evmSender = isForFillService ? fillerSenderAddress! : config.ownAddress;
+    let selectedChainService = isForFillService ? fillServiceChainService : chainService;
+    
     // Check if ready for callback
     if (operation.status === RebalanceOperationStatus.PENDING) {
       try {
@@ -1086,7 +1090,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
         // Try to execute the destination callback
         try {
           const tx = await submitTransactionWithLogging({
-            chainService,
+            chainService: selectedChainService as ChainService,
             logger,
             chainId: route.destination.toString(),
             txRequest: {
@@ -1094,7 +1098,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
               to: callback.transaction.to!,
               data: callback.transaction.data!,
               value: (callback.transaction.value || 0).toString(),
-              from: config.ownAddress,
+              from: evmSender,
               funcSig: callback.transaction.funcSig || '',
             },
             zodiacConfig: {
@@ -1108,7 +1112,9 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             callback: serializeBigInt(callback),
             receipt: serializeBigInt(receipt),
             destinationTx: tx.hash,
+            sender: evmSender,
             walletType: WalletType.EOA,
+            senderType: isForFillService ? 'fill-service' : 'market-maker',
           });
 
           // Update operation as completed with destination tx hash
@@ -1147,8 +1153,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             destination: Number(MANTLE_CHAIN_ID),
             asset: getTokenAddressFromConfig(WETH_TICKER_HASH, MAINNET_CHAIN_ID.toString(), config) || '',
           };
-          const sender = getActualAddress(route.origin, config, logger, { requestId });
-
+          
           // Step 1: Get Quote
           let receivedAmountStr: string;
           try {
@@ -1174,7 +1179,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           // Step 2: Get Bridge Transaction Requests
           let bridgeTxRequests: MemoizedTransactionRequest[] = [];
           try {
-            bridgeTxRequests = await mantleAdapter.send(sender, sender, amountToBridge, route);
+            bridgeTxRequests = await mantleAdapter.send(evmSender, evmSender, amountToBridge, route);
             logger.info('Prepared bridge transaction request from Mantle adapter', {
               requestId,
               route,
@@ -1183,8 +1188,8 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
               amountToBridge,
               receiveAmount: receivedAmountStr,
               transactionCount: bridgeTxRequests.length,
-              sender,
-              recipient: sender,
+              sender: evmSender,
+              recipient: evmSender,
             });
             if (!bridgeTxRequests.length) {
               throw new Error(`Failed to retrieve any bridge transaction requests`);
@@ -1203,11 +1208,15 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
           // Step 3: Submit the bridge transactions in order and create database record
           try {
             const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-              context: { requestId, logger, chainService, config },
+              context: { requestId, logger, chainService: selectedChainService as ChainService, config },
               route,
               bridgeType: mantleBridgeType,
               bridgeTxRequests,
               amountToBridge: BigInt(amountToBridge),
+              senderOverride: {
+                address: evmSender,
+                label: isForFillService ? 'fill-service' : 'market-maker',
+              },
             });
 
             // Step 4: Create database record for the Mantle bridge leg
@@ -1218,11 +1227,11 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 destinationChainId: route.destination,
                 tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
                 amount: effectiveBridgedAmount,
-                slippage: 1000, // 1% slippage
+                slippage: config.methRebalance!.bridge.slippageDbps, 
                 status: RebalanceOperationStatus.PENDING,
                 bridge: mantleBridgeType,
                 transactions: receipt ? { [route.origin]: receipt } : undefined,
-                recipient: sender,
+                recipient: evmSender,
               });
 
               logger.info('Successfully created Mantle rebalance operation in database', {

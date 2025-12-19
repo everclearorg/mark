@@ -231,7 +231,7 @@ export const getEvmBalance = async (
 
     const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
     let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
-
+    
     // Convert balance to standardized 18 decimals
     if (decimals !== 18) {
       balance = convertTo18Decimals(balance, decimals);
@@ -240,7 +240,8 @@ export const getEvmBalance = async (
     // Update tracker (this is async but we don't need to wait)
     prometheus.updateChainBalance(domain, tokenAddr, balance);
     return balance;
-  } catch {
+  } catch (error) {
+    console.error('Error getting evm balance', error);
     return 0n; // Return 0 balance on error
   }
 };
