@@ -3,11 +3,11 @@
 import { webcrypto } from 'crypto';
 if (typeof globalThis.crypto === 'undefined') {
   // Use Node.js webcrypto which provides Web Crypto API compatibility
-  globalThis.crypto = webcrypto as any;
+  globalThis.crypto = webcrypto as Crypto;
 }
 // Also set on global for libraries that might access it directly
-if (typeof (global as any).crypto === 'undefined') {
-  (global as any).crypto = webcrypto as any;
+if (typeof (global as typeof globalThis & { crypto?: Crypto }).crypto === 'undefined') {
+  (global as typeof globalThis & { crypto: Crypto }).crypto = webcrypto as Crypto;
 }
 
 import { initPoller } from './init';

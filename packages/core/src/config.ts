@@ -587,7 +587,9 @@ export const parseChainConfigurations = async (
 
     // Load assets from hosted config if available, otherwise use local config assets
     const hostedAssets = chainConfig?.assets ? Object.values(chainConfig.assets) : [];
-    const localAssets = (localChainConfig?.assets ? Object.values(localChainConfig.assets) : []) as AssetConfiguration[];
+    const localAssets = (
+      localChainConfig?.assets ? Object.values(localChainConfig.assets) : []
+    ) as AssetConfiguration[];
 
     // Merge assets: prefer hosted config, fall back to local config for missing assets
     const mergedAssets = [...hostedAssets];
