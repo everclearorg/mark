@@ -13,7 +13,7 @@ import {
   WalletType,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
-import { PublicKey, TransactionInstruction, SystemProgram } from '@solana/web3.js';
+import { PublicKey, TransactionInstruction, SystemProgram, Connection } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
 import { SolanaSigner } from '@mark/chainservice';
 import {
@@ -37,16 +37,203 @@ const MIN_REBALANCING_AMOUNT = 1000000n;
 // Chainlink CCIP constants for Solana
 // See: https://docs.chain.link/ccip/directory/mainnet/chain/solana-mainnet
 const CCIP_ROUTER_PROGRAM_ID = new PublicKey('Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C');
+const CCIP_FEE_QUOTER_PROGRAM_ID = new PublicKey('FeeQPGkKDeRV1MgoYfMH6L8o3KeuYjwUZrgn4LRKfjHi');
+const CCIP_RMN_REMOTE_PROGRAM_ID = new PublicKey('RmnXLft1mSEwDgMKu2okYuHkiazxntFFcZFrrcXxYg7');
+const CCIP_LOCK_RELEASE_POOL_PROGRAM_ID = new PublicKey('8eqh8wppT9c5rw4ERqNCffvU6cNFJWff9WmkcYtmGiqC');
 const SOLANA_CHAIN_SELECTOR = '124615329519749607';
 const ETHEREUM_CHAIN_SELECTOR = '5009297550715157269';
 const USDC_SOLANA_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 const PTUSDE_SOLANA_MINT = new PublicKey('PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA');
+const LINK_TOKEN_MINT = new PublicKey('LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L');
+const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 
-// Solana CCIP Token Pool addresses (from Chainlink CCIP Directory)
-// These are required for properly building CCIP instructions on Solana
-// Note: These constants are reserved for future CCIP integration enhancements
-// const CCIP_TOKEN_ADMIN_REGISTRY = new PublicKey('TokenAdminRegistry11111111111111111111111');
-// const CCIP_FEE_QUOTER = new PublicKey('FeeQuoter111111111111111111111111111111111');
+/**
+ * Derive CCIP Router PDAs
+ * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/router
+ */
+function deriveCCIPRouterPDAs(
+  destChainSelector: bigint,
+  userPubkey: PublicKey,
+): {
+  config: PublicKey;
+  destChainState: PublicKey;
+  nonce: PublicKey;
+  feeBillingSigner: PublicKey;
+} {
+  // Config: ["config"]
+  const [config] = PublicKey.findProgramAddressSync([Buffer.from('config')], CCIP_ROUTER_PROGRAM_ID);
+
+  // Destination Chain State: ["dest_chain_state", destChainSelector (u64 LE)]
+  const destChainSelectorBuf = Buffer.alloc(8);
+  destChainSelectorBuf.writeBigUInt64LE(destChainSelector, 0);
+  const [destChainState] = PublicKey.findProgramAddressSync(
+    [Buffer.from('dest_chain_state'), destChainSelectorBuf],
+    CCIP_ROUTER_PROGRAM_ID,
+  );
+
+  // Nonce: ["nonce", destChainSelector (u64 LE), userPubkey]
+  const [nonce] = PublicKey.findProgramAddressSync(
+    [Buffer.from('nonce'), destChainSelectorBuf, userPubkey.toBytes()],
+    CCIP_ROUTER_PROGRAM_ID,
+  );
+
+  // Fee Billing Signer: ["fee_billing_signer"]
+  const [feeBillingSigner] = PublicKey.findProgramAddressSync([Buffer.from('fee_billing_signer')], CCIP_ROUTER_PROGRAM_ID);
+
+  return { config, destChainState, nonce, feeBillingSigner };
+}
+
+/**
+ * Derive Fee Quoter PDAs
+ */
+function deriveFeeQuoterPDAs(
+  destChainSelector: bigint,
+  billingTokenMint: PublicKey,
+  linkTokenMint: PublicKey,
+): {
+  config: PublicKey;
+  destChain: PublicKey;
+  billingTokenConfig: PublicKey;
+  linkTokenConfig: PublicKey;
+} {
+  const destChainSelectorBuf = Buffer.alloc(8);
+  destChainSelectorBuf.writeBigUInt64LE(destChainSelector, 0);
+
+  // Config: ["config"]
+  const [config] = PublicKey.findProgramAddressSync([Buffer.from('config')], CCIP_FEE_QUOTER_PROGRAM_ID);
+
+  // Dest Chain: ["dest_chain", destChainSelector (u64 LE)]
+  const [destChain] = PublicKey.findProgramAddressSync(
+    [Buffer.from('dest_chain'), destChainSelectorBuf],
+    CCIP_FEE_QUOTER_PROGRAM_ID,
+  );
+
+  // Billing Token Config: ["billing_token_config", tokenMint]
+  const [billingTokenConfig] = PublicKey.findProgramAddressSync(
+    [Buffer.from('billing_token_config'), billingTokenMint.toBytes()],
+    CCIP_FEE_QUOTER_PROGRAM_ID,
+  );
+
+  // Link Token Config: ["billing_token_config", linkTokenMint]
+  const [linkTokenConfig] = PublicKey.findProgramAddressSync(
+    [Buffer.from('billing_token_config'), linkTokenMint.toBytes()],
+    CCIP_FEE_QUOTER_PROGRAM_ID,
+  );
+
+  return { config, destChain, billingTokenConfig, linkTokenConfig };
+}
+
+/**
+ * Derive RMN Remote PDAs
+ */
+function deriveRMNRemotePDAs(): {
+  curses: PublicKey;
+  config: PublicKey;
+} {
+  // Curses: ["curses"]
+  const [curses] = PublicKey.findProgramAddressSync([Buffer.from('curses')], CCIP_RMN_REMOTE_PROGRAM_ID);
+
+  // Config: ["config"]
+  const [config] = PublicKey.findProgramAddressSync([Buffer.from('config')], CCIP_RMN_REMOTE_PROGRAM_ID);
+
+  return { curses, config };
+}
+
+/**
+ * Fetch the Token Pool Lookup Table address from the Token Admin Registry
+ * The lookup table address is stored in the registry account data
+ *
+ * TokenAdminRegistry PDA layout (Anchor/Borsh serialized):
+ * - discriminator: 8 bytes (Anchor account discriminator)
+ * - administrator: 32 bytes (Pubkey)
+ * - pending_administrator: 32 bytes (Pubkey)
+ * - pool_lookuptable: 32 bytes (Pubkey)
+ *
+ * Total offset to pool_lookuptable: 8 + 32 + 32 = 72 bytes
+ *
+ * See:
+ * - https://docs.chain.link/ccip/concepts/cross-chain-token/svm/architecture
+ * - https://docs.chain.link/ccip/concepts/cross-chain-token/svm/token-pools
+ */
+async function fetchTokenPoolLookupTable(connection: Connection, tokenMint: PublicKey): Promise<PublicKey> {
+  // Derive Token Admin Registry PDA
+  const [tokenAdminRegistry] = PublicKey.findProgramAddressSync(
+    [Buffer.from('token_admin_registry'), tokenMint.toBytes()],
+    CCIP_ROUTER_PROGRAM_ID,
+  );
+
+  // Fetch the account data
+  const accountInfo = await connection.getAccountInfo(tokenAdminRegistry);
+  if (!accountInfo || !accountInfo.data) {
+    throw new Error(`Token Admin Registry not found for mint: ${tokenMint.toBase58()}`);
+  }
+
+  // Parse the pool_lookuptable address from the account data
+  // Layout: discriminator (8) + administrator (32) + pending_administrator (32) + pool_lookuptable (32)
+  const ANCHOR_DISCRIMINATOR_SIZE = 8;
+  const lookupTableOffset = ANCHOR_DISCRIMINATOR_SIZE + 32 + 32; // = 72 bytes
+
+  const minRequiredSize = lookupTableOffset + 32;
+  if (accountInfo.data.length < minRequiredSize) {
+    throw new Error(
+      `Token Admin Registry data too short: expected at least ${minRequiredSize} bytes, got ${accountInfo.data.length}`,
+    );
+  }
+
+  const lookupTableBytes = accountInfo.data.slice(lookupTableOffset, lookupTableOffset + 32);
+  const poolLookupTable = new PublicKey(lookupTableBytes);
+
+  // Validate the lookup table is not zero/default pubkey
+  if (poolLookupTable.equals(PublicKey.default)) {
+    throw new Error(`Token ${tokenMint.toBase58()} is not enabled for CCIP (pool_lookuptable is zero address).`);
+  }
+
+  return poolLookupTable;
+}
+
+/**
+ * Derive Token Pool PDAs for CCIP token transfers
+ */
+function deriveTokenPoolPDAs(
+  destChainSelector: bigint,
+  tokenMint: PublicKey,
+  poolProgram: PublicKey,
+): {
+  tokenAdminRegistry: PublicKey;
+  poolChainConfig: PublicKey;
+  poolSigner: PublicKey;
+  routerPoolsSigner: PublicKey;
+  poolConfig: PublicKey;
+} {
+  const destChainSelectorBuf = Buffer.alloc(8);
+  destChainSelectorBuf.writeBigUInt64LE(destChainSelector, 0);
+
+  // Token Admin Registry: ["token_admin_registry", tokenMint] from CCIP Router
+  const [tokenAdminRegistry] = PublicKey.findProgramAddressSync(
+    [Buffer.from('token_admin_registry'), tokenMint.toBytes()],
+    CCIP_ROUTER_PROGRAM_ID,
+  );
+
+  // Pool Chain Config: ["ccip_tokenpool_chainconfig", destChainSelector, tokenMint] from Pool
+  const [poolChainConfig] = PublicKey.findProgramAddressSync(
+    [Buffer.from('ccip_tokenpool_chainconfig'), destChainSelectorBuf, tokenMint.toBytes()],
+    poolProgram,
+  );
+
+  // Pool Signer: ["ccip_tokenpool_signer"] from Pool
+  const [poolSigner] = PublicKey.findProgramAddressSync([Buffer.from('ccip_tokenpool_signer')], poolProgram);
+
+  // Pool Config: ["ccip_tokenpool_config"] from Pool
+  const [poolConfig] = PublicKey.findProgramAddressSync([Buffer.from('ccip_tokenpool_config')], poolProgram);
+
+  // CCIP Router Pools Signer: ["external_token_pools_signer", poolProgram] from CCIP Router
+  const [routerPoolsSigner] = PublicKey.findProgramAddressSync(
+    [Buffer.from('external_token_pools_signer'), poolProgram.toBytes()],
+    CCIP_ROUTER_PROGRAM_ID,
+  );
+
+  return { tokenAdminRegistry, poolChainConfig, poolSigner, routerPoolsSigner, poolConfig };
+}
 
 type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
 
@@ -102,19 +289,32 @@ function encodeEvmReceiverForCCIP(evmAddress: string): Uint8Array {
 }
 
 /**
- * Build CCIP extra args for EVM destination
- * This encodes gas limit and other options for the destination chain
+ * Build CCIP EVMExtraArgsV2 for EVM destination (Borsh serialized)
+ * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/messages#evmextraargsv2
+ *
+ * Format:
+ * - Tag: 4 bytes big-endian (0x181dcf10)
+ * - gas_limit: u128 (16 bytes little-endian, Borsh)
+ * - allow_out_of_order_execution: bool (1 byte)
  */
-function buildCCIPExtraArgs(gasLimit: number = 200000): Uint8Array {
-  // EVM extra args format (simplified):
-  // - Version tag: 1 byte (0x01 for EVM)
-  // - Gas limit: 4 bytes (uint32, little-endian)
-  // - Out of order execution: 1 byte (0x01 to enable)
-  const buffer = Buffer.alloc(6);
-  buffer.writeUInt8(0x01, 0); // Version tag for EVM
-  buffer.writeUInt32LE(gasLimit, 1); // Gas limit
-  buffer.writeUInt8(0x01, 5); // Enable out-of-order execution
-  return buffer;
+function buildEVMExtraArgsV2(gasLimit: number = 0, allowOutOfOrderExecution: boolean = true): Uint8Array {
+  // EVM_EXTRA_ARGS_V2_TAG: 0x181dcf10 (4 bytes, big-endian)
+  const typeTag = Buffer.alloc(4);
+  typeTag.writeUInt32BE(0x181dcf10, 0);
+
+  // gas_limit: u128 little-endian (16 bytes) - Borsh format
+  // For token-only transfers, gas_limit MUST be 0
+  const gasLimitBuf = Buffer.alloc(16);
+  const gasLimitBigInt = BigInt(gasLimit);
+  gasLimitBuf.writeBigUInt64LE(gasLimitBigInt & BigInt('0xFFFFFFFFFFFFFFFF'), 0);
+  gasLimitBuf.writeBigUInt64LE(gasLimitBigInt >> BigInt(64), 8);
+
+  // allow_out_of_order_execution: bool (1 byte)
+  // MUST be true when sending from Solana
+  const oooBuf = Buffer.alloc(1);
+  oooBuf.writeUInt8(allowOutOfOrderExecution ? 1 : 0, 0);
+
+  return Buffer.concat([typeTag, gasLimitBuf, oooBuf]);
 }
 
 /**
@@ -248,7 +448,7 @@ async function executeSolanaToMainnetBridge({
         },
       ],
       feeToken: PublicKey.default.toBytes(), // Pay with native SOL
-      extraArgs: buildCCIPExtraArgs(200000), // 200k gas limit on destination
+      extraArgs: buildEVMExtraArgsV2(0, true), // gasLimit=0 for token-only, OOO=true required for Solana
     };
 
     logger.info('CCIP message prepared', {
@@ -262,28 +462,104 @@ async function executeSolanaToMainnetBridge({
     // Build instruction data
     const instructionData = buildCCIPInstructionData(ccipMessage, BigInt(ETHEREUM_CHAIN_SELECTOR));
 
-    // Create CCIP send instruction
-    // NOTE: The account list is simplified. Production should include:
-    // - CCIP Router PDA accounts
-    // - Token pool accounts
-    // - Fee billing accounts
-    // - OffRamp config accounts
+    // Derive all required PDAs for CCIP send instruction
+    // See: https://docs.chain.link/ccip/tutorials/svm/source/token-transfers
+    const destChainSelector = BigInt(ETHEREUM_CHAIN_SELECTOR);
+
+    // Core Router PDAs
+    const routerPDAs = deriveCCIPRouterPDAs(destChainSelector, walletPublicKey);
+
+    // Fee Quoter PDAs - using WSOL as fee token since we pay in native SOL
+    const feeQuoterPDAs = deriveFeeQuoterPDAs(destChainSelector, WSOL_MINT, LINK_TOKEN_MINT);
+
+    // RMN Remote PDAs
+    const rmnPDAs = deriveRMNRemotePDAs();
+
+    // Token Pool PDAs for USDC (using LockRelease pool)
+    const tokenPoolPDAs = deriveTokenPoolPDAs(destChainSelector, USDC_SOLANA_MINT, CCIP_LOCK_RELEASE_POOL_PROGRAM_ID);
+
+    // Fetch the Token Pool Lookup Table address from Token Admin Registry
+    const tokenPoolLookupTable = await fetchTokenPoolLookupTable(connection, USDC_SOLANA_MINT);
+
+    logger.debug('Fetched Token Pool Lookup Table', {
+      requestId,
+      tokenMint: USDC_SOLANA_MINT.toBase58(),
+      lookupTable: tokenPoolLookupTable.toBase58(),
+    });
+
+    // Get pool's token account for USDC (where locked tokens go)
+    const poolTokenAccount = await getAssociatedTokenAddress(USDC_SOLANA_MINT, tokenPoolPDAs.poolSigner, true);
+
+    // Fee receiver account - derived from fee billing signer
+    const [feeReceiver] = PublicKey.findProgramAddressSync(
+      [Buffer.from('fee_receiver'), WSOL_MINT.toBytes()],
+      CCIP_ROUTER_PROGRAM_ID,
+    );
+
+    logger.debug('CCIP PDAs derived', {
+      requestId,
+      routerConfig: routerPDAs.config.toBase58(),
+      destChainState: routerPDAs.destChainState.toBase58(),
+      nonce: routerPDAs.nonce.toBase58(),
+      tokenAdminRegistry: tokenPoolPDAs.tokenAdminRegistry.toBase58(),
+      poolChainConfig: tokenPoolPDAs.poolChainConfig.toBase58(),
+    });
+
+    // Create CCIP send instruction with all required accounts
+    // See: https://docs.chain.link/ccip/tutorials/svm/source/token-transfers#account-requirements
     const ccipSendInstruction = new TransactionInstruction({
       keys: [
-        { pubkey: walletPublicKey, isSigner: true, isWritable: true }, // Sender/payer
-        { pubkey: sourceTokenAccount, isSigner: false, isWritable: true }, // Source token account
-        { pubkey: USDC_SOLANA_MINT, isSigner: false, isWritable: false }, // Token mint
-        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // Token program
-        { pubkey: CCIP_ROUTER_PROGRAM_ID, isSigner: false, isWritable: false }, // CCIP Router
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // System program
-        // TODO: Add additional required accounts for CCIP:
-        // - CCIP Config account
-        // - Token Pool account
-        // - Fee Billing account
-        // - OnRamp account
+        // === Core Accounts (indices 0-4) ===
+        { pubkey: routerPDAs.config, isSigner: false, isWritable: false }, // 0: Config PDA
+        { pubkey: routerPDAs.destChainState, isSigner: false, isWritable: true }, // 1: Destination Chain State (writable)
+        { pubkey: routerPDAs.nonce, isSigner: false, isWritable: true }, // 2: Nonce (writable)
+        { pubkey: walletPublicKey, isSigner: true, isWritable: true }, // 3: Authority/Signer (writable, signer)
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // 4: System Program
+
+        // === Fee Payment Accounts (indices 5-9) ===
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // 5: Fee Token Program
+        { pubkey: WSOL_MINT, isSigner: false, isWritable: false }, // 6: Fee Token Mint (WSOL for internal accounting)
+        { pubkey: PublicKey.default, isSigner: false, isWritable: false }, // 7: User's Fee Token Account
+        { pubkey: feeReceiver, isSigner: false, isWritable: true }, // 8: Fee Receiver (writable)
+        { pubkey: routerPDAs.feeBillingSigner, isSigner: false, isWritable: false }, // 9: Fee Billing Signer PDA
+
+        // === Fee Quoter Accounts (indices 10-14) ===
+        { pubkey: CCIP_FEE_QUOTER_PROGRAM_ID, isSigner: false, isWritable: false }, // 10: Fee Quoter Program
+        { pubkey: feeQuoterPDAs.config, isSigner: false, isWritable: false }, // 11: Fee Quoter Config
+        { pubkey: feeQuoterPDAs.destChain, isSigner: false, isWritable: false }, // 12: Fee Quoter Dest Chain
+        { pubkey: feeQuoterPDAs.billingTokenConfig, isSigner: false, isWritable: false }, // 13: Fee Quoter Billing Token Config
+        { pubkey: feeQuoterPDAs.linkTokenConfig, isSigner: false, isWritable: false }, // 14: Fee Quoter Link Token Config
+
+        // === RMN Remote Accounts (indices 15-17) ===
+        { pubkey: CCIP_RMN_REMOTE_PROGRAM_ID, isSigner: false, isWritable: false }, // 15: RMN Remote Program
+        { pubkey: rmnPDAs.curses, isSigner: false, isWritable: false }, // 16: RMN Remote Curses
+        { pubkey: rmnPDAs.config, isSigner: false, isWritable: false }, // 17: RMN Remote Config
+
+        // === Token Transfer Accounts (for USDC) ===
+        // Per CCIP API Reference, token accounts must be in remaining_accounts with this structure:
+        // See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/router
+        { pubkey: sourceTokenAccount, isSigner: false, isWritable: true }, // 18: User Token Account (writable)
+        { pubkey: feeQuoterPDAs.billingTokenConfig, isSigner: false, isWritable: false }, // 19: Token Billing Config (USDC)
+        { pubkey: tokenPoolPDAs.poolChainConfig, isSigner: false, isWritable: true }, // 20: Pool Chain Config (writable)
+        { pubkey: tokenPoolLookupTable, isSigner: false, isWritable: false }, // 21: Token Pool Lookup Table
+        { pubkey: tokenPoolPDAs.tokenAdminRegistry, isSigner: false, isWritable: false }, // 22: Token Admin Registry
+        { pubkey: CCIP_LOCK_RELEASE_POOL_PROGRAM_ID, isSigner: false, isWritable: false }, // 23: Pool Program
+        { pubkey: tokenPoolPDAs.poolConfig, isSigner: false, isWritable: false }, // 24: Pool Config
+        { pubkey: poolTokenAccount, isSigner: false, isWritable: true }, // 25: Pool Token Account (writable)
+        { pubkey: tokenPoolPDAs.poolSigner, isSigner: false, isWritable: false }, // 26: Pool Signer
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // 27: Token Program
+        { pubkey: USDC_SOLANA_MINT, isSigner: false, isWritable: false }, // 28: Token Mint
+        { pubkey: feeQuoterPDAs.billingTokenConfig, isSigner: false, isWritable: false }, // 29: Fee Token Config (for USDC billing)
+        { pubkey: tokenPoolPDAs.routerPoolsSigner, isSigner: false, isWritable: false }, // 30: CCIP Router Pools Signer
       ],
       programId: CCIP_ROUTER_PROGRAM_ID,
       data: instructionData,
+    });
+
+    logger.info('CCIP instruction built with full account list', {
+      requestId,
+      totalAccounts: ccipSendInstruction.keys.length,
+      instructionDataLength: instructionData.length,
     });
 
     logger.info('Sending CCIP transaction to Solana via SolanaSigner', {
