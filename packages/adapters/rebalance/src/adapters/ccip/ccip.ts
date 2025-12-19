@@ -3,7 +3,6 @@ import { mainnet } from 'viem/chains';
 import { SupportedBridge, RebalanceRoute, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
-import * as CCIP from '@chainlink/ccip-js';
 import {
   CCIPMessage,
   CCIPTransferStatus,
@@ -14,6 +13,11 @@ import {
   SOLANA_CHAIN_ID_NUMBER,
 } from './types';
 import bs58 from 'bs58';
+
+// Type for CCIP module and client - using type-only import for types, dynamic import for runtime
+// The dynamic import returns the module namespace, so we extract types from it
+type CCIPModuleType = typeof import('@chainlink/ccip-js');
+type CCIPClient = ReturnType<CCIPModuleType['createClient']>;
 
 // Chainlink CCIP Router ABI
 const CCIP_ROUTER_ABI = [
@@ -74,14 +78,30 @@ const CCIP_ROUTER_ABI = [
 ] as const;
 
 export class CCIPBridgeAdapter implements BridgeAdapter {
-  private ccipClient: CCIP.Client;
+  private ccipClient: CCIPClient | null = null;
+  private ccipModule: CCIPModuleType | null = null;
 
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
   ) {
     this.logger.debug('Initializing CCIPBridgeAdapter');
-    this.ccipClient = CCIP.createClient();
+  }
+
+  /**
+   * Lazy-load the CCIP module and client to handle ES module import
+   */
+  private async getCcipClient(): Promise<CCIPClient> {
+    if (this.ccipClient) {
+      return this.ccipClient;
+    }
+
+    if (!this.ccipModule) {
+      this.ccipModule = await import('@chainlink/ccip-js');
+    }
+
+    this.ccipClient = this.ccipModule.createClient();
+    return this.ccipClient;
   }
 
   type(): SupportedBridge {
@@ -681,8 +701,11 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Use the CCIP SDK to check transfer status
       // Note: Type bridge via `unknown` required because @chainlink/ccip-js bundles its own
       // viem version with incompatible types. At runtime, the PublicClient works correctly.
-      const transferStatus = await this.ccipClient.getTransferStatus({
-        client: destinationClient as unknown as Parameters<CCIP.Client['getTransferStatus']>[0]['client'],
+      const ccipClient = await this.getCcipClient();
+
+      const transferStatus = await ccipClient.getTransferStatus({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        client: destinationClient as any,
         destinationRouterAddress,
         sourceChainSelector,
         messageId: idToCheck as `0x${string}`,
