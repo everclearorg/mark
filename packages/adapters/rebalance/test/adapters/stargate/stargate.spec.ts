@@ -656,6 +656,12 @@ describe('StargateBridgeAdapter', () => {
       };
 
       // Mock API response with both approve and bridge steps
+      // The approval data must have a valid spender address embedded (32 bytes after 4-byte selector)
+      // approve(address,uint256) = 0x095ea7b3 + 32-byte spender (padded address) + 32-byte amount
+      const spenderPadded = '000000000000000000000000PoolAddressHere123456789012';
+      const amountPadded = '0000000000000000000000000000000000000000000000000000000000000001';
+      const mockApprovalData = `0x095ea7b3${spenderPadded}${amountPadded}`;
+      
       const mockApiResponse = {
         quotes: [{
           route: { bridgeName: 'stargate' },
@@ -665,7 +671,7 @@ describe('StargateBridgeAdapter', () => {
               type: 'approve',
               transaction: {
                 to: '0xTokenAddress',
-                data: '0xapprovedata',
+                data: mockApprovalData,
               },
             },
             {
@@ -682,6 +688,9 @@ describe('StargateBridgeAdapter', () => {
         }],
       };
       (axiosGet as jest.Mock).mockResolvedValue({ data: mockApiResponse } as never);
+      
+      // Mock allowance check for USDT on mainnet (returns 0 so no zero-approval needed)
+      mockReadContract.mockResolvedValueOnce(0n as never);
 
       const result = await adapter.send(
         '0xSender',
