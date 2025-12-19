@@ -80,7 +80,7 @@ locals {
     DD_MERGE_XRAY_TRACES         = true
     DD_TRACE_OTEL_ENABLED        = false
     MARK_CONFIG_SSM_PARAMETER    = "MASON_CONFIG_MAINNET"
-    EVERCLEAR_API_URL            = "https://api.staging.everclear.org"  # Mainnet prod API - change to "https://api.staging.everclear.org" for staging
+    EVERCLEAR_API_URL            = "https://api.staging.everclear.org" # Mainnet prod API - change to "https://api.staging.everclear.org" for staging
 
     REBALANCE_CONFIG_S3_BUCKET = local.rebalanceConfig.bucket
     REBALANCE_CONFIG_S3_KEY    = local.rebalanceConfig.key
@@ -106,11 +106,11 @@ locals {
     USDT_42161_THRESHOLD = "1000000000"
 
     # TAC Chain (239) configuration
-    USDT_239_THRESHOLD = "100000000"  # 100 USDT threshold on TAC
-    
+    USDT_239_THRESHOLD = "100000000" # 100 USDT threshold on TAC
+
     # TAC Network configuration (loaded from SSM if available)
     TAC_NETWORK = "mainnet"
-    
+
     # TON wallet configuration for TAC bridge (from SSM)
     TON_SIGNER_ADDRESS = local.mark_config.tonSignerAddress
     TON_MNEMONIC       = local.mark_config.ton.mnemonic
@@ -154,6 +154,21 @@ locals {
     METH_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT      = local.mark_config.methRebalance.bridge.minRebalanceAmount
     METH_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT      = local.mark_config.methRebalance.bridge.maxRebalanceAmount
   }
+
+  # Solana USDC → ptUSDe rebalancing poller configuration
+  # Extends base poller config with Solana-specific overrides
+  solana_usdc_poller_env_vars = merge(
+    local.poller_env_vars,
+    {
+      # Solana-specific configuration
+      RUN_MODE              = "solanaUsdcOnly"
+      SOLANA_PRIVATE_KEY    = local.mark_config.solana.privateKey
+      SOLANA_RPC_URL        = local.mark_config.solana.rpcUrl
+      SOLANA_SIGNER_ADDRESS = local.mark_config.solanaSignerAddress
+      # ptUSDe SPL token mint on Solana (from SSM config)
+      PTUSDE_SOLANA_MINT = local.mark_config.solana.ptUsdeMint
+    }
+  )
 
   web3signer_env_vars = [
     {

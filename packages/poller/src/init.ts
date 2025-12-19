@@ -9,7 +9,7 @@ import {
   TRON_CHAINID,
 } from '@mark/core';
 import { EverclearAdapter } from '@mark/everclear';
-import { ChainService, EthWallet } from '@mark/chainservice';
+import { ChainService, EthWallet, SolanaSigner, createSolanaSigner } from '@mark/chainservice';
 import { Web3Signer } from '@mark/web3signer';
 import { pollAndProcessInvoices } from './invoice';
 import { PurchaseCache } from '@mark/cache';
@@ -22,6 +22,7 @@ import { execSync } from 'child_process';
 import { bytesToHex, WalletClient } from 'viem';
 import { rebalanceMantleEth } from './rebalance/mantleEth';
 import { rebalanceTacUsdt } from './rebalance/tacUsdt';
+import { rebalanceSolanaUsdc } from './rebalance/solanaUsdc';
 import { randomBytes } from 'crypto';
 import { resolve } from 'path';
 
@@ -31,6 +32,7 @@ export interface MarkAdapters {
   fillServiceChainService?: ChainService; // Optional: separate chain service for fill service sender
   everclear: EverclearAdapter;
   web3Signer: Web3Signer | WalletClient;
+  solanaSigner?: SolanaSigner; // Optional: only initialized when Solana config is present
   logger: Logger;
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;
@@ -222,11 +224,37 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
 
   database.initializeDatabase(config.database);
 
+  // Initialize Solana signer if configuration is present
+  let solanaSigner: SolanaSigner | undefined;
+  if (config.solana?.privateKey) {
+    try {
+      solanaSigner = createSolanaSigner({
+        privateKey: config.solana.privateKey,
+        rpcUrl: config.solana.rpcUrl,
+        commitment: 'confirmed',
+        maxRetries: 3,
+      });
+      logger.info('Solana signer initialized', {
+        address: solanaSigner.getAddress(),
+        rpcUrl: config.solana.rpcUrl || 'https://api.mainnet-beta.solana.com',
+      });
+    } catch (error) {
+      logger.error('Failed to initialize Solana signer', {
+        error: (error as Error).message,
+        // Don't log the actual error which might contain key info
+      });
+      // Don't throw - allow other functionality to work
+    }
+  } else {
+    logger.debug('Solana signer not configured - Solana USDC rebalancing will not be available');
+  }
+
   return {
     logger,
     chainService,
     fillServiceChainService,
     web3Signer: web3Signer as Web3Signer,
+    solanaSigner,
     everclear,
     purchaseCache,
     prometheus,
@@ -358,6 +386,36 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         });
       } else {
         logger.info('Successfully completed TAC USDT rebalancing operations', {
+          requestId: context.requestId,
+          numOperations: rebalanceOperations.length,
+          operations: rebalanceOperations,
+        });
+      }
+
+      logFileDescriptorUsage(logger);
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          rebalanceOperations: rebalanceOperations ?? [],
+        }),
+      };
+    }
+
+    if (process.env.RUN_MODE === 'solanaUsdcOnly') {
+      logger.info('Starting Solana USDC → ptUSDe rebalancing', {
+        stage: config.stage,
+        environment: config.environment,
+        addresses,
+      });
+
+      const rebalanceOperations = await rebalanceSolanaUsdc(context);
+      if (rebalanceOperations.length === 0) {
+        logger.info('Solana USDC Rebalancing completed: no operations needed', {
+          requestId: context.requestId,
+        });
+      } else {
+        logger.info('Successfully completed Solana USDC rebalancing operations', {
           requestId: context.requestId,
           numOperations: rebalanceOperations.length,
           operations: rebalanceOperations,
