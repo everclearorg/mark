@@ -702,8 +702,9 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Note: Type bridge via `unknown` required because @chainlink/ccip-js bundles its own
       // viem version with incompatible types. At runtime, the PublicClient works correctly.
       const ccipClient = await this.getCcipClient();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const transferStatus = await ccipClient.getTransferStatus({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         client: destinationClient as any,
         destinationRouterAddress,
         sourceChainSelector,
