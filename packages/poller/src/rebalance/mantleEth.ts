@@ -1,10 +1,5 @@
 import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
-import {
-  getTickerForAsset,
-  convertToNativeUnits,
-  getEvmBalance,
-  safeParseBigInt,
-} from '../helpers';
+import { getTickerForAsset, convertToNativeUnits, getEvmBalance, safeParseBigInt } from '../helpers';
 import { jsonifyError } from '@mark/logger';
 import {
   getDecimalsFromConfig,
@@ -1030,12 +1025,12 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
     };
 
     // Determine if this is for Fill Service or Market Maker based on recipient
-    const isForFillService = operation.recipient!.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
+    const isForFillService =
+      operation.recipient!.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
     const fillerSenderAddress =
       config.methRebalance?.fillService?.senderAddress ?? config.methRebalance?.fillService?.address;
     let evmSender = isForFillService ? fillerSenderAddress! : config.ownAddress;
     let selectedChainService = isForFillService ? fillServiceChainService : chainService;
-    
     // Check if ready for callback
     if (operation.status === RebalanceOperationStatus.PENDING) {
       try {
@@ -1159,7 +1154,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
             destination: Number(MANTLE_CHAIN_ID),
             asset: getTokenAddressFromConfig(WETH_TICKER_HASH, MAINNET_CHAIN_ID.toString(), config) || '',
           };
-          
+
           // Step 1: Get Quote
           let receivedAmountStr: string;
           try {
@@ -1233,7 +1228,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
                 destinationChainId: route.destination,
                 tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
                 amount: effectiveBridgedAmount,
-                slippage: config.methRebalance!.bridge.slippageDbps, 
+                slippage: config.methRebalance!.bridge.slippageDbps,
                 status: RebalanceOperationStatus.PENDING,
                 bridge: mantleBridgeType,
                 transactions: receipt ? { [route.origin]: receipt } : undefined,
