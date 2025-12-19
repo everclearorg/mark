@@ -24,7 +24,14 @@ import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
-import { createEarmark, createRebalanceOperation, Earmark, removeEarmark, TransactionEntry, TransactionReceipt } from '@mark/database';
+import {
+  createEarmark,
+  createRebalanceOperation,
+  Earmark,
+  removeEarmark,
+  TransactionEntry,
+  TransactionReceipt,
+} from '@mark/database';
 import { IntentStatus } from '@mark/everclear';
 
 const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
@@ -87,7 +94,6 @@ interface ThresholdRebalanceParams {
   runState: RebalanceRunState;
   earmarkId: string | null; // null for threshold-based
 }
-
 
 /**
  * Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
@@ -430,7 +436,7 @@ const evaluateFillServiceRebalance = async (
       earmarkId: earmark.id,
     });
 
-    if(fsActions.length === 0) {
+    if (fsActions.length === 0) {
       await removeEarmark(earmark.id);
       logger.info('Removed earmark for intent rebalance because no operations were executed', {
         requestId,

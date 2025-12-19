@@ -306,6 +306,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       solana: {
         privateKey: configJson.solana?.privateKey ?? (await fromEnv('SOLANA_PRIVATE_KEY', true)) ?? undefined,
         rpcUrl: configJson.solana?.rpcUrl ?? (await fromEnv('SOLANA_RPC_URL', true)) ?? undefined,
+      },
       tacRebalance: {
         enabled:
           parseBooleanValue(configJson.tacRebalance?.enabled) ??

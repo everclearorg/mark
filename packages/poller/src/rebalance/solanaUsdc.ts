@@ -78,7 +78,10 @@ function deriveCCIPRouterPDAs(
   );
 
   // Fee Billing Signer: ["fee_billing_signer"]
-  const [feeBillingSigner] = PublicKey.findProgramAddressSync([Buffer.from('fee_billing_signer')], CCIP_ROUTER_PROGRAM_ID);
+  const [feeBillingSigner] = PublicKey.findProgramAddressSync(
+    [Buffer.from('fee_billing_signer')],
+    CCIP_ROUTER_PROGRAM_ID,
+  );
 
   return { config, destChainState, nonce, feeBillingSigner };
 }

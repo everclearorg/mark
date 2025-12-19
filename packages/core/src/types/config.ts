@@ -191,6 +191,7 @@ export interface MarkConfiguration extends RebalanceConfig {
   solana?: {
     privateKey?: string; // Solana wallet private key (base58 encoded)
     rpcUrl?: string; // Solana RPC endpoint (defaults to mainnet-beta)
+  };
   tacRebalance?: TokenRebalanceConfig;
   methRebalance?: TokenRebalanceConfig;
   // Mantle bridge configuration
