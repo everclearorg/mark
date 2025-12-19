@@ -537,7 +537,7 @@ const evaluateFillServiceRebalance = async (
 
   // Skip if available amount is below minimum
   if (amountFromSender < minRebalance) {
-    logger.info('Available WETH below minimum rebalance threshold, skipping', {
+    logger.warn('Available WETH below minimum rebalance threshold, skipping', {
       requestId,
       availableAmount: amountFromSender.toString(),
       minRebalance: minRebalance.toString(),
