@@ -647,6 +647,161 @@ describe('StargateBridgeAdapter', () => {
       // Should throw due to unsupported destination
       await expect(adapter.send('0xSender', '0xRecipient', '1000000', route)).rejects.toThrow();
     });
+
+    it('should use API transactions when available with approve and bridge steps', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // Mock API response with both approve and bridge steps
+      const mockApiResponse = {
+        quotes: [{
+          route: { bridgeName: 'stargate' },
+          dstAmount: '995000',
+          steps: [
+            {
+              type: 'approve',
+              transaction: {
+                to: '0xTokenAddress',
+                data: '0xapprovedata',
+              },
+            },
+            {
+              type: 'bridge',
+              transaction: {
+                to: '0xPoolAddress',
+                data: '0xbridgedata',
+                value: '50000000000000000',
+              },
+            },
+          ],
+          duration: { estimated: 300 },
+          fees: { total: '0.01' },
+        }],
+      };
+      (axiosGet as jest.Mock).mockResolvedValue({ data: mockApiResponse } as never);
+
+      const result = await adapter.send(
+        '0xSender',
+        'EQD4FPq-PRDieyQKkizFTRtSDyucUIqrj0v_zXJmqaDp6_0t',
+        '1000000',
+        route,
+      );
+
+      expect(result).toHaveLength(2);
+      expect(result[0].memo).toBe('Approval');
+      expect(result[1].memo).toBe('Rebalance');
+      expect(mockLogger.info).toHaveBeenCalledWith('Using Stargate API for bridge transactions', expect.any(Object));
+    });
+
+    it('should fall back to manual transactions when API returns empty', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // API returns empty or null
+      (axiosGet as jest.Mock).mockResolvedValue({ data: { quotes: [] } } as never);
+
+      // Mock for manual fallback
+      mockReadContract
+        .mockResolvedValueOnce({ nativeFee: 50000000000000000n, lzTokenFee: 0n } as never) // quoteSend
+        .mockResolvedValueOnce(0n as never); // allowance check
+
+      const result = await adapter.send(
+        '0xSender',
+        '0xRecipient',
+        '1000000',
+        route,
+      );
+
+      expect(result).toBeDefined();
+      expect(mockLogger.info).toHaveBeenCalledWith('Prepared Stargate bridge transactions (manual fallback)', expect.any(Object));
+    });
+
+    it('should fall back to manual transactions when API throws error', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // API throws error
+      (axiosGet as jest.Mock).mockRejectedValue(new Error('API failed') as never);
+
+      // Mock for manual fallback
+      mockReadContract
+        .mockResolvedValueOnce({ nativeFee: 50000000000000000n, lzTokenFee: 0n } as never) // quoteSend
+        .mockResolvedValueOnce(0n as never); // allowance check
+
+      const result = await adapter.send(
+        '0xSender',
+        '0xRecipient',
+        '1000000',
+        route,
+      );
+
+      expect(result).toBeDefined();
+      expect(mockLogger.warn).toHaveBeenCalledWith('Stargate API transaction build failed, falling back to manual', expect.any(Object));
+    });
+
+    it('should skip approval transaction when allowance is sufficient', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // API returns null to trigger manual flow
+      (axiosGet as jest.Mock).mockResolvedValue({ data: { quotes: [] } } as never);
+
+      // Mock for manual fallback - sufficient allowance
+      mockReadContract
+        .mockResolvedValueOnce({ nativeFee: 50000000000000000n, lzTokenFee: 0n } as never) // quoteSend
+        .mockResolvedValueOnce(2000000n as never); // allowance already sufficient
+
+      const result = await adapter.send(
+        '0xSender',
+        '0xRecipient',
+        '1000000',
+        route,
+      );
+
+      // Should only have 1 transaction (bridge only, no approval)
+      expect(result).toHaveLength(1);
+      expect(result[0].memo).toBe('Rebalance');
+    });
+
+    it('should add approval transaction when allowance is insufficient', async () => {
+      const route: RebalanceRoute = {
+        origin: 1,
+        destination: 30826,
+        asset: USDT_ETH,
+      };
+
+      // API returns null to trigger manual flow
+      (axiosGet as jest.Mock).mockResolvedValue({ data: { quotes: [] } } as never);
+
+      // Mock for manual fallback - insufficient allowance
+      mockReadContract
+        .mockResolvedValueOnce({ nativeFee: 50000000000000000n, lzTokenFee: 0n } as never) // quoteSend
+        .mockResolvedValueOnce(0n as never); // no allowance
+
+      const result = await adapter.send(
+        '0xSender',
+        '0xRecipient',
+        '1000000',
+        route,
+      );
+
+      // Should have 2 transactions (approval + bridge)
+      expect(result).toHaveLength(2);
+      expect(result[0].memo).toBe('Approval');
+      expect(result[1].memo).toBe('Rebalance');
+    });
   });
 
   describe('getPublicClient', () => {

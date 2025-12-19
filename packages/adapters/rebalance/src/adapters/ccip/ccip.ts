@@ -179,6 +179,118 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     return `0x000000000000000000000000${addressWithoutPrefix}` as `0x${string}`;
   }
 
+  /**
+   * Build CCIP SVMExtraArgsV1 for Solana destination (Borsh serialized)
+   * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/messages#svmextraargsv1
+   *
+   * Format:
+   * - Tag: 4 bytes big-endian (0x1f3b3aba)
+   * - compute_units: u32 (4 bytes LE)
+   * - account_is_writable_bitmap: u64 (8 bytes LE)
+   * - allow_out_of_order_execution: bool (1 byte)
+   * - token_receiver: [u8; 32] (32 bytes)
+   * - accounts: Vec<[u8; 32]> (4 bytes length + 32 bytes per account)
+   *
+   * @param computeUnits - Compute units for Solana. MUST be 0 for token-only transfers.
+   * @param accountIsWritableBitmap - Bitmask for writable accounts. 0 for token-only.
+   * @param allowOutOfOrderExecution - Must be true for Solana destination
+   * @param tokenReceiver - Solana address (base58) receiving tokens. Required for token transfers.
+   * @param accounts - Additional accounts needed. Empty for token-only transfers.
+   */
+  private encodeSVMExtraArgsV1(
+    computeUnits: number,
+    accountIsWritableBitmap: bigint,
+    allowOutOfOrderExecution: boolean,
+    tokenReceiver: string,
+    accounts: string[] = [],
+  ): `0x${string}` {
+    // SVM_EXTRA_ARGS_V1_TAG: 0x1f3b3aba (4 bytes, big-endian)
+    const typeTag = Buffer.alloc(4);
+    typeTag.writeUInt32BE(0x1f3b3aba, 0);
+
+    // compute_units: u32 little-endian (4 bytes)
+    const computeUnitsBuf = Buffer.alloc(4);
+    computeUnitsBuf.writeUInt32LE(computeUnits, 0);
+
+    // account_is_writable_bitmap: u64 little-endian (8 bytes)
+    const bitmapBuf = Buffer.alloc(8);
+    bitmapBuf.writeBigUInt64LE(accountIsWritableBitmap, 0);
+
+    // allow_out_of_order_execution: bool (1 byte)
+    const oooBuf = Buffer.alloc(1);
+    oooBuf.writeUInt8(allowOutOfOrderExecution ? 1 : 0, 0);
+
+    // token_receiver: [u8; 32] - Solana public key
+    let tokenReceiverBuf: Buffer;
+    if (tokenReceiver.startsWith('0x')) {
+      tokenReceiverBuf = Buffer.from(tokenReceiver.slice(2), 'hex');
+    } else {
+      // Assume base58 Solana address
+      tokenReceiverBuf = Buffer.from(bs58.decode(tokenReceiver));
+    }
+    if (tokenReceiverBuf.length !== 32) {
+      throw new Error(`Invalid tokenReceiver length: expected 32 bytes, got ${tokenReceiverBuf.length}`);
+    }
+
+    // accounts: Vec<[u8; 32]> - 4 bytes length (u32 LE) + 32 bytes per account
+    const accountsLengthBuf = Buffer.alloc(4);
+    accountsLengthBuf.writeUInt32LE(accounts.length, 0);
+
+    const accountBuffers: Buffer[] = [];
+    for (const account of accounts) {
+      let accountBuf: Buffer;
+      if (account.startsWith('0x')) {
+        accountBuf = Buffer.from(account.slice(2), 'hex');
+      } else {
+        accountBuf = Buffer.from(bs58.decode(account));
+      }
+      if (accountBuf.length !== 32) {
+        throw new Error(`Invalid account length: expected 32 bytes, got ${accountBuf.length}`);
+      }
+      accountBuffers.push(accountBuf);
+    }
+
+    return `0x${Buffer.concat([
+      typeTag,
+      computeUnitsBuf,
+      bitmapBuf,
+      oooBuf,
+      tokenReceiverBuf,
+      accountsLengthBuf,
+      ...accountBuffers,
+    ]).toString('hex')}` as `0x${string}`;
+  }
+
+  /**
+   * Build CCIP EVMExtraArgsV2 for EVM destination (Borsh serialized)
+   * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/messages#evmextraargsv2
+   *
+   * Format:
+   * - Tag: 4 bytes big-endian (0x181dcf10)
+   * - gas_limit: u128 (16 bytes LE)
+   * - allow_out_of_order_execution: bool (1 byte)
+   *
+   * @param gasLimit - Gas limit for EVM execution. MUST be 0 for token-only transfers.
+   * @param allowOutOfOrderExecution - Whether to allow out-of-order execution
+   */
+  private encodeEVMExtraArgsV2(gasLimit: number, allowOutOfOrderExecution: boolean): `0x${string}` {
+    // EVM_EXTRA_ARGS_V2_TAG: 0x181dcf10 (4 bytes, big-endian)
+    const typeTag = Buffer.alloc(4);
+    typeTag.writeUInt32BE(0x181dcf10, 0);
+
+    // gas_limit: u128 little-endian (16 bytes)
+    const gasLimitBuf = Buffer.alloc(16);
+    const gasLimitBigInt = BigInt(gasLimit);
+    gasLimitBuf.writeBigUInt64LE(gasLimitBigInt & BigInt('0xFFFFFFFFFFFFFFFF'), 0);
+    gasLimitBuf.writeBigUInt64LE(gasLimitBigInt >> BigInt(64), 8);
+
+    // allow_out_of_order_execution: bool (1 byte)
+    const oooBuf = Buffer.alloc(1);
+    oooBuf.writeUInt8(allowOutOfOrderExecution ? 1 : 0, 0);
+
+    return `0x${Buffer.concat([typeTag, gasLimitBuf, oooBuf]).toString('hex')}` as `0x${string}`;
+  }
+
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
       this.validateCCIPRoute(route);
@@ -226,9 +338,18 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         recipient,
       });
 
-      // Create CCIP message
+      // Determine if destination is Solana for special handling
+      const isSolanaDestination = this.isSolanaChain(route.destination);
+
+      // Create CCIP message with proper encoding based on destination chain
+      // For Solana: receiver must be zero address, actual recipient goes in tokenReceiver (extraArgs)
+      // For EVM: receiver is the actual recipient padded to 32 bytes
       const ccipMessage: CCIPMessage = {
-        receiver: this.encodeRecipientAddress(recipient, route.destination),
+        // For Solana token-only transfers: receiver MUST be zero address
+        // The actual recipient is specified in tokenReceiver field of SVMExtraArgsV1
+        receiver: isSolanaDestination
+          ? ('0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`)
+          : this.encodeRecipientAddress(recipient, route.destination),
         data: '0x' as `0x${string}`, // No additional data for simple token transfer
         tokenAmounts: [
           {
@@ -236,9 +357,29 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
             amount: tokenAmount,
           },
         ],
-        extraArgs: '0x' as `0x${string}`, // Default args
+        // For Solana: SVMExtraArgsV1 with tokenReceiver set to actual recipient
+        // For EVM: EVMExtraArgsV2 with gasLimit=0 for token-only transfers
+        extraArgs: isSolanaDestination
+          ? this.encodeSVMExtraArgsV1(
+              0, // computeUnits: 0 for token-only transfers
+              0n, // accountIsWritableBitmap: 0 for token-only
+              true, // allowOutOfOrderExecution: MUST be true for Solana
+              recipient, // tokenReceiver: actual Solana recipient address
+              [], // accounts: empty for token-only transfers
+            )
+          : this.encodeEVMExtraArgsV2(
+              0, // gasLimit: 0 for token-only transfers
+              true, // allowOutOfOrderExecution: recommended true
+            ),
         feeToken: '0x0000000000000000000000000000000000000000' as Address, // Pay fees in native token
       };
+
+      this.logger.debug('CCIP message constructed', {
+        isSolanaDestination,
+        receiver: ccipMessage.receiver,
+        extraArgsLength: ccipMessage.extraArgs.length,
+        tokenAmount: tokenAmount.toString(),
+      });
 
       // Get providers for the origin chain
       const providers = this.chains[originChainId.toString()]?.providers ?? [];
