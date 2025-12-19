@@ -76,8 +76,10 @@ export enum SupportedBridge {
   Kraken = 'kraken',
   Near = 'near',
   Mantle = 'mantle',
+  Pendle = 'pendle',
   Stargate = 'stargate',
   TacInner = 'tac-inner',
+  CCIP = 'chainlink-ccip',
 }
 
 export enum GasType {
@@ -185,6 +187,10 @@ export interface MarkConfiguration extends RebalanceConfig {
     rpcUrl?: string; // TONAPI.io base URL (defaults to https://tonapi.io/v2)
     apiKey?: string; // TONAPI.io API key for production use
     assets?: TonAssetConfiguration[]; // TON assets with jetton addresses
+  };
+  solana?: {
+    privateKey?: string; // Solana wallet private key (base58 encoded)
+    rpcUrl?: string; // Solana RPC endpoint (defaults to mainnet-beta)
   };
   tacRebalance?: TokenRebalanceConfig;
   methRebalance?: TokenRebalanceConfig;

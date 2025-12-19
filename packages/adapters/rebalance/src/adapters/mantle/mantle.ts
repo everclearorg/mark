@@ -65,7 +65,8 @@ export class MantleBridgeAdapter implements BridgeAdapter {
     // This allows operators to override contract addresses via config if needed
     this.mantleConfig = {
       l2Gas: config?.mantle?.l2Gas ? BigInt(config.mantle.l2Gas) : DEFAULT_L2_GAS,
-      stakingContractAddress: (config?.mantle?.stakingContractAddress ?? METH_STAKING_CONTRACT_ADDRESS) as `0x${string}`,
+      stakingContractAddress: (config?.mantle?.stakingContractAddress ??
+        METH_STAKING_CONTRACT_ADDRESS) as `0x${string}`,
       methL1Address: (config?.mantle?.methL1Address ?? METH_ON_ETH_ADDRESS) as `0x${string}`,
       methL2Address: (config?.mantle?.methL2Address ?? METH_ON_MANTLE_ADDRESS) as `0x${string}`,
       bridgeContractAddress: (config?.mantle?.bridgeContractAddress ?? MANTLE_BRIDGE_CONTRACT_ADDRESS) as `0x${string}`,
