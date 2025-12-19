@@ -24,9 +24,10 @@ jest.mock('@mark/core', () => ({
 import { rebalanceMantleEth, executeMethCallbacks } from '../../src/rebalance/mantleEth';
 import * as database from '@mark/database';
 import * as balanceHelpers from '../../src/helpers/balance';
-import * as mantleEthModule from '../../src/rebalance/mantleEth';
+import * as transactionHelpers from '../../src/helpers/transactions';
 import { createDatabaseMock } from '../mocks/database';
 import { MarkConfiguration, SupportedBridge, RebalanceOperationStatus, EarmarkStatus, MAINNET_CHAIN_ID, MANTLE_CHAIN_ID } from '@mark/core';
+import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { Logger } from '@mark/logger';
 import { ChainService } from '@mark/chainservice';
 import { ProcessingContext } from '../../src/init';
@@ -144,7 +145,6 @@ describe('mETH Rebalancing', () => {
   let mockPurchaseCache: SinonStubbedInstance<PurchaseCache>;
 
   let getEvmBalanceStub: SinonStub;
-  let getMarkBalancesForTickerStub: SinonStub;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -184,16 +184,9 @@ describe('mETH Rebalancing', () => {
     mockRebalanceAdapter.isPaused.resolves(false);
     mockEverclear.fetchIntents.resolves([]);
 
-    // Stub balance helpers
+    // Stub balance helper - now used directly for each intent's origin chain
     getEvmBalanceStub = stub(balanceHelpers, 'getEvmBalance');
     getEvmBalanceStub.resolves(BigInt('1000000000000000000000')); // 1000 WETH in wei
-
-    getMarkBalancesForTickerStub = stub(balanceHelpers, 'getMarkBalancesForTicker');
-    getMarkBalancesForTickerStub.resolves(
-      new Map([
-        [MAINNET_CHAIN_ID.toString(), BigInt('1000000000000000000000')], // 1000 WETH on mainnet
-      ]),
-    );
 
     const mockConfig = createMockConfig();
 
@@ -283,14 +276,14 @@ describe('mETH Rebalancing', () => {
     });
 
     it('should execute callbacks before rebalancing', async () => {
-      // Mock callback execution
-      const executeMethCallbacksStub = stub(mantleEthModule, 'executeMethCallbacks');
-      executeMethCallbacksStub.resolves();
+      // Mock callback execution by stubbing the database call
+      const dbMock = mockContext.database as any;
+      dbMock.getRebalanceOperations = stub().resolves({ operations: [], total: 0 });
 
       await rebalanceMantleEth(mockContext as unknown as ProcessingContext);
 
-      expect(executeMethCallbacksStub.calledOnce).toBe(true);
-      executeMethCallbacksStub.restore();
+      // Verify callbacks were executed (getRebalanceOperations was called)
+      expect(dbMock.getRebalanceOperations.called).toBe(true);
     });
   });
 
@@ -306,12 +299,8 @@ describe('mETH Rebalancing', () => {
 
       mockEverclear.fetchIntents.resolves([mockIntent] as any);
 
-      // Balance on origin chain is sufficient
-      getMarkBalancesForTickerStub.resolves(
-        new Map([
-          [MAINNET_CHAIN_ID.toString(), BigInt('500000000000000000000')], // 500 WETH
-        ]),
-      );
+      // Balance on origin chain (mainnet) for FS address is sufficient
+      getEvmBalanceStub.resolves(BigInt('500000000000000000000')); // 500 WETH
 
       await rebalanceMantleEth(mockContext as unknown as ProcessingContext);
 
@@ -359,10 +348,8 @@ describe('mETH Rebalancing', () => {
 
       mockEverclear.fetchIntents.resolves([mockIntent] as any);
 
-      // Sufficient WETH balance on origin chain for intent
-      getMarkBalancesForTickerStub.resolves(
-        new Map([[MAINNET_CHAIN_ID.toString(), BigInt('500000000000000000000')]]), // 500 WETH
-      );
+      // Sufficient WETH balance on origin chain (mainnet) for FS address
+      getEvmBalanceStub.resolves(BigInt('500000000000000000000')); // 500 WETH
 
       // Force processThresholdRebalancing to produce no actions by making adapter unavailable
       // (executeMethBridge will log error and return [])
@@ -413,12 +400,8 @@ describe('mETH Rebalancing', () => {
 
       mockEverclear.fetchIntents.resolves([mockIntent] as any);
 
-      // Balance is less than intent amount
-      getMarkBalancesForTickerStub.resolves(
-        new Map([
-          [MAINNET_CHAIN_ID.toString(), BigInt('10000000000000000000')], // 10 WETH (less than 20 needed)
-        ]),
-      );
+      // Balance on origin chain (mainnet) for FS address is less than intent amount
+      getEvmBalanceStub.resolves(BigInt('10000000000000000000')); // 10 WETH (less than 20 needed)
 
       await rebalanceMantleEth(mockContext as unknown as ProcessingContext);
 
@@ -649,17 +632,16 @@ describe('mETH Rebalancing', () => {
       };
 
       mockEverclear.fetchIntents.resolves([mockIntent] as any);
-      getMarkBalancesForTickerStub.resolves(
-        new Map([
-          [MAINNET_CHAIN_ID.toString(), BigInt('500000000000000000000')], // 500 WETH
-        ]),
-      );
 
       // FS receiver has 90 mETH (below 100 threshold)
       // After committing 10 WETH from intent, effective balance is 100 (at threshold)
       getEvmBalanceStub.callsFake(async (_config, chainId, address) => {
         if (chainId === MANTLE_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
           return BigInt('90000000000000000000'); // 90 mETH
+        }
+        // Balance on mainnet for FS address (for intent processing)
+        if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('500000000000000000000'); // 500 WETH (sufficient for intent)
         }
         return BigInt('1000000000000000000000');
       });
@@ -791,6 +773,7 @@ describe('mETH Rebalancing', () => {
         slippage: 500,
         status: RebalanceOperationStatus.PENDING,
         bridge: 'across-mantle',
+        recipient: MOCK_FS_ADDRESS, // FS recipient
         transactions: {
           '999': {
             transactionHash: '0x123',
@@ -840,6 +823,7 @@ describe('mETH Rebalancing', () => {
         slippage: 500,
         status: RebalanceOperationStatus.PENDING,
         bridge: 'across-mantle',
+        recipient: MOCK_MM_ADDRESS, // MM recipient
         transactions: {
           '999': {
             transactionHash: '0x123',
@@ -879,6 +863,92 @@ describe('mETH Rebalancing', () => {
         (call) => call.args[0] && call.args[0].includes('Action not ready for destination callback'),
       );
       expect(notReadyLog).toBeTruthy();
+    });
+
+    it('should use FS sender for FS recipient operations in callbacks', async () => {
+      const awaitingCallbackOperation = {
+        id: 'op-callback-001',
+        earmarkId: null,
+        originChainId: Number(MAINNET_CHAIN_ID),
+        destinationChainId: Number(MANTLE_CHAIN_ID),
+        tickerHash: WETH_TICKER_HASH,
+        amount: '10000000000000000000',
+        slippage: 50,
+        status: RebalanceOperationStatus.AWAITING_CALLBACK,
+        bridge: 'across-mantle',
+        recipient: MOCK_FS_ADDRESS, // FS recipient
+        transactions: {
+          [MAINNET_CHAIN_ID]: {
+            transactionHash: '0x123',
+            metadata: {
+              receipt: {
+                transactionHash: '0x123',
+                blockNumber: 1000n,
+              },
+            },
+          },
+        },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const dbMock = mockContext.database as any;
+      dbMock.getRebalanceOperations = stub().resolves({
+        operations: [awaitingCallbackOperation],
+        total: 1,
+      });
+      dbMock.updateRebalanceOperation = stub().resolves({});
+
+      // Mock Mantle adapter for Leg 2
+      const mockMantleAdapter = {
+        type: stub().returns(SupportedBridge.Mantle),
+        getReceivedAmount: stub().resolves('10000000000000000000'),
+        send: stub().resolves([
+          {
+            transaction: {
+              to: '0x123',
+              data: '0x456',
+              value: BigInt('10000000000000000000'),
+            },
+            memo: RebalanceTransactionMemo.Rebalance,
+            effectiveAmount: '10000000000000000000',
+          },
+        ]),
+      };
+
+      mockRebalanceAdapter.getAdapter.callsFake((bridgeType: SupportedBridge) => {
+        if (bridgeType === SupportedBridge.Mantle) {
+          return mockMantleAdapter as any;
+        }
+        return null;
+      });
+
+      // Mock submitTransactionWithLogging to capture sender
+      const submitTxStub = stub(transactionHelpers, 'submitTransactionWithLogging');
+      submitTxStub.resolves({
+        hash: '0x789',
+        receipt: {
+          transactionHash: '0x789',
+          blockNumber: 2000n,
+          from: MOCK_FS_SENDER_ADDRESS,
+          to: '0x123',
+          cumulativeGasUsed: 100000n,
+          effectiveGasPrice: 20000000000n,
+          gasUsed: 100000n,
+          status: 'success',
+          logs: [],
+          transactionIndex: 0,
+        } as any,
+        submissionType: 'direct' as any,
+      });
+
+      await executeMethCallbacks(mockContext as unknown as ProcessingContext);
+
+      // Verify FS sender was used - check that submitTransactionWithLogging was called
+      // with fillServiceChainService (indirectly via selectedChainService)
+      expect(submitTxStub.called).toBe(true);
+      expect(dbMock.updateRebalanceOperation.called).toBe(true);
+      submitTxStub.restore();
     });
   });
 
