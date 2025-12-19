@@ -428,7 +428,19 @@ describe('TacInnerBridgeAdapter', () => {
       );
 
       expect(result).toBeNull();
-      expect(mockLogger.error).toHaveBeenCalledWith('TAC SDK not initialized, cannot execute bridge');
+      // Retry logic wraps the error - check for the wrapper message with original error inside
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to execute TAC bridge after retries',
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: 'TAC SDK not initialized, cannot execute bridge',
+          }),
+          recipient: '0xRecipient',
+          amount: '1000000',
+          asset: USDT_TON_JETTON,
+          isRetryable: false,
+        }),
+      );
     });
   });
 
