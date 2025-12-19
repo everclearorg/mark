@@ -80,7 +80,7 @@ export class CctpBridgeAdapter implements BridgeAdapter {
     // Use direct mapping from chain ID to numeric domain
     const originDomain = CHAIN_ID_TO_NUMERIC_DOMAIN[route.origin];
     const destinationDomain = CHAIN_ID_TO_NUMERIC_DOMAIN[route.destination];
-    if (!originDomain || !destinationDomain) {
+    if (originDomain == null || destinationDomain == null) {
       throw new Error(`Invalid origin or destination domain: ${route.origin} or ${route.destination}`);
     }
 
@@ -249,7 +249,7 @@ export class CctpBridgeAdapter implements BridgeAdapter {
     if (!messageHash) return false;
 
     const originDomain = CHAIN_ID_TO_NUMERIC_DOMAIN[route.origin];
-    if (!originDomain) {
+    if (originDomain == null) {
       throw new Error(`Invalid origin domain: ${route.origin}`);
     }
 
@@ -272,8 +272,12 @@ export class CctpBridgeAdapter implements BridgeAdapter {
     }
 
     const domainId =
-      this.version === 'v1' ? route.origin.toString() : CHAIN_ID_TO_NUMERIC_DOMAIN[route.origin].toString();
-    if (!domainId) {
+      this.version === 'v1'
+        ? route.origin.toString()
+        : CHAIN_ID_TO_NUMERIC_DOMAIN[route.origin] != null
+          ? CHAIN_ID_TO_NUMERIC_DOMAIN[route.origin].toString()
+          : undefined;
+    if (domainId == null) {
       throw new Error(`Invalid domain ID: ${route.origin}`);
     }
 

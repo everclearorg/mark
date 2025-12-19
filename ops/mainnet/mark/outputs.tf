@@ -13,6 +13,11 @@ output "prometheus_service_url" {
   value       = module.mark_prometheus.service_url
 }
 
+output "fillservice_web3signer_service_url" {
+  description = "URL of the fill service web3signer (if deployed)"
+  value       = try(module.mark_fillservice_web3signer[0].service_url, null)
+}
+
 output "pushgateway_service_url" {
   description = "URL of the Prometheus Pushgateway service"
   value       = module.mark_pushgateway.service_url
@@ -21,6 +26,11 @@ output "pushgateway_service_url" {
 output "lambda_function_name" {
   description = "Name of the Lambda function"
   value       = module.mark_poller.function_name
+}
+
+output "lambda_meth_only_function_name" {
+  description = "Name of the METH-only Lambda function"
+  value       = module.mark_poller_meth_only.function_name
 }
 
 output "ecs_cluster_name" {
