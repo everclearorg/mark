@@ -115,6 +115,9 @@ export const getMarkBalancesForTicker = async (
 ): Promise<Map<string, bigint>> => {
   const { chains } = config;
 
+  // Get all addresses once for TVM chains
+  const addresses = await chainService.getAddress();
+
   const balancePromises: Array<{
     domain: string;
     promise: Promise<bigint>;
@@ -130,11 +133,12 @@ export const getMarkBalancesForTicker = async (
     if (!tokenAddr || !decimals) {
       continue;
     }
+    const address = isSvm ? config.ownSolAddress : isTvm ? addresses[domain] : config.ownAddress;
     const balancePromise = isSvm
-      ? getSvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
+      ? getSvmBalance(config, chainService, domain, address, tokenAddr, decimals, prometheus)
       : isTvm
-        ? getTvmBalance(chainService, domain, tokenAddr, decimals, prometheus)
-        : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
+        ? getTvmBalance(chainService, domain, address, tokenAddr, decimals, prometheus)
+        : getEvmBalance(config, domain, address, tokenAddr, decimals, prometheus);
 
     balancePromises.push({
       domain,
@@ -156,17 +160,17 @@ export const getMarkBalancesForTicker = async (
   return markBalances;
 };
 
-const getSvmBalance = async (
+export const getSvmBalance = async (
   config: MarkConfiguration,
   chainService: ChainService,
   domain: string,
+  address: string,
   tokenAddr: string,
   decimals: number,
   prometheus: PrometheusAdapter,
 ): Promise<bigint> => {
-  const { ownSolAddress } = config;
   try {
-    const balanceStr = await chainService.getBalance(+domain, ownSolAddress, tokenAddr);
+    const balanceStr = await chainService.getBalance(+domain, address, tokenAddr);
     let balance = BigInt(balanceStr);
 
     // Convert balance to standardized 18 decimals
@@ -182,16 +186,16 @@ const getSvmBalance = async (
   }
 };
 
-const getTvmBalance = async (
+export const getTvmBalance = async (
   chainService: ChainService,
   domain: string,
+  address: string,
   tokenAddr: string,
   decimals: number,
   prometheus: PrometheusAdapter,
 ): Promise<bigint> => {
   try {
-    const addresses = await chainService.getAddress();
-    const balanceStr = await chainService.getBalance(+domain, addresses[domain], tokenAddr);
+    const balanceStr = await chainService.getBalance(+domain, address, tokenAddr);
     let balance = BigInt(balanceStr);
 
     // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
@@ -209,9 +213,10 @@ const getTvmBalance = async (
 };
 
 // TODO: make getEvmBalance get from chainService instead of viem call
-const getEvmBalance = async (
+export const getEvmBalance = async (
   config: MarkConfiguration,
   domain: string,
+  address: string,
   tokenAddr: string,
   decimals: number,
   prometheus: PrometheusAdapter,
@@ -221,7 +226,8 @@ const getEvmBalance = async (
   try {
     // Get Zodiac configuration for this chain
     const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-    const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+    // If address matches ownAddress, apply zodiac resolution; otherwise use address directly
+    const actualOwner = address === ownAddress ? getActualOwner(zodiacConfig, ownAddress) : address;
 
     const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
     let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
@@ -310,4 +316,37 @@ export const safeStringToBigInt = (value: string, scaleFactor: bigint): bigint =
   }
 
   return BigInt(value) * scaleFactor;
+};
+
+/**
+ * Safely parse a string to BigInt, returning a default value on failure.
+ * Use this for config values that are already in smallest units (e.g., "100000000" for 100 USDT).
+ *
+ * @param value - String value to parse (can be undefined/null/empty)
+ * @param defaultValue - Value to return on parse failure (default: 0n)
+ * @returns Parsed BigInt or default value
+ *
+ * @example
+ * safeParseBigInt('100000000') // returns 100000000n
+ * safeParseBigInt(undefined)   // returns 0n
+ * safeParseBigInt('')          // returns 0n
+ * safeParseBigInt('invalid')   // returns 0n
+ */
+export const safeParseBigInt = (value: string | undefined | null, defaultValue: bigint = 0n): bigint => {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+
+  try {
+    // Handle decimal strings by truncating to integer part
+    const integerValue = value.includes('.') ? value.split('.')[0] : value;
+    // Remove any whitespace and validate
+    const cleaned = integerValue.trim();
+    if (cleaned === '' || !/^-?\d+$/.test(cleaned)) {
+      return defaultValue;
+    }
+    return BigInt(cleaned);
+  } catch {
+    return defaultValue;
+  }
 };

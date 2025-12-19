@@ -114,6 +114,33 @@ export interface RebalanceConfig {
   routes: RouteRebalancingConfig[];
   onDemandRoutes?: OnDemandRouteConfig[];
 }
+
+export interface TokenRebalanceConfig {
+  enabled: boolean;
+  // Market Maker receiver configuration
+  marketMaker: {
+    address?: string; // EVM address on TAC for MM
+    onDemandEnabled: boolean; // Enable invoice-triggered rebalancing
+    thresholdEnabled: boolean; // Enable balance-threshold rebalancing
+    threshold?: string; // Min USDT balance (6 decimals)
+    targetBalance?: string; // Target after threshold-triggered rebalance
+  };
+  // Fill Service receiver configuration
+  fillService: {
+    address?: string; // EVM address on TAC for FS (destination) - also used as sender on ETH if senderAddress not set
+    senderAddress?: string; // Optional: ETH sender address if different from 'address' (rare - same key = same address)
+    thresholdEnabled: boolean; // Enable balance-threshold rebalancing
+    threshold?: string; // Min USDT balance (6 decimals)
+    targetBalance?: string; // Target after threshold-triggered rebalance
+    allowCrossWalletRebalancing?: boolean; // Allow MM to fund FS rebalancing when FS has insufficient ETH USDT
+  };
+  // Shared bridge configuration
+  bridge: {
+    slippageDbps: number; // Slippage for Stargate (default: 500 = 5%)
+    minRebalanceAmount: string; // Min amount per operation (6 decimals)
+    maxRebalanceAmount?: string; // Max amount per operation (optional cap)
+  };
+}
 export interface RedisConfig {
   host: string;
   port: number;
@@ -126,6 +153,7 @@ export interface DatabaseConfig {
 export interface MarkConfiguration extends RebalanceConfig {
   pushGatewayUrl: string;
   web3SignerUrl: string;
+  fillServiceSignerUrl?: string; // Optional: separate web3signer for fill service sender
   everclearApiUrl: string;
   relayer: {
     url?: string;
@@ -156,13 +184,22 @@ export interface MarkConfiguration extends RebalanceConfig {
   };
   ton: {
     mnemonic?: string; // TON wallet mnemonic for TAC bridge operations
-    rpcUrl?: string; // TON RPC endpoint
-    apiKey?: string; // TON API key (for tonapi.io or DRPC)
+    rpcUrl?: string; // TONAPI.io base URL (defaults to https://tonapi.io/v2)
+    apiKey?: string; // TONAPI.io API key for production use
     assets?: TonAssetConfiguration[]; // TON assets with jetton addresses
   };
   solana?: {
     privateKey?: string; // Solana wallet private key (base58 encoded)
     rpcUrl?: string; // Solana RPC endpoint (defaults to mainnet-beta)
+  tacRebalance?: TokenRebalanceConfig;
+  methRebalance?: TokenRebalanceConfig;
+  // Mantle bridge configuration
+  mantle?: {
+    l2Gas?: number; // L2 gas limit for bridge transactions (default: 200000)
+    stakingContractAddress?: string; // Override mETH staking contract
+    methL1Address?: string; // Override mETH token on L1
+    methL2Address?: string; // Override mETH token on L2 (Mantle)
+    bridgeContractAddress?: string; // Override Mantle bridge contract
   };
   redis: RedisConfig;
   database: DatabaseConfig;

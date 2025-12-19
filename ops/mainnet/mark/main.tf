@@ -45,6 +45,9 @@ locals {
     chains                  = local.mark_config_json.chains
     db_password             = local.mark_config_json.db_password
     admin_token             = local.mark_config_json.admin_token
+    # Fill Service signer configuration (optional - for TAC FS rebalancing with separate sender)
+    web3_fastfill_signer_private_key = try(local.mark_config_json.web3_fastfill_signer_private_key, "")
+    fillServiceSignerAddress         = try(local.mark_config_json.fillServiceSignerAddress, "")
     # TAC/TON configuration (optional - for TAC USDT rebalancing)
     tonSignerAddress = try(local.mark_config_json.tonSignerAddress, "")
     # Full TON configuration including assets with jetton addresses
@@ -54,11 +57,53 @@ locals {
       apiKey   = try(local.mark_config_json.ton.apiKey, "")
       assets   = try(local.mark_config_json.ton.assets, [])
     }
-    # TAC SDK configuration
-    tac = {
-      tonRpcUrl = try(local.mark_config_json.tac.tonRpcUrl, "")
-      network   = try(local.mark_config_json.tac.network, "mainnet")
-      apiKey    = try(local.mark_config_json.tac.apiKey, "")
+    # TAC Rebalance configuration
+    tacRebalance = {
+      enabled = try(local.mark_config_json.tacRebalance.enabled, false)
+      marketMaker = {
+        address           = try(local.mark_config_json.tacRebalance.marketMaker.address, "")
+        onDemandEnabled   = try(local.mark_config_json.tacRebalance.marketMaker.onDemandEnabled, false)
+        thresholdEnabled  = try(local.mark_config_json.tacRebalance.marketMaker.thresholdEnabled, false)
+        threshold         = try(local.mark_config_json.tacRebalance.marketMaker.threshold, "")
+        targetBalance     = try(local.mark_config_json.tacRebalance.marketMaker.targetBalance, "")
+      }
+      fillService = {
+        address                     = try(local.mark_config_json.tacRebalance.fillService.address, "")
+        senderAddress               = try(local.mark_config_json.tacRebalance.fillService.senderAddress, "") # Filler's ETH sender address
+        thresholdEnabled            = try(local.mark_config_json.tacRebalance.fillService.thresholdEnabled, false)
+        threshold                   = try(local.mark_config_json.tacRebalance.fillService.threshold, "")
+        targetBalance               = try(local.mark_config_json.tacRebalance.fillService.targetBalance, "")
+        allowCrossWalletRebalancing = try(local.mark_config_json.tacRebalance.fillService.allowCrossWalletRebalancing, false)
+      }
+      bridge = {
+        slippageDbps       = try(local.mark_config_json.tacRebalance.bridge.slippageDbps, 500) # 5% default
+        minRebalanceAmount = try(local.mark_config_json.tacRebalance.bridge.minRebalanceAmount, "")
+        maxRebalanceAmount = try(local.mark_config_json.tacRebalance.bridge.maxRebalanceAmount, "")
+      }
+    }
+    # METH Rebalance configuration
+    methRebalance = {
+      enabled = try(local.mark_config_json.methRebalance.enabled, false)
+      marketMaker = {
+        address           = try(local.mark_config_json.methRebalance.marketMaker.address, "")
+        onDemandEnabled   = try(local.mark_config_json.methRebalance.marketMaker.onDemandEnabled, false)
+        thresholdEnabled  = try(local.mark_config_json.methRebalance.marketMaker.thresholdEnabled, false)
+        threshold         = try(local.mark_config_json.methRebalance.marketMaker.threshold, "")
+        targetBalance     = try(local.mark_config_json.methRebalance.marketMaker.targetBalance, "")
+      }
+      fillService = {
+        address                     = try(local.mark_config_json.methRebalance.fillService.address, "")
+        senderAddress               = try(local.mark_config_json.methRebalance.fillService.senderAddress, "") # Filler's ETH sender address
+        thresholdEnabled            = try(local.mark_config_json.methRebalance.fillService.thresholdEnabled, false)
+        threshold                   = try(local.mark_config_json.methRebalance.fillService.threshold, "")
+        targetBalance               = try(local.mark_config_json.methRebalance.fillService.targetBalance, "")
+        allowCrossWalletRebalancing = try(local.mark_config_json.methRebalance.fillService.allowCrossWalletRebalancing, false)
+      }
+      bridge = {
+        slippageDbps       = try(local.mark_config_json.methRebalance.bridge.slippageDbps, 500) # 5% default
+        minRebalanceAmount = try(local.mark_config_json.methRebalance.bridge.minRebalanceAmount, "")
+        maxRebalanceAmount = try(local.mark_config_json.methRebalance.bridge.maxRebalanceAmount, "")
+      }
     }
     # Solana configuration for CCIP bridge operations
     solana = {
@@ -148,6 +193,39 @@ module "mark_web3signer" {
   zone_id                  = var.zone_id
   private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
   depends_on               = [aws_service_discovery_private_dns_namespace.mark_internal]
+}
+
+# Fill Service Web3Signer - separate signer for FS sender on TAC rebalancing
+# Uses a different private key (web3_fastfill_signer_private_key)
+# Internal port is 9000 (same as MM signer), but they're separate services with different DNS names:
+# - MM:  mark-web3signer-mainnet-production.mark.internal:9000
+# - FS:  mark-fillservice-web3signer-mainnet-production.mark.internal:9000
+module "mark_fillservice_web3signer" {
+  count               = local.mark_config.web3_fastfill_signer_private_key != "" ? 1 : 0
+  source              = "../../modules/service"
+  stage               = var.stage
+  environment         = var.environment
+  domain              = var.domain
+  region              = var.region
+  dd_api_key          = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
+  execution_role_arn  = data.aws_iam_role.ecr_admin_role.arn
+  cluster_id          = module.ecs.ecs_cluster_id
+  vpc_id              = module.network.vpc_id
+  lb_subnets          = module.network.private_subnets
+  task_subnets        = module.network.private_subnets
+  efs_id              = module.efs.mark_efs_id
+  docker_image        = "ghcr.io/connext/web3signer:latest"
+  container_family    = "${var.bot_name}-fillservice-web3signer"
+  container_port      = 9000 # Internal port is same, service discovery handles routing
+  cpu                 = 256
+  memory              = 512
+  instance_count      = 1
+  service_security_groups = [module.sgs.web3signer_sg_id]
+  container_env_vars  = local.fillservice_web3signer_env_vars
+  zone_id             = var.zone_id
+  private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
+  depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "mark_prometheus" {
@@ -278,6 +356,22 @@ module "mark_solana_usdc_poller" {
   # Uses module defaults: timeout=900s, memory_size=1024MB
 }
 
+# METH-only Lambda - runs Mantle ETH rebalancing every 1 minute
+module "mark_poller_meth_only" {
+  source              = "../../modules/lambda"
+  stage               = var.stage
+  environment         = var.environment
+  container_family    = "${var.bot_name}-poller-meth"
+  execution_role_arn  = module.iam.lambda_role_arn
+  image_uri           = var.image_uri
+  subnet_ids          = module.network.private_subnets
+  security_group_id   = module.sgs.lambda_sg_id
+  schedule_expression = "rate(1 minute)"
+  container_env_vars  = merge(local.poller_env_vars, {
+    RUN_MODE = "methOnly"
+  })
+}
+
 module "iam" {
   source      = "../../modules/iam"
   environment = var.environment
@@ -290,38 +384,40 @@ module "ecr" {
 }
 
 module "mark_admin_api" {
-  source             = "../../modules/api-gateway"
-  stage              = var.stage
-  environment        = var.environment
-  domain             = var.domain
-  certificate_arn    = var.cert_arn
-  zone_id            = var.zone_id
-  bot_name           = var.bot_name
-  execution_role_arn = module.iam.lambda_role_arn
-  subnet_ids         = module.network.private_subnets
-  security_group_id  = module.sgs.lambda_sg_id
-  image_uri          = var.admin_image_uri
-  container_env_vars = {
-    DD_SERVICE                   = "${var.bot_name}-admin"
-    DD_LAMBDA_HANDLER            = "index.handler"
-    DD_LOGS_ENABLED              = "true"
-    DD_TRACES_ENABLED            = "true"
-    DD_RUNTIME_METRICS_ENABLED   = "true"
-    DD_API_KEY                   = local.mark_config.dd_api_key
-    LOG_LEVEL                    = "debug"
-    REDIS_HOST                   = module.cache.redis_instance_address
-    REDIS_PORT                   = module.cache.redis_instance_port
-    ADMIN_TOKEN                  = local.mark_config.admin_token
-    DATABASE_URL                 = module.db.database_url
-    SIGNER_URL                   = "http://${module.mark_web3signer.service_url}:9000"
-    SIGNER_ADDRESS               = local.mark_config.signerAddress
-    MARK_CONFIG_SSM_PARAMETER    = "MARK_CONFIG_MAINNET"
-    SUPPORTED_SETTLEMENT_DOMAINS = var.supported_settlement_domains
-    SUPPORTED_ASSET_SYMBOLS      = var.supported_asset_symbols
-    ENVIRONMENT                  = var.environment
-    STAGE                        = var.stage
-    CHAIN_IDS                    = var.chain_ids
-    WHITELISTED_RECIPIENTS       = try(local.mark_config.whitelisted_recipients, "")
+  source              = "../../modules/api-gateway"
+  stage               = var.stage
+  environment         = var.environment
+  domain              = var.domain
+  certificate_arn     = var.cert_arn
+  zone_id             = var.zone_id
+  bot_name            = var.bot_name
+  execution_role_arn  = module.iam.lambda_role_arn
+  subnet_ids          = module.network.private_subnets
+  security_group_id   = module.sgs.lambda_sg_id
+  image_uri           = var.admin_image_uri
+  container_env_vars  = {
+    DD_SERVICE                      = "${var.bot_name}-admin"
+    DD_LAMBDA_HANDLER               = "index.handler"
+    DD_LOGS_ENABLED                 = "true"
+    DD_TRACES_ENABLED               = "true"
+    DD_RUNTIME_METRICS_ENABLED      = "true"
+    DD_API_KEY                      = local.mark_config.dd_api_key
+    LOG_LEVEL                       = "debug"
+    REDIS_HOST                      = module.cache.redis_instance_address
+    REDIS_PORT                      = module.cache.redis_instance_port
+    ADMIN_TOKEN                     = local.mark_config.admin_token
+    DATABASE_URL                    = module.db.database_url
+    SIGNER_URL                      = "http://${module.mark_web3signer.service_url}:9000"
+    SIGNER_ADDRESS                  = local.mark_config.signerAddress
+    MARK_CONFIG_SSM_PARAMETER       = "MARK_CONFIG_MAINNET"
+    SUPPORTED_SETTLEMENT_DOMAINS    = var.supported_settlement_domains
+    SUPPORTED_ASSET_SYMBOLS         = var.supported_asset_symbols
+    ENVIRONMENT                     = var.environment
+    STAGE                           = var.stage
+    CHAIN_IDS                       = var.chain_ids
+    WHITELISTED_RECIPIENTS          = try(local.mark_config.whitelisted_recipients, "")
+    PUSH_GATEWAY_URL                = "http://${var.bot_name}-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL                  = "http://${var.bot_name}-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
   }
 }
 

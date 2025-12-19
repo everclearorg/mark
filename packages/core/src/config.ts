@@ -33,6 +33,32 @@ export class ConfigurationError extends Error {
   }
 }
 
+/**
+ * Parses a boolean value from environment variable string or config JSON
+ * Handles string values like "true", "false", "1", "0" from environment variables
+ * @param value - The value to parse (could be boolean, string, undefined)
+ * @returns boolean value, or undefined if value is undefined
+ */
+export function parseBooleanValue(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const lower = value.toLowerCase().trim();
+    if (lower === 'true' || lower === '1') {
+      return true;
+    }
+    if (lower === 'false' || lower === '0' || lower === '') {
+      return false;
+    }
+  }
+  // For any other type, coerce to boolean
+  return Boolean(value);
+}
+
 export const DEFAULT_GAS_THRESHOLD = '5000000000000000'; // 0.005 eth
 export const DEFAULT_BALANCE_THRESHOLD = '0'; // 0
 export const DEFAULT_INVOICE_AGE = '1';
@@ -239,6 +265,8 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
       web3SignerUrl: configJson.web3SignerUrl ?? (await requireEnv('SIGNER_URL')),
+      fillServiceSignerUrl:
+        configJson.fillServiceSignerUrl ?? (await fromEnv('FILL_SERVICE_SIGNER_URL', true)) ?? undefined,
       everclearApiUrl: configJson.everclearApiUrl ?? (await fromEnv('EVERCLEAR_API_URL')) ?? apiUrl,
       relayer: {
         url: configJson?.relayer?.url ?? (await fromEnv('RELAYER_URL')) ?? undefined,
@@ -278,6 +306,139 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       solana: {
         privateKey: configJson.solana?.privateKey ?? (await fromEnv('SOLANA_PRIVATE_KEY', true)) ?? undefined,
         rpcUrl: configJson.solana?.rpcUrl ?? (await fromEnv('SOLANA_RPC_URL', true)) ?? undefined,
+      tacRebalance: {
+        enabled:
+          parseBooleanValue(configJson.tacRebalance?.enabled) ??
+          parseBooleanValue(await fromEnv('TAC_REBALANCE_ENABLED', true)) ??
+          false,
+        marketMaker: {
+          address:
+            configJson.tacRebalance?.marketMaker?.address ??
+            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
+            undefined,
+          onDemandEnabled:
+            parseBooleanValue(configJson.tacRebalance?.marketMaker?.onDemandEnabled) ??
+            parseBooleanValue(await fromEnv('TAC_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
+            false,
+          thresholdEnabled:
+            parseBooleanValue(configJson.tacRebalance?.marketMaker?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.tacRebalance?.marketMaker?.threshold ??
+            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
+            undefined,
+          targetBalance:
+            configJson.tacRebalance?.marketMaker?.targetBalance ??
+            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
+            undefined,
+        },
+        fillService: {
+          address:
+            configJson.tacRebalance?.fillService?.address ??
+            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
+            undefined,
+          senderAddress:
+            configJson.tacRebalance?.fillService?.senderAddress ??
+            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
+            undefined, // Filler's ETH address for sending from mainnet
+          thresholdEnabled:
+            parseBooleanValue(configJson.tacRebalance?.fillService?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.tacRebalance?.fillService?.threshold ??
+            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
+            undefined,
+          targetBalance:
+            configJson.tacRebalance?.fillService?.targetBalance ??
+            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
+            undefined,
+          allowCrossWalletRebalancing:
+            parseBooleanValue(configJson.tacRebalance?.fillService?.allowCrossWalletRebalancing) ??
+            parseBooleanValue(await fromEnv('TAC_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
+            false,
+        },
+        bridge: {
+          slippageDbps:
+            configJson.tacRebalance?.bridge?.slippageDbps ??
+            parseInt((await fromEnv('TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '500', 10),
+          minRebalanceAmount:
+            configJson.tacRebalance?.bridge?.minRebalanceAmount ??
+            (await fromEnv('TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
+            undefined,
+          maxRebalanceAmount:
+            configJson.tacRebalance?.bridge?.maxRebalanceAmount ??
+            (await fromEnv('TAC_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
+            undefined, // Max amount per operation (optional cap)
+        },
+      },
+      methRebalance: {
+        enabled:
+          parseBooleanValue(configJson.methRebalance?.enabled) ??
+          parseBooleanValue(await fromEnv('METH_REBALANCE_ENABLED', true)) ??
+          false,
+        marketMaker: {
+          address:
+            configJson.methRebalance?.marketMaker?.address ??
+            (await fromEnv('METH_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
+            undefined,
+          onDemandEnabled:
+            parseBooleanValue(configJson.methRebalance?.marketMaker?.onDemandEnabled) ??
+            parseBooleanValue(await fromEnv('METH_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
+            false,
+          thresholdEnabled:
+            parseBooleanValue(configJson.methRebalance?.marketMaker?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('METH_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.methRebalance?.marketMaker?.threshold ??
+            (await fromEnv('METH_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
+            undefined,
+          targetBalance:
+            configJson.methRebalance?.marketMaker?.targetBalance ??
+            (await fromEnv('METH_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
+            undefined,
+        },
+        fillService: {
+          address:
+            configJson.methRebalance?.fillService?.address ??
+            (await fromEnv('METH_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
+            undefined,
+          senderAddress:
+            configJson.methRebalance?.fillService?.senderAddress ??
+            (await fromEnv('METH_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
+            undefined, // Filler's ETH address for sending from mainnet
+          thresholdEnabled:
+            parseBooleanValue(configJson.methRebalance?.fillService?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('METH_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.methRebalance?.fillService?.threshold ??
+            (await fromEnv('METH_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
+            undefined,
+          targetBalance:
+            configJson.methRebalance?.fillService?.targetBalance ??
+            (await fromEnv('METH_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
+            undefined,
+          allowCrossWalletRebalancing:
+            parseBooleanValue(configJson.methRebalance?.fillService?.allowCrossWalletRebalancing) ??
+            parseBooleanValue(await fromEnv('METH_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
+            false,
+        },
+        bridge: {
+          slippageDbps:
+            configJson.methRebalance?.bridge?.slippageDbps ??
+            parseInt((await fromEnv('METH_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '500', 10),
+          minRebalanceAmount:
+            configJson.methRebalance?.bridge?.minRebalanceAmount ??
+            (await fromEnv('METH_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
+            undefined,
+          maxRebalanceAmount:
+            configJson.methRebalance?.bridge?.maxRebalanceAmount ??
+            (await fromEnv('METH_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
+            undefined, // Max amount per operation (optional cap)
+        },
       },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
@@ -396,29 +557,55 @@ export const parseChainConfigurations = async (
       ? (await fromEnv('CHAIN_IDS'))!.split(',').map((id) => id.trim())
       : Object.keys(config.chains);
 
+  // Parse supported settlement domains for validation
+  const supportedSettlementDomains: number[] =
+    configJson.supportedSettlementDomains ??
+    (process.env.SUPPORTED_SETTLEMENT_DOMAINS
+      ? process.env.SUPPORTED_SETTLEMENT_DOMAINS.split(',').map((d) => parseInt(d.trim(), 10))
+      : []);
+
   const chains: Record<string, ChainConfiguration> = {};
 
   for (const chainId of chainIds) {
-    if (!config.chains[chainId]) {
-      console.log(`Chain ${chainId} not found in Everclear config, skipping`);
+    const chainConfig = config?.chains?.[chainId];
+    const localChainConfig = configJson.chains?.[chainId];
+
+    // Skip if chain is not in either hosted or local config
+    if (!chainConfig && !localChainConfig) {
+      console.log(`Chain ${chainId} not found in Everclear config or local config, skipping`);
       continue;
     }
 
-    const chainConfig = config.chains[chainId]!;
-
     const providers = (
-      configJson.chains?.[chainId]?.providers ??
+      localChainConfig?.providers ??
       ((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))
         ? parseProviders((await fromEnv(`CHAIN_${chainId}_PROVIDERS`))!)
         : undefined) ??
       []
-    ).concat(chainConfig.providers ?? []);
+    ).concat(chainConfig?.providers ?? []);
+
+    // Load assets from hosted config if available, otherwise use local config assets
+    const hostedAssets = chainConfig?.assets ? Object.values(chainConfig.assets) : [];
+    const localAssets = localChainConfig?.assets ?? [];
+
+    // Merge assets: prefer hosted config, fall back to local config for missing assets
+    const mergedAssets = [...hostedAssets];
+    for (const localAsset of localAssets) {
+      const existsInHosted = hostedAssets.some(
+        (a: AssetConfiguration) =>
+          a.tickerHash?.toLowerCase() === localAsset.tickerHash?.toLowerCase() ||
+          a.address?.toLowerCase() === localAsset.address?.toLowerCase(),
+      );
+      if (!existsInHosted) {
+        mergedAssets.push(localAsset);
+      }
+    }
 
     const assets = await Promise.all(
-      Object.values(chainConfig.assets ?? {}).map(async (a) => {
-        const jsonThreshold = (configJson.chains?.[chainId]?.assets ?? []).find(
-          (asset: { symbol: string; balanceThreshold: string }) =>
-            a.symbol.toLowerCase() === asset.symbol.toLowerCase(),
+      mergedAssets.map(async (a: AssetConfiguration) => {
+        const jsonThreshold = (localAssets ?? []).find(
+          (asset: { symbol: string; balanceThreshold?: string }) =>
+            a.symbol.toLowerCase() === asset.symbol?.toLowerCase(),
         )?.balanceThreshold;
         const envThreshold = await fromEnv(`${a.symbol.toUpperCase()}_${chainId}_THRESHOLD`);
         return {
@@ -429,32 +616,45 @@ export const parseChainConfigurations = async (
     );
 
     // Get the invoice age
-    // First, check if there is a configured invoice age in the env
+    // First, check if there is a configured invoice age in local config or env
     const invoiceAge =
-      (await fromEnv(`CHAIN_${chainId}_INVOICE_AGE`)) ?? (await fromEnv('INVOICE_AGE')) ?? DEFAULT_INVOICE_AGE;
+      localChainConfig?.invoiceAge?.toString() ??
+      (await fromEnv(`CHAIN_${chainId}_INVOICE_AGE`)) ??
+      (await fromEnv('INVOICE_AGE')) ??
+      DEFAULT_INVOICE_AGE;
     const gasThreshold =
       configJson?.chains?.[chainId]?.gasThreshold ??
       (await fromEnv(`CHAIN_${chainId}_GAS_THRESHOLD`)) ??
       (await fromEnv(`GAS_THRESHOLD`)) ??
       DEFAULT_GAS_THRESHOLD;
 
-    // Extract Everclear spoke address from the config
-    const everclear = chainConfig.deployments?.everclear;
+    // Extract Everclear spoke address from the config (prefer hosted, fall back to local)
+    const everclear = chainConfig?.deployments?.everclear ?? localChainConfig?.deployments?.everclear;
+
+    // Check if this chain is a settlement domain (requires spoke address)
+    const isSettlementDomain = supportedSettlementDomains.includes(parseInt(chainId, 10));
 
     if (!everclear) {
-      throw new ConfigurationError(
-        `No spoke address found for chain ${chainId}. Make sure it's defined in the config under chains.${chainId}.deployments.everclear`,
-      );
+      if (isSettlementDomain) {
+        throw new ConfigurationError(
+          `No spoke address found for chain ${chainId}. Make sure it's defined in the config under chains.${chainId}.deployments.everclear`,
+        );
+      }
+      // Skip non-settlement chains without spoke addresses - they may only be used for RPC access
+      console.log(`Chain ${chainId} has no spoke address and is not a settlement domain, skipping`);
+      continue;
     }
 
-    // Get chain-specific contract addresses or use config values if provided
+    // Get chain-specific contract addresses or use config values if provided (prefer hosted, fall back to local)
     const permit2 =
-      chainConfig.deployments?.permit2 ||
+      chainConfig?.deployments?.permit2 ||
+      localChainConfig?.deployments?.permit2 ||
       UTILITY_CONTRACTS_OVERRIDE[chainId]?.permit2 ||
       UTILITY_CONTRACTS_DEFAULT.permit2;
 
     const multicall3 =
-      chainConfig.deployments?.multicall3 ||
+      chainConfig?.deployments?.multicall3 ||
+      localChainConfig?.deployments?.multicall3 ||
       UTILITY_CONTRACTS_OVERRIDE[chainId]?.multicall3 ||
       UTILITY_CONTRACTS_DEFAULT.multicall3;
 
