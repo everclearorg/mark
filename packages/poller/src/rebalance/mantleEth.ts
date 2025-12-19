@@ -466,6 +466,15 @@ const evaluateFillServiceRebalance = async (
     }
   }
 
+  logger.info('Checking FS receiver mETH balance..', {
+    requestId,
+    fsReceiverMethBalance: fsReceiverMethBalance.toString(),
+    committedEthWeth: runState.committedEthWeth.toString(),
+    total: (fsReceiverMethBalance + runState.committedEthWeth).toString(),
+    threshold: threshold.toString(),
+    target: target.toString(),
+    minRebalance: minRebalance.toString(),
+  });
   // Add committed funds to receiver balance.
   fsReceiverMethBalance += runState.committedEthWeth;
 
