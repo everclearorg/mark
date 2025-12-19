@@ -23,7 +23,7 @@ import {
 import { LookupTableNotFoundError } from '@mark/everclear';
 import { TransactionReceipt } from '@mark/chainservice';
 
-export const INTENT_ADDED_TOPIC0 = '0xefe68281645929e2db845c5b42e12f7c73485fb5f18737b7b29379da006fa5f7';
+export const INTENT_ADDED_TOPIC0 = '0x80eb6c87e9da127233fe2ecab8adf29403109adc6bec90147df35eeee0745991';
 export const NEW_INTENT_ADAPTER_SELECTOR = '0xb4c20477';
 
 const intentAddedAbi = [
@@ -65,11 +65,6 @@ const intentAddedAbi = [
             type: 'bytes32',
           },
           {
-            internalType: 'uint24',
-            name: 'maxFee',
-            type: 'uint24',
-          },
-          {
             internalType: 'uint32',
             name: 'origin',
             type: 'uint32',
@@ -95,6 +90,11 @@ const intentAddedAbi = [
             type: 'uint256',
           },
           {
+            internalType: 'uint256',
+            name: 'amountOutMin',
+            type: 'uint256',
+          },
+          {
             internalType: 'uint32[]',
             name: 'destinations',
             type: 'uint32[]',
@@ -106,7 +106,7 @@ const intentAddedAbi = [
           },
         ],
         indexed: false,
-        internalType: 'struct IEverclear.Intent',
+        internalType: 'struct IEverclearV2.Intent',
         name: '_intent',
         type: 'tuple',
       },

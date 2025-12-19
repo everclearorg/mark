@@ -100,6 +100,7 @@ export function createDatabaseMock(): typeof DatabaseModule {
     getRebalanceOperationById: stub().resolves(null),
     getRebalanceOperationsByStatus: stub().resolves([]),
     getRebalanceOperationsByEarmark: stub().resolves([]),
+    getRebalanceOperationByRecipient: stub().resolves([]),
     getTransactionsForRebalanceOperations: stub().resolves({}),
     getRebalanceOperationByTransactionHash: stub().resolves(undefined),
 
