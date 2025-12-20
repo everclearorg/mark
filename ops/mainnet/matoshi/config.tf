@@ -56,53 +56,61 @@ locals {
     }
   ]
 
+  # See packages/core/src/config.ts for the fallback logic.
+  
   poller_env_vars = {
-    SIGNER_URL                    = "http://${module.mark_web3signer.service_url}:9000"
-    SIGNER_ADDRESS                = local.mark_config.signerAddress
-    REDIS_HOST                    = module.cache.redis_instance_address
-    REDIS_PORT                    = module.cache.redis_instance_port
-    DATABASE_URL                  = module.db.database_url
-    SUPPORTED_SETTLEMENT_DOMAINS  = var.supported_settlement_domains
-    SUPPORTED_ASSET_SYMBOLS       = var.supported_asset_symbols
-    LOG_LEVEL                     = var.log_level
-    ENVIRONMENT                   = var.environment
-    STAGE                         = var.stage
-    CHAIN_IDS                     = var.chain_ids
-    PUSH_GATEWAY_URL              = "http://matoshi-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
-    PROMETHEUS_URL                = "http://matoshi-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
-    PROMETHEUS_ENABLED            = true
-    DD_LOGS_ENABLED               = true
-    DD_ENV                        = "${var.environment}-${var.stage}"
-    DD_API_KEY                    = local.mark_config.dd_api_key
-    DD_LAMBDA_HANDLER             = "index.handler"
-    DD_TRACE_ENABLED              = true
-    DD_PROFILING_ENABLED          = false
-    DD_MERGE_XRAY_TRACES          = true
-    DD_TRACE_OTEL_ENABLED         = false
-    MARK_CONFIG_SSM_PARAMETER     = "MATOSHI_CONFIG_MAINNET"
+    # Core infrastructure (must be env vars - runtime-determined values)
+    DATABASE_URL   = module.db.database_url
+    SIGNER_URL     = "http://${module.mark_web3signer.service_url}:9000"
+    SIGNER_ADDRESS = local.mark_config.signerAddress
+    REDIS_HOST     = module.cache.redis_instance_address
+    REDIS_PORT     = module.cache.redis_instance_port
 
-    REBALANCE_CONFIG_S3_BUCKET    = local.rebalanceConfig.bucket
-    REBALANCE_CONFIG_S3_KEY       = local.rebalanceConfig.key
-    REBALANCE_CONFIG_S3_REGION    = local.rebalanceConfig.region
+    # Application config
+    SUPPORTED_SETTLEMENT_DOMAINS = var.supported_settlement_domains
+    SUPPORTED_ASSET_SYMBOLS      = var.supported_asset_symbols
+    LOG_LEVEL                    = var.log_level
+    ENVIRONMENT                  = var.environment
+    STAGE                        = var.stage
+    CHAIN_IDS                    = var.chain_ids
 
-    WETH_1_THRESHOLD              = "800000000000000000"
-    USDC_1_THRESHOLD              = "4000000000"
-    USDT_1_THRESHOLD              = "2000000000"
+    # SSM Parameter for runtime config loading
+    MARK_CONFIG_SSM_PARAMETER = "MATOSHI_CONFIG_MAINNET"
 
-    WETH_10_THRESHOLD             = "1600000000000000000"
-    USDC_10_THRESHOLD             = "4000000000"
-    USDT_10_THRESHOLD             = "400000000"
+    # S3 rebalance config
+    REBALANCE_CONFIG_S3_BUCKET = local.rebalanceConfig.bucket
+    REBALANCE_CONFIG_S3_KEY    = local.rebalanceConfig.key
+    REBALANCE_CONFIG_S3_REGION = local.rebalanceConfig.region
 
-    USDC_56_THRESHOLD             = "2000000000000000000000"
-    USDT_56_THRESHOLD             = "4000000000000000000000"
+    # Prometheus/metrics
+    PUSH_GATEWAY_URL   = "http://matoshi-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL     = "http://matoshi-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+    PROMETHEUS_ENABLED = true
 
+    # DataDog (minimal set)
+    DD_LOGS_ENABLED       = true
+    DD_ENV                = "${var.environment}-${var.stage}"
+    DD_API_KEY            = local.mark_config.dd_api_key
+    DD_LAMBDA_HANDLER     = "index.handler"
+    DD_TRACE_ENABLED      = true
+    DD_PROFILING_ENABLED  = false
+    DD_MERGE_XRAY_TRACES  = true
+    DD_TRACE_OTEL_ENABLED = false
 
-    WETH_8453_THRESHOLD           = "1600000000000000000"
-    USDC_8453_THRESHOLD           = "4000000000"
-
-    WETH_42161_THRESHOLD          = "1600000000000000000"
-    USDC_42161_THRESHOLD          = "4000000000"
-    USDT_42161_THRESHOLD          = "1000000000"
+    # Balance thresholds - KEEP as env vars (not in SSM, defaults to 0 if missing)
+    WETH_1_THRESHOLD     = "800000000000000000"
+    USDC_1_THRESHOLD     = "4000000000"
+    USDT_1_THRESHOLD     = "2000000000"
+    WETH_10_THRESHOLD    = "1600000000000000000"
+    USDC_10_THRESHOLD    = "4000000000"
+    USDT_10_THRESHOLD    = "400000000"
+    USDC_56_THRESHOLD    = "2000000000000000000000"
+    USDT_56_THRESHOLD    = "4000000000000000000000"
+    WETH_8453_THRESHOLD  = "1600000000000000000"
+    USDC_8453_THRESHOLD  = "4000000000"
+    WETH_42161_THRESHOLD = "1600000000000000000"
+    USDC_42161_THRESHOLD = "4000000000"
+    USDT_42161_THRESHOLD = "1000000000"
   }
 
   web3signer_env_vars = [
