@@ -168,6 +168,7 @@ async function getTonNativeBalance(
 ): Promise<bigint> {
   try {
     const url = `${rpcUrl}/accounts/${walletAddress}`;
+    console.log('getTonNativeBalance url', url, apiKey)
     const response = await fetch(url, {
       headers: buildTonApiHeaders(apiKey),
     });
