@@ -172,17 +172,21 @@ async function getTonNativeBalance(
       headers: buildTonApiHeaders(apiKey),
     });
 
+    console.log('getTonNativeBalance response', response.ok)
+
     if (!response.ok) {
       return 0n;
     }
 
     const data = (await response.json()) as { balance?: number | string };
+    console.log('getTonNativeBalance data', data)
     if (data.balance === undefined) {
       return 0n;
     }
 
     return safeParseBigInt(data.balance.toString());
-  } catch {
+  } catch (error) {
+    console.log('getTonNativeBalance error', error)
     return 0n;
   }
 }
