@@ -23,6 +23,11 @@ output "lambda_function_name" {
   value       = module.mark_poller.function_name
 }
 
+output "lambda_tac_only_function_name" {
+  description = "Name of the TAC-only Lambda function"
+  value       = module.mark_poller_tac_only.function_name
+}
+
 output "ecs_cluster_name" {
   description = "Name of the ECS cluster"
   value       = module.ecs.ecs_cluster_name

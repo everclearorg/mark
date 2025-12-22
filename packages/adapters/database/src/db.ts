@@ -166,6 +166,21 @@ export async function createEarmark(input: CreateEarmarkInput): Promise<CamelCas
   });
 }
 
+export async function getEarmarkById(earmarkId: string): Promise<CamelCasedProperties<earmarks> | null> {
+  const query = `
+    SELECT * FROM earmarks
+    WHERE "id" = $1
+    LIMIT 1
+  `;
+  const result = await queryWithClient<earmarks>(query, [earmarkId]);
+
+  if (result.length === 0) {
+    return null;
+  }
+
+  return snakeToCamel(result[0]);
+}
+
 export async function getEarmarks(filter?: GetEarmarksFilter): Promise<CamelCasedProperties<earmarks>[]> {
   let query = 'SELECT * FROM earmarks';
   const values: unknown[] = [];
@@ -858,6 +873,81 @@ export async function getRebalanceOperationById(
     ...camelOp,
     transactions: transactionsByOperation[operationId] || undefined,
   };
+}
+
+export async function getRebalanceOperationByRecipient(
+  chainId: number,
+  recipient: string,
+  status?: RebalanceOperationStatus | RebalanceOperationStatus[],
+  earmarkId?: string | null,
+  invoiceId?: string,
+): Promise<(CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> })[]> {
+  const values: unknown[] = [];
+  const conditions: string[] = [];
+  let paramCount = 1;
+
+  // Build WHERE condition
+  if (chainId) {
+    conditions.push(`ro."destination_chain_id" = $${paramCount}`);
+    values.push(chainId);
+    paramCount++;
+  }
+
+  if (recipient) {
+    conditions.push(`ro."recipient" = $${paramCount}`);
+    values.push(recipient);
+    paramCount++;
+  }
+
+  if (status) {
+    if (Array.isArray(status)) {
+      conditions.push(`ro.status = ANY($${paramCount})`);
+      values.push(status);
+    } else {
+      conditions.push(`ro.status = $${paramCount}`);
+      values.push(status);
+    }
+    paramCount++;
+  }
+
+  if (earmarkId !== undefined) {
+    if (earmarkId === null) {
+      conditions.push('ro."earmark_id" IS NULL');
+    } else {
+      conditions.push(`ro."earmark_id" = $${paramCount}`);
+      values.push(earmarkId);
+      paramCount++;
+    }
+  }
+
+  if (invoiceId !== undefined) {
+    conditions.push(`e."invoice_id" = $${paramCount}`);
+    values.push(invoiceId);
+    paramCount++;
+  }
+
+  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+  const dataQuery = `SELECT * FROM rebalance_operations ro ${whereClause} ORDER BY ro."created_at" ASC`;
+
+  const operations = await queryWithClient<rebalance_operations>(dataQuery, values);
+
+  if (operations.length === 0) {
+    return [];
+  }
+
+  // Fetch all transactions associated with this operation
+  const operationIds = operations.map((op) => op.id);
+  const transactionsByOperation = await getTransactionsForRebalanceOperations(operationIds);
+
+  const operationsWithTransactions = operations.map((op) => {
+    const camelCasedOp = snakeToCamel(op);
+    return {
+      ...camelCasedOp,
+      transactions: transactionsByOperation[op.id] || undefined,
+    };
+  });
+
+  return operationsWithTransactions;
 }
 
 export type CexWithdrawalRecord<T extends object> = Omit<CamelCasedProperties<cex_withdrawals>, 'metadata'> & {

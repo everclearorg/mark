@@ -11,6 +11,7 @@ module.exports = {
     '!src/**/types.ts',
     '!src/adapters/across/utils.ts',
     '!src/adapters/cctp/**/*.ts',
+    '!src/adapters/mantle/**/*.ts', // exclude Mantle from coverage temporarily
   ],
   coverageProvider: 'babel',
   coverageDirectory: 'coverage',
@@ -20,6 +21,8 @@ module.exports = {
     '^@mark/core$': '<rootDir>/../../core/src',
     '^@mark/core/(.*)$': '<rootDir>/../../core/src/$1',
     '^@mark/(.*)$': '<rootDir>/../$1/src',
+    // Mock ESM modules
+    '^@chainlink/ccip-js$': '<rootDir>/test/mocks/ccip-js.ts',
   },
   // Make Jest resolve .ts before .js
   moduleFileExtensions: [

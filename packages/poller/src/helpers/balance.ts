@@ -91,69 +91,86 @@ export const getMarkBalances = async (
   chainService: ChainService,
   prometheus: PrometheusAdapter,
 ): Promise<Map<string, Map<string, bigint>>> => {
-  const { chains } = config;
   const tickers = getTickers(config);
 
-  const balancePromises: Array<{
-    ticker: string;
-    domain: string;
-    promise: Promise<bigint>;
-  }> = [];
-
-  for (const ticker of tickers) {
-    for (const domain of Object.keys(chains)) {
-      const isSvm = isSvmChain(domain);
-      const isTvm = isTvmChain(domain);
-      const format = isSvm ? AddressFormat.Base58 : AddressFormat.Hex;
-      const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
-      const decimals = getDecimalsFromConfig(ticker, domain, config);
-
-      if (!tokenAddr || !decimals) {
-        continue;
-      }
-      const balancePromise = isSvm
-        ? getSvmBalance(config, chainService, domain, tokenAddr, decimals, prometheus)
-        : isTvm
-          ? getTvmBalance(chainService, domain, tokenAddr, decimals, prometheus)
-          : getEvmBalance(config, domain, tokenAddr, decimals, prometheus);
-
-      balancePromises.push({
-        ticker,
-        domain,
-        promise: balancePromise,
-      });
-    }
-  }
-
-  const results = await Promise.allSettled(balancePromises.map((p) => p.promise));
   const markBalances = new Map<string, Map<string, bigint>>();
 
-  for (let i = 0; i < balancePromises.length; i++) {
-    const { ticker, domain } = balancePromises[i];
-    const result = results[i];
-
-    if (!markBalances.has(ticker)) {
-      markBalances.set(ticker, new Map());
-    }
-
-    const balance = result.status === 'fulfilled' ? result.value : 0n;
-    markBalances.get(ticker)!.set(domain, balance);
+  for (const ticker of tickers) {
+    const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus);
+    markBalances.set(ticker, tickerBalances);
   }
 
   return markBalances;
 };
 
-const getSvmBalance = async (
+/**
+ * Returns all of the balances for specific tickerHash across all chains.
+ * @returns Mapping of balances for tickerHash - chain - amount in 18 decimal units
+ */
+export const getMarkBalancesForTicker = async (
+  ticker: string,
+  config: MarkConfiguration,
+  chainService: ChainService,
+  prometheus: PrometheusAdapter,
+): Promise<Map<string, bigint>> => {
+  const { chains } = config;
+
+  // Get all addresses once for TVM chains
+  const addresses = await chainService.getAddress();
+
+  const balancePromises: Array<{
+    domain: string;
+    promise: Promise<bigint>;
+  }> = [];
+
+  for (const domain of Object.keys(chains)) {
+    const isSvm = isSvmChain(domain);
+    const isTvm = isTvmChain(domain);
+    const format = isSvm ? AddressFormat.Base58 : AddressFormat.Hex;
+    const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
+    const decimals = getDecimalsFromConfig(ticker, domain, config);
+
+    if (!tokenAddr || !decimals) {
+      continue;
+    }
+    const address = isSvm ? config.ownSolAddress : isTvm ? addresses[domain] : config.ownAddress;
+    const balancePromise = isSvm
+      ? getSvmBalance(config, chainService, domain, address, tokenAddr, decimals, prometheus)
+      : isTvm
+        ? getTvmBalance(chainService, domain, address, tokenAddr, decimals, prometheus)
+        : getEvmBalance(config, domain, address, tokenAddr, decimals, prometheus);
+
+    balancePromises.push({
+      domain,
+      promise: balancePromise,
+    });
+  }
+
+  const results = await Promise.allSettled(balancePromises.map((p) => p.promise));
+  const markBalances = new Map<string, bigint>();
+
+  for (let i = 0; i < balancePromises.length; i++) {
+    const { domain } = balancePromises[i];
+    const result = results[i];
+
+    const balance = result.status === 'fulfilled' ? result.value : 0n;
+    markBalances.set(domain, balance);
+  }
+
+  return markBalances;
+};
+
+export const getSvmBalance = async (
   config: MarkConfiguration,
   chainService: ChainService,
   domain: string,
+  address: string,
   tokenAddr: string,
   decimals: number,
   prometheus: PrometheusAdapter,
 ): Promise<bigint> => {
-  const { ownSolAddress } = config;
   try {
-    const balanceStr = await chainService.getBalance(+domain, ownSolAddress, tokenAddr);
+    const balanceStr = await chainService.getBalance(+domain, address, tokenAddr);
     let balance = BigInt(balanceStr);
 
     // Convert balance to standardized 18 decimals
@@ -169,16 +186,16 @@ const getSvmBalance = async (
   }
 };
 
-const getTvmBalance = async (
+export const getTvmBalance = async (
   chainService: ChainService,
   domain: string,
+  address: string,
   tokenAddr: string,
   decimals: number,
   prometheus: PrometheusAdapter,
 ): Promise<bigint> => {
   try {
-    const addresses = await chainService.getAddress();
-    const balanceStr = await chainService.getBalance(+domain, addresses[domain], tokenAddr);
+    const balanceStr = await chainService.getBalance(+domain, address, tokenAddr);
     let balance = BigInt(balanceStr);
 
     // Convert USDC balance from 6 decimals to 18 decimals, as hub custodied balances are standardized to 18 decimals
@@ -196,9 +213,10 @@ const getTvmBalance = async (
 };
 
 // TODO: make getEvmBalance get from chainService instead of viem call
-const getEvmBalance = async (
+export const getEvmBalance = async (
   config: MarkConfiguration,
   domain: string,
+  address: string,
   tokenAddr: string,
   decimals: number,
   prometheus: PrometheusAdapter,
@@ -208,7 +226,8 @@ const getEvmBalance = async (
   try {
     // Get Zodiac configuration for this chain
     const zodiacConfig = getValidatedZodiacConfig(chainConfig);
-    const actualOwner = getActualOwner(zodiacConfig, ownAddress);
+    // If address matches ownAddress, apply zodiac resolution; otherwise use address directly
+    const actualOwner = address === ownAddress ? getActualOwner(zodiacConfig, ownAddress) : address;
 
     const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
     let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
@@ -221,7 +240,8 @@ const getEvmBalance = async (
     // Update tracker (this is async but we don't need to wait)
     prometheus.updateChainBalance(domain, tokenAddr, balance);
     return balance;
-  } catch {
+  } catch (error) {
+    console.error('Error getting evm balance', error);
     return 0n; // Return 0 balance on error
   }
 };
@@ -297,4 +317,37 @@ export const safeStringToBigInt = (value: string, scaleFactor: bigint): bigint =
   }
 
   return BigInt(value) * scaleFactor;
+};
+
+/**
+ * Safely parse a string to BigInt, returning a default value on failure.
+ * Use this for config values that are already in smallest units (e.g., "100000000" for 100 USDT).
+ *
+ * @param value - String value to parse (can be undefined/null/empty)
+ * @param defaultValue - Value to return on parse failure (default: 0n)
+ * @returns Parsed BigInt or default value
+ *
+ * @example
+ * safeParseBigInt('100000000') // returns 100000000n
+ * safeParseBigInt(undefined)   // returns 0n
+ * safeParseBigInt('')          // returns 0n
+ * safeParseBigInt('invalid')   // returns 0n
+ */
+export const safeParseBigInt = (value: string | undefined | null, defaultValue: bigint = 0n): bigint => {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+
+  try {
+    // Handle decimal strings by truncating to integer part
+    const integerValue = value.includes('.') ? value.split('.')[0] : value;
+    // Remove any whitespace and validate
+    const cleaned = integerValue.trim();
+    if (cleaned === '' || !/^-?\d+$/.test(cleaned)) {
+      return defaultValue;
+    }
+    return BigInt(cleaned);
+  } catch {
+    return defaultValue;
+  }
 };

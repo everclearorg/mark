@@ -1905,6 +1905,23 @@ describe('handleApiRequest', () => {
         // No executeSwap method
       };
 
+      const configWithChain = {
+        ...mockAdminConfig,
+        markConfig: {
+          ...mockAdminConfig.markConfig,
+          chains: {
+            '42161': {
+              chainId: 42161,
+              rpc: ['http://localhost:8545'],
+              assets: [
+                { symbol: 'USDT', address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', decimals: 6, tickerHash: '0xusdt' },
+                { symbol: 'USDC', address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6, tickerHash: '0xusdc' },
+              ],
+            },
+          },
+        } as any,
+      };
+
       const event = {
         ...mockEvent,
         path: '/admin/trigger/swap',
@@ -1913,7 +1930,7 @@ describe('handleApiRequest', () => {
           inputAsset: 'USDT',
           outputAsset: 'USDC',
           amount: '1000000',
-          swapAdapter: 'invalid',
+          swapAdapter: 'across', // Use a valid SupportedBridge name
         }),
       };
 
@@ -1921,6 +1938,7 @@ describe('handleApiRequest', () => {
 
       const result = await handleApiRequest({
         ...mockAdminContextBase,
+        config: configWithChain,
         event,
       });
 
@@ -1930,6 +1948,23 @@ describe('handleApiRequest', () => {
     });
 
     it('should return 400 when invalid swap adapter is provided', async () => {
+      const configWithChain = {
+        ...mockAdminConfig,
+        markConfig: {
+          ...mockAdminConfig.markConfig,
+          chains: {
+            '42161': {
+              chainId: 42161,
+              rpc: ['http://localhost:8545'],
+              assets: [
+                { symbol: 'USDT', address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', decimals: 6, tickerHash: '0xusdt' },
+                { symbol: 'USDC', address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6, tickerHash: '0xusdc' },
+              ],
+            },
+          },
+        } as any,
+      };
+
       const event = {
         ...mockEvent,
         path: '/admin/trigger/swap',
@@ -1942,8 +1977,11 @@ describe('handleApiRequest', () => {
         }),
       };
 
+      // Don't mock getAdapter - the validation should fail at enum check before calling getAdapter
+
       const result = await handleApiRequest({
         ...mockAdminContextBase,
+        config: configWithChain,
         event,
       });
 

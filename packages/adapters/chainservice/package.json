@@ -23,11 +23,14 @@
     "test:unit": ""
   },
   "dependencies": {
-    "@chimera-monorepo/chainservice": "0.0.1-alpha.14",
+    "@chimera-monorepo/chainservice": "0.0.1-alpha.16",
     "@connext/nxtp-txservice": "2.5.0-alpha.6",
     "@mark/core": "workspace:*",
     "@mark/logger": "workspace:*",
     "@solana/addresses": "^2.1.1",
+    "@solana/spl-token": "^0.4.9",
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0",
     "tronweb": "6.0.3",
     "viem": "2.33.3"
   },
