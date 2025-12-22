@@ -631,7 +631,7 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     logger.warn('SolanaSigner not configured - Solana USDC rebalancing is disabled', {
       requestId,
       reason: 'Missing solana.privateKey in configuration',
-      action: 'Configure SOLANA_PRIVATE_KEY in SSM Parameter Store',
+      action: 'Configure SOLANA_PRIVATE_KEY in SSM Parameter Store to enable',
     });
     return rebalanceOperations;
   }
