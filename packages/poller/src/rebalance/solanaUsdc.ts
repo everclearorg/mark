@@ -677,7 +677,7 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
       walletAddress: walletPublicKey.toBase58(),
       ptUsdeTokenAccount: ptUsdeTokenAccount.toBase58(),
       balance: solanaPtUsdeBalance.toString(),
-      balanceInPtUsde: (Number(solanaPtUsdeBalance) / 1e18).toFixed(6), // ptUSDe has 18 decimals
+      balanceInPtUsde: (Number(solanaPtUsdeBalance) / 1e9).toFixed(6), // ptUSDe has 9 decimals on Solana
     });
   } catch (error) {
     logger.error('Failed to retrieve Solana ptUSDe balance', {
@@ -780,15 +780,15 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     const ptUsdeThresholdEnv = process.env[`PTUSDE_${SOLANA_CHAINID}_THRESHOLD`];
     const ptUsdeThreshold = ptUsdeThresholdEnv
       ? BigInt(ptUsdeThresholdEnv)
-      : convertToNativeUnits(MIN_REBALANCING_AMOUNT * 10n, 18); // ptUSDe has 18 decimals, use 10x threshold as fallback
+      : convertToNativeUnits(MIN_REBALANCING_AMOUNT * 10n, 9); // ptUSDe has 9 decimals on Solana, use 10x threshold as fallback
 
     logger.info('Checking ptUSDe balance threshold for rebalancing decision', {
       requestId,
       intentId: intent.intent_id,
       ptUsdeBalance: ptUsdeBalance.toString(),
-      ptUsdeBalanceFormatted: (Number(ptUsdeBalance) / 1e18).toFixed(6),
+      ptUsdeBalanceFormatted: (Number(ptUsdeBalance) / 1e9).toFixed(6),
       ptUsdeThreshold: ptUsdeThreshold.toString(),
-      ptUsdeThresholdFormatted: (Number(ptUsdeThreshold) / 1e18).toFixed(6),
+      ptUsdeThresholdFormatted: (Number(ptUsdeThreshold) / 1e9).toFixed(6),
       shouldTriggerRebalance: ptUsdeBalance < ptUsdeThreshold,
       availableSolanaUsdc: solanaUsdcBalance.toString(),
       availableSolanaUsdcFormatted: (Number(solanaUsdcBalance) / 1_000_000).toFixed(6),

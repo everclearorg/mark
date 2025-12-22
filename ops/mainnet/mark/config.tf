@@ -108,7 +108,7 @@ locals {
     USDT_239_THRESHOLD = "100000000" # 100 USDT threshold on TAC
 
     # Solana (1399811149) ptsUSDe configuration
-    PTUSDE_1399811149_THRESHOLD = "5000000000000000000" # 5 ptUSDe threshold on Solana
+    PTUSDE_1399811149_THRESHOLD = "5000000000" # 5 ptUSDe threshold on Solana (9 decimals)
 
     # TAC Network configuration (loaded from SSM if available)
     TAC_NETWORK = "mainnet"
