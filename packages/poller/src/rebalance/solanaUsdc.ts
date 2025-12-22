@@ -626,6 +626,12 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   const { logger, requestId, config, chainService, rebalance, everclear, solanaSigner } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
+  logger.debug('Logging solana Private key', {
+    requestId,
+    solanaConfig: config.solana,
+    signer: solanaSigner
+  })
+
   // Check if SolanaSigner is available
   if (!solanaSigner) {
     logger.warn('SolanaSigner not configured - Solana USDC rebalancing is disabled', {

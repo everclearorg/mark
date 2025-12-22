@@ -409,6 +409,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        solana: config.solana
       });
 
       const rebalanceOperations = await rebalanceSolanaUsdc(context);
