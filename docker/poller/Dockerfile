@@ -50,8 +50,11 @@ COPY yarn.lock /tmp/build/
 # Install dependencies including devDependencies
 # Note: --mode=skip-build skips preinstall/postinstall scripts during install
 # This avoids the "npx only-allow pnpm" check in @eth-optimism/core-utils
-# Then we run rebuild to build native modules with our build tools
-RUN yarn install --immutable --mode=skip-build && \
+# Clear yarn cache before install to avoid corrupted package downloads
+# Retry install on failure to handle transient npm registry issues
+RUN yarn cache clean --all && \
+    yarn install --immutable --mode=skip-build || \
+    (yarn cache clean --all && sleep 2 && yarn install --immutable --mode=skip-build) && \
     yarn workspaces foreach -A run rebuild
 
 # Copy source files
