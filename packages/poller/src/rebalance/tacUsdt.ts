@@ -184,7 +184,7 @@ async function getTonNativeBalance(
 
     return safeParseBigInt(data.balance.toString());
   } catch (error) {
-    console.log('getTonNativeBalance error', error)
+    console.log('getTonNativeBalance error', error);
     return 0n;
   }
 }
@@ -1906,7 +1906,6 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             // Still create the operation record for tracking
             // Link to the same earmark as Leg 1 for proper tracking
-            const amountToBridgeNative = convertToNativeUnits(safeParseBigInt(operation.amount), 6).toString();
             await createRebalanceOperation({
               earmarkId: operation.earmarkId,
               originChainId: Number(TON_LZ_CHAIN_ID),
@@ -1940,7 +1939,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               continue;
             }
             const tonUSDTDecimals = getTonAssetDecimals(operation.tickerHash, config) ?? 6;
-            
+
             // Check TON native balance for gas
             const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey, tonRpcUrl);
             if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
@@ -1964,7 +1963,6 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               actualUsdtBalance: actualUsdtBalance.toString(),
               actualUsdtBalance18: actualUsdtBalance18.toString(),
             });
-
 
             // CRITICAL: Use operation-specific amount, NOT the full wallet balance
             // This prevents mixing funds from multiple concurrent flows
@@ -2048,7 +2046,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
                 originChainId: Number(TON_LZ_CHAIN_ID),
                 destinationChainId: Number(TAC_CHAIN_ID),
                 tickerHash: operation.tickerHash,
-                amount: amountToBridgeBigInt.toString(),  // 18 decimals
+                amount: amountToBridgeBigInt.toString(), // 18 decimals
                 slippage: 100,
                 // Use AWAITING_CALLBACK if we have transactionLinker (bridge submitted, awaiting completion)
                 // Use PENDING if no transactionLinker (bridge failed to submit, will retry)
@@ -2157,7 +2155,12 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             if (tonMnemonic && tonWalletAddress) {
               // Get actual USDT balance on TON
-              const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey, tonRpcUrl);
+              const actualUsdtBalance = await getTonJettonBalance(
+                tonWalletAddress,
+                jettonAddress,
+                tonApiKey,
+                tonRpcUrl,
+              );
               const actualUsdtBalance18 = convertTo18Decimals(actualUsdtBalance, tonUSDTDecimals);
 
               if (actualUsdtBalance === 0n) {
@@ -2196,7 +2199,8 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
                 }
 
                 // Calculate amount: min(expectedAmount, actualBalance) - never more than expected
-                const amountToBridgeBigInt = actualUsdtBalance18 < expectedAmount ? actualUsdtBalance18 : expectedAmount;
+                const amountToBridgeBigInt =
+                  actualUsdtBalance18 < expectedAmount ? actualUsdtBalance18 : expectedAmount;
                 const amountToBridge = convertToNativeUnits(amountToBridgeBigInt, tonUSDTDecimals).toString();
 
                 logger.info('Retrying TAC SDK bridge execution (no transactionLinker)', {
