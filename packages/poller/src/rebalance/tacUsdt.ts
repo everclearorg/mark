@@ -168,19 +168,15 @@ async function getTonNativeBalance(
 ): Promise<bigint> {
   try {
     const url = `${rpcUrl}/accounts/${walletAddress}`;
-    console.log('getTonNativeBalance url', url, apiKey)
     const response = await fetch(url, {
       headers: buildTonApiHeaders(apiKey),
     });
-
-    console.log('getTonNativeBalance response', response.ok)
 
     if (!response.ok) {
       return 0n;
     }
 
     const data = (await response.json()) as { balance?: number | string };
-    console.log('getTonNativeBalance data', data)
     if (data.balance === undefined) {
       return 0n;
     }
@@ -357,7 +353,6 @@ interface RebalanceRunState {
 export async function rebalanceTacUsdt(context: ProcessingContext): Promise<RebalanceAction[]> {
   const { logger, requestId, config, rebalance, prometheus } = context;
   const actions: RebalanceAction[] = [];
-
   // Always check destination callbacks to ensure operations complete
   await executeTacCallbacks(context);
 
@@ -1925,6 +1920,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             // Query actual USDT balance on TON (Stargate may have taken fees)
             const tonWalletAddress = config.ownTonAddress;
             const tonApiKey = config.ton?.apiKey;
+            const tonRpcUrl = config.ton?.rpcUrl;
 
             if (!tonWalletAddress) {
               logger.error('TON wallet address not configured, cannot query balance', logContext);
@@ -1943,7 +1939,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             }
 
             // Check TON native balance for gas
-            const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
+            const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey, tonRpcUrl);
             if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
               logger.error('Insufficient TON balance for gas', {
                 ...logContext,
@@ -1957,6 +1953,12 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             // Get actual USDT balance on TON
             const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
+            logger.info('Ton Jetton Balance', {
+              tonWalletAddress,
+              jettonAddress,
+              decimals: 6,
+              actualUsdtBalance: actualUsdtBalance.toString(),
+            });
 
             // CRITICAL: Use operation-specific amount, NOT the full wallet balance
             // This prevents mixing funds from multiple concurrent flows
@@ -2132,6 +2134,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             const tonMnemonic = config.ton?.mnemonic;
             const tonWalletAddress = config.ownTonAddress;
             const tonApiKey = config.ton?.apiKey;
+            const tonRpcUrl = config.ton?.rpcUrl;
 
             // Get jetton address from config
             const jettonAddress = getTonAssetAddress(operation.tickerHash, config);
@@ -2146,7 +2149,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             if (tonMnemonic && tonWalletAddress) {
               // Get actual USDT balance on TON
-              const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
+              const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey, tonRpcUrl);
 
               if (actualUsdtBalance === 0n) {
                 // No USDT on TON - bridge might have already succeeded!
@@ -2155,7 +2158,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               } else {
                 // TON has USDT - try to execute the bridge
                 // First check TON gas balance
-                const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
+                const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey, tonRpcUrl);
                 if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
                   logger.error('Insufficient TON balance for gas (retry)', {
                     ...logContext,
