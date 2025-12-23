@@ -126,7 +126,7 @@ function validateSingleTokenRebalanceConfig(
   if (mm?.address && config.ownAddress && mm.address.toLowerCase() !== config.ownAddress.toLowerCase()) {
     warnings.push(
       `${configName} MM address (${mm.address}) differs from ownAddress (${config.ownAddress}). ` +
-      'Funds sent to MM may not be usable for intent filling by this Mark instance.',
+        'Funds sent to MM may not be usable for intent filling by this Mark instance.',
     );
   }
 
@@ -342,7 +342,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     await cleanupExpiredEarmarks(context);
     await cleanupExpiredRegularRebalanceOps(context);
 
-    logger.debug('Logging run mode of the instance', { runMode: process.env.RUN_MODE })
+    logger.debug('Logging run mode of the instance', { runMode: process.env.RUN_MODE });
 
     if (process.env.RUN_MODE === 'methOnly') {
       logger.info('Starting meth rebalancing', {
@@ -409,7 +409,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
-        solana: config.solana
+        solana: config.solana,
       });
 
       const rebalanceOperations = await rebalanceSolanaUsdc(context);

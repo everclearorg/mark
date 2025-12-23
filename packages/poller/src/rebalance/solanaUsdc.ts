@@ -659,8 +659,8 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   logger.debug('Logging solana Private key', {
     requestId,
     solanaConfig: config.solana,
-    signer: solanaSigner
-  })
+    signer: solanaSigner,
+  });
 
   // Check if SolanaSigner is available
   if (!solanaSigner) {
@@ -768,7 +768,9 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   const ptUsdeTarget = ptUsdeTargetEnv ? safeParseBigInt(ptUsdeTargetEnv) : DEFAULT_PTUSDE_TARGET;
 
   // Max rebalance amount per operation (in 6 decimals for USDC)
-  const maxRebalanceAmount = maxRebalanceAmountEnv ? safeParseBigInt(maxRebalanceAmountEnv) : DEFAULT_MAX_REBALANCE_AMOUNT;
+  const maxRebalanceAmount = maxRebalanceAmountEnv
+    ? safeParseBigInt(maxRebalanceAmountEnv)
+    : DEFAULT_MAX_REBALANCE_AMOUNT;
 
   logger.info('Checking ptUSDe balance threshold for rebalancing decision', {
     requestId,
