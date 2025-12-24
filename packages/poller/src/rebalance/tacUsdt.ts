@@ -1921,7 +1921,6 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             // Query actual USDT balance on TON (Stargate may have taken fees)
             const tonWalletAddress = config.ownTonAddress;
             const tonApiKey = config.ton?.apiKey;
-            const tonRpcUrl = config.ton?.rpcUrl;
 
             if (!tonWalletAddress) {
               logger.error('TON wallet address not configured, cannot query balance', logContext);
@@ -1941,7 +1940,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             const tonUSDTDecimals = getTonAssetDecimals(operation.tickerHash, config) ?? 6;
 
             // Check TON native balance for gas
-            const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey, tonRpcUrl);
+            const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
             if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
               logger.error('Insufficient TON balance for gas', {
                 ...logContext,
@@ -2139,7 +2138,6 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             const tonMnemonic = config.ton?.mnemonic;
             const tonWalletAddress = config.ownTonAddress;
             const tonApiKey = config.ton?.apiKey;
-            const tonRpcUrl = config.ton?.rpcUrl;
 
             // Get jetton address from config
             const jettonAddress = getTonAssetAddress(operation.tickerHash, config);
@@ -2155,12 +2153,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             if (tonMnemonic && tonWalletAddress) {
               // Get actual USDT balance on TON
-              const actualUsdtBalance = await getTonJettonBalance(
-                tonWalletAddress,
-                jettonAddress,
-                tonApiKey,
-                tonRpcUrl,
-              );
+              const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
               const actualUsdtBalance18 = convertTo18Decimals(actualUsdtBalance, tonUSDTDecimals);
 
               if (actualUsdtBalance === 0n) {
@@ -2170,7 +2163,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               } else {
                 // TON has USDT - try to execute the bridge
                 // First check TON gas balance
-                const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey, tonRpcUrl);
+                const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
                 if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
                   logger.error('Insufficient TON balance for gas (retry)', {
                     ...logContext,
