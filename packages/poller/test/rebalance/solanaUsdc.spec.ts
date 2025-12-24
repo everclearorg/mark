@@ -182,33 +182,17 @@ describe('Solana USDC Rebalancing', () => {
       expect(result).toEqual([]);
     });
 
-    it('should skip intent if active earmark already exists', async () => {
-      // Mock intent
-      mockEverclear.fetchIntents.resolves([
-        {
-          intent_id: 'intent-123',
-          amount_out_min: '1000000',
-          hub_settlement_domain: '1',
-          destinations: [SOLANA_CHAINID],
-        },
-      ]);
-
-      // Mock existing active earmark
-      (database.getActiveEarmarkForInvoice as jest.Mock).mockResolvedValue({
-        id: 'existing-earmark',
-        invoiceId: 'intent-123',
-        designatedPurchaseChain: Number(SOLANA_CHAINID),
-        tickerHash: 'USDC',
-        minAmount: '1000000',
-        status: EarmarkStatus.PENDING,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+    it('should skip rebalancing when ptUSDe balance is above threshold', async () => {
+      // Threshold-based rebalancing: skips when ptUSDe balance is sufficient
+      // Mock in-flight operations check
+      (mockDatabase.getRebalanceOperations as SinonStub).resolves({
+        operations: [],
+        total: 0,
       });
 
       const result = await rebalanceSolanaUsdc(mockContext as unknown as ProcessingContext);
 
       expect(result).toEqual([]);
-      expect(mockLogger.warn.calledWithMatch('Active earmark already exists')).toBe(true);
     });
   });
 
