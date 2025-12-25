@@ -358,8 +358,8 @@ function buildEVMExtraArgsV2(gasLimit: number = 0, allowOutOfOrderExecution: boo
  * When Chainlink releases the official SDK, this should be replaced.
  */
 function buildCCIPInstructionData(message: SVM2AnyMessage, destChainSelector: bigint): Buffer {
-  // Instruction discriminator (placeholder - needs to match actual program)
-  const CCIP_SEND_DISCRIMINATOR = Buffer.from([0x01]); // Placeholder
+  // Instruction discriminator: first 8 bytes of SHA256("global:ccip_send")
+  const CCIP_SEND_DISCRIMINATOR = Buffer.from([0x6c, 0xd8, 0x86, 0xbf, 0xf9, 0xea, 0x21, 0x54]);
 
   // Serialize destination chain selector (8 bytes, little-endian)
   const selectorBuffer = Buffer.alloc(8);
