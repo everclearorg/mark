@@ -11,7 +11,13 @@ import {
   WalletType,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
-import { PublicKey, TransactionInstruction, SystemProgram, Connection, AddressLookupTableProgram } from '@solana/web3.js';
+import {
+  PublicKey,
+  TransactionInstruction,
+  SystemProgram,
+  Connection,
+  AddressLookupTableProgram,
+} from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
 import { SolanaSigner } from '@mark/chainservice';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
@@ -187,40 +193,40 @@ function deriveRMNRemotePDAs(): {
  *
  * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/router
  */
-async function fetchTokenPoolLookupTable(connection: Connection, tokenMint: PublicKey): Promise<PublicKey> {
-  // Derive Token Admin Registry PDA
-  const [tokenAdminRegistry] = PublicKey.findProgramAddressSync(
-    [Buffer.from('token_admin_registry'), tokenMint.toBytes()],
-    CCIP_ROUTER_PROGRAM_ID,
-  );
+// async function fetchTokenPoolLookupTable(connection: Connection, tokenMint: PublicKey): Promise<PublicKey> {
+//   // Derive Token Admin Registry PDA
+//   const [tokenAdminRegistry] = PublicKey.findProgramAddressSync(
+//     [Buffer.from('token_admin_registry'), tokenMint.toBytes()],
+//     CCIP_ROUTER_PROGRAM_ID,
+//   );
 
-  // Fetch the account data
-  const accountInfo = await connection.getAccountInfo(tokenAdminRegistry);
-  if (!accountInfo || !accountInfo.data) {
-    throw new Error(`Token Admin Registry not found for mint: ${tokenMint.toBase58()}`);
-  }
+//   // Fetch the account data
+//   const accountInfo = await connection.getAccountInfo(tokenAdminRegistry);
+//   if (!accountInfo || !accountInfo.data) {
+//     throw new Error(`Token Admin Registry not found for mint: ${tokenMint.toBase58()}`);
+//   }
 
-  // Parse the pool_lookuptable address from the account data
-  // Layout: discriminator (8) + administrator (32) + pending_administrator (32) + flag (1) + pool_lookuptable (32)
-  const LOOKUP_TABLE_OFFSET = 73; // 8 + 32 + 32 + 1 = 73
+//   // Parse the pool_lookuptable address from the account data
+//   // Layout: discriminator (8) + administrator (32) + pending_administrator (32) + flag (1) + pool_lookuptable (32)
+//   const LOOKUP_TABLE_OFFSET = 73; // 8 + 32 + 32 + 1 = 73
 
-  const minRequiredSize = LOOKUP_TABLE_OFFSET + 32;
-  if (accountInfo.data.length < minRequiredSize) {
-    throw new Error(
-      `Token Admin Registry data too short: expected at least ${minRequiredSize} bytes, got ${accountInfo.data.length}`,
-    );
-  }
+//   const minRequiredSize = LOOKUP_TABLE_OFFSET + 32;
+//   if (accountInfo.data.length < minRequiredSize) {
+//     throw new Error(
+//       `Token Admin Registry data too short: expected at least ${minRequiredSize} bytes, got ${accountInfo.data.length}`,
+//     );
+//   }
 
-  const lookupTableBytes = accountInfo.data.subarray(LOOKUP_TABLE_OFFSET, LOOKUP_TABLE_OFFSET + 32);
-  const poolLookupTable = new PublicKey(lookupTableBytes);
+//   const lookupTableBytes = accountInfo.data.subarray(LOOKUP_TABLE_OFFSET, LOOKUP_TABLE_OFFSET + 32);
+//   const poolLookupTable = new PublicKey(lookupTableBytes);
 
-  // Validate the lookup table is not zero/default pubkey
-  if (poolLookupTable.equals(PublicKey.default)) {
-    throw new Error(`Token ${tokenMint.toBase58()} is not enabled for CCIP (pool_lookuptable is zero address).`);
-  }
+//   // Validate the lookup table is not zero/default pubkey
+//   if (poolLookupTable.equals(PublicKey.default)) {
+//     throw new Error(`Token ${tokenMint.toBase58()} is not enabled for CCIP (pool_lookuptable is zero address).`);
+//   }
 
-  return poolLookupTable;
-}
+//   return poolLookupTable;
+// }
 
 /**
  * Derive Token Pool PDAs for CCIP token transfers
@@ -279,15 +285,13 @@ function deriveTokenPoolPDAs(
 async function createCCIPLookupTable(
   connection: Connection,
   payer: PublicKey,
-  accounts: PublicKey[],
 ): Promise<{ lookupTable: PublicKey; instruction: TransactionInstruction }> {
   const recentSlot = await connection.getSlot();
-  const [lookupTableInstruction, lookupTableAddress] = 
-    AddressLookupTableProgram.createLookupTable({
-      authority: payer,
-      payer: payer,
-      recentSlot,
-    });
+  const [lookupTableInstruction, lookupTableAddress] = AddressLookupTableProgram.createLookupTable({
+    authority: payer,
+    payer: payer,
+    recentSlot,
+  });
 
   return {
     lookupTable: lookupTableAddress,
@@ -322,37 +326,33 @@ async function getOrCreateCCIPLookupTable(
   requestId: string,
 ): Promise<PublicKey> {
   const payer = solanaSigner.getPublicKey();
-  
+
   try {
     // Create lookup table
-    const { lookupTable, instruction: createInstruction } = await createCCIPLookupTable(
-      connection,
-      payer,
-      ccipAccounts,
-    );
-    
+    const { lookupTable, instruction: createInstruction } = await createCCIPLookupTable(connection, payer);
+
     // Send creation transaction
     await solanaSigner.signAndSendTransaction({
       instructions: [createInstruction],
       computeUnitPrice: 50000,
       computeUnitLimit: 100000,
     });
-    
+
     // Wait a moment for the lookup table to be created
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Extend with our accounts
     const extendInstruction = extendCCIPLookupTable(lookupTable, payer, ccipAccounts);
-    
+
     await solanaSigner.signAndSendTransaction({
       instructions: [extendInstruction],
       computeUnitPrice: 50000,
       computeUnitLimit: 100000,
     });
-    
+
     // Wait for extension to be processed
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     return lookupTable;
   } catch (error) {
     throw new Error(`Failed to create CCIP lookup table for request ${requestId}: ${error}`);
@@ -457,11 +457,7 @@ function buildEVMExtraArgsV2(gasLimit: number = 0, allowOutOfOrderExecution: boo
  * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/router
  * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/messages
  */
-function buildCCIPInstructionData(
-  message: SVM2AnyMessage,
-  destChainSelector: bigint,
-  tokenIndexes: number[],
-): Buffer {
+function buildCCIPInstructionData(message: SVM2AnyMessage, destChainSelector: bigint, tokenIndexes: number[]): Buffer {
   // Instruction discriminator: first 8 bytes of SHA256("global:ccip_send")
   const CCIP_SEND_DISCRIMINATOR = Buffer.from([0x6c, 0xd8, 0x86, 0xbf, 0xf9, 0xea, 0x21, 0x54]);
 
@@ -709,25 +705,21 @@ async function executeSolanaToMainnetBridge({
 
     // Extract all unique accounts from CCIP instruction for custom lookup table
     const ccipAccounts = ccipSendInstruction.keys
-      .map(key => key.pubkey)
-      .filter((pubkey, index, self) => 
-        !pubkey.equals(PublicKey.default) && // Skip default/placeholder keys
-        index === self.findIndex(p => p.equals(pubkey)) // Remove duplicates
+      .map((key) => key.pubkey)
+      .filter(
+        (pubkey, index, self) =>
+          !pubkey.equals(PublicKey.default) && // Skip default/placeholder keys
+          index === self.findIndex((p) => p.equals(pubkey)), // Remove duplicates
       );
 
     logger.info('Creating custom lookup table for CCIP transaction', {
       requestId,
       accountCount: ccipAccounts.length,
-      accounts: ccipAccounts.map(acc => acc.toBase58()),
+      accounts: ccipAccounts.map((acc) => acc.toBase58()),
     });
 
     // Create custom lookup table with all CCIP accounts
-    const customLookupTable = await getOrCreateCCIPLookupTable(
-      connection,
-      solanaSigner,
-      ccipAccounts,
-      requestId,
-    );
+    const customLookupTable = await getOrCreateCCIPLookupTable(connection, solanaSigner, ccipAccounts, requestId);
 
     logger.info('Custom lookup table created successfully', {
       requestId,
