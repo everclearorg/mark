@@ -141,15 +141,15 @@ function deriveFeeQuoterPDAs(
     CCIP_FEE_QUOTER_PROGRAM_ID,
   );
 
-  // Billing Token Config: ["billing_token_config", tokenMint]
+  // Billing Token Config: ["fee_billing_token_config", tokenMint]
   const [billingTokenConfig] = PublicKey.findProgramAddressSync(
-    [Buffer.from('billing_token_config'), billingTokenMint.toBytes()],
+    [Buffer.from('fee_billing_token_config'), billingTokenMint.toBytes()],
     CCIP_FEE_QUOTER_PROGRAM_ID,
   );
 
-  // Link Token Config: ["billing_token_config", linkTokenMint]
+  // Link Token Config: ["fee_billing_token_config", linkTokenMint]
   const [linkTokenConfig] = PublicKey.findProgramAddressSync(
-    [Buffer.from('billing_token_config'), linkTokenMint.toBytes()],
+    [Buffer.from('fee_billing_token_config'), linkTokenMint.toBytes()],
     CCIP_FEE_QUOTER_PROGRAM_ID,
   );
 
@@ -253,11 +253,17 @@ function deriveTokenPoolPDAs(
     poolProgram,
   );
 
-  // Pool Signer: ["ccip_tokenpool_signer"] from Pool
-  const [poolSigner] = PublicKey.findProgramAddressSync([Buffer.from('ccip_tokenpool_signer')], poolProgram);
+  // Pool Signer: ["ccip_tokenpool_signer", tokenMint] from Pool
+  const [poolSigner] = PublicKey.findProgramAddressSync(
+    [Buffer.from('ccip_tokenpool_signer'), tokenMint.toBytes()],
+    poolProgram,
+  );
 
-  // Pool Config: ["ccip_tokenpool_config"] from Pool
-  const [poolConfig] = PublicKey.findProgramAddressSync([Buffer.from('ccip_tokenpool_config')], poolProgram);
+  // Pool Config: ["ccip_tokenpool_config", tokenMint] from Pool
+  const [poolConfig] = PublicKey.findProgramAddressSync(
+    [Buffer.from('ccip_tokenpool_config'), tokenMint.toBytes()],
+    poolProgram,
+  );
 
   // CCIP Router Pools Signer: ["external_token_pools_signer", poolProgram] from CCIP Router
   const [routerPoolsSigner] = PublicKey.findProgramAddressSync(
@@ -353,27 +359,44 @@ function buildEVMExtraArgsV2(gasLimit: number = 0, allowOutOfOrderExecution: boo
 /**
  * Build CCIP send instruction data using Borsh-like serialization
  *
- * NOTE: This is a placeholder implementation. The actual serialization
- * format should match the CCIP Solana program's expected format.
- * When Chainlink releases the official SDK, this should be replaced.
+ * Instruction format (per CCIP Router IDL):
+ *   ccip_send(dest_chain_selector: u64, message: SVM2AnyMessage, token_indexes: Vec<u8>)
+ *
+ * SVM2AnyMessage Borsh layout:
+ *   - receiver: Vec<u8>        (4-byte len + data)∂
+ *   - data: Vec<u8>            (4-byte len + data)
+ *   - token_amounts: Vec<SVMTokenAmount>  (4-byte len + items)
+ *   - fee_token: Pubkey        (32 bytes, fixed)
+ *   - extra_args: Vec<u8>      (4-byte len + data)
+ *
+ * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/router
+ * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/messages
  */
-function buildCCIPInstructionData(message: SVM2AnyMessage, destChainSelector: bigint): Buffer {
+function buildCCIPInstructionData(
+  message: SVM2AnyMessage,
+  destChainSelector: bigint,
+  tokenIndexes: number[],
+): Buffer {
   // Instruction discriminator: first 8 bytes of SHA256("global:ccip_send")
   const CCIP_SEND_DISCRIMINATOR = Buffer.from([0x6c, 0xd8, 0x86, 0xbf, 0xf9, 0xea, 0x21, 0x54]);
 
-  // Serialize destination chain selector (8 bytes, little-endian)
+  // 1. Serialize destination chain selector (8 bytes, little-endian)
   const selectorBuffer = Buffer.alloc(8);
   selectorBuffer.writeBigUInt64LE(destChainSelector, 0);
 
-  // Serialize receiver (32 bytes)
+  // 2. Serialize SVM2AnyMessage struct (Borsh format)
+
+  // 2a. receiver: Vec<u8> - 4-byte length prefix + data
+  const receiverLenBuffer = Buffer.alloc(4);
+  receiverLenBuffer.writeUInt32LE(message.receiver.length, 0);
   const receiverBuffer = Buffer.from(message.receiver);
 
-  // Serialize data length + data
+  // 2b. data: Vec<u8> - 4-byte length prefix + data
   const dataLenBuffer = Buffer.alloc(4);
   dataLenBuffer.writeUInt32LE(message.data.length, 0);
   const dataBuffer = Buffer.from(message.data);
 
-  // Serialize token amounts array
+  // 2c. token_amounts: Vec<SVMTokenAmount> - 4-byte count + (token: Pubkey, amount: u64)*
   const tokenCountBuffer = Buffer.alloc(4);
   tokenCountBuffer.writeUInt32LE(message.tokenAmounts.length, 0);
 
@@ -385,25 +408,34 @@ function buildCCIPInstructionData(message: SVM2AnyMessage, destChainSelector: bi
     tokenBuffers.push(Buffer.concat([tokenBuf, amountBuf]));
   }
 
-  // Serialize extra args
+  // 2d. fee_token: Pubkey (32 bytes, fixed size - no length prefix)
+  const feeTokenBuffer = Buffer.from(message.feeToken);
+
+  // 2e. extra_args: Vec<u8> - 4-byte length prefix + data
   const extraArgsLenBuffer = Buffer.alloc(4);
   extraArgsLenBuffer.writeUInt32LE(message.extraArgs.length, 0);
   const extraArgsBuffer = Buffer.from(message.extraArgs);
 
-  // Serialize fee token (32 bytes)
-  const feeTokenBuffer = Buffer.from(message.feeToken);
+  // 3. Serialize token_indexes: Vec<u8> - indices mapping tokens in remaining_accounts
+  // Each index refers to a token's position in the remaining_accounts array
+  const tokenIndexesLenBuffer = Buffer.alloc(4);
+  tokenIndexesLenBuffer.writeUInt32LE(tokenIndexes.length, 0);
+  const tokenIndexesBuffer = Buffer.from(tokenIndexes);
 
   return Buffer.concat([
     CCIP_SEND_DISCRIMINATOR,
     selectorBuffer,
+    receiverLenBuffer,
     receiverBuffer,
     dataLenBuffer,
     dataBuffer,
     tokenCountBuffer,
     ...tokenBuffers,
+    feeTokenBuffer,
     extraArgsLenBuffer,
     extraArgsBuffer,
-    feeTokenBuffer,
+    tokenIndexesLenBuffer,
+    tokenIndexesBuffer,
   ]);
 }
 
@@ -493,7 +525,8 @@ async function executeSolanaToMainnetBridge({
     });
 
     // Build instruction data
-    const instructionData = buildCCIPInstructionData(ccipMessage, BigInt(ETHEREUM_CHAIN_SELECTOR));
+    const tokenIndexes = [0]; // Single token transfer (USDC)
+    const instructionData = buildCCIPInstructionData(ccipMessage, BigInt(ETHEREUM_CHAIN_SELECTOR), tokenIndexes);
 
     // Derive all required PDAs for CCIP send instruction
     // See: https://docs.chain.link/ccip/tutorials/svm/source/token-transfers
@@ -656,10 +689,10 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   const { logger, requestId, config, chainService, rebalance, solanaSigner } = context;
   const rebalanceOperations: RebalanceAction[] = [];
 
-  logger.debug('Logging solana Private key', {
+  logger.debug('Solana rebalancing initialized', {
     requestId,
-    solanaConfig: config.solana,
-    signer: solanaSigner,
+    solanaConfigured: !!config.solana,
+    signerConfigured: !!solanaSigner,
   });
 
   // Check if SolanaSigner is available
