@@ -626,7 +626,7 @@ async function executeSolanaToMainnetBridge({
       instructionDataLength: instructionData.length,
     });
 
-    logger.info('Sending CCIP transaction to Solana via SolanaSigner', {
+    logger.info('Sending CCIP transaction to Solana via SolanaSigner using versioned transaction', {
       requestId,
       transaction: {
         feePayer: walletPublicKey.toBase58(),
