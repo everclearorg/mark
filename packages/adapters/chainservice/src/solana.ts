@@ -26,6 +26,8 @@ import {
   TransactionInstruction,
   sendAndConfirmTransaction,
   ComputeBudgetProgram,
+  MessageV0,
+  AddressLookupTableAccount,
 } from '@solana/web3.js';
 import bs58 from 'bs58';
 
@@ -77,6 +79,8 @@ export interface SolanaTransactionRequest {
   computeUnitPrice?: number;
   /** Optional compute unit limit */
   computeUnitLimit?: number;
+  /** Optional address lookup table addresses for versioned transactions */
+  addressLookupTableAddresses?: PublicKey[];
 }
 
 /**
@@ -214,22 +218,96 @@ export class SolanaSigner {
   }
 
   /**
+   * Build a versioned transaction with address lookup tables for reduced transaction size.
+   */
+  async buildVersionedTransaction(request: SolanaTransactionRequest): Promise<VersionedTransaction> {
+    const { instructions, feePayer, computeUnitPrice, computeUnitLimit, addressLookupTableAddresses } = request;
+
+    const allInstructions: TransactionInstruction[] = [];
+
+    // Add compute budget instructions if specified (for priority fees)
+    if (computeUnitLimit) {
+      allInstructions.push(
+        ComputeBudgetProgram.setComputeUnitLimit({
+          units: computeUnitLimit,
+        }),
+      );
+    }
+
+    if (computeUnitPrice) {
+      allInstructions.push(
+        ComputeBudgetProgram.setComputeUnitPrice({
+          microLamports: computeUnitPrice,
+        }),
+      );
+    }
+
+    // Add user instructions
+    allInstructions.push(...instructions);
+
+    // Get recent blockhash
+    const { blockhash } = await this.connection.getLatestBlockhash(this.config.commitment);
+
+    // Fetch address lookup table accounts if provided
+    const lookupTableAccounts: AddressLookupTableAccount[] = [];
+    if (addressLookupTableAddresses && addressLookupTableAddresses.length > 0) {
+      for (const address of addressLookupTableAddresses) {
+        const lookupTableAccount = await this.connection.getAddressLookupTable(address);
+        if (lookupTableAccount.value) {
+          lookupTableAccounts.push(lookupTableAccount.value);
+        }
+      }
+    }
+
+    // Create versioned transaction message using MessageV0
+    const messageV0 = MessageV0.compile({
+      payerKey: feePayer || this.keypair.publicKey,
+      recentBlockhash: blockhash,
+      instructions: allInstructions,
+      addressLookupTableAccounts: lookupTableAccounts,
+    });
+
+    return new VersionedTransaction(messageV0);
+  }
+
+  /**
    * Sign and send a transaction with automatic retry and confirmation
    */
   async signAndSendTransaction(request: SolanaTransactionRequest): Promise<SolanaTransactionResult> {
-    // Build the transaction
-    const transaction = await this.buildTransaction(request);
+    const useVersionedTransaction =
+      request.addressLookupTableAddresses && request.addressLookupTableAddresses.length > 0;
 
     // Sign and send with retries
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
       try {
-        const signature = await sendAndConfirmTransaction(this.connection, transaction, [this.keypair], {
-          commitment: this.config.commitment,
-          skipPreflight: this.config.skipPreflight,
-          maxRetries: 0, // We handle retries ourselves
-        });
+        let signature: string;
+
+        if (useVersionedTransaction) {
+          // Build and send versioned transaction with lookup tables
+          const versionedTx = await this.buildVersionedTransaction(request);
+          versionedTx.sign([this.keypair]);
+
+          signature = await this.connection.sendTransaction(versionedTx, {
+            skipPreflight: this.config.skipPreflight,
+            maxRetries: 0,
+          });
+
+          // Wait for confirmation
+          const confirmation = await this.connection.confirmTransaction(signature, this.config.commitment);
+          if (confirmation.value.err) {
+            throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+          }
+        } else {
+          // Build and send legacy transaction
+          const transaction = await this.buildTransaction(request);
+          signature = await sendAndConfirmTransaction(this.connection, transaction, [this.keypair], {
+            commitment: this.config.commitment,
+            skipPreflight: this.config.skipPreflight,
+            maxRetries: 0, // We handle retries ourselves
+          });
+        }
 
         // Get transaction details
         const txDetails = await this.connection.getTransaction(signature, {
@@ -259,11 +337,6 @@ export class SolanaSigner {
         // Exponential backoff
         const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
         await this.delay(backoffMs);
-
-        // Get fresh blockhash for retry
-        const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash(this.config.commitment);
-        transaction.recentBlockhash = blockhash;
-        transaction.lastValidBlockHeight = lastValidBlockHeight;
       }
     }
 

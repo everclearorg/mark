@@ -69,7 +69,7 @@ function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERA
 const CCIP_ROUTER_PROGRAM_ID = new PublicKey('Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C');
 const CCIP_FEE_QUOTER_PROGRAM_ID = new PublicKey('FeeQPGkKDeRV1MgoYfMH6L8o3KeuYjwUZrgn4LRKfjHi');
 const CCIP_RMN_REMOTE_PROGRAM_ID = new PublicKey('RmnXLft1mSEwDgMKu2okYuHkiazxntFFcZFrrcXxYg7');
-const CCIP_LOCK_RELEASE_POOL_PROGRAM_ID = new PublicKey('8eqh8wppT9c5rw4ERqNCffvU6cNFJWff9WmkcYtmGiqC');
+const CCIP_BURN_MINT_POOL_PROGRAM_ID = new PublicKey('CCiTPESGEevd7TBU8EGBKrcxuRq7jx3YtW6tPidnscaZ');
 const SOLANA_CHAIN_SELECTOR = '124615329519749607';
 const ETHEREUM_CHAIN_SELECTOR = '5009297550715157269';
 const USDC_SOLANA_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
@@ -180,13 +180,12 @@ function deriveRMNRemotePDAs(): {
  * - discriminator: 8 bytes (Anchor account discriminator)
  * - administrator: 32 bytes (Pubkey)
  * - pending_administrator: 32 bytes (Pubkey)
+ * - flag byte: 1 byte (pool enabled flag)
  * - pool_lookuptable: 32 bytes (Pubkey)
  *
- * Total offset to pool_lookuptable: 8 + 32 + 32 = 72 bytes
+ * Total offset to pool_lookuptable: 8 + 32 + 32 + 1 = 73 bytes
  *
- * See:
- * - https://docs.chain.link/ccip/concepts/cross-chain-token/svm/architecture
- * - https://docs.chain.link/ccip/concepts/cross-chain-token/svm/token-pools
+ * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/router
  */
 async function fetchTokenPoolLookupTable(connection: Connection, tokenMint: PublicKey): Promise<PublicKey> {
   // Derive Token Admin Registry PDA
@@ -202,18 +201,17 @@ async function fetchTokenPoolLookupTable(connection: Connection, tokenMint: Publ
   }
 
   // Parse the pool_lookuptable address from the account data
-  // Layout: discriminator (8) + administrator (32) + pending_administrator (32) + pool_lookuptable (32)
-  const ANCHOR_DISCRIMINATOR_SIZE = 8;
-  const lookupTableOffset = ANCHOR_DISCRIMINATOR_SIZE + 32 + 32; // = 72 bytes
+  // Layout: discriminator (8) + administrator (32) + pending_administrator (32) + flag (1) + pool_lookuptable (32)
+  const LOOKUP_TABLE_OFFSET = 73; // 8 + 32 + 32 + 1 = 73
 
-  const minRequiredSize = lookupTableOffset + 32;
+  const minRequiredSize = LOOKUP_TABLE_OFFSET + 32;
   if (accountInfo.data.length < minRequiredSize) {
     throw new Error(
       `Token Admin Registry data too short: expected at least ${minRequiredSize} bytes, got ${accountInfo.data.length}`,
     );
   }
 
-  const lookupTableBytes = accountInfo.data.slice(lookupTableOffset, lookupTableOffset + 32);
+  const lookupTableBytes = accountInfo.data.subarray(LOOKUP_TABLE_OFFSET, LOOKUP_TABLE_OFFSET + 32);
   const poolLookupTable = new PublicKey(lookupTableBytes);
 
   // Validate the lookup table is not zero/default pubkey
@@ -541,8 +539,8 @@ async function executeSolanaToMainnetBridge({
     // RMN Remote PDAs
     const rmnPDAs = deriveRMNRemotePDAs();
 
-    // Token Pool PDAs for USDC (using LockRelease pool)
-    const tokenPoolPDAs = deriveTokenPoolPDAs(destChainSelector, USDC_SOLANA_MINT, CCIP_LOCK_RELEASE_POOL_PROGRAM_ID);
+    // Token Pool PDAs for USDC (using CCTP Burn/Mint pool)
+    const tokenPoolPDAs = deriveTokenPoolPDAs(destChainSelector, USDC_SOLANA_MINT, CCIP_BURN_MINT_POOL_PROGRAM_ID);
 
     // Fetch the Token Pool Lookup Table address from Token Admin Registry
     const tokenPoolLookupTable = await fetchTokenPoolLookupTable(connection, USDC_SOLANA_MINT);
@@ -609,7 +607,7 @@ async function executeSolanaToMainnetBridge({
         { pubkey: tokenPoolPDAs.poolChainConfig, isSigner: false, isWritable: true }, // 20: Pool Chain Config (writable)
         { pubkey: tokenPoolLookupTable, isSigner: false, isWritable: false }, // 21: Token Pool Lookup Table
         { pubkey: tokenPoolPDAs.tokenAdminRegistry, isSigner: false, isWritable: false }, // 22: Token Admin Registry
-        { pubkey: CCIP_LOCK_RELEASE_POOL_PROGRAM_ID, isSigner: false, isWritable: false }, // 23: Pool Program
+        { pubkey: CCIP_BURN_MINT_POOL_PROGRAM_ID, isSigner: false, isWritable: false }, // 23: Pool Program
         { pubkey: tokenPoolPDAs.poolConfig, isSigner: false, isWritable: false }, // 24: Pool Config
         { pubkey: poolTokenAccount, isSigner: false, isWritable: true }, // 25: Pool Token Account (writable)
         { pubkey: tokenPoolPDAs.poolSigner, isSigner: false, isWritable: false }, // 26: Pool Signer
@@ -641,6 +639,7 @@ async function executeSolanaToMainnetBridge({
       instructions: [ccipSendInstruction],
       computeUnitPrice: 50000, // Priority fee for faster inclusion
       computeUnitLimit: 200000, // Compute units for CCIP instruction
+      addressLookupTableAddresses: [tokenPoolLookupTable], // Required for CCIP - reduces tx size below 1232 bytes
     });
 
     if (!result.success) {
