@@ -796,7 +796,7 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   }
 
   // Calculate how much USDC to bridge based on ptUSDe deficit and available Solana USDC
-  const ptUsdeShortfall = ptUsdeTarget - solanaPtUsdeBalance;
+  const ptUsdeShortfall = ptUsdeThreshold - solanaPtUsdeBalance;
 
   // Approximate 1:1 ratio between USDC and ptUSDe for initial calculation
   const usdcNeeded = ptUsdeShortfall / PTUSDE_TO_USDC_DIVISOR;
