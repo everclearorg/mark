@@ -11,8 +11,8 @@ import {
   WalletType,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
-import { PublicKey, ComputeBudgetProgram } from '@solana/web3.js';
-import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
+import { PublicKey, ComputeBudgetProgram, Transaction } from '@solana/web3.js';
+import { getAssociatedTokenAddress, getAccount, createApproveInstruction } from '@solana/spl-token';
 import { BN } from '@coral-xyz/anchor';
 import { SolanaSigner } from '@mark/chainservice';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
@@ -175,6 +175,35 @@ async function executeSolanaToMainnetBridge({
       destinationChain: ETHEREUM_CHAIN_SELECTOR,
       tokenAmount: amountToBridge.toString(),
       recipient: recipientAddress,
+    });
+
+    // Approve CCIP router to transfer tokens from user account
+    logger.info('Creating token approval for CCIP router', {
+      requestId,
+      sourceTokenAccount: sourceTokenAccount.toBase58(),
+      amount: amountToBridge.toString(),
+      delegate: CCIP_ROUTER_PROGRAM_ID.toBase58(),
+    });
+
+    const approveInstruction = createApproveInstruction(
+      sourceTokenAccount, // source account
+      CCIP_ROUTER_PROGRAM_ID, // delegate (CCIP router)
+      walletPublicKey, // owner
+      amountToBridge // amount
+    );
+
+    // Send approval transaction first
+    const approveResult = await solanaSigner.signAndSendTransaction({
+      instructions: [approveInstruction],
+      feePayer: walletPublicKey,
+    });
+
+    logger.info('Token approval completed', {
+      requestId,
+      signature: approveResult.signature,
+      delegate: CCIP_ROUTER_PROGRAM_ID.toBase58(),
+      amount: amountToBridge.toString(),
+      success: approveResult.success,
     });
 
     // Create CCIP client using the keypair from SolanaSigner
