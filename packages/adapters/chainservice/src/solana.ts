@@ -156,6 +156,13 @@ export class SolanaSigner {
   }
 
   /**
+   * Get the underlying keypair for direct access
+   */
+  getKeypair(): Keypair {
+    return this.keypair;
+  }
+
+  /**
    * Get the underlying connection for read operations
    */
   getConnection(): Connection {
