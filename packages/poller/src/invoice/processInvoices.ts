@@ -788,7 +788,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       const isSpent = spentStatuses.includes(status);
 
       // Remove if ttl elapsed
-      const elapsed = start - purchase.cachedAt;
+      const elapsed = start - (purchase as any).cachedAt;
       const isElapsed = elapsed > config.purchaseCacheTtlSeconds;
       return isSpent || isElapsed;
     })
