@@ -21,14 +21,7 @@ import { RebalanceTransactionMemo, USDC_PTUSDE_PAIRS, CCIPBridgeAdapter } from '
 
 // Import CCIP client
 import { CCIPClient } from '../ccipClient/index';
-
-// Address conversion utility
-class AddressConversion {
-  static evmAddressToSolanaBytes(evmAddress: string): Buffer {
-    const cleanAddress = evmAddress.startsWith('0x') ? evmAddress.slice(2) : evmAddress;
-    return Buffer.from(cleanAddress, 'hex');
-  }
-}
+import { AddressConversion } from '../ccipClient/utils/conversion';
 
 // Ticker hash from chaindata/everclear.json for cross-chain asset matching
 const USDC_TICKER_HASH = '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa';
