@@ -1,17 +1,17 @@
-import { PublicKey } from "@solana/web3.js";
-import { CCIPContext } from "../models";
-import { TokenPoolClient } from "./abstract";
-import { BurnMintTokenPoolClient } from "./burnmint";
-import { CCIPError } from "../utils/errors";
-import { createErrorEnhancer } from "../utils/errors";
-import { createLogger, LogLevel } from "../utils/logger";
+import { PublicKey } from '@solana/web3.js';
+import { CCIPContext } from '../models';
+import { TokenPoolClient } from './abstract';
+import { BurnMintTokenPoolClient } from './burnmint';
+import { CCIPError } from '../utils/errors';
+import { createErrorEnhancer } from '../utils/errors';
+import { createLogger, LogLevel } from '../utils/logger';
 
 /**
  * Supported token pool types
  */
 export enum TokenPoolType {
   /** Burn and mint token pool (burn on source, mint on destination) */
-  BURN_MINT = "burn_mint",
+  BURN_MINT = 'burn_mint',
   // Future pool types will be added here
 }
 
@@ -35,11 +35,7 @@ export class TokenPoolFactory {
    * @param programIds Map of program IDs for different token pool types
    * @returns TokenPoolClient instance
    */
-  static create(
-    type: TokenPoolType,
-    context: CCIPContext,
-    programIds: TokenPoolProgramIds
-  ): TokenPoolClient {
+  static create(type: TokenPoolType, context: CCIPContext, programIds: TokenPoolProgramIds): TokenPoolClient {
     switch (type) {
       case TokenPoolType.BURN_MINT:
         return new BurnMintTokenPoolClient(context, programIds.burnMint);
@@ -61,22 +57,16 @@ export class TokenPoolFactory {
   static async detectPoolType(
     mint: PublicKey,
     context: CCIPContext,
-    programIds: TokenPoolProgramIds
+    programIds: TokenPoolProgramIds,
   ): Promise<TokenPoolType> {
-    const connection = context.provider.connection;
     // Create a default logger if one isn't provided in the context
-    const logger =
-      context.logger ??
-      createLogger("token-pool-factory", { level: LogLevel.INFO });
+    const logger = context.logger ?? createLogger('token-pool-factory', { level: LogLevel.INFO });
     const enhanceError = createErrorEnhancer(logger);
 
     // Check if burn-mint pool exists for this mint
     try {
       // Try to create a burn-mint client and check if pool exists
-      const burnMintClient = new BurnMintTokenPoolClient(
-        context,
-        programIds.burnMint
-      );
+      const burnMintClient = new BurnMintTokenPoolClient(context, programIds.burnMint);
 
       logger?.debug(`Checking for burn-mint pool for mint: ${mint.toString()}`);
       const hasBurnMintPool = await burnMintClient.hasPool(mint);
@@ -86,11 +76,10 @@ export class TokenPoolFactory {
         return TokenPoolType.BURN_MINT;
       }
     } catch (error) {
-      logger?.debug(
-        `Error while checking burn-mint pool: ${error instanceof Error ? error.message : String(error)
-        }`,
-        { error, mint: mint.toString() }
-      );
+      logger?.debug(`Error while checking burn-mint pool: ${error instanceof Error ? error.message : String(error)}`, {
+        error,
+        mint: mint.toString(),
+      });
     }
 
     // Add future pool type detection here
@@ -98,7 +87,7 @@ export class TokenPoolFactory {
     // Each type should be wrapped in its own try-catch block so a failure in one
     // doesn't prevent checking other types
 
-    logger.debug("No burn-mint pool found, checking for other pool types...");
+    logger.debug('No burn-mint pool found, checking for other pool types...');
 
     // Example of how to add support for a new pool type:
     /*
@@ -122,18 +111,13 @@ export class TokenPoolFactory {
     // For future development, consider implementing a registry of pool type
     // detectors that can be iterated through, rather than hardcoding each check
 
-    logger.info(
-      `No supported token pool type found for mint: ${mint.toString()}`
-    );
+    logger.info(`No supported token pool type found for mint: ${mint.toString()}`);
 
     // If we get here, no pool type was detected
-    throw enhanceError(
-      new CCIPError("No token pool found", { mint: mint.toString() }),
-      {
-        operation: "detectPoolType",
-        mint: mint.toString(),
-        checked: [TokenPoolType.BURN_MINT],
-      }
-    );
+    throw enhanceError(new CCIPError('No token pool found', { mint: mint.toString() }), {
+      operation: 'detectPoolType',
+      mint: mint.toString(),
+      checked: [TokenPoolType.BURN_MINT],
+    });
   }
 }

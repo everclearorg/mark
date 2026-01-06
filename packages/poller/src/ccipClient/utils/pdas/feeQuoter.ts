@@ -1,5 +1,5 @@
-import { PublicKey } from "@solana/web3.js";
-import { uint64ToLE } from "./common";
+import { PublicKey } from '@solana/web3.js';
+import { uint64ToLE } from './common';
 
 /**
  * Fee Quoter PDA utilities
@@ -11,7 +11,7 @@ import { uint64ToLE } from "./common";
  * @returns [PDA, bump]
  */
 export function findFqConfigPDA(feeQuoter: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync([Buffer.from("config")], feeQuoter);
+  return PublicKey.findProgramAddressSync([Buffer.from('config')], feeQuoter);
 }
 
 /**
@@ -21,10 +21,7 @@ export function findFqConfigPDA(feeQuoter: PublicKey): [PublicKey, number] {
  * @returns [PDA, bump]
  */
 export function findFqDestChainPDA(chainSelector: bigint, feeQuoter: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("dest_chain"), uint64ToLE(chainSelector)],
-    feeQuoter
-  );
+  return PublicKey.findProgramAddressSync([Buffer.from('dest_chain'), uint64ToLE(chainSelector)], feeQuoter);
 }
 
 /**
@@ -34,10 +31,7 @@ export function findFqDestChainPDA(chainSelector: bigint, feeQuoter: PublicKey):
  * @returns [PDA, bump]
  */
 export function findFqBillingTokenConfigPDA(mint: PublicKey, feeQuoter: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("fee_billing_token_config"), mint.toBuffer()],
-    feeQuoter
-  );
+  return PublicKey.findProgramAddressSync([Buffer.from('fee_billing_token_config'), mint.toBuffer()], feeQuoter);
 }
 
 /**
@@ -47,10 +41,14 @@ export function findFqBillingTokenConfigPDA(mint: PublicKey, feeQuoter: PublicKe
  * @param feeQuoter Fee Quoter program ID
  * @returns [PDA, bump]
  */
-export function findFqPerChainPerTokenConfigPDA(chainSelector: bigint, mint: PublicKey, feeQuoter: PublicKey): [PublicKey, number] {
+export function findFqPerChainPerTokenConfigPDA(
+  chainSelector: bigint,
+  mint: PublicKey,
+  feeQuoter: PublicKey,
+): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("per_chain_per_token_config"), uint64ToLE(chainSelector), mint.toBuffer()],
-    feeQuoter
+    [Buffer.from('per_chain_per_token_config'), uint64ToLE(chainSelector), mint.toBuffer()],
+    feeQuoter,
   );
 }
 
@@ -61,8 +59,5 @@ export function findFqPerChainPerTokenConfigPDA(chainSelector: bigint, mint: Pub
  * @returns [PDA, bump]
  */
 export function findFqAllowedPriceUpdaterPDA(priceUpdater: PublicKey, feeQuoter: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("allowed_price_updater"), priceUpdater.toBuffer()],
-    feeQuoter
-  );
-} 
+  return PublicKey.findProgramAddressSync([Buffer.from('allowed_price_updater'), priceUpdater.toBuffer()], feeQuoter);
+}

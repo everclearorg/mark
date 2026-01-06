@@ -1,4 +1,4 @@
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey } from '@solana/web3.js';
 
 /**
  * RMN Remote PDA utilities
@@ -10,7 +10,7 @@ import { PublicKey } from "@solana/web3.js";
  * @returns [PDA, bump]
  */
 export function findRMNRemoteConfigPDA(programId: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync([Buffer.from("config")], programId);
+  return PublicKey.findProgramAddressSync([Buffer.from('config')], programId);
 }
 
 /**
@@ -19,5 +19,5 @@ export function findRMNRemoteConfigPDA(programId: PublicKey): [PublicKey, number
  * @returns [PDA, bump]
  */
 export function findRMNRemoteCursesPDA(programId: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync([Buffer.from("curses")], programId);
-} 
+  return PublicKey.findProgramAddressSync([Buffer.from('curses')], programId);
+}

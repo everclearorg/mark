@@ -1,4 +1,5 @@
-import * as loglevel from "loglevel";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import * as loglevel from 'loglevel';
 
 /**
  * Log levels available in the CCIP SDK
@@ -15,7 +16,7 @@ export enum LogLevel {
 /**
  * SDK logging namespace prefix
  */
-export const NAMESPACE = "ccip";
+export const NAMESPACE = 'ccip';
 
 /**
  * Logger interface with all available logging methods
@@ -52,10 +53,7 @@ const DEFAULT_OPTIONS: LoggerOptions = {
  * @param options Logger configuration options
  * @returns A configured logger instance
  */
-export function createLogger(
-  component: string,
-  options?: LoggerOptions
-): Logger {
+export function createLogger(component: string, options?: LoggerOptions): Logger {
   const fullOptions = { ...DEFAULT_OPTIONS, ...options };
   const loggerName = component ? `${NAMESPACE}:${component}` : NAMESPACE;
 
@@ -67,11 +65,11 @@ export function createLogger(
 
   // Create our wrapper logger with timestamps if enabled
   const logger: Logger = {
-    trace: createLogMethod(baseLogger, "trace", fullOptions),
-    debug: createLogMethod(baseLogger, "debug", fullOptions),
-    info: createLogMethod(baseLogger, "info", fullOptions),
-    warn: createLogMethod(baseLogger, "warn", fullOptions),
-    error: createLogMethod(baseLogger, "error", fullOptions),
+    trace: createLogMethod(baseLogger, 'trace', fullOptions),
+    debug: createLogMethod(baseLogger, 'debug', fullOptions),
+    info: createLogMethod(baseLogger, 'info', fullOptions),
+    warn: createLogMethod(baseLogger, 'warn', fullOptions),
+    error: createLogMethod(baseLogger, 'error', fullOptions),
 
     setLevel(level: LogLevel) {
       baseLogger.setLevel(level as unknown as loglevel.LogLevelDesc);
@@ -90,8 +88,8 @@ export function createLogger(
  */
 function createLogMethod(
   logger: loglevel.Logger,
-  method: "trace" | "debug" | "info" | "warn" | "error",
-  options: LoggerOptions
+  method: 'trace' | 'debug' | 'info' | 'warn' | 'error',
+  options: LoggerOptions,
 ): (...args: any[]) => void {
   return function (...args: any[]) {
     // Skip logging if the current level is higher than this method's level
@@ -106,9 +104,9 @@ function createLogMethod(
       const timestamp = new Date().toISOString();
 
       // Format objects for better readability for trace level
-      if (method === "trace") {
+      if (method === 'trace') {
         const formattedArgs = args.map((arg) => {
-          if (typeof arg === "object" && arg !== null) {
+          if (typeof arg === 'object' && arg !== null) {
             return JSON.stringify(arg, null, 2);
           }
           return arg;
@@ -120,9 +118,9 @@ function createLogMethod(
       }
     } else {
       // Format objects for better readability for trace level
-      if (method === "trace") {
+      if (method === 'trace') {
         const formattedArgs = args.map((arg) => {
-          if (typeof arg === "object" && arg !== null) {
+          if (typeof arg === 'object' && arg !== null) {
             return JSON.stringify(arg, null, 2);
           }
           return arg;
@@ -139,19 +137,17 @@ function createLogMethod(
 /**
  * Convert method name to LogLevel enum value
  */
-function getMethodLogLevel(
-  method: "trace" | "debug" | "info" | "warn" | "error"
-): LogLevel {
+function getMethodLogLevel(method: 'trace' | 'debug' | 'info' | 'warn' | 'error'): LogLevel {
   switch (method) {
-    case "trace":
+    case 'trace':
       return LogLevel.TRACE;
-    case "debug":
+    case 'debug':
       return LogLevel.DEBUG;
-    case "info":
+    case 'info':
       return LogLevel.INFO;
-    case "warn":
+    case 'warn':
       return LogLevel.WARN;
-    case "error":
+    case 'error':
       return LogLevel.ERROR;
     default:
       return LogLevel.INFO;
@@ -161,7 +157,7 @@ function getMethodLogLevel(
 /**
  * Root SDK logger instance
  */
-export const rootLogger = createLogger("");
+export const rootLogger = createLogger('');
 
 /**
  * Set the global log level for all CCIP loggers

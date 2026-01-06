@@ -1,28 +1,25 @@
-import { TransactionInstruction, PublicKey, AccountMeta } from "@solana/web3.js" // eslint-disable-line @typescript-eslint/no-unused-vars
-import BN from "bn.js" // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as borsh from "@coral-xyz/borsh" // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as types from "../types" // eslint-disable-line @typescript-eslint/no-unused-vars
-import { PROGRAM_ID } from "../programId"
+import { TransactionInstruction, PublicKey, AccountMeta } from '@solana/web3.js';
+import BN from 'bn.js';
+import * as borsh from '@coral-xyz/borsh';
+import * as types from '../types'; // eslint-disable-line @typescript-eslint/no-unused-vars
+import { PROGRAM_ID } from '../programId';
 
 export interface WithdrawBilledFundsArgs {
-  transferAll: boolean
-  desiredAmount: BN
+  transferAll: boolean;
+  desiredAmount: BN;
 }
 
 export interface WithdrawBilledFundsAccounts {
-  feeTokenMint: PublicKey
-  feeTokenAccum: PublicKey
-  recipient: PublicKey
-  tokenProgram: PublicKey
-  feeBillingSigner: PublicKey
-  config: PublicKey
-  authority: PublicKey
+  feeTokenMint: PublicKey;
+  feeTokenAccum: PublicKey;
+  recipient: PublicKey;
+  tokenProgram: PublicKey;
+  feeBillingSigner: PublicKey;
+  config: PublicKey;
+  authority: PublicKey;
 }
 
-export const layout = borsh.struct([
-  borsh.bool("transferAll"),
-  borsh.u64("desiredAmount"),
-])
+export const layout = borsh.struct([borsh.bool('transferAll'), borsh.u64('desiredAmount')]);
 
 /**
  * Billing //
@@ -38,7 +35,7 @@ export const layout = borsh.struct([
 export function withdrawBilledFunds(
   args: WithdrawBilledFundsArgs,
   accounts: WithdrawBilledFundsAccounts,
-  programId: PublicKey = PROGRAM_ID
+  programId: PublicKey = PROGRAM_ID,
 ) {
   const keys: Array<AccountMeta> = [
     { pubkey: accounts.feeTokenMint, isSigner: false, isWritable: false },
@@ -48,17 +45,17 @@ export function withdrawBilledFunds(
     { pubkey: accounts.feeBillingSigner, isSigner: false, isWritable: false },
     { pubkey: accounts.config, isSigner: false, isWritable: false },
     { pubkey: accounts.authority, isSigner: true, isWritable: true },
-  ]
-  const identifier = Buffer.from([16, 116, 73, 38, 77, 232, 6, 28])
-  const buffer = Buffer.alloc(1000)
+  ];
+  const identifier = Buffer.from([16, 116, 73, 38, 77, 232, 6, 28]);
+  const buffer = Buffer.alloc(1000);
   const len = layout.encode(
     {
       transferAll: args.transferAll,
       desiredAmount: args.desiredAmount,
     },
-    buffer
-  )
-  const data = Buffer.concat([identifier, buffer]).slice(0, 8 + len)
-  const ix = new TransactionInstruction({ keys, programId, data })
-  return ix
+    buffer,
+  );
+  const data = Buffer.concat([identifier, buffer]).slice(0, 8 + len);
+  const ix = new TransactionInstruction({ keys, programId, data });
+  return ix;
 }

@@ -1,40 +1,22 @@
-import {
-  PublicKey,
-  SystemProgram,
-  AddressLookupTableProgram,
-  Connection,
-  Keypair,
-} from "@solana/web3.js";
-import { CCIPContext, CCIPProvider, CCIPCoreConfig } from "./models";
-import { createLogger, Logger, LogLevel } from "./utils/logger";
-import { createErrorEnhancer } from "./utils/errors";
-import {
-  executeTransaction,
-  extractTxOptions,
-  TransactionExecutionOptions,
-} from "./utils/transaction";
-import { detectTokenProgram } from "./utils/token";
-import {
-  findConfigPDA,
-  findTokenAdminRegistryPDA,
-  ROUTER_SEEDS,
-} from "./utils/pdas/router";
-import { TxOptions } from "./tokenpools/abstract";
-import { TokenAdminRegistry } from "./bindings/accounts/tokenAdminRegistry";
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type */
+import { PublicKey, SystemProgram, AddressLookupTableProgram, Connection, Keypair } from '@solana/web3.js';
+import { CCIPContext, CCIPProvider, CCIPCoreConfig } from './models';
+import { createLogger, Logger, LogLevel } from './utils/logger';
+import { createErrorEnhancer } from './utils/errors';
+import { executeTransaction, extractTxOptions, TransactionExecutionOptions } from './utils/transaction';
+import { detectTokenProgram } from './utils/token';
+import { findConfigPDA, findTokenAdminRegistryPDA, ROUTER_SEEDS } from './utils/pdas/router';
+import { TxOptions } from './tokenpools/abstract';
+import { TokenAdminRegistry } from './bindings/accounts/tokenAdminRegistry';
 import {
   findBurnMintPoolConfigPDA,
   findPoolSignerPDA,
   TOKEN_POOL_STATE_SEED,
   TOKEN_POOL_POOL_SIGNER_SEED,
-} from "./utils/pdas/tokenpool";
-import { findFqBillingTokenConfigPDA } from "./utils/pdas/feeQuoter";
-import { findExternalTokenPoolsSignerPDA } from "./utils/pdas/router";
-import {
-  getAssociatedTokenAddressSync,
-  TOKEN_PROGRAM_ID,
-  TOKEN_2022_PROGRAM_ID,
-} from "@solana/spl-token";
-import { loadKeypair } from "./utils/keypair";
+} from './utils/pdas/tokenpool';
+import { findFqBillingTokenConfigPDA } from './utils/pdas/feeQuoter';
+import { getAssociatedTokenAddressSync } from '@solana/spl-token';
+import { loadKeypair } from './utils/keypair';
 
 // Import from bindings for ccip-router
 import {
@@ -48,12 +30,12 @@ import {
   TransferAdminRoleTokenAdminRegistryAccounts,
   TransferAdminRoleTokenAdminRegistryArgs,
   SetPoolAccounts,
-} from "./bindings/instructions";
+} from './bindings/instructions';
 
 /**
  * Common base options extending TxOptions
  */
-export interface TokenRegistryTxOptions extends TxOptions { }
+export interface TokenRegistryTxOptions extends TxOptions {}
 
 /**
  * Options for proposing an administrator
@@ -90,8 +72,7 @@ export interface SetPoolOptions extends TokenRegistryTxOptions {
 /**
  * Options for creating a token pool lookup table
  */
-export interface CreateTokenPoolLookupTableOptions
-  extends TokenRegistryTxOptions {
+export interface CreateTokenPoolLookupTableOptions extends TokenRegistryTxOptions {
   tokenMint: PublicKey;
   poolProgramId: PublicKey;
   feeQuoterProgramId: PublicKey;
@@ -111,8 +92,7 @@ export interface CreateTokenPoolLookupTableResult {
 /**
  * Options for extending a token pool lookup table
  */
-export interface ExtendTokenPoolLookupTableOptions
-  extends TokenRegistryTxOptions {
+export interface ExtendTokenPoolLookupTableOptions extends TokenRegistryTxOptions {
   lookupTableAddress: PublicKey;
   newAddresses: PublicKey[];
 }
@@ -141,14 +121,10 @@ export class TokenRegistryClient {
    */
   constructor(
     readonly context: CCIPContext,
-    readonly routerProgramId: PublicKey
+    readonly routerProgramId: PublicKey,
   ) {
-    this.logger =
-      context.logger ??
-      createLogger("token-registry-client", { level: LogLevel.INFO });
-    this.logger.debug(
-      `TokenRegistryClient initialized: routerProgramId=${this.routerProgramId.toString()}`
-    );
+    this.logger = context.logger ?? createLogger('token-registry-client', { level: LogLevel.INFO });
+    this.logger.debug(`TokenRegistryClient initialized: routerProgramId=${this.routerProgramId.toString()}`);
   }
 
   /**
@@ -170,7 +146,7 @@ export class TokenRegistryClient {
       linkTokenMint?: string;
       receiverProgramId?: string;
     },
-    options?: { logLevel?: LogLevel }
+    options?: { logLevel?: LogLevel },
   ): TokenRegistryClient {
     // Create provider
     const provider: CCIPProvider = {
@@ -190,20 +166,20 @@ export class TokenRegistryClient {
     // Build core config with defaults
     const coreConfig: CCIPCoreConfig = {
       ccipRouterProgramId: new PublicKey(routerProgramId),
-      feeQuoterProgramId: new PublicKey(config?.feeQuoterProgramId || "FeeQPGkKDeRV1MgoYfMH6L8o3KeuYjwUZrgn4LRKfjHi"),
-      rmnRemoteProgramId: new PublicKey(config?.rmnRemoteProgramId || "RmnXLft1mSEwDgMKu2okYuHkiazxntFFcZFrrcXxYg7"),
-      linkTokenMint: new PublicKey(config?.linkTokenMint || "LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L"),
+      feeQuoterProgramId: new PublicKey(config?.feeQuoterProgramId || 'FeeQPGkKDeRV1MgoYfMH6L8o3KeuYjwUZrgn4LRKfjHi'),
+      rmnRemoteProgramId: new PublicKey(config?.rmnRemoteProgramId || 'RmnXLft1mSEwDgMKu2okYuHkiazxntFFcZFrrcXxYg7'),
+      linkTokenMint: new PublicKey(config?.linkTokenMint || 'LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L'),
       tokenMint: PublicKey.default,
       nativeSol: PublicKey.default,
-      systemProgramId: new PublicKey("11111111111111111111111111111111"),
-      programId: new PublicKey(config?.receiverProgramId || "BqmcnLFSbKwyMEgi7VhVeJCis1wW26VySztF34CJrKFq"),
+      systemProgramId: new PublicKey('11111111111111111111111111111111'),
+      programId: new PublicKey(config?.receiverProgramId || 'BqmcnLFSbKwyMEgi7VhVeJCis1wW26VySztF34CJrKFq'),
     };
 
     // Create context
     const context: CCIPContext = {
       provider,
       config: coreConfig,
-      logger: createLogger("token-registry-client", { level: options?.logLevel ?? LogLevel.INFO }),
+      logger: createLogger('token-registry-client', { level: options?.logLevel ?? LogLevel.INFO }),
     };
 
     return new TokenRegistryClient(context, new PublicKey(routerProgramId));
@@ -228,10 +204,10 @@ export class TokenRegistryClient {
       linkTokenMint?: string;
       receiverProgramId?: string;
     },
-    options?: { logLevel?: LogLevel; commitment?: string }
+    options?: { logLevel?: LogLevel; commitment?: string },
   ): TokenRegistryClient {
     const wallet = loadKeypair(keypairPath);
-    const connection = new Connection(endpoint, options?.commitment as any || "confirmed");
+    const connection = new Connection(endpoint, (options?.commitment as any) || 'confirmed');
     return TokenRegistryClient.create(connection, wallet, routerProgramId, config, options);
   }
 
@@ -241,45 +217,40 @@ export class TokenRegistryClient {
    * @param tokenMint The mint of the token to fetch the registry for
    * @returns The token admin registry account if it exists, null otherwise
    */
-  async getTokenAdminRegistry(
-    tokenMint: PublicKey
-  ): Promise<TokenAdminRegistry | null> {
+  async getTokenAdminRegistry(tokenMint: PublicKey): Promise<TokenAdminRegistry | null> {
     const errorContext = {
-      operation: "getTokenAdminRegistry",
+      operation: 'getTokenAdminRegistry',
       mint: tokenMint.toString(),
     };
 
     try {
-      this.logger.info(
-        `Fetching token admin registry for mint: ${tokenMint.toString()}`
-      );
+      this.logger.info(`Fetching token admin registry for mint: ${tokenMint.toString()}`);
 
       // Find the PDA for the token admin registry
-      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] =
-        findTokenAdminRegistryPDA(tokenMint, this.routerProgramId);
+      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] = findTokenAdminRegistryPDA(
+        tokenMint,
+        this.routerProgramId,
+      );
       this.logger.debug(
-        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`
+        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`,
       );
       this.logger.trace(
-        `Token Admin Registry PDA derivation: seeds=["${ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
-        }", ${tokenMint.toString()}], program=${this.routerProgramId.toString()}`
+        `Token Admin Registry PDA derivation: seeds=["${
+          ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
+        }", ${tokenMint.toString()}], program=${this.routerProgramId.toString()}`,
       );
 
       // Fetch the account using TokenAdminRegistry helper
       const tokenAdmin = await TokenAdminRegistry.fetch(
         this.context.provider.connection,
         tokenAdminRegistryPDA,
-        this.routerProgramId
+        this.routerProgramId,
       );
 
       if (tokenAdmin) {
-        this.logger.debug(
-          `Token admin data retrieved for ${tokenMint.toString()}`
-        );
+        this.logger.debug(`Token admin data retrieved for ${tokenMint.toString()}`);
       } else {
-        this.logger.debug(
-          `No token admin data found for ${tokenMint.toString()}`
-        );
+        this.logger.debug(`No token admin data found for ${tokenMint.toString()}`);
       }
 
       return tokenAdmin;
@@ -301,23 +272,21 @@ export class TokenRegistryClient {
    * @returns Promise resolving to the transaction signature
    * @throws Error if the caller is not the token owner or if the transaction fails
    */
-  async proposeAdministrator(
-    options: ProposeAdministratorOptions
-  ): Promise<string> {
+  async proposeAdministrator(options: ProposeAdministratorOptions): Promise<string> {
     const errorContext = {
-      operation: "proposeAdministrator",
+      operation: 'proposeAdministrator',
       mint: options.tokenMint.toString(),
       newAdmin: options.newAdmin.toString(),
     };
 
     try {
       this.logger.info(
-        `Proposing administrator for token ${options.tokenMint.toString()}: new admin ${options.newAdmin.toString()}`
+        `Proposing administrator for token ${options.tokenMint.toString()}: new admin ${options.newAdmin.toString()}`,
       );
 
       // Get signer and derive necessary PDAs
       const signerPublicKey = this.context.provider.getAddress();
-      this.logger.debug("Propose administrator details:", {
+      this.logger.debug('Propose administrator details:', {
         mint: options.tokenMint.toString(),
         newAdmin: options.newAdmin.toString(),
         signer: signerPublicKey.toString(),
@@ -325,23 +294,23 @@ export class TokenRegistryClient {
       });
 
       // Use bindings to find PDAs
-      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] =
-        findTokenAdminRegistryPDA(options.tokenMint, this.routerProgramId);
+      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] = findTokenAdminRegistryPDA(
+        options.tokenMint,
+        this.routerProgramId,
+      );
       this.logger.debug(
-        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`
+        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`,
       );
       this.logger.trace(
-        `Token Admin Registry PDA derivation: seeds=["${ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
-        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`
+        `Token Admin Registry PDA derivation: seeds=["${
+          ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
+        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`,
       );
 
       const [configPDA, configBump] = findConfigPDA(this.routerProgramId);
-      this.logger.debug(
-        `Config PDA: ${configPDA.toString()} (bump: ${configBump})`
-      );
+      this.logger.debug(`Config PDA: ${configPDA.toString()} (bump: ${configBump})`);
       this.logger.trace(
-        `Config PDA derivation: seeds=["${ROUTER_SEEDS.CONFIG
-        }"], program=${this.routerProgramId.toString()}`
+        `Config PDA derivation: seeds=["${ROUTER_SEEDS.CONFIG}"], program=${this.routerProgramId.toString()}`,
       );
 
       // Build accounts using the bindings structures
@@ -352,7 +321,7 @@ export class TokenRegistryClient {
         authority: signerPublicKey,
         systemProgram: SystemProgram.programId,
       };
-      this.logger.debug("Propose administrator accounts:", {
+      this.logger.debug('Propose administrator accounts:', {
         config: accounts.config.toString(),
         tokenAdminRegistry: accounts.tokenAdminRegistry.toString(),
         mint: accounts.mint.toString(),
@@ -364,23 +333,19 @@ export class TokenRegistryClient {
       const args: OwnerProposeAdministratorArgs = {
         tokenAdminRegistryAdmin: options.newAdmin,
       };
-      this.logger.debug("Propose administrator args:", {
+      this.logger.debug('Propose administrator args:', {
         tokenAdminRegistryAdmin: args.tokenAdminRegistryAdmin.toString(),
       });
 
       // Create instruction using the bindings
-      this.logger.debug("Creating ownerProposeAdministrator instruction...");
-      const instruction = ownerProposeAdministrator(
-        args,
-        accounts,
-        this.routerProgramId
-      );
-      this.logger.debug("Instruction created:", {
+      this.logger.debug('Creating ownerProposeAdministrator instruction...');
+      const instruction = ownerProposeAdministrator(args, accounts, this.routerProgramId);
+      this.logger.debug('Instruction created:', {
         programId: instruction.programId.toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((k, i) => ({
           index: i,
           pubkey: k.pubkey.toString(),
@@ -388,26 +353,18 @@ export class TokenRegistryClient {
           isWritable: k.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute transaction
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "proposeAdministrator",
+        operationName: 'proposeAdministrator',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
-      this.logger.info(
-        `Administrator proposed successfully. Tx signature: ${signature}`
-      );
+      this.logger.info(`Administrator proposed successfully. Tx signature: ${signature}`);
       return signature;
     } catch (error) {
       const enhanceError = createErrorEnhancer(this.logger);
@@ -428,40 +385,38 @@ export class TokenRegistryClient {
    */
   async acceptAdminRole(options: AcceptAdminRoleOptions): Promise<string> {
     const errorContext = {
-      operation: "acceptAdminRole",
+      operation: 'acceptAdminRole',
       mint: options.tokenMint.toString(),
     };
 
     try {
-      this.logger.info(
-        `Accepting admin role for token: ${options.tokenMint.toString()}`
-      );
+      this.logger.info(`Accepting admin role for token: ${options.tokenMint.toString()}`);
 
       // Get signer and derive PDAs using bindings
       const signerPublicKey = this.context.provider.getAddress();
-      this.logger.debug("Accept admin role details:", {
+      this.logger.debug('Accept admin role details:', {
         mint: options.tokenMint.toString(),
         signer: signerPublicKey.toString(),
         programId: this.routerProgramId.toString(),
       });
 
-      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] =
-        findTokenAdminRegistryPDA(options.tokenMint, this.routerProgramId);
+      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] = findTokenAdminRegistryPDA(
+        options.tokenMint,
+        this.routerProgramId,
+      );
       this.logger.debug(
-        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`
+        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`,
       );
       this.logger.trace(
-        `Token Admin Registry PDA derivation: seeds=["${ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
-        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`
+        `Token Admin Registry PDA derivation: seeds=["${
+          ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
+        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`,
       );
 
       const [configPDA, configBump] = findConfigPDA(this.routerProgramId);
-      this.logger.debug(
-        `Config PDA: ${configPDA.toString()} (bump: ${configBump})`
-      );
+      this.logger.debug(`Config PDA: ${configPDA.toString()} (bump: ${configBump})`);
       this.logger.trace(
-        `Config PDA derivation: seeds=["${ROUTER_SEEDS.CONFIG
-        }"], program=${this.routerProgramId.toString()}`
+        `Config PDA derivation: seeds=["${ROUTER_SEEDS.CONFIG}"], program=${this.routerProgramId.toString()}`,
       );
 
       // Build accounts using binding structures
@@ -471,7 +426,7 @@ export class TokenRegistryClient {
         mint: options.tokenMint,
         authority: signerPublicKey,
       };
-      this.logger.debug("Accept admin role accounts:", {
+      this.logger.debug('Accept admin role accounts:', {
         config: accounts.config.toString(),
         tokenAdminRegistry: accounts.tokenAdminRegistry.toString(),
         mint: accounts.mint.toString(),
@@ -479,19 +434,14 @@ export class TokenRegistryClient {
       });
 
       // Create instruction using bindings (no args for this one)
-      this.logger.debug(
-        "Creating acceptAdminRoleTokenAdminRegistry instruction..."
-      );
-      const instruction = acceptAdminRoleTokenAdminRegistry(
-        accounts,
-        this.routerProgramId
-      );
-      this.logger.debug("Instruction created:", {
+      this.logger.debug('Creating acceptAdminRoleTokenAdminRegistry instruction...');
+      const instruction = acceptAdminRoleTokenAdminRegistry(accounts, this.routerProgramId);
+      this.logger.debug('Instruction created:', {
         programId: instruction.programId.toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((k, i) => ({
           index: i,
           pubkey: k.pubkey.toString(),
@@ -499,26 +449,18 @@ export class TokenRegistryClient {
           isWritable: k.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute transaction
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "acceptAdminRole",
+        operationName: 'acceptAdminRole',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
-      this.logger.info(
-        `Admin role accepted successfully. Tx signature: ${signature}`
-      );
+      this.logger.info(`Admin role accepted successfully. Tx signature: ${signature}`);
       return signature;
     } catch (error) {
       const enhanceError = createErrorEnhancer(this.logger);
@@ -539,42 +481,42 @@ export class TokenRegistryClient {
    */
   async transferAdminRole(options: TransferAdminRoleOptions): Promise<string> {
     const errorContext = {
-      operation: "transferAdminRole",
+      operation: 'transferAdminRole',
       mint: options.tokenMint.toString(),
       newAdmin: options.newAdmin.toString(),
     };
 
     try {
       this.logger.info(
-        `Transferring admin role for token ${options.tokenMint.toString()} to ${options.newAdmin.toString()}`
+        `Transferring admin role for token ${options.tokenMint.toString()} to ${options.newAdmin.toString()}`,
       );
 
       // Get signer and derive PDAs
       const signerPublicKey = this.context.provider.getAddress();
-      this.logger.debug("Transfer admin role details:", {
+      this.logger.debug('Transfer admin role details:', {
         mint: options.tokenMint.toString(),
         newAdmin: options.newAdmin.toString(),
         signer: signerPublicKey.toString(),
         programId: this.routerProgramId.toString(),
       });
 
-      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] =
-        findTokenAdminRegistryPDA(options.tokenMint, this.routerProgramId);
+      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] = findTokenAdminRegistryPDA(
+        options.tokenMint,
+        this.routerProgramId,
+      );
       this.logger.debug(
-        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`
+        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`,
       );
       this.logger.trace(
-        `Token Admin Registry PDA derivation: seeds=["${ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
-        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`
+        `Token Admin Registry PDA derivation: seeds=["${
+          ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
+        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`,
       );
 
       const [configPDA, configBump] = findConfigPDA(this.routerProgramId);
-      this.logger.debug(
-        `Config PDA: ${configPDA.toString()} (bump: ${configBump})`
-      );
+      this.logger.debug(`Config PDA: ${configPDA.toString()} (bump: ${configBump})`);
       this.logger.trace(
-        `Config PDA derivation: seeds=["${ROUTER_SEEDS.CONFIG
-        }"], program=${this.routerProgramId.toString()}`
+        `Config PDA derivation: seeds=["${ROUTER_SEEDS.CONFIG}"], program=${this.routerProgramId.toString()}`,
       );
 
       // Build accounts
@@ -584,7 +526,7 @@ export class TokenRegistryClient {
         mint: options.tokenMint,
         authority: signerPublicKey,
       };
-      this.logger.debug("Transfer admin role accounts:", {
+      this.logger.debug('Transfer admin role accounts:', {
         config: accounts.config.toString(),
         tokenAdminRegistry: accounts.tokenAdminRegistry.toString(),
         mint: accounts.mint.toString(),
@@ -595,25 +537,19 @@ export class TokenRegistryClient {
       const args: TransferAdminRoleTokenAdminRegistryArgs = {
         newAdmin: options.newAdmin,
       };
-      this.logger.debug("Transfer admin role args:", {
+      this.logger.debug('Transfer admin role args:', {
         newAdmin: args.newAdmin.toString(),
       });
 
       // Create instruction
-      this.logger.debug(
-        "Creating transferAdminRoleTokenAdminRegistry instruction..."
-      );
-      const instruction = transferAdminRoleTokenAdminRegistry(
-        args,
-        accounts,
-        this.routerProgramId
-      );
-      this.logger.debug("Instruction created:", {
+      this.logger.debug('Creating transferAdminRoleTokenAdminRegistry instruction...');
+      const instruction = transferAdminRoleTokenAdminRegistry(args, accounts, this.routerProgramId);
+      this.logger.debug('Instruction created:', {
         programId: instruction.programId.toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((k, i) => ({
           index: i,
           pubkey: k.pubkey.toString(),
@@ -621,26 +557,18 @@ export class TokenRegistryClient {
           isWritable: k.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute transaction
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "transferAdminRole",
+        operationName: 'transferAdminRole',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
-      this.logger.info(
-        `Admin role transfer initiated successfully. Tx signature: ${signature}`
-      );
+      this.logger.info(`Admin role transfer initiated successfully. Tx signature: ${signature}`);
       return signature;
     } catch (error) {
       const enhanceError = createErrorEnhancer(this.logger);
@@ -661,19 +589,19 @@ export class TokenRegistryClient {
    */
   async setPool(options: SetPoolOptions): Promise<string> {
     const errorContext = {
-      operation: "setPool",
+      operation: 'setPool',
       mint: options.tokenMint.toString(),
       lookupTable: options.lookupTable.toString(),
     };
 
     try {
       this.logger.info(
-        `Setting pool for token ${options.tokenMint.toString()} with lookup table ${options.lookupTable.toString()}`
+        `Setting pool for token ${options.tokenMint.toString()} with lookup table ${options.lookupTable.toString()}`,
       );
 
       // Get signer and derive PDAs
       const signerPublicKey = this.context.provider.getAddress();
-      this.logger.debug("Set pool details:", {
+      this.logger.debug('Set pool details:', {
         mint: options.tokenMint.toString(),
         lookupTable: options.lookupTable.toString(),
         writableIndices: options.writableIndices,
@@ -681,23 +609,23 @@ export class TokenRegistryClient {
         programId: this.routerProgramId.toString(),
       });
 
-      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] =
-        findTokenAdminRegistryPDA(options.tokenMint, this.routerProgramId);
+      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] = findTokenAdminRegistryPDA(
+        options.tokenMint,
+        this.routerProgramId,
+      );
       this.logger.debug(
-        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`
+        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`,
       );
       this.logger.trace(
-        `Token Admin Registry PDA derivation: seeds=["${ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
-        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`
+        `Token Admin Registry PDA derivation: seeds=["${
+          ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
+        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`,
       );
 
       const [configPDA, configBump] = findConfigPDA(this.routerProgramId);
-      this.logger.debug(
-        `Config PDA: ${configPDA.toString()} (bump: ${configBump})`
-      );
+      this.logger.debug(`Config PDA: ${configPDA.toString()} (bump: ${configBump})`);
       this.logger.trace(
-        `Config PDA derivation: seeds=["${ROUTER_SEEDS.CONFIG
-        }"], program=${this.routerProgramId.toString()}`
+        `Config PDA derivation: seeds=["${ROUTER_SEEDS.CONFIG}"], program=${this.routerProgramId.toString()}`,
       );
 
       // Build accounts
@@ -708,7 +636,7 @@ export class TokenRegistryClient {
         poolLookuptable: options.lookupTable,
         authority: signerPublicKey,
       };
-      this.logger.debug("Set pool accounts:", {
+      this.logger.debug('Set pool accounts:', {
         config: accounts.config.toString(),
         tokenAdminRegistry: accounts.tokenAdminRegistry.toString(),
         mint: accounts.mint.toString(),
@@ -719,19 +647,19 @@ export class TokenRegistryClient {
       const args = {
         writableIndexes: Uint8Array.from(options.writableIndices),
       };
-      this.logger.debug("Set pool args:", {
+      this.logger.debug('Set pool args:', {
         writableIndexes: options.writableIndices,
       });
 
       // Create instruction
-      this.logger.debug("Creating setPool instruction...");
+      this.logger.debug('Creating setPool instruction...');
       const instruction = setPool(args, accounts, this.routerProgramId);
-      this.logger.debug("Instruction created:", {
+      this.logger.debug('Instruction created:', {
         programId: instruction.programId.toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((k, i) => ({
           index: i,
           pubkey: k.pubkey.toString(),
@@ -739,22 +667,16 @@ export class TokenRegistryClient {
           isWritable: k.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute transaction
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "setPool",
+        operationName: 'setPool',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Pool set successfully. Tx signature: ${signature}`);
       return signature;
@@ -788,30 +710,24 @@ export class TokenRegistryClient {
    * @throws Error if the caller doesn't have sufficient SOL or if the transaction fails
    */
   async createTokenPoolLookupTable(
-    options: CreateTokenPoolLookupTableOptions
+    options: CreateTokenPoolLookupTableOptions,
   ): Promise<CreateTokenPoolLookupTableResult> {
     const errorContext = {
-      operation: "createTokenPoolLookupTable",
+      operation: 'createTokenPoolLookupTable',
       mint: options.tokenMint.toString(),
       poolProgram: options.poolProgramId.toString(),
     };
 
     try {
-      this.logger.info(
-        `Creating token pool lookup table for mint: ${options.tokenMint.toString()}`
-      );
+      this.logger.info(`Creating token pool lookup table for mint: ${options.tokenMint.toString()}`);
 
       // Get signer and auto-detect token program
       const signerPublicKey = this.context.provider.getAddress();
 
-      this.logger.debug("Auto-detecting token program for mint...");
-      const tokenProgramId = await detectTokenProgram(
-        options.tokenMint,
-        this.context.provider.connection,
-        this.logger
-      );
+      this.logger.debug('Auto-detecting token program for mint...');
+      const tokenProgramId = await detectTokenProgram(options.tokenMint, this.context.provider.connection, this.logger);
 
-      this.logger.debug("Create ALT details:", {
+      this.logger.debug('Create ALT details:', {
         mint: options.tokenMint.toString(),
         poolProgram: options.poolProgramId.toString(),
         tokenProgram: tokenProgramId.toString(),
@@ -821,63 +737,53 @@ export class TokenRegistryClient {
       });
 
       // Get the current slot for ALT creation
-      const slot = await this.context.provider.connection.getSlot("finalized");
+      const slot = await this.context.provider.connection.getSlot('finalized');
       this.logger.debug(`Using finalized slot for ALT creation: ${slot}`);
 
       // Step 1: Create the lookup table
-      this.logger.debug("Creating Address Lookup Table...");
-      const [createInstruction, lookupTableAddress] =
-        AddressLookupTableProgram.createLookupTable({
-          authority: signerPublicKey,
-          payer: signerPublicKey,
-          recentSlot: slot,
-        });
+      this.logger.debug('Creating Address Lookup Table...');
+      const [createInstruction, lookupTableAddress] = AddressLookupTableProgram.createLookupTable({
+        authority: signerPublicKey,
+        payer: signerPublicKey,
+        recentSlot: slot,
+      });
 
-      this.logger.debug(
-        `ALT will be created at address: ${lookupTableAddress.toString()}`
-      );
-      this.logger.trace("Create ALT instruction:", {
+      this.logger.debug(`ALT will be created at address: ${lookupTableAddress.toString()}`);
+      this.logger.trace('Create ALT instruction:', {
         programId: createInstruction.programId.toString(),
         dataLength: createInstruction.data.length,
         keyCount: createInstruction.keys.length,
       });
 
       // Derive all necessary PDAs and addresses
-      this.logger.debug("Deriving PDAs and addresses for ALT...");
+      this.logger.debug('Deriving PDAs and addresses for ALT...');
 
       // Token Admin Registry PDA
-      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] =
-        findTokenAdminRegistryPDA(options.tokenMint, this.routerProgramId);
+      const [tokenAdminRegistryPDA, tokenAdminRegistryBump] = findTokenAdminRegistryPDA(
+        options.tokenMint,
+        this.routerProgramId,
+      );
       this.logger.debug(
-        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`
+        `Token Admin Registry PDA: ${tokenAdminRegistryPDA.toString()} (bump: ${tokenAdminRegistryBump})`,
       );
       this.logger.trace(
-        `Token Admin Registry PDA derivation: seeds=["${ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
-        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`
+        `Token Admin Registry PDA derivation: seeds=["${
+          ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY
+        }", ${options.tokenMint.toString()}], program=${this.routerProgramId.toString()}`,
       );
 
       // Pool Configuration PDA (using burn-mint pool structure)
-      const [poolConfigPDA, poolConfigBump] = findBurnMintPoolConfigPDA(
-        options.tokenMint,
-        options.poolProgramId
-      );
-      this.logger.debug(
-        `Pool Config PDA: ${poolConfigPDA.toString()} (bump: ${poolConfigBump})`
-      );
+      const [poolConfigPDA, poolConfigBump] = findBurnMintPoolConfigPDA(options.tokenMint, options.poolProgramId);
+      this.logger.debug(`Pool Config PDA: ${poolConfigPDA.toString()} (bump: ${poolConfigBump})`);
       this.logger.trace(
-        `Pool Config PDA derivation: seeds=["${TOKEN_POOL_STATE_SEED}", ${options.tokenMint.toString()}], program=${options.poolProgramId.toString()}`
+        `Pool Config PDA derivation: seeds=["${TOKEN_POOL_STATE_SEED}", ${options.tokenMint.toString()}], program=${options.poolProgramId.toString()}`,
       );
 
       // Pool Signer PDA
-      const [poolSignerPDA, poolSignerBump] = findPoolSignerPDA(
-        options.tokenMint,
-        options.poolProgramId
-      );
-      this.logger.debug(
-        `Pool Signer PDA: ${poolSignerPDA.toString()} (bump: ${poolSignerBump})`
-      );
+      const [poolSignerPDA, poolSignerBump] = findPoolSignerPDA(options.tokenMint, options.poolProgramId);
+      this.logger.debug(`Pool Signer PDA: ${poolSignerPDA.toString()} (bump: ${poolSignerBump})`);
       this.logger.trace(
-        `Pool Signer PDA derivation: seeds=["${TOKEN_POOL_POOL_SIGNER_SEED}", ${options.tokenMint.toString()}], program=${options.poolProgramId.toString()}`
+        `Pool Signer PDA derivation: seeds=["${TOKEN_POOL_POOL_SIGNER_SEED}", ${options.tokenMint.toString()}], program=${options.poolProgramId.toString()}`,
       );
 
       // Pool Token Account (ATA for pool signer)
@@ -885,43 +791,35 @@ export class TokenRegistryClient {
         options.tokenMint,
         poolSignerPDA,
         true, // allowOwnerOffCurve
-        tokenProgramId
+        tokenProgramId,
       );
-      this.logger.debug(
-        `Pool Token Account (ATA): ${poolTokenAccount.toString()}`
-      );
+      this.logger.debug(`Pool Token Account (ATA): ${poolTokenAccount.toString()}`);
       this.logger.trace(
-        `Pool Token Account derivation: mint=${options.tokenMint.toString()}, owner=${poolSignerPDA.toString()}, tokenProgram=${tokenProgramId.toString()}`
+        `Pool Token Account derivation: mint=${options.tokenMint.toString()}, owner=${poolSignerPDA.toString()}, tokenProgram=${tokenProgramId.toString()}`,
       );
 
       // Fee Billing Token Config PDA
-      const [feeTokenConfigPDA, feeTokenConfigBump] =
-        findFqBillingTokenConfigPDA(
-          options.tokenMint,
-          options.feeQuoterProgramId
-        );
-      this.logger.debug(
-        `Fee Token Config PDA: ${feeTokenConfigPDA.toString()} (bump: ${feeTokenConfigBump})`
+      const [feeTokenConfigPDA, feeTokenConfigBump] = findFqBillingTokenConfigPDA(
+        options.tokenMint,
+        options.feeQuoterProgramId,
       );
+      this.logger.debug(`Fee Token Config PDA: ${feeTokenConfigPDA.toString()} (bump: ${feeTokenConfigBump})`);
       this.logger.trace(
-        `Fee Token Config PDA derivation: mint=${options.tokenMint.toString()}, program=${options.feeQuoterProgramId.toString()}`
+        `Fee Token Config PDA derivation: mint=${options.tokenMint.toString()}, program=${options.feeQuoterProgramId.toString()}`,
       );
 
       // CCIP Router Pool Signer PDA (follows dummy script pattern)
-      const [ccipRouterPoolSignerPDA, ccipRouterPoolSignerBump] =
-        PublicKey.findProgramAddressSync(
-          [
-            Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER),
-            options.poolProgramId.toBuffer(),
-          ],
-          this.routerProgramId
-        );
+      const [ccipRouterPoolSignerPDA, ccipRouterPoolSignerBump] = PublicKey.findProgramAddressSync(
+        [Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER), options.poolProgramId.toBuffer()],
+        this.routerProgramId,
+      );
       this.logger.debug(
-        `CCIP Router Pool Signer PDA: ${ccipRouterPoolSignerPDA.toString()} (bump: ${ccipRouterPoolSignerBump})`
+        `CCIP Router Pool Signer PDA: ${ccipRouterPoolSignerPDA.toString()} (bump: ${ccipRouterPoolSignerBump})`,
       );
       this.logger.trace(
-        `CCIP Router Pool Signer PDA derivation: seeds=["${ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER
-        }", ${options.poolProgramId.toString()}], program=${this.routerProgramId.toString()}`
+        `CCIP Router Pool Signer PDA derivation: seeds=["${
+          ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER
+        }", ${options.poolProgramId.toString()}], program=${this.routerProgramId.toString()}`,
       );
 
       // Build the addresses array for the lookup table
@@ -943,15 +841,17 @@ export class TokenRegistryClient {
         ? [...baseAddresses, ...options.additionalAddresses]
         : baseAddresses;
 
-      this.logger.debug(`ALT will contain ${addresses.length} addresses (${baseAddresses.length} base + ${options.additionalAddresses?.length || 0} additional):`);
+      this.logger.debug(
+        `ALT will contain ${addresses.length} addresses (${baseAddresses.length} base + ${options.additionalAddresses?.length || 0} additional):`,
+      );
       addresses.forEach((addr, index) => {
         const isAdditional = index >= baseAddresses.length;
-        const description = isAdditional ? "additional" : "base";
+        const description = isAdditional ? 'additional' : 'base';
         this.logger.trace(`  [${index}]: ${addr.toString()} (${description})`);
       });
 
       // Step 2: Extend the lookup table with addresses
-      this.logger.debug("Creating extend ALT instruction...");
+      this.logger.debug('Creating extend ALT instruction...');
       const extendInstruction = AddressLookupTableProgram.extendLookupTable({
         lookupTable: lookupTableAddress,
         authority: signerPublicKey,
@@ -959,7 +859,7 @@ export class TokenRegistryClient {
         addresses: addresses,
       });
 
-      this.logger.trace("Extend ALT instruction:", {
+      this.logger.trace('Extend ALT instruction:', {
         programId: extendInstruction.programId.toString(),
         dataLength: extendInstruction.data.length,
         keyCount: extendInstruction.keys.length,
@@ -967,17 +867,17 @@ export class TokenRegistryClient {
       });
 
       // Execute both instructions in a single transaction
-      this.logger.debug("Executing ALT creation and extension transaction...");
+      this.logger.debug('Executing ALT creation and extension transaction...');
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "createTokenPoolLookupTable",
+        operationName: 'createTokenPoolLookupTable',
       };
 
       const signature = await executeTransaction(
         this.context,
         [createInstruction, extendInstruction],
-        executionOptions
+        executionOptions,
       );
 
       const result: CreateTokenPoolLookupTableResult = {
@@ -986,11 +886,9 @@ export class TokenRegistryClient {
         addresses,
       };
 
-      this.logger.info(
-        `Token pool lookup table created successfully. ALT address: ${lookupTableAddress.toString()}`
-      );
+      this.logger.info(`Token pool lookup table created successfully. ALT address: ${lookupTableAddress.toString()}`);
       this.logger.info(`Transaction signature: ${signature}`);
-      this.logger.debug("ALT creation result:", {
+      this.logger.debug('ALT creation result:', {
         lookupTableAddress: result.lookupTableAddress.toString(),
         addressCount: result.addresses.length,
       });
@@ -1020,61 +918,51 @@ export class TokenRegistryClient {
    * @throws Error if the caller is not the authority, ALT is frozen, or capacity exceeded
    */
   async extendTokenPoolLookupTable(
-    options: ExtendTokenPoolLookupTableOptions
+    options: ExtendTokenPoolLookupTableOptions,
   ): Promise<ExtendTokenPoolLookupTableResult> {
     const errorContext = {
-      operation: "extendTokenPoolLookupTable",
+      operation: 'extendTokenPoolLookupTable',
       lookupTableAddress: options.lookupTableAddress.toString(),
       newAddressCount: options.newAddresses.length.toString(),
     };
 
     try {
       this.logger.info(
-        `Extending lookup table ${options.lookupTableAddress.toString()} with ${options.newAddresses.length
-        } new addresses`
+        `Extending lookup table ${options.lookupTableAddress.toString()} with ${
+          options.newAddresses.length
+        } new addresses`,
       );
 
       // Get signer
       const signerPublicKey = this.context.provider.getAddress();
 
-      this.logger.debug("Extend ALT details:", {
+      this.logger.debug('Extend ALT details:', {
         lookupTableAddress: options.lookupTableAddress.toString(),
         newAddressCount: options.newAddresses.length,
         signer: signerPublicKey.toString(),
       });
 
       // Verify the ALT exists and we have authority
-      this.logger.debug("Verifying ALT exists and checking authority...");
-      const altAccount =
-        await this.context.provider.connection.getAddressLookupTable(
-          options.lookupTableAddress
-        );
+      this.logger.debug('Verifying ALT exists and checking authority...');
+      const altAccount = await this.context.provider.connection.getAddressLookupTable(options.lookupTableAddress);
 
       if (!altAccount.value) {
-        throw new Error(
-          `Address Lookup Table not found: ${options.lookupTableAddress.toString()}`
-        );
+        throw new Error(`Address Lookup Table not found: ${options.lookupTableAddress.toString()}`);
       }
 
       const currentAuthority = altAccount.value.state.authority;
       if (!currentAuthority) {
-        throw new Error(
-          `ALT has no authority (frozen): ${options.lookupTableAddress.toString()}`
-        );
+        throw new Error(`ALT has no authority (frozen): ${options.lookupTableAddress.toString()}`);
       }
 
       if (!currentAuthority.equals(signerPublicKey)) {
         throw new Error(
-          `You are not the authority of this ALT. Authority: ${currentAuthority.toString()}, Your key: ${signerPublicKey.toString()}`
+          `You are not the authority of this ALT. Authority: ${currentAuthority.toString()}, Your key: ${signerPublicKey.toString()}`,
         );
       }
 
-      this.logger.debug(
-        `ALT verified. Current authority: ${currentAuthority.toString()}`
-      );
-      this.logger.debug(
-        `Current ALT contains ${altAccount.value.state.addresses.length} addresses`
-      );
+      this.logger.debug(`ALT verified. Current authority: ${currentAuthority.toString()}`);
+      this.logger.debug(`Current ALT contains ${altAccount.value.state.addresses.length} addresses`);
 
       // Check if ALT has space for new addresses
       const currentAddressCount = altAccount.value.state.addresses.length;
@@ -1083,24 +971,22 @@ export class TokenRegistryClient {
 
       if (totalAfterExtend > 256) {
         throw new Error(
-          `ALT capacity exceeded. Current: ${currentAddressCount}, Adding: ${newAddressCount}, Total would be: ${totalAfterExtend}, Max: 256`
+          `ALT capacity exceeded. Current: ${currentAddressCount}, Adding: ${newAddressCount}, Total would be: ${totalAfterExtend}, Max: 256`,
         );
       }
 
       this.logger.debug(
-        `ALT capacity check passed: ${currentAddressCount} + ${newAddressCount} = ${totalAfterExtend} / 256`
+        `ALT capacity check passed: ${currentAddressCount} + ${newAddressCount} = ${totalAfterExtend} / 256`,
       );
 
       // Log the addresses being added
-      this.logger.debug("New addresses to add:");
+      this.logger.debug('New addresses to add:');
       options.newAddresses.forEach((addr, index) => {
-        this.logger.trace(
-          `  [${currentAddressCount + index}]: ${addr.toString()}`
-        );
+        this.logger.trace(`  [${currentAddressCount + index}]: ${addr.toString()}`);
       });
 
       // Create extend instruction
-      this.logger.debug("Creating extend ALT instruction...");
+      this.logger.debug('Creating extend ALT instruction...');
       const extendInstruction = AddressLookupTableProgram.extendLookupTable({
         lookupTable: options.lookupTableAddress,
         authority: signerPublicKey,
@@ -1108,7 +994,7 @@ export class TokenRegistryClient {
         addresses: options.newAddresses,
       });
 
-      this.logger.trace("Extend ALT instruction:", {
+      this.logger.trace('Extend ALT instruction:', {
         programId: extendInstruction.programId.toString(),
         dataLength: extendInstruction.data.length,
         keyCount: extendInstruction.keys.length,
@@ -1116,18 +1002,14 @@ export class TokenRegistryClient {
       });
 
       // Execute the transaction
-      this.logger.debug("Executing ALT extension transaction...");
+      this.logger.debug('Executing ALT extension transaction...');
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "extendTokenPoolLookupTable",
+        operationName: 'extendTokenPoolLookupTable',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [extendInstruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [extendInstruction], executionOptions);
 
       const result: ExtendTokenPoolLookupTableResult = {
         signature,
@@ -1137,10 +1019,10 @@ export class TokenRegistryClient {
       };
 
       this.logger.info(
-        `Token pool lookup table extended successfully. ALT address: ${options.lookupTableAddress.toString()}`
+        `Token pool lookup table extended successfully. ALT address: ${options.lookupTableAddress.toString()}`,
       );
       this.logger.info(`Transaction signature: ${signature}`);
-      this.logger.debug("ALT extension result:", {
+      this.logger.debug('ALT extension result:', {
         lookupTableAddress: result.lookupTableAddress.toString(),
         newAddressCount: result.newAddresses.length,
         totalAddresses: result.totalAddresses,

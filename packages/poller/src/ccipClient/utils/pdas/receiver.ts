@@ -1,4 +1,4 @@
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey } from '@solana/web3.js';
 
 /**
  * CCIP Receiver PDA utilities
@@ -6,14 +6,14 @@ import { PublicKey } from "@solana/web3.js";
 
 // Seeds for the CCIP receiver program
 export const RECEIVER_SEEDS = {
-  EXTERNAL_EXECUTION_CONFIG: Buffer.from("external_execution_config"),
-  STATE: Buffer.from("state"),
-  CONFIG: Buffer.from("config"),
-  DEST_CHAIN_STATE: Buffer.from("dest_chain_state"),
-  FEE_BILLING_SIGNER: Buffer.from("fee_billing_signer"),
-  NONCE: Buffer.from("nonce"),
-  FEE_BILLING_TOKEN_CONFIG: Buffer.from("fee_billing_token_config"),
-  CURSES: Buffer.from("curses"),
+  EXTERNAL_EXECUTION_CONFIG: Buffer.from('external_execution_config'),
+  STATE: Buffer.from('state'),
+  CONFIG: Buffer.from('config'),
+  DEST_CHAIN_STATE: Buffer.from('dest_chain_state'),
+  FEE_BILLING_SIGNER: Buffer.from('fee_billing_signer'),
+  NONCE: Buffer.from('nonce'),
+  FEE_BILLING_TOKEN_CONFIG: Buffer.from('fee_billing_token_config'),
+  CURSES: Buffer.from('curses'),
 };
 
 /**
@@ -44,4 +44,4 @@ export function deriveConfigPda(programId: PublicKey): PublicKey {
 export function deriveExternalExecutionConfigPda(programId: PublicKey): PublicKey {
   const [pda] = PublicKey.findProgramAddressSync([RECEIVER_SEEDS.EXTERNAL_EXECUTION_CONFIG], programId);
   return pda;
-} 
+}

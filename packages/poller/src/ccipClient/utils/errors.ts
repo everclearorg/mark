@@ -1,12 +1,16 @@
-import { Logger } from "./logger";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Logger } from './logger';
 
 /**
  * Base CCIP error class for standardized error handling
  */
 export class CCIPError extends Error {
-  constructor(message: string, public context?: Record<string, unknown>) {
+  constructor(
+    message: string,
+    public context?: Record<string, unknown>,
+  ) {
     super(message);
-    this.name = "CCIPError";
+    this.name = 'CCIPError';
   }
 }
 
@@ -17,13 +21,8 @@ export class CCIPError extends Error {
  * @param logger Optional logger instance
  * @returns Enhanced error with context attached
  */
-export function enhanceError(
-  error: unknown,
-  context: Record<string, unknown>,
-  logger?: Logger
-): Error {
-  const enhancedError =
-    error instanceof Error ? error : new Error(String(error));
+export function enhanceError(error: unknown, context: Record<string, unknown>, logger?: Logger): Error {
+  const enhancedError = error instanceof Error ? error : new Error(String(error));
 
   // Attach context to the error
   (enhancedError as any).context = context;
@@ -48,4 +47,4 @@ export function createErrorEnhancer(logger: Logger) {
   return (error: unknown, context: Record<string, unknown>): Error => {
     return enhanceError(error, context, logger);
   };
-} 
+}

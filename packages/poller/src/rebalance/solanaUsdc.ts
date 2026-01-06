@@ -11,10 +11,7 @@ import {
   WalletType,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
-import {
-  PublicKey,
-  ComputeBudgetProgram,
-} from '@solana/web3.js';
+import { PublicKey, ComputeBudgetProgram } from '@solana/web3.js';
 import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
 import { BN } from '@coral-xyz/anchor';
 import { SolanaSigner } from '@mark/chainservice';
@@ -84,19 +81,16 @@ function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERA
 const CCIP_ROUTER_PROGRAM_ID = new PublicKey('Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C');
 const CCIP_FEE_QUOTER_PROGRAM_ID = new PublicKey('FeeQPGkKDeRV1MgoYfMH6L8o3KeuYjwUZrgn4LRKfjHi');
 const CCIP_RMN_REMOTE_PROGRAM_ID = new PublicKey('RmnXLft1mSEwDgMKu2okYuHkiazxntFFcZFrrcXxYg7');
-const CCIP_BURN_MINT_POOL_PROGRAM_ID = new PublicKey('41FGToCmdaWa1dgZLKFAjvmx6e6AjVTX7SVRibvsMGVB');
 const SOLANA_CHAIN_SELECTOR = '124615329519749607';
 const ETHEREUM_CHAIN_SELECTOR = '5009297550715157269';
 const USDC_SOLANA_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 const PTUSDE_SOLANA_MINT = new PublicKey('PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA');
 const LINK_TOKEN_MINT = new PublicKey('LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L');
-const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 
 /**
  * Get or create lookup table for CCIP transaction accounts
  * This ensures we can use versioned transactions while preserving account order
  */
-
 
 type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
 
@@ -117,70 +111,6 @@ interface SolanaToMainnetBridgeResult {
   effectiveBridgedAmount: string;
   messageId?: string; // CCIP message ID for tracking cross-chain transfers
 }
-
-/**
- * SVM2AnyMessage structure for CCIP Solana to EVM transfers
- * See: https://docs.chain.link/ccip/architecture#svm2any-messages
- *
- * IMPORTANT: The actual CCIP Solana SDK instruction format may differ.
- * This implementation is based on available documentation and may need
- * updates when the official @chainlink/ccip-solana-sdk is released.
- */
-interface SVM2AnyMessage {
-  receiver: Uint8Array; // EVM address padded to 32 bytes
-  data: Uint8Array; // Empty for token-only transfers
-  tokenAmounts: Array<{
-    token: Uint8Array; // SPL token mint address (32 bytes)
-    amount: bigint; // Amount in base units
-  }>;
-  feeToken: Uint8Array; // PublicKey.default for native SOL payment
-  extraArgs: Uint8Array; // CCIP execution parameters (gas limit, etc.)
-}
-
-/**
- * Encode an EVM address as 32-byte receiver for CCIP
- */
-function encodeEvmReceiverForCCIP(evmAddress: string): Uint8Array {
-  // Remove 0x prefix and convert to bytes
-  const addressBytes = Buffer.from(evmAddress.slice(2), 'hex');
-  if (addressBytes.length !== 20) {
-    throw new Error(`Invalid EVM address format: ${evmAddress}`);
-  }
-  // Pad to 32 bytes (left-padded with zeros)
-  const padded = Buffer.alloc(32);
-  addressBytes.copy(padded, 12); // Copy to last 20 bytes
-  return padded;
-}
-
-/**
- * Build CCIP EVMExtraArgsV2 for EVM destination (Borsh serialized)
- * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/messages#evmextraargsv2
- *
- * Format:
- * - Tag: 4 bytes big-endian (0x181dcf10)
- * - gas_limit: u128 (16 bytes little-endian, Borsh)
- * - allow_out_of_order_execution: bool (1 byte)
- */
-function buildEVMExtraArgsV2(gasLimit: number = 0, allowOutOfOrderExecution: boolean = true): Uint8Array {
-  // EVM_EXTRA_ARGS_V2_TAG: 0x181dcf10 (4 bytes, big-endian)
-  const typeTag = Buffer.alloc(4);
-  typeTag.writeUInt32BE(0x181dcf10, 0);
-
-  // gas_limit: u128 little-endian (16 bytes) - Borsh format
-  // For token-only transfers, gas_limit MUST be 0
-  const gasLimitBuf = Buffer.alloc(16);
-  const gasLimitBigInt = BigInt(gasLimit);
-  gasLimitBuf.writeBigUInt64LE(gasLimitBigInt & BigInt('0xFFFFFFFFFFFFFFFF'), 0);
-  gasLimitBuf.writeBigUInt64LE(gasLimitBigInt >> BigInt(64), 8);
-
-  // allow_out_of_order_execution: bool (1 byte)
-  // MUST be true when sending from Solana
-  const oooBuf = Buffer.alloc(1);
-  oooBuf.writeUInt8(allowOutOfOrderExecution ? 1 : 0, 0);
-
-  return Buffer.concat([typeTag, gasLimitBuf, oooBuf]);
-}
-
 
 /**
  * Execute CCIP bridge transaction from Solana to Ethereum Mainnet
@@ -263,7 +193,7 @@ async function executeSolanaToMainnetBridge({
         linkTokenMint: LINK_TOKEN_MINT.toString(),
         tokenMint: USDC_SOLANA_MINT.toString(),
       },
-      { logLevel: 1 } // INFO level
+      { logLevel: 1 }, // INFO level
     );
 
     // Convert EVM address to Solana bytes
@@ -307,13 +237,9 @@ async function executeSolanaToMainnetBridge({
     });
 
     // Send CCIP message and get message ID
-    const result = await ccipClient.sendWithMessageId(
-      sendRequest,
-      computeBudgetInstruction,
-      {
-        skipPreflight: true, // Skip preflight to avoid simulation issues
-      }
-    );
+    const result = await ccipClient.sendWithMessageId(sendRequest, computeBudgetInstruction, {
+      skipPreflight: true, // Skip preflight to avoid simulation issues
+    });
 
     logger.info('CCIP bridge transaction successful', {
       requestId,

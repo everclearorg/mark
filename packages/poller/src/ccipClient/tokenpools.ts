@@ -1,14 +1,11 @@
-import { PublicKey, Connection, Keypair } from "@solana/web3.js";
-import { CCIPContext, CCIPProvider, CCIPCoreConfig } from "./models";
-import { createLogger, Logger, LogLevel } from "./utils/logger";
-import { TokenPoolClient } from "./tokenpools/abstract";
-import {
-  TokenPoolFactory,
-  TokenPoolProgramIds,
-} from "./tokenpools/factory";
-import { TokenPoolType } from "./tokenpools/index";
-import { TokenRegistryClient } from "./tokenregistry";
-import { loadKeypair } from "./utils/keypair";
+import { PublicKey, Connection, Keypair, ConnectionConfig } from '@solana/web3.js';
+import { CCIPContext, CCIPProvider, CCIPCoreConfig } from './models';
+import { createLogger, Logger, LogLevel } from './utils/logger';
+import { EditChainRemoteConfigOptions, InitChainRemoteConfigOptions, TokenPoolClient } from './tokenpools/abstract';
+import { TokenPoolFactory, TokenPoolProgramIds } from './tokenpools/factory';
+import { TokenPoolType } from './tokenpools/index';
+import { TokenRegistryClient } from './tokenregistry';
+import { loadKeypair } from './utils/keypair';
 
 /**
  * Manages token pool operations for CCIP
@@ -24,16 +21,11 @@ export class TokenPoolManager {
    */
   constructor(
     private readonly context: CCIPContext,
-    private readonly programIds: TokenPoolProgramIds
+    private readonly programIds: TokenPoolProgramIds,
   ) {
-    this.logger =
-      context.logger ??
-      createLogger("token-pool-manager", { level: LogLevel.INFO });
-    this.registryClient = new TokenRegistryClient(
-      context,
-      context.config.ccipRouterProgramId
-    );
-    this.logger.debug("TokenPoolManager initialized");
+    this.logger = context.logger ?? createLogger('token-pool-manager', { level: LogLevel.INFO });
+    this.registryClient = new TokenRegistryClient(context, context.config.ccipRouterProgramId);
+    this.logger.debug('TokenPoolManager initialized');
   }
 
   /**
@@ -56,7 +48,7 @@ export class TokenPoolManager {
       linkTokenMint?: string;
       receiverProgramId?: string;
     },
-    options?: { logLevel?: LogLevel }
+    options?: { logLevel?: LogLevel },
   ): TokenPoolManager {
     // Create provider
     const provider: CCIPProvider = {
@@ -78,18 +70,18 @@ export class TokenPoolManager {
       ccipRouterProgramId: new PublicKey(config.ccipRouterProgramId),
       feeQuoterProgramId: new PublicKey(config.feeQuoterProgramId),
       rmnRemoteProgramId: new PublicKey(config.rmnRemoteProgramId),
-      linkTokenMint: new PublicKey(config.linkTokenMint || "LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L"),
+      linkTokenMint: new PublicKey(config.linkTokenMint || 'LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L'),
       tokenMint: PublicKey.default,
       nativeSol: PublicKey.default,
-      systemProgramId: new PublicKey("11111111111111111111111111111111"),
-      programId: new PublicKey(config.receiverProgramId || "BqmcnLFSbKwyMEgi7VhVeJCis1wW26VySztF34CJrKFq"),
+      systemProgramId: new PublicKey('11111111111111111111111111111111'),
+      programId: new PublicKey(config.receiverProgramId || 'BqmcnLFSbKwyMEgi7VhVeJCis1wW26VySztF34CJrKFq'),
     };
 
     // Create context
     const context: CCIPContext = {
       provider,
       config: coreConfig,
-      logger: createLogger("token-pool-manager", { level: options?.logLevel ?? LogLevel.INFO }),
+      logger: createLogger('token-pool-manager', { level: options?.logLevel ?? LogLevel.INFO }),
     };
 
     return new TokenPoolManager(context, programIds);
@@ -115,10 +107,11 @@ export class TokenPoolManager {
       linkTokenMint?: string;
       receiverProgramId?: string;
     },
-    options?: { logLevel?: LogLevel; commitment?: string }
+    options?: { logLevel?: LogLevel; commitment?: string },
   ): TokenPoolManager {
     const wallet = loadKeypair(keypairPath);
-    const connection = new Connection(endpoint, options?.commitment as any || "confirmed");
+
+    const connection = new Connection(endpoint, (options?.commitment as ConnectionConfig) || 'confirmed');
     return TokenPoolManager.create(connection, wallet, programIds, config, options);
   }
 
@@ -150,11 +143,7 @@ export class TokenPoolManager {
    */
   async getTokenPoolClientForMint(mint: PublicKey): Promise<TokenPoolClient> {
     this.logger.debug(`Detecting token pool type for mint: ${mint.toString()}`);
-    const poolType = await TokenPoolFactory.detectPoolType(
-      mint,
-      this.context,
-      this.programIds
-    );
+    const poolType = await TokenPoolFactory.detectPoolType(mint, this.context, this.programIds);
     return this.getTokenPoolClient(poolType);
   }
 
@@ -174,22 +163,16 @@ export class TokenPoolManager {
   async initChainRemoteConfig(
     mint: PublicKey,
     destChainSelector: bigint,
-    options: any,
-    poolType?: TokenPoolType
+    options: InitChainRemoteConfigOptions,
+    poolType?: TokenPoolType,
   ): Promise<string> {
     this.logger.debug(
-      `Initializing chain remote config for mint: ${mint.toString()}, chain: ${destChainSelector.toString()}`
+      `Initializing chain remote config for mint: ${mint.toString()}, chain: ${destChainSelector.toString()}`,
     );
 
-    const client = poolType
-      ? this.getTokenPoolClient(poolType)
-      : await this.getTokenPoolClientForMint(mint);
+    const client = poolType ? this.getTokenPoolClient(poolType) : await this.getTokenPoolClientForMint(mint);
 
-    const result = await client.initChainRemoteConfig(
-      mint,
-      destChainSelector,
-      options
-    );
+    const result = await client.initChainRemoteConfig(mint, destChainSelector, options);
     return result.signature;
   }
 
@@ -209,22 +192,16 @@ export class TokenPoolManager {
   async editChainRemoteConfig(
     mint: PublicKey,
     destChainSelector: bigint,
-    options: any,
-    poolType?: TokenPoolType
+    options: EditChainRemoteConfigOptions,
+    poolType?: TokenPoolType,
   ): Promise<string> {
     this.logger.debug(
-      `Editing chain remote config for mint: ${mint.toString()}, chain: ${destChainSelector.toString()}`
+      `Editing chain remote config for mint: ${mint.toString()}, chain: ${destChainSelector.toString()}`,
     );
 
-    const client = poolType
-      ? this.getTokenPoolClient(poolType)
-      : await this.getTokenPoolClientForMint(mint);
+    const client = poolType ? this.getTokenPoolClient(poolType) : await this.getTokenPoolClientForMint(mint);
 
-    const result = await client.editChainRemoteConfig(
-      mint,
-      destChainSelector,
-      options
-    );
+    const result = await client.editChainRemoteConfig(mint, destChainSelector, options);
     return result.signature;
   }
 }

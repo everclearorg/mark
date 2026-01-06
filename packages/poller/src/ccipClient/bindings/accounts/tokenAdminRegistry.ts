@@ -1,7 +1,7 @@
-import { PublicKey, Connection } from "@solana/web3.js";
-import BN from "bn.js"; // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as borsh from "@coral-xyz/borsh"; // eslint-disable-line @typescript-eslint/no-unused-vars
-import { PROGRAM_ID } from "../programId";
+import { PublicKey, Connection } from '@solana/web3.js';
+import BN from 'bn.js';
+import * as borsh from '@coral-xyz/borsh';
+import { PROGRAM_ID } from '../programId';
 
 export interface TokenAdminRegistryFields {
   version: number;
@@ -29,17 +29,15 @@ export class TokenAdminRegistry {
   readonly writableIndexes: Array<BN>;
   readonly mint: PublicKey;
 
-  static readonly discriminator = Buffer.from([
-    70, 92, 207, 200, 76, 17, 57, 114,
-  ]);
+  static readonly discriminator = Buffer.from([70, 92, 207, 200, 76, 17, 57, 114]);
 
   static readonly layout = borsh.struct([
-    borsh.u8("version"),
-    borsh.publicKey("administrator"),
-    borsh.publicKey("pendingAdministrator"),
-    borsh.publicKey("lookupTable"),
-    borsh.array(borsh.u128(), 2, "writableIndexes"),
-    borsh.publicKey("mint"),
+    borsh.u8('version'),
+    borsh.publicKey('administrator'),
+    borsh.publicKey('pendingAdministrator'),
+    borsh.publicKey('lookupTable'),
+    borsh.array(borsh.u128(), 2, 'writableIndexes'),
+    borsh.publicKey('mint'),
   ]);
 
   constructor(fields: TokenAdminRegistryFields) {
@@ -54,7 +52,7 @@ export class TokenAdminRegistry {
   static async fetch(
     c: Connection,
     address: PublicKey,
-    programId: PublicKey = PROGRAM_ID
+    programId: PublicKey = PROGRAM_ID,
   ): Promise<TokenAdminRegistry | null> {
     const info = await c.getAccountInfo(address);
 
@@ -71,7 +69,7 @@ export class TokenAdminRegistry {
   static async fetchMultiple(
     c: Connection,
     addresses: PublicKey[],
-    programId: PublicKey = PROGRAM_ID
+    programId: PublicKey = PROGRAM_ID,
   ): Promise<Array<TokenAdminRegistry | null>> {
     const infos = await c.getMultipleAccountsInfo(addresses);
 
@@ -89,7 +87,7 @@ export class TokenAdminRegistry {
 
   static decode(data: Buffer): TokenAdminRegistry {
     if (!data.slice(0, 8).equals(TokenAdminRegistry.discriminator)) {
-      throw new Error("invalid account discriminator");
+      throw new Error('invalid account discriminator');
     }
 
     const dec = TokenAdminRegistry.layout.decode(data.slice(8));

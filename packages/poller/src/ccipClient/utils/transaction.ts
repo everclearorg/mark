@@ -1,13 +1,9 @@
-import {
-  Commitment,
-  Connection,
-  Transaction,
-  TransactionInstruction,
-} from "@solana/web3.js";
-import { CCIPContext } from "../models";
-import { TxOptions } from "../tokenpools/abstract";
-import { createErrorEnhancer } from "./errors";
-import { Logger } from "./logger";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Commitment, Transaction, TransactionInstruction } from '@solana/web3.js';
+import { CCIPContext } from '../models';
+import { TxOptions } from '../tokenpools/abstract';
+import { createErrorEnhancer } from './errors';
+import { Logger } from './logger';
 
 /**
  * Extended options for transaction execution that includes error context
@@ -46,16 +42,11 @@ export function extractTxOptions(options?: any): TxOptions | undefined {
   const txOptions: TxOptions = {};
 
   // Check for and copy over common tx option properties
-  if (options.skipPreflight !== undefined)
-    txOptions.skipPreflight = options.skipPreflight;
-  if (options.preflightCommitment !== undefined)
-    txOptions.preflightCommitment = options.preflightCommitment;
-  if (options.maxRetries !== undefined)
-    txOptions.maxRetries = options.maxRetries;
-  if (options.commitment !== undefined)
-    txOptions.commitment = options.commitment;
-  if (options.confirmationCommitment !== undefined)
-    txOptions.confirmationCommitment = options.confirmationCommitment;
+  if (options.skipPreflight !== undefined) txOptions.skipPreflight = options.skipPreflight;
+  if (options.preflightCommitment !== undefined) txOptions.preflightCommitment = options.preflightCommitment;
+  if (options.maxRetries !== undefined) txOptions.maxRetries = options.maxRetries;
+  if (options.commitment !== undefined) txOptions.commitment = options.commitment;
+  if (options.confirmationCommitment !== undefined) txOptions.confirmationCommitment = options.confirmationCommitment;
 
   // Return undefined if no tx options were found
   return Object.keys(txOptions).length > 0 ? txOptions : undefined;
@@ -73,35 +64,31 @@ export function extractTxOptions(options?: any): TxOptions | undefined {
 export async function executeTransaction(
   context: CCIPContext,
   instructions: TransactionInstruction[],
-  options?: TransactionExecutionOptions
+  options?: TransactionExecutionOptions,
 ): Promise<string> {
   const logger =
     context.logger ||
     ({
-      debug: () => { },
-      info: () => { },
-      warn: () => { },
-      error: () => { },
+      debug: () => {},
+      info: () => {},
+      warn: () => {},
+      error: () => {},
     } as Logger);
   const connection = context.provider.connection;
   const txOptions = extractTxOptions(options);
 
   // Setup error enhancement
   const errorContext = options?.errorContext || {};
-  const operationName = options?.operationName || "executeTransaction";
+  const operationName = options?.operationName || 'executeTransaction';
   const enhanceError = createErrorEnhancer(logger);
 
   try {
-    logger.debug(
-      `Starting transaction execution${operationName ? ` for ${operationName}` : ""
-      }`
-    );
+    logger.debug(`Starting transaction execution${operationName ? ` for ${operationName}` : ''}`);
 
     // Get the latest blockhash with configured commitment
-    const { blockhash, lastValidBlockHeight } =
-      await connection.getLatestBlockhash({
-        commitment: txOptions?.commitment ?? "finalized",
-      });
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash({
+      commitment: txOptions?.commitment ?? 'finalized',
+    });
 
     // Create transaction with the instructions
     const transaction = new Transaction();
@@ -117,15 +104,11 @@ export async function executeTransaction(
     const signedTx = await context.provider.signTransaction(transaction);
 
     // Send the transaction with configurable options
-    const signature = await connection.sendRawTransaction(
-      signedTx.serialize(),
-      {
-        skipPreflight: txOptions?.skipPreflight ?? false,
-        preflightCommitment:
-          txOptions?.preflightCommitment ?? ("processed" as Commitment),
-        maxRetries: txOptions?.maxRetries ?? 5,
-      }
-    );
+    const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+      skipPreflight: txOptions?.skipPreflight ?? false,
+      preflightCommitment: txOptions?.preflightCommitment ?? ('processed' as Commitment),
+      maxRetries: txOptions?.maxRetries ?? 5,
+    });
 
     logger.debug(`Transaction sent: ${signature}`);
 
@@ -136,7 +119,7 @@ export async function executeTransaction(
         blockhash,
         lastValidBlockHeight,
       },
-      txOptions?.confirmationCommitment ?? ("finalized" as Commitment)
+      txOptions?.confirmationCommitment ?? ('finalized' as Commitment),
     );
 
     logger.debug(`Transaction confirmed: ${signature}`);

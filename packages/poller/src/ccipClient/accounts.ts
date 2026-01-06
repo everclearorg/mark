@@ -1,14 +1,12 @@
-import * as anchor from "@coral-xyz/anchor";
-import { AnchorProvider } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
-import { CCIPContext } from "./models";
-import {
-  tokenAdminRegistry,
-  tokenAdminRegistryFields,
-} from "./bindings/accounts";
-import { findTokenAdminRegistryPDA } from "./utils/pdas";
-import { createLogger, Logger, LogLevel } from "./utils/logger";
-import { createErrorEnhancer } from "./utils/errors";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import * as anchor from '@coral-xyz/anchor';
+import { AnchorProvider } from '@coral-xyz/anchor';
+import { PublicKey } from '@solana/web3.js';
+import { CCIPContext } from './models';
+import { tokenAdminRegistry, tokenAdminRegistryFields } from './bindings/accounts';
+import { findTokenAdminRegistryPDA } from './utils/pdas';
+import { createLogger, Logger, LogLevel } from './utils/logger';
+import { createErrorEnhancer } from './utils/errors';
 
 /**
  * Token Admin Registry account type
@@ -28,15 +26,14 @@ export class CCIPAccountReader {
    * @param context SDK context with provider, config and logger
    */
   constructor(readonly context: CCIPContext) {
-    this.logger =
-      context.logger ??
-      createLogger("account-reader", { level: LogLevel.INFO });
+    this.logger = context.logger ?? createLogger('account-reader', { level: LogLevel.INFO });
 
     // Use the provider from the context to create an AnchorProvider
     this.provider = new AnchorProvider(
       context.provider.connection,
+      // @typescript-eslint/no-explicit-any
       context.provider.wallet as any, // Cast to any to satisfy AnchorProvider
-      {}
+      {},
     );
 
     // Set Anchor provider globally
@@ -45,9 +42,7 @@ export class CCIPAccountReader {
     // Use router from config
     this.programId = context.config.ccipRouterProgramId;
 
-    this.logger.debug(
-      `CCIPAccountReader initialized: programId=${this.programId.toString()}`
-    );
+    this.logger.debug(`CCIPAccountReader initialized: programId=${this.programId.toString()}`);
   }
 
   /**
@@ -59,27 +54,19 @@ export class CCIPAccountReader {
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.debug(
-        `Fetching token admin registry for mint: ${mint.toString()}`
-      );
+      this.logger.debug(`Fetching token admin registry for mint: ${mint.toString()}`);
       this.logger.trace(`Router program ID: ${this.programId.toString()}`);
       const [pda] = findTokenAdminRegistryPDA(mint, this.programId);
       this.logger.trace(`Token admin registry PDA: ${pda.toString()}`);
 
       // Use the generated tokenAdminRegistry.fetch method
-      const tokenRegistry = await tokenAdminRegistry.fetch(
-        this.context.provider.connection,
-        pda,
-        this.programId
-      );
+      const tokenRegistry = await tokenAdminRegistry.fetch(this.context.provider.connection, pda, this.programId);
 
       if (!tokenRegistry) {
-        throw new Error(
-          `Token admin registry not found for mint: ${mint.toString()}`
-        );
+        throw new Error(`Token admin registry not found for mint: ${mint.toString()}`);
       }
 
-      this.logger.trace("Retrieved token admin registry:", {
+      this.logger.trace('Retrieved token admin registry:', {
         pda: pda.toString(),
         mint: tokenRegistry.mint.toString(),
         administrator: tokenRegistry.administrator.toString(),
@@ -89,7 +76,7 @@ export class CCIPAccountReader {
       return tokenRegistry;
     } catch (error) {
       throw enhanceError(error, {
-        operation: "getTokenAdminRegistry",
+        operation: 'getTokenAdminRegistry',
         mint: mint.toString(),
         programId: this.programId.toString(),
       });

@@ -18,7 +18,7 @@ export class AddressConversion {
    * @returns Hex string
    */
   static bytesToHexString(bytes: Uint8Array): string {
-    return "0x" + Buffer.from(bytes).toString("hex");
+    return '0x' + Buffer.from(bytes).toString('hex');
   }
 
   /**
@@ -27,8 +27,8 @@ export class AddressConversion {
    * @returns Byte array
    */
   private static hexToBytes(hex: string): Uint8Array {
-    if (hex.startsWith("0x")) hex = hex.slice(2);
-    if (hex.length !== 40) throw new Error("Invalid Ethereum address length");
+    if (hex.startsWith('0x')) hex = hex.slice(2);
+    if (hex.length !== 40) throw new Error('Invalid Ethereum address length');
     const bytes = new Uint8Array(20);
     for (let i = 0; i < 40; i += 2) {
       bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
@@ -43,7 +43,7 @@ export class AddressConversion {
    * @returns Padded byte array
    */
   private static leftPadBytes(data: Uint8Array, length: number): Uint8Array {
-    if (data.length > length) throw new Error("Data too long to pad");
+    if (data.length > length) throw new Error('Data too long to pad');
     const padded = new Uint8Array(length);
     padded.set(data, length - data.length);
     return padded;

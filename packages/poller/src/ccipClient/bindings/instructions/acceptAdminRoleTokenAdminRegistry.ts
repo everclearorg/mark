@@ -1,14 +1,14 @@
-import { TransactionInstruction, PublicKey, AccountMeta } from "@solana/web3.js" // eslint-disable-line @typescript-eslint/no-unused-vars
-import BN from "bn.js" // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as borsh from "@coral-xyz/borsh" // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as types from "../types" // eslint-disable-line @typescript-eslint/no-unused-vars
-import { PROGRAM_ID } from "../programId"
+import { TransactionInstruction, PublicKey, AccountMeta } from '@solana/web3.js';
+import BN from 'bn.js'; // eslint-disable-line @typescript-eslint/no-unused-vars
+import * as borsh from '@coral-xyz/borsh'; // eslint-disable-line @typescript-eslint/no-unused-vars
+import * as types from '../types'; // eslint-disable-line @typescript-eslint/no-unused-vars
+import { PROGRAM_ID } from '../programId';
 
 export interface AcceptAdminRoleTokenAdminRegistryAccounts {
-  config: PublicKey
-  tokenAdminRegistry: PublicKey
-  mint: PublicKey
-  authority: PublicKey
+  config: PublicKey;
+  tokenAdminRegistry: PublicKey;
+  mint: PublicKey;
+  authority: PublicKey;
 }
 
 /**
@@ -23,16 +23,16 @@ export interface AcceptAdminRoleTokenAdminRegistryAccounts {
  */
 export function acceptAdminRoleTokenAdminRegistry(
   accounts: AcceptAdminRoleTokenAdminRegistryAccounts,
-  programId: PublicKey = PROGRAM_ID
+  programId: PublicKey = PROGRAM_ID,
 ) {
   const keys: Array<AccountMeta> = [
     { pubkey: accounts.config, isSigner: false, isWritable: false },
     { pubkey: accounts.tokenAdminRegistry, isSigner: false, isWritable: true },
     { pubkey: accounts.mint, isSigner: false, isWritable: false },
     { pubkey: accounts.authority, isSigner: true, isWritable: true },
-  ]
-  const identifier = Buffer.from([106, 240, 16, 173, 137, 213, 163, 246])
-  const data = identifier
-  const ix = new TransactionInstruction({ keys, programId, data })
-  return ix
+  ];
+  const identifier = Buffer.from([106, 240, 16, 173, 137, 213, 163, 246]);
+  const data = identifier;
+  const ix = new TransactionInstruction({ keys, programId, data });
+  return ix;
 }

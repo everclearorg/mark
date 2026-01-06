@@ -20,13 +20,13 @@ export interface AccountSpec {
 export class SolanaAccountManager {
   /**
    * Calculate account writable bitmap from account specifications
-   * 
+   *
    * The bitmap represents which accounts should be writable, with bit positions
    * corresponding to account indices. Bit 0 (rightmost) = account 0, etc.
-   * 
+   *
    * @param accounts Array of account specifications
    * @returns Bitmap as bigint where set bits indicate writable accounts
-   * 
+   *
    * @example
    * ```typescript
    * const accounts = [
@@ -34,7 +34,7 @@ export class SolanaAccountManager {
    *   { publicKey: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", isWritable: true },  // bit 1 = 1
    *   { publicKey: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", isWritable: true },  // bit 2 = 1
    * ];
-   * 
+   *
    * const bitmap = SolanaAccountManager.calculateWritableBitmap(accounts);
    * // Returns 6 (binary: 110, decimal: 6)
    * // bit 0 = 0 (not writable), bit 1 = 1 (writable), bit 2 = 1 (writable)
@@ -55,11 +55,11 @@ export class SolanaAccountManager {
 
   /**
    * Get human-readable explanation of a bitmap
-   * 
+   *
    * @param bitmap The bitmap value
    * @param accountCount Number of accounts the bitmap applies to
    * @returns Object with binary representation and per-account breakdown
-   * 
+   *
    * @example
    * ```typescript
    * const explanation = SolanaAccountManager.explainBitmap(BigInt(46), 7);
@@ -79,7 +79,10 @@ export class SolanaAccountManager {
    * // }
    * ```
    */
-  static explainBitmap(bitmap: bigint, accountCount: number): {
+  static explainBitmap(
+    bitmap: bigint,
+    accountCount: number,
+  ): {
     binary: string;
     decimal: number;
     accounts: Array<{ index: number; writable: boolean }>;
@@ -102,7 +105,7 @@ export class SolanaAccountManager {
 
   /**
    * Validate that a bitmap is appropriate for the given number of accounts
-   * 
+   *
    * @param bitmap The bitmap to validate
    * @param accountCount Expected number of accounts
    * @throws Error if bitmap has bits set beyond the account count
@@ -110,11 +113,11 @@ export class SolanaAccountManager {
   static validateBitmap(bitmap: bigint, accountCount: number): void {
     // Check if any bits are set beyond the account count
     const maxValidBitmap = (BigInt(1) << BigInt(accountCount)) - BigInt(1);
-    
+
     if (bitmap > maxValidBitmap) {
       throw new Error(
         `Invalid bitmap ${bitmap} for ${accountCount} accounts. ` +
-        `Maximum valid bitmap is ${maxValidBitmap} (binary: ${maxValidBitmap.toString(2)})`
+          `Maximum valid bitmap is ${maxValidBitmap} (binary: ${maxValidBitmap.toString(2)})`,
       );
     }
 
@@ -125,10 +128,10 @@ export class SolanaAccountManager {
 
   /**
    * Create a bitmap from a simple boolean array indicating writability
-   * 
+   *
    * @param writableFlags Array of boolean values where true = writable
    * @returns Calculated bitmap
-   * 
+   *
    * @example
    * ```typescript
    * // For accounts [readonly, writable, writable, readonly]

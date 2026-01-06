@@ -1,4 +1,5 @@
-import { TransactionInstruction, Connection, Keypair, PublicKey } from "@solana/web3.js";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { TransactionInstruction, Connection, Keypair, PublicKey } from '@solana/web3.js';
 import {
   CCIPContext,
   CCIPSendRequest,
@@ -9,17 +10,17 @@ import {
   CCIPCoreConfig,
   CCIPProvider,
   CCIPClientKeypairOptions,
-} from "./models";
-import * as types from "./bindings/types";
-import { loadKeypair } from "./utils/keypair";
-import { createLogger, Logger, LogLevel } from "./utils/logger";
+} from './models';
+import * as types from './bindings/types';
+import { loadKeypair } from './utils/keypair';
+import { createLogger, Logger, LogLevel } from './utils/logger';
 
 // Import functionality from separate modules
-import { calculateFee } from "./fee";
-import { parseCCIPMessageSentEvent } from "./events";
-import { createExtraArgs } from "./utils";
-import { sendCCIPMessage } from "./send";
-import { CCIPAccountReader } from "./accounts";
+import { calculateFee } from './fee';
+import { parseCCIPMessageSentEvent } from './events';
+import { createExtraArgs } from './utils';
+import { sendCCIPMessage } from './send';
+import { CCIPAccountReader } from './accounts';
 
 /**
  * Main client class for interacting with CCIP on Solana
@@ -43,8 +44,7 @@ export class CCIPClient {
     this.context = {
       provider: context.provider,
       config: context.config,
-      logger:
-        context.logger,
+      logger: context.logger,
     };
 
     // Initialize account reader with the same context
@@ -62,8 +62,8 @@ export class CCIPClient {
 
     // Create connection
     const connection = new Connection(
-      options.endpoint || "https://api.devnet.solana.com",
-      options.commitment as any || "confirmed"
+      options.endpoint || 'https://api.devnet.solana.com',
+      (options.commitment as any) || 'confirmed',
     );
 
     // Create provider
@@ -87,7 +87,7 @@ export class CCIPClient {
     const context: CCIPContext = {
       provider,
       config: options.config,
-      logger: createLogger("ccip-client", { level: options.logLevel ?? LogLevel.INFO }),
+      logger: createLogger('ccip-client', { level: options.logLevel ?? LogLevel.INFO }),
     };
 
     return new CCIPClient(context);
@@ -113,7 +113,7 @@ export class CCIPClient {
       tokenMint?: string;
       receiverProgramId?: string;
     },
-    options?: { logLevel?: LogLevel }
+    options?: { logLevel?: LogLevel },
   ): CCIPClient {
     // Create provider
     const provider: CCIPProvider = {
@@ -135,18 +135,18 @@ export class CCIPClient {
       ccipRouterProgramId: new PublicKey(config.ccipRouterProgramId),
       feeQuoterProgramId: new PublicKey(config.feeQuoterProgramId),
       rmnRemoteProgramId: new PublicKey(config.rmnRemoteProgramId),
-      linkTokenMint: new PublicKey(config.linkTokenMint || "LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L"),
-      tokenMint: new PublicKey(config.tokenMint || "11111111111111111111111111111111"),
+      linkTokenMint: new PublicKey(config.linkTokenMint || 'LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L'),
+      tokenMint: new PublicKey(config.tokenMint || '11111111111111111111111111111111'),
       nativeSol: PublicKey.default,
-      systemProgramId: new PublicKey("11111111111111111111111111111111"),
-      programId: new PublicKey(config.receiverProgramId || "BqmcnLFSbKwyMEgi7VhVeJCis1wW26VySztF34CJrKFq"),
+      systemProgramId: new PublicKey('11111111111111111111111111111111'),
+      programId: new PublicKey(config.receiverProgramId || 'BqmcnLFSbKwyMEgi7VhVeJCis1wW26VySztF34CJrKFq'),
     };
 
     // Create context
     const context: CCIPContext = {
       provider,
       config: coreConfig,
-      logger: createLogger("ccip-client", { level: options?.logLevel ?? LogLevel.INFO }),
+      logger: createLogger('ccip-client', { level: options?.logLevel ?? LogLevel.INFO }),
     };
 
     return new CCIPClient(context);
@@ -199,15 +199,9 @@ export class CCIPClient {
   async send(
     request: CCIPSendRequest,
     computeBudgetInstruction?: TransactionInstruction,
-    sendOptions?: CCIPSendOptions
+    sendOptions?: CCIPSendOptions,
   ): Promise<string> {
-    return sendCCIPMessage(
-      this.context,
-      request,
-      this.accountReader,
-      computeBudgetInstruction,
-      sendOptions
-    );
+    return sendCCIPMessage(this.context, request, this.accountReader, computeBudgetInstruction, sendOptions);
   }
 
   /**
@@ -220,19 +214,12 @@ export class CCIPClient {
   async sendWithMessageId(
     request: CCIPSendRequest,
     computeBudgetInstruction?: TransactionInstruction,
-    sendOptions?: CCIPSendOptions
+    sendOptions?: CCIPSendOptions,
   ): Promise<CCIPSendResult> {
-    const txSignature = await this.send(
-      request,
-      computeBudgetInstruction,
-      sendOptions
-    );
+    const txSignature = await this.send(request, computeBudgetInstruction, sendOptions);
 
     // Parse the CCIPMessageSent event to get the messageId
-    const eventData = await parseCCIPMessageSentEvent(
-      this.context,
-      txSignature
-    );
+    const eventData = await parseCCIPMessageSentEvent(this.context, txSignature);
 
     return {
       txSignature,

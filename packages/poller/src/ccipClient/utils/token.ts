@@ -1,11 +1,11 @@
-import * as anchor from "@coral-xyz/anchor";
-import { PublicKey, Connection } from "@solana/web3.js";
-import { getMint, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { Logger } from "./logger";
+import * as anchor from '@coral-xyz/anchor';
+import { PublicKey, Connection } from '@solana/web3.js';
+import { getMint, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { Logger } from './logger';
 
 /**
  * Automatically detects the token program for a given mint by checking on-chain data
- * 
+ *
  * Enhanced version that combines the best practices from both script and SDK implementations.
  * Provides detailed logging about which token program is detected and falls back gracefully
  * on errors.
@@ -18,14 +18,16 @@ import { Logger } from "./logger";
 export async function detectTokenProgram(
   tokenMint: PublicKey,
   connection: Connection,
-  logger?: Logger
+  logger?: Logger,
 ): Promise<PublicKey> {
   try {
     logger?.info(`Getting mint account info for ${tokenMint.toString()} to determine token program ID...`);
     const tokenMintInfo = await connection.getAccountInfo(tokenMint);
-    
+
     if (!tokenMintInfo) {
-      logger?.warn(`Mint account ${tokenMint.toString()} not found, using fallback token program ${TOKEN_2022_PROGRAM_ID.toString()}`);
+      logger?.warn(
+        `Mint account ${tokenMint.toString()} not found, using fallback token program ${TOKEN_2022_PROGRAM_ID.toString()}`,
+      );
       return TOKEN_2022_PROGRAM_ID;
     }
 
@@ -49,7 +51,7 @@ export async function detectTokenProgram(
     logger?.warn(
       `Failed to determine token program from mint, falling back to TOKEN_2022_PROGRAM_ID: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
     return TOKEN_2022_PROGRAM_ID;
   }
@@ -57,7 +59,7 @@ export async function detectTokenProgram(
 
 /**
  * Fetches token decimals from a mint account
- * 
+ *
  * @param connection Solana connection
  * @param mintAddress Token mint public key
  * @param tokenProgramId Token program ID that owns the mint
@@ -68,75 +70,65 @@ export async function fetchTokenDecimals(
   connection: Connection,
   mintAddress: PublicKey,
   tokenProgramId: PublicKey,
-  logger?: Logger
+  logger?: Logger,
 ): Promise<number> {
   try {
     logger?.info(`Fetching token decimals for ${mintAddress.toString()}`);
-    const mintInfo = await getMint(
-      connection,
-      mintAddress,
-      undefined,
-      tokenProgramId
-    );
+    const mintInfo = await getMint(connection, mintAddress, undefined, tokenProgramId);
     logger?.info(`Token ${mintAddress.toString()} has ${mintInfo.decimals} decimals`);
     return mintInfo.decimals;
   } catch (error) {
     logger?.error(`Failed to fetch token decimals: ${error instanceof Error ? error.message : String(error)}`);
-    logger?.warn("Defaulting to 9 decimals as fallback");
+    logger?.warn('Defaulting to 9 decimals as fallback');
     return 9; // Default to 9 decimals as fallback
   }
 }
 
 /**
  * Formats a raw token amount to human-readable form
- * 
+ *
  * @param rawAmount Raw token amount (string or BN)
  * @param decimals Token decimals
  * @returns Formatted human-readable amount
  */
-export function formatTokenAmount(
-  rawAmount: string | anchor.BN, 
-  decimals: number
-): string {
+export function formatTokenAmount(rawAmount: string | anchor.BN, decimals: number): string {
   // Convert the input to a string representation
   let amountStr: string;
-  
+
   if (rawAmount instanceof anchor.BN) {
     amountStr = rawAmount.toString();
   } else {
     amountStr = rawAmount;
   }
-  
+
   // For very large numbers, we need to handle the decimal point manually
   if (amountStr.length <= decimals) {
     // Pad with leading zeros if needed
     amountStr = amountStr.padStart(decimals + 1, '0');
   }
-  
+
   // Insert decimal point at the right position
   const integerPart = amountStr.slice(0, -decimals) || '0';
   const fractionalPart = amountStr.slice(-decimals);
-  
+
   // Format with appropriate number of decimal places
   const formattedAmount = `${integerPart}.${fractionalPart}`;
-  
+
   // Parse and format to remove trailing zeros if needed
   const parsedNumber = parseFloat(formattedAmount);
   return parsedNumber.toLocaleString(undefined, {
     minimumFractionDigits: 0,
-    maximumFractionDigits: decimals
+    maximumFractionDigits: decimals,
   });
 }
 
 /**
  * Converts a raw token amount to an on-chain representation
- * 
+ *
  * @param rawAmount Raw token amount (string or BN)
  * @returns Anchor BN representation for on-chain use
  */
-export function toOnChainAmount(
-  rawAmount: string | anchor.BN
-): anchor.BN {
+export function toOnChainAmount(rawAmount: string | anchor.BN): anchor.BN {
   if (rawAmount instanceof anchor.BN) {
     return rawAmount;
   } else {

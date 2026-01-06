@@ -1,12 +1,8 @@
-import {
-  TransactionInstruction,
-  PublicKey,
-  AccountMeta,
-} from "@solana/web3.js"; // eslint-disable-line @typescript-eslint/no-unused-vars
-import BN from "bn.js"; // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as borsh from "@coral-xyz/borsh"; // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as types from "../types"; // eslint-disable-line @typescript-eslint/no-unused-vars
-import { PROGRAM_ID } from "../programId";
+import { TransactionInstruction, PublicKey, AccountMeta } from '@solana/web3.js';
+import BN from 'bn.js';
+import * as borsh from '@coral-xyz/borsh';
+import * as types from '../types';
+import { PROGRAM_ID } from '../programId';
 
 export interface CcipSendArgs {
   destChainSelector: BN;
@@ -37,9 +33,9 @@ export interface CcipSendAccounts {
 }
 
 export const layout = borsh.struct([
-  borsh.u64("destChainSelector"),
-  types.SVM2AnyMessage.layout("message"),
-  borsh.vecU8("tokenIndexes"),
+  borsh.u64('destChainSelector'),
+  types.SVM2AnyMessage.layout('message'),
+  borsh.vecU8('tokenIndexes'),
 ]);
 
 /**
@@ -59,11 +55,7 @@ export const layout = borsh.struct([
  * * `message` - The message to be sent. The size limit of data is 256 bytes.
  * * `token_indexes` - Indices into the remaining accounts vector where the subslice for a token begins.
  */
-export function ccipSend(
-  args: CcipSendArgs,
-  accounts: CcipSendAccounts,
-  programId: PublicKey = PROGRAM_ID
-) {
+export function ccipSend(args: CcipSendArgs, accounts: CcipSendAccounts, programId: PublicKey = PROGRAM_ID) {
   const keys: Array<AccountMeta> = [
     { pubkey: accounts.config, isSigner: false, isWritable: false },
     { pubkey: accounts.destChainState, isSigner: false, isWritable: true },
@@ -102,13 +94,9 @@ export function ccipSend(
     {
       destChainSelector: args.destChainSelector,
       message: types.SVM2AnyMessage.toEncodable(args.message),
-      tokenIndexes: Buffer.from(
-        args.tokenIndexes.buffer,
-        args.tokenIndexes.byteOffset,
-        args.tokenIndexes.length
-      ),
+      tokenIndexes: Buffer.from(args.tokenIndexes.buffer, args.tokenIndexes.byteOffset, args.tokenIndexes.length),
     },
-    buffer
+    buffer,
   );
   const data = Buffer.concat([identifier, buffer]).slice(0, 8 + len);
   const ix = new TransactionInstruction({ keys, programId, data });

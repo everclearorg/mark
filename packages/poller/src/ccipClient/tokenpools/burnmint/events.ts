@@ -1,13 +1,8 @@
-import { PublicKey } from "@solana/web3.js";
-import { CCIPContext } from "../../models";
-import { createLogger, Logger } from "../../utils/logger";
-import { createErrorEnhancer } from "../../utils/errors";
-import {
-  RemoteAddress,
-  RateLimitConfig,
-  RemoteAddressFields,
-  RateLimitConfigFields,
-} from "../../burnmint-pool-bindings/types";
+import { PublicKey } from '@solana/web3.js';
+import { CCIPContext } from '../../models';
+import { createLogger, Logger } from '../../utils/logger';
+import { createErrorEnhancer } from '../../utils/errors';
+import { RemoteAddressFields, RateLimitConfigFields } from '../../burnmint-pool-bindings/types';
 
 /**
  * Event data for RemoteChainConfigured event using existing bindings types
@@ -42,18 +37,9 @@ export interface GlobalConfigUpdatedEvent {
  * Union type for all burnmint pool events
  */
 export type BurnMintPoolEvent =
-  | { type: "RemoteChainConfigured"; data: RemoteChainConfiguredEvent }
-  | { type: "RateLimitConfigured"; data: RateLimitConfiguredEvent }
-  | { type: "GlobalConfigUpdated"; data: GlobalConfigUpdatedEvent };
-
-/**
- * Event discriminators (hardcoded - would ideally come from IDL generation)
- */
-const EVENT_DISCRIMINATORS = {
-  RemoteChainConfigured: Buffer.from([1, 2, 3, 4, 5, 6, 7, 8]), // TODO: Get actual discriminator
-  RateLimitConfigured: Buffer.from([8, 7, 6, 5, 4, 3, 2, 1]), // TODO: Get actual discriminator
-  GlobalConfigUpdated: Buffer.from([9, 8, 7, 6, 5, 4, 3, 2]), // TODO: Get actual discriminator
-} as const;
+  | { type: 'RemoteChainConfigured'; data: RemoteChainConfiguredEvent }
+  | { type: 'RateLimitConfigured'; data: RateLimitConfiguredEvent }
+  | { type: 'GlobalConfigUpdated'; data: GlobalConfigUpdatedEvent };
 
 /**
  * Simple manual event parser for burnmint pool events
@@ -62,8 +48,11 @@ const EVENT_DISCRIMINATORS = {
 export class BurnMintPoolEventParser {
   private readonly logger: Logger;
 
-  constructor(private readonly programId: PublicKey, context?: CCIPContext) {
-    this.logger = context?.logger ?? createLogger("burnmint-pool-events");
+  constructor(
+    private readonly programId: PublicKey,
+    context?: CCIPContext,
+  ) {
+    this.logger = context?.logger ?? createLogger('burnmint-pool-events');
   }
 
   /**
@@ -79,9 +68,7 @@ export class BurnMintPoolEventParser {
 
       // Look for "Program data: " logs from our program
       const programDataLogs = logMessages.filter(
-        (log) =>
-          log.includes("Program data: ") &&
-          log.includes(this.programId.toString())
+        (log) => log.includes('Program data: ') && log.includes(this.programId.toString()),
       );
 
       for (const log of programDataLogs) {
@@ -95,13 +82,11 @@ export class BurnMintPoolEventParser {
         }
       }
 
-      this.logger.debug(
-        `Parsed ${parsedEvents.length} events from transaction logs`
-      );
+      this.logger.debug(`Parsed ${parsedEvents.length} events from transaction logs`);
       return parsedEvents;
     } catch (error) {
       throw enhanceError(error, {
-        operation: "parseEvents",
+        operation: 'parseEvents',
         programId: this.programId.toString(),
       });
     }
@@ -113,17 +98,14 @@ export class BurnMintPoolEventParser {
    * @param txSignature Transaction signature
    * @returns Array of parsed events
    */
-  async parseEventsFromTransaction(
-    context: CCIPContext,
-    txSignature: string
-  ): Promise<BurnMintPoolEvent[]> {
+  async parseEventsFromTransaction(context: CCIPContext, txSignature: string): Promise<BurnMintPoolEvent[]> {
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
       this.logger.debug(`Fetching transaction details for: ${txSignature}`);
 
       const tx = await context.provider.connection.getTransaction(txSignature, {
-        commitment: "confirmed",
+        commitment: 'confirmed',
         maxSupportedTransactionVersion: 0,
       });
 
@@ -135,7 +117,7 @@ export class BurnMintPoolEventParser {
       return this.parseEvents(tx.meta.logMessages);
     } catch (error) {
       throw enhanceError(error, {
-        operation: "parseEventsFromTransaction",
+        operation: 'parseEventsFromTransaction',
         txSignature,
         programId: this.programId.toString(),
       });
@@ -147,14 +129,10 @@ export class BurnMintPoolEventParser {
    * @param logMessages Transaction log messages
    * @returns Parsed RemoteChainConfigured event or null
    */
-  parseRemoteChainConfiguredEvent(
-    logMessages: string[]
-  ): RemoteChainConfiguredEvent | null {
+  parseRemoteChainConfiguredEvent(logMessages: string[]): RemoteChainConfiguredEvent | null {
     const events = this.parseEvents(logMessages);
-    const configEvent = events.find((e) => e.type === "RemoteChainConfigured");
-    return configEvent?.type === "RemoteChainConfigured"
-      ? configEvent.data
-      : null;
+    const configEvent = events.find((e) => e.type === 'RemoteChainConfigured');
+    return configEvent?.type === 'RemoteChainConfigured' ? configEvent.data : null;
   }
 
   /**
@@ -165,13 +143,11 @@ export class BurnMintPoolEventParser {
    */
   async parseRemoteChainConfiguredFromTransaction(
     context: CCIPContext,
-    txSignature: string
+    txSignature: string,
   ): Promise<RemoteChainConfiguredEvent | null> {
     const events = await this.parseEventsFromTransaction(context, txSignature);
-    const configEvent = events.find((e) => e.type === "RemoteChainConfigured");
-    return configEvent?.type === "RemoteChainConfigured"
-      ? configEvent.data
-      : null;
+    const configEvent = events.find((e) => e.type === 'RemoteChainConfigured');
+    return configEvent?.type === 'RemoteChainConfigured' ? configEvent.data : null;
   }
 
   /**
@@ -183,11 +159,11 @@ export class BurnMintPoolEventParser {
   private parseEventFromLog(log: string): BurnMintPoolEvent | null {
     try {
       // Extract base64 data from "Program data: " log
-      const parts = log.split("Program data: ");
+      const parts = log.split('Program data: ');
       if (parts.length < 2) return null;
 
       const base64Data = parts[1].trim();
-      const buffer = Buffer.from(base64Data, "base64");
+      const buffer = Buffer.from(base64Data, 'base64');
 
       if (buffer.length < 8) return null; // Need at least discriminator
 
@@ -196,17 +172,11 @@ export class BurnMintPoolEventParser {
       // Check discriminator to determine event type
       // NOTE: These discriminators need to be determined from the actual program
       // For now, we'll implement a simple fallback that logs the discriminator
-      this.logger.trace(
-        `Event discriminator: ${discriminator.toString("hex")}`
-      );
+      this.logger.trace(`Event discriminator: ${discriminator.toString('hex')}`);
 
       // TODO: Implement proper discriminator matching once we have the actual values
       // For now, return null and log the discriminator for investigation
-      this.logger.debug(
-        `Found potential event with discriminator: ${discriminator.toString(
-          "hex"
-        )}`
-      );
+      this.logger.debug(`Found potential event with discriminator: ${discriminator.toString('hex')}`);
 
       return null;
     } catch (error) {
@@ -222,9 +192,6 @@ export class BurnMintPoolEventParser {
  * @param context Optional CCIP context
  * @returns Event parser instance
  */
-export function createBurnMintPoolEventParser(
-  programId: PublicKey,
-  context?: CCIPContext
-): BurnMintPoolEventParser {
+export function createBurnMintPoolEventParser(programId: PublicKey, context?: CCIPContext): BurnMintPoolEventParser {
   return new BurnMintPoolEventParser(programId, context);
 }

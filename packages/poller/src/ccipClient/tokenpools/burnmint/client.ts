@@ -1,9 +1,6 @@
-import {
-  PublicKey,
-  SystemProgram,
-  TransactionInstruction,
-} from "@solana/web3.js";
-import { CCIPContext } from "../../models";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { PublicKey, SystemProgram } from '@solana/web3.js';
+import { CCIPContext } from '../../models';
 import {
   BurnMintPoolInitializeOptions,
   BurnMintSetRateLimitOptions,
@@ -24,19 +21,12 @@ import {
   UpdateDefaultRouterOptions,
   UpdateDefaultRmnOptions,
   TransferMintAuthorityToMultisigOptions,
-} from "../abstract";
-import { createLogger, Logger, LogLevel } from "../../utils/logger";
-import { createErrorEnhancer } from "../../utils/errors";
-import { padTo32Bytes } from "../../utils/conversion";
-import {
-  executeTransaction,
-  extractTxOptions,
-  TransactionExecutionOptions,
-} from "../../utils/transaction";
-import {
-  BurnMintTokenPoolAccountReader,
-  BurnMintTokenPoolInfo,
-} from "./accounts";
+} from '../abstract';
+import { createLogger, Logger, LogLevel } from '../../utils/logger';
+import { createErrorEnhancer } from '../../utils/errors';
+import { padTo32Bytes } from '../../utils/conversion';
+import { executeTransaction, extractTxOptions, TransactionExecutionOptions } from '../../utils/transaction';
+import { BurnMintTokenPoolAccountReader, BurnMintTokenPoolInfo } from './accounts';
 import {
   findBurnMintPoolConfigPDA,
   findBurnMintPoolChainConfigPDA,
@@ -46,7 +36,7 @@ import {
   TOKEN_POOL_STATE_SEED,
   TOKEN_POOL_CHAIN_CONFIG_SEED,
   TOKEN_POOL_GLOBAL_CONFIG_SEED,
-} from "../../utils/pdas/tokenpool";
+} from '../../utils/pdas/tokenpool';
 import {
   initialize,
   InitializeAccounts,
@@ -96,18 +86,10 @@ import {
   UpdateDefaultRmnAccounts,
   transferMintAuthorityToMultisig,
   TransferMintAuthorityToMultisigAccounts,
-} from "../../burnmint-pool-bindings/instructions";
-import {
-  RemoteConfig,
-  RemoteAddress,
-  RateLimitConfig,
-} from "../../burnmint-pool-bindings/types";
-import { BN } from "@coral-xyz/anchor";
-import {
-  createBurnMintPoolEventParser,
-  RemoteChainConfiguredEvent,
-  BurnMintPoolEventParser,
-} from "./events";
+} from '../../burnmint-pool-bindings/instructions';
+import { RemoteConfig, RemoteAddress, RateLimitConfig } from '../../burnmint-pool-bindings/types';
+import { BN } from '@coral-xyz/anchor';
+import { createBurnMintPoolEventParser, RemoteChainConfiguredEvent, BurnMintPoolEventParser } from './events';
 
 /**
  * Implementation of TokenPoolClient for burn-mint token pools
@@ -123,23 +105,19 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
    * @param context CCIP context
    * @param programId Burn-mint token pool program ID
    */
-  constructor(readonly context: CCIPContext, programId: PublicKey) {
-    this.logger =
-      context.logger ??
-      createLogger("burnmint-pool-client", { level: LogLevel.INFO });
+  constructor(
+    readonly context: CCIPContext,
+    programId: PublicKey,
+  ) {
+    this.logger = context.logger ?? createLogger('burnmint-pool-client', { level: LogLevel.INFO });
     this.programId = programId;
-    this.accountReader = new BurnMintTokenPoolAccountReader(
-      context,
-      this.programId
-    );
+    this.accountReader = new BurnMintTokenPoolAccountReader(context, this.programId);
 
     // Create event parser (no IDL required for simplified parsing)
     this.eventParser = createBurnMintPoolEventParser(programId, context);
-    this.logger.debug("Event parsing enabled using manual parsing");
+    this.logger.debug('Event parsing enabled using manual parsing');
 
-    this.logger.debug(
-      `BurnMintTokenPoolClient initialized: programId=${this.getProgramId().toString()}`
-    );
+    this.logger.debug(`BurnMintTokenPoolClient initialized: programId=${this.getProgramId().toString()}`);
   }
 
   /** @inheritDoc */
@@ -157,7 +135,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.debug("Getting global config info");
+      this.logger.debug('Getting global config info');
       this.logger.debug(`Query details:`, {
         programId: this.getProgramId().toString(),
       });
@@ -173,11 +151,11 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       return {
         programId: this.getProgramId(),
         config: globalConfig,
-        configType: "global",
+        configType: 'global',
       };
     } catch (error) {
       throw enhanceError(error, {
-        operation: "getGlobalConfigInfo",
+        operation: 'getGlobalConfigInfo',
       });
     }
   }
@@ -206,11 +184,11 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       return {
         programId: this.getProgramId(),
         config: poolConfig,
-        poolType: "burn-mint",
+        poolType: 'burn-mint',
       };
     } catch (error) {
       throw enhanceError(error, {
-        operation: "getPoolInfo",
+        operation: 'getPoolInfo',
         mint: mint.toString(),
       });
     }
@@ -223,47 +201,35 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
    */
   async initializeGlobalConfig(options?: { txOptions?: any }): Promise<string> {
     const errorContext = {
-      operation: "initializeGlobalConfig",
+      operation: 'initializeGlobalConfig',
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Initializing global config for burn-mint token pool program`
-      );
+      this.logger.info(`Initializing global config for burn-mint token pool program`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Signer: ${signerPublicKey.toString()}`);
       this.logger.debug(`Program ID: ${this.getProgramId().toString()}`);
 
       // Find the global config PDA
-      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`
-      );
+      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(this.getProgramId());
+      this.logger.debug(`Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`);
       this.logger.trace(
-        `Global config PDA derivation: seeds=[${TOKEN_POOL_GLOBAL_CONFIG_SEED}], program=${this.getProgramId().toString()}`
+        `Global config PDA derivation: seeds=[${TOKEN_POOL_GLOBAL_CONFIG_SEED}], program=${this.getProgramId().toString()}`,
       );
 
       // Find program data PDA
-      const [programDataPDA, programDataBump] = findProgramDataPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`
-      );
-      this.logger.trace(
-        `Program data PDA derivation: program=${this.getProgramId().toString()}`
-      );
+      const [programDataPDA, programDataBump] = findProgramDataPDA(this.getProgramId());
+      this.logger.debug(`Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`);
+      this.logger.trace(`Program data PDA derivation: program=${this.getProgramId().toString()}`);
 
       const args: InitGlobalConfigArgs = {
         routerAddress: this.context.config.ccipRouterProgramId,
         rmnAddress: this.context.config.rmnRemoteProgramId,
       };
 
-      this.logger.debug("Init global config args:", {
+      this.logger.debug('Init global config args:', {
         routerAddress: this.context.config.ccipRouterProgramId.toString(),
         rmnAddress: this.context.config.rmnRemoteProgramId.toString(),
       });
@@ -278,7 +244,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Initialize global config accounts:", {
+      this.logger.debug('Initialize global config accounts:', {
         config: globalConfigPDA.toString(),
         authority: signerPublicKey.toString(),
         system_program: SystemProgram.programId.toString(),
@@ -287,16 +253,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Create the instruction using the imported builder (no args needed)
-      this.logger.debug("Creating init_global_config instruction...");
+      this.logger.debug('Creating init_global_config instruction...');
       const instruction = initGlobalConfig(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Initialize global config instruction created:", {
+      this.logger.debug('Initialize global config instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -304,22 +270,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "initializeGlobalConfig",
+        operationName: 'initializeGlobalConfig',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Global config initialized: ${signature}`);
       return signature;
@@ -329,20 +289,15 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async initializePool(
-    mint: PublicKey,
-    options: BurnMintPoolInitializeOptions
-  ): Promise<string> {
+  async initializePool(mint: PublicKey, options: BurnMintPoolInitializeOptions): Promise<string> {
     const errorContext = {
-      operation: "initializePool",
+      operation: 'initializePool',
       mint: mint.toString(),
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Initializing burn-mint pool for mint: ${mint.toString()}`
-      );
+      this.logger.info(`Initializing burn-mint pool for mint: ${mint.toString()}`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Pool initialization details:`);
@@ -351,31 +306,20 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       this.logger.debug(`  Program ID: ${this.getProgramId().toString()}`);
 
       // Find the pool config PDA (state)
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
       this.logger.info(`📍 Pool State PDA: ${statePDA.toString()}`);
       this.logger.debug(`  State PDA bump: ${stateBump}`);
       this.logger.trace(
-        `  State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `  State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Find program data PDA
-      const [programDataPDA, programDataBump] = findProgramDataPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `  Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`
-      );
+      const [programDataPDA, programDataBump] = findProgramDataPDA(this.getProgramId());
+      this.logger.debug(`  Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`);
 
       // Find the global config PDA
-      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `  Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`
-      );
+      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(this.getProgramId());
+      this.logger.debug(`  Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`);
 
       // Build the accounts for the initialize instruction
       const accounts: InitializeAccounts = {
@@ -389,7 +333,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Initialize pool accounts:", {
+      this.logger.debug('Initialize pool accounts:', {
         state: statePDA.toString(),
         mint: mint.toString(),
         authority: signerPublicKey.toString(),
@@ -400,22 +344,22 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Log all args being used for debugging
-      this.logger.debug("Initialize pool args:", {
+      this.logger.debug('Initialize pool args:', {
         router: this.context.config.ccipRouterProgramId.toString(),
         rmn_remote: this.context.config.rmnRemoteProgramId.toString(),
       });
 
       // Create the instruction using the imported builder
-      this.logger.debug("Creating initialize instruction...");
+      this.logger.debug('Creating initialize instruction...');
       const instruction = initialize(accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Initialize instruction created:", {
+      this.logger.debug('Initialize instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -423,22 +367,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "initializePool",
+        operationName: 'initializePool',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Burn-mint pool initialized: ${signature}`);
 
@@ -450,9 +388,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       this.logger.info(`   Token Mint:       ${mint.toString()}`);
       this.logger.info(`   Pool State PDA:   ${statePDA.toString()}`);
       this.logger.info(`   Pool Signer PDA:  ${poolSignerPDA.toString()}`);
-      this.logger.info(
-        `   Program ID:       ${this.getProgramId().toString()}`
-      );
+      this.logger.info(`   Program ID:       ${this.getProgramId().toString()}`);
       this.logger.info(`   Transaction:      ${signature}`);
 
       return signature;
@@ -465,10 +401,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   async initChainRemoteConfig(
     mint: PublicKey,
     remoteChainSelector: bigint,
-    options: InitChainRemoteConfigOptions
+    options: InitChainRemoteConfigOptions,
   ): Promise<RemoteChainConfigResult> {
     const errorContext = {
-      operation: "initChainRemoteConfig",
+      operation: 'initChainRemoteConfig',
       mint: mint.toString(),
       destChainSelector: remoteChainSelector.toString(),
     };
@@ -476,7 +412,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
     try {
       this.logger.info(
-        `Initializing chain remote config for chain ${remoteChainSelector.toString()} on mint: ${mint.toString()}`
+        `Initializing chain remote config for chain ${remoteChainSelector.toString()} on mint: ${mint.toString()}`,
       );
 
       const signerPublicKey = this.context.provider.getAddress();
@@ -500,81 +436,65 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       try {
         await this.accountReader.getChainConfig(mint, remoteChainSelector);
         throw new Error(
-          `Chain config already exists for chain ${remoteChainSelector.toString()}. Use editChainRemoteConfig instead.`
+          `Chain config already exists for chain ${remoteChainSelector.toString()}. Use editChainRemoteConfig instead.`,
         );
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message.includes("already exists")
-        ) {
+        if (error instanceof Error && error.message.includes('already exists')) {
           throw error; // Re-throw our specific error
         }
         // Expected error - chain config doesn't exist, which is what we want
-        this.logger.debug(
-          `Chain config does not exist - proceeding with initialization`
-        );
+        this.logger.debug(`Chain config does not exist - proceeding with initialization`);
       }
 
       // Find the chain config PDA
       const [chainConfigPDA, chainConfigBump] = findBurnMintPoolChainConfigPDA(
         remoteChainSelector,
         mint,
-        this.getProgramId()
+        this.getProgramId(),
       );
-      this.logger.debug(
-        `Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`
-      );
+      this.logger.debug(`Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`);
       this.logger.trace(
-        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // For initialization, pool addresses MUST be empty (Rust program requirement)
       // Create RemoteAddresses from the provided addresses (if any)
       // Pool addresses use raw bytes (typically 20 bytes for Ethereum addresses)
       const remotePoolAddresses = (options.poolAddresses || [])
-        .filter((addr) => addr && addr.trim() !== "") // Filter out empty strings
+        .filter((addr) => addr && addr.trim() !== '') // Filter out empty strings
         .map((addr) => {
-          const buffer = Buffer.from(addr, "hex");
+          const buffer = Buffer.from(addr, 'hex');
           // No padding required for pool addresses - use raw bytes
           return new RemoteAddress({ address: buffer });
         });
-      this.logger.debug(
-        `Converted ${remotePoolAddresses.length} pool addresses`
-      );
+      this.logger.debug(`Converted ${remotePoolAddresses.length} pool addresses`);
 
       // Validate and transform token address
       if (!options.tokenAddress) {
-        throw new Error("Token address must be provided");
+        throw new Error('Token address must be provided');
       }
       // Strip 0x prefix if present
-      const cleanTokenAddress = options.tokenAddress.startsWith("0x")
+      const cleanTokenAddress = options.tokenAddress.startsWith('0x')
         ? options.tokenAddress.slice(2)
         : options.tokenAddress;
-      const rawTokenAddressBuffer = Buffer.from(cleanTokenAddress, "hex");
+      const rawTokenAddressBuffer = Buffer.from(cleanTokenAddress, 'hex');
       // Token addresses need to be padded to 32 bytes (Ethereum-style)
       const tokenAddressBuffer = padTo32Bytes(rawTokenAddressBuffer);
       const remoteTokenAddress = new RemoteAddress({
         address: tokenAddressBuffer,
       });
-      this.logger.debug(
-        `Token address: ${options.tokenAddress} (cleaned: ${cleanTokenAddress}, padded to 32 bytes)`
-      );
+      this.logger.debug(`Token address: ${options.tokenAddress} (cleaned: ${cleanTokenAddress}, padded to 32 bytes)`);
 
       // Validate decimals
       if (options.decimals < 0 || options.decimals > 18) {
-        throw new Error("Invalid decimals value. Must be between 0 and 18.");
+        throw new Error('Invalid decimals value. Must be between 0 and 18.');
       }
       this.logger.debug(`Decimals: ${options.decimals}`);
 
@@ -594,7 +514,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Init chain remote config accounts:", {
+      this.logger.debug('Init chain remote config accounts:', {
         state: statePDA.toString(),
         chain_config: chainConfigPDA.toString(),
         authority: signerPublicKey.toString(),
@@ -609,7 +529,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Init chain remote config args:", {
+      this.logger.debug('Init chain remote config args:', {
         remote_chain_selector: remoteChainSelector.toString(),
         mint: mint.toString(),
         poolAddressCount: remotePoolAddresses.length,
@@ -618,20 +538,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Create the instruction
-      this.logger.debug("Creating init_chain_remote_config instruction...");
-      const instruction = initChainRemoteConfig(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating init_chain_remote_config instruction...');
+      const instruction = initChainRemoteConfig(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Init chain remote config instruction created:", {
+      this.logger.debug('Init chain remote config instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -639,33 +555,26 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "initChainRemoteConfig",
+        operationName: 'initChainRemoteConfig',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Chain remote config initialized: ${signature}`);
 
       // Parse event data
       let event: RemoteChainConfiguredEvent | undefined;
       try {
-        event =
-          await this.eventParser.parseRemoteChainConfiguredFromTransaction(
-            this.context,
-            signature
-          ) as RemoteChainConfiguredEvent;
+        event = (await this.eventParser.parseRemoteChainConfiguredFromTransaction(
+          this.context,
+          signature,
+        )) as RemoteChainConfiguredEvent;
       } catch (error) {
         this.logger.warn(`Failed to parse event from transaction: ${error}`);
       }
@@ -677,28 +586,20 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async getChainConfig(
-    mint: PublicKey,
-    remoteChainSelector: bigint
-  ): Promise<any> {
+  async getChainConfig(mint: PublicKey, remoteChainSelector: bigint): Promise<any> {
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.debug(
-        `Getting chain config for mint: ${mint.toString()}, chain: ${remoteChainSelector.toString()}`
-      );
+      this.logger.debug(`Getting chain config for mint: ${mint.toString()}, chain: ${remoteChainSelector.toString()}`);
 
       // Use the account reader to get the chain config
-      const chainConfig = await this.accountReader.getChainConfig(
-        mint,
-        remoteChainSelector
-      );
+      const chainConfig = await this.accountReader.getChainConfig(mint, remoteChainSelector);
 
       this.logger.debug(`Chain config retrieved successfully`);
       return chainConfig;
     } catch (error) {
       throw enhanceError(error, {
-        operation: "getChainConfig",
+        operation: 'getChainConfig',
         mint: mint.toString(),
         remoteChainSelector: remoteChainSelector.toString(),
       });
@@ -709,10 +610,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   async editChainRemoteConfig(
     mint: PublicKey,
     remoteChainSelector: bigint,
-    options: EditChainRemoteConfigOptions
+    options: EditChainRemoteConfigOptions,
   ): Promise<RemoteChainConfigResult> {
     const errorContext = {
-      operation: "editChainRemoteConfig",
+      operation: 'editChainRemoteConfig',
       mint: mint.toString(),
       destChainSelector: remoteChainSelector.toString(),
     };
@@ -720,7 +621,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
     try {
       this.logger.info(
-        `Editing chain remote config for chain ${remoteChainSelector.toString()} on mint: ${mint.toString()}`
+        `Editing chain remote config for chain ${remoteChainSelector.toString()} on mint: ${mint.toString()}`,
       );
 
       const signerPublicKey = this.context.provider.getAddress();
@@ -742,74 +643,61 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
       // Verify chain config EXISTS (this is an edit operation)
       await this.accountReader.getChainConfig(mint, remoteChainSelector);
-      this.logger.debug(
-        `Chain config exists for chain: ${remoteChainSelector.toString()}`
-      );
+      this.logger.debug(`Chain config exists for chain: ${remoteChainSelector.toString()}`);
 
       // Find the chain config PDA
       const [chainConfigPDA, chainConfigBump] = findBurnMintPoolChainConfigPDA(
         remoteChainSelector,
         mint,
-        this.getProgramId()
+        this.getProgramId(),
       );
-      this.logger.debug(
-        `Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`
-      );
+      this.logger.debug(`Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`);
       this.logger.trace(
-        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Validate and transform pool addresses from options
       if (!options.poolAddresses || options.poolAddresses.length === 0) {
-        throw new Error("At least one pool address must be provided");
+        throw new Error('At least one pool address must be provided');
       }
 
       // Create RemoteAddresses from the provided addresses
       // Pool addresses use raw bytes (typically 20 bytes for Ethereum addresses)
       const remotePoolAddresses = options.poolAddresses.map((addr) => {
         // Strip 0x prefix if present for pool addresses
-        const cleanPoolAddr = addr.startsWith("0x") ? addr.slice(2) : addr;
-        const buffer = Buffer.from(cleanPoolAddr, "hex");
+        const cleanPoolAddr = addr.startsWith('0x') ? addr.slice(2) : addr;
+        const buffer = Buffer.from(cleanPoolAddr, 'hex');
         // No padding required for pool addresses - use raw bytes
         return new RemoteAddress({ address: buffer });
       });
-      this.logger.debug(
-        `Converted ${remotePoolAddresses.length} pool addresses`
-      );
+      this.logger.debug(`Converted ${remotePoolAddresses.length} pool addresses`);
 
       // Validate and transform token address
       if (!options.tokenAddress) {
-        throw new Error("Token address must be provided");
+        throw new Error('Token address must be provided');
       }
       // Strip 0x prefix if present
-      const cleanTokenAddress = options.tokenAddress.startsWith("0x")
+      const cleanTokenAddress = options.tokenAddress.startsWith('0x')
         ? options.tokenAddress.slice(2)
         : options.tokenAddress;
-      const rawTokenAddressBuffer = Buffer.from(cleanTokenAddress, "hex");
+      const rawTokenAddressBuffer = Buffer.from(cleanTokenAddress, 'hex');
       // Token addresses need to be padded to 32 bytes (Ethereum-style)
       const tokenAddressBuffer = padTo32Bytes(rawTokenAddressBuffer);
       const remoteTokenAddress = new RemoteAddress({
         address: tokenAddressBuffer,
       });
-      this.logger.debug(
-        `Token address: ${options.tokenAddress} (padded to 32 bytes)`
-      );
+      this.logger.debug(`Token address: ${options.tokenAddress} (padded to 32 bytes)`);
 
       // Validate decimals
       if (options.decimals < 0 || options.decimals > 18) {
-        throw new Error("Invalid decimals value. Must be between 0 and 18.");
+        throw new Error('Invalid decimals value. Must be between 0 and 18.');
       }
       this.logger.debug(`Decimals: ${options.decimals}`);
 
@@ -829,7 +717,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Edit chain remote config accounts:", {
+      this.logger.debug('Edit chain remote config accounts:', {
         state: statePDA.toString(),
         chain_config: chainConfigPDA.toString(),
         authority: signerPublicKey.toString(),
@@ -844,7 +732,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Edit chain remote config args:", {
+      this.logger.debug('Edit chain remote config args:', {
         remoteChainSelector: remoteChainSelector.toString(),
         mint: mint.toString(),
         poolAddressCount: remotePoolAddresses.length,
@@ -853,20 +741,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Create the instruction
-      this.logger.debug("Creating edit_chain_remote_config instruction...");
-      const instruction = editChainRemoteConfig(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating edit_chain_remote_config instruction...');
+      const instruction = editChainRemoteConfig(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Edit chain remote config instruction created:", {
+      this.logger.debug('Edit chain remote config instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -874,33 +758,26 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "editChainRemoteConfig",
+        operationName: 'editChainRemoteConfig',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Chain remote config edited: ${signature}`);
 
       // Parse event data
       let event: RemoteChainConfiguredEvent | undefined;
       try {
-        event =
-          await this.eventParser.parseRemoteChainConfiguredFromTransaction(
-            this.context,
-            signature
-          ) as RemoteChainConfiguredEvent;
+        event = (await this.eventParser.parseRemoteChainConfiguredFromTransaction(
+          this.context,
+          signature,
+        )) as RemoteChainConfiguredEvent;
       } catch (error) {
         this.logger.warn(`Failed to parse event from transaction: ${error}`);
       }
@@ -915,11 +792,11 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   async setRateLimit(
     mint: PublicKey,
     remoteChainSelector: bigint,
-    options: BurnMintSetRateLimitOptions
+    options: BurnMintSetRateLimitOptions,
   ): Promise<string> {
     // 1. Define error context early
     const errorContext = {
-      operation: "setRateLimit",
+      operation: 'setRateLimit',
       mint: mint.toString(),
       remoteChainSelector: remoteChainSelector.toString(),
     };
@@ -927,9 +804,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
     try {
       // 2. Standard setup: logger, signer, connection
-      this.logger.info(
-        `Setting rate limits for mint: ${mint.toString()}, chain: ${remoteChainSelector.toString()}`
-      );
+      this.logger.info(`Setting rate limits for mint: ${mint.toString()}, chain: ${remoteChainSelector.toString()}`);
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Set rate limit details:`, {
         mint: mint.toString(),
@@ -942,56 +817,38 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       //    a. Verify pool state exists
       const poolConfig = await this.accountReader.getPoolConfig(mint); // Throws if not found
       this.logger.debug(`Current owner: ${poolConfig.config.owner.toString()}`);
-      this.logger.debug(
-        `Rate limit admin: ${poolConfig.config.rateLimitAdmin?.toString() || "none"
-        }`
-      );
+      this.logger.debug(`Rate limit admin: ${poolConfig.config.rateLimitAdmin?.toString() || 'none'}`);
 
       //    b. Verify authority (Owner or Rate Limit Admin)
       const isOwner = poolConfig.config.owner.equals(signerPublicKey);
       // Check if rate_limit_admin exists on the config object before comparing
-      const isRateAdmin =
-        poolConfig.config.rateLimitAdmin &&
-        poolConfig.config.rateLimitAdmin.equals(signerPublicKey);
+      const isRateAdmin = poolConfig.config.rateLimitAdmin && poolConfig.config.rateLimitAdmin.equals(signerPublicKey);
 
-      this.logger.debug(
-        `Authorization check: isOwner=${isOwner}, isRateAdmin=${isRateAdmin}`
-      );
+      this.logger.debug(`Authorization check: isOwner=${isOwner}, isRateAdmin=${isRateAdmin}`);
 
       if (!isOwner && !isRateAdmin) {
-        throw new Error(
-          `Signer is not the owner or rate limit admin of the pool`
-        );
+        throw new Error(`Signer is not the owner or rate limit admin of the pool`);
       }
 
       //    c. Verify target chain config exists (No fallback/hardcoding)
       await this.accountReader.getChainConfig(mint, remoteChainSelector); // Throws if not found
-      this.logger.debug(
-        `Chain config exists for chain: ${remoteChainSelector.toString()}`
-      );
+      this.logger.debug(`Chain config exists for chain: ${remoteChainSelector.toString()}`);
 
       // 4. Prepare Accounts: Use correct types
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       const [chainConfigPDA, chainConfigBump] = findBurnMintPoolChainConfigPDA(
         remoteChainSelector,
         mint,
-        this.getProgramId()
+        this.getProgramId(),
       );
-      this.logger.debug(
-        `Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`
-      );
+      this.logger.debug(`Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`);
       this.logger.trace(
-        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       const accounts: SetChainRateLimitAccounts = {
@@ -1001,7 +858,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Set rate limit accounts:", {
+      this.logger.debug('Set rate limit accounts:', {
         state: statePDA.toString(),
         chain_config: chainConfigPDA.toString(),
         authority: signerPublicKey.toString(),
@@ -1027,7 +884,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Set rate limit args:", {
+      this.logger.debug('Set rate limit args:', {
         remote_chain_selector: remoteChainSelector.toString(),
         mint: mint.toString(),
         inbound: {
@@ -1043,20 +900,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // 6. Create Instruction: Use correct builder
-      this.logger.debug("Creating set_chain_rate_limit instruction...");
-      const instruction = setChainRateLimit(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating set_chain_rate_limit instruction...');
+      const instruction = setChainRateLimit(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Set rate limit instruction created:", {
+      this.logger.debug('Set rate limit instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -1064,27 +917,19 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "setRateLimit",
+        operationName: 'setRateLimit',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       // 8. Logging
-      this.logger.info(
-        `Rate limits set for chain ${remoteChainSelector.toString()}: ${signature}`
-      );
+      this.logger.info(`Rate limits set for chain ${remoteChainSelector.toString()}: ${signature}`);
       return signature;
     } catch (error) {
       // 9. Consistent Error Handling: Enhance all caught errors
@@ -1097,44 +942,34 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
     try {
       await this.accountReader.getPoolConfig(mint);
       return true;
-    } catch (error) {
+    } catch {
       this.logger.warn(`Pool not found for mint: ${mint.toString()}`);
       return false;
     }
   }
 
   /** @inheritDoc */
-  async hasChainConfig(
-    mint: PublicKey,
-    remoteChainSelector: bigint
-  ): Promise<boolean> {
+  async hasChainConfig(mint: PublicKey, remoteChainSelector: bigint): Promise<boolean> {
     try {
       await this.accountReader.getChainConfig(mint, remoteChainSelector);
       return true;
-    } catch (error) {
-      this.logger.warn(
-        `Chain config not found for mint: ${mint.toString()}, chain: ${remoteChainSelector.toString()}`
-      );
+    } catch {
+      this.logger.warn(`Chain config not found for mint: ${mint.toString()}, chain: ${remoteChainSelector.toString()}`);
       return false;
     }
   }
 
   /** @inheritDoc */
-  async transferAdminRole(
-    mint: PublicKey,
-    options: TransferAdminRoleOptions
-  ): Promise<string> {
+  async transferAdminRole(mint: PublicKey, options: TransferAdminRoleOptions): Promise<string> {
     const errorContext = {
-      operation: "transferAdminRole",
+      operation: 'transferAdminRole',
       mint: mint.toString(),
       newAdmin: options.newAdmin.toString(),
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Proposing ownership transfer for mint: ${mint.toString()} to: ${options.newAdmin.toString()}`
-      );
+      this.logger.info(`Proposing ownership transfer for mint: ${mint.toString()} to: ${options.newAdmin.toString()}`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Admin role transfer details:`, {
@@ -1147,10 +982,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       // Verify pool exists
       const poolConfig = await this.accountReader.getPoolConfig(mint);
       this.logger.debug(`Current owner: ${poolConfig.config.owner.toString()}`);
-      this.logger.debug(
-        `Current proposed owner: ${poolConfig.config.proposedOwner?.toString() || "none"
-        }`
-      );
+      this.logger.debug(`Current proposed owner: ${poolConfig.config.proposedOwner?.toString() || 'none'}`);
 
       // Check if signer is owner
       if (!poolConfig.config.owner.equals(signerPublicKey)) {
@@ -1158,15 +990,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       }
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Build the accounts
@@ -1177,7 +1004,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Transfer admin role accounts:", {
+      this.logger.debug('Transfer admin role accounts:', {
         state: statePDA.toString(),
         mint: mint.toString(),
         authority: signerPublicKey.toString(),
@@ -1189,25 +1016,21 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Transfer admin role args:", {
+      this.logger.debug('Transfer admin role args:', {
         proposed_owner: options.newAdmin.toString(),
       });
 
       // Create the instruction
-      this.logger.debug("Creating transfer_ownership instruction...");
-      const instruction = transferOwnership(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating transfer_ownership instruction...');
+      const instruction = transferOwnership(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Transfer admin role instruction created:", {
+      this.logger.debug('Transfer admin role instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -1215,22 +1038,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "transferAdminRole",
+        operationName: 'transferAdminRole',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Admin role transfer proposed: ${signature}`);
       return signature;
@@ -1240,12 +1057,9 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async acceptAdminRole(
-    mint: PublicKey,
-    options?: AcceptAdminRoleOptions
-  ): Promise<string> {
+  async acceptAdminRole(mint: PublicKey, options?: AcceptAdminRoleOptions): Promise<string> {
     const errorContext = {
-      operation: "acceptAdminRole",
+      operation: 'acceptAdminRole',
       mint: mint.toString(),
     };
     const enhanceError = createErrorEnhancer(this.logger);
@@ -1263,10 +1077,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       // Verify pool exists and fetch config
       const poolConfig = await this.accountReader.getPoolConfig(mint);
       this.logger.debug(`Current owner: ${poolConfig.config.owner.toString()}`);
-      this.logger.debug(
-        `Current proposed owner: ${poolConfig.config.proposedOwner?.toString() || "none"
-        }`
-      );
+      this.logger.debug(`Current proposed owner: ${poolConfig.config.proposedOwner?.toString() || 'none'}`);
 
       // Check if signer is the proposed owner
       // Ensure proposed_owner is not null/default before comparing
@@ -1276,20 +1087,15 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
         !poolConfig.config.proposedOwner.equals(signerPublicKey)
       ) {
         throw new Error(
-          `Signer ${signerPublicKey.toString()} is not the proposed owner (${poolConfig.config.proposedOwner?.toString()}) for this pool`
+          `Signer ${signerPublicKey.toString()} is not the proposed owner (${poolConfig.config.proposedOwner?.toString()}) for this pool`,
         );
       }
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Build the accounts
@@ -1300,23 +1106,23 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Accept admin role accounts:", {
+      this.logger.debug('Accept admin role accounts:', {
         state: statePDA.toString(),
         mint: mint.toString(),
         authority: signerPublicKey.toString(),
       });
 
       // Create the instruction (accept_ownership has no args)
-      this.logger.debug("Creating accept_ownership instruction...");
+      this.logger.debug('Creating accept_ownership instruction...');
       const instruction = acceptOwnership(accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Accept admin role instruction created:", {
+      this.logger.debug('Accept admin role instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -1324,22 +1130,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "acceptAdminRole",
+        operationName: 'acceptAdminRole',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Admin role accepted: ${signature}`);
       return signature;
@@ -1351,16 +1151,14 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   /** @inheritDoc */
   async setRouter(mint: PublicKey, options: SetRouterOptions): Promise<string> {
     const errorContext = {
-      operation: "setRouter",
+      operation: 'setRouter',
       mint: mint.toString(),
       newRouter: options.newRouter.toString(),
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Setting router for mint: ${mint.toString()} to: ${options.newRouter.toString()}`
-      );
+      this.logger.info(`Setting router for mint: ${mint.toString()} to: ${options.newRouter.toString()}`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Router update details:`, {
@@ -1372,35 +1170,24 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
       // Verify pool exists and signer is owner
       const poolConfig = await this.accountReader.getPoolConfig(mint);
-      this.logger.debug(
-        `Current router: ${poolConfig.config.router.toString()}`
-      );
+      this.logger.debug(`Current router: ${poolConfig.config.router.toString()}`);
 
       if (!poolConfig.config.owner.equals(signerPublicKey)) {
         throw new Error(`Signer is not the owner of the pool`);
       }
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Find the program data PDA for this program
-      const [programDataPDA, programDataBump] = findProgramDataPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`
-      );
+      const [programDataPDA, programDataBump] = findProgramDataPDA(this.getProgramId());
+      this.logger.debug(`Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`);
       this.logger.trace(
-        `Program data PDA derivation: seeds=[${this.getProgramId().toString()}], program=BPF_LOADER_UPGRADEABLE_PROGRAM_ID`
+        `Program data PDA derivation: seeds=[${this.getProgramId().toString()}], program=BPF_LOADER_UPGRADEABLE_PROGRAM_ID`,
       );
 
       // Build the accounts
@@ -1413,7 +1200,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Set router accounts:", {
+      this.logger.debug('Set router accounts:', {
         state: statePDA.toString(),
         mint: mint.toString(),
         authority: signerPublicKey.toString(),
@@ -1427,21 +1214,21 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Set router args:", {
+      this.logger.debug('Set router args:', {
         newRouter: options.newRouter.toString(),
       });
 
       // Create the instruction
-      this.logger.debug("Creating set_router instruction...");
+      this.logger.debug('Creating set_router instruction...');
       const instruction = setRouter(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Set router instruction created:", {
+      this.logger.debug('Set router instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -1449,22 +1236,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "setRouter",
+        operationName: 'setRouter',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Router updated: ${signature}`);
       return signature;
@@ -1474,20 +1255,15 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async initializeStateVersion(
-    mint: PublicKey,
-    options?: InitializeStateVersionOptions
-  ): Promise<string> {
+  async initializeStateVersion(mint: PublicKey, options?: InitializeStateVersionOptions): Promise<string> {
     const errorContext = {
-      operation: "initializeStateVersion",
+      operation: 'initializeStateVersion',
       mint: mint.toString(),
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Initializing state version for mint: ${mint.toString()}`
-      );
+      this.logger.info(`Initializing state version for mint: ${mint.toString()}`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Initialize state version details:`, {
@@ -1497,20 +1273,13 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Note: This operation is permissionless - no owner check needed
-      this.logger.debug(
-        `Operation is permissionless - no ownership validation required`
-      );
+      this.logger.debug(`Operation is permissionless - no ownership validation required`);
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Build the accounts
@@ -1519,7 +1288,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Initialize state version accounts:", {
+      this.logger.debug('Initialize state version accounts:', {
         state: statePDA.toString(),
       });
 
@@ -1529,25 +1298,21 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Initialize state version args:", {
+      this.logger.debug('Initialize state version args:', {
         mint: mint.toString(),
       });
 
       // Create the instruction
-      this.logger.debug("Creating initializeStateVersion instruction...");
-      const instruction = initializeStateVersion(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating initializeStateVersion instruction...');
+      const instruction = initializeStateVersion(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Initialize state version instruction created:", {
+      this.logger.debug('Initialize state version instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -1555,22 +1320,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "initializeStateVersion",
+        operationName: 'initializeStateVersion',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`State version initialized: ${signature}`);
       return signature;
@@ -1580,12 +1339,9 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async configureAllowlist(
-    mint: PublicKey,
-    options: ConfigureAllowlistOptions
-  ): Promise<string> {
+  async configureAllowlist(mint: PublicKey, options: ConfigureAllowlistOptions): Promise<string> {
     const errorContext = {
-      operation: "configureAllowlist",
+      operation: 'configureAllowlist',
       mint: mint.toString(),
       enabled: String(options.enabled),
       addCount: String(options.add.length),
@@ -1594,8 +1350,9 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
     try {
       this.logger.info(
-        `Configuring allowlist for mint: ${mint.toString()}, enabled: ${options.enabled
-        }, adding ${options.add.length} addresses`
+        `Configuring allowlist for mint: ${mint.toString()}, enabled: ${
+          options.enabled
+        }, adding ${options.add.length} addresses`,
       );
 
       const signerPublicKey = this.context.provider.getAddress();
@@ -1616,15 +1373,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       }
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Build the accounts
@@ -1636,7 +1388,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Configure allowlist accounts:", {
+      this.logger.debug('Configure allowlist accounts:', {
         state: statePDA.toString(),
         mint: mint.toString(),
         authority: signerPublicKey.toString(),
@@ -1650,26 +1402,22 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Configure allowlist args:", {
+      this.logger.debug('Configure allowlist args:', {
         enabled: options.enabled,
         addAddresses: options.add.map((addr) => addr.toString()),
       });
 
       // Create the instruction
-      this.logger.debug("Creating configureAllowList instruction...");
-      const instruction = configureAllowList(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating configureAllowList instruction...');
+      const instruction = configureAllowList(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Configure allowlist instruction created:", {
+      this.logger.debug('Configure allowlist instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -1677,22 +1425,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "configureAllowlist",
+        operationName: 'configureAllowlist',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Allowlist configured: ${signature}`);
       return signature;
@@ -1702,22 +1444,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async removeFromAllowlist(
-    mint: PublicKey,
-    options: RemoveFromAllowlistOptions
-  ): Promise<string> {
+  async removeFromAllowlist(mint: PublicKey, options: RemoveFromAllowlistOptions): Promise<string> {
     const errorContext = {
-      operation: "removeFromAllowlist",
+      operation: 'removeFromAllowlist',
       mint: mint.toString(),
       removeCount: String(options.remove.length),
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Removing ${options.remove.length
-        } addresses from allowlist for mint: ${mint.toString()}`
-      );
+      this.logger.info(`Removing ${options.remove.length} addresses from allowlist for mint: ${mint.toString()}`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Remove from allowlist details:`, {
@@ -1736,15 +1472,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       }
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Build the accounts
@@ -1756,7 +1487,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Remove from allowlist accounts:", {
+      this.logger.debug('Remove from allowlist accounts:', {
         state: statePDA.toString(),
         mint: mint.toString(),
         authority: signerPublicKey.toString(),
@@ -1769,25 +1500,21 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Remove from allowlist args:", {
+      this.logger.debug('Remove from allowlist args:', {
         removeAddresses: options.remove.map((addr) => addr.toString()),
       });
 
       // Create the instruction
-      this.logger.debug("Creating removeFromAllowList instruction...");
-      const instruction = removeFromAllowList(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating removeFromAllowList instruction...');
+      const instruction = removeFromAllowList(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Remove from allowlist instruction created:", {
+      this.logger.debug('Remove from allowlist instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -1795,22 +1522,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "removeFromAllowlist",
+        operationName: 'removeFromAllowlist',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Removed from allowlist: ${signature}`);
       return signature;
@@ -1820,12 +1541,9 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async appendRemotePoolAddresses(
-    mint: PublicKey,
-    options: AppendRemotePoolAddressesOptions
-  ): Promise<string> {
+  async appendRemotePoolAddresses(mint: PublicKey, options: AppendRemotePoolAddressesOptions): Promise<string> {
     const errorContext = {
-      operation: "appendRemotePoolAddresses",
+      operation: 'appendRemotePoolAddresses',
       mint: mint.toString(),
       remoteChainSelector: options.remoteChainSelector.toString(),
       addressCount: String(options.addresses.length),
@@ -1834,8 +1552,9 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
     try {
       this.logger.info(
-        `Appending ${options.addresses.length
-        } remote pool addresses for mint: ${mint.toString()}, chain: ${options.remoteChainSelector.toString()}`
+        `Appending ${
+          options.addresses.length
+        } remote pool addresses for mint: ${mint.toString()}, chain: ${options.remoteChainSelector.toString()}`,
       );
 
       const signerPublicKey = this.context.provider.getAddress();
@@ -1856,48 +1575,34 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       }
 
       // Verify chain configuration exists
-      await this.accountReader.getChainConfig(
-        mint,
-        options.remoteChainSelector
-      );
-      this.logger.debug(
-        `Chain config exists for chain: ${options.remoteChainSelector.toString()}`
-      );
+      await this.accountReader.getChainConfig(mint, options.remoteChainSelector);
+      this.logger.debug(`Chain config exists for chain: ${options.remoteChainSelector.toString()}`);
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Find the chain config PDA
       const [chainConfigPDA, chainConfigBump] = findBurnMintPoolChainConfigPDA(
         options.remoteChainSelector,
         mint,
-        this.getProgramId()
+        this.getProgramId(),
       );
-      this.logger.debug(
-        `Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`
-      );
+      this.logger.debug(`Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`);
       this.logger.trace(
-        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${options.remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${options.remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Convert hex string addresses to RemoteAddress objects (raw bytes, no enforced length)
       const remoteAddresses = options.addresses.map((addr) => {
-        const clean = addr.startsWith("0x") ? addr.slice(2) : addr;
-        const buffer = Buffer.from(clean, "hex");
+        const clean = addr.startsWith('0x') ? addr.slice(2) : addr;
+        const buffer = Buffer.from(clean, 'hex');
         return new RemoteAddress({ address: buffer });
       });
-      this.logger.debug(
-        `Converted ${remoteAddresses.length} hex addresses to RemoteAddress objects`
-      );
+      this.logger.debug(`Converted ${remoteAddresses.length} hex addresses to RemoteAddress objects`);
 
       // Build the accounts
       const accounts: AppendRemotePoolAddressesAccounts = {
@@ -1908,7 +1613,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Append remote pool addresses accounts:", {
+      this.logger.debug('Append remote pool addresses accounts:', {
         state: statePDA.toString(),
         chain_config: chainConfigPDA.toString(),
         authority: signerPublicKey.toString(),
@@ -1923,27 +1628,23 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Append remote pool addresses args:", {
+      this.logger.debug('Append remote pool addresses args:', {
         remote_chain_selector: options.remoteChainSelector.toString(),
         addressCount: remoteAddresses.length,
         _mint: mint.toString(),
       });
 
       // Create the instruction
-      this.logger.debug("Creating append_remote_pool_addresses instruction...");
-      const instruction = appendRemotePoolAddresses(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating append_remote_pool_addresses instruction...');
+      const instruction = appendRemotePoolAddresses(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Append remote pool addresses instruction created:", {
+      this.logger.debug('Append remote pool addresses instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -1951,22 +1652,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "appendRemotePoolAddresses",
+        operationName: 'appendRemotePoolAddresses',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Remote pool addresses appended: ${signature}`);
       return signature;
@@ -1976,12 +1671,9 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async deleteChainConfig(
-    mint: PublicKey,
-    options: DeleteChainConfigOptions
-  ): Promise<string> {
+  async deleteChainConfig(mint: PublicKey, options: DeleteChainConfigOptions): Promise<string> {
     const errorContext = {
-      operation: "deleteChainConfig",
+      operation: 'deleteChainConfig',
       mint: mint.toString(),
       remoteChainSelector: options.remoteChainSelector.toString(),
     };
@@ -1989,7 +1681,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
     try {
       this.logger.info(
-        `Deleting chain config for mint: ${mint.toString()}, chain: ${options.remoteChainSelector.toString()}`
+        `Deleting chain config for mint: ${mint.toString()}, chain: ${options.remoteChainSelector.toString()}`,
       );
 
       const signerPublicKey = this.context.provider.getAddress();
@@ -2009,37 +1701,25 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       }
 
       // Verify chain configuration exists
-      await this.accountReader.getChainConfig(
-        mint,
-        options.remoteChainSelector
-      );
-      this.logger.debug(
-        `Chain config exists for chain: ${options.remoteChainSelector.toString()}`
-      );
+      await this.accountReader.getChainConfig(mint, options.remoteChainSelector);
+      this.logger.debug(`Chain config exists for chain: ${options.remoteChainSelector.toString()}`);
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
       this.logger.trace(
-        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `State PDA derivation: seeds=[${TOKEN_POOL_STATE_SEED}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Find the chain config PDA
       const [chainConfigPDA, chainConfigBump] = findBurnMintPoolChainConfigPDA(
         options.remoteChainSelector,
         mint,
-        this.getProgramId()
+        this.getProgramId(),
       );
-      this.logger.debug(
-        `Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`
-      );
+      this.logger.debug(`Chain config PDA: ${chainConfigPDA.toString()} (bump: ${chainConfigBump})`);
       this.logger.trace(
-        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${options.remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`
+        `Chain config PDA derivation: seeds=[${TOKEN_POOL_CHAIN_CONFIG_SEED}, ${options.remoteChainSelector.toString()}, ${mint.toString()}], program=${this.getProgramId().toString()}`,
       );
 
       // Build the accounts
@@ -2050,7 +1730,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Delete chain config accounts:", {
+      this.logger.debug('Delete chain config accounts:', {
         state: statePDA.toString(),
         chain_config: chainConfigPDA.toString(),
         authority: signerPublicKey.toString(),
@@ -2063,25 +1743,21 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Delete chain config args:", {
+      this.logger.debug('Delete chain config args:', {
         remote_chain_selector: options.remoteChainSelector.toString(),
         mint: mint.toString(),
       });
 
-      this.logger.debug("Creating delete_chain_config instruction...");
-      const instruction = deleteChainConfig(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating delete_chain_config instruction...');
+      const instruction = deleteChainConfig(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Delete chain config instruction created:", {
+      this.logger.debug('Delete chain config instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
       });
-      this.logger.trace("Instruction accounts:", {
+      this.logger.trace('Instruction accounts:', {
         keys: instruction.keys.map((key, index) => ({
           index,
           pubkey: key.pubkey.toString(),
@@ -2089,22 +1765,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
           isWritable: key.isWritable,
         })),
       });
-      this.logger.trace(
-        `Instruction data (hex): ${instruction.data.toString("hex")}`
-      );
+      this.logger.trace(`Instruction data (hex): ${instruction.data.toString('hex')}`);
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "deleteChainConfig",
+        operationName: 'deleteChainConfig',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Chain config deleted: ${signature}`);
       return signature;
@@ -2114,19 +1784,15 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async updateSelfServedAllowed(
-    options: UpdateSelfServedAllowedOptions
-  ): Promise<string> {
+  async updateSelfServedAllowed(options: UpdateSelfServedAllowedOptions): Promise<string> {
     const errorContext = {
-      operation: "updateSelfServedAllowed",
+      operation: 'updateSelfServedAllowed',
       selfServedAllowed: String(options.selfServedAllowed),
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Updating global self-served allowed flag to: ${options.selfServedAllowed}`
-      );
+      this.logger.info(`Updating global self-served allowed flag to: ${options.selfServedAllowed}`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Update self-served allowed details:`, {
@@ -2136,20 +1802,12 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Find the global config PDA
-      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`
-      );
+      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(this.getProgramId());
+      this.logger.debug(`Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`);
 
       // Find the program data PDA
-      const [programDataPDA, programDataBump] = findProgramDataPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`
-      );
+      const [programDataPDA, programDataBump] = findProgramDataPDA(this.getProgramId());
+      this.logger.debug(`Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`);
 
       // Build the accounts
       const accounts: UpdateSelfServedAllowedAccounts = {
@@ -2160,7 +1818,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Update self-served allowed accounts:", {
+      this.logger.debug('Update self-served allowed accounts:', {
         config: globalConfigPDA.toString(),
         authority: signerPublicKey.toString(),
         program: this.getProgramId().toString(),
@@ -2173,20 +1831,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Update self-served allowed args:", {
+      this.logger.debug('Update self-served allowed args:', {
         selfServedAllowed: options.selfServedAllowed,
       });
 
       // Create the instruction
-      this.logger.debug("Creating updateSelfServedAllowed instruction...");
-      const instruction = updateSelfServedAllowed(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating updateSelfServedAllowed instruction...');
+      const instruction = updateSelfServedAllowed(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Update self-served allowed instruction created:", {
+      this.logger.debug('Update self-served allowed instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
@@ -2196,14 +1850,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "updateSelfServedAllowed",
+        operationName: 'updateSelfServedAllowed',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Global self-served allowed updated: ${signature}`);
       return signature;
@@ -2213,19 +1863,15 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   }
 
   /** @inheritDoc */
-  async updateDefaultRouter(
-    options: UpdateDefaultRouterOptions
-  ): Promise<string> {
+  async updateDefaultRouter(options: UpdateDefaultRouterOptions): Promise<string> {
     const errorContext = {
-      operation: "updateDefaultRouter",
+      operation: 'updateDefaultRouter',
       routerAddress: options.routerAddress.toString(),
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Updating global default router to: ${options.routerAddress.toString()}`
-      );
+      this.logger.info(`Updating global default router to: ${options.routerAddress.toString()}`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Update default router details:`, {
@@ -2235,20 +1881,12 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Find the global config PDA
-      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`
-      );
+      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(this.getProgramId());
+      this.logger.debug(`Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`);
 
       // Find the program data PDA
-      const [programDataPDA, programDataBump] = findProgramDataPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`
-      );
+      const [programDataPDA, programDataBump] = findProgramDataPDA(this.getProgramId());
+      this.logger.debug(`Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`);
 
       // Build the accounts
       const accounts: UpdateDefaultRouterAccounts = {
@@ -2259,7 +1897,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Update default router accounts:", {
+      this.logger.debug('Update default router accounts:', {
         config: globalConfigPDA.toString(),
         authority: signerPublicKey.toString(),
         program: this.getProgramId().toString(),
@@ -2272,20 +1910,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Update default router args:", {
+      this.logger.debug('Update default router args:', {
         routerAddress: options.routerAddress.toString(),
       });
 
       // Create the instruction
-      this.logger.debug("Creating updateDefaultRouter instruction...");
-      const instruction = updateDefaultRouter(
-        args,
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating updateDefaultRouter instruction...');
+      const instruction = updateDefaultRouter(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Update default router instruction created:", {
+      this.logger.debug('Update default router instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
@@ -2295,14 +1929,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "updateDefaultRouter",
+        operationName: 'updateDefaultRouter',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Global default router updated: ${signature}`);
       return signature;
@@ -2314,15 +1944,13 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   /** @inheritDoc */
   async updateDefaultRmn(options: UpdateDefaultRmnOptions): Promise<string> {
     const errorContext = {
-      operation: "updateDefaultRmn",
+      operation: 'updateDefaultRmn',
       rmnAddress: options.rmnAddress.toString(),
     };
     const enhanceError = createErrorEnhancer(this.logger);
 
     try {
-      this.logger.info(
-        `Updating global default RMN to: ${options.rmnAddress.toString()}`
-      );
+      this.logger.info(`Updating global default RMN to: ${options.rmnAddress.toString()}`);
 
       const signerPublicKey = this.context.provider.getAddress();
       this.logger.debug(`Update default RMN details:`, {
@@ -2332,20 +1960,12 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Find the global config PDA
-      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`
-      );
+      const [globalConfigPDA, globalConfigBump] = findGlobalConfigPDA(this.getProgramId());
+      this.logger.debug(`Global config PDA: ${globalConfigPDA.toString()} (bump: ${globalConfigBump})`);
 
       // Find the program data PDA
-      const [programDataPDA, programDataBump] = findProgramDataPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`
-      );
+      const [programDataPDA, programDataBump] = findProgramDataPDA(this.getProgramId());
+      this.logger.debug(`Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`);
 
       // Build the accounts
       const accounts: UpdateDefaultRmnAccounts = {
@@ -2356,7 +1976,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Update default RMN accounts:", {
+      this.logger.debug('Update default RMN accounts:', {
         config: globalConfigPDA.toString(),
         authority: signerPublicKey.toString(),
         program: this.getProgramId().toString(),
@@ -2369,16 +1989,16 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all args being used for debugging
-      this.logger.debug("Update default RMN args:", {
+      this.logger.debug('Update default RMN args:', {
         rmnAddress: options.rmnAddress.toString(),
       });
 
       // Create the instruction
-      this.logger.debug("Creating updateDefaultRmn instruction...");
+      this.logger.debug('Creating updateDefaultRmn instruction...');
       const instruction = updateDefaultRmn(args, accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug("Update default RMN instruction created:", {
+      this.logger.debug('Update default RMN instruction created:', {
         programId: this.getProgramId().toString(),
         dataLength: instruction.data.length,
         keyCount: instruction.keys.length,
@@ -2388,14 +2008,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "updateDefaultRmn",
+        operationName: 'updateDefaultRmn',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Global default RMN updated: ${signature}`);
       return signature;
@@ -2407,10 +2023,10 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
   /** @inheritDoc */
   async transferMintAuthorityToMultisig(
     mint: PublicKey,
-    options: TransferMintAuthorityToMultisigOptions
+    options: TransferMintAuthorityToMultisigOptions,
   ): Promise<string> {
     const errorContext = {
-      operation: "transferMintAuthorityToMultisig",
+      operation: 'transferMintAuthorityToMultisig',
       mint: mint.toString(),
       newMultisigMintAuthority: options.newMultisigMintAuthority.toString(),
     };
@@ -2418,7 +2034,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
     try {
       this.logger.info(
-        `Transferring mint authority for mint: ${mint.toString()} to multisig: ${options.newMultisigMintAuthority.toString()}`
+        `Transferring mint authority for mint: ${mint.toString()} to multisig: ${options.newMultisigMintAuthority.toString()}`,
       );
 
       const signerPublicKey = this.context.provider.getAddress();
@@ -2431,40 +2047,22 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
 
       // Verify pool exists (will be needed for pool signer derivation)
       const poolConfig = await this.accountReader.getPoolConfig(mint);
-      this.logger.debug(
-        `Pool exists with owner: ${poolConfig.config.owner.toString()}`
-      );
+      this.logger.debug(`Pool exists with owner: ${poolConfig.config.owner.toString()}`);
 
       // Find the state PDA
-      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `State PDA: ${statePDA.toString()} (bump: ${stateBump})`
-      );
+      const [statePDA, stateBump] = findBurnMintPoolConfigPDA(mint, this.getProgramId());
+      this.logger.debug(`State PDA: ${statePDA.toString()} (bump: ${stateBump})`);
 
       // Find the pool signer PDA
-      const [poolSignerPDA, poolSignerBump] = findPoolSignerPDA(
-        mint,
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Pool signer PDA: ${poolSignerPDA.toString()} (bump: ${poolSignerBump})`
-      );
+      const [poolSignerPDA, poolSignerBump] = findPoolSignerPDA(mint, this.getProgramId());
+      this.logger.debug(`Pool signer PDA: ${poolSignerPDA.toString()} (bump: ${poolSignerBump})`);
 
       // Find the program data PDA
-      const [programDataPDA, programDataBump] = findProgramDataPDA(
-        this.getProgramId()
-      );
-      this.logger.debug(
-        `Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`
-      );
+      const [programDataPDA, programDataBump] = findProgramDataPDA(this.getProgramId());
+      this.logger.debug(`Program data PDA: ${programDataPDA.toString()} (bump: ${programDataBump})`);
 
       // Get the token program from the mint account
-      const mintAccount = await this.context.provider.connection.getAccountInfo(
-        mint
-      );
+      const mintAccount = await this.context.provider.connection.getAccountInfo(mint);
       if (!mintAccount) {
         throw new Error(`Mint account not found: ${mint.toString()}`);
       }
@@ -2484,7 +2082,7 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       };
 
       // Log all accounts being used for debugging
-      this.logger.debug("Transfer mint authority to multisig accounts:", {
+      this.logger.debug('Transfer mint authority to multisig accounts:', {
         state: statePDA.toString(),
         mint: mint.toString(),
         tokenProgram: tokenProgram.toString(),
@@ -2496,36 +2094,24 @@ export class BurnMintTokenPoolClient implements TokenPoolClient {
       });
 
       // Create the instruction (this function has no args, only accounts)
-      this.logger.debug(
-        "Creating transferMintAuthorityToMultisig instruction..."
-      );
-      const instruction = transferMintAuthorityToMultisig(
-        accounts,
-        this.getProgramId()
-      );
+      this.logger.debug('Creating transferMintAuthorityToMultisig instruction...');
+      const instruction = transferMintAuthorityToMultisig(accounts, this.getProgramId());
 
       // Log instruction details
-      this.logger.debug(
-        "Transfer mint authority to multisig instruction created:",
-        {
-          programId: this.getProgramId().toString(),
-          dataLength: instruction.data.length,
-          keyCount: instruction.keys.length,
-        }
-      );
+      this.logger.debug('Transfer mint authority to multisig instruction created:', {
+        programId: this.getProgramId().toString(),
+        dataLength: instruction.data.length,
+        keyCount: instruction.keys.length,
+      });
 
       // Execute the transaction using the shared utility
       const executionOptions: TransactionExecutionOptions = {
         ...extractTxOptions(options),
         errorContext,
-        operationName: "transferMintAuthorityToMultisig",
+        operationName: 'transferMintAuthorityToMultisig',
       };
 
-      const signature = await executeTransaction(
-        this.context,
-        [instruction],
-        executionOptions
-      );
+      const signature = await executeTransaction(this.context, [instruction], executionOptions);
 
       this.logger.info(`Mint authority transferred to multisig: ${signature}`);
       return signature;

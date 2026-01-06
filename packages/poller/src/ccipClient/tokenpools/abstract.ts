@@ -1,6 +1,7 @@
-import { Commitment, PublicKey } from "@solana/web3.js";
-import { TokenPoolChainConfigResponse } from "../models";
-import { RemoteChainConfiguredEvent } from "./burnmint/events";
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-empty-object-type */
+import { Commitment, PublicKey } from '@solana/web3.js';
+import { TokenPoolChainConfigResponse } from '../models';
+import { RemoteChainConfiguredEvent } from './burnmint/events';
 
 /**
  * Options for controlling Solana transaction execution.
@@ -167,6 +168,7 @@ export interface TokenPoolAccountReader {
    * @returns Global configuration data including version and global settings
    * @throws Error if global configuration is not found or not initialized
    */
+
   getGlobalConfigInfo(): Promise<any>;
 
   /**
@@ -203,15 +205,9 @@ export interface TokenPoolAccountReader {
    * @throws Error if the configuration is not found for the given mint and selector(s),
    *         or if an error occurs during retrieval (e.g., empty selectors array for listChainConfigs).
    */
-  getChainConfig(
-    mint: PublicKey,
-    remoteChainSelector: bigint
-  ): Promise<TokenPoolChainConfigResponse>;
+  getChainConfig(mint: PublicKey, remoteChainSelector: bigint): Promise<TokenPoolChainConfigResponse>;
 
-  listChainConfigs(
-    mint: PublicKey,
-    remoteChainSelectors: bigint[]
-  ): Promise<any[]>;
+  listChainConfigs(mint: PublicKey, remoteChainSelectors: bigint[]): Promise<any[]>;
 
   /**
    * Read rate limit configuration for a specific chain
@@ -225,10 +221,7 @@ export interface TokenPoolAccountReader {
    * @returns Rate limit information including capacity, rate, current consumption, and timestamp
    * @throws Error if chain configuration is not found for the given mint and chain selector
    */
-  getRateLimitConfigForChain(
-    mint: PublicKey,
-    remoteChainSelector: bigint
-  ): Promise<TokenPoolRateLimit>;
+  getRateLimitConfigForChain(mint: PublicKey, remoteChainSelector: bigint): Promise<TokenPoolRateLimit>;
 
   /**
    * Read rate limit configurations for multiple chains
@@ -242,10 +235,7 @@ export interface TokenPoolAccountReader {
    * @returns Array of rate limit information, one entry per chain selector
    * @throws Error if no chain selectors are provided or if an error occurs during retrieval
    */
-  getRateLimitConfigsForChains(
-    mint: PublicKey,
-    remoteChainSelectors: bigint[]
-  ): Promise<TokenPoolRateLimit[]>;
+  getRateLimitConfigsForChains(mint: PublicKey, remoteChainSelectors: bigint[]): Promise<TokenPoolRateLimit[]>;
 }
 
 /**
@@ -388,10 +378,7 @@ export interface TokenPoolClient {
    * @param mint Token mint
    * @param options Creation options
    */
-  initializePool(
-    mint: PublicKey,
-    options: BurnMintPoolInitializeOptions
-  ): Promise<string>;
+  initializePool(mint: PublicKey, options: BurnMintPoolInitializeOptions): Promise<string>;
 
   /**
    * Initialize a new chain remote configuration for a token pool.
@@ -410,7 +397,7 @@ export interface TokenPoolClient {
   initChainRemoteConfig(
     mint: PublicKey,
     destChainSelector: bigint,
-    options: InitChainRemoteConfigOptions
+    options: InitChainRemoteConfigOptions,
   ): Promise<RemoteChainConfigResult>;
 
   /**
@@ -430,7 +417,7 @@ export interface TokenPoolClient {
   editChainRemoteConfig(
     mint: PublicKey,
     destChainSelector: bigint,
-    options: EditChainRemoteConfigOptions
+    options: EditChainRemoteConfigOptions,
   ): Promise<RemoteChainConfigResult>;
 
   /**
@@ -471,7 +458,7 @@ export interface TokenPoolClient {
   setRateLimit(
     mint: PublicKey,
     remoteChainSelector: bigint,
-    options: BurnMintSetRateLimitOptions // Use the more specific base options type
+    options: BurnMintSetRateLimitOptions, // Use the more specific base options type
   ): Promise<string>;
 
   /**
@@ -504,10 +491,7 @@ export interface TokenPoolClient {
    * @returns A Promise resolving to the transaction signature string.
    * @throws Error if the caller is not the current owner or if the transaction fails.
    */
-  transferAdminRole(
-    mint: PublicKey,
-    options: TransferAdminRoleOptions
-  ): Promise<string>;
+  transferAdminRole(mint: PublicKey, options: TransferAdminRoleOptions): Promise<string>;
 
   /**
    * Accept the admin role for a token pool.
@@ -521,10 +505,7 @@ export interface TokenPoolClient {
    * @returns A Promise resolving to the transaction signature string.
    * @throws Error if the caller is not the proposed owner or if the transaction fails.
    */
-  acceptAdminRole(
-    mint: PublicKey,
-    options?: AcceptAdminRoleOptions
-  ): Promise<string>;
+  acceptAdminRole(mint: PublicKey, options?: AcceptAdminRoleOptions): Promise<string>;
 
   /**
    * Sets the router address for the token pool.
@@ -547,10 +528,7 @@ export interface TokenPoolClient {
    * @param options Configuration options including remote chain selector, addresses, and transaction settings.
    * @returns A Promise resolving to the transaction signature string.
    */
-  appendRemotePoolAddresses(
-    mint: PublicKey,
-    options: AppendRemotePoolAddressesOptions
-  ): Promise<string>;
+  appendRemotePoolAddresses(mint: PublicKey, options: AppendRemotePoolAddressesOptions): Promise<string>;
 
   /**
    * Deletes the configuration for a specific remote chain.
@@ -562,10 +540,7 @@ export interface TokenPoolClient {
    * @param options Configuration options including remote chain selector and transaction settings.
    * @returns A Promise resolving to the transaction signature string.
    */
-  deleteChainConfig(
-    mint: PublicKey,
-    options: DeleteChainConfigOptions
-  ): Promise<string>;
+  deleteChainConfig(mint: PublicKey, options: DeleteChainConfigOptions): Promise<string>;
 
   /**
    * Configures the sender allowlist for the token pool.
@@ -576,10 +551,7 @@ export interface TokenPoolClient {
    * @param options Configuration options including addresses to add, enabled flag, and transaction settings.
    * @returns A Promise resolving to the transaction signature string.
    */
-  configureAllowlist(
-    mint: PublicKey,
-    options: ConfigureAllowlistOptions
-  ): Promise<string>;
+  configureAllowlist(mint: PublicKey, options: ConfigureAllowlistOptions): Promise<string>;
 
   /**
    * Removes addresses from the sender allowlist for the token pool.
@@ -590,10 +562,7 @@ export interface TokenPoolClient {
    * @param options Configuration options including addresses to remove and transaction settings.
    * @returns A Promise resolving to the transaction signature string.
    */
-  removeFromAllowlist(
-    mint: PublicKey,
-    options: RemoveFromAllowlistOptions
-  ): Promise<string>;
+  removeFromAllowlist(mint: PublicKey, options: RemoveFromAllowlistOptions): Promise<string>;
 
   /**
    * Initializes the state version of a pool if it's currently uninitialized (version 0).
@@ -605,10 +574,7 @@ export interface TokenPoolClient {
    * @param options Optional transaction execution settings.
    * @returns A Promise resolving to the transaction signature string.
    */
-  initializeStateVersion(
-    mint: PublicKey,
-    options?: InitializeStateVersionOptions
-  ): Promise<string>;
+  initializeStateVersion(mint: PublicKey, options?: InitializeStateVersionOptions): Promise<string>;
 
   /**
    * Updates the global self-served allowed flag for the token pool program.
@@ -620,9 +586,7 @@ export interface TokenPoolClient {
    * @returns A Promise resolving to the transaction signature string.
    * @throws Error if the caller is not the program upgrade authority or if the transaction fails.
    */
-  updateSelfServedAllowed(
-    options: UpdateSelfServedAllowedOptions
-  ): Promise<string>;
+  updateSelfServedAllowed(options: UpdateSelfServedAllowedOptions): Promise<string>;
 
   /**
    * Updates the global default router address for the token pool program.
@@ -664,8 +628,5 @@ export interface TokenPoolClient {
    * @returns A Promise resolving to the transaction signature string.
    * @throws Error if the caller is not the program upgrade authority, if the multisig is invalid, or if the transaction fails.
    */
-  transferMintAuthorityToMultisig(
-    mint: PublicKey,
-    options: TransferMintAuthorityToMultisigOptions
-  ): Promise<string>;
+  transferMintAuthorityToMultisig(mint: PublicKey, options: TransferMintAuthorityToMultisigOptions): Promise<string>;
 }

@@ -1,32 +1,29 @@
-import { PublicKey } from "@solana/web3.js" // eslint-disable-line @typescript-eslint/no-unused-vars
-import BN from "bn.js" // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as types from "../types" // eslint-disable-line @typescript-eslint/no-unused-vars
-import * as borsh from "@coral-xyz/borsh"
+import { PublicKey } from '@solana/web3.js';
+import BN from 'bn.js';
+import * as types from '../types'; // eslint-disable-line @typescript-eslint/no-unused-vars
+import * as borsh from '@coral-xyz/borsh';
 
 export interface SVMTokenAmountFields {
-  token: PublicKey
-  amount: BN
+  token: PublicKey;
+  amount: BN;
 }
 
 export interface SVMTokenAmountJSON {
-  token: string
-  amount: string
+  token: string;
+  amount: string;
 }
 
 export class SVMTokenAmount {
-  readonly token: PublicKey
-  readonly amount: BN
+  readonly token: PublicKey;
+  readonly amount: BN;
 
   constructor(fields: SVMTokenAmountFields) {
-    this.token = fields.token
-    this.amount = fields.amount
+    this.token = fields.token;
+    this.amount = fields.amount;
   }
 
   static layout(property?: string) {
-    return borsh.struct(
-      [borsh.publicKey("token"), borsh.u64("amount")],
-      property
-    )
+    return borsh.struct([borsh.publicKey('token'), borsh.u64('amount')], property);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,31 +31,31 @@ export class SVMTokenAmount {
     return new SVMTokenAmount({
       token: obj.token,
       amount: obj.amount,
-    })
+    });
   }
 
   static toEncodable(fields: SVMTokenAmountFields) {
     return {
       token: fields.token,
       amount: fields.amount,
-    }
+    };
   }
 
   toJSON(): SVMTokenAmountJSON {
     return {
       token: this.token.toString(),
       amount: this.amount.toString(),
-    }
+    };
   }
 
   static fromJSON(obj: SVMTokenAmountJSON): SVMTokenAmount {
     return new SVMTokenAmount({
       token: new PublicKey(obj.token),
       amount: new BN(obj.amount),
-    })
+    });
   }
 
   toEncodable() {
-    return SVMTokenAmount.toEncodable(this)
+    return SVMTokenAmount.toEncodable(this);
   }
 }

@@ -1,6 +1,6 @@
-import { Logger } from "./utils/logger";
-import { ExtraArgsOptions } from "./models";
-import { BN } from "@coral-xyz/anchor";
+import { Logger } from './utils/logger';
+import { ExtraArgsOptions } from './models';
+import { BN } from '@coral-xyz/anchor';
 
 /**
  * Creates extra arguments for CCIP send
@@ -8,10 +8,7 @@ import { BN } from "@coral-xyz/anchor";
  * @param logger Optional logger instance
  * @returns Buffer with encoded extra args
  */
-export function createExtraArgs(
-  options?: ExtraArgsOptions,
-  logger?: Logger
-): Buffer {
+export function createExtraArgs(options?: ExtraArgsOptions, logger?: Logger): Buffer {
   if (logger) {
     logger.debug(`Creating extraArgs buffer for CCIP message`);
   }
@@ -20,7 +17,7 @@ export function createExtraArgs(
   if (!options) {
     if (logger) {
       logger.warn(
-        `No options provided, creating default extraArgs with allowOutOfOrderExecution=true to avoid error 8030`
+        `No options provided, creating default extraArgs with allowOutOfOrderExecution=true to avoid error 8030`,
       );
     }
 
@@ -38,9 +35,7 @@ export function createExtraArgs(
     const result = Buffer.concat([typeTag, argsData]);
 
     if (logger) {
-      logger.trace(
-        `Created default extraArgs buffer with allowOutOfOrderExecution=true`
-      );
+      logger.trace(`Created default extraArgs buffer with allowOutOfOrderExecution=true`);
     }
 
     return result;
@@ -70,19 +65,17 @@ export function createExtraArgs(
   }
 
   // Always use true regardless of what was specified
-  const allowOutOfOrderExecution = true;
+  // const allowOutOfOrderExecution = true;
 
   // Log what we're doing
   if (logger) {
     const forcedMsg =
       options.allowOutOfOrderExecution === false
-        ? " (forced)"
+        ? ' (forced)'
         : options.allowOutOfOrderExecution === undefined
-          ? " (default)"
-          : "";
-    logger.debug(
-      `ExtraArgs options - gasLimit: ${gasLimit}, allowOutOfOrderExecution: true${forcedMsg}`
-    );
+          ? ' (default)'
+          : '';
+    logger.debug(`ExtraArgs options - gasLimit: ${gasLimit}, allowOutOfOrderExecution: true${forcedMsg}`);
   }
 
   // Use the GENERIC_EXTRA_ARGS_V2_TAG which is bytes4(keccak256("CCIP EVMExtraArgsV2"))
@@ -98,12 +91,10 @@ export function createExtraArgs(
   // 2. allow_out_of_order_execution (bool) - 1 byte (1 = true, 0 = false)
 
   // Convert gas limit to little-endian bytes (Anchor uses little endian)
-  const gasLimitLE = new BN(gasLimit).toArrayLike(Buffer, "le", 16);
+  const gasLimitLE = new BN(gasLimit).toArrayLike(Buffer, 'le', 16);
 
   if (logger) {
-    logger.trace(
-      `Gas limit buffer (LE, 16 bytes): 0x${gasLimitLE.toString("hex")}`
-    );
+    logger.trace(`Gas limit buffer (LE, 16 bytes): 0x${gasLimitLE.toString('hex')}`);
   }
 
   // Create bool byte for allowOutOfOrderExecution - ALWAYS true (1)
@@ -120,11 +111,7 @@ export function createExtraArgs(
   const result = Buffer.concat([typeTag, argsData]);
 
   if (logger) {
-    logger.trace(
-      `Final extraArgs buffer (${result.length} bytes): 0x${result.toString(
-        "hex"
-      )}`
-    );
+    logger.trace(`Final extraArgs buffer (${result.length} bytes): 0x${result.toString('hex')}`);
   }
 
   return result;

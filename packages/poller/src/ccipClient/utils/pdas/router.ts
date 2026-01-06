@@ -1,22 +1,22 @@
-import { PublicKey } from "@solana/web3.js";
-import { uint64ToLE } from "./common";
-import { Connection } from "@solana/web3.js";
-import { tokenAdminRegistry } from "../../bindings/accounts";
+import { PublicKey } from '@solana/web3.js';
+import { uint64ToLE } from './common';
+import { Connection } from '@solana/web3.js';
+import { tokenAdminRegistry } from '../../bindings/accounts';
 
 /**
  * CCIP Router seeds for PDA derivation
  */
 export const ROUTER_SEEDS = {
-  CONFIG: "config",
-  FEE_BILLING_SIGNER: "fee_billing_signer",
-  TOKEN_ADMIN_REGISTRY: "token_admin_registry",
-  DEST_CHAIN_STATE: "dest_chain_state",
-  NONCE: "nonce",
-  ALLOWED_OFFRAMP: "allowed_offramp",
-  EXTERNAL_TOKEN_POOLS_SIGNER: "external_token_pools_signer",
-  APPROVED_CCIP_SENDER: "approved_ccip_sender",
-  EXTERNAL_EXECUTION_CONFIG: "external_execution_config",
-  TOKEN_POOL_CHAIN_CONFIG: "ccip_tokenpool_chainconfig"
+  CONFIG: 'config',
+  FEE_BILLING_SIGNER: 'fee_billing_signer',
+  TOKEN_ADMIN_REGISTRY: 'token_admin_registry',
+  DEST_CHAIN_STATE: 'dest_chain_state',
+  NONCE: 'nonce',
+  ALLOWED_OFFRAMP: 'allowed_offramp',
+  EXTERNAL_TOKEN_POOLS_SIGNER: 'external_token_pools_signer',
+  APPROVED_CCIP_SENDER: 'approved_ccip_sender',
+  EXTERNAL_EXECUTION_CONFIG: 'external_execution_config',
+  TOKEN_POOL_CHAIN_CONFIG: 'ccip_tokenpool_chainconfig',
 } as const;
 
 /**
@@ -37,13 +37,8 @@ export function findConfigPDA(programId: PublicKey): [PublicKey, number] {
  * @param programId Router program ID
  * @returns [PDA, bump]
  */
-export function findFeeBillingSignerPDA(
-  programId: PublicKey
-): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from(ROUTER_SEEDS.FEE_BILLING_SIGNER)],
-    programId
-  );
+export function findFeeBillingSignerPDA(programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from(ROUTER_SEEDS.FEE_BILLING_SIGNER)], programId);
 }
 
 /**
@@ -52,14 +47,8 @@ export function findFeeBillingSignerPDA(
  * @param programId Router program ID
  * @returns [PDA, bump]
  */
-export function findTokenAdminRegistryPDA(
-  mint: PublicKey,
-  programId: PublicKey
-): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from(ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY), mint.toBuffer()],
-    programId
-  );
+export function findTokenAdminRegistryPDA(mint: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from(ROUTER_SEEDS.TOKEN_ADMIN_REGISTRY), mint.toBuffer()], programId);
 }
 
 /**
@@ -68,13 +57,10 @@ export function findTokenAdminRegistryPDA(
  * @param programId Router program ID
  * @returns [PDA, bump]
  */
-export function findDestChainStatePDA(
-  chainSelector: bigint,
-  programId: PublicKey
-): [PublicKey, number] {
+export function findDestChainStatePDA(chainSelector: bigint, programId: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
     [Buffer.from(ROUTER_SEEDS.DEST_CHAIN_STATE), uint64ToLE(chainSelector)],
-    programId
+    programId,
   );
 }
 
@@ -85,14 +71,10 @@ export function findDestChainStatePDA(
  * @param programId Router program ID
  * @returns [PDA, bump]
  */
-export function findNoncePDA(
-  chainSelector: bigint,
-  authority: PublicKey,
-  programId: PublicKey
-): [PublicKey, number] {
+export function findNoncePDA(chainSelector: bigint, authority: PublicKey, programId: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
     [Buffer.from(ROUTER_SEEDS.NONCE), uint64ToLE(chainSelector), authority.toBuffer()],
-    programId
+    programId,
   );
 }
 
@@ -106,17 +88,12 @@ export function findNoncePDA(
 export function findApprovedSenderPDA(
   chainSelector: bigint,
   sourceSender: Buffer,
-  receiverProgram: PublicKey
+  receiverProgram: PublicKey,
 ): [PublicKey, number] {
   const lenPrefix = Buffer.from([sourceSender.length]);
   return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from(ROUTER_SEEDS.APPROVED_CCIP_SENDER),
-      uint64ToLE(chainSelector),
-      lenPrefix,
-      sourceSender,
-    ],
-    receiverProgram
+    [Buffer.from(ROUTER_SEEDS.APPROVED_CCIP_SENDER), uint64ToLE(chainSelector), lenPrefix, sourceSender],
+    receiverProgram,
   );
 }
 
@@ -130,15 +107,11 @@ export function findApprovedSenderPDA(
 export function findAllowedOfframpPDA(
   chainSelector: bigint,
   offramp: PublicKey,
-  programId: PublicKey
+  programId: PublicKey,
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from(ROUTER_SEEDS.ALLOWED_OFFRAMP),
-      uint64ToLE(chainSelector),
-      offramp.toBuffer(),
-    ],
-    programId
+    [Buffer.from(ROUTER_SEEDS.ALLOWED_OFFRAMP), uint64ToLE(chainSelector), offramp.toBuffer()],
+    programId,
   );
 }
 
@@ -152,15 +125,11 @@ export function findAllowedOfframpPDA(
 export function findTokenPoolChainConfigPDA(
   chainSelector: bigint,
   tokenMint: PublicKey,
-  programId: PublicKey
+  programId: PublicKey,
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from(ROUTER_SEEDS.TOKEN_POOL_CHAIN_CONFIG),
-      uint64ToLE(chainSelector),
-      tokenMint.toBuffer(),
-    ],
-    programId
+    [Buffer.from(ROUTER_SEEDS.TOKEN_POOL_CHAIN_CONFIG), uint64ToLE(chainSelector), tokenMint.toBuffer()],
+    programId,
   );
 }
 
@@ -169,13 +138,8 @@ export function findTokenPoolChainConfigPDA(
  * @param programId Router program ID
  * @returns [PDA, bump]
  */
-export function findExternalTokenPoolsSignerPDA(
-  programId: PublicKey
-): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER)],
-    programId
-  );
+export function findExternalTokenPoolsSignerPDA(programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER)], programId);
 }
 
 /**
@@ -194,34 +158,23 @@ export function findExternalTokenPoolsSignerPDA(
 export async function findDynamicTokenPoolsSignerPDA(
   mint: PublicKey,
   routerProgramId: PublicKey,
-  connection: Connection
+  connection: Connection,
 ): Promise<[PublicKey, number]> {
   // First find the token admin registry PDA
-  const [tokenAdminRegistryPDA] = findTokenAdminRegistryPDA(
-    mint,
-    routerProgramId
-  );
+  const [tokenAdminRegistryPDA] = findTokenAdminRegistryPDA(mint, routerProgramId);
 
   // Fetch the token admin registry account
-  const tokenAdminRegistryAccount = await connection.getAccountInfo(
-    tokenAdminRegistryPDA
-  );
+  const tokenAdminRegistryAccount = await connection.getAccountInfo(tokenAdminRegistryPDA);
   if (!tokenAdminRegistryAccount) {
-    throw new Error(
-      `Token admin registry not found for mint: ${mint.toString()}`
-    );
+    throw new Error(`Token admin registry not found for mint: ${mint.toString()}`);
   }
 
   // Decode the token admin registry to get the lookup table
-  const tokenRegistry = tokenAdminRegistry.decode(
-    tokenAdminRegistryAccount.data
-  );
+  const tokenRegistry = tokenAdminRegistry.decode(tokenAdminRegistryAccount.data);
   const lookupTableAddress = tokenRegistry.lookupTable;
 
   // Fetch the lookup table
-  const { value: lookupTableAccount } = await connection.getAddressLookupTable(
-    lookupTableAddress
-  );
+  const { value: lookupTableAccount } = await connection.getAddressLookupTable(lookupTableAddress);
   if (!lookupTableAccount) {
     throw new Error(`Lookup table not found: ${lookupTableAddress.toString()}`);
   }
@@ -231,9 +184,7 @@ export async function findDynamicTokenPoolsSignerPDA(
 
   // The pool program is at index 2 in the lookup table
   if (lookupTableAddresses.length <= 2) {
-    throw new Error(
-      "Lookup table doesn't have enough entries to determine pool program"
-    );
+    throw new Error("Lookup table doesn't have enough entries to determine pool program");
   }
 
   // Extract the pool program from the lookup table (index 2)
@@ -242,7 +193,7 @@ export async function findDynamicTokenPoolsSignerPDA(
   // Now create the correct PDA using both the external_token_pools_signer seed and the pool program
   return PublicKey.findProgramAddressSync(
     [Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER), poolProgram.toBuffer()],
-    routerProgramId
+    routerProgramId,
   );
 }
 
@@ -251,13 +202,8 @@ export async function findDynamicTokenPoolsSignerPDA(
  * @param programId Router program ID
  * @returns [PDA, bump]
  */
-export function findExternalExecutionConfigPDA(
-  programId: PublicKey
-): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from(ROUTER_SEEDS.EXTERNAL_EXECUTION_CONFIG)],
-    programId
-  );
+export function findExternalExecutionConfigPDA(programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from(ROUTER_SEEDS.EXTERNAL_EXECUTION_CONFIG)], programId);
 }
 
 /**
@@ -276,20 +222,16 @@ export function findExternalExecutionConfigPDA(
 export async function findTokenPoolsSignerWithAccountReader(
   mint: PublicKey,
   routerProgramId: PublicKey,
-  accountReader: import("../../accounts").CCIPAccountReader,
-  connection: Connection
+  accountReader: import('../../accounts').CCIPAccountReader,
+  connection: Connection,
 ): Promise<[PublicKey, number]> {
   // Use the account reader to get the token admin registry
   const tokenRegistry = await accountReader.getTokenAdminRegistry(mint);
 
   // Fetch the lookup table
-  const { value: lookupTableAccount } = await connection.getAddressLookupTable(
-    tokenRegistry.lookupTable
-  );
+  const { value: lookupTableAccount } = await connection.getAddressLookupTable(tokenRegistry.lookupTable);
   if (!lookupTableAccount) {
-    throw new Error(
-      `Lookup table not found: ${tokenRegistry.lookupTable.toString()}`
-    );
+    throw new Error(`Lookup table not found: ${tokenRegistry.lookupTable.toString()}`);
   }
 
   // Get the addresses from the lookup table
@@ -297,9 +239,7 @@ export async function findTokenPoolsSignerWithAccountReader(
 
   // The pool program is at index 2 in the lookup table
   if (lookupTableAddresses.length <= 2) {
-    throw new Error(
-      "Lookup table doesn't have enough entries to determine pool program"
-    );
+    throw new Error("Lookup table doesn't have enough entries to determine pool program");
   }
 
   // Extract the pool program from the lookup table (index 2)
@@ -308,6 +248,6 @@ export async function findTokenPoolsSignerWithAccountReader(
   // Now create the correct PDA using both the external_token_pools_signer seed and the pool program
   return PublicKey.findProgramAddressSync(
     [Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER), poolProgram.toBuffer()],
-    routerProgramId
+    routerProgramId,
   );
 }
