@@ -11,7 +11,7 @@ import {
   WalletType,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
-import { PublicKey, ComputeBudgetProgram, Transaction } from '@solana/web3.js';
+import { PublicKey, ComputeBudgetProgram } from '@solana/web3.js';
 import { getAssociatedTokenAddress, getAccount, createApproveInstruction } from '@solana/spl-token';
 import { BN } from '@coral-xyz/anchor';
 import { SolanaSigner } from '@mark/chainservice';
@@ -146,7 +146,7 @@ async function executeSolanaToMainnetBridge({
     // Get associated token accounts
     const sourceTokenAccount = await getAssociatedTokenAddress(USDC_SOLANA_MINT, walletPublicKey);
 
-    logger.info('Checking source token', { requestId, tokenAccount: sourceTokenAccount, walletPublicKey })
+    logger.info('Checking source token', { requestId, tokenAccount: sourceTokenAccount, walletPublicKey });
 
     // Verify USDC balance
     try {
@@ -189,7 +189,7 @@ async function executeSolanaToMainnetBridge({
       sourceTokenAccount, // source account
       CCIP_ROUTER_PROGRAM_ID, // delegate (CCIP router)
       walletPublicKey, // owner
-      amountToBridge // amount
+      amountToBridge, // amount
     );
 
     // Send approval transaction first
