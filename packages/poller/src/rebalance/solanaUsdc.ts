@@ -146,6 +146,8 @@ async function executeSolanaToMainnetBridge({
     // Get associated token accounts
     const sourceTokenAccount = await getAssociatedTokenAddress(USDC_SOLANA_MINT, walletPublicKey);
 
+    logger.info('Checking source token', { requestId, tokenAccount: sourceTokenAccount, walletPublicKey })
+
     // Verify USDC balance
     try {
       const tokenAccountInfo = await getAccount(connection, sourceTokenAccount);
