@@ -171,7 +171,7 @@ async function executeSolanaToMainnetBridge({
     });
 
     // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
-    // @ts-ignore - ESM-only package, types shimmed via src/types
+    // @ts-expect-error - ESM-only package, types shimmed via src/types
     const { SolanaChain, networkInfo } = await eval('import("@chainlink/ccip-sdk")');
     const solanaChain = await SolanaChain.fromConnection(connection);
 
