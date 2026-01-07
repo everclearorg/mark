@@ -2,7 +2,6 @@ import { PublicKey } from '@solana/web3.js';
 import { uint64ToLE } from './common';
 import { Connection } from '@solana/web3.js';
 import { tokenAdminRegistry } from '../../bindings/accounts';
-import { TOKEN_POOL_POOL_SIGNER_SEED } from './tokenpool';
 
 /**
  * CCIP Router seeds for PDA derivation
@@ -251,6 +250,9 @@ export async function findTokenPoolsSignerWithAccountReader(
   // Extract the pool program from the lookup table (index 2)
   const poolProgram = lookupTableAddresses[2];
 
-  // Now create the correct PDA using both the pool signer seed and the pool program
-  return PublicKey.findProgramAddressSync([Buffer.from(TOKEN_POOL_POOL_SIGNER_SEED), mint.toBuffer()], poolProgram);
+  // Now create the correct PDA using both the external_token_pools_signer seed and the pool program
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER), mint.toBuffer()],
+    poolProgram,
+  );
 }
