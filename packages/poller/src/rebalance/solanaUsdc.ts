@@ -13,7 +13,7 @@ import {
 import { ProcessingContext } from '../init';
 import { PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
-import {  Wallet } from '@coral-xyz/anchor';
+import { Wallet } from '@coral-xyz/anchor';
 import { SolanaSigner } from '@mark/chainservice';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
 import { submitTransactionWithLogging } from '../helpers/transactions';
@@ -180,20 +180,20 @@ async function executeSolanaToMainnetBridge({
       gasLimit: 0n, // No execution on destination for token transfers
       allowOutOfOrderExecution: true,
     };
-    
+
     // Get fee first
-    const fee = await solanaChain.getFee( {
+    const fee = await solanaChain.getFee({
       router: CCIP_ROUTER_PROGRAM_ID.toString(),
-      destChainSelector: networkInfo(1).chainSelector, 
-      message: { 
-        receiver: recipientAddress, 
-        data: Buffer.from(''), 
-        tokenAmounts: [{ token: USDC_SOLANA_MINT.toString(), amount: amountToBridge }], 
-        extraArgs: extraArgs 
-      }
+      destChainSelector: networkInfo(1).chainSelector,
+      message: {
+        receiver: recipientAddress,
+        data: Buffer.from(''),
+        tokenAmounts: [{ token: USDC_SOLANA_MINT.toString(), amount: amountToBridge }],
+        extraArgs: extraArgs,
+      },
     });
     logger.info('CCIP fee calculated', { requestId, fee: fee.toString() });
-   
+
     const result = await solanaChain.sendMessage({
       wallet: new Wallet(solanaSigner.getKeypair()),
       router: CCIP_ROUTER_PROGRAM_ID.toString(),
@@ -205,8 +205,7 @@ async function executeSolanaToMainnetBridge({
         extraArgs: extraArgs,
         fee: fee,
       },
-    })
-
+    });
 
     // Create transaction receipt
     const receipt: TransactionReceipt = {
