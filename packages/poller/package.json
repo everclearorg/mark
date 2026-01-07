@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@chainlink/ccip-js": "^0.2.6",
+    "@chainlink/ccip-sdk": "^0.93.0",
     "@mark/cache": "workspace:*",
     "@mark/chainservice": "workspace:*",
     "@mark/core": "workspace:*",
