@@ -146,7 +146,6 @@ export function findExternalTokenPoolsSignerPDA(programId: PublicKey): [PublicKe
  * Seed for the pool signer PDA (derived from pool program, not router)
  * See: https://docs.chain.link/ccip/concepts/cross-chain-token/svm/token-pools
  */
-const POOL_SIGNER_SEED = 'ccip_tokenpool_signer';
 
 /**
  * Dynamically finds the correct token pool signer PDA for a specific token by retrieving
@@ -197,7 +196,10 @@ export async function findDynamicTokenPoolsSignerPDA(
   const poolProgram = lookupTableAddresses[2];
 
   // Now create the correct PDA using both the external_token_pools_signer seed and the pool program
-  return PublicKey.findProgramAddressSync([Buffer.from(POOL_SIGNER_SEED), mint.toBuffer()], poolProgram);
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER), poolProgram.toBuffer()],
+    routerProgramId,
+  );
 }
 
 /**
@@ -249,5 +251,8 @@ export async function findTokenPoolsSignerWithAccountReader(
   const poolProgram = lookupTableAddresses[2];
 
   // Now create the correct PDA using both the external_token_pools_signer seed and the pool program
-  return PublicKey.findProgramAddressSync([Buffer.from(POOL_SIGNER_SEED), mint.toBuffer()], poolProgram);
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER), mint.toBuffer()],
+    poolProgram,
+  );
 }
