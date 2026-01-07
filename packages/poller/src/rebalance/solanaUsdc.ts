@@ -12,7 +12,7 @@ import {
 } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { PublicKey, ComputeBudgetProgram } from '@solana/web3.js';
-import { getAssociatedTokenAddress, getAccount, createApproveInstruction } from '@solana/spl-token';
+import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
 import { BN } from '@coral-xyz/anchor';
 import { SolanaSigner } from '@mark/chainservice';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
@@ -22,7 +22,6 @@ import { RebalanceTransactionMemo, USDC_PTUSDE_PAIRS, CCIPBridgeAdapter } from '
 // Import CCIP client
 import { CCIPClient } from '../ccipClient/index';
 import { AddressConversion } from '../ccipClient/utils/conversion';
-import { findDynamicTokenPoolsSignerPDA } from '../ccipClient/utils/pdas/router';
 
 // Ticker hash from chaindata/everclear.json for cross-chain asset matching
 const USDC_TICKER_HASH = '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa';
@@ -176,43 +175,6 @@ async function executeSolanaToMainnetBridge({
       destinationChain: ETHEREUM_CHAIN_SELECTOR,
       tokenAmount: amountToBridge.toString(),
       recipient: recipientAddress,
-    });
-
-    // Find the correct delegate PDA for token approval
-    // The CCIP system uses "external_token_pools_signer" PDA derived from the pool program
-    const [tokenPoolsSignerPDA] = await findDynamicTokenPoolsSignerPDA(
-      USDC_SOLANA_MINT,
-      CCIP_ROUTER_PROGRAM_ID,
-      connection,
-    );
-
-    // Approve the token pools signer PDA to transfer tokens from user account
-    logger.info('Creating token approval for CCIP token pools signer', {
-      requestId,
-      sourceTokenAccount: sourceTokenAccount.toBase58(),
-      amount: amountToBridge.toString(),
-      delegate: tokenPoolsSignerPDA.toBase58(),
-    });
-
-    const approveInstruction = createApproveInstruction(
-      sourceTokenAccount, // source account
-      tokenPoolsSignerPDA, // delegate (CCIP token pools signer PDA)
-      walletPublicKey, // owner
-      amountToBridge, // amount
-    );
-
-    // Send approval transaction first
-    const approveResult = await solanaSigner.signAndSendTransaction({
-      instructions: [approveInstruction],
-      feePayer: walletPublicKey,
-    });
-
-    logger.info('Token approval completed', {
-      requestId,
-      signature: approveResult.signature,
-      delegate: tokenPoolsSignerPDA.toBase58(),
-      amount: amountToBridge.toString(),
-      success: approveResult.success,
     });
 
     // Create CCIP client using the keypair from SolanaSigner
