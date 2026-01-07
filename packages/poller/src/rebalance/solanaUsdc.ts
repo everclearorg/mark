@@ -11,18 +11,13 @@ import {
   WalletType,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
-import { PublicKey, ComputeBudgetProgram } from '@solana/web3.js';
-import { getAssociatedTokenAddress, getAccount, createApproveInstruction } from '@solana/spl-token';
-import { BN } from '@coral-xyz/anchor';
+import { PublicKey } from '@solana/web3.js';
+import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
+import { Wallet } from '@coral-xyz/anchor';
 import { SolanaSigner } from '@mark/chainservice';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceTransactionMemo, USDC_PTUSDE_PAIRS, CCIPBridgeAdapter } from '@mark/rebalance';
-
-// Import CCIP client
-import { CCIPClient } from '../ccipClient/index';
-import { AddressConversion } from '../ccipClient/utils/conversion';
-import { findDynamicTokenPoolsSignerPDA } from '../ccipClient/utils/pdas/router';
 
 // Ticker hash from chaindata/everclear.json for cross-chain asset matching
 const USDC_TICKER_HASH = '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa';
@@ -73,13 +68,10 @@ function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERA
 // Chainlink CCIP constants for Solana
 // See: https://docs.chain.link/ccip/directory/mainnet/chain/solana-mainnet
 const CCIP_ROUTER_PROGRAM_ID = new PublicKey('Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C');
-const CCIP_FEE_QUOTER_PROGRAM_ID = new PublicKey('FeeQPGkKDeRV1MgoYfMH6L8o3KeuYjwUZrgn4LRKfjHi');
-const CCIP_RMN_REMOTE_PROGRAM_ID = new PublicKey('RmnXLft1mSEwDgMKu2okYuHkiazxntFFcZFrrcXxYg7');
 const SOLANA_CHAIN_SELECTOR = '124615329519749607';
 const ETHEREUM_CHAIN_SELECTOR = '5009297550715157269';
 const USDC_SOLANA_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 const PTUSDE_SOLANA_MINT = new PublicKey('PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA');
-const LINK_TOKEN_MINT = new PublicKey('LinkhB3afbBKb2EQQu7s7umdZceV3wcvAUJhQAfQ23L');
 
 /**
  * Get or create lookup table for CCIP transaction accounts
@@ -178,116 +170,48 @@ async function executeSolanaToMainnetBridge({
       recipient: recipientAddress,
     });
 
-    // Find the correct delegate PDA for token approval
-    // The CCIP system uses "external_token_pools_signer" PDA derived from the pool program
-    const [tokenPoolsSignerPDA] = await findDynamicTokenPoolsSignerPDA(
-      USDC_SOLANA_MINT,
-      CCIP_ROUTER_PROGRAM_ID,
-      connection,
-    );
-
-    // Approve the token pools signer PDA to transfer tokens from user account
-    logger.info('Creating token approval for CCIP token pools signer', {
-      requestId,
-      sourceTokenAccount: sourceTokenAccount.toBase58(),
-      amount: amountToBridge.toString(),
-      delegate: tokenPoolsSignerPDA.toBase58(),
-    });
-
-    const approveInstruction = createApproveInstruction(
-      sourceTokenAccount, // source account
-      tokenPoolsSignerPDA, // delegate (CCIP token pools signer PDA)
-      walletPublicKey, // owner
-      amountToBridge, // amount
-    );
-
-    // Send approval transaction first
-    const approveResult = await solanaSigner.signAndSendTransaction({
-      instructions: [approveInstruction],
-      feePayer: walletPublicKey,
-    });
-
-    logger.info('Token approval completed', {
-      requestId,
-      signature: approveResult.signature,
-      delegate: tokenPoolsSignerPDA.toBase58(),
-      amount: amountToBridge.toString(),
-      success: approveResult.success,
-    });
-
-    // Create CCIP client using the keypair from SolanaSigner
-    const ccipClient = CCIPClient.create(
-      connection,
-      solanaSigner.getKeypair(), // Extract keypair from SolanaSigner
-      {
-        ccipRouterProgramId: CCIP_ROUTER_PROGRAM_ID.toString(),
-        feeQuoterProgramId: CCIP_FEE_QUOTER_PROGRAM_ID.toString(),
-        rmnRemoteProgramId: CCIP_RMN_REMOTE_PROGRAM_ID.toString(),
-        linkTokenMint: LINK_TOKEN_MINT.toString(),
-        tokenMint: USDC_SOLANA_MINT.toString(),
-      },
-      { logLevel: 1 }, // INFO level
-    );
-
-    // Convert EVM address to Solana bytes
-    const receiverBytes = AddressConversion.evmAddressToSolanaBytes(recipientAddress);
-
-    // Create token amounts array
-    const tokenAmounts = [
-      {
-        token: USDC_SOLANA_MINT,
-        amount: new BN(amountToBridge.toString()),
-      },
-    ];
+    // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
+    const { SolanaChain, networkInfo } = await eval('import("@chainlink/ccip-sdk")');
+    const solanaChain = await SolanaChain.fromConnection(connection);
 
     // Create extra args
-    const extraArgs = ccipClient.createExtraArgs({
-      gasLimit: 0, // No execution on destination for token transfers
+    const extraArgs = {
+      gasLimit: 0n, // No execution on destination for token transfers
       allowOutOfOrderExecution: true,
-    });
-
-    // Create CCIP send request
-    const sendRequest = {
-      destChainSelector: new BN(ETHEREUM_CHAIN_SELECTOR),
-      receiver: receiverBytes,
-      data: Buffer.from(''), // Empty data for token transfer
-      tokenAmounts: tokenAmounts,
-      feeToken: PublicKey.default, // Use native SOL
-      extraArgs: extraArgs,
     };
 
-    logger.info('Sending CCIP transaction via CCIPClient', {
-      requestId,
-      destChainSelector: ETHEREUM_CHAIN_SELECTOR,
-      recipient: recipientAddress,
-      tokenAmount: amountToBridge.toString(),
-      feeToken: 'Native SOL',
+    // Get fee first
+    const fee = await solanaChain.getFee({
+      router: CCIP_ROUTER_PROGRAM_ID.toString(),
+      destChainSelector: networkInfo(1).chainSelector,
+      message: {
+        receiver: recipientAddress,
+        data: Buffer.from(''),
+        tokenAmounts: [{ token: USDC_SOLANA_MINT.toString(), amount: amountToBridge }],
+        extraArgs: extraArgs,
+      },
     });
+    logger.info('CCIP fee calculated', { requestId, fee: fee.toString() });
 
-    // Create compute budget instruction for the transaction
-    const computeBudgetInstruction = ComputeBudgetProgram.setComputeUnitLimit({
-      units: 1_400_000, // Increase compute budget for complex CCIP transactions
-    });
-
-    // Send CCIP message and get message ID
-    const result = await ccipClient.sendWithMessageId(sendRequest, computeBudgetInstruction, {
-      skipPreflight: true, // Skip preflight to avoid simulation issues
-    });
-
-    logger.info('CCIP bridge transaction successful', {
-      requestId,
-      signature: result.txSignature,
-      messageId: result.messageId,
-      amountBridged: amountToBridge.toString(),
-      recipient: recipientAddress,
+    const result = await solanaChain.sendMessage({
+      wallet: new Wallet(solanaSigner.getKeypair()),
+      router: CCIP_ROUTER_PROGRAM_ID.toString(),
+      destChainSelector: networkInfo(1).chainSelector,
+      message: {
+        receiver: recipientAddress,
+        data: Buffer.from(''),
+        tokenAmounts: [{ token: USDC_SOLANA_MINT.toString(), amount: amountToBridge }],
+        extraArgs: extraArgs,
+        fee: fee,
+      },
     });
 
     // Create transaction receipt
     const receipt: TransactionReceipt = {
-      transactionHash: result.txSignature,
+      transactionHash: result.tx.hash,
       status: 1, // Success if we got here
-      blockNumber: 0, // Will be filled in later when we get transaction details
-      logs: [], // CCIP client doesn't return logs directly
+      blockNumber: result.tx.blockNumber, // Will be filled in later when we get transaction details
+      logs: result.tx.logs, // CCIP client doesn't return logs directly
       cumulativeGasUsed: '0', // Will be filled in later
       effectiveGasPrice: '0',
       from: walletPublicKey.toBase58(),
@@ -298,7 +222,7 @@ async function executeSolanaToMainnetBridge({
     return {
       receipt,
       effectiveBridgedAmount: amountToBridge.toString(),
-      messageId: result.messageId, // Include CCIP message ID for tracking
+      messageId: result.message.messageId, // Include CCIP message ID for tracking
     };
   } catch (error) {
     logger.error('Failed to execute Solana CCIP bridge', {
