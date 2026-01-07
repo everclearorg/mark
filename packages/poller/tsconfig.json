@@ -11,6 +11,8 @@
     "composite": true,
     "moduleResolution": "node",
     "module": "commonjs",
+    "typeRoots": ["./src/types", "./node_modules/@types", "../../node_modules/@types"],
+    "allowSyntheticDefaultImports": true,
     "types": ["node", "jest"]
   },
   "include": ["src/**/*", "test/**/*"],
