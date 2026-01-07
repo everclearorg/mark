@@ -248,5 +248,5 @@ export async function findTokenPoolsSignerWithAccountReader(
   const poolProgram = lookupTableAddresses[2];
 
   // Now create the correct PDA using both the external_token_pools_signer seed and the pool program
-  return PublicKey.findProgramAddressSync([Buffer.from(POOL_SIGNER_SEED), mint.toBuffer()], poolProgram);
+  return PublicKey.findProgramAddressSync([Buffer.from(ROUTER_SEEDS.EXTERNAL_TOKEN_POOLS_SIGNER), mint.toBuffer()], poolProgram);
 }
