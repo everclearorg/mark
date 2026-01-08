@@ -71,11 +71,11 @@ const mockCcipClient = {
 // Import adapter after mocks are set up
 import { CCIPBridgeAdapter } from '../../../src/adapters/ccip/ccip';
 
-// Create a testable subclass that overrides the protected importCcipModule method
+// Create a testable subclass that overrides the protected createCcipClient method
 class TestableCCIPBridgeAdapter extends CCIPBridgeAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  protected async importCcipModule(): Promise<any> {
-    return { createClient: () => mockCcipClient };
+  protected createCcipClient(): any {
+    return mockCcipClient;
   }
 }
 

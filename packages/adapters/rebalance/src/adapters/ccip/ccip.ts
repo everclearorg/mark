@@ -90,6 +90,13 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   }
 
   /**
+   * Create CCIP client - can be overridden for testing
+   */
+  protected createCcipClient(): CCIPClient {
+    return ccipSDK.createClient();
+  }
+
+  /**
    * Get or create the CCIP client using the static import
    */
   private getCcipClient(): CCIPClient | null {
@@ -102,7 +109,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     }
 
     try {
-      this.ccipClient = ccipSDK.createClient();
+      this.ccipClient = this.createCcipClient();
       return this.ccipClient;
     } catch (error) {
       this.logger.warn('CCIP SDK unavailable', {
