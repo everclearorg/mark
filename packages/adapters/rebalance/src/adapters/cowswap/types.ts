@@ -14,7 +14,7 @@ export const SUPPORTED_NETWORKS: Record<number, string> = {
 
 export const USDC_USDT_PAIRS: Record<number, { usdc: string; usdt: string }> = {
   1: {
-    usdc: '0xA0b86a33E6417fad52e9d5e5d12a0749A9e9ad2B',
+    usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
   },
   100: {
