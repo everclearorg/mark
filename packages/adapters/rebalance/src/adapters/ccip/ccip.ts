@@ -89,6 +89,14 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   }
 
   /**
+   * Dynamic import for ES module compatibility.
+   */
+  protected async importCcipModule(): Promise<CCIPModuleType> {
+    // Use eval to prevent TS from downleveling to require()
+    return eval('import("@chainlink/ccip-js")');
+  }
+
+  /**
    * Lazy-load the CCIP module and client to handle ES module import
    */
   private async getCcipClient(): Promise<CCIPClient | null> {
@@ -101,8 +109,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     }
 
     try {
-      // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
-      const { createClient } = await eval('import("@chainlink/ccip-js")');
+      const { createClient } = await this.importCcipModule();
       this.ccipClient = createClient();
       return this.ccipClient;
     } catch (error) {
