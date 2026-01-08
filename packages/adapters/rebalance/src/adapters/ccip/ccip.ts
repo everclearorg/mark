@@ -79,7 +79,7 @@ const CCIP_ROUTER_ABI = [
 
 export class CCIPBridgeAdapter implements BridgeAdapter {
   private ccipClient: CCIPClient | null = null;
-  private ccipModule: CCIPModuleType | null = null;
+  private ccipSdkUnavailable = false;
 
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
@@ -89,19 +89,36 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   }
 
   /**
+   * Dynamic import for ES module compatibility.
+   */
+  protected async importCcipModule(): Promise<CCIPModuleType> {
+    // Use eval to prevent TS from downleveling to require()
+    return eval('import("@chainlink/ccip-js")');
+  }
+
+  /**
    * Lazy-load the CCIP module and client to handle ES module import
    */
-  private async getCcipClient(): Promise<CCIPClient> {
+  private async getCcipClient(): Promise<CCIPClient | null> {
+    if (this.ccipSdkUnavailable) {
+      return null;
+    }
+
     if (this.ccipClient) {
       return this.ccipClient;
     }
 
-    if (!this.ccipModule) {
-      this.ccipModule = await import('@chainlink/ccip-js');
+    try {
+      const { createClient } = await this.importCcipModule();
+      this.ccipClient = createClient();
+      return this.ccipClient;
+    } catch (error) {
+      this.logger.warn('CCIP SDK unavailable', {
+        error: (error as Error).message,
+      });
+      this.ccipSdkUnavailable = true;
+      return null;
     }
-
-    this.ccipClient = this.ccipModule.createClient();
-    return this.ccipClient;
   }
 
   type(): SupportedBridge {
@@ -583,6 +600,15 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
    */
   async extractMessageIdFromReceipt(transactionHash: string, originChainId: number): Promise<string | null> {
     try {
+      // Skip for Solana chains - can't use eth_getTransactionReceipt on Solana RPC
+      if (this.isSolanaChain(originChainId)) {
+        this.logger.debug('Skipping message ID extraction for Solana origin chain', {
+          transactionHash,
+          originChainId,
+        });
+        return null;
+      }
+
       const providers = this.chains[originChainId.toString()]?.providers ?? [];
       if (!providers.length) {
         return null;
@@ -702,6 +728,19 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Note: Type bridge via `unknown` required because @chainlink/ccip-js bundles its own
       // viem version with incompatible types. At runtime, the PublicClient works correctly.
       const ccipClient = await this.getCcipClient();
+
+      // If SDK is unavailable return PENDING
+      if (!ccipClient) {
+        this.logger.debug('CCIP SDK unavailable, returning PENDING status', {
+          transactionHash,
+          messageId,
+        });
+        return {
+          status: 'PENDING',
+          message: 'CCIP SDK unavailable - transfer may still complete',
+          messageId: messageId || undefined,
+        };
+      }
 
       const transferStatus = await ccipClient.getTransferStatus({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

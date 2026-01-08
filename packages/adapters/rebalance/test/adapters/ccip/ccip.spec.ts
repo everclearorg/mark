@@ -68,12 +68,16 @@ const mockCcipClient = {
   getTransferStatus: jest.fn<() => Promise<number | null>>(),
 };
 
-jest.mock('@chainlink/ccip-js', () => ({
-  createClient: () => mockCcipClient,
-}), { virtual: true });
-
 // Import adapter after mocks are set up
 import { CCIPBridgeAdapter } from '../../../src/adapters/ccip/ccip';
+
+// Create a testable subclass that overrides the protected importCcipModule method
+class TestableCCIPBridgeAdapter extends CCIPBridgeAdapter {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  protected async importCcipModule(): Promise<any> {
+    return { createClient: () => mockCcipClient };
+  }
+}
 
 // Mock viem
 jest.mock('viem', () => {
@@ -116,12 +120,12 @@ jest.mock('bs58', () => {
 });
 
 describe('CCIPBridgeAdapter', () => {
-  let adapter: CCIPBridgeAdapter;
+  let adapter: TestableCCIPBridgeAdapter;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockCcipClient.getTransferStatus.mockResolvedValue(null);
-    adapter = new CCIPBridgeAdapter(mockChains, mockLogger);
+    adapter = new TestableCCIPBridgeAdapter(mockChains, mockLogger);
   });
 
   describe('constructor and type', () => {
