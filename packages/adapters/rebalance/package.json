@@ -18,7 +18,7 @@
         "test:unit": "jest --coverage --testPathIgnorePatterns='.*\\.integration\\.spec\\.ts$'"
     },
     "dependencies": {
-        "@chainlink/ccip-js": "^0.2.6",
+        "@chainlink/ccip-sdk": "^0.93.0",
         "@cowprotocol/cow-sdk": "^7.1.2-beta.0",
         "@defuse-protocol/one-click-sdk-typescript": "^0.1.5",
         "@mark/core": "workspace:*",

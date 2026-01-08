@@ -68,3 +68,62 @@ export interface SolanaAddressEncoding {
   address: string;
   encoding: 'base58' | 'hex';
 }
+
+// Chainlink CCIP Router ABI
+export const CCIP_ROUTER_ABI = [
+  {
+    inputs: [
+      { name: 'destinationChainSelector', type: 'uint64' },
+      {
+        name: 'message',
+        type: 'tuple',
+        components: [
+          { name: 'receiver', type: 'bytes' },
+          { name: 'data', type: 'bytes' },
+          {
+            name: 'tokenAmounts',
+            type: 'tuple[]',
+            components: [
+              { name: 'token', type: 'address' },
+              { name: 'amount', type: 'uint256' },
+            ],
+          },
+          { name: 'extraArgs', type: 'bytes' },
+          { name: 'feeToken', type: 'address' },
+        ],
+      },
+    ],
+    name: 'getFee',
+    outputs: [{ name: 'fee', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'destinationChainSelector', type: 'uint64' },
+      {
+        name: 'message',
+        type: 'tuple',
+        components: [
+          { name: 'receiver', type: 'bytes' },
+          { name: 'data', type: 'bytes' },
+          {
+            name: 'tokenAmounts',
+            type: 'tuple[]',
+            components: [
+              { name: 'token', type: 'address' },
+              { name: 'amount', type: 'uint256' },
+            ],
+          },
+          { name: 'extraArgs', type: 'bytes' },
+          { name: 'feeToken', type: 'address' },
+        ],
+      },
+    ],
+    name: 'ccipSend',
+    outputs: [{ name: 'messageId', type: 'bytes32' }],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+] as const;
+

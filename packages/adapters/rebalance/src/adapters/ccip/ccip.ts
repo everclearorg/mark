@@ -11,76 +11,14 @@ import {
   CCIP_SUPPORTED_CHAINS,
   CHAIN_ID_TO_CCIP_SELECTOR,
   SOLANA_CHAIN_ID_NUMBER,
+  CCIP_ROUTER_ABI
 } from './types';
-import bs58 from 'bs58';
-
-// Type for CCIP module and client - using type-only import for types, dynamic import for runtime
-// The dynamic import returns the module namespace, so we extract types from it
-type CCIPModuleType = typeof import('@chainlink/ccip-js');
-type CCIPClient = ReturnType<CCIPModuleType['createClient']>;
-
-// Chainlink CCIP Router ABI
-const CCIP_ROUTER_ABI = [
-  {
-    inputs: [
-      { name: 'destinationChainSelector', type: 'uint64' },
-      {
-        name: 'message',
-        type: 'tuple',
-        components: [
-          { name: 'receiver', type: 'bytes' },
-          { name: 'data', type: 'bytes' },
-          {
-            name: 'tokenAmounts',
-            type: 'tuple[]',
-            components: [
-              { name: 'token', type: 'address' },
-              { name: 'amount', type: 'uint256' },
-            ],
-          },
-          { name: 'extraArgs', type: 'bytes' },
-          { name: 'feeToken', type: 'address' },
-        ],
-      },
-    ],
-    name: 'getFee',
-    outputs: [{ name: 'fee', type: 'uint256' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-  {
-    inputs: [
-      { name: 'destinationChainSelector', type: 'uint64' },
-      {
-        name: 'message',
-        type: 'tuple',
-        components: [
-          { name: 'receiver', type: 'bytes' },
-          { name: 'data', type: 'bytes' },
-          {
-            name: 'tokenAmounts',
-            type: 'tuple[]',
-            components: [
-              { name: 'token', type: 'address' },
-              { name: 'amount', type: 'uint256' },
-            ],
-          },
-          { name: 'extraArgs', type: 'bytes' },
-          { name: 'feeToken', type: 'address' },
-        ],
-      },
-    ],
-    name: 'ccipSend',
-    outputs: [{ name: 'messageId', type: 'bytes32' }],
-    stateMutability: 'payable',
-    type: 'function',
-  },
-] as const;
-
 export class CCIPBridgeAdapter implements BridgeAdapter {
-  private ccipClient: CCIPClient | null = null;
-  private ccipSdkUnavailable = false;
-
+  // Lazy-load bs58 to avoid CJS/ESM interop issues under Node16 resolution
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private bs58Module?: Promise<any>;
+  private bs58Decode?: (value: string) => Uint8Array;
+  
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
@@ -88,37 +26,28 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     this.logger.debug('Initializing CCIPBridgeAdapter');
   }
 
-  /**
-   * Dynamic import for ES module compatibility.
-   */
-  protected async importCcipModule(): Promise<CCIPModuleType> {
-    // Use eval to prevent TS from downleveling to require()
-    return eval('import("@chainlink/ccip-js")');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  protected async importBs58Module(): Promise<any> {
+    return import('bs58');
   }
 
-  /**
-   * Lazy-load the CCIP module and client to handle ES module import
-   */
-  private async getCcipClient(): Promise<CCIPClient | null> {
-    if (this.ccipSdkUnavailable) {
-      return null;
+  private async getBs58Decode(): Promise<(value: string) => Uint8Array> {
+    if (!this.bs58Module) {
+      this.bs58Module = this.importBs58Module();
     }
 
-    if (this.ccipClient) {
-      return this.ccipClient;
+    const mod = await this.bs58Module;
+    const decode =
+      (mod as { decode?: unknown }).decode ??
+      (mod as { default?: { decode?: unknown } }).default?.decode ??
+      (mod as { default?: unknown }).default;
+
+    if (typeof decode !== 'function') {
+      throw new Error('bs58 decode function is unavailable');
     }
 
-    try {
-      const { createClient } = await this.importCcipModule();
-      this.ccipClient = createClient();
-      return this.ccipClient;
-    } catch (error) {
-      this.logger.warn('CCIP SDK unavailable', {
-        error: (error as Error).message,
-      });
-      this.ccipSdkUnavailable = true;
-      return null;
-    }
+    this.bs58Decode = this.bs58Decode ?? (decode as (value: string) => Uint8Array);
+    return this.bs58Decode;
   }
 
   type(): SupportedBridge {
@@ -181,10 +110,11 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
    * Encode a Solana base58 address as bytes for CCIP receiver field
    * CCIP expects Solana addresses as 32-byte public keys
    */
-  private encodeSolanaAddress(solanaAddress: string): `0x${string}` {
+  private async encodeSolanaAddress(solanaAddress: string): Promise<`0x${string}`> {
     try {
+      const decode = await this.getBs58Decode();
       // Decode base58 Solana address to get the 32-byte public key
-      const publicKeyBytes = bs58.decode(solanaAddress);
+      const publicKeyBytes = decode(solanaAddress);
 
       if (publicKeyBytes.length !== 32) {
         throw new Error(`Invalid Solana address length: expected 32 bytes, got ${publicKeyBytes.length}`);
@@ -200,7 +130,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   /**
    * Encode recipient address based on destination chain type
    */
-  private encodeRecipientAddress(address: string, destinationChainId: number): `0x${string}` {
+  private async encodeRecipientAddress(address: string, destinationChainId: number): Promise<`0x${string}`> {
     // Check if destination is Solana
     if (this.isSolanaChain(destinationChainId)) {
       return this.encodeSolanaAddress(address);
@@ -234,13 +164,15 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
    * @param tokenReceiver - Solana address (base58) receiving tokens. Required for token transfers.
    * @param accounts - Additional accounts needed. Empty for token-only transfers.
    */
-  private encodeSVMExtraArgsV1(
+  private async encodeSVMExtraArgsV1(
     computeUnits: number,
     accountIsWritableBitmap: bigint,
     allowOutOfOrderExecution: boolean,
     tokenReceiver: string,
     accounts: string[] = [],
-  ): `0x${string}` {
+  ): Promise<`0x${string}`> {
+    const decode = await this.getBs58Decode();
+
     // SVM_EXTRA_ARGS_V1_TAG: 0x1f3b3aba (4 bytes, big-endian)
     const typeTag = Buffer.alloc(4);
     typeTag.writeUInt32BE(0x1f3b3aba, 0);
@@ -263,7 +195,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       tokenReceiverBuf = Buffer.from(tokenReceiver.slice(2), 'hex');
     } else {
       // Assume base58 Solana address
-      tokenReceiverBuf = Buffer.from(bs58.decode(tokenReceiver));
+      tokenReceiverBuf = Buffer.from(decode(tokenReceiver));
     }
     if (tokenReceiverBuf.length !== 32) {
       throw new Error(`Invalid tokenReceiver length: expected 32 bytes, got ${tokenReceiverBuf.length}`);
@@ -279,7 +211,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       if (account.startsWith('0x')) {
         accountBuf = Buffer.from(account.slice(2), 'hex');
       } else {
-        accountBuf = Buffer.from(bs58.decode(account));
+        accountBuf = Buffer.from(decode(account));
       }
       if (accountBuf.length !== 32) {
         throw new Error(`Invalid account length: expected 32 bytes, got ${accountBuf.length}`);
@@ -381,12 +313,27 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Create CCIP message with proper encoding based on destination chain
       // For Solana: receiver must be zero address, actual recipient goes in tokenReceiver (extraArgs)
       // For EVM: receiver is the actual recipient padded to 32 bytes
+      const receiver = isSolanaDestination
+        ? ('0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`)
+        : await this.encodeRecipientAddress(recipient, route.destination);
+
+      const extraArgs = isSolanaDestination
+        ? await this.encodeSVMExtraArgsV1(
+            0, // computeUnits: 0 for token-only transfers
+            0n, // accountIsWritableBitmap: 0 for token-only
+            true, // allowOutOfOrderExecution: MUST be true for Solana
+            recipient, // tokenReceiver: actual Solana recipient address
+            [], // accounts: empty for token-only transfers
+          )
+        : this.encodeEVMExtraArgsV2(
+            0, // gasLimit: 0 for token-only transfers
+            true, // allowOutOfOrderExecution: recommended true
+          );
+
       const ccipMessage: CCIPMessage = {
         // For Solana token-only transfers: receiver MUST be zero address
         // The actual recipient is specified in tokenReceiver field of SVMExtraArgsV1
-        receiver: isSolanaDestination
-          ? ('0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`)
-          : this.encodeRecipientAddress(recipient, route.destination),
+        receiver,
         data: '0x' as `0x${string}`, // No additional data for simple token transfer
         tokenAmounts: [
           {
@@ -396,18 +343,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         ],
         // For Solana: SVMExtraArgsV1 with tokenReceiver set to actual recipient
         // For EVM: EVMExtraArgsV2 with gasLimit=0 for token-only transfers
-        extraArgs: isSolanaDestination
-          ? this.encodeSVMExtraArgsV1(
-              0, // computeUnits: 0 for token-only transfers
-              0n, // accountIsWritableBitmap: 0 for token-only
-              true, // allowOutOfOrderExecution: MUST be true for Solana
-              recipient, // tokenReceiver: actual Solana recipient address
-              [], // accounts: empty for token-only transfers
-            )
-          : this.encodeEVMExtraArgsV2(
-              0, // gasLimit: 0 for token-only transfers
-              true, // allowOutOfOrderExecution: recommended true
-            ),
+        extraArgs,
         feeToken: '0x0000000000000000000000000000000000000000' as Address, // Pay fees in native token
       };
 
@@ -680,82 +616,59 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         destinationChainId,
       });
 
-      // First, try to extract the message ID from the transaction logs
-      const messageId = await this.extractMessageIdFromReceipt(transactionHash, originChainId);
+      // Create a public client for the destination chain to check status
+      let destinationChain, sourceChain;
 
-      if (!messageId) {
+      const destinationProviders = this.chains[destinationChainId.toString()]?.providers ?? [];
+      const originProviders = this.chains[originChainId.toString()]?.providers ?? [];
+      if (!destinationProviders.length) {
+        throw new Error(`No providers found for destination chain ${destinationChainId}`);
+      }
+      if (!originProviders.length) {
+        throw new Error(`No providers found for origin chain ${originChainId}`);
+      }
+
+      // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
+      const { SolanaChain, EVMChain, discoverOffRamp, ExecutionState, MessageStatus} = await import("@chainlink/ccip-sdk");
+      if(this.isSolanaChain(destinationChainId)) {
+        destinationChain  = await SolanaChain.fromUrl(destinationProviders[0]);
+        sourceChain = await EVMChain.fromUrl(originProviders[0]);
+      } else {
+        destinationChain  = await EVMChain.fromUrl(destinationProviders[0]);
+        sourceChain = await SolanaChain.fromUrl(originProviders[0]);
+      }
+      
+      // First, try to extract the message ID from the transaction logs
+      const requests = await sourceChain.getMessagesInTx(transactionHash);
+      if (!requests.length) {
         this.logger.warn('Could not extract CCIP message ID, will try using transaction hash', {
           transactionHash,
           originChainId,
         });
       }
 
-      const idToCheck = messageId || transactionHash;
-
-      // Create a public client for the destination chain to check status
-      let destinationClient;
-
-      if (this.isSolanaChain(destinationChainId)) {
-        // For Solana destination, use Ethereum mainnet client (CCIP hub)
-        destinationClient = createPublicClient({
-          chain: mainnet,
-          transport: http(),
-        });
-      } else {
-        // For EVM destinations, create client for that specific chain
-        const providers = this.chains[destinationChainId.toString()]?.providers ?? [];
-        if (!providers.length) {
-          throw new Error(`No providers found for destination chain ${destinationChainId}`);
-        }
-
-        const transports = providers.map((p: string) => http(p));
-        const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
-        destinationClient = createPublicClient({ transport });
+      const request = requests[0];
+      const messageId = request.message.messageId;
+      const offRamp = await discoverOffRamp(sourceChain, destinationChain, request.lane.onRamp);
+      let transferStatus;
+      for await (const receipt of destinationChain.getExecutionReceipts({
+        offRamp,
+        messageId: messageId,
+        sourceChainSelector: request.message.sourceChainSelector,
+        startTime: request.tx.timestamp,
+      })) {
+        transferStatus =
+          receipt.receipt.state === ExecutionState.Success
+            ? MessageStatus.Success
+            : MessageStatus.Failed
       }
-
-      // For Solana destination, use Ethereum router as the check point
-      const destinationRouterAddress = this.isSolanaChain(destinationChainId)
-        ? CCIP_ROUTER_ADDRESSES[1] // Ethereum mainnet router
-        : CCIP_ROUTER_ADDRESSES[destinationChainId];
-
-      if (!destinationRouterAddress) {
-        throw new Error(`No router address for destination chain ${destinationChainId}`);
-      }
-
-      const sourceChainSelector = this.getDestinationChainSelector(originChainId);
-
-      // Use the CCIP SDK to check transfer status
-      // Note: Type bridge via `unknown` required because @chainlink/ccip-js bundles its own
-      // viem version with incompatible types. At runtime, the PublicClient works correctly.
-      const ccipClient = await this.getCcipClient();
-
-      // If SDK is unavailable return PENDING
-      if (!ccipClient) {
-        this.logger.debug('CCIP SDK unavailable, returning PENDING status', {
-          transactionHash,
-          messageId,
-        });
-        return {
-          status: 'PENDING',
-          message: 'CCIP SDK unavailable - transfer may still complete',
-          messageId: messageId || undefined,
-        };
-      }
-
-      const transferStatus = await ccipClient.getTransferStatus({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        client: destinationClient as any,
-        destinationRouterAddress,
-        sourceChainSelector,
-        messageId: idToCheck as `0x${string}`,
-      });
 
       this.logger.debug('CCIP SDK transfer status response', {
         transactionHash,
-        messageId: idToCheck,
+        messageId: messageId,
         transferStatus,
-        sourceChainSelector,
-        destinationRouterAddress,
+        sourceChainSelector: request.message.sourceChainSelector,
+        destinationRouterAddress: offRamp,
       });
 
       if (transferStatus === null) {
@@ -768,26 +681,19 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
 
       // TransferStatus enum: Untouched = 0, InProgress = 1, Success = 2, Failure = 3
       switch (transferStatus) {
-        case 2: // Success
+        case MessageStatus.Success: // Success
           return {
             status: 'SUCCESS',
             message: 'CCIP transfer completed successfully',
             messageId: messageId || undefined,
             destinationTransactionHash: transactionHash,
           };
-        case 3: // Failure
+        case MessageStatus.Failed: // Failure
           return {
             status: 'FAILURE',
             message: 'CCIP transfer failed',
             messageId: messageId || undefined,
           };
-        case 1: // InProgress
-          return {
-            status: 'PENDING',
-            message: 'CCIP transfer in progress',
-            messageId: messageId || undefined,
-          };
-        case 0: // Untouched
         default:
           return {
             status: 'PENDING',

@@ -10,6 +10,7 @@ if (typeof (global as typeof globalThis & { crypto?: Crypto }).crypto === 'undef
   (global as typeof globalThis & { crypto: Crypto }).crypto = webcrypto as Crypto;
 }
 
+import './polyfills';
 import { initPoller } from './init';
 
 initPoller()
