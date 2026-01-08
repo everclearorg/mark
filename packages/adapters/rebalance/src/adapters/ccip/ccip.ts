@@ -12,7 +12,6 @@ import {
   CHAIN_ID_TO_CCIP_SELECTOR,
   SOLANA_CHAIN_ID_NUMBER,
 } from './types';
-import * as ccipSDK from '@chainlink/ccip-js'
 import bs58 from 'bs58';
 
 // Type for CCIP module and client - using type-only import for types, dynamic import for runtime
@@ -90,16 +89,17 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   }
 
   /**
-   * Create CCIP client - can be overridden for testing
+   * Dynamic import for ES module compatibility.
    */
-  protected createCcipClient(): CCIPClient {
-    return ccipSDK.createClient();
+  protected async importCcipModule(): Promise<CCIPModuleType> {
+    const ccipModule = await eval('import("@chainlink/ccip-js")');
+    return ccipModule
   }
 
   /**
-   * Get or create the CCIP client using the static import
+   * Lazy-load the CCIP module and client to handle ES module import
    */
-  private getCcipClient(): CCIPClient | null {
+  private async getCcipClient(): Promise<CCIPClient | null> {
     if (this.ccipSdkUnavailable) {
       return null;
     }
@@ -109,7 +109,8 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     }
 
     try {
-      this.ccipClient = this.createCcipClient();
+      const { createClient } = await this.importCcipModule();
+      this.ccipClient = createClient();
       return this.ccipClient;
     } catch (error) {
       this.logger.warn('CCIP SDK unavailable', {
@@ -726,7 +727,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Use the CCIP SDK to check transfer status
       // Note: Type bridge via `unknown` required because @chainlink/ccip-js bundles its own
       // viem version with incompatible types. At runtime, the PublicClient works correctly.
-      const ccipClient = this.getCcipClient();
+      const ccipClient = await this.getCcipClient();
 
       // If SDK is unavailable return PENDING
       if (!ccipClient) {
