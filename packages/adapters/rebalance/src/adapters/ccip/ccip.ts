@@ -12,6 +12,7 @@ import {
   CHAIN_ID_TO_CCIP_SELECTOR,
   SOLANA_CHAIN_ID_NUMBER,
 } from './types';
+import * as ccipSDK from '@chainlink/ccip-js'
 import bs58 from 'bs58';
 
 // Type for CCIP module and client - using type-only import for types, dynamic import for runtime
@@ -89,17 +90,9 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   }
 
   /**
-   * Dynamic import for ES module compatibility.
+   * Get or create the CCIP client using the static import
    */
-  protected async importCcipModule(): Promise<CCIPModuleType> {
-    // Use eval to prevent TS from downleveling to require()
-    return eval('import("@chainlink/ccip-js")');
-  }
-
-  /**
-   * Lazy-load the CCIP module and client to handle ES module import
-   */
-  private async getCcipClient(): Promise<CCIPClient | null> {
+  private getCcipClient(): CCIPClient | null {
     if (this.ccipSdkUnavailable) {
       return null;
     }
@@ -109,8 +102,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     }
 
     try {
-      const { createClient } = await this.importCcipModule();
-      this.ccipClient = createClient();
+      this.ccipClient = ccipSDK.createClient();
       return this.ccipClient;
     } catch (error) {
       this.logger.warn('CCIP SDK unavailable', {
@@ -398,16 +390,16 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         // For EVM: EVMExtraArgsV2 with gasLimit=0 for token-only transfers
         extraArgs: isSolanaDestination
           ? this.encodeSVMExtraArgsV1(
-              0, // computeUnits: 0 for token-only transfers
-              0n, // accountIsWritableBitmap: 0 for token-only
-              true, // allowOutOfOrderExecution: MUST be true for Solana
-              recipient, // tokenReceiver: actual Solana recipient address
-              [], // accounts: empty for token-only transfers
-            )
+            0, // computeUnits: 0 for token-only transfers
+            0n, // accountIsWritableBitmap: 0 for token-only
+            true, // allowOutOfOrderExecution: MUST be true for Solana
+            recipient, // tokenReceiver: actual Solana recipient address
+            [], // accounts: empty for token-only transfers
+          )
           : this.encodeEVMExtraArgsV2(
-              0, // gasLimit: 0 for token-only transfers
-              true, // allowOutOfOrderExecution: recommended true
-            ),
+            0, // gasLimit: 0 for token-only transfers
+            true, // allowOutOfOrderExecution: recommended true
+          ),
         feeToken: '0x0000000000000000000000000000000000000000' as Address, // Pay fees in native token
       };
 
@@ -727,7 +719,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Use the CCIP SDK to check transfer status
       // Note: Type bridge via `unknown` required because @chainlink/ccip-js bundles its own
       // viem version with incompatible types. At runtime, the PublicClient works correctly.
-      const ccipClient = await this.getCcipClient();
+      const ccipClient = this.getCcipClient();
 
       // If SDK is unavailable return PENDING
       if (!ccipClient) {
