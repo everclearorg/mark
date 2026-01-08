@@ -102,7 +102,6 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
 
     try {
       // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
-      // @ts-ignore - ESM-only package
       const { createClient } = await eval('import("@chainlink/ccip-js")');
       this.ccipClient = createClient();
       return this.ccipClient;
