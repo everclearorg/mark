@@ -393,7 +393,8 @@ export const getProviderUrls = (chainId: string, config: MarkConfiguration): str
 // Singleton map for viem clients
 const viemClients = new Map<string, ReturnType<typeof createPublicClient>>();
 
-export const createClient = (chainId: string, config: MarkConfiguration) => {
+// Explicitly annotate return type to avoid viem internal type leakage
+export const createClient = (chainId: string, config: MarkConfiguration): ReturnType<typeof createPublicClient> => {
   if (viemClients.has(chainId)) {
     return viemClients.get(chainId)!;
   }

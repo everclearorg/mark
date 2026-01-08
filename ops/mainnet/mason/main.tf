@@ -74,11 +74,11 @@ locals {
     tacRebalance = {
       enabled = try(local.mark_config_json.tacRebalance.enabled, false)
       marketMaker = {
-        address           = try(local.mark_config_json.tacRebalance.marketMaker.address, "")
-        onDemandEnabled   = try(local.mark_config_json.tacRebalance.marketMaker.onDemandEnabled, false)
-        thresholdEnabled  = try(local.mark_config_json.tacRebalance.marketMaker.thresholdEnabled, false)
-        threshold         = try(local.mark_config_json.tacRebalance.marketMaker.threshold, "")
-        targetBalance     = try(local.mark_config_json.tacRebalance.marketMaker.targetBalance, "")
+        address          = try(local.mark_config_json.tacRebalance.marketMaker.address, "")
+        onDemandEnabled  = try(local.mark_config_json.tacRebalance.marketMaker.onDemandEnabled, false)
+        thresholdEnabled = try(local.mark_config_json.tacRebalance.marketMaker.thresholdEnabled, false)
+        threshold        = try(local.mark_config_json.tacRebalance.marketMaker.threshold, "")
+        targetBalance    = try(local.mark_config_json.tacRebalance.marketMaker.targetBalance, "")
       }
       fillService = {
         address                     = try(local.mark_config_json.tacRebalance.fillService.address, "")
@@ -98,11 +98,11 @@ locals {
     methRebalance = {
       enabled = try(local.mark_config_json.methRebalance.enabled, false)
       marketMaker = {
-        address           = try(local.mark_config_json.methRebalance.marketMaker.address, "")
-        onDemandEnabled   = try(local.mark_config_json.methRebalance.marketMaker.onDemandEnabled, false)
-        thresholdEnabled  = try(local.mark_config_json.methRebalance.marketMaker.thresholdEnabled, false)
-        threshold         = try(local.mark_config_json.methRebalance.marketMaker.threshold, "")
-        targetBalance     = try(local.mark_config_json.methRebalance.marketMaker.targetBalance, "")
+        address          = try(local.mark_config_json.methRebalance.marketMaker.address, "")
+        onDemandEnabled  = try(local.mark_config_json.methRebalance.marketMaker.onDemandEnabled, false)
+        thresholdEnabled = try(local.mark_config_json.methRebalance.marketMaker.thresholdEnabled, false)
+        threshold        = try(local.mark_config_json.methRebalance.marketMaker.threshold, "")
+        targetBalance    = try(local.mark_config_json.methRebalance.marketMaker.targetBalance, "")
       }
       fillService = {
         address                     = try(local.mark_config_json.methRebalance.fillService.address, "")
@@ -119,6 +119,13 @@ locals {
       }
     }
   }
+}
+
+module "iam" {
+  source      = "../../modules/iam"
+  environment = var.environment
+  stage       = var.stage
+  domain      = var.domain
 }
 
 module "network" {
@@ -355,7 +362,7 @@ module "mark_solana_usdc_poller" {
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
   container_env_vars  = local.solana_usdc_poller_env_vars
-  schedule_expression = "rate(30 minutes)"
+  schedule_expression = "rate(5 minutes)"
 }
 
 # TAC-only Lambda - runs TAC USDT rebalancing every 1 minute
@@ -369,7 +376,7 @@ module "mark_poller_tac_only" {
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
   schedule_expression = "rate(1 minute)"
-  container_env_vars  = merge(local.poller_env_vars, {
+  container_env_vars = merge(local.poller_env_vars, {
     RUN_MODE = "tacOnly"
   })
 }
@@ -385,16 +392,9 @@ module "mark_poller_meth_only" {
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
   schedule_expression = "rate(1 minute)"
-  container_env_vars  = merge(local.poller_env_vars, {
+  container_env_vars = merge(local.poller_env_vars, {
     RUN_MODE = "methOnly"
   })
-}
-
-module "iam" {
-  source      = "../../modules/iam"
-  environment = var.environment
-  stage       = var.stage
-  domain      = var.domain
 }
 
 module "ecr" {
@@ -414,28 +414,28 @@ module "mark_admin_api" {
   security_group_id  = module.sgs.lambda_sg_id
   image_uri          = var.admin_image_uri
   container_env_vars = {
-    DD_SERVICE                      = "${var.bot_name}-admin"
-    DD_LAMBDA_HANDLER               = "index.handler"
-    DD_LOGS_ENABLED                 = "true"
-    DD_TRACES_ENABLED               = "true"
-    DD_RUNTIME_METRICS_ENABLED      = "true"
-    DD_API_KEY                      = local.mark_config.dd_api_key
-    LOG_LEVEL                       = "debug"
-    REDIS_HOST                      = module.cache.redis_instance_address
-    REDIS_PORT                      = module.cache.redis_instance_port
-    ADMIN_TOKEN                     = local.mark_config.admin_token
-    DATABASE_URL                    = module.db.database_url
-    SIGNER_URL                      = "http://${module.mark_web3signer.service_url}:9000"
-    SIGNER_ADDRESS                  = local.mark_config.signerAddress
-    MARK_CONFIG_SSM_PARAMETER       = "MASON_CONFIG_MAINNET"
-    SUPPORTED_SETTLEMENT_DOMAINS    = var.supported_settlement_domains
-    SUPPORTED_ASSET_SYMBOLS         = var.supported_asset_symbols
-    ENVIRONMENT                     = var.environment
-    STAGE                           = var.stage
-    CHAIN_IDS                       = var.chain_ids
-    WHITELISTED_RECIPIENTS          = try(local.mark_config.whitelisted_recipients, "")
-    PUSH_GATEWAY_URL                = "http://${var.bot_name}-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
-    PROMETHEUS_URL                  = "http://${var.bot_name}-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+    DD_SERVICE                   = "${var.bot_name}-admin"
+    DD_LAMBDA_HANDLER            = "index.handler"
+    DD_LOGS_ENABLED              = "true"
+    DD_TRACES_ENABLED            = "true"
+    DD_RUNTIME_METRICS_ENABLED   = "true"
+    DD_API_KEY                   = local.mark_config.dd_api_key
+    LOG_LEVEL                    = "debug"
+    REDIS_HOST                   = module.cache.redis_instance_address
+    REDIS_PORT                   = module.cache.redis_instance_port
+    ADMIN_TOKEN                  = local.mark_config.admin_token
+    DATABASE_URL                 = module.db.database_url
+    SIGNER_URL                   = "http://${module.mark_web3signer.service_url}:9000"
+    SIGNER_ADDRESS               = local.mark_config.signerAddress
+    MARK_CONFIG_SSM_PARAMETER    = "MASON_CONFIG_MAINNET"
+    SUPPORTED_SETTLEMENT_DOMAINS = var.supported_settlement_domains
+    SUPPORTED_ASSET_SYMBOLS      = var.supported_asset_symbols
+    ENVIRONMENT                  = var.environment
+    STAGE                        = var.stage
+    CHAIN_IDS                    = var.chain_ids
+    WHITELISTED_RECIPIENTS       = try(local.mark_config.whitelisted_recipients, "")
+    PUSH_GATEWAY_URL             = "http://${var.bot_name}-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    PROMETHEUS_URL               = "http://${var.bot_name}-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
   }
 }
 

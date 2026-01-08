@@ -320,9 +320,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     };
   }
 
-  // TODO: sanitize sensitive vars
-  logger.debug('Created config', { config });
-
   // Validate token rebalance config if enabled (fail fast on misconfiguration)
   validateTokenRebalanceConfig(config, logger);
 
@@ -341,6 +338,8 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
 
     await cleanupExpiredEarmarks(context);
     await cleanupExpiredRegularRebalanceOps(context);
+
+    logger.debug('Logging run mode of the instance', { runMode: process.env.RUN_MODE });
 
     if (process.env.RUN_MODE === 'methOnly') {
       logger.info('Starting meth rebalancing', {

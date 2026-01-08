@@ -240,7 +240,8 @@ export const getEvmBalance = async (
     // Update tracker (this is async but we don't need to wait)
     prometheus.updateChainBalance(domain, tokenAddr, balance);
     return balance;
-  } catch {
+  } catch (error) {
+    console.error('Error getting evm balance', error);
     return 0n; // Return 0 balance on error
   }
 };

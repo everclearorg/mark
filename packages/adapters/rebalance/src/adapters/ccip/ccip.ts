@@ -3,7 +3,6 @@ import { mainnet } from 'viem/chains';
 import { SupportedBridge, RebalanceRoute, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
-import * as CCIP from '@chainlink/ccip-js';
 import {
   CCIPMessage,
   CCIPTransferStatus,
@@ -14,6 +13,11 @@ import {
   SOLANA_CHAIN_ID_NUMBER,
 } from './types';
 import bs58 from 'bs58';
+
+// Type for CCIP module and client - using type-only import for types, dynamic import for runtime
+// The dynamic import returns the module namespace, so we extract types from it
+type CCIPModuleType = typeof import('@chainlink/ccip-js');
+type CCIPClient = ReturnType<CCIPModuleType['createClient']>;
 
 // Chainlink CCIP Router ABI
 const CCIP_ROUTER_ABI = [
@@ -74,14 +78,47 @@ const CCIP_ROUTER_ABI = [
 ] as const;
 
 export class CCIPBridgeAdapter implements BridgeAdapter {
-  private ccipClient: CCIP.Client;
+  private ccipClient: CCIPClient | null = null;
+  private ccipSdkUnavailable = false;
 
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
   ) {
     this.logger.debug('Initializing CCIPBridgeAdapter');
-    this.ccipClient = CCIP.createClient();
+  }
+
+  /**
+   * Dynamic import for ES module compatibility.
+   */
+  protected async importCcipModule(): Promise<CCIPModuleType> {
+    // Use eval to prevent TS from downleveling to require()
+    return eval('import("@chainlink/ccip-js")');
+  }
+
+  /**
+   * Lazy-load the CCIP module and client to handle ES module import
+   */
+  private async getCcipClient(): Promise<CCIPClient | null> {
+    if (this.ccipSdkUnavailable) {
+      return null;
+    }
+
+    if (this.ccipClient) {
+      return this.ccipClient;
+    }
+
+    try {
+      const { createClient } = await this.importCcipModule();
+      this.ccipClient = createClient();
+      return this.ccipClient;
+    } catch (error) {
+      this.logger.warn('CCIP SDK unavailable', {
+        error: (error as Error).message,
+      });
+      this.ccipSdkUnavailable = true;
+      return null;
+    }
   }
 
   type(): SupportedBridge {
@@ -563,6 +600,15 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
    */
   async extractMessageIdFromReceipt(transactionHash: string, originChainId: number): Promise<string | null> {
     try {
+      // Skip for Solana chains - can't use eth_getTransactionReceipt on Solana RPC
+      if (this.isSolanaChain(originChainId)) {
+        this.logger.debug('Skipping message ID extraction for Solana origin chain', {
+          transactionHash,
+          originChainId,
+        });
+        return null;
+      }
+
       const providers = this.chains[originChainId.toString()]?.providers ?? [];
       if (!providers.length) {
         return null;
@@ -681,8 +727,24 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Use the CCIP SDK to check transfer status
       // Note: Type bridge via `unknown` required because @chainlink/ccip-js bundles its own
       // viem version with incompatible types. At runtime, the PublicClient works correctly.
-      const transferStatus = await this.ccipClient.getTransferStatus({
-        client: destinationClient as unknown as Parameters<CCIP.Client['getTransferStatus']>[0]['client'],
+      const ccipClient = await this.getCcipClient();
+
+      // If SDK is unavailable return PENDING
+      if (!ccipClient) {
+        this.logger.debug('CCIP SDK unavailable, returning PENDING status', {
+          transactionHash,
+          messageId,
+        });
+        return {
+          status: 'PENDING',
+          message: 'CCIP SDK unavailable - transfer may still complete',
+          messageId: messageId || undefined,
+        };
+      }
+
+      const transferStatus = await ccipClient.getTransferStatus({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        client: destinationClient as any,
         destinationRouterAddress,
         sourceChainSelector,
         messageId: idToCheck as `0x${string}`,
