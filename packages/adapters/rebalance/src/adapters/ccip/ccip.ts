@@ -686,7 +686,6 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
             status: 'SUCCESS',
             message: 'CCIP transfer completed successfully',
             messageId: messageId || undefined,
-            destinationTransactionHash: transactionHash,
           };
         case MessageStatus.Failed: // Failure
           return {
