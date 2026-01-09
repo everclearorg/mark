@@ -1,5 +1,24 @@
 import { Address } from 'viem';
 
+// Solana (SVM) extra arguments structure for CCIP
+export interface SVMExtraArgsV1 {
+  computeUnits: bigint;
+  accountIsWritableBitmap: bigint;
+  allowOutOfOrderExecution: boolean;
+  tokenReceiver: `0x${string}`;
+  accounts: `0x${string}`[];
+}
+
+// Minimal AnyMessage shape used when calling the CCIP SDK
+export interface SDKAnyMessage {
+  receiver: `0x${string}`;
+  data: `0x${string}`;
+  extraArgs: SVMExtraArgsV1;
+  tokenAmounts?: { token: Address; amount: bigint }[];
+  feeToken?: Address;
+  fee?: bigint;
+}
+
 export interface CCIPRequestTx {
   /** Transaction hash. */
   hash: string
@@ -50,6 +69,7 @@ export const CHAIN_ID_TO_CCIP_SELECTOR: Record<number, string> = {
   10: CHAIN_SELECTORS.OPTIMISM,
   137: CHAIN_SELECTORS.POLYGON,
   8453: CHAIN_SELECTORS.BASE,
+  1399811149: CHAIN_SELECTORS.SOLANA,
 };
 
 // Solana chain ID as used in the system (from @mark/core SOLANA_CHAINID)

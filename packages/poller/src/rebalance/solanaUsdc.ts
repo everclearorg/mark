@@ -577,7 +577,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
         ttlMinutes: DEFAULT_OPERATION_TTL_MINUTES,
       });
       await db.updateRebalanceOperation(operation.id, {
-        status: RebalanceOperationStatus.FAILED,
+        status: RebalanceOperationStatus.EXPIRED,
       });
       continue;
     }
@@ -673,7 +673,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           if (!tokenPair?.ptUSDe) {
             logger.error('ptUSDe address not configured for mainnet in USDC_PTUSDE_PAIRS', logContext);
             await db.updateRebalanceOperation(operation.id, {
-              status: RebalanceOperationStatus.FAILED,
+              status: RebalanceOperationStatus.CANCELLED,
             });
             continue;
           }
@@ -778,7 +778,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           };
 
           // Execute Leg 3 CCIP transactions
-          const ccipTxRequests = await ccipAdapter.send(context.solanaSigner?.getAddress()!, recipient, effectivePtUsdeAmount, ccipRoute);
+          const ccipTxRequests = await ccipAdapter.send(recipient, context.solanaSigner?.getAddress()!, effectivePtUsdeAmount, ccipRoute);
 
           let leg3CcipTx: TransactionSubmissionResult | undefined;
 
@@ -823,13 +823,12 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           if (leg3CcipTx) {
             const leg3Receipt: TransactionReceipt = leg3CcipTx.receipt!;
 
-            const updatedTransactions = {
-              ...operation.transactions,
+            const insertedTransactions = {
               [MAINNET_CHAIN_ID]: leg3Receipt,
             };
 
             await db.updateRebalanceOperation(operation.id, {
-              txHashes: updatedTransactions,
+              txHashes: insertedTransactions,
             });
 
             logger.info('Stored Leg 3 CCIP transaction hash for status tracking', {
@@ -855,7 +854,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
           // Mark operation as FAILED since Leg 2 failed
           await db.updateRebalanceOperation(operation.id, {
-            status: RebalanceOperationStatus.FAILED,
+            status: RebalanceOperationStatus.CANCELLED,
           });
 
           logger.info('Marked operation as FAILED due to Leg 2 Pendle swap failure', {
@@ -873,7 +872,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
         // Mark operation as FAILED since CCIP bridge failed
         await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.FAILED,
+          status: RebalanceOperationStatus.CANCELLED,
         });
 
         logger.info('Marked operation as FAILED due to CCIP bridge failure', {
@@ -942,7 +941,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
         note: 'Leg 3 CCIP may have failed or taken too long',
       });
       await db.updateRebalanceOperation(operation.id, {
-        status: RebalanceOperationStatus.FAILED,
+        status: RebalanceOperationStatus.EXPIRED,
       });
       continue;
     }

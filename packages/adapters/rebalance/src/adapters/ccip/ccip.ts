@@ -1,20 +1,20 @@
-import { TransactionReceipt, createPublicClient, http, fallback, encodeFunctionData, erc20Abi, Address } from 'viem';
+import { TransactionReceipt, createPublicClient, http, fallback, Address } from 'viem';
 import { SupportedBridge, RebalanceRoute, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
+import { SVMExtraArgsV1, SDKAnyMessage } from './types';
 import {
-  CCIPMessage,
   CCIPTransferStatus,
   CHAIN_SELECTORS,
   CCIP_ROUTER_ADDRESSES,
   CCIP_SUPPORTED_CHAINS,
   CHAIN_ID_TO_CCIP_SELECTOR,
   SOLANA_CHAIN_ID_NUMBER,
-  CCIP_ROUTER_ABI,
-  CCIPRequestTx
+  CCIPRequestTx,
 } from './types';
 import { Connection } from '@solana/web3.js';
 import { Wallet } from '@coral-xyz/anchor';
+import { TransactionRequest } from 'ethers';
 export class CCIPBridgeAdapter implements BridgeAdapter {
   // Lazy-load bs58 to avoid CJS/ESM interop issues under Node16 resolution
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -172,7 +172,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     allowOutOfOrderExecution: boolean,
     tokenReceiver: string,
     accounts: string[] = [],
-  ): Promise<`0x${string}`> {
+  ): Promise<SVMExtraArgsV1> {
     const decode = await this.getBs58Decode();
 
     // SVM_EXTRA_ARGS_V1_TAG: 0x1f3b3aba (4 bytes, big-endian)
@@ -203,33 +203,23 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       throw new Error(`Invalid tokenReceiver length: expected 32 bytes, got ${tokenReceiverBuf.length}`);
     }
 
-    // accounts: Vec<[u8; 32]> - 4 bytes length (u32 LE) + 32 bytes per account
-    const accountsLengthBuf = Buffer.alloc(4);
-    accountsLengthBuf.writeUInt32LE(accounts.length, 0);
-
-    const accountBuffers: Buffer[] = [];
-    for (const account of accounts) {
-      let accountBuf: Buffer;
-      if (account.startsWith('0x')) {
-        accountBuf = Buffer.from(account.slice(2), 'hex');
-      } else {
-        accountBuf = Buffer.from(decode(account));
+    const accountsHex = accounts.map((account) => {
+      const buf = account.startsWith('0x')
+        ? Buffer.from(account.slice(2), 'hex')
+        : Buffer.from(decode(account));
+      if (buf.length !== 32) {
+        throw new Error(`Invalid account length: expected 32 bytes, got ${buf.length}`);
       }
-      if (accountBuf.length !== 32) {
-        throw new Error(`Invalid account length: expected 32 bytes, got ${accountBuf.length}`);
-      }
-      accountBuffers.push(accountBuf);
-    }
+      return `0x${buf.toString('hex')}` as `0x${string}`;
+    });
 
-    return `0x${Buffer.concat([
-      typeTag,
-      computeUnitsBuf,
-      bitmapBuf,
-      oooBuf,
-      tokenReceiverBuf,
-      accountsLengthBuf,
-      ...accountBuffers,
-    ]).toString('hex')}` as `0x${string}`;
+    return {
+      computeUnits: BigInt(computeUnits),
+      accountIsWritableBitmap,
+      allowOutOfOrderExecution,
+      tokenReceiver: `0x${tokenReceiverBuf.toString('hex')}` as `0x${string}`,
+      accounts: accountsHex,
+    };
   }
 
   /**
@@ -364,27 +354,35 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Determine if destination is Solana for special handling
       const isSolanaDestination = this.isSolanaChain(route.destination);
 
+      if(!isSolanaDestination) {
+        throw new Error('Destination chain must be an Solana chain');
+      }
+
+      // Get providers for the origin chain
+      const providers = this.chains[originChainId.toString()]?.providers ?? [];
+      if (!providers.length) {
+        throw new Error(`No providers found for origin chain ${originChainId}`);
+      }
+
+      // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
+      const { EVMChain } = await import("@chainlink/ccip-sdk");
+      const sourceChain = await EVMChain.fromUrl(providers[0])
+      const destChainSelector = BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination])
+
       // Create CCIP message with proper encoding based on destination chain
       // For Solana: receiver must be zero address, actual recipient goes in tokenReceiver (extraArgs)
       // For EVM: receiver is the actual recipient padded to 32 bytes
-      const receiver = isSolanaDestination
-        ? ('0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`)
-        : await this.encodeRecipientAddress(recipient, route.destination);
+      const receiver = ('0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`);
 
-      const extraArgs = isSolanaDestination
-        ? await this.encodeSVMExtraArgsV1(
-            0, // computeUnits: 0 for token-only transfers
-            0n, // accountIsWritableBitmap: 0 for token-only
-            true, // allowOutOfOrderExecution: MUST be true for Solana
-            recipient, // tokenReceiver: actual Solana recipient address
-            [], // accounts: empty for token-only transfers
-          )
-        : this.encodeEVMExtraArgsV2(
-            0, // gasLimit: 0 for token-only transfers
-            true, // allowOutOfOrderExecution: recommended true
-          );
-
-      const ccipMessage: CCIPMessage = {
+      const extraArgs = await this.encodeSVMExtraArgsV1(
+        0, // computeUnits: 0 for token-only transfers
+        0n, // accountIsWritableBitmap: 0 for token-only
+        true, // allowOutOfOrderExecution: MUST be true for Solana
+        recipient, // tokenReceiver: actual Solana recipient address
+        [], // accounts: empty for token-only transfers
+      );
+        
+      const ccipMessage: SDKAnyMessage = {
         // For Solana token-only transfers: receiver MUST be zero address
         // The actual recipient is specified in tokenReceiver field of SVMExtraArgsV1
         receiver,
@@ -401,116 +399,64 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         feeToken: '0x0000000000000000000000000000000000000000' as Address, // Pay fees in native token
       };
 
-      this.logger.debug('CCIP message constructed', {
-        isSolanaDestination,
-        receiver: ccipMessage.receiver,
-        extraArgsLength: ccipMessage.extraArgs.length,
-        tokenAmount: tokenAmount.toString(),
-      });
-
-      // Get providers for the origin chain
-      const providers = this.chains[originChainId.toString()]?.providers ?? [];
-      if (!providers.length) {
-        throw new Error(`No providers found for origin chain ${originChainId}`);
-      }
-
-      const transports = providers.map((p: string) => http(p));
-      const transport = transports.length === 1 ? transports[0] : fallback(transports, { rank: true });
-      const client = createPublicClient({ transport });
-
-      // Get CCIP fee estimate
-      const ccipFee = await client.readContract({
-        address: routerAddress as `0x${string}`,
-        abi: CCIP_ROUTER_ABI,
-        functionName: 'getFee',
-        args: [
-          BigInt(destinationChainSelector),
-          {
-            receiver: ccipMessage.receiver,
-            data: ccipMessage.data,
-            tokenAmounts: ccipMessage.tokenAmounts,
-            extraArgs: ccipMessage.extraArgs,
-            feeToken: ccipMessage.feeToken,
-          },
-        ],
+      // Get fee first
+      const fee = await sourceChain.getFee({
+        router: routerAddress as `0x${string}`,
+        destChainSelector: BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]),
+        message: ccipMessage,
       });
 
       this.logger.info('CCIP fee calculated', {
-        fee: ccipFee.toString(),
+        fee: fee.toString(),
         originChainId,
       });
-
-      // Check token allowance for CCIP router
-      const currentAllowance = await client.readContract({
-        address: tokenAddress,
-        abi: erc20Abi,
-        functionName: 'allowance',
-        args: [sender as Address, routerAddress as `0x${string}`],
-      });
-
-      const transactions: MemoizedTransactionRequest[] = [];
-
-      // Add approval transaction if needed
-      if (currentAllowance < tokenAmount) {
-        this.logger.info('Adding approval transaction for CCIP transfer', {
-          originChainId,
-          tokenAddress,
-          routerAddress,
-          currentAllowance: currentAllowance.toString(),
-          requiredAmount: tokenAmount.toString(),
-        });
-
-        const approvalTx: MemoizedTransactionRequest = {
-          transaction: {
-            to: tokenAddress,
-            data: encodeFunctionData({
-              abi: erc20Abi,
-              functionName: 'approve',
-              args: [routerAddress as `0x${string}`, tokenAmount],
-            }),
-            value: BigInt(0),
-            funcSig: 'approve(address,uint256)',
-          },
-          memo: RebalanceTransactionMemo.Approval,
-        };
-        transactions.push(approvalTx);
-      }
-
-      // Add CCIP send transaction
-      const ccipTx: MemoizedTransactionRequest = {
-        transaction: {
-          to: routerAddress as `0x${string}`,
-          data: encodeFunctionData({
-            abi: CCIP_ROUTER_ABI,
-            functionName: 'ccipSend',
-            args: [
-              BigInt(destinationChainSelector),
-              {
-                receiver: ccipMessage.receiver,
-                data: ccipMessage.data,
-                tokenAmounts: ccipMessage.tokenAmounts,
-                extraArgs: ccipMessage.extraArgs,
-                feeToken: ccipMessage.feeToken,
-              },
-            ],
-          }),
-          value: ccipFee, // Pay fee in native token
-          funcSig: 'ccipSend(uint64,(bytes,bytes,(address,uint256)[],bytes,address))',
+    
+      const unsignedTx = await sourceChain.generateUnsignedSendMessage({
+        sender, // Your wallet address
+        router: routerAddress as `0x${string}`,
+        destChainSelector,
+        message: {
+          ...ccipMessage,
+          fee,
         },
-        memo: RebalanceTransactionMemo.Rebalance,
-        effectiveAmount: amount,
-      };
-      transactions.push(ccipTx);
+      })
 
       this.logger.info('CCIP transfer transactions prepared', {
         originChainId,
-        totalTransactions: transactions.length,
-        needsApproval: currentAllowance < tokenAmount,
-        ccipFee: ccipFee.toString(),
+        totalTransactions: unsignedTx.transactions.length,
+        needsApproval: unsignedTx.transactions.length > 1,
+        ccipFee: fee.toString(),
         effectiveAmount: amount,
       });
 
-      return transactions;
+      const txs = unsignedTx.transactions;
+      const approveTxs = txs.slice(0, txs.length - 1)
+      const sendTx: TransactionRequest = txs[txs.length - 1]!
+
+      return [
+        ...approveTxs.map((tx: TransactionRequest) => ({
+          transaction: {
+            to: tx.to as `0x${string}`,
+            from: tx.from as `0x${string}`,
+            data: tx.data as `0x${string}`,
+            value: tx.value as bigint,
+            nonce: tx.nonce as number,
+          },
+          memo: RebalanceTransactionMemo.Approval,
+          effectiveAmount: amount,
+        })),
+        {
+          transaction: {
+            to: sendTx.to as `0x${string}`,
+            from: sendTx.from as `0x${string}`,
+            data: sendTx.data as `0x${string}`,
+            value: sendTx.value as bigint,
+            nonce: sendTx.nonce as number,
+          },
+          memo: RebalanceTransactionMemo.Rebalance,
+          effectiveAmount: amount,
+        },
+      ]
     } catch (error) {
       this.logger.error('Failed to prepare CCIP transfer transactions', {
         error: jsonifyError(error),
