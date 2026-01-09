@@ -615,20 +615,95 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
           transactionHash,
           originChainId,
         });
+        return {
+          status: 'PENDING',
+          message: 'Could not extract CCIP message ID from transaction',
+          messageId: undefined,
+        };
       }
 
       const request = requests[0];
       const messageId = request.message.messageId;
       const offRamp = await discoverOffRamp(sourceChain, destinationChain, request.lane.onRamp);
       let transferStatus;
-      for await (const receipt of destinationChain.getExecutionReceipts({
-        offRamp,
-        messageId: messageId,
-        sourceChainSelector: request.message.sourceChainSelector,
-        startTime: request.tx.timestamp,
-      })) {
-        transferStatus =
-          receipt.receipt.state === ExecutionState.Success ? MessageStatus.Success : MessageStatus.Failed;
+
+      // For Solana, add retry logic with exponential backoff to handle rate limits
+      const isSolanaDestination = this.isSolanaChain(destinationChainId);
+      const maxRetries = isSolanaDestination ? 3 : 1;
+      let retryCount = 0;
+      let lastError: Error | null = null;
+
+      while (retryCount <= maxRetries) {
+        try {
+          // Add delay between retries (exponential backoff)
+          if (retryCount > 0) {
+            const delayMs = Math.min(1000 * Math.pow(2, retryCount - 1), 20000); // Max 20 seconds
+            this.logger.debug('Retrying getExecutionReceipts after rate limit', {
+              retryCount,
+              delayMs,
+              transactionHash,
+            });
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          }
+
+          // For Solana, add delay between iterations to avoid rate limits
+          const receiptIterator = destinationChain.getExecutionReceipts({
+            offRamp,
+            messageId: messageId,
+            sourceChainSelector: request.message.sourceChainSelector,
+            startTime: request.tx.timestamp,
+          });
+
+          for await (const receipt of receiptIterator) {
+            transferStatus =
+              receipt.receipt.state === ExecutionState.Success ? MessageStatus.Success : MessageStatus.Failed;
+
+            // For Solana, add a small delay between receipt checks to avoid rate limits
+            if (isSolanaDestination) {
+              await new Promise((resolve) => setTimeout(resolve, 500)); // 500ms delay
+            }
+          }
+
+          // Successfully got receipts, break out of retry loop
+          break;
+        } catch (error) {
+          lastError = error as Error;
+          const errorMessage = (error as Error).message || '';
+          const isRateLimitError =
+            errorMessage.includes('Too Many Requests') ||
+            errorMessage.includes('429') ||
+            errorMessage.includes('rate limit') ||
+            errorMessage.toLowerCase().includes('rate limit');
+
+          if (isRateLimitError && retryCount < maxRetries) {
+            retryCount++;
+            this.logger.warn('Rate limit hit on getExecutionReceipts, will retry', {
+              retryCount,
+              maxRetries,
+              transactionHash,
+              destinationChainId,
+              error: errorMessage,
+            });
+            continue;
+          }
+
+          // Not a rate limit error or max retries exceeded, throw
+          throw error;
+        }
+      }
+
+      // If we exhausted retries, log and treat as pending
+      if (retryCount > maxRetries && lastError) {
+        this.logger.error('Max retries exceeded for getExecutionReceipts', {
+          transactionHash,
+          destinationChainId,
+          error: jsonifyError(lastError),
+        });
+        return {
+          status: 'PENDING',
+          message: `Rate limit error after ${maxRetries} retries: ${lastError.message}`,
+          messageId: messageId || undefined,
+        };
       }
 
       this.logger.debug('CCIP SDK transfer status response', {
