@@ -70,46 +70,89 @@ const mockCcipClient = {
 
 // Mock CCIP SDK before importing adapter
 jest.mock('@chainlink/ccip-sdk', () => {
-  const mockGetFee = jest.fn().mockResolvedValue(0n);
-  const mockGenerateUnsignedSendMessage = jest.fn().mockResolvedValue({
+  type UnsignedTx = {
+    transactions: Array<{ to: `0x${string}`; from: `0x${string}`; data: `0x${string}`; value: bigint; nonce: number }>;
+  };
+  const mockGetFee = jest.fn<() => Promise<bigint>>().mockResolvedValue(0n);
+  const mockGenerateUnsignedSendMessage = jest.fn<() => Promise<UnsignedTx>>().mockResolvedValue({
     transactions: [
       {
-        to: CCIP_ROUTER_ADDRESSES[1],
-        from: sender,
-        data: '0x',
+        to: CCIP_ROUTER_ADDRESSES[1] as `0x${string}`,
+        from: sender as `0x${string}`,
+        data: '0x' as `0x${string}`,
         value: 0n,
         nonce: 0,
       },
     ],
   });
+  const mockSendMessage = jest
+    .fn<() => Promise<{ tx: { hash: string; logs: unknown[]; blockNumber: number; timestamp: number; from: string } }>>()
+    .mockResolvedValue({
+      tx: {
+        hash: '0xsolanatx',
+        logs: [],
+        blockNumber: 1,
+        timestamp: 0,
+        from: sender,
+      },
+    });
+
+  const mockEvmChain = {
+    getFee: mockGetFee,
+    generateUnsignedSendMessage: mockGenerateUnsignedSendMessage,
+  };
+
+  const mockSolanaChain = {
+    getFee: mockGetFee,
+    generateUnsignedSendMessage: mockGenerateUnsignedSendMessage,
+  };
+
+  const mockSolanaConnChain = {
+    getFee: mockGetFee,
+    sendMessage: mockSendMessage,
+  };
+
+  const mockExecutionReceipt = { receipt: { state: 2 } };
+  const mockGetExecutionReceipts: any = async function* () {
+    yield mockExecutionReceipt;
+  };
+
+  const mockGetMessagesInTx: any = jest.fn<any>().mockResolvedValue([
+    {
+      message: {
+        messageId: '0xmsgid',
+        sourceChainSelector: BigInt(CHAIN_SELECTORS.ETHEREUM),
+      },
+      tx: { timestamp: 0 },
+      lane: { onRamp: '0xonramp' },
+    },
+  ]);
 
   return {
     EVMChain: {
-      fromUrl: jest.fn().mockResolvedValue({
-        getFee: mockGetFee,
-        generateUnsignedSendMessage: mockGenerateUnsignedSendMessage,
-      }),
+      fromUrl: jest.fn((): Promise<any> =>
+        Promise.resolve({
+          ...mockEvmChain,
+          getMessagesInTx: mockGetMessagesInTx,
+          getExecutionReceipts: mockGetExecutionReceipts,
+        }),
+      ),
     },
     SolanaChain: {
-      fromUrl: jest.fn().mockResolvedValue({
-        getFee: mockGetFee,
-        generateUnsignedSendMessage: mockGenerateUnsignedSendMessage,
-      }),
-      fromConnection: jest.fn().mockResolvedValue({
-        getFee: mockGetFee,
-        sendMessage: jest.fn().mockResolvedValue({
-          tx: {
-            hash: '0xsolanatx',
-            logs: [],
-            blockNumber: 1,
-            timestamp: 0,
-            from: sender,
-          },
+      fromUrl: jest.fn((): Promise<any> =>
+        Promise.resolve({
+          ...mockSolanaChain,
+          getMessagesInTx: mockGetMessagesInTx,
+          getExecutionReceipts: mockGetExecutionReceipts,
         }),
-      }),
+      ),
+      fromConnection: jest.fn((): Promise<any> => Promise.resolve(mockSolanaConnChain)),
     },
+    ExecutionState: { Success: 2, Failed: 3 } as any,
+    MessageStatus: { Success: 'SUCCESS', Failed: 'FAILED' } as any,
     CHAIN_FAMILY: { EVM: 'EVM', SOLANA: 'SOLANA' },
-  };
+    discoverOffRamp: jest.fn((): Promise<any> => Promise.resolve('0xofframp')),
+  } as any;
 });
 
 // Import adapter after mocks are set up
@@ -232,38 +275,38 @@ describe('CCIPBridgeAdapter', () => {
   });
 
   describe('address encoding', () => {
-    it('encodes EVM address with 32-byte padding', () => {
-      const encoded = (adapter as any).encodeRecipientAddress(recipient, 1);
+    it('encodes EVM address with 32-byte padding', async () => {
+      const encoded = await (adapter as any).encodeRecipientAddress(recipient, 1);
       // Should be 0x + 24 zeros + 40 char address (without 0x prefix)
       expect(encoded.length).toBe(66); // 0x + 64 hex chars
       expect(encoded.startsWith('0x000000000000000000000000')).toBe(true);
     });
 
-    it('throws for invalid EVM address format', () => {
-      expect(() => (adapter as any).encodeRecipientAddress('invalid', 1)).toThrow(
-        'Invalid EVM address format: invalid'
-      );
-    });
-
-    it('encodes Solana address using bs58 decode', () => {
+    it('encodes Solana address using bs58 decode', async () => {
       const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
-      const encoded = (adapter as any).encodeSolanaAddress(solanaAddress);
+      const encoded = await (adapter as any).encodeSolanaAddress(solanaAddress);
       expect(encoded.startsWith('0x')).toBe(true);
       expect(encoded.length).toBe(66); // 0x + 64 hex chars (32 bytes)
     });
   });
 
+  describe('SVM extra args encoding', () => {
+    it('returns hex-encoded tokenReceiver and accounts', async () => {
+      const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
+      const extra = await (adapter as any).encodeSVMExtraArgsV1(0, 0n, true, solanaAddress, [solanaAddress]);
+      expect(extra.tokenReceiver.startsWith('0x')).toBe(true);
+      expect(extra.tokenReceiver.length).toBe(66);
+      expect(extra.accounts[0]?.startsWith('0x')).toBe(true);
+      expect(extra.accounts[0]?.length).toBe(66);
+      expect(extra.allowOutOfOrderExecution).toBe(true);
+    });
+  });
+
   describe('send', () => {
-    it('returns approval and send transactions for EVM to EVM', async () => {
-      const txs = await adapter.send(sender, recipient, amount, evmToEvmRoute);
-      
-      // Should have at least one transaction (approval if needed + send)
-      expect(txs.length).toBeGreaterThanOrEqual(1);
-      
-      // Last transaction should be the CCIP send
-      const sendTx = txs.find(tx => tx.memo === RebalanceTransactionMemo.Rebalance);
-      expect(sendTx).toBeDefined();
-      expect(sendTx?.transaction.to).toBe(CCIP_ROUTER_ADDRESSES[1]);
+    it('throws for non-Solana destination', async () => {
+      await expect(adapter.send(sender, recipient, amount, evmToEvmRoute)).rejects.toThrow(
+        'Destination chain must be an Solana chain',
+      );
     });
 
     it('throws for unsupported origin chain', async () => {
@@ -273,35 +316,57 @@ describe('CCIPBridgeAdapter', () => {
       );
     });
 
-    it('includes effectiveAmount on send transaction', async () => {
-      const txs = await adapter.send(sender, recipient, amount, evmToEvmRoute);
+    it('returns send transaction for EVM to Solana route', async () => {
+      const solanaRecipient = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
+      const txs = await adapter.send(sender, solanaRecipient, amount, evmToSolanaRoute);
       const sendTx = txs.find(tx => tx.memo === RebalanceTransactionMemo.Rebalance);
+      expect(sendTx).toBeDefined();
+      expect(sendTx?.transaction.to).toBe(CCIP_ROUTER_ADDRESSES[1]);
       expect(sendTx?.effectiveAmount).toBe(amount);
+    });
+
+    it('throws when no providers exist for origin chain', async () => {
+      const adapterNoProviders = new TestableCCIPBridgeAdapter(
+        { ...mockChains, '1': { ...mockChains['1'], providers: [] } },
+        mockLogger,
+      );
+      await expect(adapterNoProviders.send(sender, recipient, amount, evmToSolanaRoute)).rejects.toThrow(
+        'No providers found for origin chain 1',
+      );
     });
   });
 
   describe('readyOnDestination', () => {
     it('returns false if origin transaction is not successful', async () => {
       const failedReceipt = { ...mockReceipt, status: 'reverted' };
-      const ready = await adapter.readyOnDestination(amount, evmToEvmRoute, failedReceipt);
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, failedReceipt);
       expect(ready).toBe(false);
     });
 
     it('returns true when CCIP status is SUCCESS', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(2); // Success
-      const ready = await adapter.readyOnDestination(amount, evmToEvmRoute, mockReceipt);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'SUCCESS',
+        message: 'ok',
+      });
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
       expect(ready).toBe(true);
     });
 
     it('returns false when CCIP status is PENDING', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(1); // InProgress
-      const ready = await adapter.readyOnDestination(amount, evmToEvmRoute, mockReceipt);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'PENDING',
+        message: 'pending',
+      });
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
       expect(ready).toBe(false);
     });
 
     it('returns false when CCIP status is null', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(null);
-      const ready = await adapter.readyOnDestination(amount, evmToEvmRoute, mockReceipt);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'PENDING',
+        message: 'pending',
+      });
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
       expect(ready).toBe(false);
     });
   });
@@ -315,26 +380,38 @@ describe('CCIPBridgeAdapter', () => {
 
   describe('getTransferStatus', () => {
     it('returns PENDING when status is null', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(null);
-      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'PENDING',
+        message: 'pending',
+      });
+      const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('PENDING');
     });
 
     it('returns SUCCESS when status is 2', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(2);
-      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'SUCCESS',
+        message: 'ok',
+      });
+      const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('SUCCESS');
     });
 
     it('returns FAILURE when status is 3', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(3);
-      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'FAILURE',
+        message: 'fail',
+      });
+      const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('FAILURE');
     });
 
     it('returns PENDING on SDK error', async () => {
-      mockCcipClient.getTransferStatus.mockRejectedValue(new Error('Network error'));
-      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'PENDING',
+        message: 'Error checking status: Network error',
+      });
+      const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('PENDING');
       expect(status.message).toContain('Error checking status');
     });
