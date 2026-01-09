@@ -1,5 +1,4 @@
 import { TransactionReceipt, createPublicClient, http, fallback, encodeFunctionData, erc20Abi, Address } from 'viem';
-import { mainnet } from 'viem/chains';
 import { SupportedBridge, RebalanceRoute, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
@@ -11,8 +10,11 @@ import {
   CCIP_SUPPORTED_CHAINS,
   CHAIN_ID_TO_CCIP_SELECTOR,
   SOLANA_CHAIN_ID_NUMBER,
-  CCIP_ROUTER_ABI
+  CCIP_ROUTER_ABI,
+  CCIPRequestTx
 } from './types';
+import { Connection } from '@solana/web3.js';
+import { Wallet } from '@coral-xyz/anchor';
 export class CCIPBridgeAdapter implements BridgeAdapter {
   // Lazy-load bs58 to avoid CJS/ESM interop issues under Node16 resolution
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -282,6 +284,58 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     }
   }
 
+  async sendSolanaToMainnet(
+    sender: string,
+    recipient: string,
+    amount: string,
+    connection: Connection,
+    wallet: Wallet,
+    route: RebalanceRoute,
+  ): Promise<CCIPRequestTx> {
+     // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
+     const { SolanaChain } = await import("@chainlink/ccip-sdk");
+     const solanaChain = await SolanaChain.fromConnection(connection);
+ 
+     // Create extra args
+     const extraArgs = {
+       gasLimit: 0n, // No execution on destination for token transfers
+       allowOutOfOrderExecution: true,
+     };
+ 
+     // Get fee first
+     const fee = await solanaChain.getFee({
+       router: CCIP_ROUTER_ADDRESSES[route.origin],
+       destChainSelector: BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]),
+       message: {
+         receiver: recipient,
+         data: Buffer.from(''),
+         tokenAmounts: [{ token: route.asset, amount: BigInt(amount) }],
+         extraArgs: extraArgs,
+       },
+     });
+     
+     const result = await solanaChain.sendMessage({
+       wallet: wallet,
+       router: CCIP_ROUTER_ADDRESSES[route.origin],
+       destChainSelector: BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]),
+       message: {
+         receiver: recipient,
+         data: Buffer.from(''),
+         tokenAmounts: [{ token: route.asset, amount: BigInt(amount) }],
+         extraArgs: extraArgs,
+         fee: fee,
+       },
+     });
+
+     return {
+      hash: result.tx.hash,
+      logs: result.tx.logs,
+      blockNumber: result.tx.blockNumber,
+      timestamp: result.tx.timestamp,
+      from: sender,
+     };
+  }
+
   async send(
     sender: string,
     recipient: string,
@@ -366,7 +420,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
 
       // Get CCIP fee estimate
       const ccipFee = await client.readContract({
-        address: routerAddress,
+        address: routerAddress as `0x${string}`,
         abi: CCIP_ROUTER_ABI,
         functionName: 'getFee',
         args: [
@@ -391,7 +445,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         address: tokenAddress,
         abi: erc20Abi,
         functionName: 'allowance',
-        args: [sender as Address, routerAddress],
+        args: [sender as Address, routerAddress as `0x${string}`],
       });
 
       const transactions: MemoizedTransactionRequest[] = [];
@@ -412,7 +466,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: erc20Abi,
               functionName: 'approve',
-              args: [routerAddress, tokenAmount],
+              args: [routerAddress as `0x${string}`, tokenAmount],
             }),
             value: BigInt(0),
             funcSig: 'approve(address,uint256)',
@@ -425,7 +479,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Add CCIP send transaction
       const ccipTx: MemoizedTransactionRequest = {
         transaction: {
-          to: routerAddress,
+          to: routerAddress as `0x${string}`,
           data: encodeFunctionData({
             abi: CCIP_ROUTER_ABI,
             functionName: 'ccipSend',

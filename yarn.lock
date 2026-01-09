@@ -4737,7 +4737,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@mark/poller@workspace:packages/poller"
   dependencies:
-    "@chainlink/ccip-sdk": ^0.93.0
     "@mark/cache": "workspace:*"
     "@mark/chainservice": "workspace:*"
     "@mark/core": "workspace:*"
@@ -4804,6 +4803,7 @@ __metadata:
     "@mark/core": "workspace:*"
     "@mark/database": "workspace:*"
     "@mark/logger": "workspace:*"
+    "@solana/web3.js": ^1.98.0
     "@ton/crypto": ^3.3.0
     "@ton/ton": ^16.1.0
     "@tonappchain/sdk": 0.7.1

@@ -1,5 +1,19 @@
 import { Address } from 'viem';
 
+export interface CCIPRequestTx {
+  /** Transaction hash. */
+  hash: string
+  /** Logs emitted by this transaction. */
+  logs: readonly unknown[]
+  /** Block number containing this transaction. */
+  blockNumber: number
+  /** Unix timestamp of the block. */
+  timestamp: number
+  /** Sender address. */
+  from: string
+  /** Optional error if transaction failed. */
+  error?: unknown
+}
 export interface CCIPMessage {
   receiver: `0x${string}`;
   data: `0x${string}`;
@@ -43,12 +57,13 @@ export const SOLANA_CHAIN_ID_NUMBER = 1399811149;
 
 // CCIP Router addresses by chain ID
 // See: https://docs.chain.link/ccip/directory/mainnet
-export const CCIP_ROUTER_ADDRESSES: Record<number, Address> = {
+export const CCIP_ROUTER_ADDRESSES: Record<number, string> = {
   1: '0x80226fc0Ee2b096224EeAc085Bb9a8cba1146f7D', // Ethereum Mainnet
   42161: '0x141fa059441E0ca23ce184B6A78bafD2A517DdE8', // Arbitrum
   10: '0x261c05167db67B2b619f9d312e0753f3721ad6E8', // Optimism
   137: '0x849c5ED5a80F5B408Dd4969b78c2C8fdf0565Bfe', // Polygon
   8453: '0x881e3A65B4d4a04dD529061dd0071cf975F58bCD', // Base
+  1399811149: 'Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C', // Solana
 };
 
 // Supported chains for CCIP operations (EVM only)

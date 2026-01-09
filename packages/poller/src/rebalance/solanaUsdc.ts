@@ -16,7 +16,7 @@ import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
 import { Wallet } from '@coral-xyz/anchor';
 import { SolanaSigner } from '@mark/chainservice';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
-import { submitTransactionWithLogging } from '../helpers/transactions';
+import { submitTransactionWithLogging, TransactionSubmissionResult } from '../helpers/transactions';
 import { RebalanceTransactionMemo, USDC_PTUSDE_PAIRS, CCIPBridgeAdapter } from '@mark/rebalance';
 
 // Ticker hash from chaindata/everclear.json for cross-chain asset matching
@@ -78,7 +78,7 @@ const PTUSDE_SOLANA_MINT = new PublicKey('PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9u
  * This ensures we can use versioned transactions while preserving account order
  */
 
-type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
+type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId' | 'rebalance'>;
 
 interface SolanaToMainnetBridgeParams {
   context: ExecuteBridgeContext;
@@ -170,48 +170,16 @@ async function executeSolanaToMainnetBridge({
       recipient: recipientAddress,
     });
 
-    // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
-    const { SolanaChain, networkInfo } = await eval('import("@chainlink/ccip-sdk")');
-    const solanaChain = await SolanaChain.fromConnection(connection);
-
-    // Create extra args
-    const extraArgs = {
-      gasLimit: 0n, // No execution on destination for token transfers
-      allowOutOfOrderExecution: true,
-    };
-
-    // Get fee first
-    const fee = await solanaChain.getFee({
-      router: CCIP_ROUTER_PROGRAM_ID.toString(),
-      destChainSelector: networkInfo(1).chainSelector,
-      message: {
-        receiver: recipientAddress,
-        data: Buffer.from(''),
-        tokenAmounts: [{ token: USDC_SOLANA_MINT.toString(), amount: amountToBridge }],
-        extraArgs: extraArgs,
-      },
-    });
-    logger.info('CCIP fee calculated', { requestId, fee: fee.toString() });
-
-    const result = await solanaChain.sendMessage({
-      wallet: new Wallet(solanaSigner.getKeypair()),
-      router: CCIP_ROUTER_PROGRAM_ID.toString(),
-      destChainSelector: networkInfo(1).chainSelector,
-      message: {
-        receiver: recipientAddress,
-        data: Buffer.from(''),
-        tokenAmounts: [{ token: USDC_SOLANA_MINT.toString(), amount: amountToBridge }],
-        extraArgs: extraArgs,
-        fee: fee,
-      },
-    });
+    const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP) as CCIPBridgeAdapter;
+    const ccipTx = await ccipAdapter.sendSolanaToMainnet(walletPublicKey.toBase58(), recipientAddress, amountToBridge.toString(), connection, new Wallet(solanaSigner.getKeypair()), route);
 
     // Create transaction receipt
     const receipt: TransactionReceipt = {
-      transactionHash: result.tx.hash,
+      transactionHash: ccipTx.hash,
       status: 1, // Success if we got here
-      blockNumber: result.tx.blockNumber, // Will be filled in later when we get transaction details
-      logs: result.tx.logs, // CCIP client doesn't return logs directly
+      blockNumber: ccipTx.blockNumber, // Will be filled in later when we get transaction details
+      // ccipTx.logs can be readonly; clone to a mutable array to satisfy TransactionReceipt
+      logs: [...(ccipTx.logs ?? [])] as unknown[],
       cumulativeGasUsed: '0', // Will be filled in later
       effectiveGasPrice: '0',
       from: walletPublicKey.toBase58(),
@@ -222,7 +190,6 @@ async function executeSolanaToMainnetBridge({
     return {
       receipt,
       effectiveBridgedAmount: amountToBridge.toString(),
-      messageId: result.message.messageId, // Include CCIP message ID for tracking
     };
   } catch (error) {
     logger.error('Failed to execute Solana CCIP bridge', {
@@ -427,13 +394,11 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   });
 
   // Check for in-flight operations to prevent overlapping rebalances
-  const { operations: pendingOps } = await context.database.getRebalanceOperations(undefined, undefined, {
+  const { operations: inFlightSolanaOps } = await context.database.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    chainId: Number(SOLANA_CHAINID),
+    bridge: 'ccip-solana-mainnet',
   });
-
-  const inFlightSolanaOps = pendingOps.filter(
-    (op) => op.bridge === 'ccip-solana-mainnet' && op.originChainId === Number(SOLANA_CHAINID),
-  );
 
   if (inFlightSolanaOps.length > 0) {
     logger.info('In-flight Solana rebalance operations exist, skipping new rebalance to prevent overlap', {
@@ -491,7 +456,7 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
 
     // Execute Leg 1: Solana to Mainnet bridge
     const bridgeResult = await executeSolanaToMainnetBridge({
-      context: { requestId, logger, config, chainService },
+      context: { requestId, logger, config, chainService, rebalance: context.rebalance },
       solanaSigner,
       route: solanaToMainnetRoute,
       amountToBridge,
@@ -576,17 +541,19 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
   logger.info('Executing destination callbacks for Solana USDC rebalance', { requestId });
 
   // Get all pending CCIP operations from Solana to Mainnet
-  const { operations } = await db.getRebalanceOperations(undefined, undefined, {
+  const { operations: pendingSolanaOps } = await db.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING],
+    chainId: Number(SOLANA_CHAINID),
+    bridge: 'ccip-solana-mainnet',
   });
 
   logger.debug('Found pending Solana USDC rebalance operations', {
-    count: operations.length,
+    count: pendingSolanaOps.length,
     requestId,
     status: RebalanceOperationStatus.PENDING,
   });
 
-  for (const operation of operations) {
+  for (const operation of pendingSolanaOps) {
     const logContext = {
       requestId,
       operationId: operation.id,
@@ -594,11 +561,6 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
       originChain: operation.originChainId,
       destinationChain: operation.destinationChainId,
     };
-
-    // Only process Solana -> Mainnet CCIP operations
-    if (!operation.bridge || operation.bridge !== 'ccip-solana-mainnet') {
-      continue;
-    }
 
     if (
       operation.originChainId !== Number(SOLANA_CHAINID) ||
@@ -674,7 +636,6 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
         logger.info('CCIP bridge completed successfully, initiating Leg 2: USDC → ptUSDe swap', {
           ...logContext,
           solanaTransactionHash,
-          destinationTransactionHash: ccipStatus.destinationTransactionHash,
           proceedingToLeg2: true,
         });
 
@@ -817,9 +778,9 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           };
 
           // Execute Leg 3 CCIP transactions
-          const ccipTxRequests = await ccipAdapter.send(recipient, recipient, effectivePtUsdeAmount, ccipRoute);
+          const ccipTxRequests = await ccipAdapter.send(context.solanaSigner?.getAddress()!, recipient, effectivePtUsdeAmount, ccipRoute);
 
-          let leg3CcipTxHash: string | undefined;
+          let leg3CcipTx: TransactionSubmissionResult | undefined;
 
           for (const { transaction, memo } of ccipTxRequests) {
             logger.info('Submitting CCIP ptUSDe → Solana transaction', {
@@ -854,23 +815,13 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
             // Store the CCIP bridge transaction hash (not approval)
             if (memo === RebalanceTransactionMemo.Rebalance) {
-              leg3CcipTxHash = result.hash;
+              leg3CcipTx = result;
             }
           }
 
           // Update operation with Leg 3 CCIP transaction hash for status tracking
-          if (leg3CcipTxHash) {
-            const leg3Receipt: TransactionReceipt = {
-              transactionHash: leg3CcipTxHash,
-              blockNumber: 0,
-              from: rebalanceConfig.ownAddress,
-              to: '',
-              cumulativeGasUsed: '0',
-              effectiveGasPrice: '0',
-              logs: [],
-              status: 1,
-              confirmations: 1,
-            };
+          if (leg3CcipTx) {
+            const leg3Receipt: TransactionReceipt = leg3CcipTx.receipt!;
 
             const updatedTransactions = {
               ...operation.transactions,
@@ -884,7 +835,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
             logger.info('Stored Leg 3 CCIP transaction hash for status tracking', {
               requestId,
               operationId: operation.id,
-              leg3CcipTxHash,
+              leg3CcipTxHash: leg3CcipTx.hash,
             });
           }
 
@@ -964,6 +915,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
   // Check operations in AWAITING_CALLBACK status for Leg 3 (ptUSDe → Solana CCIP) completion
   const { operations: awaitingCallbackOps } = await db.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.AWAITING_CALLBACK],
+    bridge: 'ccip-solana-mainnet',
   });
 
   logger.debug('Found operations awaiting Leg 3 CCIP completion', {
@@ -980,11 +932,6 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
       originChain: operation.originChainId,
       destinationChain: operation.destinationChainId,
     };
-
-    // Only process operations that should have Leg 3 CCIP (ptUSDe → Solana)
-    if (operation.bridge !== 'ccip-solana-mainnet') {
-      continue;
-    }
 
     // Check for operation timeout - mark as failed if stuck for too long
     if (operation.createdAt && isOperationTimedOut(new Date(operation.createdAt))) {
