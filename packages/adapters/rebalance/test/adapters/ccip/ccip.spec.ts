@@ -68,6 +68,50 @@ const mockCcipClient = {
   getTransferStatus: jest.fn<() => Promise<number | null>>(),
 };
 
+// Mock CCIP SDK before importing adapter
+jest.mock('@chainlink/ccip-sdk', () => {
+  const mockGetFee = jest.fn().mockResolvedValue(0n);
+  const mockGenerateUnsignedSendMessage = jest.fn().mockResolvedValue({
+    transactions: [
+      {
+        to: CCIP_ROUTER_ADDRESSES[1],
+        from: sender,
+        data: '0x',
+        value: 0n,
+        nonce: 0,
+      },
+    ],
+  });
+
+  return {
+    EVMChain: {
+      fromUrl: jest.fn().mockResolvedValue({
+        getFee: mockGetFee,
+        generateUnsignedSendMessage: mockGenerateUnsignedSendMessage,
+      }),
+    },
+    SolanaChain: {
+      fromUrl: jest.fn().mockResolvedValue({
+        getFee: mockGetFee,
+        generateUnsignedSendMessage: mockGenerateUnsignedSendMessage,
+      }),
+      fromConnection: jest.fn().mockResolvedValue({
+        getFee: mockGetFee,
+        sendMessage: jest.fn().mockResolvedValue({
+          tx: {
+            hash: '0xsolanatx',
+            logs: [],
+            blockNumber: 1,
+            timestamp: 0,
+            from: sender,
+          },
+        }),
+      }),
+    },
+    CHAIN_FAMILY: { EVM: 'EVM', SOLANA: 'SOLANA' },
+  };
+});
+
 // Import adapter after mocks are set up
 import { CCIPBridgeAdapter } from '../../../src/adapters/ccip/ccip';
 
