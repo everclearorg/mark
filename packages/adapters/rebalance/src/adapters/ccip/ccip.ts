@@ -20,7 +20,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private bs58Module?: Promise<any>;
   private bs58Decode?: (value: string) => Uint8Array;
-  
+
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
     protected readonly logger: Logger,
@@ -204,9 +204,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     }
 
     const accountsHex = accounts.map((account) => {
-      const buf = account.startsWith('0x')
-        ? Buffer.from(account.slice(2), 'hex')
-        : Buffer.from(decode(account));
+      const buf = account.startsWith('0x') ? Buffer.from(account.slice(2), 'hex') : Buffer.from(decode(account));
       if (buf.length !== 32) {
         throw new Error(`Invalid account length: expected 32 bytes, got ${buf.length}`);
       }
@@ -282,48 +280,48 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     wallet: Wallet,
     route: RebalanceRoute,
   ): Promise<CCIPRequestTx> {
-     // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
-     const { SolanaChain } = await import("@chainlink/ccip-sdk");
-     const solanaChain = await SolanaChain.fromConnection(connection);
- 
-     // Create extra args
-     const extraArgs = {
-       gasLimit: 0n, // No execution on destination for token transfers
-       allowOutOfOrderExecution: true,
-     };
- 
-     // Get fee first
-     const fee = await solanaChain.getFee({
-       router: CCIP_ROUTER_ADDRESSES[route.origin],
-       destChainSelector: BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]),
-       message: {
-         receiver: recipient,
-         data: Buffer.from(''),
-         tokenAmounts: [{ token: route.asset, amount: BigInt(amount) }],
-         extraArgs: extraArgs,
-       },
-     });
-     
-     const result = await solanaChain.sendMessage({
-       wallet: wallet,
-       router: CCIP_ROUTER_ADDRESSES[route.origin],
-       destChainSelector: BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]),
-       message: {
-         receiver: recipient,
-         data: Buffer.from(''),
-         tokenAmounts: [{ token: route.asset, amount: BigInt(amount) }],
-         extraArgs: extraArgs,
-         fee: fee,
-       },
-     });
+    // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
+    const { SolanaChain } = await import('@chainlink/ccip-sdk');
+    const solanaChain = await SolanaChain.fromConnection(connection);
 
-     return {
+    // Create extra args
+    const extraArgs = {
+      gasLimit: 0n, // No execution on destination for token transfers
+      allowOutOfOrderExecution: true,
+    };
+
+    // Get fee first
+    const fee = await solanaChain.getFee({
+      router: CCIP_ROUTER_ADDRESSES[route.origin],
+      destChainSelector: BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]),
+      message: {
+        receiver: recipient,
+        data: Buffer.from(''),
+        tokenAmounts: [{ token: route.asset, amount: BigInt(amount) }],
+        extraArgs: extraArgs,
+      },
+    });
+
+    const result = await solanaChain.sendMessage({
+      wallet: wallet,
+      router: CCIP_ROUTER_ADDRESSES[route.origin],
+      destChainSelector: BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]),
+      message: {
+        receiver: recipient,
+        data: Buffer.from(''),
+        tokenAmounts: [{ token: route.asset, amount: BigInt(amount) }],
+        extraArgs: extraArgs,
+        fee: fee,
+      },
+    });
+
+    return {
       hash: result.tx.hash,
       logs: result.tx.logs,
       blockNumber: result.tx.blockNumber,
       timestamp: result.tx.timestamp,
       from: sender,
-     };
+    };
   }
 
   async send(
@@ -354,7 +352,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Determine if destination is Solana for special handling
       const isSolanaDestination = this.isSolanaChain(route.destination);
 
-      if(!isSolanaDestination) {
+      if (!isSolanaDestination) {
         throw new Error('Destination chain must be an Solana chain');
       }
 
@@ -365,14 +363,14 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       }
 
       // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
-      const { EVMChain } = await import("@chainlink/ccip-sdk");
-      const sourceChain = await EVMChain.fromUrl(providers[0])
-      const destChainSelector = BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination])
+      const { EVMChain } = await import('@chainlink/ccip-sdk');
+      const sourceChain = await EVMChain.fromUrl(providers[0]);
+      const destChainSelector = BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]);
 
       // Create CCIP message with proper encoding based on destination chain
       // For Solana: receiver must be zero address, actual recipient goes in tokenReceiver (extraArgs)
       // For EVM: receiver is the actual recipient padded to 32 bytes
-      const receiver = ('0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`);
+      const receiver = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`;
 
       const extraArgs = await this.encodeSVMExtraArgsV1(
         0, // computeUnits: 0 for token-only transfers
@@ -381,7 +379,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         recipient, // tokenReceiver: actual Solana recipient address
         [], // accounts: empty for token-only transfers
       );
-        
+
       const ccipMessage: SDKAnyMessage = {
         // For Solana token-only transfers: receiver MUST be zero address
         // The actual recipient is specified in tokenReceiver field of SVMExtraArgsV1
@@ -410,7 +408,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         fee: fee.toString(),
         originChainId,
       });
-    
+
       const unsignedTx = await sourceChain.generateUnsignedSendMessage({
         sender, // Your wallet address
         router: routerAddress as `0x${string}`,
@@ -419,7 +417,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
           ...ccipMessage,
           fee,
         },
-      })
+      });
 
       this.logger.info('CCIP transfer transactions prepared', {
         originChainId,
@@ -430,8 +428,8 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       });
 
       const txs = unsignedTx.transactions;
-      const approveTxs = txs.slice(0, txs.length - 1)
-      const sendTx: TransactionRequest = txs[txs.length - 1]!
+      const approveTxs = txs.slice(0, txs.length - 1);
+      const sendTx: TransactionRequest = txs[txs.length - 1]!;
 
       return [
         ...approveTxs.map((tx: TransactionRequest) => ({
@@ -456,7 +454,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
           memo: RebalanceTransactionMemo.Rebalance,
           effectiveAmount: amount,
         },
-      ]
+      ];
     } catch (error) {
       this.logger.error('Failed to prepare CCIP transfer transactions', {
         error: jsonifyError(error),
@@ -629,15 +627,17 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       }
 
       // Dynamic import for ES module compatibility; use eval to prevent TS from downleveling to require()
-      const { SolanaChain, EVMChain, discoverOffRamp, ExecutionState, MessageStatus} = await import("@chainlink/ccip-sdk");
-      if(this.isSolanaChain(destinationChainId)) {
-        destinationChain  = await SolanaChain.fromUrl(destinationProviders[0]);
+      const { SolanaChain, EVMChain, discoverOffRamp, ExecutionState, MessageStatus } = await import(
+        '@chainlink/ccip-sdk'
+      );
+      if (this.isSolanaChain(destinationChainId)) {
+        destinationChain = await SolanaChain.fromUrl(destinationProviders[0]);
         sourceChain = await EVMChain.fromUrl(originProviders[0]);
       } else {
-        destinationChain  = await EVMChain.fromUrl(destinationProviders[0]);
+        destinationChain = await EVMChain.fromUrl(destinationProviders[0]);
         sourceChain = await SolanaChain.fromUrl(originProviders[0]);
       }
-      
+
       // First, try to extract the message ID from the transaction logs
       const requests = await sourceChain.getMessagesInTx(transactionHash);
       if (!requests.length) {
@@ -658,9 +658,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         startTime: request.tx.timestamp,
       })) {
         transferStatus =
-          receipt.receipt.state === ExecutionState.Success
-            ? MessageStatus.Success
-            : MessageStatus.Failed
+          receipt.receipt.state === ExecutionState.Success ? MessageStatus.Success : MessageStatus.Failed;
       }
 
       this.logger.debug('CCIP SDK transfer status response', {

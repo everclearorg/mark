@@ -21,17 +21,17 @@ export interface SDKAnyMessage {
 
 export interface CCIPRequestTx {
   /** Transaction hash. */
-  hash: string
+  hash: string;
   /** Logs emitted by this transaction. */
-  logs: readonly unknown[]
+  logs: readonly unknown[];
   /** Block number containing this transaction. */
-  blockNumber: number
+  blockNumber: number;
   /** Unix timestamp of the block. */
-  timestamp: number
+  timestamp: number;
   /** Sender address. */
-  from: string
+  from: string;
   /** Optional error if transaction failed. */
-  error?: unknown
+  error?: unknown;
 }
 export interface CCIPMessage {
   receiver: `0x${string}`;
@@ -161,4 +161,3 @@ export const CCIP_ROUTER_ABI = [
     type: 'function',
   },
 ] as const;
-

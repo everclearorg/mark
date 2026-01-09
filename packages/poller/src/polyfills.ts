@@ -19,4 +19,4 @@ if (!Array.prototype.toReversed) {
   });
 }
 
-export {}
+export {};

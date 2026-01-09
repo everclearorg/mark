@@ -171,7 +171,14 @@ async function executeSolanaToMainnetBridge({
     });
 
     const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP) as CCIPBridgeAdapter;
-    const ccipTx = await ccipAdapter.sendSolanaToMainnet(walletPublicKey.toBase58(), recipientAddress, amountToBridge.toString(), connection, new Wallet(solanaSigner.getKeypair()), route);
+    const ccipTx = await ccipAdapter.sendSolanaToMainnet(
+      walletPublicKey.toBase58(),
+      recipientAddress,
+      amountToBridge.toString(),
+      connection,
+      new Wallet(solanaSigner.getKeypair()),
+      route,
+    );
 
     // Create transaction receipt
     const receipt: TransactionReceipt = {
@@ -778,7 +785,10 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           };
 
           // Execute Leg 3 CCIP transactions
-          const ccipTxRequests = await ccipAdapter.send(recipient, context.solanaSigner?.getAddress()!, effectivePtUsdeAmount, ccipRoute);
+          const solanaRecipient = context.solanaSigner?.getAddress();
+          if (!solanaRecipient) throw new Error('Solana signer address unavailable for CCIP leg 3');
+
+          const ccipTxRequests = await ccipAdapter.send(recipient, solanaRecipient, effectivePtUsdeAmount, ccipRoute);
 
           let leg3CcipTx: TransactionSubmissionResult | undefined;
 
