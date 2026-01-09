@@ -282,11 +282,24 @@ describe('CCIPBridgeAdapter', () => {
       expect(encoded.startsWith('0x000000000000000000000000')).toBe(true);
     });
 
+    it('encodes Solana address through encodeRecipientAddress', async () => {
+      const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
+      const encoded = await (adapter as any).encodeRecipientAddress(solanaAddress, SOLANA_CHAIN_ID_NUMBER);
+      expect(encoded.startsWith('0x')).toBe(true);
+      expect(encoded.length).toBe(66);
+    });
+
     it('encodes Solana address using bs58 decode', async () => {
       const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
       const encoded = await (adapter as any).encodeSolanaAddress(solanaAddress);
       expect(encoded.startsWith('0x')).toBe(true);
       expect(encoded.length).toBe(66); // 0x + 64 hex chars (32 bytes)
+    });
+
+    it('throws when Solana address is invalid', async () => {
+      await expect((adapter as any).encodeSolanaAddress('short')).rejects.toThrow(
+        /Failed to encode Solana address 'short'/,
+      );
     });
   });
 
@@ -299,6 +312,13 @@ describe('CCIPBridgeAdapter', () => {
       expect(extra.accounts[0]?.startsWith('0x')).toBe(true);
       expect(extra.accounts[0]?.length).toBe(66);
       expect(extra.allowOutOfOrderExecution).toBe(true);
+    });
+
+    it('throws when accounts are not 32 bytes', async () => {
+      const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
+      await expect(
+        (adapter as any).encodeSVMExtraArgsV1(0, 0n, true, solanaAddress, ['0x1234']),
+      ).rejects.toThrow(/Invalid account length/);
     });
   });
 
@@ -341,6 +361,15 @@ describe('CCIPBridgeAdapter', () => {
       const failedReceipt = { ...mockReceipt, status: 'reverted' };
       const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, failedReceipt);
       expect(ready).toBe(false);
+    });
+
+    it('treats numeric status 1 as successful', async () => {
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'SUCCESS',
+        message: 'ok',
+      });
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, { ...mockReceipt, status: 1 } as any);
+      expect(ready).toBe(true);
     });
 
     it('returns true when CCIP status is SUCCESS', async () => {
