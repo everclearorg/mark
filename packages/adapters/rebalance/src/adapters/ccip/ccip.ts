@@ -92,8 +92,8 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
    * Dynamic import for ES module compatibility.
    */
   protected async importCcipModule(): Promise<CCIPModuleType> {
-    // Use eval to prevent TS from downleveling to require()
-    return eval('import("@chainlink/ccip-js")');
+    const ccipModule = await eval('import("@chainlink/ccip-js")');
+    return ccipModule
   }
 
   /**
@@ -398,16 +398,16 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         // For EVM: EVMExtraArgsV2 with gasLimit=0 for token-only transfers
         extraArgs: isSolanaDestination
           ? this.encodeSVMExtraArgsV1(
-              0, // computeUnits: 0 for token-only transfers
-              0n, // accountIsWritableBitmap: 0 for token-only
-              true, // allowOutOfOrderExecution: MUST be true for Solana
-              recipient, // tokenReceiver: actual Solana recipient address
-              [], // accounts: empty for token-only transfers
-            )
+            0, // computeUnits: 0 for token-only transfers
+            0n, // accountIsWritableBitmap: 0 for token-only
+            true, // allowOutOfOrderExecution: MUST be true for Solana
+            recipient, // tokenReceiver: actual Solana recipient address
+            [], // accounts: empty for token-only transfers
+          )
           : this.encodeEVMExtraArgsV2(
-              0, // gasLimit: 0 for token-only transfers
-              true, // allowOutOfOrderExecution: recommended true
-            ),
+            0, // gasLimit: 0 for token-only transfers
+            true, // allowOutOfOrderExecution: recommended true
+          ),
         feeToken: '0x0000000000000000000000000000000000000000' as Address, // Pay fees in native token
       };
 
