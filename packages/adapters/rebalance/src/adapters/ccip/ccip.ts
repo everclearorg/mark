@@ -675,35 +675,35 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
             errorMessage.includes('rate limit') ||
             errorMessage.toLowerCase().includes('rate limit');
 
-          if (isRateLimitError && retryCount < maxRetries) {
-            retryCount++;
-            this.logger.warn('Rate limit hit on getExecutionReceipts, will retry', {
-              retryCount,
-              maxRetries,
-              transactionHash,
-              destinationChainId,
-              error: errorMessage,
-            });
-            continue;
+          if (isRateLimitError) {
+            if (retryCount < maxRetries) {
+              retryCount++;
+              this.logger.warn('Rate limit hit on getExecutionReceipts, will retry', {
+                retryCount,
+                maxRetries,
+                transactionHash,
+                destinationChainId,
+                error: errorMessage,
+              });
+              continue;
+            } else {
+              // Exhausted retries, return early
+              this.logger.error('Max retries exceeded for getExecutionReceipts', {
+                transactionHash,
+                destinationChainId,
+                error: jsonifyError(lastError),
+              });
+              return {
+                status: 'PENDING',
+                message: `Rate limit error after ${maxRetries} retries: ${lastError.message}`,
+                messageId: messageId || undefined,
+              };
+            }
           }
 
-          // Not a rate limit error or max retries exceeded, throw
+          // Not a rate limit error, throw immediately
           throw error;
         }
-      }
-
-      // If we exhausted retries, log and treat as pending
-      if (retryCount > maxRetries && lastError) {
-        this.logger.error('Max retries exceeded for getExecutionReceipts', {
-          transactionHash,
-          destinationChainId,
-          error: jsonifyError(lastError),
-        });
-        return {
-          status: 'PENDING',
-          message: `Rate limit error after ${maxRetries} retries: ${lastError.message}`,
-          messageId: messageId || undefined,
-        };
       }
 
       this.logger.debug('CCIP SDK transfer status response', {

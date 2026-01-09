@@ -58,9 +58,9 @@ const evmToEvmRoute = { asset: usdcAddress, origin: 1, destination: 42161 };
 const evmToSolanaRoute = { asset: usdcAddress, origin: 1, destination: SOLANA_CHAIN_ID_NUMBER };
 
 const mockExecutionReceipt = { receipt: { state: 2 } };
-const mockGetExecutionReceipts: any = async function* () {
+const mockGetExecutionReceipts: any = jest.fn<any>().mockImplementation(async function* () {
   yield mockExecutionReceipt;
-};
+});
 const mockGetMessagesInTx: any = jest.fn<any>();
 
 const mockReceipt = {
@@ -432,39 +432,51 @@ describe('CCIPBridgeAdapter', () => {
   });
 
   describe('getTransferStatus', () => {
-    it('returns PENDING when status is null', async () => {
-      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
-        status: 'PENDING',
-        message: 'pending',
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockGetMessagesInTx.mockResolvedValue([
+        {
+          message: {
+            messageId: '0xmsgid',
+            sourceChainSelector: BigInt(CHAIN_SELECTORS.ETHEREUM),
+          },
+          tx: { timestamp: 0 },
+          lane: { onRamp: '0xonramp' },
+        },
+      ]);
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        yield mockExecutionReceipt;
       });
-      const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
-      expect(status.status).toBe('PENDING');
     });
 
-    it('returns SUCCESS when status is 2', async () => {
-      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
-        status: 'SUCCESS',
-        message: 'ok',
-      });
-      const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
+    it('returns SUCCESS when execution receipt shows success', async () => {
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('SUCCESS');
+      expect(status.messageId).toBe('0xmsgid');
     });
 
-    it('returns FAILURE when status is 3', async () => {
-      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
-        status: 'FAILURE',
-        message: 'fail',
+    it('returns FAILURE when execution receipt shows failure', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        yield { receipt: { state: 3 } };
       });
-      const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('FAILURE');
     });
 
-    it('returns PENDING on SDK error', async () => {
-      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
-        status: 'PENDING',
-        message: 'Error checking status: Network error',
+    it('returns PENDING when no execution receipts found', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        // Empty generator - no receipts
       });
-      const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('CCIP transfer pending or not yet started');
+    });
+
+    it('returns PENDING on SDK error', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        throw new Error('Network error');
+      });
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('PENDING');
       expect(status.message).toContain('Error checking status');
     });
@@ -473,19 +485,78 @@ describe('CCIPBridgeAdapter', () => {
       mockGetMessagesInTx.mockResolvedValueOnce([]);
       const status = await adapter.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('PENDING');
-      expect(status.message).toContain('Error checking status');
+      expect(status.message).toContain('Could not extract CCIP message ID');
     });
 
     it('returns SUCCESS on Solana destination branch', async () => {
-      mockGetMessagesInTx.mockResolvedValue([
-        {
-          message: { messageId: '0xmsgid', sourceChainSelector: BigInt(CHAIN_SELECTORS.ETHEREUM) },
-          tx: { timestamp: 0 },
-          lane: { onRamp: '0xonramp' },
-        },
-      ]);
       const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
       expect(status.status).toBe('SUCCESS');
+    });
+
+    it('retries on rate limit error for Solana and eventually succeeds', async () => {
+      let callCount = 0;
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Too Many Requests');
+        }
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('SUCCESS');
+      expect(callCount).toBe(2); // Should retry once
+    });
+
+    it('retries on 429 error for Solana', async () => {
+      let callCount = 0;
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('429 Too Many Requests');
+        }
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('SUCCESS');
+      expect(callCount).toBe(2);
+    });
+
+    it('retries on rate limit error (case insensitive) for Solana', async () => {
+      let callCount = 0;
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Rate Limit Exceeded');
+        }
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('SUCCESS');
+      expect(callCount).toBe(2);
+    });
+
+    it('returns PENDING after max retries exceeded for Solana', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        throw new Error('Too Many Requests');
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('Rate limit error after 3 retries');
+    });
+
+    it('does not retry non-rate-limit errors', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        throw new Error('Network timeout');
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('Error checking status');
+      expect(mockGetExecutionReceipts).toHaveBeenCalledTimes(1); // No retries
     });
 
     it('returns PENDING when no destination providers', async () => {
