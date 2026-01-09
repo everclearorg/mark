@@ -26,6 +26,17 @@ const mockChains = {
       multicall3: '0x0000000000000000000000000000000000000003',
     },
   },
+  [SOLANA_CHAIN_ID_NUMBER.toString()]: {
+    providers: ['https://mock-sol-rpc'],
+    assets: [],
+    invoiceAge: 0,
+    gasThreshold: '0',
+    deployments: {
+      everclear: 'Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C',
+      permit2: '0x' + '0'.repeat(40),
+      multicall3: '0x' + '0'.repeat(40),
+    },
+  },
   '42161': {
     providers: ['https://mock-arb-rpc'],
     assets: [],
@@ -45,6 +56,12 @@ const amount = '1000000';
 const usdcAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const evmToEvmRoute = { asset: usdcAddress, origin: 1, destination: 42161 };
 const evmToSolanaRoute = { asset: usdcAddress, origin: 1, destination: SOLANA_CHAIN_ID_NUMBER };
+
+const mockExecutionReceipt = { receipt: { state: 2 } };
+const mockGetExecutionReceipts: any = async function* () {
+  yield mockExecutionReceipt;
+};
+const mockGetMessagesInTx: any = jest.fn<any>();
 
 const mockReceipt = {
   blockHash: '0xblock',
@@ -112,12 +129,7 @@ jest.mock('@chainlink/ccip-sdk', () => {
     sendMessage: mockSendMessage,
   };
 
-  const mockExecutionReceipt = { receipt: { state: 2 } };
-  const mockGetExecutionReceipts: any = async function* () {
-    yield mockExecutionReceipt;
-  };
-
-  const mockGetMessagesInTx: any = jest.fn<any>().mockResolvedValue([
+  mockGetMessagesInTx.mockResolvedValue([
     {
       message: {
         messageId: '0xmsgid',
@@ -282,6 +294,12 @@ describe('CCIPBridgeAdapter', () => {
       expect(encoded.startsWith('0x000000000000000000000000')).toBe(true);
     });
 
+    it('throws for invalid EVM address format', async () => {
+      await expect((adapter as any).encodeRecipientAddress('0x1234', 1)).rejects.toThrow(
+        'Invalid EVM address format: 0x1234',
+      );
+    });
+
     it('encodes Solana address through encodeRecipientAddress', async () => {
       const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
       const encoded = await (adapter as any).encodeRecipientAddress(solanaAddress, SOLANA_CHAIN_ID_NUMBER);
@@ -398,6 +416,12 @@ describe('CCIPBridgeAdapter', () => {
       const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
       expect(ready).toBe(false);
     });
+
+    it('returns false when getTransferStatus throws', async () => {
+      jest.spyOn(adapter as any, 'getTransferStatus').mockRejectedValue(new Error('boom'));
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
+      expect(ready).toBe(false);
+    });
   });
 
   describe('destinationCallback', () => {
@@ -443,6 +467,51 @@ describe('CCIPBridgeAdapter', () => {
       const status = await (adapter as any).getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('PENDING');
       expect(status.message).toContain('Error checking status');
+    });
+
+    it('returns PENDING when no message is found', async () => {
+      mockGetMessagesInTx.mockResolvedValueOnce([]);
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('Error checking status');
+    });
+
+    it('returns SUCCESS on Solana destination branch', async () => {
+      mockGetMessagesInTx.mockResolvedValue([
+        {
+          message: { messageId: '0xmsgid', sourceChainSelector: BigInt(CHAIN_SELECTORS.ETHEREUM) },
+          tx: { timestamp: 0 },
+          lane: { onRamp: '0xonramp' },
+        },
+      ]);
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('SUCCESS');
+    });
+
+    it('returns PENDING when no destination providers', async () => {
+      const adapterNoDest = new TestableCCIPBridgeAdapter(
+        {
+          ...mockChains,
+          [SOLANA_CHAIN_ID_NUMBER]: {
+            ...mockChains[SOLANA_CHAIN_ID_NUMBER],
+            providers: [],
+          } as any,
+        },
+        mockLogger,
+      );
+      const status = await adapterNoDest.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('No providers found for destination chain');
+    });
+
+    it('returns PENDING when no origin providers', async () => {
+      const adapterNoOrigin = new TestableCCIPBridgeAdapter(
+        { ...mockChains, '1': { ...(mockChains as any)['1'], providers: [] } },
+        mockLogger,
+      );
+      const status = await adapterNoOrigin.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('No providers found for origin chain');
     });
   });
 

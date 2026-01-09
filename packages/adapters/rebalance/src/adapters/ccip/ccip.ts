@@ -220,36 +220,6 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     };
   }
 
-  /**
-   * Build CCIP EVMExtraArgsV2 for EVM destination (Borsh serialized)
-   * See: https://docs.chain.link/ccip/api-reference/svm/v1.6.0/messages#evmextraargsv2
-   *
-   * Format:
-   * - Tag: 4 bytes big-endian (0x181dcf10)
-   * - gas_limit: u128 (16 bytes LE)
-   * - allow_out_of_order_execution: bool (1 byte)
-   *
-   * @param gasLimit - Gas limit for EVM execution. MUST be 0 for token-only transfers.
-   * @param allowOutOfOrderExecution - Whether to allow out-of-order execution
-   */
-  private encodeEVMExtraArgsV2(gasLimit: number, allowOutOfOrderExecution: boolean): `0x${string}` {
-    // EVM_EXTRA_ARGS_V2_TAG: 0x181dcf10 (4 bytes, big-endian)
-    const typeTag = Buffer.alloc(4);
-    typeTag.writeUInt32BE(0x181dcf10, 0);
-
-    // gas_limit: u128 little-endian (16 bytes)
-    const gasLimitBuf = Buffer.alloc(16);
-    const gasLimitBigInt = BigInt(gasLimit);
-    gasLimitBuf.writeBigUInt64LE(gasLimitBigInt & BigInt('0xFFFFFFFFFFFFFFFF'), 0);
-    gasLimitBuf.writeBigUInt64LE(gasLimitBigInt >> BigInt(64), 8);
-
-    // allow_out_of_order_execution: bool (1 byte)
-    const oooBuf = Buffer.alloc(1);
-    oooBuf.writeUInt8(allowOutOfOrderExecution ? 1 : 0, 0);
-
-    return `0x${Buffer.concat([typeTag, gasLimitBuf, oooBuf]).toString('hex')}` as `0x${string}`;
-  }
-
   async getReceivedAmount(amount: string, route: RebalanceRoute): Promise<string> {
     try {
       this.validateCCIPRoute(route);
