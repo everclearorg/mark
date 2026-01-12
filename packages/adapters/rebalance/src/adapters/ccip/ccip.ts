@@ -81,7 +81,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       const response = await fetch(apiUrl, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
+          Accept: 'application/json',
         },
       });
 
@@ -840,7 +840,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
   /**
    * Check CCIP message status directly by messageId using Chainlink Atlas API
    * This is a lightweight alternative to getTransferStatus that doesn't require transaction hash
-   * 
+   *
    * @param messageId - The CCIP message ID (0x-prefixed hex string)
    * @returns Transfer status or null if message not found
    */
