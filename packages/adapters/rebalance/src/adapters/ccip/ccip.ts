@@ -68,6 +68,65 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
     return chainId === SOLANA_CHAIN_ID_NUMBER;
   }
 
+  /**
+   * Check message status using Chainlink CCIP Atlas API
+   * This is a fallback/alternative to the SDK's getExecutionReceipts method
+   * API docs: https://ccip.chain.link/api/h/atlas/message/{messageId}
+   */
+  private async getMessageStatusFromAtlasAPI(messageId: string): Promise<CCIPTransferStatus | null> {
+    try {
+      const apiUrl = `https://ccip.chain.link/api/h/atlas/message/${messageId}`;
+      this.logger.debug('Checking message status via Chainlink Atlas API', { messageId, apiUrl });
+
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          // Message not found in Atlas API yet
+          return null;
+        }
+        throw new Error(`Chainlink Atlas API returned ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Map API state to our status
+      // state: 0 = Untouched, 1 = InProgress, 2 = Success, 3 = Failure
+      const state = data.state;
+      if (state === 2) {
+        return {
+          status: 'SUCCESS',
+          message: 'CCIP transfer completed successfully (via Atlas API)',
+          messageId: messageId,
+        };
+      } else if (state === 3) {
+        return {
+          status: 'FAILURE',
+          message: 'CCIP transfer failed (via Atlas API)',
+          messageId: messageId,
+        };
+      } else {
+        // state 0 or 1, or other values
+        return {
+          status: 'PENDING',
+          message: `CCIP transfer pending (state: ${state})`,
+          messageId: messageId,
+        };
+      }
+    } catch (error) {
+      this.logger.warn('Failed to check message status via Chainlink Atlas API', {
+        error: jsonifyError(error),
+        messageId,
+      });
+      return null; // Return null to indicate API check failed, fallback to SDK
+    }
+  }
+
   private validateCCIPRoute(route: RebalanceRoute): void {
     const originChainId = route.origin;
     const destinationChainId = route.destination;
@@ -611,7 +670,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // First, try to extract the message ID from the transaction logs
       const requests = await sourceChain.getMessagesInTx(transactionHash);
       if (!requests.length) {
-        this.logger.warn('Could not extract CCIP message ID, will try using transaction hash', {
+        this.logger.warn('Could not extract CCIP message ID from transaction', {
           transactionHash,
           originChainId,
         });
@@ -624,6 +683,24 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
 
       const request = requests[0];
       const messageId = request.message.messageId;
+
+      // Try Atlas API first (faster, more reliable, no rate limits)
+      this.logger.debug('Trying Atlas API first for message status', { messageId });
+      const atlasStatus = await this.getMessageStatusFromAtlasAPI(messageId);
+      if (atlasStatus) {
+        this.logger.debug('Successfully retrieved status from Atlas API', {
+          messageId,
+          status: atlasStatus.status,
+        });
+        return atlasStatus;
+      }
+
+      // Atlas API failed or returned null, fall back to SDK method
+      this.logger.debug('Atlas API unavailable or message not found, falling back to SDK method', {
+        messageId,
+        transactionHash,
+      });
+
       const offRamp = await discoverOffRamp(sourceChain, destinationChain, request.lane.onRamp);
       let transferStatus;
 
@@ -688,7 +765,7 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
               });
               continue;
             } else {
-              // Exhausted retries, return early
+              // Exhausted retries, return pending
               this.logger.error('Max retries exceeded for getExecutionReceipts', {
                 transactionHash,
                 destinationChainId,
@@ -758,5 +835,17 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
         message: `Error checking status: ${(error as Error).message}`,
       };
     }
+  }
+
+  /**
+   * Check CCIP message status directly by messageId using Chainlink Atlas API
+   * This is a lightweight alternative to getTransferStatus that doesn't require transaction hash
+   *
+   * @param messageId - The CCIP message ID (0x-prefixed hex string)
+   * @returns Transfer status or null if message not found
+   */
+  async getTransferStatusByMessageId(messageId: string): Promise<CCIPTransferStatus | null> {
+    this.logger.debug('Checking CCIP transfer status by messageId via Atlas API', { messageId });
+    return await this.getMessageStatusFromAtlasAPI(messageId);
   }
 }

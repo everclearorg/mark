@@ -220,6 +220,18 @@ jest.mock('bs58', () => {
 
 describe('CCIPBridgeAdapter', () => {
   let adapter: TestableCCIPBridgeAdapter;
+  // Mock global fetch for Atlas API
+  const mockFetch = jest.fn<typeof fetch>();
+  let originalFetch: typeof fetch;
+
+  beforeAll(() => {
+    originalFetch = global.fetch;
+    global.fetch = mockFetch as typeof fetch;
+  });
+
+  afterAll(() => {
+    global.fetch = originalFetch;
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -447,15 +459,73 @@ describe('CCIPBridgeAdapter', () => {
       mockGetExecutionReceipts.mockImplementation(async function* () {
         yield mockExecutionReceipt;
       });
+      // Default: Atlas API returns null (not found), so we fall back to SDK
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => ({}),
+      } as Response);
     });
 
-    it('returns SUCCESS when execution receipt shows success', async () => {
+    it('returns SUCCESS from Atlas API when available', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 2, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('SUCCESS');
+      expect(status.messageId).toBe('0xmsgid');
+      expect(status.message).toContain('via Atlas API');
+      expect(mockGetExecutionReceipts).not.toHaveBeenCalled(); // SDK should not be called
+    });
+
+    it('falls back to SDK when Atlas API returns 404', async () => {
+      // Atlas API returns 404 (default in beforeEach)
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('SUCCESS');
+      expect(status.messageId).toBe('0xmsgid');
+      expect(mockGetExecutionReceipts).toHaveBeenCalled(); // SDK should be called as fallback
+    });
+
+    it('returns SUCCESS when execution receipt shows success (SDK fallback)', async () => {
       const status = await adapter.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('SUCCESS');
       expect(status.messageId).toBe('0xmsgid');
     });
 
-    it('returns FAILURE when execution receipt shows failure', async () => {
+    it('returns FAILURE from Atlas API when state is 3', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 3, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('FAILURE');
+      expect(status.message).toContain('via Atlas API');
+      expect(mockGetExecutionReceipts).not.toHaveBeenCalled();
+    });
+
+    it('returns PENDING from Atlas API when state is 1 (InProgress)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 1, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('pending (state: 1)');
+      expect(mockGetExecutionReceipts).not.toHaveBeenCalled();
+    });
+
+    it('returns FAILURE when execution receipt shows failure (SDK fallback)', async () => {
       mockGetExecutionReceipts.mockImplementation(async function* () {
         yield { receipt: { state: 3 } };
       });
@@ -463,7 +533,18 @@ describe('CCIPBridgeAdapter', () => {
       expect(status.status).toBe('FAILURE');
     });
 
-    it('returns PENDING when no execution receipts found', async () => {
+    it('falls back to SDK when Atlas API throws error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('SUCCESS');
+      expect(mockGetExecutionReceipts).toHaveBeenCalled(); // SDK should be called as fallback
+    });
+
+    it('returns PENDING when no execution receipts found (SDK fallback)', async () => {
       mockGetExecutionReceipts.mockImplementation(async function* () {
         // Empty generator - no receipts
       });
@@ -583,6 +664,86 @@ describe('CCIPBridgeAdapter', () => {
       const status = await adapterNoOrigin.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('PENDING');
       expect(status.message).toContain('No providers found for origin chain');
+    });
+  });
+
+  describe('getTransferStatusByMessageId', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('returns SUCCESS when Atlas API returns state 2', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 2, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).not.toBeNull();
+      expect(status?.status).toBe('SUCCESS');
+      expect(status?.messageId).toBe('0xmsgid');
+      expect(status?.message).toContain('via Atlas API');
+    });
+
+    it('returns FAILURE when Atlas API returns state 3', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 3, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).not.toBeNull();
+      expect(status?.status).toBe('FAILURE');
+      expect(status?.message).toContain('via Atlas API');
+    });
+
+    it('returns PENDING when Atlas API returns state 1', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 1, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).not.toBeNull();
+      expect(status?.status).toBe('PENDING');
+      expect(status?.message).toContain('pending (state: 1)');
+    });
+
+    it('returns null when Atlas API returns 404', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => ({}),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).toBeNull();
+    });
+
+    it('returns null when Atlas API throws error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).toBeNull();
+    });
+
+    it('returns null when Atlas API returns non-200 status', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({}),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).toBeNull();
     });
   });
 
