@@ -627,9 +627,10 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       const offRamp = await discoverOffRamp(sourceChain, destinationChain, request.lane.onRamp);
       let transferStatus;
 
-      // For Solana, add retry logic with exponential backoff to handle rate limits
+      // Add retry logic with exponential backoff to handle rate limits
+      // Solana gets more retries due to higher rate limit issues, but EVM chains also benefit from retries
       const isSolanaDestination = this.isSolanaChain(destinationChainId);
-      const maxRetries = isSolanaDestination ? 3 : 1;
+      const maxRetries = isSolanaDestination ? 3 : 2; // 3 retries for Solana, 2 for EVM chains
       let retryCount = 0;
       let lastError: Error | null = null;
 
