@@ -353,7 +353,19 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   }
 
   // Calculate how much USDC to bridge based on ptUSDe deficit and available Solana USDC
-  const ptUsdeShortfall = ptUsdeThreshold - solanaPtUsdeBalance;
+  const ptUsdeShortfall = ptUsdeTarget - solanaPtUsdeBalance;
+
+  // If balance is already at or above target, no bridging needed
+  if (ptUsdeShortfall <= 0n) {
+    logger.info('ptUSDe balance is at or above target, no bridging needed', {
+      requestId,
+      solanaPtUsdeBalance: solanaPtUsdeBalance.toString(),
+      solanaPtUsdeBalanceFormatted: (Number(solanaPtUsdeBalance) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
+      ptUsdeTarget: ptUsdeTarget.toString(),
+      ptUsdeTargetFormatted: (Number(ptUsdeTarget) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
+    });
+    return rebalanceOperations;
+  }
 
   // Approximate 1:1 ratio between USDC and ptUSDe for initial calculation
   const usdcNeeded = ptUsdeShortfall / PTUSDE_TO_USDC_DIVISOR;
