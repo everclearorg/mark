@@ -35,22 +35,6 @@ const MIN_REBALANCING_AMOUNT = 1_000_000n; // 1 USDC
 // Default operation timeout: 24 hours (in minutes)
 const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
 
-// ============================================================================
-// TESTING DEFAULTS - TODO: Update these values for production
-// ============================================================================
-// For testing, we use low thresholds (5 tokens) to trigger rebalancing easily.
-// Production values should be significantly higher based on expected volumes.
-//
-// Environment variables to override:
-//   - PTUSDE_SOLANA_THRESHOLD: Minimum ptUSDe balance before rebalancing (9 decimals)
-//   - PTUSDE_SOLANA_TARGET: Target ptUSDe balance after rebalancing (9 decimals)
-//   - SOLANA_USDC_MAX_REBALANCE_AMOUNT: Maximum USDC per rebalance operation (6 decimals)
-//
-// ============================================================================
-const DEFAULT_PTUSDE_THRESHOLD = 5n * BigInt(10 ** PTUSDE_SOLANA_DECIMALS); // 5 ptUSDe for testing
-const DEFAULT_PTUSDE_TARGET = 10n * BigInt(10 ** PTUSDE_SOLANA_DECIMALS); // 10 ptUSDe for testing
-const DEFAULT_MAX_REBALANCE_AMOUNT = 10n * BigInt(10 ** USDC_SOLANA_DECIMALS); // 10 USDC for testing
-
 /**
  * Check if an operation has exceeded its TTL (time-to-live).
  * Operations stuck in PENDING or AWAITING_CALLBACK for too long should be marked as failed.
@@ -313,21 +297,30 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   }
 
   // Values should be in native units (9 decimals for ptUSDe, 6 decimals for USDC)
-  const ptUsdeThresholdEnv = process.env['PTUSDE_SOLANA_THRESHOLD'];
-  const ptUsdeTargetEnv = process.env['PTUSDE_SOLANA_TARGET'];
-  const maxRebalanceAmountEnv = process.env['SOLANA_USDC_MAX_REBALANCE_AMOUNT'];
+  const ptUsdeThresholdEnv = config.solana?.ptUsdeThreshold;
+  const ptUsdeTargetEnv = config.solana?.ptUsdeTarget;
+  const ptUsdeMaxRebalanceAmountEnv = config.solana?.ptUsdeMaxRebalanceAmount;
 
-  // TODO: Update defaults for production - current values are for testing
+  if (!ptUsdeThresholdEnv || !ptUsdeTargetEnv || !ptUsdeMaxRebalanceAmountEnv) {
+    logger.error('Missing Solana USDC rebalancing configuration', {
+      requestId,
+      missingConfig: {
+        ptUsdeThresholdEnv,
+        ptUsdeTargetEnv,
+        ptUsdeMaxRebalanceAmountEnv,
+      },
+    });
+    return rebalanceOperations;
+  }
+
   // Threshold: minimum ptUSDe balance that triggers rebalancing (in 9 decimals for Solana ptUSDe)
-  const ptUsdeThreshold = ptUsdeThresholdEnv ? safeParseBigInt(ptUsdeThresholdEnv) : DEFAULT_PTUSDE_THRESHOLD;
+  const ptUsdeThreshold = safeParseBigInt(ptUsdeThresholdEnv);
 
   // Target: desired ptUSDe balance after rebalancing (in 9 decimals for Solana ptUSDe)
-  const ptUsdeTarget = ptUsdeTargetEnv ? safeParseBigInt(ptUsdeTargetEnv) : DEFAULT_PTUSDE_TARGET;
+  const ptUsdeTarget = safeParseBigInt(ptUsdeTargetEnv);
 
   // Max rebalance amount per operation (in 6 decimals for USDC)
-  const maxRebalanceAmount = maxRebalanceAmountEnv
-    ? safeParseBigInt(maxRebalanceAmountEnv)
-    : DEFAULT_MAX_REBALANCE_AMOUNT;
+  const maxRebalanceAmount = safeParseBigInt(ptUsdeMaxRebalanceAmountEnv);
 
   logger.info('Checking ptUSDe balance threshold for rebalancing decision', {
     requestId,

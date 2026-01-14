@@ -306,6 +306,13 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       solana: {
         privateKey: configJson.solana?.privateKey ?? (await fromEnv('SOLANA_PRIVATE_KEY', true)) ?? undefined,
         rpcUrl: configJson.solana?.rpcUrl ?? (await fromEnv('SOLANA_RPC_URL', true)) ?? undefined,
+        ptUsdeThreshold:
+          configJson.solana?.ptUsdeThreshold ?? (await fromEnv('PTUSDE_SOLANA_THRESHOLD', true)) ?? undefined,
+        ptUsdeTarget: configJson.solana?.ptUsdeTarget ?? (await fromEnv('PTUSDE_SOLANA_TARGET', true)) ?? undefined,
+        ptUsdeMaxRebalanceAmount:
+          configJson.solana?.ptUsdeMaxRebalanceAmount ??
+          (await fromEnv('PTUSDE_SOLANA_MAX_REBALANCE_AMOUNT', true)) ??
+          undefined,
       },
       tacRebalance: {
         enabled:

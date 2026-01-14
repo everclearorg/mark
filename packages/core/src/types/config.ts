@@ -191,6 +191,9 @@ export interface MarkConfiguration extends RebalanceConfig {
   solana?: {
     privateKey?: string; // Solana wallet private key (base58 encoded)
     rpcUrl?: string; // Solana RPC endpoint (defaults to mainnet-beta)
+    ptUsdeThreshold?: string; // ptUSDe threshold for rebalancing (9 decimals)
+    ptUsdeTarget?: string; // ptUSDe target for rebalancing (9 decimals)
+    ptUsdeMaxRebalanceAmount?: string; // max usdc rebalance amount for rebalancing (6 decimals)
   };
   tacRebalance?: TokenRebalanceConfig;
   methRebalance?: TokenRebalanceConfig;
