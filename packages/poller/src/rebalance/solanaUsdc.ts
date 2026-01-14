@@ -779,7 +779,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
           if (!tokenPair?.ptUSDe) {
             logger.error('ptUSDe address not configured for mainnet in USDC_PTUSDE_PAIRS', logContext);
             await db.updateRebalanceOperation(operation.id, {
-              status: RebalanceOperationStatus.FAILED,
+              status: RebalanceOperationStatus.CANCELLED,
             });
             continue;
           }
@@ -963,7 +963,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
           // Mark operation as FAILED since Leg 2/3 failed
           await db.updateRebalanceOperation(operation.id, {
-            status: RebalanceOperationStatus.FAILED,
+            status: RebalanceOperationStatus.CANCELLED,
           });
 
           logger.info('Marked operation as FAILED due to Leg 2/3 failure', {
@@ -981,7 +981,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
         // Mark operation as FAILED since CCIP bridge failed
         await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.FAILED,
+          status: RebalanceOperationStatus.CANCELLED,
         });
 
         logger.info('Marked operation as FAILED due to CCIP bridge failure', {
