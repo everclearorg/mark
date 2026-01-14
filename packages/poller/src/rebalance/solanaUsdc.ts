@@ -35,18 +35,18 @@ const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
  * Get Solana rebalance configuration from context.
  * Config is loaded from environment variables or config file in @mark/core config.ts
  * with built-in defaults:
- * - SOLANA_REBALANCE_ENABLED (default: true)
- * - SOLANA_REBALANCE_PTUSDE_THRESHOLD (default: 100 ptUSDe = "100000000000")
- * - SOLANA_REBALANCE_PTUSDE_TARGET (default: 500 ptUSDe = "500000000000")
- * - SOLANA_REBALANCE_BRIDGE_SLIPPAGE_DBPS (default: 50 = 0.5%)
- * - SOLANA_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT (default: "1000000" = 1 USDC)
- * - SOLANA_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT (default: "100000000" = 100 USDC)
+ * - SOLANA_PTUSDE_REBALANCE_ENABLED (default: true)
+ * - SOLANA_PTUSDE_REBALANCE_THRESHOLD (default: 100 ptUSDe = "100000000000")
+ * - SOLANA_PTUSDE_REBALANCE_TARGET (default: 500 ptUSDe = "500000000000")
+ * - SOLANA_PTUSDE_REBALANCE_BRIDGE_SLIPPAGE_DBPS (default: 50 = 0.5%)
+ * - SOLANA_PTUSDE_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT (default: "1000000" = 1 USDC)
+ * - SOLANA_PTUSDE_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT (default: "100000000" = 100 USDC)
  */
 function getSolanaRebalanceConfig(config: ProcessingContext['config']): SolanaRebalanceConfig {
-  if (!config.solanaRebalance) {
-    throw new Error('solanaRebalance config not found - this should be provided by @mark/core config loader');
+  if (!config.solanaPtusdeRebalance) {
+    throw new Error('solanaPtusdeRebalance config not found - this should be provided by @mark/core config loader');
   }
-  return config.solanaRebalance;
+  return config.solanaPtusdeRebalance;
 }
 
 /**
@@ -424,7 +424,7 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     shouldTriggerRebalance: solanaPtUsdeBalance < ptUsdeThreshold,
     availableSolanaUsdc: solanaUsdcBalance.toString(),
     availableSolanaUsdcFormatted: (Number(solanaUsdcBalance) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-    configSource: config.solanaRebalance ? 'explicit' : 'defaults',
+    configSource: config.solanaPtusdeRebalance ? 'explicit' : 'defaults',
   });
 
   if (solanaPtUsdeBalance >= ptUsdeThreshold) {
