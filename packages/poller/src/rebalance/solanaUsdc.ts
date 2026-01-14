@@ -9,6 +9,7 @@ import {
   SOLANA_CHAINID,
   getTokenAddressFromConfig,
   WalletType,
+  SolanaRebalanceConfig,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { PublicKey } from '@solana/web3.js';
@@ -17,7 +18,7 @@ import { Wallet } from '@coral-xyz/anchor';
 import { SolanaSigner } from '@mark/chainservice';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
 import { submitTransactionWithLogging, TransactionSubmissionResult } from '../helpers/transactions';
-import { RebalanceTransactionMemo, USDC_PTUSDE_PAIRS, CCIPBridgeAdapter } from '@mark/rebalance';
+import { RebalanceTransactionMemo, USDC_PTUSDE_PAIRS, CCIPBridgeAdapter, PendleBridgeAdapter } from '@mark/rebalance';
 
 // Ticker hash from chaindata/everclear.json for cross-chain asset matching
 const USDC_TICKER_HASH = '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa';
@@ -25,31 +26,28 @@ const USDC_TICKER_HASH = '0xd6aca1be9729c13d677335161321649cccae6a59155477251670
 // Token decimals on Solana
 const PTUSDE_SOLANA_DECIMALS = 9; // PT-sUSDE has 9 decimals on Solana
 const USDC_SOLANA_DECIMALS = 6; // USDC has 6 decimals on Solana
-
-// Decimal conversion factor from ptUSDe (9 decimals) to USDC (6 decimals)
-const PTUSDE_TO_USDC_DIVISOR = BigInt(10 ** (PTUSDE_SOLANA_DECIMALS - USDC_SOLANA_DECIMALS)); // 10^3 = 1000
-
-// Minimum rebalancing amount (1 USDC in 6 decimals)
-const MIN_REBALANCING_AMOUNT = 1_000_000n; // 1 USDC
+const PTUSDE_MAINNET_DECIMALS = 18; // PT-sUSDE has 18 decimals on Mainnet
 
 // Default operation timeout: 24 hours (in minutes)
 const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
 
-// ============================================================================
-// TESTING DEFAULTS - TODO: Update these values for production
-// ============================================================================
-// For testing, we use low thresholds (5 tokens) to trigger rebalancing easily.
-// Production values should be significantly higher based on expected volumes.
-//
-// Environment variables to override:
-//   - PTUSDE_SOLANA_THRESHOLD: Minimum ptUSDe balance before rebalancing (9 decimals)
-//   - PTUSDE_SOLANA_TARGET: Target ptUSDe balance after rebalancing (9 decimals)
-//   - SOLANA_USDC_MAX_REBALANCE_AMOUNT: Maximum USDC per rebalance operation (6 decimals)
-//
-// ============================================================================
-const DEFAULT_PTUSDE_THRESHOLD = 5n * BigInt(10 ** PTUSDE_SOLANA_DECIMALS); // 5 ptUSDe for testing
-const DEFAULT_PTUSDE_TARGET = 10n * BigInt(10 ** PTUSDE_SOLANA_DECIMALS); // 10 ptUSDe for testing
-const DEFAULT_MAX_REBALANCE_AMOUNT = 10n * BigInt(10 ** USDC_SOLANA_DECIMALS); // 10 USDC for testing
+/**
+ * Get Solana rebalance configuration from context.
+ * Config is loaded from environment variables or config file in @mark/core config.ts
+ * with built-in defaults:
+ * - SOLANA_PTUSDE_REBALANCE_ENABLED (default: true)
+ * - SOLANA_PTUSDE_REBALANCE_THRESHOLD (default: 100 ptUSDe = "100000000000")
+ * - SOLANA_PTUSDE_REBALANCE_TARGET (default: 500 ptUSDe = "500000000000")
+ * - SOLANA_PTUSDE_REBALANCE_BRIDGE_SLIPPAGE_DBPS (default: 50 = 0.5%)
+ * - SOLANA_PTUSDE_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT (default: "1000000" = 1 USDC)
+ * - SOLANA_PTUSDE_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT (default: "100000000" = 100 USDC)
+ */
+function getSolanaRebalanceConfig(config: ProcessingContext['config']): SolanaRebalanceConfig {
+  if (!config.solanaPtusdeRebalance) {
+    throw new Error('solanaPtusdeRebalance config not found - this should be provided by @mark/core config loader');
+  }
+  return config.solanaPtusdeRebalance;
+}
 
 /**
  * Check if an operation has exceeded its TTL (time-to-live).
@@ -63,6 +61,100 @@ function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERA
   const maxAgeMs = ttlMinutes * 60 * 1000;
   const operationAgeMs = Date.now() - createdAt.getTime();
   return operationAgeMs > maxAgeMs;
+}
+
+/**
+ * Get the expected ptUSDe output for a given USDC input using Pendle API.
+ *
+ * @param pendleAdapter - Pendle bridge adapter instance
+ * @param usdcAmount - USDC amount in 6 decimals
+ * @param logger - Logger instance
+ * @returns Expected ptUSDe output in 18 decimals (Mainnet), or null if quote fails
+ */
+async function getPtUsdeOutputForUsdc(
+  pendleAdapter: PendleBridgeAdapter,
+  usdcAmount: bigint,
+  logger: ProcessingContext['logger'],
+): Promise<bigint | null> {
+  try {
+    const tokenPair = USDC_PTUSDE_PAIRS[Number(MAINNET_CHAIN_ID)];
+    if (!tokenPair) {
+      logger.warn('USDC/ptUSDe pair not configured for mainnet');
+      return null;
+    }
+
+    const pendleRoute = {
+      asset: tokenPair.usdc,
+      origin: Number(MAINNET_CHAIN_ID),
+      destination: Number(MAINNET_CHAIN_ID),
+      swapOutputAsset: tokenPair.ptUSDe,
+    };
+
+    // Get quote from Pendle API (returns ptUSDe in 18 decimals)
+    const ptUsdeOutput = await pendleAdapter.getReceivedAmount(usdcAmount.toString(), pendleRoute);
+
+    logger.debug('Pendle API quote received', {
+      usdcInput: usdcAmount.toString(),
+      ptUsdeOutput,
+      route: pendleRoute,
+    });
+
+    return BigInt(ptUsdeOutput);
+  } catch (error) {
+    logger.warn('Failed to get Pendle quote', {
+      error: jsonifyError(error),
+      usdcAmount: usdcAmount.toString(),
+    });
+    return null;
+  }
+}
+
+/**
+ * Calculate required USDC to achieve target ptUSDe balance using Pendle pricing.
+ * Returns null if Pendle API is unavailable - callers should skip rebalancing in this case.
+ *
+ * @param ptUsdeShortfall - Required ptUSDe in Solana decimals (9 decimals)
+ * @param pendleAdapter - Pendle bridge adapter
+ * @param logger - Logger instance
+ * @returns Required USDC amount in 6 decimals, or null if Pendle API unavailable
+ */
+async function calculateRequiredUsdcForPtUsde(
+  ptUsdeShortfall: bigint,
+  pendleAdapter: PendleBridgeAdapter,
+  logger: ProcessingContext['logger'],
+): Promise<bigint | null> {
+  // Convert Solana ptUSDe (9 decimals) to Mainnet ptUSDe (18 decimals) for calculation
+  const ptUsdeShortfallMainnet = ptUsdeShortfall * BigInt(10 ** (PTUSDE_MAINNET_DECIMALS - PTUSDE_SOLANA_DECIMALS));
+
+  // Estimate USDC amount using decimal conversion (ptUSDe 18 decimals → USDC 6 decimals)
+  const estimatedUsdcAmount = ptUsdeShortfallMainnet / BigInt(10 ** (PTUSDE_MAINNET_DECIMALS - USDC_SOLANA_DECIMALS));
+
+  // Get Pendle quote for the estimated amount to account for actual price impact at this size
+  const ptUsdeOutput = await getPtUsdeOutputForUsdc(pendleAdapter, estimatedUsdcAmount, logger);
+
+  if (ptUsdeOutput && ptUsdeOutput > 0n) {
+    // If estimated USDC gives us ptUsdeOutput, we need: (shortfall / ptUsdeOutput) * estimatedUsdc
+    const requiredUsdc = (ptUsdeShortfallMainnet * estimatedUsdcAmount) / ptUsdeOutput;
+
+    logger.info('Calculated USDC requirement using Pendle API pricing', {
+      ptUsdeShortfallSolana: ptUsdeShortfall.toString(),
+      ptUsdeShortfallMainnet: ptUsdeShortfallMainnet.toString(),
+      estimatedUsdcAmount: estimatedUsdcAmount.toString(),
+      ptUsdeOutput: ptUsdeOutput.toString(),
+      requiredUsdc: requiredUsdc.toString(),
+      effectiveRate: (Number(ptUsdeOutput) / Number(estimatedUsdcAmount) / 1e12).toFixed(6),
+    });
+
+    return requiredUsdc;
+  }
+
+  // Pendle API unavailable - return null to signal failure
+  logger.error('Pendle API unavailable - cannot calculate USDC requirement, skipping rebalancing', {
+    ptUsdeShortfall: ptUsdeShortfall.toString(),
+    ptUsdeShortfallMainnet: ptUsdeShortfallMainnet.toString(),
+  });
+
+  return null;
 }
 
 // Chainlink CCIP constants for Solana
@@ -312,22 +404,14 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     return rebalanceOperations;
   }
 
-  // Values should be in native units (9 decimals for ptUSDe, 6 decimals for USDC)
-  const ptUsdeThresholdEnv = process.env['PTUSDE_SOLANA_THRESHOLD'];
-  const ptUsdeTargetEnv = process.env['PTUSDE_SOLANA_TARGET'];
-  const maxRebalanceAmountEnv = process.env['SOLANA_USDC_MAX_REBALANCE_AMOUNT'];
+  // Get configuration from config or use production defaults
+  const solanaRebalanceConfig = getSolanaRebalanceConfig(config);
 
-  // TODO: Update defaults for production - current values are for testing
-  // Threshold: minimum ptUSDe balance that triggers rebalancing (in 9 decimals for Solana ptUSDe)
-  const ptUsdeThreshold = ptUsdeThresholdEnv ? safeParseBigInt(ptUsdeThresholdEnv) : DEFAULT_PTUSDE_THRESHOLD;
-
-  // Target: desired ptUSDe balance after rebalancing (in 9 decimals for Solana ptUSDe)
-  const ptUsdeTarget = ptUsdeTargetEnv ? safeParseBigInt(ptUsdeTargetEnv) : DEFAULT_PTUSDE_TARGET;
-
-  // Max rebalance amount per operation (in 6 decimals for USDC)
-  const maxRebalanceAmount = maxRebalanceAmountEnv
-    ? safeParseBigInt(maxRebalanceAmountEnv)
-    : DEFAULT_MAX_REBALANCE_AMOUNT;
+  // Parse thresholds from configuration (in native decimals)
+  const ptUsdeThreshold = safeParseBigInt(solanaRebalanceConfig.ptUsdeThreshold);
+  const ptUsdeTarget = safeParseBigInt(solanaRebalanceConfig.ptUsdeTarget);
+  const minRebalanceAmount = safeParseBigInt(solanaRebalanceConfig.bridge.minRebalanceAmount);
+  const maxRebalanceAmount = safeParseBigInt(solanaRebalanceConfig.bridge.maxRebalanceAmount);
 
   logger.info('Checking ptUSDe balance threshold for rebalancing decision', {
     requestId,
@@ -340,7 +424,7 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     shouldTriggerRebalance: solanaPtUsdeBalance < ptUsdeThreshold,
     availableSolanaUsdc: solanaUsdcBalance.toString(),
     availableSolanaUsdcFormatted: (Number(solanaUsdcBalance) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-    isTestingDefaults: !ptUsdeThresholdEnv && !ptUsdeTargetEnv,
+    configSource: config.solanaPtusdeRebalance ? 'explicit' : 'defaults',
   });
 
   if (solanaPtUsdeBalance >= ptUsdeThreshold) {
@@ -353,28 +437,41 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
   }
 
   // Calculate how much USDC to bridge based on ptUSDe deficit and available Solana USDC
-  const ptUsdeShortfall = ptUsdeThreshold - solanaPtUsdeBalance;
+  const ptUsdeShortfall = ptUsdeTarget - solanaPtUsdeBalance;
 
-  // Approximate 1:1 ratio between USDC and ptUSDe for initial calculation
-  const usdcNeeded = ptUsdeShortfall / PTUSDE_TO_USDC_DIVISOR;
+  // Get Pendle adapter for accurate pricing
+  const pendleAdapter = context.rebalance.getAdapter(SupportedBridge.Pendle) as PendleBridgeAdapter;
+
+  // Calculate required USDC using Pendle API pricing
+  const usdcNeeded = await calculateRequiredUsdcForPtUsde(ptUsdeShortfall, pendleAdapter, logger);
+
+  // If Pendle API is unavailable, skip rebalancing
+  if (usdcNeeded === null) {
+    logger.error('Skipping rebalancing due to Pendle API unavailability', {
+      requestId,
+      ptUsdeShortfall: ptUsdeShortfall.toString(),
+      reason: 'Cannot determine accurate USDC requirement without Pendle API',
+    });
+    return rebalanceOperations;
+  }
 
   // Calculate amount to bridge: min(shortfall, available balance, max per operation)
   let amountToBridge = usdcNeeded;
   if (amountToBridge > solanaUsdcBalance) {
     amountToBridge = solanaUsdcBalance;
   }
-  if (amountToBridge > maxRebalanceAmount) {
+  if (maxRebalanceAmount && maxRebalanceAmount > 0n && amountToBridge > maxRebalanceAmount) {
     amountToBridge = maxRebalanceAmount;
   }
 
-  // Check minimum rebalancing amount
-  if (amountToBridge < MIN_REBALANCING_AMOUNT) {
+  // Check minimum rebalancing amount from config
+  if (amountToBridge < minRebalanceAmount) {
     logger.warn('Calculated bridge amount is below minimum threshold, skipping rebalancing', {
       requestId,
       calculatedAmount: amountToBridge.toString(),
       calculatedAmountFormatted: (Number(amountToBridge) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-      minAmount: MIN_REBALANCING_AMOUNT.toString(),
-      minAmountFormatted: (Number(MIN_REBALANCING_AMOUNT) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
+      minAmount: minRebalanceAmount.toString(),
+      minAmountFormatted: (Number(minRebalanceAmount) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
       reason: 'Calculated bridge amount too small to be effective',
     });
     return rebalanceOperations;
@@ -389,8 +486,10 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
       usdcNeededFormatted: (Number(usdcNeeded) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
       availableSolanaUsdc: solanaUsdcBalance.toString(),
       availableSolanaUsdcFormatted: (Number(solanaUsdcBalance) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-      maxRebalanceAmount: maxRebalanceAmount.toString(),
-      maxRebalanceAmountFormatted: (Number(maxRebalanceAmount) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
+      maxRebalanceAmount: maxRebalanceAmount?.toString() ?? 'unlimited',
+      maxRebalanceAmountFormatted: maxRebalanceAmount
+        ? (Number(maxRebalanceAmount) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6)
+        : 'unlimited',
     },
     bridgeDecision: {
       finalAmountToBridge: amountToBridge.toString(),
@@ -857,17 +956,17 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
             status: 'AWAITING_CALLBACK',
           });
         } catch (pendleError) {
-          logger.error('Failed to execute Leg 2 Pendle swap', {
+          logger.error('Failed to execute Leg 2/3', {
             ...logContext,
             error: jsonifyError(pendleError),
           });
 
-          // Mark operation as FAILED since Leg 2 failed
+          // Mark operation as FAILED since Leg 2/3 failed
           await db.updateRebalanceOperation(operation.id, {
             status: RebalanceOperationStatus.CANCELLED,
           });
 
-          logger.info('Marked operation as FAILED due to Leg 2 Pendle swap failure', {
+          logger.info('Marked operation as FAILED due to Leg 2/3 failure', {
             ...logContext,
             note: 'Funds are on Mainnet as USDC - manual intervention may be required',
           });
