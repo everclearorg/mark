@@ -330,6 +330,13 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     return rebalanceOperations;
   }
 
+  // Get configuration from config or use production defaults
+  const solanaRebalanceConfig = getSolanaRebalanceConfig(config);
+  if (!solanaRebalanceConfig?.enabled) {
+    logger.warn('Solana PtUSDe Rebalance is not enabled', { requestId });
+    return rebalanceOperations;
+  }
+
   logger.info('Starting to rebalance Solana USDC', {
     requestId,
     solanaAddress: solanaSigner.getAddress(),
@@ -403,9 +410,6 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     logger.info('No Solana USDC balance available for bridging, skipping rebalancing', { requestId });
     return rebalanceOperations;
   }
-
-  // Get configuration from config or use production defaults
-  const solanaRebalanceConfig = getSolanaRebalanceConfig(config);
 
   // Parse thresholds from configuration (in native decimals)
   const ptUsdeThreshold = safeParseBigInt(solanaRebalanceConfig.ptUsdeThreshold);
