@@ -141,6 +141,23 @@ export interface TokenRebalanceConfig {
     maxRebalanceAmount?: string; // Max amount per operation (optional cap)
   };
 }
+
+/**
+ * Solana USDC/ptUSDe rebalancing configuration.
+ * Supports threshold-based rebalancing: Solana USDC → Mainnet USDC → ptUSDe → Solana ptUSDe
+ */
+export interface SolanaRebalanceConfig {
+  enabled: boolean;
+  // ptUSDe threshold configuration (balance in 9 decimals - Solana ptUSDe)
+  ptUsdeThreshold: string; // Min ptUSDe balance that triggers rebalancing (e.g., "100000000000" = 100 ptUSDe)
+  ptUsdeTarget: string; // Target ptUSDe balance after rebalancing (e.g., "500000000000" = 500 ptUSDe)
+  // Bridge configuration (matches TAC rebalancer structure)
+  bridge: {
+    slippageDbps: number; // Slippage tolerance for Pendle swap (default: 500 = 5%)
+    minRebalanceAmount: string; // Min USDC amount per operation (6 decimals, e.g., "1000000" = 1 USDC)
+    maxRebalanceAmount?: string; // Max USDC amount per operation (optional cap)
+  };
+}
 export interface RedisConfig {
   host: string;
   port: number;
@@ -192,6 +209,7 @@ export interface MarkConfiguration extends RebalanceConfig {
     privateKey?: string; // Solana wallet private key (base58 encoded)
     rpcUrl?: string; // Solana RPC endpoint (defaults to mainnet-beta)
   };
+  solanaRebalance?: SolanaRebalanceConfig;
   tacRebalance?: TokenRebalanceConfig;
   methRebalance?: TokenRebalanceConfig;
   // Mantle bridge configuration
