@@ -1700,14 +1700,10 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
   const operationTtlMinutes = config.regularRebalanceOpTTLMinutes ?? DEFAULT_OPERATION_TTL_MINUTES;
 
   // Get all pending TAC operations
-  const { operations } = await db.getRebalanceOperations(undefined, undefined, {
+  const { operations: tacOperations } = await db.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    bridge: [`${SupportedBridge.Stargate}-tac`, SupportedBridge.TacInner],
   });
-
-  // Filter for TAC-related operations
-  const tacOperations = operations.filter(
-    (op) => op.bridge === 'stargate-tac' || op.bridge === SupportedBridge.TacInner,
-  );
 
   // SERIALIZATION CHECK: Only allow one Leg 2 (TacInner) operation in-flight at a time
   // This prevents mixing funds from multiple flows when they complete close together

@@ -320,9 +320,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
     };
   }
 
-  // TODO: sanitize sensitive vars
-  logger.debug('Created config', { config });
-
   // Validate token rebalance config if enabled (fail fast on misconfiguration)
   validateTokenRebalanceConfig(config, logger);
 

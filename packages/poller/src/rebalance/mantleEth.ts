@@ -923,6 +923,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
   // Get all pending operations from database
   const { operations } = await db.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    bridge: [SupportedBridge.Mantle, `${SupportedBridge.Across}-mantle`],
   });
 
   logger.debug(`Found ${operations.length} meth rebalance operations`, {
@@ -987,6 +988,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       logger.warn('Operation is not a mantle bridge', logContext);
       continue;
     }
+    
     const adapter = rebalance.getAdapter(bridgeType as SupportedBridge);
 
     // Get origin transaction hash from JSON field

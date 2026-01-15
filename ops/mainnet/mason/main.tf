@@ -362,7 +362,7 @@ module "mark_solana_usdc_poller" {
   subnet_ids          = module.network.private_subnets
   security_group_id   = module.sgs.lambda_sg_id
   container_env_vars  = local.solana_usdc_poller_env_vars
-  schedule_expression = "rate(30 minutes)"
+  schedule_expression = "rate(5 minutes)"
 }
 
 # TAC-only Lambda - runs TAC USDT rebalancing every 1 minute

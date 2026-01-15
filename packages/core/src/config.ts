@@ -441,6 +441,33 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
             undefined, // Max amount per operation (optional cap)
         },
       },
+      solanaPtusdeRebalance: {
+        enabled:
+          parseBooleanValue(configJson.solanaPtusdeRebalance?.enabled) ??
+          parseBooleanValue(await fromEnv('SOLANA_PTUSDE_REBALANCE_ENABLED', true)) ??
+          true,
+        ptUsdeThreshold:
+          configJson.solanaPtusdeRebalance?.ptUsdeThreshold ??
+          (await fromEnv('SOLANA_PTUSDE_REBALANCE_THRESHOLD', true)) ??
+          '100000000000', // 100 ptUSDe (9 decimals on Solana)
+        ptUsdeTarget:
+          configJson.solanaPtusdeRebalance?.ptUsdeTarget ??
+          (await fromEnv('SOLANA_PTUSDE_REBALANCE_TARGET', true)) ??
+          '500000000000', // 500 ptUSDe (9 decimals on Solana)
+        bridge: {
+          slippageDbps:
+            configJson.solanaPtusdeRebalance?.bridge?.slippageDbps ??
+            parseInt((await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '50', 10), // 0.5% default
+          minRebalanceAmount:
+            configJson.solanaPtusdeRebalance?.bridge?.minRebalanceAmount ??
+            (await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
+            '1000000', // 1 USDC minimum (6 decimals)
+          maxRebalanceAmount:
+            configJson.solanaPtusdeRebalance?.bridge?.maxRebalanceAmount ??
+            (await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
+            '100000000', // 100 USDC max (6 decimals)
+        },
+      },
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),

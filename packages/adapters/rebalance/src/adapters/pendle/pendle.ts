@@ -89,7 +89,7 @@ export class PendleBridgeAdapter implements BridgeAdapter {
       const url = `${PENDLE_API_BASE_URL}/${route.origin}/convert`;
 
       const params = new URLSearchParams({
-        receiver: '0x0000000000000000000000000000000000000000',
+        receiver: '0x000000000000000000000000000000000000dead',
         slippage: '0.005',
         tokensIn,
         tokensOut,
