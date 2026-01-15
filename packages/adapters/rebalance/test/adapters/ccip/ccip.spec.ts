@@ -544,6 +544,22 @@ describe('CCIPBridgeAdapter', () => {
       expect(mockGetExecutionReceipts).toHaveBeenCalled(); // SDK should be called as fallback
     });
 
+    it('falls back to SDK when Atlas API returns non-200, non-404 status', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({}),
+      } as Response);
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('SUCCESS');
+      expect(mockGetExecutionReceipts).toHaveBeenCalled(); // SDK should be called as fallback
+    });
+
     it('returns PENDING when no execution receipts found (SDK fallback)', async () => {
       mockGetExecutionReceipts.mockImplementation(async function* () {
         // Empty generator - no receipts

@@ -712,7 +712,7 @@ export async function getRebalanceOperations(
   offset?: number,
   filter?: {
     status?: RebalanceOperationStatus | RebalanceOperationStatus[];
-    bridge?: string;
+    bridge?: string | string[];
     chainId?: number;
     earmarkId?: string | null;
     invoiceId?: string;
@@ -738,9 +738,14 @@ export async function getRebalanceOperations(
       paramCount++;
     }
 
-    if (filter.bridge !== undefined) {
-      conditions.push(`ro."bridge" = $${paramCount}`);
-      values.push(filter.bridge);
+    if (filter.bridge) {
+      if (Array.isArray(filter.bridge)) {
+        conditions.push(`ro.bridge = ANY($${paramCount})`);
+        values.push(filter.bridge);
+      } else {
+        conditions.push(`ro.bridge = $${paramCount}`);
+        values.push(filter.bridge);
+      }
       paramCount++;
     }
 
