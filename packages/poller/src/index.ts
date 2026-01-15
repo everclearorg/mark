@@ -1,3 +1,4 @@
+import './polyfills';
 import { Logger } from '@mark/logger';
 import { logFileDescriptorUsage, shouldExitForFileDescriptors } from '@mark/core';
 import { initPoller } from './init';

@@ -18,12 +18,13 @@
         "test:unit": "jest --coverage --testPathIgnorePatterns='.*\\.integration\\.spec\\.ts$'"
     },
     "dependencies": {
-        "@chainlink/ccip-js": "^0.2.6",
+        "@chainlink/ccip-sdk": "^0.93.0",
         "@cowprotocol/cow-sdk": "^7.1.2-beta.0",
         "@defuse-protocol/one-click-sdk-typescript": "^0.1.5",
         "@mark/core": "workspace:*",
         "@mark/database": "workspace:*",
         "@mark/logger": "workspace:*",
+        "@solana/web3.js": "^1.98.0",
         "@tonappchain/sdk": "0.7.1",
         "axios": "1.9.0",
         "bs58": "^6.0.0",

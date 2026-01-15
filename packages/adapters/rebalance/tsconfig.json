@@ -4,7 +4,9 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "baseUrl": ".",
+    "module": "Node16",
     "composite": true,
+    "moduleResolution": "node16",
     "paths": {
       "zapatos/schema": ["../database/src/zapatos/zapatos/schema"],
       "zapatos/db": ["../database/node_modules/zapatos/dist/db"]

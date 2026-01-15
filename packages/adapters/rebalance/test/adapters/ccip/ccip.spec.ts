@@ -26,6 +26,17 @@ const mockChains = {
       multicall3: '0x0000000000000000000000000000000000000003',
     },
   },
+  [SOLANA_CHAIN_ID_NUMBER.toString()]: {
+    providers: ['https://mock-sol-rpc'],
+    assets: [],
+    invoiceAge: 0,
+    gasThreshold: '0',
+    deployments: {
+      everclear: 'Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C',
+      permit2: '0x' + '0'.repeat(40),
+      multicall3: '0x' + '0'.repeat(40),
+    },
+  },
   '42161': {
     providers: ['https://mock-arb-rpc'],
     assets: [],
@@ -45,6 +56,12 @@ const amount = '1000000';
 const usdcAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const evmToEvmRoute = { asset: usdcAddress, origin: 1, destination: 42161 };
 const evmToSolanaRoute = { asset: usdcAddress, origin: 1, destination: SOLANA_CHAIN_ID_NUMBER };
+
+const mockExecutionReceipt = { receipt: { state: 2 } };
+const mockGetExecutionReceipts: any = jest.fn<any>().mockImplementation(async function* () {
+  yield mockExecutionReceipt;
+});
+const mockGetMessagesInTx: any = jest.fn<any>();
 
 const mockReceipt = {
   blockHash: '0xblock',
@@ -67,6 +84,88 @@ const mockReceipt = {
 const mockCcipClient = {
   getTransferStatus: jest.fn<() => Promise<number | null>>(),
 };
+
+// Mock CCIP SDK before importing adapter
+jest.mock('@chainlink/ccip-sdk', () => {
+  type UnsignedTx = {
+    transactions: Array<{ to: `0x${string}`; from: `0x${string}`; data: `0x${string}`; value: bigint; nonce: number }>;
+  };
+  const mockGetFee = jest.fn<() => Promise<bigint>>().mockResolvedValue(0n);
+  const mockGenerateUnsignedSendMessage = jest.fn<() => Promise<UnsignedTx>>().mockResolvedValue({
+    transactions: [
+      {
+        to: CCIP_ROUTER_ADDRESSES[1] as `0x${string}`,
+        from: sender as `0x${string}`,
+        data: '0x' as `0x${string}`,
+        value: 0n,
+        nonce: 0,
+      },
+    ],
+  });
+  const mockSendMessage = jest
+    .fn<() => Promise<{ tx: { hash: string; logs: unknown[]; blockNumber: number; timestamp: number; from: string } }>>()
+    .mockResolvedValue({
+      tx: {
+        hash: '0xsolanatx',
+        logs: [],
+        blockNumber: 1,
+        timestamp: 0,
+        from: sender,
+      },
+    });
+
+  const mockEvmChain = {
+    getFee: mockGetFee,
+    generateUnsignedSendMessage: mockGenerateUnsignedSendMessage,
+  };
+
+  const mockSolanaChain = {
+    getFee: mockGetFee,
+    generateUnsignedSendMessage: mockGenerateUnsignedSendMessage,
+  };
+
+  const mockSolanaConnChain = {
+    getFee: mockGetFee,
+    sendMessage: mockSendMessage,
+  };
+
+  mockGetMessagesInTx.mockResolvedValue([
+    {
+      message: {
+        messageId: '0xmsgid',
+        sourceChainSelector: BigInt(CHAIN_SELECTORS.ETHEREUM),
+      },
+      tx: { timestamp: 0 },
+      lane: { onRamp: '0xonramp' },
+    },
+  ]);
+
+  return {
+    EVMChain: {
+      fromUrl: jest.fn((): Promise<any> =>
+        Promise.resolve({
+          ...mockEvmChain,
+          getMessagesInTx: mockGetMessagesInTx,
+          getExecutionReceipts: mockGetExecutionReceipts,
+        }),
+      ),
+    },
+    SolanaChain: {
+      fromUrl: jest.fn((): Promise<any> =>
+        Promise.resolve({
+          ...mockSolanaChain,
+          getMessagesInTx: mockGetMessagesInTx,
+          getExecutionReceipts: mockGetExecutionReceipts,
+        }),
+      ),
+      fromConnection: jest.fn((): Promise<any> => Promise.resolve(mockSolanaConnChain)),
+    },
+    ExecutionState: { Success: 2, Failed: 3 } as any,
+    MessageStatus: { Success: 'SUCCESS', Failed: 'FAILED' } as any,
+    CHAIN_FAMILY: { EVM: 'EVM', SOLANA: 'SOLANA' },
+    discoverOffRamp: jest.fn((): Promise<any> => Promise.resolve('0xofframp')),
+  } as any;
+});
 
 // Import adapter after mocks are set up
 import { CCIPBridgeAdapter } from '../../../src/adapters/ccip/ccip';
@@ -121,6 +220,18 @@ jest.mock('bs58', () => {
 
 describe('CCIPBridgeAdapter', () => {
   let adapter: TestableCCIPBridgeAdapter;
+  // Mock global fetch for Atlas API
+  const mockFetch = jest.fn<typeof fetch>();
+  let originalFetch: typeof fetch;
+
+  beforeAll(() => {
+    originalFetch = global.fetch;
+    global.fetch = mockFetch as typeof fetch;
+  });
+
+  afterAll(() => {
+    global.fetch = originalFetch;
+  });
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -188,38 +299,64 @@ describe('CCIPBridgeAdapter', () => {
   });
 
   describe('address encoding', () => {
-    it('encodes EVM address with 32-byte padding', () => {
-      const encoded = (adapter as any).encodeRecipientAddress(recipient, 1);
+    it('encodes EVM address with 32-byte padding', async () => {
+      const encoded = await (adapter as any).encodeRecipientAddress(recipient, 1);
       // Should be 0x + 24 zeros + 40 char address (without 0x prefix)
       expect(encoded.length).toBe(66); // 0x + 64 hex chars
       expect(encoded.startsWith('0x000000000000000000000000')).toBe(true);
     });
 
-    it('throws for invalid EVM address format', () => {
-      expect(() => (adapter as any).encodeRecipientAddress('invalid', 1)).toThrow(
-        'Invalid EVM address format: invalid'
+    it('throws for invalid EVM address format', async () => {
+      await expect((adapter as any).encodeRecipientAddress('0x1234', 1)).rejects.toThrow(
+        'Invalid EVM address format: 0x1234',
       );
     });
 
-    it('encodes Solana address using bs58 decode', () => {
+    it('encodes Solana address through encodeRecipientAddress', async () => {
       const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
-      const encoded = (adapter as any).encodeSolanaAddress(solanaAddress);
+      const encoded = await (adapter as any).encodeRecipientAddress(solanaAddress, SOLANA_CHAIN_ID_NUMBER);
+      expect(encoded.startsWith('0x')).toBe(true);
+      expect(encoded.length).toBe(66);
+    });
+
+    it('encodes Solana address using bs58 decode', async () => {
+      const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
+      const encoded = await (adapter as any).encodeSolanaAddress(solanaAddress);
       expect(encoded.startsWith('0x')).toBe(true);
       expect(encoded.length).toBe(66); // 0x + 64 hex chars (32 bytes)
+    });
+
+    it('throws when Solana address is invalid', async () => {
+      await expect((adapter as any).encodeSolanaAddress('short')).rejects.toThrow(
+        /Failed to encode Solana address 'short'/,
+      );
+    });
+  });
+
+  describe('SVM extra args encoding', () => {
+    it('returns hex-encoded tokenReceiver and accounts', async () => {
+      const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
+      const extra = await (adapter as any).encodeSVMExtraArgsV1(0, 0n, true, solanaAddress, [solanaAddress]);
+      expect(extra.tokenReceiver.startsWith('0x')).toBe(true);
+      expect(extra.tokenReceiver.length).toBe(66);
+      expect(extra.accounts[0]?.startsWith('0x')).toBe(true);
+      expect(extra.accounts[0]?.length).toBe(66);
+      expect(extra.allowOutOfOrderExecution).toBe(true);
+    });
+
+    it('throws when accounts are not 32 bytes', async () => {
+      const solanaAddress = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
+      await expect(
+        (adapter as any).encodeSVMExtraArgsV1(0, 0n, true, solanaAddress, ['0x1234']),
+      ).rejects.toThrow(/Invalid account length/);
     });
   });
 
   describe('send', () => {
-    it('returns approval and send transactions for EVM to EVM', async () => {
-      const txs = await adapter.send(sender, recipient, amount, evmToEvmRoute);
-      
-      // Should have at least one transaction (approval if needed + send)
-      expect(txs.length).toBeGreaterThanOrEqual(1);
-      
-      // Last transaction should be the CCIP send
-      const sendTx = txs.find(tx => tx.memo === RebalanceTransactionMemo.Rebalance);
-      expect(sendTx).toBeDefined();
-      expect(sendTx?.transaction.to).toBe(CCIP_ROUTER_ADDRESSES[1]);
+    it('throws for non-Solana destination', async () => {
+      await expect(adapter.send(sender, recipient, amount, evmToEvmRoute)).rejects.toThrow(
+        'Destination chain must be an Solana chain',
+      );
     });
 
     it('throws for unsupported origin chain', async () => {
@@ -229,35 +366,72 @@ describe('CCIPBridgeAdapter', () => {
       );
     });
 
-    it('includes effectiveAmount on send transaction', async () => {
-      const txs = await adapter.send(sender, recipient, amount, evmToEvmRoute);
+    it('returns send transaction for EVM to Solana route', async () => {
+      const solanaRecipient = 'PTSg1sXMujX5bgTM88C2PMksHG5w2bqvXJrG9uUdzpA';
+      const txs = await adapter.send(sender, solanaRecipient, amount, evmToSolanaRoute);
       const sendTx = txs.find(tx => tx.memo === RebalanceTransactionMemo.Rebalance);
+      expect(sendTx).toBeDefined();
+      expect(sendTx?.transaction.to).toBe(CCIP_ROUTER_ADDRESSES[1]);
       expect(sendTx?.effectiveAmount).toBe(amount);
+    });
+
+    it('throws when no providers exist for origin chain', async () => {
+      const adapterNoProviders = new TestableCCIPBridgeAdapter(
+        { ...mockChains, '1': { ...mockChains['1'], providers: [] } },
+        mockLogger,
+      );
+      await expect(adapterNoProviders.send(sender, recipient, amount, evmToSolanaRoute)).rejects.toThrow(
+        'No providers found for origin chain 1',
+      );
     });
   });
 
   describe('readyOnDestination', () => {
     it('returns false if origin transaction is not successful', async () => {
       const failedReceipt = { ...mockReceipt, status: 'reverted' };
-      const ready = await adapter.readyOnDestination(amount, evmToEvmRoute, failedReceipt);
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, failedReceipt);
       expect(ready).toBe(false);
     });
 
+    it('treats numeric status 1 as successful', async () => {
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'SUCCESS',
+        message: 'ok',
+      });
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, { ...mockReceipt, status: 1 } as any);
+      expect(ready).toBe(true);
+    });
+
     it('returns true when CCIP status is SUCCESS', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(2); // Success
-      const ready = await adapter.readyOnDestination(amount, evmToEvmRoute, mockReceipt);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'SUCCESS',
+        message: 'ok',
+      });
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
       expect(ready).toBe(true);
     });
 
     it('returns false when CCIP status is PENDING', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(1); // InProgress
-      const ready = await adapter.readyOnDestination(amount, evmToEvmRoute, mockReceipt);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'PENDING',
+        message: 'pending',
+      });
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
       expect(ready).toBe(false);
     });
 
     it('returns false when CCIP status is null', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(null);
-      const ready = await adapter.readyOnDestination(amount, evmToEvmRoute, mockReceipt);
+      jest.spyOn(adapter as any, 'getTransferStatus').mockResolvedValue({
+        status: 'PENDING',
+        message: 'pending',
+      });
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
+      expect(ready).toBe(false);
+    });
+
+    it('returns false when getTransferStatus throws', async () => {
+      jest.spyOn(adapter as any, 'getTransferStatus').mockRejectedValue(new Error('boom'));
+      const ready = await adapter.readyOnDestination(amount, evmToSolanaRoute, mockReceipt);
       expect(ready).toBe(false);
     });
   });
@@ -270,29 +444,322 @@ describe('CCIPBridgeAdapter', () => {
   });
 
   describe('getTransferStatus', () => {
-    it('returns PENDING when status is null', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(null);
-      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
-      expect(status.status).toBe('PENDING');
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockGetMessagesInTx.mockResolvedValue([
+        {
+          message: {
+            messageId: '0xmsgid',
+            sourceChainSelector: BigInt(CHAIN_SELECTORS.ETHEREUM),
+          },
+          tx: { timestamp: 0 },
+          lane: { onRamp: '0xonramp' },
+        },
+      ]);
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        yield mockExecutionReceipt;
+      });
+      // Default: Atlas API returns null (not found), so we fall back to SDK
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => ({}),
+      } as Response);
     });
 
-    it('returns SUCCESS when status is 2', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(2);
+    it('returns SUCCESS from Atlas API when available', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 2, messageId: '0xmsgid' }),
+      } as Response);
+
       const status = await adapter.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('SUCCESS');
+      expect(status.messageId).toBe('0xmsgid');
+      expect(status.message).toContain('via Atlas API');
+      expect(mockGetExecutionReceipts).not.toHaveBeenCalled(); // SDK should not be called
     });
 
-    it('returns FAILURE when status is 3', async () => {
-      mockCcipClient.getTransferStatus.mockResolvedValue(3);
+    it('falls back to SDK when Atlas API returns 404', async () => {
+      // Atlas API returns 404 (default in beforeEach)
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('SUCCESS');
+      expect(status.messageId).toBe('0xmsgid');
+      expect(mockGetExecutionReceipts).toHaveBeenCalled(); // SDK should be called as fallback
+    });
+
+    it('returns SUCCESS when execution receipt shows success (SDK fallback)', async () => {
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('SUCCESS');
+      expect(status.messageId).toBe('0xmsgid');
+    });
+
+    it('returns FAILURE from Atlas API when state is 3', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 3, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('FAILURE');
+      expect(status.message).toContain('via Atlas API');
+      expect(mockGetExecutionReceipts).not.toHaveBeenCalled();
+    });
+
+    it('returns PENDING from Atlas API when state is 1 (InProgress)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 1, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('pending (state: 1)');
+      expect(mockGetExecutionReceipts).not.toHaveBeenCalled();
+    });
+
+    it('returns FAILURE when execution receipt shows failure (SDK fallback)', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        yield { receipt: { state: 3 } };
+      });
       const status = await adapter.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('FAILURE');
     });
 
+    it('falls back to SDK when Atlas API throws error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('SUCCESS');
+      expect(mockGetExecutionReceipts).toHaveBeenCalled(); // SDK should be called as fallback
+    });
+
+    it('falls back to SDK when Atlas API returns non-200, non-404 status', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({}),
+      } as Response);
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('SUCCESS');
+      expect(mockGetExecutionReceipts).toHaveBeenCalled(); // SDK should be called as fallback
+    });
+
+    it('returns PENDING when no execution receipts found (SDK fallback)', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        // Empty generator - no receipts
+      });
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('CCIP transfer pending or not yet started');
+    });
+
     it('returns PENDING on SDK error', async () => {
-      mockCcipClient.getTransferStatus.mockRejectedValue(new Error('Network error'));
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        throw new Error('Network error');
+      });
       const status = await adapter.getTransferStatus('0xhash', 1, 42161);
       expect(status.status).toBe('PENDING');
       expect(status.message).toContain('Error checking status');
+    });
+
+    it('returns PENDING when no message is found', async () => {
+      mockGetMessagesInTx.mockResolvedValueOnce([]);
+      const status = await adapter.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('Could not extract CCIP message ID');
+    });
+
+    it('returns SUCCESS on Solana destination branch', async () => {
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('SUCCESS');
+    });
+
+    it('retries on rate limit error for Solana and eventually succeeds', async () => {
+      let callCount = 0;
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Too Many Requests');
+        }
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('SUCCESS');
+      expect(callCount).toBe(2); // Should retry once
+    });
+
+    it('retries on 429 error for Solana', async () => {
+      let callCount = 0;
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('429 Too Many Requests');
+        }
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('SUCCESS');
+      expect(callCount).toBe(2);
+    });
+
+    it('retries on rate limit error (case insensitive) for Solana', async () => {
+      let callCount = 0;
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Rate Limit Exceeded');
+        }
+        yield mockExecutionReceipt;
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('SUCCESS');
+      expect(callCount).toBe(2);
+    });
+
+    it('returns PENDING after max retries exceeded for Solana', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        throw new Error('Too Many Requests');
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('Rate limit error after 3 retries');
+    });
+
+    it('does not retry non-rate-limit errors', async () => {
+      mockGetExecutionReceipts.mockImplementation(async function* () {
+        throw new Error('Network timeout');
+      });
+
+      const status = await adapter.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('Error checking status');
+      expect(mockGetExecutionReceipts).toHaveBeenCalledTimes(1); // No retries
+    });
+
+    it('returns PENDING when no destination providers', async () => {
+      const adapterNoDest = new TestableCCIPBridgeAdapter(
+        {
+          ...mockChains,
+          [SOLANA_CHAIN_ID_NUMBER]: {
+            ...mockChains[SOLANA_CHAIN_ID_NUMBER],
+            providers: [],
+          } as any,
+        },
+        mockLogger,
+      );
+      const status = await adapterNoDest.getTransferStatus('0xhash', 1, SOLANA_CHAIN_ID_NUMBER);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('No providers found for destination chain');
+    });
+
+    it('returns PENDING when no origin providers', async () => {
+      const adapterNoOrigin = new TestableCCIPBridgeAdapter(
+        { ...mockChains, '1': { ...(mockChains as any)['1'], providers: [] } },
+        mockLogger,
+      );
+      const status = await adapterNoOrigin.getTransferStatus('0xhash', 1, 42161);
+      expect(status.status).toBe('PENDING');
+      expect(status.message).toContain('No providers found for origin chain');
+    });
+  });
+
+  describe('getTransferStatusByMessageId', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('returns SUCCESS when Atlas API returns state 2', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 2, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).not.toBeNull();
+      expect(status?.status).toBe('SUCCESS');
+      expect(status?.messageId).toBe('0xmsgid');
+      expect(status?.message).toContain('via Atlas API');
+    });
+
+    it('returns FAILURE when Atlas API returns state 3', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 3, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).not.toBeNull();
+      expect(status?.status).toBe('FAILURE');
+      expect(status?.message).toContain('via Atlas API');
+    });
+
+    it('returns PENDING when Atlas API returns state 1', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ state: 1, messageId: '0xmsgid' }),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).not.toBeNull();
+      expect(status?.status).toBe('PENDING');
+      expect(status?.message).toContain('pending (state: 1)');
+    });
+
+    it('returns null when Atlas API returns 404', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => ({}),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).toBeNull();
+    });
+
+    it('returns null when Atlas API throws error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).toBeNull();
+    });
+
+    it('returns null when Atlas API returns non-200 status', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({}),
+      } as Response);
+
+      const status = await adapter.getTransferStatusByMessageId('0xmsgid');
+      expect(status).toBeNull();
     });
   });
 
