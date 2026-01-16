@@ -138,15 +138,6 @@ locals {
       SOLANA_PRIVATE_KEY    = local.mark_config.solana.privateKey
       SOLANA_RPC_URL        = local.mark_config.solana.rpcUrl
       SOLANA_SIGNER_ADDRESS = local.mark_config.solanaSignerAddress
-      # ptUSDe SPL token mint on Solana (from SSM config)
-      PTUSDE_SOLANA_MINT = local.mark_config.solana.ptUsdeMint
-
-      # Threshold-based rebalancing configuration
-      # Values in native token units (9 decimals for ptUSDe, 6 decimals for USDC)
-      # TODO: Update values after testing
-      PTUSDE_SOLANA_THRESHOLD        = "5000000000"    # 5 ptUSDe (testing)
-      PTUSDE_SOLANA_TARGET           = "10000000000"   # 10 ptUSDe (testing)
-      SOLANA_USDC_MAX_REBALANCE_AMOUNT = "100000000"   # 100 USDC (testing)
     }
   )
 

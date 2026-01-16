@@ -8,6 +8,7 @@ import {
   convertToNativeUnits,
   convertTo18Decimals,
   safeParseBigInt,
+  getTonAssetDecimals,
 } from '../helpers';
 import { jsonifyMap, jsonifyError } from '@mark/logger';
 import {
@@ -182,7 +183,8 @@ async function getTonNativeBalance(
     }
 
     return safeParseBigInt(data.balance.toString());
-  } catch {
+  } catch (error) {
+    console.log('getTonNativeBalance error', error);
     return 0n;
   }
 }
@@ -352,7 +354,6 @@ interface RebalanceRunState {
 export async function rebalanceTacUsdt(context: ProcessingContext): Promise<RebalanceAction[]> {
   const { logger, requestId, config, rebalance, prometheus } = context;
   const actions: RebalanceAction[] = [];
-
   // Always check destination callbacks to ensure operations complete
   await executeTacCallbacks(context);
 
@@ -1932,6 +1933,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               });
               continue;
             }
+            const tonUSDTDecimals = getTonAssetDecimals(operation.tickerHash, config) ?? 6;
 
             // Check TON native balance for gas
             const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
@@ -1948,6 +1950,14 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             // Get actual USDT balance on TON
             const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
+            const actualUsdtBalance18 = convertTo18Decimals(actualUsdtBalance, tonUSDTDecimals);
+            logger.info('Ton Jetton Balance', {
+              tonWalletAddress,
+              jettonAddress,
+              decimals: 6,
+              actualUsdtBalance: actualUsdtBalance.toString(),
+              actualUsdtBalance18: actualUsdtBalance18.toString(),
+            });
 
             // CRITICAL: Use operation-specific amount, NOT the full wallet balance
             // This prevents mixing funds from multiple concurrent flows
@@ -1967,14 +1977,14 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             const minExpectedAmount = calculateMinExpectedAmount(expectedAmount, slippageBps);
 
             // Validate: TON wallet must have at least the minimum expected amount
-            if (actualUsdtBalance < minExpectedAmount) {
+            if (actualUsdtBalance18 < minExpectedAmount) {
               // Not enough funds yet - Stargate might still be in transit or another flow took funds
               logger.warn('Insufficient USDT on TON for this operation - waiting for Stargate delivery', {
                 ...logContext,
                 expectedAmount: expectedAmount.toString(),
                 minExpectedAmount: minExpectedAmount.toString(),
-                actualUsdtBalance: actualUsdtBalance.toString(),
-                shortfall: (minExpectedAmount - actualUsdtBalance).toString(),
+                actualUsdtBalance18: actualUsdtBalance18.toString(),
+                shortfall: (minExpectedAmount - actualUsdtBalance18).toString(),
                 note: 'Will retry when funds arrive. If persists, check Stargate bridge status.',
               });
               continue;
@@ -1982,7 +1992,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             // Calculate amount to bridge: min(expectedAmount, actualBalance)
             // NEVER bridge more than the operation's expected amount
-            const amountToBridgeBigInt = actualUsdtBalance < expectedAmount ? actualUsdtBalance : expectedAmount;
+            const amountToBridgeBigInt = actualUsdtBalance18 < expectedAmount ? actualUsdtBalance18 : expectedAmount;
             const amountToBridge = amountToBridgeBigInt.toString();
 
             // Log if we're bridging less than expected (Stargate took fees)
@@ -1993,7 +2003,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               recipient,
               expectedAmount: expectedAmount.toString(),
               minExpectedAmount: minExpectedAmount.toString(),
-              actualUsdtBalance: actualUsdtBalance.toString(),
+              actualUsdtBalance18: actualUsdtBalance18.toString(),
               amountToBridge,
               stargateFeesDeducted: tookFees,
               note: tookFees
@@ -2001,10 +2011,11 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
                 : 'Bridging expected amount',
             });
 
+            const amountToBridgeNative = convertToNativeUnits(amountToBridgeBigInt, tonUSDTDecimals).toString();
             const transactionLinker = await tacInnerAdapter.executeTacBridge(
               tonMnemonic,
               recipient,
-              amountToBridge,
+              amountToBridgeNative,
               jettonAddress, // CRITICAL: Pass the TON jetton address for the asset to bridge
             );
 
@@ -2030,7 +2041,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
                 originChainId: Number(TON_LZ_CHAIN_ID),
                 destinationChainId: Number(TAC_CHAIN_ID),
                 tickerHash: operation.tickerHash,
-                amount: amountToBridge, // Use actual amount, not original
+                amount: amountToBridgeBigInt.toString(), // 18 decimals
                 slippage: 100,
                 // Use AWAITING_CALLBACK if we have transactionLinker (bridge submitted, awaiting completion)
                 // Use PENDING if no transactionLinker (bridge failed to submit, will retry)
@@ -2134,10 +2145,12 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               });
               continue;
             }
+            const tonUSDTDecimals = getTonAssetDecimals(operation.tickerHash, config) ?? 6;
 
             if (tonMnemonic && tonWalletAddress) {
               // Get actual USDT balance on TON
               const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
+              const actualUsdtBalance18 = convertTo18Decimals(actualUsdtBalance, tonUSDTDecimals);
 
               if (actualUsdtBalance === 0n) {
                 // No USDT on TON - bridge might have already succeeded!
@@ -2163,20 +2176,21 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
                 const minExpectedAmount = calculateMinExpectedAmount(expectedAmount, slippageDbps);
 
                 // Validate: Must have at least minimum expected amount
-                if (actualUsdtBalance < minExpectedAmount) {
+                if (actualUsdtBalance18 < minExpectedAmount) {
                   logger.warn('Insufficient USDT on TON for this operation (retry) - waiting', {
                     ...logContext,
                     expectedAmount: expectedAmount.toString(),
                     minExpectedAmount: minExpectedAmount.toString(),
-                    actualUsdtBalance: actualUsdtBalance.toString(),
+                    actualUsdtBalance18: actualUsdtBalance18.toString(),
                     note: 'Another flow may have taken funds or Stargate still in transit',
                   });
                   continue;
                 }
 
                 // Calculate amount: min(expectedAmount, actualBalance) - never more than expected
-                const amountToBridgeBigInt = actualUsdtBalance < expectedAmount ? actualUsdtBalance : expectedAmount;
-                const amountToBridge = amountToBridgeBigInt.toString();
+                const amountToBridgeBigInt =
+                  actualUsdtBalance18 < expectedAmount ? actualUsdtBalance18 : expectedAmount;
+                const amountToBridge = convertToNativeUnits(amountToBridgeBigInt, tonUSDTDecimals).toString();
 
                 logger.info('Retrying TAC SDK bridge execution (no transactionLinker)', {
                   ...logContext,

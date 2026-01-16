@@ -186,7 +186,7 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     web3Signer as EthWallet,
     logger,
   );
-
+  
   // Initialize fill service chain service if FS signer URL is configured
   // This allows TAC rebalancing to use a separate sender address for FS
   // senderAddress defaults to fillService.address if not explicitly set (same key = same address)
@@ -328,6 +328,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
   try {
     adapters = initializeAdapters(config, logger);
     const addresses = await adapters.chainService.getAddress();
+    const fillServiceAddresses = adapters.fillServiceChainService ? await adapters.fillServiceChainService.getAddress() : undefined;
 
     const context: ProcessingContext = {
       ...adapters,
@@ -346,6 +347,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        fillServiceAddresses
       });
 
       const rebalanceOperations = await rebalanceMantleEth(context);
@@ -376,6 +378,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        fillServiceAddresses
       });
 
       const rebalanceOperations = await rebalanceTacUsdt(context);
@@ -406,6 +409,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        fillServiceAddresses
       });
 
       const rebalanceOperations = await rebalanceSolanaUsdc(context);
@@ -438,6 +442,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        fillServiceAddresses
       });
 
       invoiceResult = await pollAndProcessInvoices(context);
