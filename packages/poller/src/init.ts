@@ -161,7 +161,7 @@ function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger)
   validateSingleTokenRebalanceConfig(config.methRebalance, 'methRebalance', config, logger);
 }
 
-async function initializeAdapters(config: MarkConfiguration, logger: Logger): Promise<MarkAdapters> {
+function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdapters {
   // Initialize adapters in the correct order
   const web3Signer = config.web3SignerUrl.startsWith('http')
     ? new Web3Signer(config.web3SignerUrl)
@@ -186,11 +186,7 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger): Pr
     web3Signer as EthWallet,
     logger,
   );
-  const signerAddress = await chainService.getAddress();
-  logger.info('ChainService initialized!', {
-    signerAddress
-  });
-
+  
   // Initialize fill service chain service if FS signer URL is configured
   // This allows TAC rebalancing to use a separate sender address for FS
   // senderAddress defaults to fillService.address if not explicitly set (same key = same address)
@@ -216,11 +212,6 @@ async function initializeAdapters(config: MarkConfiguration, logger: Logger): Pr
       fillServiceSigner as EthWallet,
       logger,
     );
-
-    const fillServiceSignerAddress = await fillServiceChainService.getAddress();
-    logger.info('FillService ChainService initialized!', {
-      fillServiceSignerAddress
-    });
   }
 
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
@@ -335,8 +326,9 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
   let adapters: MarkAdapters | undefined;
 
   try {
-    adapters = await initializeAdapters(config, logger);
+    adapters = initializeAdapters(config, logger);
     const addresses = await adapters.chainService.getAddress();
+    const fillServiceAddresses = adapters.fillServiceChainService ? await adapters.fillServiceChainService.getAddress() : undefined;
 
     const context: ProcessingContext = {
       ...adapters,
@@ -355,6 +347,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        fillServiceAddresses
       });
 
       const rebalanceOperations = await rebalanceMantleEth(context);
@@ -385,6 +378,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        fillServiceAddresses
       });
 
       const rebalanceOperations = await rebalanceTacUsdt(context);
@@ -415,6 +409,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        fillServiceAddresses
       });
 
       const rebalanceOperations = await rebalanceSolanaUsdc(context);
@@ -447,6 +442,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
         stage: config.stage,
         environment: config.environment,
         addresses,
+        fillServiceAddresses
       });
 
       invoiceResult = await pollAndProcessInvoices(context);
