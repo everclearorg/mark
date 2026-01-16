@@ -325,16 +325,16 @@ const evaluateFillServiceRebalance = async (
     }
 
     // Check if an earmark already exists for this intent before executing operations
-    const existingActive = await database.getEarmarks({
+    const existingEarmarks = await database.getEarmarks({
       invoiceId: intent.intent_id,
     });
 
-    if (existingActive) {
-      logger.warn('Active earmark already exists for intent, skipping rebalance operations', {
+    if (existingEarmarks.length > 0) {
+      logger.warn('Earmark already exists for intent, skipping rebalance operations', {
         requestId,
         invoiceId: intent.intent_id,
-        existingEarmarkId: existingActive[0].id,
-        existingStatus: existingActive[0].status,
+        existingEarmarkId: existingEarmarks[0].id,
+        existingStatus: existingEarmarks[0].status,
       });
       continue;
     }
