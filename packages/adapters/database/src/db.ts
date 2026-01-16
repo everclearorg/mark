@@ -906,7 +906,7 @@ export async function getRebalanceOperationByRecipient(
   }
 
   if (recipient) {
-    conditions.push(`ro."recipient" = $${paramCount}`);
+    conditions.push(`LOWER(ro."recipient") = LOWER($${paramCount})`);
     values.push(recipient);
     paramCount++;
   }

@@ -324,15 +324,17 @@ const evaluateFillServiceRebalance = async (
       continue;
     }
 
-    // Check if an active earmark already exists for this intent before executing operations
-    const existingActive = await database.getActiveEarmarkForInvoice(intent.intent_id);
+    // Check if an earmark already exists for this intent before executing operations
+    const existingEarmarks = await database.getEarmarks({
+      invoiceId: intent.intent_id,
+    });
 
-    if (existingActive) {
-      logger.warn('Active earmark already exists for intent, skipping rebalance operations', {
+    if (existingEarmarks.length > 0) {
+      logger.warn('Earmark already exists for intent, skipping rebalance operations', {
         requestId,
         invoiceId: intent.intent_id,
-        existingEarmarkId: existingActive.id,
-        existingStatus: existingActive.status,
+        existingEarmarkId: existingEarmarks[0].id,
+        existingStatus: existingEarmarks[0].status,
       });
       continue;
     }
@@ -441,6 +443,18 @@ const evaluateFillServiceRebalance = async (
   // PRIORITY 2: Threshold Rebalancing (FS → FS)
   // FS sender does not have enough funds on Mantle, rebalance from WETH on Mainnet
   // Get FS receiver's mETH balance
+  const { operations: inFlightOps } = await database.getRebalanceOperations(undefined, undefined, {
+    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    bridge: [SupportedBridge.Mantle, `${SupportedBridge.Across}-mantle`],
+    earmarkId: null
+  });
+  if(inFlightOps.length) {
+    logger.info(`Found inflight rebalance operations ${inFlightOps.length}. Threshold rebalancing skipping....`, {
+      requestId,
+    });
+    return actions;
+  }
+
   let fsReceiverMethBalance = 0n;
   if (fsConfig.address) {
     try {
