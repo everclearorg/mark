@@ -161,7 +161,7 @@ function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger)
   validateSingleTokenRebalanceConfig(config.methRebalance, 'methRebalance', config, logger);
 }
 
-function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdapters {
+async function initializeAdapters(config: MarkConfiguration, logger: Logger): Promise<MarkAdapters> {
   // Initialize adapters in the correct order
   const web3Signer = config.web3SignerUrl.startsWith('http')
     ? new Web3Signer(config.web3SignerUrl)
@@ -186,6 +186,10 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
     web3Signer as EthWallet,
     logger,
   );
+  const signerAddress = await chainService.getAddress();
+  logger.info('ChainService initialized!', {
+    signerAddress
+  });
 
   // Initialize fill service chain service if FS signer URL is configured
   // This allows TAC rebalancing to use a separate sender address for FS
@@ -212,6 +216,11 @@ function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdap
       fillServiceSigner as EthWallet,
       logger,
     );
+
+    const fillServiceSignerAddress = await fillServiceChainService.getAddress();
+    logger.info('FillService ChainService initialized!', {
+      fillServiceSignerAddress
+    });
   }
 
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
@@ -326,7 +335,7 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
   let adapters: MarkAdapters | undefined;
 
   try {
-    adapters = initializeAdapters(config, logger);
+    adapters = await initializeAdapters(config, logger);
     const addresses = await adapters.chainService.getAddress();
 
     const context: ProcessingContext = {
