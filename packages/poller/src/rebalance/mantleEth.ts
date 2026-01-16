@@ -441,6 +441,18 @@ const evaluateFillServiceRebalance = async (
   // PRIORITY 2: Threshold Rebalancing (FS → FS)
   // FS sender does not have enough funds on Mantle, rebalance from WETH on Mainnet
   // Get FS receiver's mETH balance
+  const { operations: inFlightOps } = await database.getRebalanceOperations(undefined, undefined, {
+    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    bridge: [SupportedBridge.Mantle, `${SupportedBridge.Across}-mantle`],
+    earmarkId: null
+  });
+  if(inFlightOps.length) {
+    logger.info(`Found inflight rebalance operations ${inFlightOps.length}. Threshold rebalancing skipping....`, {
+      requestId,
+    });
+    return actions;
+  }
+
   let fsReceiverMethBalance = 0n;
   if (fsConfig.address) {
     try {
