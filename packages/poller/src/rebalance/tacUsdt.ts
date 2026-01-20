@@ -1478,6 +1478,20 @@ const evaluateFillServiceRebalance = async (
     return [];
   }
 
+  // Check for pending FS rebalancing operations
+  const { operations: inFlightOps } = await db.getRebalanceOperations(undefined, undefined, {
+    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    bridge: [`${SupportedBridge.Stargate}-tac`, SupportedBridge.TacInner],
+  });
+
+  if (inFlightOps.length > 0) {
+    logger.info('TAC in-flight rebalance operations exist. skipping...', {
+      requestId,
+      inFlightOps: inFlightOps.length,
+    });
+    return [];
+  }
+
   // Convert config values from native decimals (6) to normalized (18)
   const thresholdNative = safeParseBigInt(fsConfig.threshold);
   const targetNative = safeParseBigInt(fsConfig.targetBalance);
