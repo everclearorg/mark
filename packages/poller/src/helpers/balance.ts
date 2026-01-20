@@ -95,8 +95,14 @@ export const getMarkBalances = async (
 
   const markBalances = new Map<string, Map<string, bigint>>();
 
-  for (const ticker of tickers) {
-    const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus);
+  const results = await Promise.all(
+    tickers.map(async (ticker) => {
+      const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus);
+      return { ticker, tickerBalances };
+    }),
+  );
+
+  for (const { ticker, tickerBalances } of results) {
     markBalances.set(ticker, tickerBalances);
   }
 

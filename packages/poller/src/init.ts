@@ -327,7 +327,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
 
   try {
     adapters = initializeAdapters(config, logger);
-    const addresses = await adapters.chainService.getAddress();
     const fillServiceAddresses = adapters.fillServiceChainService ? await adapters.fillServiceChainService.getAddress() : undefined;
 
     const context: ProcessingContext = {
@@ -346,7 +345,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       logger.info('Starting meth rebalancing', {
         stage: config.stage,
         environment: config.environment,
-        addresses,
         fillServiceAddresses
       });
 
@@ -377,7 +375,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       logger.info('Starting TAC USDT rebalancing', {
         stage: config.stage,
         environment: config.environment,
-        addresses,
         fillServiceAddresses
       });
 
@@ -408,7 +405,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       logger.info('Starting Solana USDC → ptUSDe rebalancing', {
         stage: config.stage,
         environment: config.environment,
-        addresses,
         fillServiceAddresses
       });
 
@@ -441,7 +437,6 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
       logger.info('Starting invoice polling', {
         stage: config.stage,
         environment: config.environment,
-        addresses,
         fillServiceAddresses
       });
 
