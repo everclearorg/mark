@@ -20,6 +20,7 @@ import { existsSync, readFileSync } from 'fs';
 import { hexToBase58 } from './solana';
 import { isTvmChain } from './tron';
 import { getRebalanceConfigFromS3 } from './s3';
+import { stitchConfig, loadManifest } from './shard';
 
 config();
 
@@ -210,9 +211,37 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const ssmParameterName = (await fromEnv('MARK_CONFIG_SSM_PARAMETER')) ?? 'MARK_CONFIG_' + environment.toUpperCase();
     const configStr = await fromEnv(ssmParameterName, true);
-    const configJson = existsSync('config.json')
+    let configJson = existsSync('config.json')
       ? JSON.parse(readFileSync('config.json', 'utf8'))
       : JSON.parse(configStr ?? '{}');
+
+    // ============ KEY SHARDING: Reconstruct sharded fields ============
+    // Load manifest from: embedded in config, SSM parameter, or local file
+    const manifestStr = await fromEnv('SHARD_MANIFEST', true);
+    const localManifestPath = existsSync('shard-manifest.json') ? 'shard-manifest.json' : undefined;
+    const manifest = loadManifest(configJson, manifestStr, localManifestPath);
+
+    // If manifest exists with sharded fields, fetch GCP shares and reconstruct
+    if (manifest && manifest.shardedFields && manifest.shardedFields.length > 0) {
+      console.log(`🔐 Reconstructing ${manifest.shardedFields.length} sharded field(s)...`);
+      try {
+        configJson = await stitchConfig(configJson, manifest, {
+          logger: {
+            debug: (msg) => console.log(`  [shard] ${msg}`),
+            info: (msg) => console.log(`  [shard] ${msg}`),
+            warn: (msg) => console.warn(`  [shard] ⚠️ ${msg}`),
+            error: (msg) => console.error(`  [shard] ❌ ${msg}`),
+          },
+        });
+        console.log('✓ Key sharding reconstruction complete');
+      } catch (error) {
+        console.error('❌ Key sharding reconstruction failed:', (error as Error).message);
+        throw new ConfigurationError(`Failed to reconstruct sharded configuration: ${(error as Error).message}`, {
+          error: JSON.stringify(error),
+        });
+      }
+    }
+    // ============ END KEY SHARDING ============
 
     // Extract web3_signer_private_key from config JSON and make it available as an environment variable
     if (configJson.web3_signer_private_key && !process.env.WEB3_SIGNER_PRIVATE_KEY) {
