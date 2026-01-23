@@ -1179,11 +1179,19 @@ describe('TAC Flow Isolation - Prevent Fund Mixing', () => {
       };
 
       // Mock the database on context
+      // Important: Return empty array for TAC Inner Bridge operations to avoid hasInFlightLeg2 check
       const dbMock = mockContext.database as any;
-      dbMock.getRebalanceOperations = stub().resolves({
-        operations: [leg1Op],
-        total: 1,
-      });
+      dbMock.getRebalanceOperations = stub()
+        .onFirstCall()
+        .resolves({
+          operations: [leg1Op], // Stargate operation
+          total: 1,
+        })
+        .onSecondCall()
+        .resolves({
+          operations: [], // No TAC Inner Bridge operations (hasInFlightLeg2 = false)
+          total: 0,
+        });
 
       // Mock TON balance to be sufficient for the operation
       fetchStub.callsFake(async (url: string) => {
@@ -1263,12 +1271,13 @@ describe('TAC Flow Isolation - Prevent Fund Mixing', () => {
 
     it('should bridge reduced amount when wallet has less than expected (Stargate fees)', async () => {
       // Setup: Operation expects 10 USDT, wallet only has 9.5 USDT (Stargate took fees)
+      // Note: operation.amount is stored in 18 decimals format
       const leg1Op = {
         id: 'leg1-A',
         originChainId: 1,
         destinationChainId: 30826,
         tickerHash: USDT_TICKER_HASH,
-        amount: '10000000', // 10 USDT expected
+        amount: '10000000000000000000', // 10 USDT expected (in 18 decimals)
         status: RebalanceOperationStatus.AWAITING_CALLBACK,
         bridge: 'stargate-tac',
         recipient: MOCK_MM_ADDRESS,
@@ -1276,24 +1285,33 @@ describe('TAC Flow Isolation - Prevent Fund Mixing', () => {
       };
 
       // Mock the database on context
+      // Important: Return empty array for TAC Inner Bridge operations to avoid hasInFlightLeg2 check
       const dbMock = mockContext.database as any;
-      dbMock.getRebalanceOperations = stub().resolves({
-        operations: [leg1Op],
-        total: 1,
-      });
+      dbMock.getRebalanceOperations = stub()
+        .onFirstCall()
+        .resolves({
+          operations: [leg1Op], // Stargate operation
+          total: 1,
+        })
+        .onSecondCall()
+        .resolves({
+          operations: [], // No TAC Inner Bridge operations (hasInFlightLeg2 = false)
+          total: 0,
+        });
 
       // TON wallet has 9.5 USDT (5% less due to Stargate fees)
+      // Mock must match the exact URL pattern: /accounts/{address}/jettons/{jettonAddress}
       fetchStub.callsFake(async (url: string) => {
-        if (url.includes('/jettons/')) {
+        if (url.includes('/accounts/') && url.includes('/jettons/')) {
           return {
             ok: true,
-            json: async () => ({ balance: '9500000' }), // 9.5 USDT
+            json: async () => ({ balance: '9500000' }), // 9.5 USDT in native 6 decimals
           };
         }
-        if (url.includes('/accounts/')) {
+        if (url.includes('/accounts/') && !url.includes('/jettons/')) {
           return {
             ok: true,
-            json: async () => ({ balance: 1000000000 }),
+            json: async () => ({ balance: 1000000000 }), // Native TON balance for gas
           };
         }
         return { ok: false };
@@ -1302,11 +1320,13 @@ describe('TAC Flow Isolation - Prevent Fund Mixing', () => {
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
 
       // Should proceed and bridge actual balance (9.5) which is within 5% slippage
-      if (mockTacInnerAdapter.executeTacBridge.called) {
-        const callArgs = mockTacInnerAdapter.executeTacBridge.getCall(0).args;
-        const bridgedAmount = callArgs[2];
-        expect(bridgedAmount).toBe('9500000'); // Actual balance, not expected
-      }
+      expect(mockTacInnerAdapter.executeTacBridge.called).toBe(true);
+      // Find the call with non-zero amount (there might be multiple calls)
+      const calls = mockTacInnerAdapter.executeTacBridge.getCalls();
+      const callWithAmount = calls.find((call) => call.args[2] !== '0' && call.args[2] !== '0n');
+      expect(callWithAmount).toBeDefined();
+      const bridgedAmount = callWithAmount!.args[2];
+      expect(bridgedAmount).toBe('9500000'); // Actual balance in native 6 decimals, not expected
 
       // Should log the execution with stargateFeesDeducted flag
       const infoCalls = mockLogger.info.getCalls();
@@ -1321,12 +1341,13 @@ describe('TAC Flow Isolation - Prevent Fund Mixing', () => {
       // Setup: Operation expects 10 USDT, wallet only has 9 USDT (> 5% slippage)
       // Minimum expected = 10 * 0.95 = 9.5 USDT
       // 9 < 9.5, so should wait
+      // Note: operation.amount is stored in 18 decimals format
       const leg1Op = {
         id: 'leg1-A',
         originChainId: 1,
         destinationChainId: 30826,
         tickerHash: USDT_TICKER_HASH,
-        amount: '10000000', // 10 USDT expected
+        amount: '10000000000000000000', // 10 USDT expected (in 18 decimals)
         status: RebalanceOperationStatus.AWAITING_CALLBACK,
         bridge: 'stargate-tac',
         recipient: MOCK_MM_ADDRESS,
@@ -1334,11 +1355,19 @@ describe('TAC Flow Isolation - Prevent Fund Mixing', () => {
       };
 
       // Mock the database on context
+      // Important: Return empty array for TAC Inner Bridge operations to avoid hasInFlightLeg2 check
       const dbMock = mockContext.database as any;
-      dbMock.getRebalanceOperations = stub().resolves({
-        operations: [leg1Op],
-        total: 1,
-      });
+      dbMock.getRebalanceOperations = stub()
+        .onFirstCall()
+        .resolves({
+          operations: [leg1Op], // Stargate operation
+          total: 1,
+        })
+        .onSecondCall()
+        .resolves({
+          operations: [], // No TAC Inner Bridge operations (hasInFlightLeg2 = false)
+          total: 0,
+        });
 
       // TON wallet has only 9 USDT (below 9.5 minimum expected)
       fetchStub.callsFake(async (url: string) => {
@@ -1386,11 +1415,19 @@ describe('TAC Flow Isolation - Prevent Fund Mixing', () => {
       };
 
       // Mock the database on context
+      // Important: Return empty array for TAC Inner Bridge operations to avoid hasInFlightLeg2 check
       const dbMock = mockContext.database as any;
-      dbMock.getRebalanceOperations = stub().resolves({
-        operations: [leg1Op],
-        total: 1,
-      });
+      dbMock.getRebalanceOperations = stub()
+        .onFirstCall()
+        .resolves({
+          operations: [leg1Op], // Stargate operation
+          total: 1,
+        })
+        .onSecondCall()
+        .resolves({
+          operations: [], // No TAC Inner Bridge operations (hasInFlightLeg2 = false)
+          total: 0,
+        });
 
       // TON wallet has 0 USDT
       fetchStub.callsFake(async (url: string) => {

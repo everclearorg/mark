@@ -1,0 +1,263 @@
+import { jsonifyError, Logger } from '@mark/logger';
+import { EventQueue, QueuedEvent } from '#/queue';
+import { EventProcessingResult, EventProcessor } from '#/processor';
+import { WebhookEventType } from '@mark/core';
+
+export class EventConsumer {
+  private isProcessing = false;
+  // The total number of events being processed across all event types
+  private totalActive = 0;
+  // The number of events being processed per event type
+  private readonly activeCounts: Record<WebhookEventType, number> = {} as Record<WebhookEventType, number>;
+
+  constructor(
+    private readonly queue: EventQueue,
+    private readonly processor: EventProcessor,
+    private readonly logger: Logger,
+    private readonly maxConcurrentEvents: number = 5,
+  ) {
+    // Initialize counts per queue for each event type
+    for (const eventType of Object.values(WebhookEventType)) {
+      this.activeCounts[eventType] = 0;
+    }
+  }
+
+  /**
+   * Start consuming events from the queue
+   */
+  async start(): Promise<void> {
+    if (this.isProcessing) {
+      this.logger.warn('Consumer is already running');
+      return;
+    }
+
+    this.isProcessing = true;
+    this.logger.info('Starting event consumer', {
+      maxConcurrentEvents: this.maxConcurrentEvents,
+      totalMaxConcurrent: this.maxConcurrentEvents * Object.values(WebhookEventType).length,
+    });
+
+    // Move all events from processing queues back to pending queues
+    await this.queue.moveProcessingToPending();
+
+    // Process any pending events from the queue on the start
+    await this.processPendingEvents();
+  }
+
+  /**
+   * Stop consuming events
+   */
+  async stop(): Promise<void> {
+    if (!this.isProcessing) {
+      this.logger.warn('Consumer is already being stopped or not running, skipping stop');
+      return;
+    }
+
+    this.isProcessing = false;
+    this.logger.info('Stopping event consumer');
+
+    // Wait for active processing to complete (with timeout)
+    const maxWaitTime = 30000; // 30 seconds
+    const startTime = Date.now();
+    while (this.totalActive > 0 && Date.now() - startTime < maxWaitTime) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    if (this.totalActive > 0) {
+      this.logger.warn('Some events are still processing after stop', {
+        activeCount: this.totalActive,
+        perQueue: this.activeCounts,
+      });
+    }
+  }
+
+  /**
+   * Adds a new event (called when the event arrives)
+   * Enqueues the event and processes it immediately if under concurrent
+   * limit for this event type and the event was not in the queue previously.
+   */
+  async addEvent(event: QueuedEvent): Promise<void> {
+    const alreadyExists = await this.queue.enqueueEvent(event, event.priority);
+
+    if (!this.isProcessing) {
+      this.logger.warn('Consumer is not running, skipping event processing', { event });
+      return;
+    }
+
+    // Don't process if the event was already in the queue
+    if (alreadyExists) {
+      this.logger.debug('Event already in queue, skipping processing', {
+        event,
+      });
+      return;
+    }
+
+    const activeCount = this.activeCounts[event.type];
+
+    // If we're at the concurrent limit for this event type, skip immediate processing
+    if (activeCount >= this.maxConcurrentEvents) {
+      this.logger.debug('Concurrent limit reached for event type', {
+        event,
+        activeCount,
+        maxConcurrent: this.maxConcurrentEvents,
+      });
+      return;
+    }
+
+    // Process immediately
+    this.processEvent(event).catch((e) => {
+      this.logger.error('Error processing event', {
+        event,
+        error: jsonifyError(e),
+      });
+    });
+  }
+
+  /**
+   * Processes pending events from Redis queues
+   * Processes events from each queue separately and in parallel, respecting per-queue concurrent limits
+   */
+  private async processPendingEvents(): Promise<void> {
+    const eventTypes = Object.values(WebhookEventType) as WebhookEventType[];
+    await Promise.all(eventTypes.map((eventType) => this.processPendingEventsForType(eventType)));
+  }
+
+  /**
+   * Process pending events for a specific event type queue
+   */
+  private async processPendingEventsForType(eventType: WebhookEventType): Promise<void> {
+    while (this.isProcessing) {
+      try {
+        const activeCount = this.activeCounts[eventType];
+        const availableSlots = this.maxConcurrentEvents - activeCount;
+
+        if (availableSlots <= 0) {
+          break;
+        }
+
+        // Dequeue events from this specific queue
+        const events = await this.queue.dequeueEvents(eventType, availableSlots);
+
+        if (events.length === 0) {
+          break; // No more events in this queue
+        }
+
+        for (const event of events) {
+          this.processEvent(event).catch((e) => {
+            this.logger.error('Error processing event from queue', {
+              event,
+              error: jsonifyError(e),
+            });
+          });
+        }
+      } catch (e) {
+        this.logger.error('Error processing pending events', {
+          eventType,
+          error: jsonifyError(e),
+        });
+        break;
+      }
+    }
+  }
+
+  /**
+   * Process a single event
+   */
+  private async processEvent(event: QueuedEvent): Promise<EventProcessingResult> {
+    this.totalActive++;
+    this.activeCounts[event.type]++;
+
+    try {
+      this.logger.debug('Processing event', {
+        event,
+        retryCount: event.retryCount,
+        activeCount: this.activeCounts[event.type],
+        totalActive: this.totalActive,
+      });
+
+      return await this.processEventWithRetry(event);
+    } finally {
+      // Decrement active processing counters
+      this.totalActive = Math.max(0, this.totalActive - 1);
+      const updatedCount = this.activeCounts[event.type] - 1;
+      this.activeCounts[event.type] = Math.max(0, updatedCount);
+
+      // After processing completes, check for pending events for this event type
+      // Process one batch opportunistically (the loop will continue if more events are available)
+      this.processPendingEventsForType(event.type).catch((e) => {
+        this.logger.error('Error processing pending events', {
+          eventType: event.type,
+          error: jsonifyError(e),
+        });
+      });
+    }
+  }
+
+  /**
+   * Process event with retry logic
+   */
+  private async processEventWithRetry(event: QueuedEvent): Promise<EventProcessingResult> {
+    let result: EventProcessingResult;
+    switch (event.type) {
+      case WebhookEventType.InvoiceEnqueued:
+        result = await this.processor.processInvoiceEnqueued(event);
+        break;
+      case WebhookEventType.SettlementEnqueued:
+        result = await this.processor.processSettlementEnqueued(event);
+        break;
+      default:
+        throw new Error(`Unknown event type: ${event.type}`);
+    }
+
+    // Handle processing result
+    await this.handleProcessingResult(event, result);
+
+    return result;
+  }
+
+  /**
+   * Handle the result of event processing
+   */
+  private async handleProcessingResult(event: QueuedEvent, result: EventProcessingResult): Promise<void> {
+    if (result.success) {
+      await this.queue.acknowledgeProcessedEvent(event);
+      this.logger.info('Event processed successfully', {
+        event,
+        duration: result.duration,
+      });
+    } else {
+      await this.handleRetry(event, new Error(result.error || 'Processing failed'), result.retryAfter);
+    }
+  }
+
+  /**
+   * Handle retry logic for failed events
+   */
+  async handleRetry(event: QueuedEvent, error: Error, retryAfter?: number): Promise<void> {
+    const retryCount = event.retryCount + 1;
+    if (event.maxRetries >= 0 && retryCount > event.maxRetries) {
+      this.logger.error('Event exceeded max retries, moving to dead letter queue', {
+        event,
+        retryCount,
+        maxRetries: event.maxRetries,
+        error: jsonifyError(error),
+      });
+
+      await this.queue.moveToDeadLetterQueue(event, error.message);
+      return;
+    }
+
+    this.logger.warn('Scheduling event retry', {
+      eventId: event.id,
+      eventType: event.type,
+      retryCount,
+      error: error.message,
+    });
+
+    event.retryCount = retryCount;
+    event.scheduledAt = Date.now() + (retryAfter ?? 0);
+
+    // Re-enqueue event
+    await this.queue.enqueueEvent(event, event.priority);
+  }
+}

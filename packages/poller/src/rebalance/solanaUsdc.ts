@@ -985,7 +985,7 @@ export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Pr
 
         // Mark operation as FAILED since CCIP bridge failed
         await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.CANCELLED,
+          status: RebalanceOperationStatus.FAILED,
         });
 
         logger.info('Marked operation as FAILED due to CCIP bridge failure', {
