@@ -85,7 +85,14 @@ RUN yarn workspace @mark/core build && \
 FROM base AS runtime
 
 # Install dbmate for database migrations
-RUN curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && \
+# Pin to specific version and verify SHA256 checksum for supply chain security
+ARG DBMATE_VERSION=v2.29.3
+ARG DBMATE_SHA256=2bb1554a32d9c0bd544841d3523eae64fd60a58d7720c5d82900043dc5e87a6c
+RUN set -eux; \
+    curl -fsSL -o /tmp/dbmate \
+        https://github.com/amacneil/dbmate/releases/download/${DBMATE_VERSION}/dbmate-linux-amd64; \
+    echo "${DBMATE_SHA256}  /tmp/dbmate" | sha256sum -c -; \
+    mv /tmp/dbmate /usr/local/bin/dbmate; \
     chmod +x /usr/local/bin/dbmate
 
 ENV NODE_ENV=production \
