@@ -498,6 +498,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       regularRebalanceOpTTLMinutes:
         configJson.regularRebalanceOpTTLMinutes ??
         parseInt((await fromEnv('REGULAR_REBALANCE_OP_TTL_MINUTES')) || '1440'),
+      goldskyWebhookSecret: configJson.goldskyWebhookSecret ?? (await fromEnv('GOLDSKY_WEBHOOK_SECRET')) ?? undefined,
     };
 
     validateConfiguration(config);

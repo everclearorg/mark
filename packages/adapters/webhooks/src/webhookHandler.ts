@@ -1,5 +1,5 @@
-import { createHmac, timingSafeEqual } from 'crypto';
-import { Logger } from '@mark/logger';
+import { timingSafeEqual } from 'crypto';
+import { Logger, jsonifyError } from '@mark/logger';
 import { WebhookPayload, InvoiceEnqueuedWebhookPayload, SettlementEnqueuedWebhookPayload } from './types';
 import { WebhookEventProcessor, WebhookEventType } from '@mark/core';
 
@@ -26,24 +26,24 @@ export class WebhookHandler {
    */
   async handleWebhookRequest(
     rawBody: string,
-    signatureHeader?: string,
+    webhookSecretHeader?: string,
     webhookName?: string,
   ): Promise<WebhookHandlerResult> {
     try {
       this.logger.info('Webhook request received', {
         rawBody,
-        signatureHeader,
+        webhookSecretHeader,
         webhookName,
       });
 
-      if (!this.verifySignature(rawBody, signatureHeader)) {
-        this.logger.warn('Invalid webhook signature', {
-          hasSignature: !!signatureHeader,
+      if (!this.verifyWebhookSecret(webhookSecretHeader)) {
+        this.logger.warn('Invalid webhook secret', {
+          hasSecret: !!webhookSecretHeader,
           webhookName,
         });
         return {
           statusCode: 401,
-          body: JSON.stringify({ error: 'Invalid signature' }),
+          body: JSON.stringify({ error: 'Invalid webhook secret' }),
         };
       }
 
@@ -56,9 +56,8 @@ export class WebhookHandler {
       };
     } catch (error) {
       this.logger.error('Error handling webhook request', {
-        error: error instanceof Error ? error.message : 'Unknown error',
         webhookName,
-        stack: error instanceof Error ? error.stack : undefined,
+        error: jsonifyError(error),
       });
       return {
         statusCode: 500,
@@ -98,31 +97,30 @@ export class WebhookHandler {
   }
 
   /**
-   * Verify webhook signature
+   * Verify webhook secret
+   * Goldsky subgraph webhooks send the secret directly in the 'goldsky-webhook-secret' header.
+   * We compare this header value directly with the configured webhook secret.
    */
-  private verifySignature(rawBody: string, signatureHeader?: string): boolean {
-    if (!signatureHeader) {
-      this.logger.warn('No signature header provided');
+  private verifyWebhookSecret(webhookSecretHeader?: string): boolean {
+    if (!webhookSecretHeader) {
+      this.logger.warn('No webhook secret header provided');
       return false;
     }
 
     try {
-      // Extract signature from the header (assuming format: "sha256=<signature>")
-      const signature = signatureHeader.replace('sha256=', '');
+      // Goldsky subgraph webhooks send the secret directly in the header
+      // Use timing-safe comparison to prevent timing attacks
+      const providedSecret = Buffer.from(webhookSecretHeader);
+      const expectedSecret = Buffer.from(this.webhookSecret);
 
-      // Create HMAC signature
-      const hmac = createHmac('sha256', this.webhookSecret);
-      hmac.update(rawBody);
-      const expectedSignature = hmac.digest('hex');
+      if (providedSecret.length !== expectedSecret.length) {
+        return false;
+      }
 
-      // Compare signatures using timing-safe comparison
-      const providedSignature = Buffer.from(signature, 'hex');
-      const expectedSignatureBuffer = Buffer.from(expectedSignature, 'hex');
-
-      return timingSafeEqual(providedSignature, expectedSignatureBuffer);
+      return timingSafeEqual(providedSecret, expectedSecret);
     } catch (error) {
-      this.logger.error('Error verifying webhook signature', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+      this.logger.error('Error verifying webhook secret', {
+        error: jsonifyError(error),
       });
       return false;
     }

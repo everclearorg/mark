@@ -6,7 +6,6 @@ import {
   InvoiceEnqueuedWebhookPayload,
   SettlementEnqueuedWebhookPayload,
 } from '../src/types';
-import { createHmac } from 'crypto';
 import sinon, { createStubInstance, SinonStubbedInstance } from 'sinon';
 
 describe('WebhookHandler', () => {
@@ -29,10 +28,9 @@ describe('WebhookHandler', () => {
   });
 
   describe('handleWebhookRequest', () => {
-    const createValidSignature = (body: string): string => {
-      const hmac = createHmac('sha256', webhookSecret);
-      hmac.update(body);
-      return `sha256=${hmac.digest('hex')}`;
+    // Goldsky subgraph webhooks send the secret directly in the header
+    const createValidSecretHeader = (): string => {
+      return webhookSecret;
     };
 
     const createInvoiceEnqueuedPayload = (): InvoiceEnqueuedWebhookPayload => ({
@@ -120,12 +118,12 @@ describe('WebhookHandler', () => {
       entity: 'SettlementEnqueuedEvent',
     });
 
-    it('should successfully handle invoice-enqueued webhook with valid signature', async () => {
+    it('should successfully handle invoice-enqueued webhook with valid secret', async () => {
       const payload = createInvoiceEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
-      const signature = createValidSignature(rawBody);
+      const secretHeader = createValidSecretHeader();
 
-      const result = await webhookHandler.handleWebhookRequest(rawBody, signature, 'invoice-enqueued');
+      const result = await webhookHandler.handleWebhookRequest(rawBody, secretHeader, 'invoice-enqueued');
 
       expect(result.statusCode).toBe(200);
       const responseBody = JSON.parse(result.body);
@@ -141,12 +139,12 @@ describe('WebhookHandler', () => {
       );
     });
 
-    it('should successfully handle settlement-enqueued webhook with valid signature', async () => {
+    it('should successfully handle settlement-enqueued webhook with valid secret', async () => {
       const payload = createSettlementEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
-      const signature = createValidSignature(rawBody);
+      const secretHeader = createValidSecretHeader();
 
-      const result = await webhookHandler.handleWebhookRequest(rawBody, signature, 'settlement-enqueued');
+      const result = await webhookHandler.handleWebhookRequest(rawBody, secretHeader, 'settlement-enqueued');
 
       expect(result.statusCode).toBe(200);
       const responseBody = JSON.parse(result.body);
@@ -162,21 +160,21 @@ describe('WebhookHandler', () => {
       );
     });
 
-    it('should reject webhook with invalid signature', async () => {
+    it('should reject webhook with invalid secret', async () => {
       const payload = createInvoiceEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
-      const invalidSignature = 'sha256=invalid-signature';
+      const invalidSecret = 'invalid-secret';
 
-      const result = await webhookHandler.handleWebhookRequest(rawBody, invalidSignature, 'invoice-enqueued');
+      const result = await webhookHandler.handleWebhookRequest(rawBody, invalidSecret, 'invoice-enqueued');
 
       expect(result.statusCode).toBe(401);
       const responseBody = JSON.parse(result.body);
-      expect(responseBody.error).toBe('Invalid signature');
+      expect(responseBody.error).toBe('Invalid webhook secret');
       expect(mockProcessor.processEvent).not.toHaveBeenCalled();
-      expect(mockLogger.warn.calledWithMatch('Invalid webhook signature')).toBe(true);
+      expect(mockLogger.warn.calledWithMatch('Invalid webhook secret')).toBe(true);
     });
 
-    it('should reject webhook without signature header', async () => {
+    it('should reject webhook without secret header', async () => {
       const payload = createInvoiceEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
 
@@ -184,9 +182,9 @@ describe('WebhookHandler', () => {
 
       expect(result.statusCode).toBe(401);
       const responseBody = JSON.parse(result.body);
-      expect(responseBody.error).toBe('Invalid signature');
+      expect(responseBody.error).toBe('Invalid webhook secret');
       expect(mockProcessor.processEvent).not.toHaveBeenCalled();
-      expect(mockLogger.warn.calledWithMatch('No signature header provided')).toBe(true);
+      expect(mockLogger.warn.calledWithMatch('No webhook secret header provided')).toBe(true);
     });
 
     it('should handle webhook with no new data', async () => {
@@ -199,9 +197,9 @@ describe('WebhookHandler', () => {
         },
       };
       const rawBody = JSON.stringify(payload);
-      const signature = createValidSignature(rawBody);
+      const secretHeader = createValidSecretHeader();
 
-      const result = await webhookHandler.handleWebhookRequest(rawBody, signature, 'invoice-enqueued');
+      const result = await webhookHandler.handleWebhookRequest(rawBody, secretHeader, 'invoice-enqueued');
 
       expect(result.statusCode).toBe(200);
       const responseBody = JSON.parse(result.body);
@@ -229,9 +227,9 @@ describe('WebhookHandler', () => {
         entity: 'UnknownEvent',
       };
       const rawBody = JSON.stringify(payload);
-      const signature = createValidSignature(rawBody);
+      const secretHeader = createValidSecretHeader();
 
-      const result = await webhookHandler.handleWebhookRequest(rawBody, signature, 'unknown-webhook');
+      const result = await webhookHandler.handleWebhookRequest(rawBody, secretHeader, 'unknown-webhook');
 
       expect(result.statusCode).toBe(200);
       const responseBody = JSON.parse(result.body);
@@ -242,9 +240,9 @@ describe('WebhookHandler', () => {
 
     it('should handle JSON parse errors', async () => {
       const invalidJson = '{ invalid json }';
-      const signature = createValidSignature(invalidJson);
+      const secretHeader = createValidSecretHeader();
 
-      const result = await webhookHandler.handleWebhookRequest(invalidJson, signature, 'invoice-enqueued');
+      const result = await webhookHandler.handleWebhookRequest(invalidJson, secretHeader, 'invoice-enqueued');
 
       expect(result.statusCode).toBe(500);
       const responseBody = JSON.parse(result.body);
@@ -255,12 +253,12 @@ describe('WebhookHandler', () => {
     it('should handle processor errors gracefully', async () => {
       const payload = createInvoiceEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
-      const signature = createValidSignature(rawBody);
+      const secretHeader = createValidSecretHeader();
 
       const processorError = new Error('Processor failed');
       mockProcessor.processEvent = jest.fn().mockRejectedValue(processorError);
 
-      const result = await webhookHandler.handleWebhookRequest(rawBody, signature, 'invoice-enqueued');
+      const result = await webhookHandler.handleWebhookRequest(rawBody, secretHeader, 'invoice-enqueued');
 
       expect(result.statusCode).toBe(500);
       const responseBody = JSON.parse(result.body);
@@ -271,9 +269,9 @@ describe('WebhookHandler', () => {
     it('should set invoice event id from invoice.id', async () => {
       const payload = createInvoiceEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
-      const signature = createValidSignature(rawBody);
+      const secretHeader = createValidSecretHeader();
 
-      await webhookHandler.handleWebhookRequest(rawBody, signature, 'invoice-enqueued');
+      await webhookHandler.handleWebhookRequest(rawBody, secretHeader, 'invoice-enqueued');
 
       expect(mockProcessor.processEvent).toHaveBeenCalledWith(
         'webhook-123',
@@ -287,9 +285,9 @@ describe('WebhookHandler', () => {
     it('should set settlement event id from intentId', async () => {
       const payload = createSettlementEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
-      const signature = createValidSignature(rawBody);
+      const secretHeader = createValidSecretHeader();
 
-      await webhookHandler.handleWebhookRequest(rawBody, signature, 'settlement-enqueued');
+      await webhookHandler.handleWebhookRequest(rawBody, secretHeader, 'settlement-enqueued');
 
       expect(mockProcessor.processEvent).toHaveBeenCalledWith(
         'webhook-456',
@@ -303,23 +301,23 @@ describe('WebhookHandler', () => {
     it('should log webhook request details', async () => {
       const payload = createInvoiceEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
-      const signature = createValidSignature(rawBody);
+      const secretHeader = createValidSecretHeader();
 
-      await webhookHandler.handleWebhookRequest(rawBody, signature, 'invoice-enqueued');
+      await webhookHandler.handleWebhookRequest(rawBody, secretHeader, 'invoice-enqueued');
 
       expect(mockLogger.info.calledWithMatch('Webhook request received')).toBe(true);
     });
 
-    it('should handle signature verification errors', async () => {
+    it('should handle secret verification errors', async () => {
       const payload = createInvoiceEnqueuedPayload();
       const rawBody = JSON.stringify(payload);
-      // Invalid hex signature that will cause an error in Buffer.from
-      const invalidHexSignature = 'sha256=invalid-hex-signature-zzz';
+      // Use a secret that doesn't match (will fail comparison)
+      const invalidSecret = 'wrong-secret';
 
-      const result = await webhookHandler.handleWebhookRequest(rawBody, invalidHexSignature, 'invoice-enqueued');
+      const result = await webhookHandler.handleWebhookRequest(rawBody, invalidSecret, 'invoice-enqueued');
 
       expect(result.statusCode).toBe(401);
-      expect(mockLogger.error.calledWithMatch('Error verifying webhook signature')).toBe(true);
+      expect(mockLogger.warn.calledWithMatch('Invalid webhook secret')).toBe(true);
     });
   });
 });

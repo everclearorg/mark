@@ -77,7 +77,11 @@ export async function initializeAdapters(config: MarkConfiguration, logger: Logg
   };
 
   // Initialize webhook handler
-  const webhookHandler = new WebhookHandler(process.env.GOLDSKY_WEBHOOK_SECRET || '', logger, { processEvent });
+  const webhookSecret = config.goldskyWebhookSecret || '';
+  if (!webhookSecret) {
+    logger.warn('Goldsky webhook secret not configured - webhook authentication will fail');
+  }
+  const webhookHandler = new WebhookHandler(webhookSecret, logger, { processEvent });
 
   return {
     processingContext,

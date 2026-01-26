@@ -158,18 +158,19 @@ function registerRoutes(server: FastifyInstance): void {
       }
 
       const webhookName = req.params.webhookName;
-      const signatureHeader =
-        (req.headers['x-goldsky-signature'] as string) || (req.headers['X-Goldsky-Signature'] as string);
+      // Goldsky subgraph webhooks send the secret in the 'goldsky-webhook-secret' header
+      const webhookSecretHeader =
+        (req.headers['goldsky-webhook-secret'] as string) || (req.headers['Goldsky-Webhook-Secret'] as string);
       const rawBody = JSON.stringify(req.body);
 
       logger.info('Processing webhook request', {
         webhookName,
         path: req.url,
-        hasSignature: !!signatureHeader,
+        hasSignature: !!webhookSecretHeader,
       });
 
       try {
-        const result = await adapters.webhookHandler.handleWebhookRequest(rawBody, signatureHeader, webhookName);
+        const result = await adapters.webhookHandler.handleWebhookRequest(rawBody, webhookSecretHeader, webhookName);
         return res.status(result.statusCode).send(JSON.parse(result.body));
       } catch (error) {
         logger.error('Failed to handle webhook request', {
