@@ -9,6 +9,10 @@ import { EventProcessor } from './processor';
 import { EventConsumer } from './consumer';
 import { ProcessingContext } from '@mark/poller/src/init';
 
+// Configurable settings via environment variables
+const DEFAULT_MAX_RETRIES = parseInt(process.env.EVENT_MAX_RETRIES || '10', 10);
+const MAX_CONCURRENT_EVENTS = parseInt(process.env.MAX_CONCURRENT_EVENTS || '5', 10);
+
 export interface InvoiceHandlerAdapters {
   processingContext: ProcessingContext;
   webhookHandler: WebhookHandler;
@@ -51,8 +55,13 @@ export async function initializeAdapters(config: MarkConfiguration, logger: Logg
   // Initialize event processor
   const eventProcessor = new EventProcessor(processingContext);
 
-  // Initialize event consumer
-  const eventConsumer = new EventConsumer(eventQueue, eventProcessor, logger);
+  // Initialize event consumer with configurable concurrency
+  const eventConsumer = new EventConsumer(eventQueue, eventProcessor, logger, MAX_CONCURRENT_EVENTS);
+
+  logger.info('Event consumer initialized', {
+    maxConcurrentEvents: MAX_CONCURRENT_EVENTS,
+    defaultMaxRetries: DEFAULT_MAX_RETRIES,
+  });
 
   // Create the processEvent callback that calls eventConsumer.addEvent
   const processEvent = async (id: string, type: WebhookEventType, data: WebhookEvent) => {
@@ -62,7 +71,7 @@ export async function initializeAdapters(config: MarkConfiguration, logger: Logg
       data,
       priority: EventPriority.NORMAL,
       retryCount: 0,
-      maxRetries: -1,
+      maxRetries: DEFAULT_MAX_RETRIES,
       scheduledAt: Date.now(),
       metadata: {
         source: 'goldsky-webhook',

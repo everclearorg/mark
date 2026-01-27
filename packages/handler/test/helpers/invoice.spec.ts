@@ -40,6 +40,10 @@ describe('Invoice Helpers', () => {
       moveProcessingToPending: jest.fn(),
       acknowledgeProcessedEvent: jest.fn(),
       moveToDeadLetterQueue: jest.fn(),
+      getBackfillCursor: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),
+      setBackfillCursor: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      getQueueDepths: jest.fn(),
+      getQueueStatus: jest.fn(),
     } as any;
 
     mockEventConsumer = {
@@ -105,6 +109,8 @@ describe('Invoice Helpers', () => {
 
       await checkPendingInvoices(mockAdapters);
 
+      // Verify cursor was fetched from Redis
+      expect(mockEventQueue.getBackfillCursor).toHaveBeenCalled();
       expect(mockEverclear.fetchInvoicesByTxNonce).toHaveBeenCalledWith(null, 100);
       expect(mockEventQueue.hasEvent).toHaveBeenCalledTimes(2);
       expect(mockEventConsumer.addEvent).toHaveBeenCalledTimes(2);
@@ -112,6 +118,8 @@ describe('Invoice Helpers', () => {
         'Found InvoiceEnqueued event missed by webhook',
         { invoiceId: 'invoice-1' },
       );
+      // Verify cursor was persisted to Redis
+      expect(mockEventQueue.setBackfillCursor).toHaveBeenCalledWith('cursor-123');
     });
 
     it('should skip invoices that already exist in queue', async () => {

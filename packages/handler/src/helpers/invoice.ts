@@ -1,19 +1,22 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { AxiosQueryError, SettlementEnqueuedEvent, WebhookEventType, InvoiceEnqueuedEvent, Invoice } from '@mark/core';
+import { SettlementEnqueuedEvent, WebhookEventType, InvoiceEnqueuedEvent, Invoice, isNotFoundError } from '@mark/core';
 import { jsonifyError } from '@mark/logger';
 import { InvoiceHandlerAdapters } from '#/init';
 import { EventPriority, QueuedEvent } from '#/queue';
 
-// Store the cursor (hub_invoice_enqueued_tx_nonce) in memory (no cursor on start)
-let lastCursor: string | null = null;
+// Default max retries for events (configurable via environment variable)
+const DEFAULT_MAX_RETRIES = parseInt(process.env.EVENT_MAX_RETRIES || '10', 10);
 
 /**
  * Check for pending invoices and enqueue InvoiceEnqueued events for missed webhooks
+ * Uses Redis-backed cursor for persistence across container restarts
  */
 export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Promise<void> {
   try {
     const { everclear, logger } = adapters.processingContext;
     const { eventQueue } = adapters;
+
+    // Get cursor from Redis for persistence across restarts
+    const lastCursor = await eventQueue.getBackfillCursor();
 
     // Query invoices from API with cursor-based pagination
     let result: { invoices: Invoice[]; nextCursor: string | null };
@@ -94,7 +97,7 @@ export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Pr
         data: invoiceEvent,
         priority: EventPriority.NORMAL,
         retryCount: 0,
-        maxRetries: -1,
+        maxRetries: DEFAULT_MAX_RETRIES,
         scheduledAt: Date.now(),
         metadata: {
           source: 'backfill-check',
@@ -107,10 +110,10 @@ export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Pr
       });
     }
 
-    // Update cursor to nextCursor for the next call
-    lastCursor = nextCursor;
-    logger.debug('Updated cursor', {
-      lastCursor,
+    // Persist cursor to Redis for consistency across restarts
+    await eventQueue.setBackfillCursor(nextCursor);
+    logger.debug('Updated cursor in Redis', {
+      cursor: nextCursor,
     });
   } catch (error) {
     adapters.processingContext.logger.error('Error checking for pending invoices', {
@@ -146,19 +149,11 @@ export async function checkSettledInvoices(adapters: InvoiceHandlerAdapters): Pr
         await everclear.fetchInvoiceById(invoiceId);
         // Invoice still exists and is not settled, skip it
       } catch (error) {
-        // axiosGet() throws AxiosQueryError with context.status containing the HTTP status code
+        // Use centralized error detection helper
         // If we get a 404/NotFound error, the invoice was settled
         // (API filters out SETTLED invoices, so 404 means it's settled or doesn't exist)
         // Since the invoice is in our purchase cache, it must have existed, so 404 = settled
-        const isNotFound =
-          (error instanceof AxiosQueryError && error.context?.status === 404) ||
-          (error as any).context?.status === 404 ||
-          (error as any).response?.status === 404 ||
-          (error as any).status === 404 ||
-          (error as any).message?.includes('404') ||
-          (error as any).message?.includes('NotFound');
-
-        if (isNotFound) {
+        if (isNotFoundError(error)) {
           settledInvoiceIds.push(invoiceId);
           logger.info('Found settled invoice that was missed by webhook', {
             invoiceId,
@@ -206,7 +201,7 @@ export async function checkSettledInvoices(adapters: InvoiceHandlerAdapters): Pr
           data: settlementEvent,
           priority: EventPriority.NORMAL,
           retryCount: 0,
-          maxRetries: -1,
+          maxRetries: DEFAULT_MAX_RETRIES,
           scheduledAt: Date.now(),
           metadata: {
             source: 'backfill-check',

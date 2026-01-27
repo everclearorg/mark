@@ -246,6 +246,9 @@ async function runMaintenanceTasks(): Promise<void> {
     // Log file descriptor usage
     logFileDescriptorUsage(context.logger);
 
+    // Collect and push queue health metrics
+    await collectQueueMetrics(adapters);
+
     // Check for pending invoices and enqueue missed InvoiceEnqueued events
     await checkPendingInvoices(adapters);
 
@@ -274,6 +277,40 @@ async function runMaintenanceTasks(): Promise<void> {
     }
   } catch (error) {
     logger.error('Error running maintenance tasks', {
+      error: jsonifyError(error),
+    });
+  }
+}
+
+/**
+ * Collect and push queue health metrics to Prometheus
+ */
+async function collectQueueMetrics(adapters: InvoiceHandlerAdapters): Promise<void> {
+  try {
+    const { eventQueue, processingContext } = adapters;
+    const { prometheus, logger: contextLogger } = processingContext;
+
+    // Get queue depths for each event type
+    const queueDepths = await eventQueue.getQueueDepths();
+    const queueStatus = await eventQueue.getQueueStatus();
+
+    // Update Prometheus metrics for each event type
+    for (const [eventType, depths] of Object.entries(queueDepths)) {
+      await prometheus.updateEventQueueDepth(eventType, 'pending', depths.pending);
+      await prometheus.updateEventQueueDepth(eventType, 'processing', depths.processing);
+    }
+
+    // Update dead letter queue metric
+    await prometheus.updateDeadLetterQueueSize(queueStatus.deadLetterQueueLength);
+
+    // Log queue status for visibility
+    contextLogger.debug('Queue health metrics collected', {
+      queueDepths,
+      deadLetterQueueLength: queueStatus.deadLetterQueueLength,
+      lastProcessedAt: queueStatus.lastProcessedAt,
+    });
+  } catch (error) {
+    logger.warn('Failed to collect queue metrics', {
       error: jsonifyError(error),
     });
   }

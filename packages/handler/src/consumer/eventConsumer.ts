@@ -3,12 +3,17 @@ import { EventQueue, QueuedEvent } from '#/queue';
 import { EventProcessingResult, EventProcessor } from '#/processor';
 import { WebhookEventType } from '@mark/core';
 
+// Debounce delay for scheduling pending work (prevents unbounded task spawning)
+const PENDING_WORK_DEBOUNCE_MS = 100;
+
 export class EventConsumer {
   private isProcessing = false;
   // The total number of events being processed across all event types
   private totalActive = 0;
   // The number of events being processed per event type
   private readonly activeCounts: Record<WebhookEventType, number> = {} as Record<WebhookEventType, number>;
+  // Debounce timers for pending work per event type (prevents unbounded async spawning)
+  private readonly pendingWorkTimers: Map<WebhookEventType, NodeJS.Timeout> = new Map();
 
   constructor(
     private readonly queue: EventQueue,
@@ -55,6 +60,9 @@ export class EventConsumer {
 
     this.isProcessing = false;
     this.logger.info('Stopping event consumer');
+
+    // Clear any pending work timers to prevent new processing
+    this.clearPendingWorkTimers();
 
     // Wait for active processing to complete (with timeout)
     const maxWaitTime = 30000; // 30 seconds
@@ -104,12 +112,34 @@ export class EventConsumer {
       return;
     }
 
-    // Process immediately
-    this.processEvent(event).catch((e) => {
-      this.logger.error('Error processing event', {
-        event,
+    // Process immediately with proper error handling
+    this.processEventSafely(event);
+  }
+
+  /**
+   * Process an event with proper error handling for fire-and-forget scenarios.
+   * Ensures that errors trigger retry logic instead of being silently logged.
+   */
+  private processEventSafely(event: QueuedEvent): void {
+    this.processEvent(event).catch(async (e) => {
+      const error = e instanceof Error ? e : new Error(String(e));
+      this.logger.error('Unhandled error processing event, scheduling retry', {
+        eventId: event.id,
+        eventType: event.type,
+        retryCount: event.retryCount,
         error: jsonifyError(e),
       });
+
+      // Trigger retry logic to ensure event is not lost
+      try {
+        await this.handleRetry(event, error, 60000);
+      } catch (retryError) {
+        this.logger.error('Failed to schedule retry for event', {
+          eventId: event.id,
+          eventType: event.type,
+          error: jsonifyError(retryError),
+        });
+      }
     });
   }
 
@@ -143,12 +173,7 @@ export class EventConsumer {
         }
 
         for (const event of events) {
-          this.processEvent(event).catch((e) => {
-            this.logger.error('Error processing event from queue', {
-              event,
-              error: jsonifyError(e),
-            });
-          });
+          this.processEventSafely(event);
         }
       } catch (e) {
         this.logger.error('Error processing pending events', {
@@ -182,14 +207,8 @@ export class EventConsumer {
       const updatedCount = this.activeCounts[event.type] - 1;
       this.activeCounts[event.type] = Math.max(0, updatedCount);
 
-      // After processing completes, check for pending events for this event type
-      // Process one batch opportunistically (the loop will continue if more events are available)
-      this.processPendingEventsForType(event.type).catch((e) => {
-        this.logger.error('Error processing pending events', {
-          eventType: event.type,
-          error: jsonifyError(e),
-        });
-      });
+      // Schedule pending work with debouncing to prevent unbounded async spawning
+      this.schedulePendingWork(event.type);
     }
   }
 
@@ -259,5 +278,45 @@ export class EventConsumer {
 
     // Re-enqueue event
     await this.queue.enqueueEvent(event, event.priority);
+  }
+
+  /**
+   * Schedule pending work for an event type with debouncing.
+   * Prevents unbounded async task spawning by coalescing rapid calls.
+   */
+  private schedulePendingWork(eventType: WebhookEventType): void {
+    // If there's already a pending timer for this event type, don't schedule another
+    if (this.pendingWorkTimers.has(eventType)) {
+      return;
+    }
+
+    // Schedule processing after a short debounce delay
+    const timer = setTimeout(() => {
+      this.pendingWorkTimers.delete(eventType);
+
+      // Only process if we're still running
+      if (!this.isProcessing) {
+        return;
+      }
+
+      this.processPendingEventsForType(eventType).catch((e) => {
+        this.logger.error('Error processing pending events after debounce', {
+          eventType,
+          error: jsonifyError(e),
+        });
+      });
+    }, PENDING_WORK_DEBOUNCE_MS);
+
+    this.pendingWorkTimers.set(eventType, timer);
+  }
+
+  /**
+   * Clear all pending work timers (called during shutdown)
+   */
+  private clearPendingWorkTimers(): void {
+    for (const timer of this.pendingWorkTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingWorkTimers.clear();
   }
 }

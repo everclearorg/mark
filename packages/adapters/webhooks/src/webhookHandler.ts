@@ -30,9 +30,11 @@ export class WebhookHandler {
     webhookName?: string,
   ): Promise<WebhookHandlerResult> {
     try {
+      // Log webhook receipt without sensitive data (secret header)
+      // Only log body length to avoid potential PII in logs
       this.logger.info('Webhook request received', {
-        rawBody,
-        webhookSecretHeader,
+        bodyLength: rawBody.length,
+        hasSecretHeader: !!webhookSecretHeader,
         webhookName,
       });
 
