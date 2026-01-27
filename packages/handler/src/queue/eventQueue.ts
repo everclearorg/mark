@@ -44,6 +44,8 @@ export class EventQueue {
   private readonly deadLetterQueueKey = `${this.prefix}:dead-letter`;
   private readonly dataKey = `${this.prefix}:data`;
   private readonly statusKey = `${this.prefix}:status`;
+  private readonly cursorKey = `${this.prefix}:backfill-cursor`;
+  private readonly metricsKey = `${this.prefix}:metrics`;
   private readonly store: Redis;
 
   constructor(
@@ -332,5 +334,61 @@ export class EventQueue {
       lastAction: action,
     };
     await this.store.set(this.statusKey, JSON.stringify(status));
+  }
+
+  /**
+   * Get the backfill cursor from Redis for persistent pagination across restarts
+   * @returns The cursor string or null if not set
+   */
+  async getBackfillCursor(): Promise<string | null> {
+    const cursor = await this.store.get(this.cursorKey);
+    return cursor || null;
+  }
+
+  /**
+   * Set the backfill cursor in Redis for persistent pagination across restarts
+   * @param cursor The cursor value to persist (or null to clear)
+   */
+  async setBackfillCursor(cursor: string | null): Promise<void> {
+    if (cursor) {
+      await this.store.set(this.cursorKey, cursor);
+    } else {
+      await this.store.del(this.cursorKey);
+    }
+  }
+
+  /**
+   * Increment a metric counter in Redis
+   * @param metricName The name of the metric
+   * @param labels Optional labels for the metric
+   */
+  async incrementMetric(metricName: string, labels: Record<string, string> = {}): Promise<void> {
+    const labelStr = Object.entries(labels)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join(',');
+    const key = labelStr ? `${this.metricsKey}:${metricName}:${labelStr}` : `${this.metricsKey}:${metricName}`;
+    await this.store.incr(key);
+  }
+
+  /**
+   * Get queue depths for each event type (for metrics/monitoring)
+   * @returns Map of event type to queue depth
+   */
+  async getQueueDepths(): Promise<Record<WebhookEventType, { pending: number; processing: number }>> {
+    const depths: Record<WebhookEventType, { pending: number; processing: number }> = {} as Record<
+      WebhookEventType,
+      { pending: number; processing: number }
+    >;
+
+    for (const eventType of Object.values(WebhookEventType) as WebhookEventType[]) {
+      const [pending, processing] = await Promise.all([
+        this.store.zcard(this.pendingQueueKeys[eventType]),
+        this.store.zcard(this.processingQueueKeys[eventType]),
+      ]);
+      depths[eventType] = { pending, processing };
+    }
+
+    return depths;
   }
 }

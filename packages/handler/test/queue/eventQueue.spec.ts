@@ -306,4 +306,65 @@ describe('EventQueue', () => {
       expect(mockMulti.zadd).toHaveBeenCalled();
     });
   });
+
+  describe('getBackfillCursor', () => {
+    it('should return cursor from Redis', async () => {
+      mockRedis.get = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue('cursor-123');
+
+      const result = await eventQueue.getBackfillCursor();
+
+      expect(result).toBe('cursor-123');
+      expect(mockRedis.get).toHaveBeenCalledWith('event-queue:backfill-cursor');
+    });
+
+    it('should return null when cursor is not set', async () => {
+      mockRedis.get = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(null);
+
+      const result = await eventQueue.getBackfillCursor();
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('setBackfillCursor', () => {
+    it('should set cursor in Redis', async () => {
+      mockRedis.set = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue('OK');
+
+      await eventQueue.setBackfillCursor('cursor-123');
+
+      expect(mockRedis.set).toHaveBeenCalled();
+      // Verify the key and value were passed correctly
+      const setCall = (mockRedis.set as jest.Mock).mock.calls[0];
+      expect(setCall[0]).toBe('event-queue:backfill-cursor');
+      expect(setCall[1]).toBe('cursor-123');
+    });
+
+    it('should delete cursor when null is passed', async () => {
+      mockRedis.del = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(1);
+
+      await eventQueue.setBackfillCursor(null);
+
+      expect(mockRedis.del).toHaveBeenCalled();
+      // Verify the key was passed correctly
+      const delCall = (mockRedis.del as jest.Mock).mock.calls[0];
+      expect(delCall[0]).toBe('event-queue:backfill-cursor');
+    });
+  });
+
+  describe('getQueueDepths', () => {
+    it('should return queue depths for all event types', async () => {
+      mockRedis.zcard = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(5);
+
+      const result = await eventQueue.getQueueDepths();
+
+      expect(result).toBeDefined();
+      expect(mockRedis.zcard).toHaveBeenCalled();
+      // Each event type should have pending and processing counts
+      for (const eventType of Object.values(WebhookEventType)) {
+        expect(result[eventType]).toBeDefined();
+        expect(result[eventType].pending).toBe(5);
+        expect(result[eventType].processing).toBe(5);
+      }
+    });
+  });
 });
