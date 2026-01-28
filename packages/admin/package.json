@@ -14,6 +14,7 @@
         "build": "tsc --build ./tsconfig.json",
         "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
         "dev": "ts-node-dev -r tsconfig-paths/register --respawn src/dev.ts",
+        "generate:openapi": "ts-node -P ../../tsconfig.json scripts/generateOpenApi.ts",
         "lint": "eslint src",
         "lint:fix": "yarn lint --fix",
         "test": "jest --coverage"
@@ -42,6 +43,8 @@
         "ts-jest": "29.1.2",
         "ts-node": "10.9.2",
         "ts-node-dev": "2.0.0",
-        "typescript": "5.7.2"
+        "typescript": "5.7.2",
+        "yaml": "2.8.2",
+        "zod": "3.25.76"
     }
 }
