@@ -424,7 +424,7 @@ module "mark_invoice_handler" {
   task_subnets           = module.network.private_subnets
   efs_id                 = module.efs.mark_efs_id
   docker_image           = var.handler_image_uri
-  container_family       = "${var.bot_name}-invoice-handler"
+  container_family       = "${var.bot_name}-handler"
   container_port         = 3000
   cpu                    = 512
   memory                 = 1024
