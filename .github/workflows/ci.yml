@@ -229,6 +229,16 @@ jobs:
         with:
           mask-password: 'true'
 
+      - name: Ensure ECR repositories exist
+        run: |
+          # Create repositories if they don't exist
+          aws ecr describe-repositories --repository-names $ADMIN_REPOSITORY --region $AWS_REGION || \
+            aws ecr create-repository --repository-name $ADMIN_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
+          aws ecr describe-repositories --repository-names $HANDLER_REPOSITORY --region $AWS_REGION || \
+            aws ecr create-repository --repository-name $HANDLER_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
+          aws ecr describe-repositories --repository-names $POLLER_REPOSITORY --region $AWS_REGION || \
+            aws ecr create-repository --repository-name $POLLER_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
+
       - name: Build and push Admin Docker image
         run: |
           docker build -f docker/admin/Dockerfile -t $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG .
