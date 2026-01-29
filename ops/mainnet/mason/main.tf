@@ -488,6 +488,13 @@ module "mark_admin_api" {
     WHITELISTED_RECIPIENTS       = try(local.mark_config.whitelisted_recipients, "")
     PUSH_GATEWAY_URL             = "http://${var.bot_name}-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
     PROMETHEUS_URL               = "http://${var.bot_name}-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+
+    # Key Sharding (Shamir 2-of-2) - reconstructs secrets from AWS SSM + GCP at runtime
+    SHARD_MANIFEST                 = local.shard_manifest
+    GCP_PROJECT_ID                 = local.gcp_project_id
+    GOOGLE_CLOUD_PROJECT           = local.gcp_project_id
+    GCP_WORKLOAD_IDENTITY_PROVIDER = local.gcp_workload_identity_provider
+    GCP_SERVICE_ACCOUNT_EMAIL      = local.gcp_service_account
   }
 }
 

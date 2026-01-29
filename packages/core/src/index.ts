@@ -7,3 +7,4 @@ export * from './types';
 export * from './solana';
 export * from './tron';
 export * from './utils';
+export * from './shard';

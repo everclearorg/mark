@@ -57,6 +57,104 @@ export function initializeAdapters(config: MarkConfiguration, logger: Logger): M
     serviceName: 'mark-poller',
     includeSolanaSigner: true,
   });
+}
+
+/**
+ * Validates token rebalance configuration for production readiness.
+ * Throws if required fields are missing when token rebalancing is enabled.
+ */
+function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger): void {
+  validateSingleTokenRebalanceConfig(config.tacRebalance, 'tacRebalance', config, logger);
+  validateSingleTokenRebalanceConfig(config.methRebalance, 'methRebalance', config, logger);
+}
+
+function initializeAdapters(config: MarkConfiguration, logger: Logger): MarkAdapters {
+  // Initialize adapters in the correct order
+  const web3Signer = config.web3SignerUrl.startsWith('http')
+    ? new Web3Signer(config.web3SignerUrl)
+    : new EthWallet(config.web3SignerUrl);
+
+  // TODO: update chainservice to automatically get Tron private key from config.
+  const tronPrivateKey = config.chains[TRON_CHAINID]?.privateKey;
+  if (tronPrivateKey) {
+    logger.info('Using Tron signer key from configuration');
+    process.env.TRON_PRIVATE_KEY = tronPrivateKey;
+  } else {
+    logger.warn('Tron signer key is not in configuration');
+  }
+
+  const chainService = new ChainService(
+    {
+      chains: config.chains,
+      maxRetries: 3,
+      retryDelay: 15000,
+      logLevel: config.logLevel,
+    },
+    web3Signer as EthWallet,
+    logger,
+  );
+
+  // Initialize fill service chain service if FS signer URL is configured
+  // This allows TAC rebalancing to use a separate sender address for FS
+  // senderAddress defaults to fillService.address if not explicitly set (same key = same address)
+  let fillServiceChainService: ChainService | undefined;
+  const fsSenderAddress = config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
+  if (config.fillServiceSignerUrl && fsSenderAddress) {
+    logger.info('Initializing Fill Service chain service for TAC rebalancing', {
+      signerUrl: config.fillServiceSignerUrl,
+      senderAddress: fsSenderAddress,
+    });
+
+    const fillServiceSigner = config.fillServiceSignerUrl.startsWith('http')
+      ? new Web3Signer(config.fillServiceSignerUrl)
+      : new EthWallet(config.fillServiceSignerUrl);
+
+    fillServiceChainService = new ChainService(
+      {
+        chains: config.chains,
+        maxRetries: 3,
+        retryDelay: 15000,
+        logLevel: config.logLevel,
+      },
+      fillServiceSigner as EthWallet,
+      logger,
+    );
+  }
+
+  const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
+
+  const purchaseCache = new PurchaseCache(config.redis.host, config.redis.port);
+
+  const prometheus = new PrometheusAdapter(logger, 'mark-poller', config.pushGatewayUrl);
+
+  const rebalance = new RebalanceAdapter(config, logger, database);
+
+  database.initializeDatabase(config.database);
+
+  // Initialize Solana signer if configuration is present
+  let solanaSigner: SolanaSigner | undefined;
+  if (config.solana?.privateKey) {
+    try {
+      solanaSigner = createSolanaSigner({
+        privateKey: config.solana.privateKey,
+        rpcUrl: config.solana.rpcUrl,
+        commitment: 'confirmed',
+        maxRetries: 3,
+      });
+      logger.info('Solana signer initialized', {
+        address: solanaSigner.getAddress(),
+        rpcUrl: config.solana.rpcUrl || 'https://api.mainnet-beta.solana.com',
+      });
+    } catch (error) {
+      logger.error('Failed to initialize Solana signer', {
+        error: (error as Error).message,
+        // Don't log the actual error which might contain key info
+      });
+      // Don't throw - allow other functionality to work
+    }
+  } else {
+    logger.debug('Solana signer not configured - Solana USDC rebalancing will not be available');
+  }
 
   // Return MarkAdapters with logger added
   return {
