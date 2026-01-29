@@ -20,8 +20,10 @@
     "packages/adapters/rebalance"
   ],
   "scripts": {
+    "aws:setup": "npx ts-node scripts/aws-shard-setup.ts --manifest",
     "build": "yarn workspaces foreach -Av --parallel --topological-dev run build",
     "clean": "yarn workspaces foreach -A --parallel run clean",
+    "gcp:setup": "npx ts-node scripts/gcp-shard-setup.ts --manifest",
     "lint": "yarn lint:package && yarn workspaces foreach -A --parallel run lint",
     "lint:fix": "yarn workspaces foreach -A --parallel run lint:fix",
     "lint:package": "sort-package-json",
@@ -29,6 +31,8 @@
     "purge": "yarn workspaces foreach -A --parallel run clean && rimraf node_modules packages/*/node_modules packages/adapters/*/node_modules .yarn/cache .yarn/install-state.gz",
     "rebalance:dev": "npx tsx packages/adapters/rebalance/scripts/dev.ts",
     "redis:up": "yarn workspace @mark/cache docker:redis:up",
+    "shamir:split": "npx ts-node scripts/shamir-split-secret.ts",
+    "shamir:verify": "npx ts-node scripts/shamir-verify.ts",
     "test": "yarn workspaces foreach -A --parallel run test",
     "test:unit": "yarn workspaces foreach -v -A --parallel run test:unit"
   },

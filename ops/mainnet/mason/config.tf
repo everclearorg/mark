@@ -5,6 +5,57 @@ locals {
     region = var.region
   }
 
+  # ============================================================================
+  # KEY SHARDING CONFIGURATION (Shamir 2-of-2)
+  # Share 1: AWS SSM (sa-east-1), Share 2: GCP Secret Manager (everclear-staging)
+  # ============================================================================
+  shard_manifest = jsonencode({
+    version = "1.0"
+    awsConfig = {
+      region          = "sa-east-1"
+      parameterPrefix = "/mason/config"
+    }
+    gcpConfig = {
+      project = "everclear-staging"
+    }
+    shardedFields = [
+      {
+        path         = "web3_signer_private_key"
+        awsParamName = "/mason/config/web3_signer_private_key_share1"
+        gcpSecretRef = { project = "everclear-staging", secretId = "mason-web3-signer-pk-share2" }
+        method       = "shamir"
+        required     = true
+      },
+      {
+        path         = "web3_fastfill_signer_private_key"
+        awsParamName = "/mason/config/web3_fastfill_signer_private_key_share1"
+        gcpSecretRef = { project = "everclear-staging", secretId = "mason-fastfill-signer-pk-share2" }
+        method       = "shamir"
+        required     = true
+      },
+      {
+        path         = "ton.mnemonic"
+        awsParamName = "/mason/config/ton_mnemonic_share1"
+        gcpSecretRef = { project = "everclear-staging", secretId = "mason-ton-mnemonic-share2" }
+        method       = "shamir"
+        required     = true
+      },
+      {
+        path         = "solana.privateKey"
+        awsParamName = "/mason/config/solana_privateKey_share1"
+        gcpSecretRef = { project = "everclear-staging", secretId = "mason-solana-pk-share2" }
+        method       = "shamir"
+        required     = true
+      }
+    ]
+  })
+
+  # GCP Workload Identity for cross-cloud authentication (AWS → GCP)
+  gcp_project_number             = "842536713593"
+  gcp_project_id                 = "everclear-staging"
+  gcp_service_account            = "shard-reader-staging@everclear-staging.iam.gserviceaccount.com"
+  gcp_workload_identity_provider = "projects/${local.gcp_project_number}/locations/global/workloadIdentityPools/aws-cross-cloud-staging/providers/aws-staging"
+
   prometheus_config = <<-EOT
     global:
       scrape_interval: 15s
@@ -65,7 +116,7 @@ locals {
   # - ton.mnemonic, tonSignerAddress
   #
   # See packages/core/src/config.ts for the fallback logic.
-  
+
   poller_env_vars = {
     # Core infrastructure (must be env vars - runtime-determined values)
     DATABASE_URL   = module.db.database_url
@@ -85,6 +136,15 @@ locals {
 
     # SSM Parameter for runtime config loading
     MARK_CONFIG_SSM_PARAMETER = "MASON_CONFIG_MAINNET"
+
+    # Key Sharding (Shamir 2-of-2) - reconstructs secrets from AWS SSM + GCP at runtime
+    SHARD_MANIFEST = local.shard_manifest
+
+    # GCP Workload Identity Federation (AWS → GCP authentication)
+    GCP_PROJECT_ID                 = local.gcp_project_id
+    GOOGLE_CLOUD_PROJECT           = local.gcp_project_id
+    GCP_WORKLOAD_IDENTITY_PROVIDER = local.gcp_workload_identity_provider
+    GCP_SERVICE_ACCOUNT_EMAIL      = local.gcp_service_account
 
     # S3 rebalance config
     REBALANCE_CONFIG_S3_BUCKET = local.rebalanceConfig.bucket

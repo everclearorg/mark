@@ -6,11 +6,35 @@
  */
 
 /**
+ * AWS configuration defaults for the manifest.
+ */
+export interface AwsManifestConfig {
+  /** Default AWS region for SSM operations */
+  region?: string;
+  /** Default SSM parameter path prefix (e.g., /mason/config) */
+  parameterPrefix?: string;
+}
+
+/**
+ * GCP configuration defaults for the manifest.
+ */
+export interface GcpManifestConfig {
+  /** Default GCP project ID */
+  project?: string;
+}
+
+/**
  * Manifest declaring which fields in the config JSON are sharded.
  */
 export interface ShardManifest {
   /** Schema version for forward compatibility */
   version: '1.0';
+  /** Optional description for the manifest */
+  description?: string;
+  /** AWS configuration defaults */
+  awsConfig?: AwsManifestConfig;
+  /** GCP configuration defaults */
+  gcpConfig?: GcpManifestConfig;
   /** List of sharded field configurations */
   shardedFields: ShardedFieldConfig[];
 }
@@ -24,6 +48,12 @@ export interface ShardedFieldConfig {
    * Supports array indices: "chains.1.privateKey" or "chains[1].privateKey"
    */
   path: string;
+
+  /**
+   * AWS SSM Parameter name for Share 1.
+   * If not provided, derived from path: /{prefix}/{path}_share1
+   */
+  awsParamName?: string;
 
   /**
    * GCP Secret Manager reference for Share 2.
