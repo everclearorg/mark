@@ -239,4 +239,6 @@ export interface MarkConfiguration extends RebalanceConfig {
   regularRebalanceOpTTLMinutes?: number;
   // Whitelisted recipient addresses for admin trigger/send endpoint
   whitelistedRecipients?: string[];
+  // Goldsky webhook secret for subgraph webhook authentication
+  goldskyWebhookSecret?: string;
 }

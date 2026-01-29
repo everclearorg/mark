@@ -30,6 +30,9 @@ jobs:
       - name: Enable Corepack for Yarn 3
         run: corepack enable
 
+      - name: Prepare Yarn version
+        run: corepack prepare yarn@3.3.1 --activate
+
       - name: Check Yarn version
         run: yarn --version
 
@@ -72,6 +75,9 @@ jobs:
 
       - name: Enable Corepack for Yarn 3
         run: corepack enable
+
+      - name: Prepare Yarn version
+        run: corepack prepare yarn@3.3.1 --activate
 
       - name: Check Yarn version
         run: yarn --version
@@ -198,6 +204,8 @@ jobs:
       REGISTRY: 679752396206.dkr.ecr.sa-east-1.amazonaws.com
       POLLER_REPOSITORY: mark-poller
       POLLER_IMAGE_TAG: mark-poller-${{ github.sha }}
+      HANDLER_REPOSITORY: mark-handler
+      HANDLER_IMAGE_TAG: mark-handler-${{ github.sha }}
       ADMIN_REPOSITORY: mark-admin
       ADMIN_IMAGE_TAG: mark-admin-${{ github.sha }}
     permissions:
@@ -226,10 +234,27 @@ jobs:
           docker build -f docker/admin/Dockerfile -t $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG .
           docker push $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG
 
+      - name: Build and push Invoice Handler Docker image
+        run: |
+          docker build -f docker/handler/Dockerfile -t $REGISTRY/$HANDLER_REPOSITORY:$HANDLER_IMAGE_TAG .
+          docker push $REGISTRY/$HANDLER_REPOSITORY:$HANDLER_IMAGE_TAG
+
       - name: Build and push Poller Docker image
         run: |
           docker build -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
           docker push $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG
+
+      # ============================================================================
+      # POLLER REMOVAL - TEMPORARY
+      # ============================================================================
+      # Remove only the main poller Lambda function (mark_poller) before deploying the invoice
+      # handler to prevent duplicate intent creation. Other poller Lambdas remain active.
+      # 
+      # TODO: Remove this step once poller migration is complete
+      # ============================================================================
+      - name: Remove Main Poller Lambda Function
+        run: |
+          bash ops/scripts/remove-poller-lambda.sh mason mainnet staging $AWS_REGION
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -273,6 +298,7 @@ jobs:
           AWS_PROFILE: aws-deployer-connext
         run: |
           terraform apply \
+            -var "handler_image_uri=${REGISTRY}/${HANDLER_REPOSITORY}:${HANDLER_IMAGE_TAG}" \
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
             -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
             -auto-approve > /dev/null 2>&1
@@ -283,3 +309,10 @@ jobs:
         run: |
           echo "Admin API Endpoint URL for mason (staging):"
           terraform output -raw admin_api_endpoint
+
+      - name: Show Invoice Handler URL
+        if: success()
+        working-directory: ./ops/mainnet/mason
+        run: |
+          echo "Invoice Handler URL for mason (staging):"
+          terraform output -raw invoice_handler_url

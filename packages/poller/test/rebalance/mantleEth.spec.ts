@@ -318,12 +318,14 @@ describe('mETH Rebalancing', () => {
 
       mockEverclear.fetchIntents.resolves([mockIntent] as any);
 
-      // Use context database mock
+      // Use context database mock - the code uses getEarmarks, not getActiveEarmarkForInvoice
       const dbMock = mockContext.database as any;
-      dbMock.getActiveEarmarkForInvoice = stub().resolves({
-        id: 'existing-earmark',
-        status: 'pending',
-      });
+      dbMock.getEarmarks = stub().resolves([
+        {
+          id: 'existing-earmark',
+          status: 'pending',
+        },
+      ]);
 
       await rebalanceMantleEth(mockContext as unknown as ProcessingContext);
 
@@ -614,8 +616,8 @@ describe('mETH Rebalancing', () => {
 
       await rebalanceMantleEth(mockContext as unknown as ProcessingContext);
 
-      const infoCalls = mockLogger.info.getCalls();
-      const belowMinLog = infoCalls.find(
+      const warnCalls = mockLogger.warn.getCalls();
+      const belowMinLog = warnCalls.find(
         (call) => call.args[0] && call.args[0].includes('Available WETH below minimum rebalance threshold'),
       );
       expect(belowMinLog).toBeTruthy();

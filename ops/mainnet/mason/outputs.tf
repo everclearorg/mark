@@ -83,3 +83,8 @@ output "database_url" {
   value       = module.db.database_url
   sensitive   = true
 }
+
+output "invoice_handler_url" {
+  description = "Public URL of the invoice handler service (for Goldsky webhooks)"
+  value       = module.mark_invoice_handler.service_url
+}

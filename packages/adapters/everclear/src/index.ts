@@ -129,6 +129,12 @@ export class EverclearAdapter {
     return data.invoices;
   }
 
+  async fetchInvoiceById(invoiceId: string): Promise<Invoice> {
+    const url = `${this.apiUrl}/invoices/${invoiceId}`;
+    const { data } = await axiosGet<{ invoice: Invoice }>(url);
+    return data.invoice;
+  }
+
   // TODO: add parameters to filter intents
   async fetchIntents(params: GetIntentsParams | undefined = undefined): Promise<Intent[]> {
     const url = `${this.apiUrl}/intents`;
@@ -136,6 +142,34 @@ export class EverclearAdapter {
     const { data } = await axiosGet<{ intents: Intent[] }>(url, { params });
 
     return data.intents;
+  }
+
+  /**
+   * Fetch invoices with pagination, ordered by hub_invoice_enqueued_tx_nonce
+   * @param cursor - Cursor (hub_invoice_enqueued_tx_nonce) for pagination. If null, fetches from the beginning.
+   * @param limit - Maximum number of invoices to return (default: 100)
+   * @returns Object with invoices array and nextCursor for pagination
+   */
+  async fetchInvoicesByTxNonce(
+    cursor: string | null = null,
+    limit: number = 100,
+  ): Promise<{ invoices: Invoice[]; nextCursor: string | null }> {
+    const url = `${this.apiUrl}/invoices`;
+    const params: Record<string, string | number> = {
+      limit,
+      sortOrderByDiscount: 'asc', // Sort ascending by hub_invoice_enqueued_tx_nonce
+    };
+
+    if (cursor) {
+      params.cursor = cursor;
+    }
+
+    const { data } = await axiosGet<{ invoices: Invoice[]; nextCursor: string | null }>(url, { params });
+
+    return {
+      invoices: data.invoices || [],
+      nextCursor: data.nextCursor || null,
+    };
   }
 
   async createNewIntent(
