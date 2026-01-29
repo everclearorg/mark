@@ -18,10 +18,11 @@ output "pushgateway_service_url" {
   value       = module.mark_pushgateway.service_url
 }
 
-output "lambda_function_name" {
-  description = "Name of the Lambda function"
-  value       = module.mark_poller.function_name
-}
+# Main poller Lambda has been removed (migrated to invoice handler)
+# output "lambda_function_name" {
+#   description = "Name of the Lambda function"
+#   value       = module.mark_poller.function_name
+# }
 
 output "lambda_tac_only_function_name" {
   description = "Name of the TAC-only Lambda function"
