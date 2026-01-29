@@ -5,7 +5,7 @@
  * Supports Application Default Credentials (ADC) and explicit credentials.
  */
 
-import { ShardError, ShardErrorCode, StitcherOptions } from './types';
+import { ShardError, ShardErrorCode } from './types';
 import { withRetry, withTimeout, isRetryableError } from './retry';
 
 /**
@@ -179,7 +179,12 @@ export async function getGcpSecret(
     maxRetries?: number;
   } = {},
 ): Promise<string> {
-  const { useCache = true, cacheTtlMs = DEFAULT_CACHE_TTL_MS, timeoutMs = clientConfig.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxRetries = clientConfig.maxRetries ?? DEFAULT_MAX_RETRIES } = options;
+  const {
+    useCache = true,
+    cacheTtlMs = DEFAULT_CACHE_TTL_MS,
+    timeoutMs = clientConfig.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    maxRetries = clientConfig.maxRetries ?? DEFAULT_MAX_RETRIES,
+  } = options;
 
   // Check cache first
   const cacheKey = `${project}/${secretId}/${version}`;
@@ -193,10 +198,14 @@ export async function getGcpSecret(
   const client = await getGcpClient();
 
   if (!client) {
-    throw new ShardError('GCP Secret Manager client not available. Ensure @google-cloud/secret-manager is installed and GCP credentials are configured.', ShardErrorCode.GCP_ACCESS_FAILED, {
-      suggestion: 'npm install @google-cloud/secret-manager',
-      initError: initializationError?.message,
-    });
+    throw new ShardError(
+      'GCP Secret Manager client not available. Ensure @google-cloud/secret-manager is installed and GCP credentials are configured.',
+      ShardErrorCode.GCP_ACCESS_FAILED,
+      {
+        suggestion: 'npm install @google-cloud/secret-manager',
+        initError: initializationError?.message,
+      },
+    );
   }
 
   const name = `projects/${project}/secrets/${secretId}/versions/${version}`;
@@ -208,7 +217,9 @@ export async function getGcpSecret(
       const [response] = await withTimeout(apiCall, timeoutMs, `GCP secret access timed out after ${timeoutMs}ms`);
 
       if (!response.payload?.data) {
-        throw new ShardError(`Secret payload is empty: ${name}`, ShardErrorCode.GCP_ACCESS_FAILED, { secretPath: name });
+        throw new ShardError(`Secret payload is empty: ${name}`, ShardErrorCode.GCP_ACCESS_FAILED, {
+          secretPath: name,
+        });
       }
 
       // Handle both string and Uint8Array payloads
@@ -232,7 +243,11 @@ export async function getGcpSecret(
       }
 
       if (message.includes('PERMISSION_DENIED') || message.includes('403')) {
-        throw new ShardError(`Permission denied accessing secret: ${name}. Ensure the service account has secretmanager.versions.access permission.`, ShardErrorCode.GCP_ACCESS_FAILED, { secretPath: name });
+        throw new ShardError(
+          `Permission denied accessing secret: ${name}. Ensure the service account has secretmanager.versions.access permission.`,
+          ShardErrorCode.GCP_ACCESS_FAILED,
+          { secretPath: name },
+        );
       }
 
       throw new ShardError(`Failed to access GCP secret '${name}': ${message}`, ShardErrorCode.GCP_ACCESS_FAILED, {
@@ -285,7 +300,12 @@ export async function getGcpSecret(
  * @param createIfNotExists - Whether to create the secret if it doesn't exist
  * @returns The version name of the stored secret
  */
-export async function setGcpSecret(project: string, secretId: string, value: string, createIfNotExists: boolean = true): Promise<string> {
+export async function setGcpSecret(
+  project: string,
+  secretId: string,
+  value: string,
+  createIfNotExists: boolean = true,
+): Promise<string> {
   const client = await getGcpClient();
 
   if (!client) {
@@ -314,7 +334,10 @@ export async function setGcpSecret(project: string, secretId: string, value: str
         },
       });
     } else {
-      throw new ShardError(`Failed to access secret ${secretId}: ${(error as Error).message}`, ShardErrorCode.GCP_ACCESS_FAILED);
+      throw new ShardError(
+        `Failed to access secret ${secretId}: ${(error as Error).message}`,
+        ShardErrorCode.GCP_ACCESS_FAILED,
+      );
     }
   }
 

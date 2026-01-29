@@ -70,7 +70,14 @@ export function isRetryableError(error: Error): boolean {
  * );
  */
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
-  const { maxAttempts = 3, baseDelayMs = 100, maxDelayMs = 5000, jitter = 0.1, isRetryable = isRetryableError, onRetry } = options;
+  const {
+    maxAttempts = 3,
+    baseDelayMs = 100,
+    maxDelayMs = 5000,
+    jitter = 0.1,
+    isRetryable = isRetryableError,
+    onRetry,
+  } = options;
 
   let lastError: Error | undefined;
 
@@ -121,7 +128,11 @@ export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, err
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutHandle = setTimeout(() => {
-      reject(new ShardError(errorMessage ?? `Operation timed out after ${timeoutMs}ms`, ShardErrorCode.GCP_ACCESS_FAILED, { timeoutMs }));
+      reject(
+        new ShardError(errorMessage ?? `Operation timed out after ${timeoutMs}ms`, ShardErrorCode.GCP_ACCESS_FAILED, {
+          timeoutMs,
+        }),
+      );
     }, timeoutMs);
   });
 
