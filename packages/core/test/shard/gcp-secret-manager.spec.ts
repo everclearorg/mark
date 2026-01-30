@@ -10,6 +10,7 @@ import {
 
 let lastClientOptions: unknown;
 let lastCredentialConfig: unknown;
+let lastAuthOptions: unknown;
 let accessSecretVersionMock: jest.Mock;
 
 jest.mock('@google-cloud/secret-manager', () => {
@@ -28,12 +29,13 @@ jest.mock('@google-cloud/secret-manager', () => {
 
 jest.mock('google-auth-library', () => {
   return {
-    ExternalAccountClient: {
-      fromJSON: jest.fn((config) => {
-        lastCredentialConfig = config;
-        return {};
-      }),
-    },
+    GoogleAuth: jest.fn().mockImplementation((options) => {
+      lastAuthOptions = options;
+      lastCredentialConfig = options?.credentials;
+      return {
+        getUniverseDomain: jest.fn().mockResolvedValue('googleapis.com'),
+      };
+    }),
   };
 });
 
@@ -64,6 +66,11 @@ describe('gcp-secret-manager', () => {
 
     expect(value).toBe('secret-value');
     expect(lastClientOptions).toEqual(expect.objectContaining({ auth: expect.any(Object) }));
+    expect(lastAuthOptions).toEqual(
+      expect.objectContaining({
+        scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      }),
+    );
     expect(lastCredentialConfig).toEqual(
       expect.objectContaining({
         type: 'external_account',

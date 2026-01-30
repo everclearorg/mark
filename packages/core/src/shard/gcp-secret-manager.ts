@@ -75,8 +75,8 @@ export function configureGcpClient(config: GcpClientConfig): void {
 }
 
 /**
- * Create Workload Identity Federation credentials configuration.
- * Uses google-auth-library's AwsClient for robust credential handling.
+ * Create Workload Identity Federation auth client.
+ * Uses google-auth-library's GoogleAuth for compatibility with google-gax.
  *
  * This approach:
  * - Automatically detects AWS credentials from environment (Lambda) or IMDS (EC2/ECS)
@@ -86,7 +86,7 @@ export function configureGcpClient(config: GcpClientConfig): void {
 async function createWorkloadIdentityAuthClient(
   provider: string,
   serviceAccountEmail: string,
-): Promise<import('google-auth-library').AuthClient> {
+): Promise<import('google-auth-library').GoogleAuth> {
   // Validate provider format
   // Format: projects/{project_number}/locations/global/workloadIdentityPools/{pool_id}/providers/{provider_id}
   const providerPattern = /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[^/]+\/providers\/[^/]+$/;
@@ -96,7 +96,7 @@ async function createWorkloadIdentityAuthClient(
   }
 
   // Dynamic import google-auth-library
-  const { ExternalAccountClient } = await import('google-auth-library');
+  const { GoogleAuth } = await import('google-auth-library');
 
   // Create external account credentials configuration for AWS
   // See: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds
@@ -124,20 +124,12 @@ async function createWorkloadIdentityAuthClient(
     },
   };
 
-  // ExternalAccountClient automatically handles:
-  // - Environment-based AWS credentials (AWS_ACCESS_KEY_ID, etc.) for Lambda
-  // - IMDS-based credentials for EC2/ECS with IMDSv2 support
-  // - Credential refresh
-  const client = ExternalAccountClient.fromJSON(credentialConfig);
+  const authClient = new GoogleAuth({
+    credentials: credentialConfig,
+    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+  });
 
-  if (!client) {
-    throw new Error('Failed to create ExternalAccountClient from credential configuration');
-  }
-
-  // Set required OAuth scopes for Secret Manager access
-  client.scopes = ['https://www.googleapis.com/auth/cloud-platform'];
-
-  return client;
+  return authClient;
 }
 
 /**
