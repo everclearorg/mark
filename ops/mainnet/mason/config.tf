@@ -294,6 +294,26 @@ locals {
       value = "MASON_CONFIG_MAINNET"
     },
     {
+      name  = "SHARD_MANIFEST"
+      value = local.shard_manifest
+    },
+    {
+      name  = "GCP_PROJECT_ID"
+      value = local.gcp_project_id
+    },
+    {
+      name  = "GOOGLE_CLOUD_PROJECT"
+      value = local.gcp_project_id
+    },
+    {
+      name  = "GCP_WORKLOAD_IDENTITY_PROVIDER"
+      value = local.gcp_workload_identity_provider
+    },
+    {
+      name  = "GCP_SERVICE_ACCOUNT_EMAIL"
+      value = local.gcp_service_account
+    },
+    {
       name  = "REBALANCE_CONFIG_S3_BUCKET"
       value = local.rebalanceConfig.bucket
     },
