@@ -3,9 +3,10 @@
  *
  * This is the main orchestration layer that:
  * 1. Loads the shard manifest
- * 2. Fetches Share 2 from GCP Secret Manager
- * 3. Reconstructs original values using Shamir or XOR
- * 4. Returns the complete configuration JSON
+ * 2. Fetches Share 1 from AWS SSM Parameter Store
+ * 3. Fetches Share 2 from GCP Secret Manager
+ * 4. Reconstructs original values using Shamir or XOR
+ * 5. Returns the complete configuration JSON with secrets restored
  *
  * The stitcher is designed to be a drop-in addition to existing config loading,
  * requiring no changes to downstream code.
@@ -15,19 +16,20 @@ import { ShardManifest, ShardedFieldConfig, StitcherOptions, ShardError, ShardEr
 import { getGcpSecret, configureGcpClient } from './gcp-secret-manager';
 import { shamirReconstructPair, isValidShare } from './shamir';
 import { xorReconstruct } from './xor';
-import { getValueByPath, setValueByPath, deleteValueByPath } from './path-utils';
+import { setValueByPath, deleteValueByPath } from './path-utils';
+import { getSsmParameter } from '../ssm';
 
 /**
- * Stitch sharded fields in a config JSON by fetching GCP shares
- * and reconstructing the original values.
+ * Stitch sharded fields in a config JSON by fetching shares from both
+ * AWS SSM and GCP Secret Manager, then reconstructing the original values.
  *
  * This function:
  * 1. Deep clones the input to avoid mutations
  * 2. For each sharded field in the manifest:
- *    - Reads Share 1 from the config JSON
- *    - Fetches Share 2 from GCP Secret Manager
- *    - Reconstructs the original value
- *    - Replaces the share with the reconstructed value
+ *    - Fetches Share 1 from AWS SSM Parameter Store (using awsParamName)
+ *    - Fetches Share 2 from GCP Secret Manager (using gcpSecretRef)
+ *    - Reconstructs the original value using Shamir or XOR
+ *    - Sets the reconstructed value at the field path in the config
  * 3. Removes the manifest from the output
  *
  * @param configJson - The config JSON loaded from AWS SSM (containing Share 1 values)
@@ -110,18 +112,25 @@ export async function stitchConfig<T extends object>(
 }
 
 /**
- * Process a single sharded field: fetch GCP share and reconstruct.
+ * Process a single sharded field: fetch shares from AWS SSM and GCP, then reconstruct.
  */
 async function processShardedField(
   configJson: object,
   fieldConfig: ShardedFieldConfig,
   logger?: StitcherOptions['logger'],
 ): Promise<void> {
-  const { path, gcpSecretRef, method = 'shamir' } = fieldConfig;
+  const { path, awsParamName, gcpSecretRef, method = 'shamir' } = fieldConfig;
 
   // Validate field config
   if (!path || typeof path !== 'string') {
     throw new ShardError('Field path must be a non-empty string', ShardErrorCode.MANIFEST_PARSE_FAILED);
+  }
+
+  if (!awsParamName || typeof awsParamName !== 'string') {
+    throw new ShardError(
+      `Invalid awsParamName for field '${path}': awsParamName is required`,
+      ShardErrorCode.MANIFEST_PARSE_FAILED,
+    );
   }
 
   if (!gcpSecretRef?.project || !gcpSecretRef?.secretId) {
@@ -131,23 +140,29 @@ async function processShardedField(
     );
   }
 
-  // Get Share 1 from the config JSON
-  const share1Value = getValueByPath(configJson, path);
+  // Fetch Share 1 from AWS SSM Parameter Store
+  logger?.debug?.(`Fetching Share 1 for '${path}' from AWS SSM: ${awsParamName}`);
+
+  const share1Value = await getSsmParameter(awsParamName);
 
   if (share1Value === undefined || share1Value === null) {
-    throw new ShardError(`Share 1 not found at path '${path}'`, ShardErrorCode.FIELD_NOT_FOUND, { path });
+    throw new ShardError(
+      `Share 1 not found in AWS SSM at '${awsParamName}' for field '${path}'`,
+      ShardErrorCode.FIELD_NOT_FOUND,
+      { path, awsParamName },
+    );
   }
 
   if (typeof share1Value !== 'string') {
     throw new ShardError(
-      `Share 1 at path '${path}' must be a string, got ${typeof share1Value}`,
+      `Share 1 from AWS SSM '${awsParamName}' must be a string, got ${typeof share1Value}`,
       ShardErrorCode.INVALID_SHARE_FORMAT,
-      { path, type: typeof share1Value },
+      { path, awsParamName, type: typeof share1Value },
     );
   }
 
-  // Fetch Share 2 from GCP
-  logger?.debug?.(`Fetching GCP share for '${path}' from ${gcpSecretRef.project}/${gcpSecretRef.secretId}`);
+  // Fetch Share 2 from GCP Secret Manager
+  logger?.debug?.(`Fetching Share 2 for '${path}' from GCP: ${gcpSecretRef.project}/${gcpSecretRef.secretId}`);
 
   const share2Value = await getGcpSecret(gcpSecretRef.project, gcpSecretRef.secretId, gcpSecretRef.version);
 
