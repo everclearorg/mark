@@ -40,7 +40,8 @@ locals {
   mark_config_json = jsondecode(data.aws_ssm_parameter.mark_config_mainnet.value)
   mark_config = {
     dd_api_key              = local.mark_config_json.dd_api_key
-    web3_signer_private_key = local.mark_config_json.web3_signer_private_key
+    # Private keys are stored as Shamir shares in separate SSM parameters, not in main config
+    web3_signer_private_key = try(local.mark_config_json.web3_signer_private_key, "")
     signerAddress           = local.mark_config_json.signerAddress
     chains                  = local.mark_config_json.chains
     db_password             = local.mark_config_json.db_password
