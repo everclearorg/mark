@@ -1,6 +1,6 @@
-import { ProcessingContext } from '@mark/poller/dist/src/init';
+import { ProcessingContext } from '@mark/poller/src/init';
 import { EarmarkStatus, Invoice, RebalanceOperationStatus } from '@mark/core';
-import * as onDemand from '@mark/poller/dist/src/rebalance/onDemand';
+import * as onDemand from '@mark/poller/src/rebalance/onDemand';
 import { jsonifyError } from '@mark/logger';
 
 /**
