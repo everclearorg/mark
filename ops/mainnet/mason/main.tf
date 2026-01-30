@@ -419,6 +419,7 @@ module "mark_invoice_handler" {
   dd_api_key             = local.mark_config.dd_api_key
   vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
   execution_role_arn     = data.aws_iam_role.ecr_admin_role.arn
+  task_role_arn          = module.iam.ecs_task_role_arn
   cluster_id             = module.ecs.ecs_cluster_id
   vpc_id                 = module.network.vpc_id
   lb_subnets             = module.network.public_subnets
