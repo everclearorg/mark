@@ -1,4 +1,4 @@
-import { ProcessingContext } from '@mark/poller/dist/src/init';
+import { ProcessingContext } from '@mark/poller/src/init';
 import {
   AddressFormat,
   BPS_MULTIPLIER,
@@ -10,7 +10,7 @@ import {
 import { PurchaseAction } from '@mark/cache';
 import { getTimeSeconds } from './utils';
 import { InvoiceLabels } from '@mark/prometheus';
-import { calculateSplitIntents, sendIntents } from '@mark/poller/dist/src/helpers';
+import { calculateSplitIntents, sendIntents } from '@mark/poller/src/helpers';
 import * as onDemand from '@mark/poller/src/rebalance/onDemand';
 import { jsonifyError } from '@mark/logger';
 

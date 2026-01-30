@@ -1,14 +1,14 @@
 import fastify, { FastifyInstance } from 'fastify';
 import { jsonifyError, Logger } from '@mark/logger';
 import { logFileDescriptorUsage, loadConfiguration, cleanupHttpConnections } from '@mark/core';
-import { cleanupViemClients } from '@mark/poller/dist/src/helpers';
+import { cleanupViemClients } from '@mark/poller/src/helpers';
 import { initializeAdapters, InvoiceHandlerAdapters } from './init';
 import { runMigration, validateTokenRebalanceConfig } from '@mark/agent';
 import {
   cleanupExpiredEarmarks,
   cleanupExpiredRegularRebalanceOps,
   rebalanceInventory,
-} from '@mark/poller/dist/src/rebalance';
+} from '@mark/poller/src/rebalance';
 import { checkSettledInvoices, checkPendingInvoices } from './helpers';
 
 const logger = new Logger({ service: 'invoice-handler', level: 'debug' });
