@@ -22,8 +22,15 @@ jest.mock('../../src/shard/gcp-secret-manager', () => ({
   configureGcpClient: jest.fn(),
 }));
 
+// Mock AWS SSM
+jest.mock('../../src/ssm', () => ({
+  getSsmParameter: jest.fn(),
+}));
+
 import { getGcpSecret } from '../../src/shard/gcp-secret-manager';
+import { getSsmParameter } from '../../src/ssm';
 const mockedGetGcpSecret = getGcpSecret as jest.MockedFunction<typeof getGcpSecret>;
+const mockedGetSsmParameter = getSsmParameter as jest.MockedFunction<typeof getSsmParameter>;
 
 describe('stitcher', () => {
   beforeEach(() => {
@@ -36,10 +43,12 @@ describe('stitcher', () => {
       const { share1, share2 } = shamirSplitPair(originalSecret);
 
       const config = {
-        web3_signer_private_key: share1,
         other: { nested: 'value' },
       };
 
+      // Mock AWS SSM to return Share 1
+      mockedGetSsmParameter.mockResolvedValue(share1);
+      // Mock GCP to return Share 2
       mockedGetGcpSecret.mockResolvedValue(share2);
 
       const manifest: ShardManifest = {
@@ -47,16 +56,18 @@ describe('stitcher', () => {
         shardedFields: [
           {
             path: 'web3_signer_private_key',
+            awsParamName: '/test/web3_signer_private_key_share1',
             gcpSecretRef: { project: 'test-project', secretId: 'test-secret' },
             method: 'shamir',
           },
         ],
       };
 
-      const result = await stitchConfig(config, manifest);
+      const result = await stitchConfig(config, manifest) as { web3_signer_private_key: string; other: { nested: string } };
 
       expect(result.web3_signer_private_key).toBe(originalSecret);
       expect(result.other.nested).toBe('value'); // Unchanged
+      expect(mockedGetSsmParameter).toHaveBeenCalledWith('/test/web3_signer_private_key_share1');
       expect(mockedGetGcpSecret).toHaveBeenCalledWith('test-project', 'test-secret', undefined);
     });
 
@@ -66,11 +77,11 @@ describe('stitcher', () => {
 
       const config = {
         solana: {
-          privateKey: share1,
           rpcUrl: 'https://api.mainnet-beta.solana.com',
         },
       };
 
+      mockedGetSsmParameter.mockResolvedValue(share1);
       mockedGetGcpSecret.mockResolvedValue(share2);
 
       const manifest: ShardManifest = {
@@ -78,13 +89,14 @@ describe('stitcher', () => {
         shardedFields: [
           {
             path: 'solana.privateKey',
+            awsParamName: '/test/solana_privateKey_share1',
             gcpSecretRef: { project: 'test', secretId: 'solana-share2' },
             method: 'shamir',
           },
         ],
       };
 
-      const result = await stitchConfig(config, manifest);
+      const result = await stitchConfig(config, manifest) as { solana: { privateKey: string; rpcUrl: string } };
 
       expect(result.solana.privateKey).toBe(originalSecret);
       expect(result.solana.rpcUrl).toBe('https://api.mainnet-beta.solana.com'); // Unchanged
@@ -96,11 +108,12 @@ describe('stitcher', () => {
 
       const config = {
         chains: {
-          '1': { privateKey: share1, address: '0x123' },
+          '1': { address: '0x123' },
           '42161': { address: '0x456' },
         },
       };
 
+      mockedGetSsmParameter.mockResolvedValue(share1);
       mockedGetGcpSecret.mockResolvedValue(share2);
 
       const manifest: ShardManifest = {
@@ -108,13 +121,14 @@ describe('stitcher', () => {
         shardedFields: [
           {
             path: 'chains.1.privateKey',
+            awsParamName: '/test/chains_1_privateKey_share1',
             gcpSecretRef: { project: 'test', secretId: 'chain-1-share2' },
             method: 'shamir',
           },
         ],
       };
 
-      const result = await stitchConfig(config, manifest);
+      const result = await stitchConfig(config, manifest) as { chains: Record<string, { privateKey?: string; address: string }> };
 
       expect(result.chains['1'].privateKey).toBe(originalSecret);
       expect(result.chains['1'].address).toBe('0x123');
@@ -128,12 +142,12 @@ describe('stitcher', () => {
       const split2 = shamirSplitPair(secret2);
 
       const config = {
-        key1: split1.share1,
-        nested: {
-          key2: split2.share1,
-        },
+        nested: {},
       };
 
+      mockedGetSsmParameter
+        .mockResolvedValueOnce(split1.share1)
+        .mockResolvedValueOnce(split2.share1);
       mockedGetGcpSecret
         .mockResolvedValueOnce(split1.share2)
         .mockResolvedValueOnce(split2.share2);
@@ -143,18 +157,20 @@ describe('stitcher', () => {
         shardedFields: [
           {
             path: 'key1',
+            awsParamName: '/test/key1_share1',
             gcpSecretRef: { project: 'p', secretId: 's1' },
             method: 'shamir',
           },
           {
             path: 'nested.key2',
+            awsParamName: '/test/nested_key2_share1',
             gcpSecretRef: { project: 'p', secretId: 's2' },
             method: 'shamir',
           },
         ],
       };
 
-      const result = await stitchConfig(config, manifest);
+      const result = await stitchConfig(config, manifest) as { key1: string; nested: { key2: string } };
 
       expect(result.key1).toBe(secret1);
       expect(result.nested.key2).toBe(secret2);
@@ -166,10 +182,9 @@ describe('stitcher', () => {
       const originalSecret = 'xor-secret';
       const { share1, share2 } = xorSplit(originalSecret);
 
-      const config = {
-        secret: share1,
-      };
+      const config = {};
 
+      mockedGetSsmParameter.mockResolvedValue(share1);
       mockedGetGcpSecret.mockResolvedValue(share2);
 
       const manifest: ShardManifest = {
@@ -177,33 +192,34 @@ describe('stitcher', () => {
         shardedFields: [
           {
             path: 'secret',
+            awsParamName: '/test/secret_share1',
             gcpSecretRef: { project: 'test', secretId: 'xor-share2' },
             method: 'xor',
           },
         ],
       };
 
-      const result = await stitchConfig(config, manifest);
+      const result = await stitchConfig(config, manifest) as { secret: string };
 
       expect(result.secret).toBe(originalSecret);
     });
   });
 
   describe('stitchConfig error handling', () => {
-    it('should throw when required field has no share in config', async () => {
-      // This test verifies that stitchConfig correctly detects when Share 1
-      // is missing from the config JSON. In production, Share 1 should be
-      // loaded from AWS SSM and placed into the config JSON before calling
-      // stitchConfig (see config.ts loadConfiguration function).
+    it('should throw when Share 1 is not found in AWS SSM', async () => {
       const config = {
         other: 'value',
       };
+
+      // AWS SSM returns undefined (parameter not found)
+      mockedGetSsmParameter.mockResolvedValue(undefined);
 
       const manifest: ShardManifest = {
         version: '1.0',
         shardedFields: [
           {
             path: 'missing.field',
+            awsParamName: '/test/missing_share1',
             gcpSecretRef: { project: 'test', secretId: 'test' },
             method: 'shamir',
           },
@@ -211,13 +227,13 @@ describe('stitcher', () => {
       };
 
       await expect(stitchConfig(config, manifest)).rejects.toThrow(ShardError);
-      await expect(stitchConfig(config, manifest)).rejects.toThrow(/Share 1 not found at path/);
+      await expect(stitchConfig(config, manifest)).rejects.toThrow(/Share 1 not found in AWS SSM/);
     });
 
     it('should throw when GCP secret is unavailable', async () => {
       const { share1 } = shamirSplitPair('secret');
-      const config = { key: share1 };
 
+      mockedGetSsmParameter.mockResolvedValue(share1);
       mockedGetGcpSecret.mockRejectedValue(new Error('Not found'));
 
       const manifest: ShardManifest = {
@@ -225,19 +241,21 @@ describe('stitcher', () => {
         shardedFields: [
           {
             path: 'key',
+            awsParamName: '/test/key_share1',
             gcpSecretRef: { project: 'test', secretId: 'missing' },
             method: 'shamir',
           },
         ],
       };
 
-      await expect(stitchConfig(config, manifest)).rejects.toThrow();
+      await expect(stitchConfig({}, manifest)).rejects.toThrow();
     });
 
     it('should skip optional fields gracefully', async () => {
       const { share1 } = shamirSplitPair('secret');
-      const config = { key: share1 };
+      const config = { existingKey: 'value' };
 
+      mockedGetSsmParameter.mockResolvedValue(share1);
       mockedGetGcpSecret.mockRejectedValue(new Error('Not found'));
 
       const manifest: ShardManifest = {
@@ -245,6 +263,7 @@ describe('stitcher', () => {
         shardedFields: [
           {
             path: 'key',
+            awsParamName: '/test/key_share1',
             gcpSecretRef: { project: 'test', secretId: 'missing' },
             method: 'shamir',
             required: false,
@@ -253,8 +272,9 @@ describe('stitcher', () => {
       };
 
       // Should not throw for optional field
-      const result = await stitchConfig(config, manifest);
-      expect(result.key).toBe(share1); // Unchanged (not reconstructed)
+      const result = await stitchConfig(config, manifest) as { existingKey: string; key?: string };
+      expect(result.existingKey).toBe('value'); // Unchanged
+      expect(result.key).toBeUndefined(); // Not reconstructed due to GCP error
     });
 
     it('should throw for invalid manifest version', async () => {
@@ -265,22 +285,22 @@ describe('stitcher', () => {
     });
 
     it('should throw for invalid share format', async () => {
-      const config = { key: 'not-a-valid-share' };
-
-      mockedGetGcpSecret.mockResolvedValue('1-abc123');
+      mockedGetSsmParameter.mockResolvedValue('not-a-valid-share');
+      mockedGetGcpSecret.mockResolvedValue('also-not-valid');
 
       const manifest: ShardManifest = {
         version: '1.0',
         shardedFields: [
           {
             path: 'key',
+            awsParamName: '/test/key_share1',
             gcpSecretRef: { project: 'test', secretId: 'test' },
             method: 'shamir',
           },
         ],
       };
 
-      await expect(stitchConfig(config, manifest)).rejects.toThrow(ShardError);
+      await expect(stitchConfig({}, manifest)).rejects.toThrow(ShardError);
     });
   });
 
@@ -290,12 +310,12 @@ describe('stitcher', () => {
       const { share1, share2 } = shamirSplitPair(originalSecret);
 
       const config = {
-        key: share1,
         nested: { value: 'original' },
       };
 
       const configCopy = JSON.stringify(config);
 
+      mockedGetSsmParameter.mockResolvedValue(share1);
       mockedGetGcpSecret.mockResolvedValue(share2);
 
       const manifest: ShardManifest = {
@@ -303,6 +323,7 @@ describe('stitcher', () => {
         shardedFields: [
           {
             path: 'key',
+            awsParamName: '/test/key_share1',
             gcpSecretRef: { project: 'test', secretId: 'test' },
             method: 'shamir',
           },
