@@ -191,6 +191,10 @@ describe('stitcher', () => {
 
   describe('stitchConfig error handling', () => {
     it('should throw when required field has no share in config', async () => {
+      // This test verifies that stitchConfig correctly detects when Share 1
+      // is missing from the config JSON. In production, Share 1 should be
+      // loaded from AWS SSM and placed into the config JSON before calling
+      // stitchConfig (see config.ts loadConfiguration function).
       const config = {
         other: 'value',
       };
@@ -207,6 +211,7 @@ describe('stitcher', () => {
       };
 
       await expect(stitchConfig(config, manifest)).rejects.toThrow(ShardError);
+      await expect(stitchConfig(config, manifest)).rejects.toThrow(/Share 1 not found at path/);
     });
 
     it('should throw when GCP secret is unavailable', async () => {

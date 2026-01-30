@@ -142,15 +142,29 @@ describe('retry', () => {
     });
 
     it('should throw ShardError on timeout', async () => {
-      const promise = new Promise((resolve) => setTimeout(resolve, 1000));
+      let timeoutHandle: NodeJS.Timeout;
+      const promise = new Promise((resolve) => {
+        timeoutHandle = setTimeout(resolve, 1000);
+      });
 
-      await expect(withTimeout(promise, 50)).rejects.toThrow(ShardError);
+      try {
+        await expect(withTimeout(promise, 50)).rejects.toThrow(ShardError);
+      } finally {
+        clearTimeout(timeoutHandle!);
+      }
     });
 
     it('should include custom error message', async () => {
-      const promise = new Promise((resolve) => setTimeout(resolve, 1000));
+      let timeoutHandle: NodeJS.Timeout;
+      const promise = new Promise((resolve) => {
+        timeoutHandle = setTimeout(resolve, 1000);
+      });
 
-      await expect(withTimeout(promise, 50, 'Custom timeout message')).rejects.toThrow('Custom timeout message');
+      try {
+        await expect(withTimeout(promise, 50, 'Custom timeout message')).rejects.toThrow('Custom timeout message');
+      } finally {
+        clearTimeout(timeoutHandle!);
+      }
     });
 
     it('should resolve with promise result even when timeout is set', async () => {
