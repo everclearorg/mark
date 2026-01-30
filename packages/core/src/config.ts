@@ -11,16 +11,15 @@ import {
   RebalanceConfig,
   SupportedBridge,
   RouteRebalancingConfig,
-} from './types/config';
+  LogLevel,
+} from './types';
 import yaml from 'js-yaml';
-import fs from 'fs';
-import { LogLevel } from './types/logging';
+import fs, { existsSync, readFileSync } from 'fs';
 import { getSsmParameter } from './ssm';
-import { existsSync, readFileSync } from 'fs';
 import { hexToBase58 } from './solana';
 import { isTvmChain } from './tron';
 import { getRebalanceConfigFromS3 } from './s3';
-import { stitchConfig, loadManifest } from './shard';
+import { stitchConfig, loadManifest, setValueByPath } from './shard';
 
 config();
 
@@ -221,8 +220,58 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const localManifestPath = existsSync('shard-manifest.json') ? 'shard-manifest.json' : undefined;
     const manifest = loadManifest(configJson, manifestStr, localManifestPath);
 
-    // If manifest exists with sharded fields, fetch GCP shares and reconstruct
+    // If manifest exists with sharded fields, load Share 1 values from SSM, fetch GCP shares and reconstruct
     if (manifest && manifest.shardedFields && manifest.shardedFields.length > 0) {
+      console.log(`🔐 Loading Share 1 values from SSM for ${manifest.shardedFields.length} sharded field(s)...`);
+
+      // Load Share 1 values from AWS SSM and place them into config JSON
+      const parameterPrefix = manifest.awsConfig?.parameterPrefix ?? '/mark/config';
+
+      for (const fieldConfig of manifest.shardedFields) {
+        // Determine SSM parameter name
+        let ssmParamName: string;
+        if (fieldConfig.awsParamName) {
+          ssmParamName = fieldConfig.awsParamName;
+        } else {
+          // Derive from the path: convert dots to underscores and append _share1
+          const safePath = fieldConfig.path.replace(/\./g, '_').replace(/\[/g, '_').replace(/\]/g, '');
+          ssmParamName = `${parameterPrefix}/${safePath}_share1`;
+        }
+
+        try {
+          // Fetch Share 1 from SSM
+          const share1Value = await getSsmParameter(ssmParamName);
+
+          if (share1Value === undefined || share1Value === null) {
+            const isRequired = fieldConfig.required !== false;
+            if (isRequired) {
+              throw new ConfigurationError(
+                `Failed to load Share 1 from SSM parameter '${ssmParamName}' for field '${fieldConfig.path}'`,
+                { ssmParamName, path: fieldConfig.path },
+              );
+            } else {
+              console.warn(
+                `  [shard] ⚠️  Skipping optional field '${fieldConfig.path}': Share 1 not found at '${ssmParamName}'`,
+              );
+              continue;
+            }
+          }
+
+          // Place Share 1 into config JSON at the field's path
+          setValueByPath(configJson, fieldConfig.path, share1Value);
+          console.log(`  [shard] ✓ Loaded Share 1 for '${fieldConfig.path}' from '${ssmParamName}'`);
+        } catch (error) {
+          const isRequired = fieldConfig.required !== false;
+          if (isRequired) {
+            console.error(`  [shard] ❌ Failed to load Share 1 for '${fieldConfig.path}':`, (error as Error).message);
+            throw error;
+          } else {
+            console.warn(`  [shard] ⚠️  Skipping optional field '${fieldConfig.path}': ${(error as Error).message}`);
+          }
+        }
+      }
+
+      // Now reconstruct the original values using Share 1 (from config JSON) and Share 2 (from GCP)
       console.log(`🔐 Reconstructing ${manifest.shardedFields.length} sharded field(s)...`);
       try {
         configJson = await stitchConfig(configJson, manifest, {
@@ -268,8 +317,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         return false;
       }
 
-      const isSupported = supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
-      return isSupported;
+      return supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
     });
 
     const filteredOnDemandRoutes = onDemandRoutes?.filter((route) => {
@@ -287,8 +335,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         return false;
       }
 
-      const isSupported = supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
-      return isSupported;
+      return supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
     });
 
     const config: MarkConfiguration = {
