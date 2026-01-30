@@ -124,6 +124,19 @@ export interface StitcherOptions {
   };
 
   /**
+   * AWS Workload Identity Federation configuration for GCP authentication.
+   * If not provided, reads from environment variables:
+   * - GCP_WORKLOAD_IDENTITY_PROVIDER
+   * - GCP_SERVICE_ACCOUNT_EMAIL
+   */
+  workloadIdentity?: {
+    /** GCP Workload Identity Provider resource name */
+    provider: string;
+    /** GCP Service Account email to impersonate */
+    serviceAccountEmail: string;
+  };
+
+  /**
    * Whether to fail startup when optional shards are missing.
    * Default: false
    */

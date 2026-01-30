@@ -2,7 +2,10 @@
  * Google Cloud Secret Manager client for fetching Share 2 values.
  *
  * Uses the @google-cloud/secret-manager SDK.
- * Supports Application Default Credentials (ADC) and explicit credentials.
+ * Supports:
+ * - Application Default Credentials (ADC)
+ * - Explicit service account key files
+ * - AWS Workload Identity Federation (for cross-cloud authentication)
  */
 
 import { ShardError, ShardErrorCode } from './types';
@@ -22,8 +25,20 @@ export interface GcpClientConfig {
   maxRetries?: number;
   /** Optional logger for warnings and errors. Falls back to console if not provided. */
   logger?: {
+    info?: (message: string) => void;
+    debug?: (message: string) => void;
     warn?: (message: string) => void;
     error?: (message: string) => void;
+  };
+  /**
+   * Workload Identity Federation configuration for AWS-to-GCP authentication.
+   * If provided, uses federated credentials instead of ADC.
+   */
+  workloadIdentity?: {
+    /** GCP Workload Identity Provider resource name */
+    provider: string;
+    /** GCP Service Account email to impersonate */
+    serviceAccountEmail: string;
   };
 }
 
@@ -60,8 +75,79 @@ export function configureGcpClient(config: GcpClientConfig): void {
 }
 
 /**
+ * Create Workload Identity Federation credentials configuration.
+ * Uses google-auth-library's AwsClient for robust credential handling.
+ *
+ * This approach:
+ * - Automatically detects AWS credentials from environment (Lambda) or IMDS (EC2/ECS)
+ * - Handles IMDSv2 token requirements
+ * - Supports all AWS compute environments
+ */
+async function createWorkloadIdentityAuthClient(
+  provider: string,
+  serviceAccountEmail: string,
+): Promise<import('google-auth-library').AuthClient> {
+  // Validate provider format
+  // Format: projects/{project_number}/locations/global/workloadIdentityPools/{pool_id}/providers/{provider_id}
+  const providerPattern = /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[^/]+\/providers\/[^/]+$/;
+
+  if (!providerPattern.test(provider)) {
+    throw new Error(`Invalid workload identity provider format: ${provider}`);
+  }
+
+  // Dynamic import google-auth-library
+  const { ExternalAccountClient } = await import('google-auth-library');
+
+  // Create external account credentials configuration for AWS
+  // See: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds
+  const imdsBaseUrl = process.env.AWS_EC2_METADATA_SERVICE_ENDPOINT ?? 'http://169.254.169.254';
+  const containerCredentialsUrl = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI
+    ? process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI
+    : process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+      ? `http://169.254.170.2${process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI}`
+      : undefined;
+
+  const credentialConfig = {
+    type: 'external_account' as const,
+    audience: `//iam.googleapis.com/${provider}`,
+    subject_token_type: 'urn:ietf:params:aws:token-type:aws4_request',
+    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
+    token_url: 'https://sts.googleapis.com/v1/token',
+    credential_source: {
+      environment_id: 'aws1',
+      // For Lambda, credentials come from environment; for EC2/ECS, from IMDS or ECS credential endpoints
+      region_url: `${imdsBaseUrl}/latest/meta-data/placement/availability-zone`,
+      url: containerCredentialsUrl ?? `${imdsBaseUrl}/latest/meta-data/iam/security-credentials`,
+      regional_cred_verification_url: 'https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15',
+      // Enable IMDSv2 support
+      imdsv2_session_token_url: `${imdsBaseUrl}/latest/api/token`,
+    },
+  };
+
+  // ExternalAccountClient automatically handles:
+  // - Environment-based AWS credentials (AWS_ACCESS_KEY_ID, etc.) for Lambda
+  // - IMDS-based credentials for EC2/ECS with IMDSv2 support
+  // - Credential refresh
+  const client = ExternalAccountClient.fromJSON(credentialConfig);
+
+  if (!client) {
+    throw new Error('Failed to create ExternalAccountClient from credential configuration');
+  }
+
+  // Set required OAuth scopes for Secret Manager access
+  client.scopes = ['https://www.googleapis.com/auth/cloud-platform'];
+
+  return client;
+}
+
+/**
  * Get or create the GCP Secret Manager client.
  * Uses lazy initialization to avoid startup failures when GCP isn't configured.
+ *
+ * Supports:
+ * - Standard ADC (Application Default Credentials)
+ * - Explicit service account key file
+ * - AWS Workload Identity Federation (for Lambda/ECS running in AWS)
  *
  * @returns The client instance, or null if initialization failed
  */
@@ -78,16 +164,31 @@ async function getGcpClient(): Promise<SecretManagerClient | null> {
     // Dynamic import to handle missing dependency gracefully
     const { SecretManagerServiceClient } = await import('@google-cloud/secret-manager');
 
-    // Initialize with configuration if provided
-    const clientOptions: { projectId?: string; keyFilename?: string } = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const clientOptions: any = {};
 
     if (clientConfig.projectId) {
       clientOptions.projectId = clientConfig.projectId;
     }
 
-    if (clientConfig.keyFilename) {
+    // Check for Workload Identity Federation configuration
+    if (clientConfig.workloadIdentity) {
+      const { provider, serviceAccountEmail } = clientConfig.workloadIdentity;
+
+      // Create auth client using google-auth-library's ExternalAccountClient
+      // This handles AWS credential detection automatically (env vars for Lambda, IMDS for EC2/ECS)
+      const authClient = await createWorkloadIdentityAuthClient(provider, serviceAccountEmail);
+
+      // Pass auth client to Secret Manager - uses 'auth' option (not 'authClient')
+      // See: https://github.com/googleapis/google-cloud-node
+      clientOptions.auth = authClient;
+
+      clientConfig.logger?.debug?.('[GCP] Using AWS Workload Identity Federation for authentication');
+    } else if (clientConfig.keyFilename) {
+      // Use explicit key file
       clientOptions.keyFilename = clientConfig.keyFilename;
     }
+    // Otherwise, rely on ADC (Application Default Credentials)
 
     gcpClient = new SecretManagerServiceClient(Object.keys(clientOptions).length > 0 ? clientOptions : undefined);
 

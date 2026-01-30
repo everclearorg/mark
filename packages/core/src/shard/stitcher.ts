@@ -20,6 +20,25 @@ import { setValueByPath, deleteValueByPath } from './path-utils';
 import { getSsmParameter } from '../ssm';
 
 /**
+ * Read Workload Identity configuration from environment variables.
+ * Returns undefined if not configured.
+ *
+ * Environment variables:
+ * - GCP_WORKLOAD_IDENTITY_PROVIDER: Full provider resource name
+ * - GCP_SERVICE_ACCOUNT_EMAIL: Service account to impersonate
+ */
+function getWorkloadIdentityFromEnv(): { provider: string; serviceAccountEmail: string } | undefined {
+  const provider = process.env.GCP_WORKLOAD_IDENTITY_PROVIDER;
+  const serviceAccountEmail = process.env.GCP_SERVICE_ACCOUNT_EMAIL;
+
+  if (provider && serviceAccountEmail) {
+    return { provider, serviceAccountEmail };
+  }
+
+  return undefined;
+}
+
+/**
  * Stitch sharded fields in a config JSON by fetching shares from both
  * AWS SSM and GCP Secret Manager, then reconstructing the original values.
  *
@@ -47,16 +66,26 @@ export async function stitchConfig<T extends object>(
   manifest: ShardManifest,
   options: StitcherOptions = {},
 ): Promise<T> {
-  const { logger, failOnMissingOptional = false, gcpCredentials } = options;
+  const { logger, failOnMissingOptional = false, gcpCredentials, workloadIdentity } = options;
 
-  // Configure GCP client with credentials and logger if provided
-  if (gcpCredentials || logger) {
-    configureGcpClient({
-      projectId: gcpCredentials?.projectId,
-      keyFilename: gcpCredentials?.keyFilename,
-      logger: logger ? { warn: logger.warn, error: logger.error } : undefined,
-    });
-  }
+  // Determine Workload Identity configuration
+  // Priority: explicit options > environment variables
+  const effectiveWorkloadIdentity = workloadIdentity ?? getWorkloadIdentityFromEnv();
+
+  // Configure GCP client with credentials, workload identity, and logger
+  configureGcpClient({
+    projectId: gcpCredentials?.projectId ?? process.env.GCP_PROJECT_ID ?? process.env.GOOGLE_CLOUD_PROJECT,
+    keyFilename: gcpCredentials?.keyFilename,
+    workloadIdentity: effectiveWorkloadIdentity,
+    logger: logger
+      ? {
+          info: logger.info,
+          debug: logger.debug,
+          warn: logger.warn,
+          error: logger.error,
+        }
+      : undefined,
+  });
 
   // Validate manifest
   if (!manifest || manifest.version !== '1.0') {
