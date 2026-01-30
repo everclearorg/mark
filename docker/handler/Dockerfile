@@ -102,7 +102,7 @@ WORKDIR /app
 
 # Copy only the necessary files from build
 COPY --from=build /tmp/build/node_modules /app/node_modules
-COPY --from=build /tmp/build/packages/handler/dist /app/
+COPY --from=build /tmp/build/packages/handler/dist/. /app/
 COPY --from=build /tmp/build/packages/core/dist /app/packages/core/dist
 COPY --from=build /tmp/build/packages/agent/dist /app/packages/agent/dist
 COPY --from=build /tmp/build/packages/poller/dist /app/packages/poller/dist
