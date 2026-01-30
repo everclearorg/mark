@@ -53,8 +53,8 @@ locals {
   # GCP Workload Identity for cross-cloud authentication (AWS → GCP)
   gcp_project_number             = "842536713593"
   gcp_project_id                 = "everclear-staging"
-  gcp_service_account            = "shard-reader-staging@everclear-staging.iam.gserviceaccount.com"
-  gcp_workload_identity_provider = "projects/${local.gcp_project_number}/locations/global/workloadIdentityPools/aws-cross-cloud-staging/providers/aws-staging"
+  gcp_service_account            = "mason-shamir-reader@everclear-staging.iam.gserviceaccount.com"
+  gcp_workload_identity_provider = "projects/${local.gcp_project_number}/locations/global/workloadIdentityPools/mason-aws-pool/providers/aws-staging"
 
   prometheus_config = <<-EOT
     global:

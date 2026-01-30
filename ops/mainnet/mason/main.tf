@@ -39,7 +39,7 @@ locals {
 
   mark_config_json = jsondecode(data.aws_ssm_parameter.mark_config_mainnet.value)
   mark_config = {
-    dd_api_key              = local.mark_config_json.dd_api_key
+    dd_api_key = local.mark_config_json.dd_api_key
     # Private keys are stored as Shamir shares in separate SSM parameters, not in main config
     web3_signer_private_key = try(local.mark_config_json.web3_signer_private_key, "")
     signerAddress           = local.mark_config_json.signerAddress
@@ -411,34 +411,34 @@ module "mark_poller_meth_only" {
 # Invoice Handler ECS Service - replaces poller Lambda functions
 # Exposed via public ALB for Goldsky webhook access
 module "mark_invoice_handler" {
-  source                 = "../../modules/service"
-  stage                  = var.stage
-  environment            = var.environment
-  domain                 = var.domain
-  region                 = var.region
-  dd_api_key             = local.mark_config.dd_api_key
-  vpc_flow_logs_role_arn = module.iam.vpc_flow_logs_role_arn
-  execution_role_arn     = data.aws_iam_role.ecr_admin_role.arn
-  task_role_arn          = module.iam.ecs_task_role_arn
-  cluster_id             = module.ecs.ecs_cluster_id
-  vpc_id                 = module.network.vpc_id
-  lb_subnets             = module.network.public_subnets
-  task_subnets           = module.network.private_subnets
-  efs_id                 = module.efs.mark_efs_id
-  docker_image           = var.handler_image_uri
-  container_family       = "${var.bot_name}-handler"
-  container_port         = 3000
-  cpu                    = 512
-  memory                 = 1024
-  instance_count         = 1
-  service_security_groups = [module.sgs.lambda_sg_id]
-  container_env_vars     = local.handler_env_vars
-  zone_id                = var.zone_id
-  cert_arn               = var.cert_arn
-  ingress_cdir_blocks    = ["0.0.0.0/0"]
+  source                   = "../../modules/service"
+  stage                    = var.stage
+  environment              = var.environment
+  domain                   = var.domain
+  region                   = var.region
+  dd_api_key               = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn   = module.iam.vpc_flow_logs_role_arn
+  execution_role_arn       = data.aws_iam_role.ecr_admin_role.arn
+  task_role_arn            = module.iam.ecs_task_role_arn
+  cluster_id               = module.ecs.ecs_cluster_id
+  vpc_id                   = module.network.vpc_id
+  lb_subnets               = module.network.public_subnets
+  task_subnets             = module.network.private_subnets
+  efs_id                   = module.efs.mark_efs_id
+  docker_image             = var.handler_image_uri
+  container_family         = "${var.bot_name}-handler"
+  container_port           = 3000
+  cpu                      = 512
+  memory                   = 1024
+  instance_count           = 1
+  service_security_groups  = [module.sgs.lambda_sg_id]
+  container_env_vars       = local.handler_env_vars
+  zone_id                  = var.zone_id
+  cert_arn                 = var.cert_arn
+  ingress_cdir_blocks      = ["0.0.0.0/0"]
   ingress_ipv6_cdir_blocks = []
-  create_alb             = true
-  internal_lb            = false
+  create_alb               = true
+  internal_lb              = false
   health_check_settings = {
     path                = "/health"
     matcher             = "200"
@@ -448,7 +448,7 @@ module "mark_invoice_handler" {
     unhealthy_threshold = 3
   }
   private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
-  depends_on             = [aws_service_discovery_private_dns_namespace.mark_internal]
+  depends_on               = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "ecr" {
