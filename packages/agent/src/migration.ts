@@ -1,6 +1,7 @@
 import { Logger } from '@mark/logger';
 import { execSync } from 'child_process';
 import { resolve } from 'path';
+import { existsSync } from 'fs';
 
 /**
  * Run database migrations using dbmate
@@ -13,8 +14,19 @@ export async function runMigration(logger: Logger): Promise<void> {
       return;
     }
 
-    // Default to AWS Lambda environment path
-    const db_migration_path = process.env.DATABASE_MIGRATION_PATH ?? '/var/task/db/migrations';
+    // Determine default migration path based on environment
+    // Lambda uses /var/task, Fargate/ECS uses /app
+    let defaultMigrationPath: string;
+    const cwd = process.cwd();
+    if (cwd === '/var/task' || existsSync('/var/task')) {
+      // AWS Lambda environment
+      defaultMigrationPath = '/var/task/db/migrations';
+    } else {
+      // Fargate/ECS or other container environments
+      defaultMigrationPath = resolve(cwd, 'db/migrations');
+    }
+
+    const db_migration_path = process.env.DATABASE_MIGRATION_PATH ?? defaultMigrationPath;
 
     let cwdOption: { cwd?: string } = {};
 
