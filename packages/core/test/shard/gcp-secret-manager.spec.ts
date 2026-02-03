@@ -11,6 +11,7 @@ import {
 let lastClientOptions: unknown;
 let lastCredentialConfig: unknown;
 let lastAuthOptions: unknown;
+let lastAwsClientOptions: unknown;
 let accessSecretVersionMock: jest.Mock;
 
 jest.mock('@google-cloud/secret-manager', () => {
@@ -34,6 +35,15 @@ jest.mock('google-auth-library', () => {
       lastCredentialConfig = options?.credentials;
       return {
         getUniverseDomain: jest.fn().mockResolvedValue('googleapis.com'),
+      };
+    }),
+    AwsClient: jest.fn().mockImplementation((options) => {
+      lastAwsClientOptions = options;
+      // Also set lastCredentialConfig for backward compatibility with tests
+      lastCredentialConfig = options;
+      return {
+        getUniverseDomain: jest.fn().mockResolvedValue('googleapis.com'),
+        getAccessToken: jest.fn().mockResolvedValue({ token: 'mock-token' }),
       };
     }),
     ExternalAccountClient: {
@@ -61,6 +71,7 @@ describe('gcp-secret-manager', () => {
     jest.clearAllMocks();
     lastClientOptions = undefined;
     lastCredentialConfig = undefined;
+    lastAwsClientOptions = undefined;
     // Clean up environment variables
     delete process.env.AWS_EC2_METADATA_SERVICE_ENDPOINT;
     delete process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;

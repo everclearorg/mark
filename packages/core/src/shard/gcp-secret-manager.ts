@@ -86,7 +86,7 @@ export function configureGcpClient(config: GcpClientConfig): void {
 async function createWorkloadIdentityAuthClient(
   provider: string,
   serviceAccountEmail: string,
-): Promise<import('google-auth-library').GoogleAuth> {
+): Promise<import('google-auth-library').GoogleAuth | import('google-auth-library').AwsClient> {
   // Validate provider format
   // Format: projects/{project_number}/locations/global/workloadIdentityPools/{pool_id}/providers/{provider_id}
   const providerPattern = /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[^/]+\/providers\/[^/]+$/;
@@ -94,9 +94,6 @@ async function createWorkloadIdentityAuthClient(
   if (!providerPattern.test(provider)) {
     throw new Error(`Invalid workload identity provider format: ${provider}`);
   }
-
-  // Dynamic import google-auth-library
-  const { GoogleAuth } = await import('google-auth-library');
 
   // Create external account credentials configuration for AWS
   // See: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds
@@ -117,13 +114,11 @@ async function createWorkloadIdentityAuthClient(
 
   const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || '';
 
-  // Build credential source based on environment
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let credentialConfig: any;
-
   if (isLambda || isFargate) {
-    // For Lambda and Fargate: Use a custom credential supplier that fetches fresh credentials
-    // This ensures credentials are always valid even for long-running ECS tasks
+    // For Lambda and Fargate: Use AwsClient directly with a credential supplier
+    // GoogleAuth doesn't properly handle aws_security_credentials_supplier when passed inline
+    // We must use AwsClient directly to support programmatic credential suppliers
+    const { AwsClient } = await import('google-auth-library');
     const { defaultProvider } = await import('@aws-sdk/credential-provider-node');
     const credentialProvider = defaultProvider();
 
@@ -144,18 +139,23 @@ async function createWorkloadIdentityAuthClient(
       },
     };
 
-    credentialConfig = {
-      type: 'external_account' as const,
+    // Use AwsClient directly - this properly supports aws_security_credentials_supplier
+    const awsClient = new AwsClient({
       audience: `//iam.googleapis.com/${provider}`,
       subject_token_type: 'urn:ietf:params:aws:token-type:aws4_request',
       service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
       token_url: 'https://sts.googleapis.com/v1/token',
-      // Use programmatic credential supplier instead of static credential_source
       aws_security_credentials_supplier: awsSecurityCredentialsSupplier,
-    };
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    });
+
+    return awsClient;
   } else {
-    // EC2 or ECS on EC2: Use IMDS for region and credentials
-    credentialConfig = {
+    // EC2 or ECS on EC2: Use GoogleAuth with IMDS credential_source
+    // This works because credential_source is a static JSON config, not functions
+    const { GoogleAuth } = await import('google-auth-library');
+
+    const credentialConfig = {
       type: 'external_account' as const,
       audience: `//iam.googleapis.com/${provider}`,
       subject_token_type: 'urn:ietf:params:aws:token-type:aws4_request',
@@ -170,14 +170,14 @@ async function createWorkloadIdentityAuthClient(
         imdsv2_session_token_url: `${imdsBaseUrl}/latest/api/token`,
       },
     };
+
+    const authClient = new GoogleAuth({
+      credentials: credentialConfig,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    });
+
+    return authClient;
   }
-
-  const authClient = new GoogleAuth({
-    credentials: credentialConfig,
-    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-  });
-
-  return authClient;
 }
 
 /**
