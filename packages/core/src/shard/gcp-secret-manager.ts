@@ -130,14 +130,26 @@ async function createWorkloadIdentityAuthClient(
     const awsSecurityCredentialsSupplier = {
       getAwsRegion: async () => region,
       getAwsSecurityCredentials: async () => {
-        const creds = await credentialProvider();
-        return {
-          accessKeyId: creds.accessKeyId,
-          secretAccessKey: creds.secretAccessKey,
-          token: creds.sessionToken,
-        };
+        try {
+          const creds = await credentialProvider();
+          return {
+            accessKeyId: creds.accessKeyId,
+            secretAccessKey: creds.secretAccessKey,
+            token: creds.sessionToken,
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(
+            `Failed to fetch AWS credentials for GCP Workload Identity Federation: ${message}. ` +
+              `Environment: ${isLambda ? 'Lambda' : 'Fargate'}, Region: ${region}`,
+          );
+        }
       },
     };
+
+    // Determine universe domain (standard GCP uses 'googleapis.com')
+    // Support custom universe domains via environment variable for Google Distributed Cloud
+    const universeDomain = process.env.GOOGLE_CLOUD_UNIVERSE_DOMAIN || 'googleapis.com';
 
     // Use AwsClient directly - this properly supports aws_security_credentials_supplier
     const awsClient = new AwsClient({
@@ -147,7 +159,26 @@ async function createWorkloadIdentityAuthClient(
       token_url: 'https://sts.googleapis.com/v1/token',
       aws_security_credentials_supplier: awsSecurityCredentialsSupplier,
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      // Note: AwsClient supports universeDomain in constructor, but we also add the method
+      // for compatibility with google-cloud client libraries that call getUniverseDomain()
+      universeDomain,
     });
+
+    // Add getUniverseDomain method required by SecretManagerServiceClient
+    // The google-cloud client libraries call auth.getUniverseDomain() as a method,
+    // but AwsClient only exposes universeDomain as a property.
+    // We add the method explicitly to ensure compatibility.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const awsClientAny = awsClient as any;
+    if (typeof awsClientAny.getUniverseDomain !== 'function') {
+      // Only add if not already present (future-proofing for when library adds it)
+      Object.defineProperty(awsClient, 'getUniverseDomain', {
+        value: async () => universeDomain,
+        writable: false,
+        enumerable: false,
+        configurable: false,
+      });
+    }
 
     return awsClient;
   } else {
