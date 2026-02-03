@@ -14,6 +14,8 @@ export class EventConsumer {
   private readonly activeCounts: Record<WebhookEventType, number> = {} as Record<WebhookEventType, number>;
   // Debounce timers for pending work per event type (prevents unbounded async spawning)
   private readonly pendingWorkTimers: Map<WebhookEventType, NodeJS.Timeout> = new Map();
+  // Tracks whether pending work processing is currently running for each event type (prevents race conditions)
+  private readonly pendingWorkInProgress: Set<WebhookEventType> = new Set();
 
   constructor(
     private readonly queue: EventQueue,
@@ -283,15 +285,17 @@ export class EventConsumer {
   /**
    * Schedule pending work for an event type with debouncing.
    * Prevents unbounded async task spawning by coalescing rapid calls.
+   * Uses a lock to prevent race conditions between timer expiration and new scheduling.
    */
   private schedulePendingWork(eventType: WebhookEventType): void {
-    // If there's already a pending timer for this event type, don't schedule another
-    if (this.pendingWorkTimers.has(eventType)) {
+    // If there's already a pending timer or work in progress for this event type, don't schedule another
+    if (this.pendingWorkTimers.has(eventType) || this.pendingWorkInProgress.has(eventType)) {
       return;
     }
 
     // Schedule processing after a short debounce delay
     const timer = setTimeout(() => {
+      // Delete timer reference first
       this.pendingWorkTimers.delete(eventType);
 
       // Only process if we're still running
@@ -299,24 +303,33 @@ export class EventConsumer {
         return;
       }
 
-      this.processPendingEventsForType(eventType).catch((e) => {
-        this.logger.error('Error processing pending events after debounce', {
-          eventType,
-          error: jsonifyError(e),
+      // Mark work as in progress to prevent concurrent scheduling
+      this.pendingWorkInProgress.add(eventType);
+
+      this.processPendingEventsForType(eventType)
+        .catch((e) => {
+          this.logger.error('Error processing pending events after debounce', {
+            eventType,
+            error: jsonifyError(e),
+          });
+        })
+        .finally(() => {
+          // Clear the in-progress flag when done
+          this.pendingWorkInProgress.delete(eventType);
         });
-      });
     }, PENDING_WORK_DEBOUNCE_MS);
 
     this.pendingWorkTimers.set(eventType, timer);
   }
 
   /**
-   * Clear all pending work timers (called during shutdown)
+   * Clear all pending work timers and in-progress flags (called during shutdown)
    */
   private clearPendingWorkTimers(): void {
     for (const timer of this.pendingWorkTimers.values()) {
       clearTimeout(timer);
     }
     this.pendingWorkTimers.clear();
+    this.pendingWorkInProgress.clear();
   }
 }

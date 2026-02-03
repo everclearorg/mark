@@ -131,6 +131,21 @@ describe('PurchaseCache', () => {
             expect(result).toEqual([mockPurchaseAction]);
         });
 
+        it('should handle corrupted JSON data gracefully', async () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            mockRedis.hmget.mockResolvedValue(['invalid-json{', JSON.stringify(mockPurchaseAction)]);
+
+            const result = await cache.getPurchases(['corrupted', 'test-intent-1']);
+
+            expect(result).toHaveLength(1);
+            expect(result[0]).toEqual(mockPurchaseAction);
+            expect(consoleSpy).toHaveBeenCalledWith(
+                'Failed to parse purchase data, skipping corrupted entry:',
+                expect.any(SyntaxError)
+            );
+            consoleSpy.mockRestore();
+        });
+
         it('should return an empty array if targetIds is empty', async () => {
             // If targetIds is empty, hmget might be called with just the key,
             // or the mock might need to handle ...targetIds spreading an empty array.
@@ -265,6 +280,24 @@ describe('PurchaseCache', () => {
 
             expect(result).toEqual([]);
             expect(mockRedis.hgetall).toHaveBeenCalledWith('purchases:data');
+        });
+
+        it('should handle corrupted JSON data gracefully', async () => {
+            const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+            mockRedis.hgetall.mockResolvedValue({
+                'corrupted': 'invalid-json{',
+                [mockPurchaseAction.target.intent_id]: JSON.stringify(mockPurchaseAction),
+            });
+
+            const result = await cache.getAllPurchases();
+
+            expect(result).toHaveLength(1);
+            expect(result[0]).toEqual(mockPurchaseAction);
+            expect(consoleSpy).toHaveBeenCalledWith(
+                'Failed to parse purchase data in getAllPurchases, skipping corrupted entry:',
+                expect.any(SyntaxError)
+            );
+            consoleSpy.mockRestore();
         });
     });
 

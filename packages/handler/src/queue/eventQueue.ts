@@ -2,6 +2,9 @@ import Redis from 'ioredis';
 import { Logger } from '@mark/logger';
 import { WebhookEvent, WebhookEventType } from '@mark/core';
 
+// Default TTL for dead letter queue entries (7 days in milliseconds)
+const DEFAULT_DEAD_LETTER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 export enum EventPriority {
   HIGH = 'HIGH',
   NORMAL = 'NORMAL',
@@ -47,12 +50,15 @@ export class EventQueue {
   private readonly cursorKey = `${this.prefix}:backfill-cursor`;
   private readonly metricsKey = `${this.prefix}:metrics`;
   private readonly store: Redis;
+  private readonly deadLetterTtlMs: number;
 
   constructor(
     host: string,
     port: number,
     private readonly logger: Logger,
+    deadLetterTtlMs: number = DEFAULT_DEAD_LETTER_TTL_MS,
   ) {
+    this.deadLetterTtlMs = deadLetterTtlMs;
     this.store = new Redis({
       host,
       port,
@@ -73,8 +79,23 @@ export class EventQueue {
    * Event ID is stored in a sorted set, full event data is stored separately.
    * If the event exists in the processing queue, it will be removed first (for retries).
    * @returns true if the event was already in the pending or processing queue, false otherwise
+   * @throws Error if event validation fails
    */
   async enqueueEvent(event: QueuedEvent, priority: EventPriority = EventPriority.NORMAL): Promise<boolean> {
+    // Input validation
+    if (!event.id || typeof event.id !== 'string' || event.id.trim() === '') {
+      throw new Error('Event ID must be a non-empty string');
+    }
+    if (typeof event.scheduledAt !== 'number' || !Number.isFinite(event.scheduledAt) || event.scheduledAt < 0) {
+      throw new Error('Event scheduledAt must be a non-negative finite number');
+    }
+    if (!Object.values(EventPriority).includes(priority)) {
+      throw new Error(`Invalid priority: ${priority}. Must be one of: ${Object.values(EventPriority).join(', ')}`);
+    }
+    if (!Object.values(WebhookEventType).includes(event.type)) {
+      throw new Error(`Invalid event type: ${event.type}`);
+    }
+
     const eventWithPriority = { ...event, priority };
     const pendingQueueKey = this.pendingQueueKeys[event.type];
     const processingQueueKey = this.processingQueueKeys[event.type];
@@ -156,12 +177,23 @@ export class EventQueue {
         const eventId = eventIds[i];
         const eventData = eventDataArray[i];
         if (eventData) {
-          // Parse event to get scheduledAt for proper ordering
-          const event: QueuedEvent = JSON.parse(eventData);
-          const score = event.scheduledAt;
-          // Remove from the processing queue and add to the pending queue
-          multi.zrem(processingQueueKey, eventId);
-          multi.zadd(pendingQueueKey, score, eventId);
+          try {
+            // Parse event to get scheduledAt for proper ordering
+            const event: QueuedEvent = JSON.parse(eventData);
+            const score = event.scheduledAt;
+            // Remove from the processing queue and add to the pending queue
+            multi.zrem(processingQueueKey, eventId);
+            multi.zadd(pendingQueueKey, score, eventId);
+          } catch (parseError) {
+            // Corrupted event data - remove from processing queue and delete data
+            this.logger.error('Failed to parse event data during moveProcessingToPending, removing corrupted event', {
+              eventId,
+              eventType,
+              error: parseError instanceof Error ? parseError.message : String(parseError),
+            });
+            multi.zrem(processingQueueKey, eventId);
+            multi.hdel(this.dataKey, eventId);
+          }
         } else {
           // Event data is missing, just remove from the processing queue
           multi.zrem(processingQueueKey, eventId);
@@ -184,9 +216,20 @@ export class EventQueue {
    * Dequeue multiple events for processing (FIFO)
    * Checks the specified event type pending queue and returns up to count ready events
    * Uses a Redis transaction for atomic batch operations
+   * @param eventType - The type of events to dequeue
+   * @param count - Maximum number of events to dequeue (must be between 1 and 1000)
    */
   async dequeueEvents(eventType: WebhookEventType, count: number): Promise<QueuedEvent[]> {
-    if (count <= 0) {
+    // Input validation
+    if (!Number.isInteger(count) || count <= 0) {
+      return [];
+    }
+    if (count > 1000) {
+      this.logger.warn('Dequeue count exceeds maximum, capping at 1000', { requestedCount: count });
+      count = 1000;
+    }
+    if (!Object.values(WebhookEventType).includes(eventType)) {
+      this.logger.error('Invalid event type for dequeue', { eventType });
       return [];
     }
 
@@ -211,11 +254,21 @@ export class EventQueue {
       const eventId = eventIds[i];
       const eventData = eventDataArray[i];
       if (eventData) {
-        const event: QueuedEvent = JSON.parse(eventData);
-        // Skip events scheduled for future processing (scheduledAt > now)
-        if (event.scheduledAt <= Date.now()) {
-          events.push(event);
-          validEventIds.push(eventId);
+        try {
+          const event: QueuedEvent = JSON.parse(eventData);
+          // Skip events scheduled for future processing (scheduledAt > now)
+          if (event.scheduledAt <= Date.now()) {
+            events.push(event);
+            validEventIds.push(eventId);
+          }
+        } catch (parseError) {
+          // Corrupted event data - mark for removal
+          this.logger.error('Failed to parse event data during dequeue, marking as orphaned', {
+            eventId,
+            eventType,
+            error: parseError instanceof Error ? parseError.message : String(parseError),
+          });
+          orphanedEventIds.push(eventId);
         }
       } else {
         // Event data is missing, mark for removal
@@ -287,6 +340,39 @@ export class EventQueue {
   }
 
   /**
+   * Clean up expired entries from the dead letter queue.
+   * Removes entries older than the configured TTL and their associated data.
+   * @returns Number of expired entries removed
+   */
+  async cleanupExpiredDeadLetterEntries(): Promise<number> {
+    const cutoffTimestamp = Date.now() - this.deadLetterTtlMs;
+
+    // Get all event IDs with scores (timestamps) older than the cutoff
+    // Score range: 0 to cutoffTimestamp (entries added before the cutoff)
+    const expiredEventIds = await this.store.zrangebyscore(this.deadLetterQueueKey, 0, cutoffTimestamp);
+
+    if (expiredEventIds.length === 0) {
+      return 0;
+    }
+
+    // Remove expired entries from the sorted set and their data from the hash
+    const multi = this.store.multi();
+    for (const eventId of expiredEventIds) {
+      multi.zrem(this.deadLetterQueueKey, eventId);
+      multi.hdel(this.dataKey, eventId);
+    }
+    await multi.exec();
+
+    this.logger.info('Cleaned up expired dead letter queue entries', {
+      count: expiredEventIds.length,
+      cutoffTimestamp,
+      ttlMs: this.deadLetterTtlMs,
+    });
+
+    return expiredEventIds.length;
+  }
+
+  /**
    * Get queue status
    */
   async getQueueStatus(): Promise<QueueStatus> {
@@ -306,7 +392,16 @@ export class EventQueue {
 
     // Get the last processed timestamp from status
     const statusData = await this.store.get(this.statusKey);
-    const status = statusData ? JSON.parse(statusData) : {};
+    let status: { lastProcessedAt?: number } = {};
+    if (statusData) {
+      try {
+        status = JSON.parse(statusData);
+      } catch (parseError) {
+        this.logger.error('Failed to parse queue status data', {
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+        });
+      }
+    }
 
     return {
       queueLength: totalQueueLength,
