@@ -42,6 +42,14 @@
   "dependencies": {
     "@types/node": "20.17.12"
   },
+  "dependenciesMeta": {
+    "@eth-optimism/core-utils": {
+      "built": false
+    },
+    "@eth-optimism/contracts-bedrock": {
+      "built": false
+    }
+  },
   "devDependencies": {
     "@commitlint/cli": "19.6.1",
     "@commitlint/config-conventional": "19.6.0",
