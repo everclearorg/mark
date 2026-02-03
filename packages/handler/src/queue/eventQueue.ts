@@ -286,12 +286,13 @@ export class EventQueue {
       multi.zadd(processingQueueKey, timestamp, eventId);
     }
 
-    // Remove orphaned event IDs from the queue (missing data)
+    // Remove orphaned event IDs from the queue and clean up any corrupted data
     if (orphanedEventIds.length > 0) {
       for (const eventId of orphanedEventIds) {
         multi.zrem(pendingQueueKey, eventId);
+        multi.hdel(this.dataKey, eventId);
       }
-      this.logger.warn('Removed orphaned event IDs (missing data)', {
+      this.logger.warn('Removed orphaned event IDs', {
         eventType,
         orphanedCount: orphanedEventIds.length,
         orphanedIds: orphanedEventIds,

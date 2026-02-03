@@ -295,6 +295,7 @@ describe('EventQueue', () => {
       const mockMulti: any = {
         zrem: jest.fn().mockReturnThis(),
         zadd: jest.fn().mockReturnThis(),
+        hdel: jest.fn().mockReturnThis(),
         exec: mockExec,
       };
       mockRedis.multi.mockReturnValue(mockMulti);
@@ -303,6 +304,7 @@ describe('EventQueue', () => {
 
       expect(result).toHaveLength(0);
       expect(mockMulti.zrem).toHaveBeenCalledTimes(2);
+      expect(mockMulti.hdel).toHaveBeenCalledTimes(2);
     });
 
     it('should return empty array for non-positive count', async () => {
@@ -350,6 +352,7 @@ describe('EventQueue', () => {
       const mockMulti: any = {
         zrem: jest.fn().mockReturnThis(),
         zadd: jest.fn().mockReturnThis(),
+        hdel: jest.fn().mockReturnThis(),
         exec: mockExec,
       };
       mockRedis.multi.mockReturnValue(mockMulti);
@@ -361,6 +364,8 @@ describe('EventQueue', () => {
         'Failed to parse event data during dequeue, marking as orphaned',
         expect.objectContaining({ eventId: 'event-1' })
       );
+      // Verify corrupted data is cleaned up
+      expect(mockMulti.hdel).toHaveBeenCalledTimes(1);
     });
   });
 
