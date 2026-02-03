@@ -43,10 +43,10 @@
     "@types/node": "20.17.12"
   },
   "dependenciesMeta": {
-    "@eth-optimism/core-utils": {
+    "@eth-optimism/contracts-bedrock": {
       "built": false
     },
-    "@eth-optimism/contracts-bedrock": {
+    "@eth-optimism/core-utils": {
       "built": false
     }
   },

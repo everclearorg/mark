@@ -16604,6 +16604,11 @@ __metadata:
     sort-package-json: 2.12.0
     tsc-alias: 1.8.10
     typescript: 5.7.2
+  dependenciesMeta:
+    "@eth-optimism/contracts-bedrock":
+      built: false
+    "@eth-optimism/core-utils":
+      built: false
   languageName: unknown
   linkType: soft
 
