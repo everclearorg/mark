@@ -109,7 +109,9 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
     // Get current operation to verify it exists and check status
     const operations = await database
       .queryWithClient<database.rebalance_operations>('SELECT * FROM rebalance_operations WHERE id = $1', [operationId])
-      .then((rows: database.rebalance_operations[]) => rows.map((row: database.rebalance_operations) => snakeToCamel(row)));
+      .then((rows: database.rebalance_operations[]) =>
+        rows.map((row: database.rebalance_operations) => snakeToCamel(row)),
+      );
 
     if (operations.length === 0) {
       return jsonWithSchema(404, ErrorResponse, { message: 'Rebalance operation not found' });
@@ -135,7 +137,9 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
        RETURNING *`,
         [RebalanceOperationStatus.CANCELLED, operationId],
       )
-      .then((rows: database.rebalance_operations[]) => rows.map((row: database.rebalance_operations) => snakeToCamel(row)));
+      .then((rows: database.rebalance_operations[]) =>
+        rows.map((row: database.rebalance_operations) => snakeToCamel(row)),
+      );
 
     logger.info('Rebalance operation cancelled successfully', {
       operationId,
@@ -202,9 +206,12 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       invoiceId: earmark.invoiceId,
       previousStatus: earmark.status,
       orphanedOperations: orphanedOps.length,
-      orphanedPending: orphanedOps.filter((op: { id: string; status: string }) => op.status === RebalanceOperationStatus.PENDING).length,
-      orphanedAwaitingCallback: orphanedOps.filter((op: { id: string; status: string }) => op.status === RebalanceOperationStatus.AWAITING_CALLBACK)
-        .length,
+      orphanedPending: orphanedOps.filter(
+        (op: { id: string; status: string }) => op.status === RebalanceOperationStatus.PENDING,
+      ).length,
+      orphanedAwaitingCallback: orphanedOps.filter(
+        (op: { id: string; status: string }) => op.status === RebalanceOperationStatus.AWAITING_CALLBACK,
+      ).length,
     });
 
     return jsonWithSchema(200, AdminApi.cancelEarmark.response, {

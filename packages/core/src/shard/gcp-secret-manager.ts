@@ -96,7 +96,7 @@ async function createWorkloadIdentityAuthClient(
   }
 
   // Dynamic import google-auth-library
-  const { GoogleAuth, ExternalAccountClient } = await import('google-auth-library');
+  const { GoogleAuth } = await import('google-auth-library');
 
   // Create external account credentials configuration for AWS
   // See: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds
@@ -109,13 +109,6 @@ async function createWorkloadIdentityAuthClient(
   const isFargate =
     !!process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI || !!process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
   const imdsBaseUrl = process.env.AWS_EC2_METADATA_SERVICE_ENDPOINT ?? 'http://169.254.169.254';
-
-  // For Fargate, build the container credentials URL
-  const containerCredentialsUrl = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI
-    ? process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI
-    : process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
-      ? `http://169.254.170.2${process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI}`
-      : undefined;
 
   // Validate region is available for Lambda/Fargate
   if ((isLambda || isFargate) && !process.env.AWS_REGION && !process.env.AWS_DEFAULT_REGION) {
@@ -172,7 +165,8 @@ async function createWorkloadIdentityAuthClient(
         environment_id: 'aws1',
         region_url: `${imdsBaseUrl}/latest/meta-data/placement/availability-zone`,
         url: `${imdsBaseUrl}/latest/meta-data/iam/security-credentials`,
-        regional_cred_verification_url: 'https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15',
+        regional_cred_verification_url:
+          'https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15',
         imdsv2_session_token_url: `${imdsBaseUrl}/latest/api/token`,
       },
     };
