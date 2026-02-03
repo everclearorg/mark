@@ -36,6 +36,22 @@ jest.mock('google-auth-library', () => {
         getUniverseDomain: jest.fn().mockResolvedValue('googleapis.com'),
       };
     }),
+    ExternalAccountClient: {
+      fromJSON: jest.fn(),
+    },
+  };
+});
+
+// Mock AWS SDK credential provider
+jest.mock('@aws-sdk/credential-provider-node', () => {
+  return {
+    defaultProvider: jest.fn().mockReturnValue(() =>
+      Promise.resolve({
+        accessKeyId: 'MOCK_ACCESS_KEY',
+        secretAccessKey: 'MOCK_SECRET_KEY',
+        sessionToken: 'MOCK_SESSION_TOKEN',
+      }),
+    ),
   };
 });
 
@@ -45,12 +61,17 @@ describe('gcp-secret-manager', () => {
     jest.clearAllMocks();
     lastClientOptions = undefined;
     lastCredentialConfig = undefined;
+    // Clean up environment variables
     delete process.env.AWS_EC2_METADATA_SERVICE_ENDPOINT;
     delete process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
     delete process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
     delete process.env.AWS_LAMBDA_FUNCTION_NAME;
     delete process.env.AWS_REGION;
     delete process.env.AWS_DEFAULT_REGION;
+    // Clean up credentials that may have been set by previous tests
+    delete process.env.AWS_ACCESS_KEY_ID;
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    delete process.env.AWS_SESSION_TOKEN;
   });
 
   it('uses Workload Identity auth client and passes auth option', async () => {
@@ -86,7 +107,7 @@ describe('gcp-secret-manager', () => {
     );
   });
 
-  it('uses ECS container credentials URL when provided (Fargate)', async () => {
+  it('uses AWS SDK credentials supplier for Fargate environment', async () => {
     // Simulate Fargate environment
     process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI = '/v2/credentials/abc';
     process.env.AWS_REGION = 'us-east-1';
@@ -101,16 +122,18 @@ describe('gcp-secret-manager', () => {
 
     await getGcpSecret('proj', 'secret');
 
+    // For Fargate, we use a programmatic credential supplier (more secure)
     expect(lastCredentialConfig).toEqual(
       expect.objectContaining({
-        credential_source: expect.objectContaining({
-          url: 'http://169.254.170.2/v2/credentials/abc',
-          region: 'us-east-1',
+        aws_security_credentials_supplier: expect.objectContaining({
+          getAwsRegion: expect.any(Function),
+          getAwsSecurityCredentials: expect.any(Function),
         }),
       }),
     );
-    // Fargate should NOT have IMDS URLs
-    expect((lastCredentialConfig as { credential_source?: { region_url?: string } })?.credential_source?.region_url).toBeUndefined();
+    // Credentials should NOT be set in environment (security improvement)
+    expect(process.env.AWS_ACCESS_KEY_ID).toBeUndefined();
+    expect(process.env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
   });
 
   it('uses IMDS for EC2 environment (no Lambda/Fargate env vars)', async () => {
@@ -135,7 +158,7 @@ describe('gcp-secret-manager', () => {
     );
   });
 
-  it('uses AWS_REGION for Lambda environment', async () => {
+  it('uses AWS SDK credentials supplier for Lambda environment', async () => {
     // Simulate Lambda environment
     process.env.AWS_LAMBDA_FUNCTION_NAME = 'my-function';
     process.env.AWS_REGION = 'sa-east-1';
@@ -150,15 +173,17 @@ describe('gcp-secret-manager', () => {
 
     await getGcpSecret('proj', 'secret');
 
+    // For Lambda, we use a programmatic credential supplier
     expect(lastCredentialConfig).toEqual(
       expect.objectContaining({
-        credential_source: expect.objectContaining({
-          region: 'sa-east-1',
+        aws_security_credentials_supplier: expect.objectContaining({
+          getAwsRegion: expect.any(Function),
+          getAwsSecurityCredentials: expect.any(Function),
         }),
       }),
     );
-    // Lambda should NOT have IMDS URLs
-    expect((lastCredentialConfig as { credential_source?: { region_url?: string } })?.credential_source?.region_url).toBeUndefined();
+    // Should NOT have credential_source (uses supplier instead)
+    expect((lastCredentialConfig as { credential_source?: unknown })?.credential_source).toBeUndefined();
   });
 
   it('fails gracefully when Lambda/Fargate without AWS_REGION', async () => {

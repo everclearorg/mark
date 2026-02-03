@@ -96,7 +96,7 @@ async function createWorkloadIdentityAuthClient(
   }
 
   // Dynamic import google-auth-library
-  const { GoogleAuth } = await import('google-auth-library');
+  const { GoogleAuth, ExternalAccountClient } = await import('google-auth-library');
 
   // Create external account credentials configuration for AWS
   // See: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds
@@ -117,45 +117,66 @@ async function createWorkloadIdentityAuthClient(
       ? `http://169.254.170.2${process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI}`
       : undefined;
 
-  // Build credential source based on environment
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const credentialSource: any = {
-    environment_id: 'aws1',
-    regional_cred_verification_url: 'https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15',
-  };
-
-  if (isLambda || isFargate) {
-    // Lambda and Fargate: Get region from environment variable
-    // AWS sets AWS_REGION automatically in both Lambda and ECS Fargate
-    if (!process.env.AWS_REGION && !process.env.AWS_DEFAULT_REGION) {
-      throw new Error(
-        'AWS_REGION environment variable is required for Workload Identity Federation in Lambda/Fargate',
-      );
-    }
-    // Use environment-based region (no IMDS call needed)
-    credentialSource.region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
-
-    if (isFargate && containerCredentialsUrl) {
-      // Fargate: Use ECS task metadata endpoint for credentials
-      credentialSource.url = containerCredentialsUrl;
-    }
-    // For Lambda: credentials come from environment variables automatically
-    // (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN)
-  } else {
-    // EC2 or ECS on EC2: Use IMDS for region and credentials
-    credentialSource.region_url = `${imdsBaseUrl}/latest/meta-data/placement/availability-zone`;
-    credentialSource.url = `${imdsBaseUrl}/latest/meta-data/iam/security-credentials`;
-    credentialSource.imdsv2_session_token_url = `${imdsBaseUrl}/latest/api/token`;
+  // Validate region is available for Lambda/Fargate
+  if ((isLambda || isFargate) && !process.env.AWS_REGION && !process.env.AWS_DEFAULT_REGION) {
+    throw new Error('AWS_REGION environment variable is required for Workload Identity Federation in Lambda/Fargate');
   }
 
-  const credentialConfig = {
-    type: 'external_account' as const,
-    audience: `//iam.googleapis.com/${provider}`,
-    subject_token_type: 'urn:ietf:params:aws:token-type:aws4_request',
-    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
-    token_url: 'https://sts.googleapis.com/v1/token',
-    credential_source: credentialSource,
-  };
+  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || '';
+
+  // Build credential source based on environment
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let credentialConfig: any;
+
+  if (isLambda || isFargate) {
+    // For Lambda and Fargate: Use a custom credential supplier that fetches fresh credentials
+    // This ensures credentials are always valid even for long-running ECS tasks
+    const { defaultProvider } = await import('@aws-sdk/credential-provider-node');
+    const credentialProvider = defaultProvider();
+
+    // Create a custom AwsSecurityCredentialsSupplier that fetches fresh credentials
+    // This is more secure than setting env vars because:
+    // 1. Credentials are fetched on-demand, not stored globally
+    // 2. Credentials auto-refresh when expired
+    // 3. No risk of accidentally logging env vars with credentials
+    const awsSecurityCredentialsSupplier = {
+      getAwsRegion: async () => region,
+      getAwsSecurityCredentials: async () => {
+        const creds = await credentialProvider();
+        return {
+          accessKeyId: creds.accessKeyId,
+          secretAccessKey: creds.secretAccessKey,
+          token: creds.sessionToken,
+        };
+      },
+    };
+
+    credentialConfig = {
+      type: 'external_account' as const,
+      audience: `//iam.googleapis.com/${provider}`,
+      subject_token_type: 'urn:ietf:params:aws:token-type:aws4_request',
+      service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
+      token_url: 'https://sts.googleapis.com/v1/token',
+      // Use programmatic credential supplier instead of static credential_source
+      aws_security_credentials_supplier: awsSecurityCredentialsSupplier,
+    };
+  } else {
+    // EC2 or ECS on EC2: Use IMDS for region and credentials
+    credentialConfig = {
+      type: 'external_account' as const,
+      audience: `//iam.googleapis.com/${provider}`,
+      subject_token_type: 'urn:ietf:params:aws:token-type:aws4_request',
+      service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
+      token_url: 'https://sts.googleapis.com/v1/token',
+      credential_source: {
+        environment_id: 'aws1',
+        region_url: `${imdsBaseUrl}/latest/meta-data/placement/availability-zone`,
+        url: `${imdsBaseUrl}/latest/meta-data/iam/security-credentials`,
+        regional_cred_verification_url: 'https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15',
+        imdsv2_session_token_url: `${imdsBaseUrl}/latest/api/token`,
+      },
+    };
+  }
 
   const authClient = new GoogleAuth({
     credentials: credentialConfig,
@@ -199,6 +220,19 @@ async function getGcpClient(): Promise<SecretManagerClient | null> {
     // Check for Workload Identity Federation configuration
     if (clientConfig.workloadIdentity) {
       const { provider, serviceAccountEmail } = clientConfig.workloadIdentity;
+
+      // Log environment detection for debugging
+      const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+      const isFargate =
+        !!process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI || !!process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
+      clientConfig.logger?.debug?.(
+        `[GCP] Environment: Lambda=${isLambda}, Fargate=${isFargate}, Region=${process.env.AWS_REGION}`,
+      );
+      if (isFargate) {
+        clientConfig.logger?.debug?.(
+          `[GCP] Fargate credentials: RELATIVE_URI=${process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI}, FULL_URI=${process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ? 'set' : 'not set'}`,
+        );
+      }
 
       // Create auth client using google-auth-library's ExternalAccountClient
       // This handles AWS credential detection automatically (env vars for Lambda, IMDS for EC2/ECS)
@@ -361,7 +395,35 @@ export async function getGcpSecret(
         throw error;
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      // Extract error message, handling nested error objects
+      let message: string;
+      if (error instanceof Error) {
+        // Handle gRPC/nested errors that may have details in cause or other properties
+        const err = error as Error & { code?: string; details?: string; cause?: Error };
+        message = err.message || '';
+        if (err.details) {
+          message = `${message} - ${err.details}`;
+        }
+        if (err.cause?.message) {
+          message = `${message} - Caused by: ${err.cause.message}`;
+        }
+        // Handle case where message contains [object Object]
+        if (message.includes('[object Object]')) {
+          try {
+            message = message.replace('[object Object]', JSON.stringify(error));
+          } catch {
+            message = `${message} (error details could not be serialized)`;
+          }
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        try {
+          message = JSON.stringify(error);
+        } catch {
+          message = String(error);
+        }
+      } else {
+        message = String(error);
+      }
 
       // Check for common GCP errors
       if (message.includes('NOT_FOUND') || message.includes('404')) {
