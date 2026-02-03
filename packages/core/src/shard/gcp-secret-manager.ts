@@ -100,12 +100,53 @@ async function createWorkloadIdentityAuthClient(
 
   // Create external account credentials configuration for AWS
   // See: https://cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds
+  //
+  // Environment detection:
+  // - Lambda: Has AWS_LAMBDA_FUNCTION_NAME, credentials in env vars
+  // - ECS Fargate: Has AWS_CONTAINER_CREDENTIALS_RELATIVE_URI, NO IMDS access
+  // - EC2/ECS on EC2: Has IMDS at 169.254.169.254
+  const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const isFargate =
+    !!process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI || !!process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI;
   const imdsBaseUrl = process.env.AWS_EC2_METADATA_SERVICE_ENDPOINT ?? 'http://169.254.169.254';
+
+  // For Fargate, build the container credentials URL
   const containerCredentialsUrl = process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI
     ? process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI
     : process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
       ? `http://169.254.170.2${process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI}`
       : undefined;
+
+  // Build credential source based on environment
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const credentialSource: any = {
+    environment_id: 'aws1',
+    regional_cred_verification_url: 'https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15',
+  };
+
+  if (isLambda || isFargate) {
+    // Lambda and Fargate: Get region from environment variable
+    // AWS sets AWS_REGION automatically in both Lambda and ECS Fargate
+    if (!process.env.AWS_REGION && !process.env.AWS_DEFAULT_REGION) {
+      throw new Error(
+        'AWS_REGION environment variable is required for Workload Identity Federation in Lambda/Fargate',
+      );
+    }
+    // Use environment-based region (no IMDS call needed)
+    credentialSource.region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+
+    if (isFargate && containerCredentialsUrl) {
+      // Fargate: Use ECS task metadata endpoint for credentials
+      credentialSource.url = containerCredentialsUrl;
+    }
+    // For Lambda: credentials come from environment variables automatically
+    // (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN)
+  } else {
+    // EC2 or ECS on EC2: Use IMDS for region and credentials
+    credentialSource.region_url = `${imdsBaseUrl}/latest/meta-data/placement/availability-zone`;
+    credentialSource.url = `${imdsBaseUrl}/latest/meta-data/iam/security-credentials`;
+    credentialSource.imdsv2_session_token_url = `${imdsBaseUrl}/latest/api/token`;
+  }
 
   const credentialConfig = {
     type: 'external_account' as const,
@@ -113,15 +154,7 @@ async function createWorkloadIdentityAuthClient(
     subject_token_type: 'urn:ietf:params:aws:token-type:aws4_request',
     service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
     token_url: 'https://sts.googleapis.com/v1/token',
-    credential_source: {
-      environment_id: 'aws1',
-      // For Lambda, credentials come from environment; for EC2/ECS, from IMDS or ECS credential endpoints
-      region_url: `${imdsBaseUrl}/latest/meta-data/placement/availability-zone`,
-      url: containerCredentialsUrl ?? `${imdsBaseUrl}/latest/meta-data/iam/security-credentials`,
-      regional_cred_verification_url: 'https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15',
-      // Enable IMDSv2 support
-      imdsv2_session_token_url: `${imdsBaseUrl}/latest/api/token`,
-    },
+    credential_source: credentialSource,
   };
 
   const authClient = new GoogleAuth({
