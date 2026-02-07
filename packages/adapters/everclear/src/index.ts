@@ -118,6 +118,22 @@ export class EverclearAdapter {
     this.logger = logger;
   }
 
+  /**
+   * Logs API errors with full context including response body.
+   * Extracts the response data from AxiosQueryError.context so the
+   * actual API rejection reason is visible in Datadog.
+   */
+  private logApiError(message: string, url: string, params: unknown, err: unknown): void {
+    const errorContext = (err as { context?: Record<string, unknown> }).context;
+    this.logger.error(message, {
+      url,
+      errorMessage: (err as Error).message,
+      apiResponseStatus: errorContext?.status,
+      apiResponseBody: errorContext?.data,
+      requestParams: params,
+    });
+  }
+
   async fetchInvoices(destinations: Record<string, ChainConfiguration>): Promise<Invoice[]> {
     const LIMIT = 100;
     const url = `${this.apiUrl}/invoices?limit=${LIMIT}`;
@@ -141,20 +157,21 @@ export class EverclearAdapter {
   async createNewIntent(
     params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[],
   ): Promise<TransactionRequest> {
+    const url = `${this.apiUrl}/intents`;
     try {
-      const url = `${this.apiUrl}/intents`;
       const { data } = await axiosPost<TransactionRequest>(url, params);
       return data;
     } catch (err) {
-      throw new Error(`Failed to fetch create intent from API ${err}`);
+      this.logApiError('Failed to create intent via API', url, params, err);
+      throw err;
     }
   }
 
   async solanaCreateNewIntent(
     params: NewIntentParams | NewIntentWithPermit2Params | (NewIntentParams | NewIntentWithPermit2Params)[],
   ): Promise<TransactionRequest> {
+    const url = `${this.apiUrl}/solana/intents`;
     try {
-      const url = `${this.apiUrl}/solana/intents`;
       const { data } = await axiosPost<TransactionRequest>(url, params);
       return data;
     } catch (err) {
@@ -163,28 +180,31 @@ export class EverclearAdapter {
       if (ctx?.error?.status === 404) {
         throw new LookupTableNotFoundError();
       }
-      throw new Error(`Failed to fetch create solana intent from API ${err}`);
+      this.logApiError('Failed to create solana intent via API', url, params, err);
+      throw err;
     }
   }
 
   async solanaCreateLookupTable(params: CreateLookupTableParams): Promise<TransactionRequest> {
+    const url = `${this.apiUrl}/solana/create-lookup-table`;
     try {
-      const url = `${this.apiUrl}/solana/create-lookup-table`;
       const { data } = await axiosPost<TransactionRequest>(url, params);
       return data;
     } catch (err) {
-      throw new Error(`Failed to fetch create solana intent from API ${err}`);
+      this.logApiError('Failed to create solana lookup table via API', url, params, err);
+      throw err;
     }
   }
 
   async tronCreateNewIntent(params: NewIntentParams | NewIntentWithPermit2Params): Promise<TransactionRequest> {
+    const url = `${this.apiUrl}/tron/intents`;
     try {
-      const url = `${this.apiUrl}/tron/intents`;
       // Tron API only supports single intents (for now - add batching via newOrder later)
       const { data } = await axiosPost<TransactionRequest>(url, params);
       return data;
     } catch (err) {
-      throw new Error(`Failed to fetch create tron intent from API ${err}`);
+      this.logApiError('Failed to create tron intent via API', url, params, err);
+      throw err;
     }
   }
 
@@ -273,7 +293,7 @@ export class EverclearAdapter {
         tickerHash,
         url,
       });
-      throw new Error(`Failed to fetch economy data for ${chain}/${tickerHash}: ${error}`);
+      throw error;
     }
   }
 }

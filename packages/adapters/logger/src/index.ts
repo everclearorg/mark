@@ -29,13 +29,24 @@ export function jsonifyMap(map: Map<string, unknown>): Record<string, unknown> {
 interface ErrorWithContext extends Error {
   context: object;
 }
+
+interface ErrorWithOwnContext extends Error {
+  context?: Record<string, unknown>;
+}
+
 export const jsonifyError = (err: unknown, ctx: object = {}): ErrorWithContext => {
-  const error = err as Error;
+  const error = err as ErrorWithOwnContext;
+
+  // Merge the error's own context (e.g., from AxiosQueryError) with passed context
+  // This ensures API response data (like 400 error details) is surfaced in logs
+  const errorContext = error?.context ?? {};
+  const mergedContext = { ...errorContext, ...ctx };
+
   return {
     name: error?.name ?? 'unknown',
     message: error?.message ?? 'unknown',
     stack: error?.stack ?? 'unknown',
-    context: ctx,
+    context: mergedContext,
   };
 };
 

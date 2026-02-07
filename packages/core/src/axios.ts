@@ -12,6 +12,15 @@ interface CleanedError extends Record<string, unknown> {
   data?: unknown;
 }
 
+/**
+ * Returns true if an HTTP status code is a client error (4xx).
+ * Client errors indicate a problem with the request itself and
+ * should not be retried -- the same request will always fail.
+ */
+function isClientError(status: number | undefined): boolean {
+  return status !== undefined && status >= 400 && status < 500;
+}
+
 // Singleton axios instance with connection pooling
 let axiosInstance: AxiosInstance | null = null;
 
@@ -79,7 +88,7 @@ export const axiosPost = async <
   retryDelay = 2000,
 ): Promise<TResponse> => {
   const instance = getAxiosInstance();
-  let lastError;
+  let lastError: CleanedError | unknown;
   for (let i = 0; i < numAttempts; i++) {
     try {
       const response = await instance.post<TResponseData, TResponse, TRequestData>(url, data, config);
@@ -95,6 +104,11 @@ export const axiosPost = async <
           method: err.config?.method,
           data: err.response?.data,
         };
+
+        // Do not retry client errors (4xx) -- the request is invalid and will never succeed
+        if (isClientError(err.response?.status)) {
+          break;
+        }
       } else {
         lastError = err;
       }
@@ -122,7 +136,7 @@ export const axiosGet = async <
   retryDelay = 2000,
 ): Promise<TResponse> => {
   const instance = getAxiosInstance();
-  let lastError;
+  let lastError: CleanedError | unknown;
   for (let i = 0; i < numAttempts; i++) {
     try {
       const response = await instance.get<TResponseData, TResponse>(url, config);
@@ -138,6 +152,11 @@ export const axiosGet = async <
           method: err.config?.method,
           data: err.response?.data,
         };
+
+        // Do not retry client errors (4xx) -- the request is invalid and will never succeed
+        if (isClientError(err.response?.status)) {
+          break;
+        }
       } else {
         lastError = err;
       }
