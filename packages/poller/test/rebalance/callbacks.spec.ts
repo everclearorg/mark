@@ -641,4 +641,105 @@ describe('executeDestinationCallbacks', () => {
       ),
     ).toBe(true);
   });
+
+  it('should retain operation when isCallbackComplete returns false (multi-step bridge)', async () => {
+    const isCallbackCompleteStub = stub().resolves(false);
+    const multiStepAdapter = {
+      ...mockSpecificBridgeAdapter,
+      isCallbackComplete: isCallbackCompleteStub,
+    };
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+    mockRebalanceAdapter.getAdapter.callsFake(() => multiStepAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+    multiStepAdapter.destinationCallback.resolves(mockCallbackTx);
+
+    await executeDestinationCallbacks(mockContext);
+
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    expect(isCallbackCompleteStub.calledOnce).toBe(true);
+    // Should NOT mark as completed
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({ status: RebalanceOperationStatus.COMPLETED }),
+      ),
+    ).toBe(false);
+    const infoCall = mockLogger.info
+      .getCalls()
+      .find((call) => call.args[0] === 'Callback submitted but process not yet complete, retaining for next iteration');
+    expect(infoCall).toBeDefined();
+  });
+
+  it('should complete operation when isCallbackComplete returns true', async () => {
+    const isCallbackCompleteStub = stub().resolves(true);
+    const multiStepAdapter = {
+      ...mockSpecificBridgeAdapter,
+      isCallbackComplete: isCallbackCompleteStub,
+    };
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+    mockRebalanceAdapter.getAdapter.callsFake(() => multiStepAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+    multiStepAdapter.destinationCallback.resolves(mockCallbackTx);
+
+    await executeDestinationCallbacks(mockContext);
+
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    expect(isCallbackCompleteStub.calledOnce).toBe(true);
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({ status: RebalanceOperationStatus.COMPLETED }),
+      ),
+    ).toBe(true);
+  });
+
+  it('should complete operation as fail-safe when isCallbackComplete throws', async () => {
+    const isCallbackCompleteStub = stub().rejects(new Error('RPC error'));
+    const multiStepAdapter = {
+      ...mockSpecificBridgeAdapter,
+      isCallbackComplete: isCallbackCompleteStub,
+    };
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+    mockRebalanceAdapter.getAdapter.callsFake(() => multiStepAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+    multiStepAdapter.destinationCallback.resolves(mockCallbackTx);
+
+    await executeDestinationCallbacks(mockContext);
+
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({ status: RebalanceOperationStatus.COMPLETED }),
+      ),
+    ).toBe(true);
+    const warnCall = mockLogger.warn
+      .getCalls()
+      .find((call) => call.args[0] === 'isCallbackComplete check failed, completing as fail-safe');
+    expect(warnCall).toBeDefined();
+  });
+
+  it('should complete operation when adapter has no isCallbackComplete (backward compat)', async () => {
+    // The default mockSpecificBridgeAdapter has no isCallbackComplete
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+    mockSpecificBridgeAdapter.destinationCallback.resolves(mockCallbackTx);
+
+    await executeDestinationCallbacks(mockContext);
+
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({ status: RebalanceOperationStatus.COMPLETED }),
+      ),
+    ).toBe(true);
+  });
 });

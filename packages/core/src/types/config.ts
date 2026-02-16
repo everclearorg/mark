@@ -81,6 +81,8 @@ export enum SupportedBridge {
   TacInner = 'tac-inner',
   CCIP = 'chainlink-ccip',
   Zksync = 'zksync',
+  Linea = 'linea',
+  Zircuit = 'zircuit',
 }
 
 export enum GasType {
