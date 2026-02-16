@@ -128,12 +128,12 @@ jobs:
 
       - name: Build and push Admin Docker image
         run: |
-          docker build -f docker/admin/Dockerfile -t $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG .
+          docker build --provenance=false --sbom=false -f docker/admin/Dockerfile -t $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG .
           docker push $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG
 
       - name: Build and push Poller Docker image
         run: |
-          docker build -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
+          docker build --provenance=false --sbom=false -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
           docker push $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG
 
       - name: Use Node.js
@@ -223,12 +223,12 @@ jobs:
 
       - name: Build and push Admin Docker image
         run: |
-          docker build -f docker/admin/Dockerfile -t $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG .
+          docker build --provenance=false --sbom=false -f docker/admin/Dockerfile -t $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG .
           docker push $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG
 
       - name: Build and push Poller Docker image
         run: |
-          docker build -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
+          docker build --provenance=false --sbom=false -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
           docker push $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG
 
       - name: Use Node.js
