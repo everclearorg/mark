@@ -36,7 +36,9 @@ COPY package.json /tmp/build/
 # Copy all package.json files
 COPY packages/core/package.json /tmp/build/packages/core/
 COPY packages/admin/package.json /tmp/build/packages/admin/
+COPY packages/agent/package.json /tmp/build/packages/agent/
 COPY packages/poller/package.json /tmp/build/packages/poller/
+COPY packages/handler/package.json /tmp/build/packages/handler/
 COPY packages/adapters/rebalance/package.json /tmp/build/packages/adapters/rebalance/
 COPY packages/adapters/logger/package.json /tmp/build/packages/adapters/logger/
 COPY packages/adapters/chainservice/package.json /tmp/build/packages/adapters/chainservice/
@@ -45,6 +47,7 @@ COPY packages/adapters/web3signer/package.json /tmp/build/packages/adapters/web3
 COPY packages/adapters/cache/package.json /tmp/build/packages/adapters/cache/
 COPY packages/adapters/prometheus/package.json /tmp/build/packages/adapters/prometheus/
 COPY packages/adapters/database/package.json /tmp/build/packages/adapters/database/
+COPY packages/adapters/webhooks/package.json /tmp/build/packages/adapters/webhooks/
 COPY yarn.lock /tmp/build/
 
 # Install dependencies including devDependencies
@@ -59,6 +62,7 @@ RUN yarn cache clean --all && \
 
 # Copy source files
 COPY packages/core /tmp/build/packages/core
+COPY packages/agent /tmp/build/packages/agent
 COPY packages/poller /tmp/build/packages/poller
 COPY packages/admin /tmp/build/packages/admin
 COPY packages/adapters/rebalance /tmp/build/packages/adapters/rebalance
@@ -72,9 +76,18 @@ COPY packages/adapters/database /tmp/build/packages/adapters/database
 COPY tsconfig.json /tmp/build/
 
 # Build packages
-# Build core first to ensure declaration files are available
+# Build only the workspaces needed for admin (not all workspaces)
+# Build dependencies first, then admin
 RUN yarn workspace @mark/core build && \
-    yarn build
+    yarn workspace @mark/logger build && \
+    yarn workspace @mark/cache build && \
+    yarn workspace @mark/chainservice build && \
+    yarn workspace @mark/database build && \
+    yarn workspace @mark/everclear build && \
+    yarn workspace @mark/prometheus build && \
+    yarn workspace @mark/web3signer build && \
+    yarn workspace @mark/rebalance build && \
+    yarn workspace @mark/admin build
 
 # ----------------------------------------
 # Runtime stage
