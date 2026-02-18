@@ -1234,7 +1234,7 @@ async function checkAllOperationsComplete(earmarkId: string): Promise<boolean> {
 /**
  * Handle the case when minAmount has increased for an earmarked invoice
  */
-async function handleMinAmountIncrease(
+export async function handleMinAmountIncrease(
   earmark: database.CamelCasedProperties<earmarks>,
   invoice: Invoice,
   currentMinAmount: string,

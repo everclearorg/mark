@@ -118,6 +118,16 @@ describe('Solana USDC Rebalancing', () => {
         privateKey: 'mockPrivateKey',
         rpcUrl: 'https://api.mainnet-beta.solana.com',
       },
+      solanaPtusdeRebalance: {
+        enabled: true,
+        ptUsdeThreshold: '100000000000', // 100 ptUSDe
+        ptUsdeTarget: '500000000000', // 500 ptUSDe
+        bridge: {
+          slippageDbps: 50, // 0.5%
+          minRebalanceAmount: '1000000', // 1 USDC
+          maxRebalanceAmount: '100000000', // 100 USDC
+        },
+      },
     } as MarkConfiguration;
 
     mockContext = {

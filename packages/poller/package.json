@@ -22,6 +22,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@mark/agent": "workspace:*",
     "@mark/cache": "workspace:*",
     "@mark/chainservice": "workspace:*",
     "@mark/core": "workspace:*",
