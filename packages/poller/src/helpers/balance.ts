@@ -8,6 +8,7 @@ import {
   AddressFormat,
   GasType,
 } from '@mark/core';
+import { zeroAddress } from 'viem';
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers, convertTo18Decimals } from './asset';
 import { PrometheusAdapter } from '@mark/prometheus';
@@ -130,7 +131,7 @@ export const getMarkBalancesForTicker = async (
     const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
     const decimals = getDecimalsFromConfig(ticker, domain, config);
 
-    if (!tokenAddr || !decimals) {
+    if (!tokenAddr || !decimals || tokenAddr === zeroAddress) {
       continue;
     }
     const address = isSvm ? config.ownSolAddress : isTvm ? addresses[domain] : config.ownAddress;
@@ -223,11 +224,23 @@ export const getEvmBalance = async (
 ): Promise<bigint> => {
   const { chains, ownAddress } = config;
   const chainConfig = chains[domain];
+  let actualOwner: string = address;
+
+  // Validate the token address before attempting the balance check
+  if (!tokenAddr || tokenAddr.toLowerCase() === zeroAddress) {
+    console.error('Invalid token address for balance check, skipping', {
+      domain,
+      tokenAddr,
+      address,
+    });
+    return 0n;
+  }
+
   try {
     // Get Zodiac configuration for this chain
     const zodiacConfig = getValidatedZodiacConfig(chainConfig);
     // If address matches ownAddress, apply zodiac resolution; otherwise use address directly
-    const actualOwner = address === ownAddress ? getActualOwner(zodiacConfig, ownAddress) : address;
+    actualOwner = address === ownAddress ? getActualOwner(zodiacConfig, ownAddress) : address;
 
     const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
     let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
@@ -241,7 +254,13 @@ export const getEvmBalance = async (
     prometheus.updateChainBalance(domain, tokenAddr, balance);
     return balance;
   } catch (error) {
-    console.error('Error getting evm balance', error);
+    console.error('Error getting evm balance', {
+      domain,
+      tokenAddr,
+      address,
+      actualOwner,
+      error,
+    });
     return 0n; // Return 0 balance on error
   }
 };
