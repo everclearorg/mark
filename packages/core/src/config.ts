@@ -748,7 +748,9 @@ export const parseChainConfigurations = async (
         );
       }
       // Skip non-settlement chains without spoke addresses - they may only be used for RPC access
-      console.log(`Chain ${chainId} has no spoke address and is not a settlement domain, skipping`);
+
+      // Reduce log noise
+      // console.log(`Chain ${chainId} has no spoke address and is not a settlement domain, skipping`);
       continue;
     }
 
