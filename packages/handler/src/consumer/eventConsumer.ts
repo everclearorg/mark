@@ -192,6 +192,8 @@ export class EventConsumer {
     this.totalActive++;
     this.activeCounts[event.type]++;
 
+    // Process event and get a result, then decrement counters, and then handle retry/acknowledge
+    let result: EventProcessingResult;
     try {
       this.logger.debug('Processing event', {
         event,
@@ -200,36 +202,29 @@ export class EventConsumer {
         totalActive: this.totalActive,
       });
 
-      return await this.processEventWithRetry(event);
+      switch (event.type) {
+        case WebhookEventType.InvoiceEnqueued:
+          result = await this.processor.processInvoiceEnqueued(event);
+          break;
+        case WebhookEventType.SettlementEnqueued:
+          result = await this.processor.processSettlementEnqueued(event);
+          break;
+        default:
+          throw new Error(`Unknown event type: ${event.type}`);
+      }
     } finally {
       // Decrement active processing counters
       this.totalActive = Math.max(0, this.totalActive - 1);
       const updatedCount = this.activeCounts[event.type] - 1;
       this.activeCounts[event.type] = Math.max(0, updatedCount);
-
-      // Schedule pending work with debouncing to prevent unbounded async spawning
-      this.schedulePendingWork(event.type);
-    }
-  }
-
-  /**
-   * Process event with retry logic
-   */
-  private async processEventWithRetry(event: QueuedEvent): Promise<EventProcessingResult> {
-    let result: EventProcessingResult;
-    switch (event.type) {
-      case WebhookEventType.InvoiceEnqueued:
-        result = await this.processor.processInvoiceEnqueued(event);
-        break;
-      case WebhookEventType.SettlementEnqueued:
-        result = await this.processor.processSettlementEnqueued(event);
-        break;
-      default:
-        throw new Error(`Unknown event type: ${event.type}`);
     }
 
-    // Handle processing result
+    // Handle processing result after counters are decremented
+    // This prevents the race condition where the event is removed from the processing queue
+    // while counters still show it as active
     await this.handleProcessingResult(event, result);
+
+    this.schedulePendingWork(event.type);
 
     return result;
   }
