@@ -109,6 +109,8 @@ jobs:
       REGISTRY: 679752396206.dkr.ecr.${{ matrix.environment.region }}.amazonaws.com
       POLLER_REPOSITORY: mark-poller
       POLLER_IMAGE_TAG: mark-poller-${{ github.sha }}
+      HANDLER_REPOSITORY: mark-handler
+      HANDLER_IMAGE_TAG: mark-handler-${{ github.sha }}
       ADMIN_REPOSITORY: mark-admin
       ADMIN_IMAGE_TAG: mark-admin-${{ github.sha }}
     permissions:
@@ -132,6 +134,15 @@ jobs:
         with:
           mask-password: 'true'
 
+      - name: Ensure ECR repositories exist
+        run: |
+          aws ecr describe-repositories --repository-names $ADMIN_REPOSITORY --region $AWS_REGION || \
+            aws ecr create-repository --repository-name $ADMIN_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
+          aws ecr describe-repositories --repository-names $HANDLER_REPOSITORY --region $AWS_REGION || \
+            aws ecr create-repository --repository-name $HANDLER_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
+          aws ecr describe-repositories --repository-names $POLLER_REPOSITORY --region $AWS_REGION || \
+            aws ecr create-repository --repository-name $POLLER_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
+
       - name: Build and push Admin Docker image
         run: |
           docker build --provenance=false --sbom=false -f docker/admin/Dockerfile -t $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG .
@@ -141,6 +152,16 @@ jobs:
         run: |
           docker build --provenance=false --sbom=false -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
           docker push $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG
+
+      - name: Build and push Invoice Handler Docker image
+        run: |
+          docker build -f docker/handler/Dockerfile -t $REGISTRY/$HANDLER_REPOSITORY:$HANDLER_IMAGE_TAG .
+          docker push $REGISTRY/$HANDLER_REPOSITORY:$HANDLER_IMAGE_TAG
+
+      # Remove the main poller Lambda before deploying the invoice handler (prevents duplicate intent creation)
+      - name: Remove Main Poller Lambda Function
+        run: |
+          bash ops/scripts/remove-poller-lambda.sh ${{ matrix.environment.name }} mainnet prod $AWS_REGION
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -184,6 +205,7 @@ jobs:
           AWS_PROFILE: aws-deployer-connext
         run: |
           terraform apply \
+            -var "handler_image_uri=${REGISTRY}/${HANDLER_REPOSITORY}:${HANDLER_IMAGE_TAG}" \
             -var "image_uri=${REGISTRY}/${POLLER_REPOSITORY}:${POLLER_IMAGE_TAG}" \
             -var "admin_image_uri=${REGISTRY}/${ADMIN_REPOSITORY}:${ADMIN_IMAGE_TAG}" \
             -auto-approve > /dev/null 2>&1
@@ -194,6 +216,13 @@ jobs:
         run: |
           echo "Admin API Endpoint URL for ${{ matrix.environment.name }}:"
           terraform output -raw admin_api_endpoint
+
+      - name: Show Invoice Handler URL
+        if: success()
+        working-directory: ${{ matrix.environment.terraform_dir }}
+        run: |
+          echo "Invoice Handler URL for ${{ matrix.environment.name }}:"
+          terraform output -raw invoice_handler_url
 
   # Staging deployment (mason) - triggered on staging branch
   build-and-deploy-staging:

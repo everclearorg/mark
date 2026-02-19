@@ -225,16 +225,68 @@ module "mark_pushgateway" {
   depends_on = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
-module "mark_poller" {
-  source              = "../../modules/lambda"
-  stage               = var.stage
-  environment         = var.environment
-  container_family    = "${var.bot_name}-poller"
-  execution_role_arn  = module.iam.lambda_role_arn
-  image_uri           = var.image_uri
-  subnet_ids          = module.network.private_subnets
-  security_group_id   = module.sgs.lambda_sg_id
-  container_env_vars  = local.poller_env_vars
+# ============================================================================
+# POLLER LAMBDA MODULE - REPLACED BY INVOICE HANDLER
+# ============================================================================
+# The mark_poller Lambda is replaced by the invoice handler ECS service to
+# prevent duplicate intent creation.
+#
+# TODO: Remove this commented module once migration is complete
+# ============================================================================
+
+# module "mark_poller" {
+#   source              = "../../modules/lambda"
+#   stage               = var.stage
+#   environment         = var.environment
+#   container_family    = "${var.bot_name}-poller"
+#   execution_role_arn  = module.iam.lambda_role_arn
+#   image_uri           = var.image_uri
+#   subnet_ids          = module.network.private_subnets
+#   security_group_id   = module.sgs.lambda_sg_id
+#   container_env_vars  = local.poller_env_vars
+# }
+
+# Invoice Handler ECS Service - replaces poller Lambda functions
+# Exposed via public ALB for Goldsky webhook access
+module "mark_invoice_handler" {
+  source                   = "../../modules/service"
+  stage                    = var.stage
+  environment              = var.environment
+  domain                   = var.domain
+  region                   = var.region
+  dd_api_key               = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn   = module.iam.vpc_flow_logs_role_arn
+  execution_role_arn       = data.aws_iam_role.ecr_admin_role.arn
+  task_role_arn            = module.iam.ecs_task_role_arn
+  cluster_id               = module.ecs.ecs_cluster_id
+  vpc_id                   = module.network.vpc_id
+  lb_subnets               = module.network.public_subnets
+  task_subnets             = module.network.private_subnets
+  efs_id                   = module.efs.mark_efs_id
+  docker_image             = var.handler_image_uri
+  container_family         = "${var.bot_name}-handler"
+  container_port           = 3000
+  cpu                      = 512
+  memory                   = 1024
+  instance_count           = 1
+  service_security_groups  = [module.sgs.lambda_sg_id]
+  container_env_vars       = local.handler_env_vars
+  zone_id                  = var.zone_id
+  cert_arn                 = var.cert_arn
+  ingress_cdir_blocks     = ["0.0.0.0/0"]
+  ingress_ipv6_cdir_blocks = []
+  create_alb               = true
+  internal_lb              = false
+  health_check_settings = {
+    path                = "/health"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+  private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
+  depends_on               = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
 module "iam" {
