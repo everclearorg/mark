@@ -27,6 +27,24 @@ import {
   zkSyncDiamondProxyAbi,
 } from './constants';
 
+interface ZkSyncL2ToL1Log {
+  sender: string;
+  key: string;
+}
+
+interface ZkSyncRawLog {
+  address: string;
+  topics: string[];
+  data: string;
+}
+
+interface ZkSyncRawReceipt {
+  l1BatchNumber: string | null;
+  l1BatchTxIndex: string | null;
+  l2ToL1Logs?: ZkSyncL2ToL1Log[];
+  logs?: ZkSyncRawLog[];
+}
+
 export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
@@ -178,11 +196,7 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
               data: encodeFunctionData({
                 abi: zkSyncL2BridgeAbi,
                 functionName: 'withdraw',
-                args: [
-                  recipient as `0x${string}`,
-                  route.asset as `0x${string}`,
-                  BigInt(amount),
-                ],
+                args: [recipient as `0x${string}`, route.asset as `0x${string}`, BigInt(amount)],
               }),
               value: BigInt(0),
             },
@@ -270,11 +284,9 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
 
         // Find the l2ToL1Log index for this withdrawal
         const l2ToL1Logs = rawReceipt.l2ToL1Logs ?? [];
-        const targetKey = isETH
-          ? ETH_TOKEN_L2.toLowerCase()
-          : ZKSYNC_L2_BRIDGE.toLowerCase();
+        const targetKey = isETH ? ETH_TOKEN_L2.toLowerCase() : ZKSYNC_L2_BRIDGE.toLowerCase();
         const l2ToL1LogIndex = l2ToL1Logs.findIndex(
-          (log: { sender: string; key: string }) =>
+          (log: ZkSyncL2ToL1Log) =>
             log.sender.toLowerCase() === L1_MESSENGER.toLowerCase() &&
             log.key.toLowerCase().endsWith(targetKey.slice(2)),
         );
@@ -327,13 +339,7 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
               data: encodeFunctionData({
                 abi: zkSyncDiamondProxyAbi,
                 functionName: 'finalizeEthWithdrawal',
-                args: [
-                  l1BatchNumber,
-                  BigInt(l2MessageIndex),
-                  l1BatchTxIndex,
-                  message,
-                  proofData.proof,
-                ],
+                args: [l1BatchNumber, BigInt(l2MessageIndex), l1BatchTxIndex, message, proofData.proof],
               }),
               value: BigInt(0),
             },
@@ -373,13 +379,7 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
               data: encodeFunctionData({
                 abi: zkSyncL1BridgeAbi,
                 functionName: 'finalizeWithdrawal',
-                args: [
-                  l1BatchNumber,
-                  BigInt(l2MessageIndex),
-                  l1BatchTxIndex,
-                  message,
-                  proofData.proof,
-                ],
+                args: [l1BatchNumber, BigInt(l2MessageIndex), l1BatchTxIndex, message, proofData.proof],
               }),
               value: BigInt(0),
             },
@@ -414,11 +414,11 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
    * Get the raw transaction receipt from zkSync RPC, which includes zkSync-specific fields
    * like l1BatchNumber, l1BatchTxIndex, and l2ToL1Logs that viem may not expose.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async getRawReceipt(l2Client: PublicClient, txHash: string): Promise<any | undefined> {
+  private async getRawReceipt(l2Client: PublicClient, txHash: string): Promise<ZkSyncRawReceipt | undefined> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (l2Client as any).request({
+      const result = await (
+        l2Client as unknown as { request: (args: { method: string; params: string[] }) => Promise<ZkSyncRawReceipt> }
+      ).request({
         method: 'eth_getTransactionReceipt',
         params: [txHash],
       });
@@ -438,21 +438,25 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
     l2ToL1LogIndex: number,
   ): Promise<{ proof: `0x${string}`[]; id: number } | undefined> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (l2Client as any).request({
+      const result = await (
+        l2Client as unknown as {
+          request: (args: {
+            method: string;
+            params: [string, number];
+          }) => Promise<{ proof: `0x${string}`[]; id: number } | null>;
+        }
+      ).request({
         method: 'zks_getL2ToL1LogProof',
         params: [txHash, l2ToL1LogIndex],
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const proofResult = result as any;
-      if (!proofResult || !proofResult.proof) {
+      if (!result || !result.proof) {
         return undefined;
       }
 
       return {
-        proof: proofResult.proof as `0x${string}`[],
-        id: proofResult.id ?? 0,
+        proof: result.proof,
+        id: result.id ?? 0,
       };
     } catch (error) {
       this.logger.warn('Failed to get L2 to L1 log proof', {
@@ -469,16 +473,14 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
    * The L1MessageSent event is emitted by the L1Messenger system contract (0x8008)
    * with the second topic matching the sender token address (0x800A for ETH, bridge for ERC20).
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private extractL1Message(rawReceipt: any, senderKey: string): `0x${string}` {
+  private extractL1Message(rawReceipt: ZkSyncRawReceipt, senderKey: string): `0x${string}` {
     const logs = rawReceipt.logs ?? [];
-    // Find L1MessageSent event from L1Messenger where topic[1] matches the sender key
     const paddedKey = pad(senderKey as `0x${string}`, { size: 32 }).toLowerCase();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const messageSentLog = logs.find((log: any) =>
-      log.address.toLowerCase() === L1_MESSENGER.toLowerCase() &&
-      log.topics[0]?.toLowerCase() === L1_MESSAGE_SENT_TOPIC.toLowerCase() &&
-      log.topics[1]?.toLowerCase() === paddedKey,
+    const messageSentLog = logs.find(
+      (log: ZkSyncRawLog) =>
+        log.address.toLowerCase() === L1_MESSENGER.toLowerCase() &&
+        log.topics[0]?.toLowerCase() === L1_MESSAGE_SENT_TOPIC.toLowerCase() &&
+        log.topics[1]?.toLowerCase() === paddedKey,
     );
 
     if (!messageSentLog) {

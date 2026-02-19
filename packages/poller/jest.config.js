@@ -1,6 +1,16 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  transform: {
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        diagnostics: {
+          exclude: ['**/ccip/**'],
+        },
+      },
+    ],
+  },
   setupFilesAfterEnv: ['<rootDir>/../../jest.setup.shared.js', '<rootDir>/test/jest.setup.ts'],
   testMatch: ['**/test/**/*.spec.ts'],
   moduleNameMapper: {
@@ -16,6 +26,7 @@ module.exports = {
     '^#/(.*)$': '<rootDir>/src/$1',
     // Mock ESM modules that cause issues
     '^@chainlink/ccip-js$': '<rootDir>/test/mocks/ccip-js.ts',
+    '^@chainlink/ccip-sdk$': '<rootDir>/test/mocks/ccip-sdk.ts',
   },
   collectCoverage: false,
   coverageDirectory: 'coverage',

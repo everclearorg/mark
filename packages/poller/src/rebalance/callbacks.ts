@@ -165,15 +165,9 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
         // Check if the callback process is complete (multi-step bridges like Zircuit may need further callbacks)
         let shouldComplete = true;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const isCallbackComplete = (adapter as any).isCallbackComplete;
-        if (typeof isCallbackComplete === 'function') {
+        if (adapter.isCallbackComplete) {
           try {
-            shouldComplete = await isCallbackComplete.call(
-              adapter,
-              route,
-              receipt as unknown as ViemTransactionReceipt,
-            );
+            shouldComplete = await adapter.isCallbackComplete(route, receipt as unknown as ViemTransactionReceipt);
           } catch (e) {
             logger.warn('isCallbackComplete check failed, completing as fail-safe', {
               ...logContext,

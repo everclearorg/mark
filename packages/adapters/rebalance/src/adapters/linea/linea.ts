@@ -26,7 +26,7 @@ import {
   lineaMessageServiceAbi,
   lineaTokenBridgeAbi,
 } from './constants';
-import { LineaSDK, OnChainMessageStatus } from '@consensys/linea-sdk';
+import { LineaSDK } from '@consensys/linea-sdk';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
@@ -374,9 +374,7 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
     }
   }
 
-  private async getMessageProof(
-    originTransaction: TransactionReceipt,
-  ): Promise<
+  private async getMessageProof(originTransaction: TransactionReceipt): Promise<
     | {
         proof: `0x${string}`[];
         messageNumber: bigint;
@@ -450,10 +448,7 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
     // which commercial providers like Alchemy reject due to block range limits.
     // Use configured L1 providers first, then fall back to public RPCs.
     const l1Providers = this.chains[ETHEREUM_CHAIN_ID.toString()]?.providers ?? [];
-    const l1RpcCandidates = [
-      ...l1Providers,
-      ...LINEA_SDK_FALLBACK_L1_RPCS,
-    ];
+    const l1RpcCandidates = [...l1Providers, ...LINEA_SDK_FALLBACK_L1_RPCS];
 
     for (const l1RpcUrl of l1RpcCandidates) {
       try {
