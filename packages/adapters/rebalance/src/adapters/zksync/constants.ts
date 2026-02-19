@@ -23,9 +23,7 @@ export const zkSyncL2BridgeAbi = parseAbi([
   'event WithdrawalInitiated(address indexed l2Sender, address indexed l1Receiver, address indexed l2Token, uint256 amount)',
 ]);
 
-export const zkSyncL2EthTokenAbi = parseAbi([
-  'function withdraw(address _l1Receiver) payable',
-]);
+export const zkSyncL2EthTokenAbi = parseAbi(['function withdraw(address _l1Receiver) payable']);
 
 export const zkSyncDiamondProxyAbi = parseAbi([
   'function getTotalBatchesExecuted() view returns (uint256)',

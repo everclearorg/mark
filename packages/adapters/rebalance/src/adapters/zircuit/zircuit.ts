@@ -22,7 +22,6 @@ import {
   ZIRCUIT_L2_STANDARD_BRIDGE,
   ZIRCUIT_OPTIMISM_PORTAL,
   ZIRCUIT_L2_OUTPUT_ORACLE,
-  ZIRCUIT_L2_TO_L1_MESSAGE_PASSER,
   ETHEREUM_CHAIN_ID,
   ZIRCUIT_CHAIN_ID,
   CHALLENGE_PERIOD_SECONDS,
@@ -31,7 +30,6 @@ import {
   zircuitOptimismPortalAbi,
   zircuitL2OutputOracleAbi,
   zircuitL2ToL1MessagePasserAbi,
-  L2_ETH_TOKEN,
   ZERO_ADDRESS,
 } from './constants';
 
@@ -49,6 +47,12 @@ interface OutputRootProof {
   stateRoot: `0x${string}`;
   messagePasserStorageRoot: `0x${string}`;
   latestBlockhash: `0x${string}`;
+}
+
+interface ZircuitProofResult {
+  l2OutputIndex: bigint;
+  outputRootProof: OutputRootProof;
+  withdrawalProof: `0x${string}`[];
 }
 
 export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
@@ -82,6 +86,10 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
   ): Promise<MemoizedTransactionRequest[]> {
     try {
       const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZIRCUIT_CHAIN_ID;
+      const isL2ToL1 = route.origin === ZIRCUIT_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
+      if (!isL1ToL2 && !isL2ToL1) {
+        throw new Error(`Unsupported Zircuit route: ${route.origin}->${route.destination}`);
+      }
       const isETH = route.asset.toLowerCase() === ZERO_ADDRESS;
       const transactions: MemoizedTransactionRequest[] = [];
 
@@ -128,7 +136,13 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
           }
 
           // Resolve the L2 token address via tickerHash mapping
-          const l2Token = getDestinationAssetAddress(route.asset, route.origin, route.destination, this.chains, this.logger);
+          const l2Token = getDestinationAssetAddress(
+            route.asset,
+            route.origin,
+            route.destination,
+            this.chains,
+            this.logger,
+          );
           if (!l2Token) {
             throw new Error(`No L2 token mapping found for ${route.asset} on chain ${route.destination}`);
           }
@@ -195,7 +209,13 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
           }
 
           // Resolve the L1 token address via tickerHash mapping
-          const l1Token = getDestinationAssetAddress(route.asset, route.origin, route.destination, this.chains, this.logger);
+          const l1Token = getDestinationAssetAddress(
+            route.asset,
+            route.origin,
+            route.destination,
+            this.chains,
+            this.logger,
+          );
           if (!l1Token) {
             throw new Error(`No L1 token mapping found for ${route.asset} on chain ${route.destination}`);
           }
@@ -235,6 +255,10 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
   ): Promise<boolean> {
     try {
       const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZIRCUIT_CHAIN_ID;
+      const isL2ToL1 = route.origin === ZIRCUIT_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
+      if (!isL1ToL2 && !isL2ToL1) {
+        throw new Error(`Unsupported Zircuit route: ${route.origin}->${route.destination}`);
+      }
 
       if (isL1ToL2) {
         // L1→L2: Auto-relayed by the sequencer
@@ -279,11 +303,7 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
           args: [withdrawalHash],
         });
 
-        const [outputRoot, timestamp, l2OutputIndex] = provenWithdrawal as [
-          `0x${string}`,
-          bigint,
-          bigint,
-        ];
+        const [, timestamp] = provenWithdrawal as [`0x${string}`, bigint, bigint];
 
         if (timestamp > 0) {
           // Withdrawal is proven, check if challenge period has passed
@@ -339,7 +359,11 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
     originTransaction: TransactionReceipt,
   ): Promise<MemoizedTransactionRequest | void> {
     try {
+      const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZIRCUIT_CHAIN_ID;
       const isL2ToL1 = route.origin === ZIRCUIT_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
+      if (!isL1ToL2 && !isL2ToL1) {
+        throw new Error(`Unsupported Zircuit route: ${route.origin}->${route.destination}`);
+      }
 
       if (isL2ToL1) {
         const l1Client = await this.getClient(ETHEREUM_CHAIN_ID);
@@ -378,11 +402,7 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
           args: [withdrawalHash],
         });
 
-        const [outputRoot, timestamp, l2OutputIndex] = provenWithdrawal as [
-          `0x${string}`,
-          bigint,
-          bigint,
-        ];
+        const [, timestamp] = provenWithdrawal as [`0x${string}`, bigint, bigint];
 
         if (timestamp > 0) {
           // Withdrawal is proven, check if we can finalize
@@ -459,6 +479,10 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
 
   async isCallbackComplete(route: RebalanceRoute, originTransaction: TransactionReceipt): Promise<boolean> {
     const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZIRCUIT_CHAIN_ID;
+    const isL2ToL1 = route.origin === ZIRCUIT_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
+    if (!isL1ToL2 && !isL2ToL1) {
+      throw new Error(`Unsupported Zircuit route: ${route.origin}->${route.destination}`);
+    }
     if (isL1ToL2) {
       return true;
     }
@@ -546,10 +570,14 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
 
   private hashWithdrawal(tx: WithdrawalTransaction): `0x${string}` {
     return keccak256(
-      encodeAbiParameters(
-        parseAbiParameters('uint256, address, address, uint256, uint256, bytes'),
-        [tx.nonce, tx.sender, tx.target, tx.value, tx.gasLimit, tx.data],
-      ),
+      encodeAbiParameters(parseAbiParameters('uint256, address, address, uint256, uint256, bytes'), [
+        tx.nonce,
+        tx.sender,
+        tx.target,
+        tx.value,
+        tx.gasLimit,
+        tx.data,
+      ]),
     );
   }
 
@@ -564,21 +592,22 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
     l2Client: PublicClient,
     l1Client: PublicClient,
     originTransaction: TransactionReceipt,
-  ): Promise<
-    | {
-        l2OutputIndex: bigint;
-        outputRootProof: OutputRootProof;
-        withdrawalProof: `0x${string}`[];
-      }
-    | undefined
-  > {
+  ): Promise<ZircuitProofResult | undefined> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await buildProveZircuitWithdrawal(l2Client as any, {
+      const buildProof = buildProveZircuitWithdrawal as unknown as (
+        l2Client: PublicClient,
+        params: {
+          receipt: TransactionReceipt;
+          l1Client: PublicClient;
+          l2OutputOracleAddress: `0x${string}`;
+        },
+      ) => Promise<ZircuitProofResult>;
+
+      const result = await buildProof(l2Client, {
         receipt: originTransaction,
-        l1Client: l1Client as any,
+        l1Client,
         l2OutputOracleAddress: ZIRCUIT_L2_OUTPUT_ORACLE as `0x${string}`,
-      } as any);
+      });
 
       this.logger.info('Zircuit proof built successfully', {
         txHash: originTransaction.transactionHash,
@@ -591,9 +620,9 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
       });
 
       return {
-        l2OutputIndex: result.l2OutputIndex as bigint,
-        outputRootProof: result.outputRootProof as OutputRootProof,
-        withdrawalProof: result.withdrawalProof as `0x${string}`[],
+        l2OutputIndex: result.l2OutputIndex,
+        outputRootProof: result.outputRootProof,
+        withdrawalProof: result.withdrawalProof,
       };
     } catch (error) {
       this.logger.warn('Failed to build Zircuit withdrawal proof', {

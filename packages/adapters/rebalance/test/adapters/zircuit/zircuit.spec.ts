@@ -435,4 +435,18 @@ describe('ZircuitNativeBridgeAdapter', () => {
       expect(hash.startsWith('0x')).toBe(true);
     });
   });
+
+  describe('route validation', () => {
+    it('throws for unsupported routes in send', async () => {
+      await expect(adapter.send(sender, recipient, amount, { asset: ethAsset, origin: 10, destination: 48900 })).rejects.toThrow(
+        'Unsupported Zircuit route',
+      );
+    });
+
+    it('throws for unsupported routes in destinationCallback', async () => {
+      await expect(
+        adapter.destinationCallback({ asset: ethAsset, origin: 10, destination: 48900 }, mockReceipt),
+      ).rejects.toThrow('Unsupported Zircuit route');
+    });
+  });
 });

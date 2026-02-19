@@ -27,6 +27,10 @@ import {
   zkSyncDiamondProxyAbi,
 } from './constants';
 
+const ETHEREUM_CHAIN_ID = 1;
+const ZKSYNC_CHAIN_ID = 324;
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
 export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
   constructor(
     protected readonly chains: Record<string, ChainConfiguration>,
@@ -57,8 +61,13 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
     route: RebalanceRoute,
   ): Promise<MemoizedTransactionRequest[]> {
     try {
-      const isL1ToL2 = route.origin === 1 && route.destination === 324;
-      const isETH = route.asset.toLowerCase() === '0x0000000000000000000000000000000000000000';
+      const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZKSYNC_CHAIN_ID;
+      const isL2ToL1 = route.origin === ZKSYNC_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
+      if (!isL1ToL2 && !isL2ToL1) {
+        throw new Error(`Unsupported zkSync route: ${route.origin}->${route.destination}`);
+      }
+
+      const isETH = route.asset.toLowerCase() === ZERO_ADDRESS;
       const transactions: MemoizedTransactionRequest[] = [];
 
       const l2GasLimit = BigInt(2000000); // Must be sufficient for L2 execution; 200k causes ValidateTxnNotEnoughGas
@@ -178,11 +187,7 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
               data: encodeFunctionData({
                 abi: zkSyncL2BridgeAbi,
                 functionName: 'withdraw',
-                args: [
-                  recipient as `0x${string}`,
-                  route.asset as `0x${string}`,
-                  BigInt(amount),
-                ],
+                args: [recipient as `0x${string}`, route.asset as `0x${string}`, BigInt(amount)],
               }),
               value: BigInt(0),
             },
@@ -202,19 +207,23 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
     originTransaction: TransactionReceipt,
   ): Promise<boolean> {
     try {
-      const isL1ToL2 = route.origin === 1 && route.destination === 324;
+      const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZKSYNC_CHAIN_ID;
+      const isL2ToL1 = route.origin === ZKSYNC_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
+      if (!isL1ToL2 && !isL2ToL1) {
+        throw new Error(`Unsupported zkSync route: ${route.origin}->${route.destination}`);
+      }
 
       if (isL1ToL2) {
         return true;
       } else {
         // L2→L1: Check if batch containing the withdrawal has been executed on L1
-        const l1Client = await this.getClient(1);
-        const l2Client = await this.getClient(324);
+        const l1Client = await this.getClient(ETHEREUM_CHAIN_ID);
+        const l2Client = await this.getClient(ZKSYNC_CHAIN_ID);
 
         // Get the batch number from the L2 receipt (l1BatchNumber is a zkSync-specific field)
         const rawReceipt = await this.getRawReceipt(l2Client, originTransaction.transactionHash);
         const l1BatchNumber = rawReceipt?.l1BatchNumber;
-        if (!l1BatchNumber) {
+        if (l1BatchNumber == null) {
           this.logger.info('zkSync withdrawal: batch number not yet available', {
             txHash: originTransaction.transactionHash,
           });
@@ -252,27 +261,29 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
     originTransaction: TransactionReceipt,
   ): Promise<MemoizedTransactionRequest | void> {
     try {
-      const isL2ToL1 = route.origin === 324 && route.destination === 1;
+      const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZKSYNC_CHAIN_ID;
+      const isL2ToL1 = route.origin === ZKSYNC_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
+      if (!isL1ToL2 && !isL2ToL1) {
+        throw new Error(`Unsupported zkSync route: ${route.origin}->${route.destination}`);
+      }
 
       if (isL2ToL1) {
-        const l1Client = await this.getClient(1);
-        const l2Client = await this.getClient(324);
+        const l1Client = await this.getClient(ETHEREUM_CHAIN_ID);
+        const l2Client = await this.getClient(ZKSYNC_CHAIN_ID);
 
         // Get the raw receipt to access zkSync-specific fields (l1BatchNumber, l1BatchTxIndex, l2ToL1Logs)
         const rawReceipt = await this.getRawReceipt(l2Client, originTransaction.transactionHash);
-        if (!rawReceipt?.l1BatchNumber || !rawReceipt?.l1BatchTxIndex) {
+        if (rawReceipt?.l1BatchNumber == null || rawReceipt?.l1BatchTxIndex == null) {
           throw new Error('Batch number not available for withdrawal transaction');
         }
 
         const l1BatchNumber = BigInt(rawReceipt.l1BatchNumber);
         const l1BatchTxIndex = Number(rawReceipt.l1BatchTxIndex);
-        const isETH = route.asset.toLowerCase() === '0x0000000000000000000000000000000000000000';
+        const isETH = route.asset.toLowerCase() === ZERO_ADDRESS;
 
         // Find the l2ToL1Log index for this withdrawal
         const l2ToL1Logs = rawReceipt.l2ToL1Logs ?? [];
-        const targetKey = isETH
-          ? ETH_TOKEN_L2.toLowerCase()
-          : ZKSYNC_L2_BRIDGE.toLowerCase();
+        const targetKey = isETH ? ETH_TOKEN_L2.toLowerCase() : ZKSYNC_L2_BRIDGE.toLowerCase();
         const l2ToL1LogIndex = l2ToL1Logs.findIndex(
           (log: { sender: string; key: string }) =>
             log.sender.toLowerCase() === L1_MESSENGER.toLowerCase() &&
@@ -327,13 +338,7 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
               data: encodeFunctionData({
                 abi: zkSyncDiamondProxyAbi,
                 functionName: 'finalizeEthWithdrawal',
-                args: [
-                  l1BatchNumber,
-                  BigInt(l2MessageIndex),
-                  l1BatchTxIndex,
-                  message,
-                  proofData.proof,
-                ],
+                args: [l1BatchNumber, BigInt(l2MessageIndex), l1BatchTxIndex, message, proofData.proof],
               }),
               value: BigInt(0),
             },
@@ -373,13 +378,7 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
               data: encodeFunctionData({
                 abi: zkSyncL1BridgeAbi,
                 functionName: 'finalizeWithdrawal',
-                args: [
-                  l1BatchNumber,
-                  BigInt(l2MessageIndex),
-                  l1BatchTxIndex,
-                  message,
-                  proofData.proof,
-                ],
+                args: [l1BatchNumber, BigInt(l2MessageIndex), l1BatchTxIndex, message, proofData.proof],
               }),
               value: BigInt(0),
             },
@@ -474,11 +473,12 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
     const logs = rawReceipt.logs ?? [];
     // Find L1MessageSent event from L1Messenger where topic[1] matches the sender key
     const paddedKey = pad(senderKey as `0x${string}`, { size: 32 }).toLowerCase();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const messageSentLog = logs.find((log: any) =>
-      log.address.toLowerCase() === L1_MESSENGER.toLowerCase() &&
-      log.topics[0]?.toLowerCase() === L1_MESSAGE_SENT_TOPIC.toLowerCase() &&
-      log.topics[1]?.toLowerCase() === paddedKey,
+
+    const messageSentLog = logs.find(
+      (log: { address: string; topics: string[] }) =>
+        log.address.toLowerCase() === L1_MESSENGER.toLowerCase() &&
+        log.topics[0]?.toLowerCase() === L1_MESSAGE_SENT_TOPIC.toLowerCase() &&
+        log.topics[1]?.toLowerCase() === paddedKey,
     );
 
     if (!messageSentLog) {
