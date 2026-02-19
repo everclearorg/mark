@@ -14,6 +14,9 @@ import { StargateBridgeAdapter } from './stargate';
 import { TacInnerBridgeAdapter, TacNetwork } from './tac';
 import { PendleBridgeAdapter } from './pendle';
 import { CCIPBridgeAdapter } from './ccip';
+import { ZKSyncNativeBridgeAdapter } from './zksync';
+import { LineaNativeBridgeAdapter } from './linea';
+import { ZircuitNativeBridgeAdapter } from './zircuit';
 
 export class RebalanceAdapter {
   constructor(
@@ -94,6 +97,12 @@ export class RebalanceAdapter {
         return new PendleBridgeAdapter(this.config.chains, this.logger);
       case SupportedBridge.CCIP:
         return new CCIPBridgeAdapter(this.config.chains, this.logger);
+      case SupportedBridge.Zksync:
+        return new ZKSyncNativeBridgeAdapter(this.config.chains, this.logger);
+      case SupportedBridge.Linea:
+        return new LineaNativeBridgeAdapter(this.config.chains, this.logger);
+      case SupportedBridge.Zircuit:
+        return new ZircuitNativeBridgeAdapter(this.config.chains, this.logger);
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }

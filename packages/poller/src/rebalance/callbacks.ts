@@ -163,6 +163,31 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
           continue;
         }
 
+        // Check if the callback process is complete (multi-step bridges like Zircuit may need further callbacks)
+        let shouldComplete = true;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const isCallbackComplete = (adapter as any).isCallbackComplete;
+        if (typeof isCallbackComplete === 'function') {
+          try {
+            shouldComplete = await isCallbackComplete.call(
+              adapter,
+              route,
+              receipt as unknown as ViemTransactionReceipt,
+            );
+          } catch (e) {
+            logger.warn('isCallbackComplete check failed, completing as fail-safe', {
+              ...logContext,
+              error: jsonifyError(e),
+            });
+            shouldComplete = true;
+          }
+        }
+
+        if (!shouldComplete) {
+          logger.info('Callback submitted but process not yet complete, retaining for next iteration', logContext);
+          continue;
+        }
+
         try {
           await db.updateRebalanceOperation(operation.id, {
             status: RebalanceOperationStatus.COMPLETED,

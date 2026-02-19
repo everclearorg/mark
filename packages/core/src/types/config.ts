@@ -80,6 +80,9 @@ export enum SupportedBridge {
   Stargate = 'stargate',
   TacInner = 'tac-inner',
   CCIP = 'chainlink-ccip',
+  Zksync = 'zksync',
+  Linea = 'linea',
+  Zircuit = 'zircuit',
 }
 
 export enum GasType {
