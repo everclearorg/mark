@@ -292,4 +292,18 @@ describe('LineaNativeBridgeAdapter', () => {
       expect(isClaimed).toBe(false);
     });
   });
+
+  describe('route validation', () => {
+    it('throws for unsupported routes in send', async () => {
+      await expect(adapter.send(sender, recipient, amount, { asset: ethAsset, origin: 10, destination: 59144 })).rejects.toThrow(
+        'Unsupported Linea route',
+      );
+    });
+
+    it('throws for unsupported routes in destinationCallback', async () => {
+      await expect(
+        adapter.destinationCallback({ asset: ethAsset, origin: 10, destination: 59144 }, mockReceipt),
+      ).rejects.toThrow('Unsupported Linea route');
+    });
+  });
 });
