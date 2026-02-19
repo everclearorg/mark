@@ -244,6 +244,20 @@ describe('LineaNativeBridgeAdapter', () => {
       expect(tx).toBeUndefined();
     });
 
+    it('returns undefined when proof is not yet available (retry path)', async () => {
+      const route = { asset: ethAsset, origin: 59144, destination: 1 };
+
+      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
+        getLogs: jest.fn<any>().mockResolvedValue([]),
+      });
+      jest.spyOn(adapter as any, 'extractMessageHash').mockReturnValue('0xhash');
+      jest.spyOn(adapter as any, 'isMessageClaimed').mockResolvedValue(false);
+      jest.spyOn(adapter as any, 'getMessageProof').mockResolvedValue(undefined);
+
+      const tx = await adapter.destinationCallback(route, mockReceipt);
+      expect(tx).toBeUndefined();
+    });
+
     it('returns claimMessageWithProof tx when proof is available', async () => {
       const route = { asset: ethAsset, origin: 59144, destination: 1 };
 

@@ -297,7 +297,11 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
         // Get the L2 to L1 log proof from zkSync RPC
         const proofData = await this.getL2ToL1LogProof(l2Client, originTransaction.transactionHash, l2ToL1LogIndex);
         if (!proofData) {
-          throw new Error('Failed to get L2 to L1 log proof');
+          this.logger.info('zkSync L2 to L1 log proof not available yet; will retry callback later', {
+            txHash: originTransaction.transactionHash,
+            l2ToL1LogIndex,
+          });
+          return;
         }
 
         // proof.id is the message index within the batch Merkle tree

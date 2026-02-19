@@ -471,8 +471,11 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
 
     const withdrawalTx = await this.extractWithdrawalTransaction(l2Client, originTransaction);
     if (!withdrawalTx) {
-      // Cannot determine state — treat as complete to avoid stuck entries
-      return true;
+      // Cannot determine state safely; retain operation for retry on next poll iteration.
+      this.logger.warn('Zircuit isCallbackComplete could not extract withdrawal transaction; will retry', {
+        txHash: originTransaction.transactionHash,
+      });
+      return false;
     }
 
     const withdrawalHash = this.hashWithdrawal(withdrawalTx);

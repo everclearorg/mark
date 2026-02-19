@@ -178,7 +178,18 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         }
 
         if (!shouldComplete) {
-          logger.info('Callback submitted but process not yet complete, retaining for next iteration', logContext);
+          await db.updateRebalanceOperation(operation.id, {
+            status: RebalanceOperationStatus.AWAITING_CALLBACK,
+            txHashes: {
+              [route.destination.toString()]: tx.receipt as TransactionReceipt,
+            },
+          });
+
+          logger.info('Callback submitted but process not yet complete, retaining for next iteration', {
+            ...logContext,
+            callbackState: 'callback_submitted_not_complete',
+            destinationTx: tx.hash,
+          });
           continue;
         }
 

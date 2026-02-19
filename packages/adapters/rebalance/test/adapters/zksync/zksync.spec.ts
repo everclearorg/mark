@@ -339,7 +339,7 @@ describe('ZKSyncNativeBridgeAdapter', () => {
       );
     });
 
-    it('throws if proof data is unavailable', async () => {
+    it('returns undefined if proof data is unavailable (retry path)', async () => {
       const route = { asset: ethAsset, origin: 324, destination: 1 };
 
       const mockRawReceipt = {
@@ -360,9 +360,8 @@ describe('ZKSyncNativeBridgeAdapter', () => {
         readContract: jest.fn<any>(),
       });
 
-      await expect(adapter.destinationCallback(route, mockReceipt)).rejects.toThrow(
-        'Failed to get L2 to L1 log proof',
-      );
+      const tx = await adapter.destinationCallback(route, mockReceipt);
+      expect(tx).toBeUndefined();
     });
   });
 

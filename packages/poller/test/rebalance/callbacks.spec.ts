@@ -659,6 +659,15 @@ describe('executeDestinationCallbacks', () => {
 
     expect(submitTransactionStub.calledOnce).toBe(true);
     expect(isCallbackCompleteStub.calledOnce).toBe(true);
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({
+          status: RebalanceOperationStatus.AWAITING_CALLBACK,
+          txHashes: sinon.match.object,
+        }),
+      ),
+    ).toBe(true);
     // Should NOT mark as completed
     expect(
       (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(

@@ -38,9 +38,6 @@ export const lineaTokenBridgeAbi = parseAbi([
 // L1 MessageService deployment block (avoids scanning from genesis)
 export const LINEA_L1_MESSAGE_SERVICE_DEPLOY_BLOCK = BigInt(17614000);
 
-// Status anchor events for proof retrieval
-export const STATUS_ANCHOR_EVENT_SIGNATURE = '0x7ec0c4a1ce1ec0d8b871e88b71f4f2b26a6ce6bb2c6d9e1c8a00f8efcf87b87e';
-
 // Public L1 RPCs that support wide-range eth_getLogs queries.
 // The Linea SDK queries from block 0 to latest, which commercial
 // providers (Alchemy, Infura) reject due to block range limits.

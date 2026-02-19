@@ -406,7 +406,7 @@ describe('ZircuitNativeBridgeAdapter', () => {
       expect(result).toBe(false);
     });
 
-    it('returns true if withdrawal transaction cannot be extracted (fail-safe)', async () => {
+    it('returns false if withdrawal transaction cannot be extracted (retry-safe)', async () => {
       const route = { asset: ethAsset, origin: 48900, destination: 1 };
 
       jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
@@ -415,7 +415,7 @@ describe('ZircuitNativeBridgeAdapter', () => {
       jest.spyOn(adapter as any, 'extractWithdrawalTransaction').mockResolvedValue(undefined);
 
       const result = await adapter.isCallbackComplete(route, mockReceipt);
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
   });
 

@@ -286,7 +286,11 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
         // Get the message proof from Linea SDK/API
         const proofData = await this.getMessageProof(originTransaction);
         if (!proofData) {
-          throw new Error('Failed to get message proof - finality may not be reached yet');
+          this.logger.info('Linea message proof not available yet; will retry callback later', {
+            txHash: originTransaction.transactionHash,
+            messageHash,
+          });
+          return;
         }
 
         this.logger.info('Building Linea claim transaction', {
