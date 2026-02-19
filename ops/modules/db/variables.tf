@@ -18,7 +18,7 @@ variable "instance_class" {
 variable "engine_version" {
   description = "PostgreSQL engine version to deploy"
   type        = string
-  default     = "16.3"
+  default     = "16.10"
 }
 
 variable "db_name" {
