@@ -28,6 +28,8 @@ describe('EventQueue', () => {
       multi: jest.fn(),
       exec: jest.fn(),
       set: (jest.fn() as jest.MockedFunction<any>).mockResolvedValue('OK'),
+      setex: (jest.fn() as jest.MockedFunction<any>).mockResolvedValue('OK'),
+      exists: (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(0),
     } as any;
 
     (Redis as jest.MockedClass<typeof Redis>).mockImplementation(() => mockRedis as any);
@@ -471,6 +473,49 @@ describe('EventQueue', () => {
       // Verify the key was passed correctly
       const delCall = (mockRedis.del as jest.Mock).mock.calls[0];
       expect(delCall[0]).toBe('event-queue:backfill-cursor');
+    });
+  });
+
+  describe('invalid invoice store', () => {
+    it('should add invalid invoice with default TTL', async () => {
+      await eventQueue.addInvalidInvoice('invoice-123');
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'event-queue:invalid-invoice:invoice-123',
+        7 * 24 * 60 * 60,
+        '1',
+      );
+      expect(mockLogger.debug).toHaveBeenCalledWith('Added invalid invoice to store', {
+        invoiceId: 'invoice-123',
+        ttl: 7 * 24 * 60 * 60,
+      });
+    });
+
+    it('should add invalid invoice with custom TTL', async () => {
+      await eventQueue.addInvalidInvoice('invoice-456', 3600);
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'event-queue:invalid-invoice:invoice-456',
+        3600,
+        '1',
+      );
+    });
+
+    it('should return true when invoice is invalid', async () => {
+      (mockRedis.exists as jest.Mock<() => Promise<number>>).mockResolvedValue(1);
+
+      const result = await eventQueue.isInvalidInvoice('invoice-789');
+
+      expect(result).toBe(true);
+      expect(mockRedis.exists).toHaveBeenCalledWith('event-queue:invalid-invoice:invoice-789');
+    });
+
+    it('should return false when invoice is not invalid', async () => {
+      (mockRedis.exists as jest.Mock<() => Promise<number>>).mockResolvedValue(0);
+
+      const result = await eventQueue.isInvalidInvoice('invoice-999');
+
+      expect(result).toBe(false);
     });
   });
 

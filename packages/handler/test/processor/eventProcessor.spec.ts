@@ -12,6 +12,7 @@ import {
   MarkConfiguration,
   EarmarkStatus,
 } from '@mark/core';
+import { EventProcessingResultType } from '#/processor';
 import { Logger } from '@mark/logger';
 import { EverclearAdapter } from '@mark/everclear';
 import { ChainService } from '@mark/chainservice';
@@ -223,7 +224,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(true);
+      expect(result.result).toBe(EventProcessingResultType.Success);
       expect(result.eventId).toBe('invoice-1');
       expect(mockEverclear.fetchInvoiceById).toHaveBeenCalledWith('invoice-1');
       expect(mockEverclear.getMinAmounts).toHaveBeenCalledWith('invoice-1');
@@ -239,7 +240,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(true);
+      expect(result.result).toBe(EventProcessingResultType.Success);
       expect(cleanupStaleEarmarks).toHaveBeenCalledWith(['invoice-1'], mockProcessingContext);
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Invoice not found',
@@ -258,7 +259,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(false);
+      expect(result.result).toBe(EventProcessingResultType.Failure);
       expect(result.retryAfter).toBe(60000);
       expect(mockPrometheus.recordInvalidPurchase).toHaveBeenCalledWith(
         InvalidPurchaseReasons.TransactionFailed,
@@ -285,7 +286,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(false);
+      expect(result.result).toBe(EventProcessingResultType.Failure);
       expect(result.retryAfter).toBe(60000);
       expect(mockLogger.warn).toHaveBeenCalledWith(
         'Purchase loop is paused, skipping invoice',
@@ -295,62 +296,59 @@ describe('EventProcessor', () => {
       );
     });
 
-    it('should skip invalid invoice', async () => {
+    it('should skip invalid invoice and return invalid for permanent reasons', async () => {
       const event = createInvoiceEvent('invoice-1');
       const invoice = createMockInvoice();
-      const { processPendingEarmark } = require('#/helpers');
       const { isValidInvoice } = require('@mark/poller/src/invoice/validation');
 
       mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
-      mockEverclear.getMinAmounts.mockResolvedValue({
-        invoiceAmount: '1000',
-        amountAfterDiscount: '900',
-        discountBps: '100',
-        custodiedAmounts: { '1': '0' },
-        minAmounts: { '1': '100' },
-      });
-      mockPurchaseCache.isPaused.mockResolvedValue(false);
-      processPendingEarmark.mockResolvedValue(undefined);
-      mockDatabase.getEarmarks.mockResolvedValue([]);
       isValidInvoice.mockReturnValue(InvalidPurchaseReasons.InvalidAmount);
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(true);
+      expect(result.result).toBe(EventProcessingResultType.Invalid);
       expect(mockPrometheus.recordInvalidPurchase).toHaveBeenCalledWith(
         InvalidPurchaseReasons.InvalidAmount,
         expect.any(Object),
       );
+      expect(mockEverclear.getMinAmounts).not.toHaveBeenCalled();
     });
 
-    it('should skip invoice with XERC20 support', async () => {
+    it('should skip invalid invoice but not return invalid for transient reasons (InvalidAge)', async () => {
       const event = createInvoiceEvent('invoice-1');
       const invoice = createMockInvoice();
-      const { processPendingEarmark } = require('#/helpers');
+      const { isValidInvoice } = require('@mark/poller/src/invoice/validation');
+
+      mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
+      isValidInvoice.mockReturnValue(InvalidPurchaseReasons.InvalidAge);
+
+      const result = await eventProcessor.processInvoiceEnqueued(event);
+
+      expect(result.result).toBe(EventProcessingResultType.Failure);
+      expect(mockPrometheus.recordInvalidPurchase).toHaveBeenCalledWith(
+        InvalidPurchaseReasons.InvalidAge,
+        expect.any(Object),
+      );
+    });
+
+    it('should skip invoice with XERC20 support and return invalid', async () => {
+      const event = createInvoiceEvent('invoice-1');
+      const invoice = createMockInvoice();
       const { isXerc20Supported } = require('@mark/poller/src/helpers');
       const { isValidInvoice } = require('@mark/poller/src/invoice/validation');
 
       mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
-      mockEverclear.getMinAmounts.mockResolvedValue({
-        invoiceAmount: '1000',
-        amountAfterDiscount: '900',
-        discountBps: '100',
-        custodiedAmounts: { '1': '0' },
-        minAmounts: { '1': '100' },
-      });
-      mockPurchaseCache.isPaused.mockResolvedValue(false);
-      processPendingEarmark.mockResolvedValue(undefined);
-      mockDatabase.getEarmarks.mockResolvedValue([]);
       isValidInvoice.mockReturnValue(null);
       isXerc20Supported.mockResolvedValue(true);
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(true);
+      expect(result.result).toBe(EventProcessingResultType.Invalid);
       expect(mockPrometheus.recordInvalidPurchase).toHaveBeenCalledWith(
         InvalidPurchaseReasons.DestinationXerc20,
         expect.any(Object),
       );
+      expect(mockEverclear.getMinAmounts).not.toHaveBeenCalled();
     });
 
     it('should skip invoice if purchase already exists', async () => {
@@ -408,7 +406,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(true);
+      expect(result.result).toBe(EventProcessingResultType.Success);
       expect(mockPrometheus.recordInvalidPurchase).toHaveBeenCalledWith(
         InvalidPurchaseReasons.PendingPurchaseRecord,
         expect.any(Object),
@@ -453,7 +451,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(false);
+      expect(result.result).toBe(EventProcessingResultType.Failure);
       expect(result.retryAfter).toBe(10000);
     });
 
@@ -482,7 +480,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(false);
+      expect(result.result).toBe(EventProcessingResultType.Failure);
       expect(result.retryAfter).toBe(10000);
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Skipping invoice with pending earmark',
@@ -529,7 +527,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.success).toBe(false);
+      expect(result.result).toBe(EventProcessingResultType.Failure);
       expect(result.error).toBe('Unexpected error');
       expect(result.retryAfter).toBe(60000);
     });
@@ -610,7 +608,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processSettlementEnqueued(event);
 
-      expect(result.success).toBe(true);
+      expect(result.result).toBe(EventProcessingResultType.Success);
       expect(result.eventId).toBe('invoice-1');
       expect(mockPurchaseCache.getPurchases).toHaveBeenCalledWith(['invoice-1']);
       expect(mockPurchaseCache.removePurchases).toHaveBeenCalledWith(['invoice-1']);
@@ -624,7 +622,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processSettlementEnqueued(event);
 
-      expect(result.success).toBe(true);
+      expect(result.result).toBe(EventProcessingResultType.Success);
       expect(mockPurchaseCache.removePurchases).not.toHaveBeenCalled();
     });
 
@@ -635,7 +633,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processSettlementEnqueued(event);
 
-      expect(result.success).toBe(false);
+      expect(result.result).toBe(EventProcessingResultType.Failure);
       expect(result.error).toBe('Cache error');
       expect(result.retryAfter).toBe(60000);
       expect(mockLogger.error).toHaveBeenCalledWith(

@@ -5,6 +5,9 @@ import { WebhookEvent, WebhookEventType } from '@mark/core';
 // Default TTL for dead letter queue entries (7 days in milliseconds)
 const DEFAULT_DEAD_LETTER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Default TTL for dead letter queue entries (7 days in milliseconds)
+const DEFAULT_INVALID_INVOICE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 export enum EventPriority {
   HIGH = 'HIGH',
   NORMAL = 'NORMAL',
@@ -49,16 +52,16 @@ export class EventQueue {
   private readonly statusKey = `${this.prefix}:status`;
   private readonly cursorKey = `${this.prefix}:backfill-cursor`;
   private readonly metricsKey = `${this.prefix}:metrics`;
+  private readonly invalidInvoiceKeyPrefix = `${this.prefix}:invalid-invoice`;
   private readonly store: Redis;
-  private readonly deadLetterTtlMs: number;
 
   constructor(
     host: string,
     port: number,
     private readonly logger: Logger,
-    deadLetterTtlMs: number = DEFAULT_DEAD_LETTER_TTL_MS,
+    private readonly deadLetterTtlMs: number = DEFAULT_DEAD_LETTER_TTL_MS,
+    private readonly invalidInvoiceTtlSeconds: number = DEFAULT_INVALID_INVOICE_TTL_SECONDS,
   ) {
-    this.deadLetterTtlMs = deadLetterTtlMs;
     this.store = new Redis({
       host,
       port,
@@ -465,6 +468,29 @@ export class EventQueue {
       .join(',');
     const key = labelStr ? `${this.metricsKey}:${metricName}:${labelStr}` : `${this.metricsKey}:${metricName}`;
     await this.store.incr(key);
+  }
+
+  /**
+   * Record an invoice as invalid so it won't be reprocessed (e.g. by backfill).
+   * @param invoiceId - The invoice ID to mark as invalid
+   * @param ttlSeconds - Optional TTL in seconds (default: 7 days)
+   */
+  async addInvalidInvoice(invoiceId: string, ttlSeconds?: number): Promise<void> {
+    const key = `${this.invalidInvoiceKeyPrefix}:${invoiceId}`;
+    const ttl = ttlSeconds ?? this.invalidInvoiceTtlSeconds;
+    await this.store.setex(key, ttl, '1');
+    this.logger.debug('Added invalid invoice to store', { invoiceId, ttl });
+  }
+
+  /**
+   * Check if an invoice has been marked as invalid.
+   * @param invoiceId - The invoice ID to check
+   * @returns true if the invoice is in the invalid store
+   */
+  async isInvalidInvoice(invoiceId: string): Promise<boolean> {
+    const key = `${this.invalidInvoiceKeyPrefix}:${invoiceId}`;
+    const result = await this.store.exists(key);
+    return result === 1;
   }
 
   /**
