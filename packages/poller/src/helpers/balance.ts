@@ -1,5 +1,6 @@
 import {
   getDecimalsFromConfig,
+  getIsNativeFromConfig,
   getTokenAddressFromConfig,
   MarkConfiguration,
   isSvmChain,
@@ -131,7 +132,9 @@ export const getMarkBalancesForTicker = async (
     const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
     const decimals = getDecimalsFromConfig(ticker, domain, config);
 
-    if (!tokenAddr || !decimals || tokenAddr === zeroAddress) {
+    // Skip native tokens as they aren't ERC20 contracts
+    const isNative = getIsNativeFromConfig(ticker, domain, config);
+    if (!tokenAddr || !decimals || tokenAddr === zeroAddress || isNative) {
       continue;
     }
     const address = isSvm ? config.ownSolAddress : isTvm ? addresses[domain] : config.ownAddress;
