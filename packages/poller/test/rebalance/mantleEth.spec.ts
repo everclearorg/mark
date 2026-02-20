@@ -318,13 +318,9 @@ describe('mETH Rebalancing', () => {
 
       mockEverclear.fetchIntents.resolves([mockIntent] as any);
 
-      // Use context database mock - the code uses getEarmarks, not getActiveEarmarkForInvoice
-      const dbMock = mockContext.database as any;
-      dbMock.getEarmarks = stub().resolves([
-        {
-          id: 'existing-earmark',
-          status: 'pending',
-        },
+      // mantleEth uses context.database, not the imported database module
+      (mockContext.database as any).getEarmarks.resolves([
+        { id: 'existing-earmark', status: 'pending' },
       ]);
 
       await rebalanceMantleEth(mockContext as unknown as ProcessingContext);
@@ -335,7 +331,7 @@ describe('mETH Rebalancing', () => {
 
       const warnCalls = mockLogger.warn.getCalls();
       const existingEarmarkLog = warnCalls.find(
-        (call) => call.args[0] && call.args[0].includes('Active earmark already exists for intent'),
+        (call) => call.args[0] && call.args[0].includes('Earmark already exists for intent'),
       );
       expect(existingEarmarkLog).toBeTruthy();
     });
