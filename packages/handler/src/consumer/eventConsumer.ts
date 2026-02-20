@@ -114,34 +114,13 @@ export class EventConsumer {
       return;
     }
 
-    // Process immediately with proper error handling
-    this.processEventSafely(event);
-  }
-
-  /**
-   * Process an event with proper error handling for fire-and-forget scenarios.
-   * Ensures that errors trigger retry logic instead of being silently logged.
-   */
-  private processEventSafely(event: QueuedEvent): void {
-    this.processEvent(event).catch(async (e) => {
-      const error = e instanceof Error ? e : new Error(String(e));
-      this.logger.error('Unhandled error processing event, scheduling retry', {
-        eventId: event.id,
+    // Process immediately (fire-and-forget; processEvent handles errors internally)
+    this.processEvent(event).catch((e) => {
+      this.logger.error('Error processing event', {
         eventType: event.type,
-        retryCount: event.retryCount,
+        event,
         error: jsonifyError(e),
       });
-
-      // Trigger retry logic to ensure event is not lost
-      try {
-        await this.handleRetry(event, error, 60000);
-      } catch (retryError) {
-        this.logger.error('Failed to schedule retry for event', {
-          eventId: event.id,
-          eventType: event.type,
-          error: jsonifyError(retryError),
-        });
-      }
     });
   }
 
@@ -175,7 +154,13 @@ export class EventConsumer {
         }
 
         for (const event of events) {
-          this.processEventSafely(event);
+          this.processEvent(event).catch((e) => {
+            this.logger.error('Error processing pending event', {
+              eventType,
+              event,
+              error: jsonifyError(e),
+            });
+          });
         }
       } catch (e) {
         this.logger.error('Error processing pending events', {
@@ -190,12 +175,13 @@ export class EventConsumer {
   /**
    * Process a single event
    */
-  private async processEvent(event: QueuedEvent): Promise<EventProcessingResult> {
+  private async processEvent(event: QueuedEvent): Promise<void> {
     this.totalActive++;
     this.activeCounts[event.type]++;
 
     // Process event and get a result, then decrement counters, and then handle retry/acknowledge
     let result: EventProcessingResult;
+    const startTime = Date.now();
     try {
       this.logger.debug('Processing event', {
         event,
@@ -214,21 +200,34 @@ export class EventConsumer {
         default:
           throw new Error(`Unknown event type: ${event.type}`);
       }
+    } catch (e) {
+      this.logger.error('Unhandled error processing event, scheduling retry', {
+        eventId: event.id,
+        eventType: event.type,
+        retryCount: event.retryCount,
+        error: jsonifyError(e),
+      });
+      result = {
+        success: false,
+        eventId: event.id,
+        processedAt: Date.now(),
+        duration: Date.now() - startTime,
+        error: e instanceof Error ? e.message : 'Unknown error',
+        retryAfter: 60000,
+      };
     } finally {
       // Decrement active processing counters
       this.totalActive = Math.max(0, this.totalActive - 1);
       const updatedCount = this.activeCounts[event.type] - 1;
       this.activeCounts[event.type] = Math.max(0, updatedCount);
+
+      // Handle processing result after counters are decremented
+      // This prevents the race condition where the event is removed from the processing queue
+      // while counters still show it as active
+      await this.handleProcessingResult(event, result!);
+
+      this.schedulePendingWork(event.type);
     }
-
-    // Handle processing result after counters are decremented
-    // This prevents the race condition where the event is removed from the processing queue
-    // while counters still show it as active
-    await this.handleProcessingResult(event, result);
-
-    this.schedulePendingWork(event.type);
-
-    return result;
   }
 
   /**
@@ -242,7 +241,15 @@ export class EventConsumer {
         duration: result.duration,
       });
     } else {
-      await this.handleRetry(event, new Error(result.error || 'Processing failed'), result.retryAfter);
+      try {
+        await this.handleRetry(event, new Error(result.error || 'Processing failed'), result.retryAfter);
+      } catch (e) {
+        this.logger.error('Failed to schedule retry for event', {
+          eventId: event.id,
+          eventType: event.type,
+          error: jsonifyError(e),
+        });
+      }
     }
   }
 
