@@ -182,6 +182,16 @@ module "cache" {
   public_redis                  = true
 }
 
+# ACM certificate for this bot's domains (handler, admin API, prometheus)
+module "acm" {
+  source      = "../../modules/acm"
+  bot_name    = var.bot_name
+  domain      = var.domain
+  zone_id     = var.zone_id
+  environment = var.environment
+  stage       = var.stage
+}
+
 module "mark_web3signer" {
   source                   = "../../modules/service"
   stage                    = var.stage
@@ -287,7 +297,7 @@ module "mark_prometheus" {
     "-c",
     "set -e; echo 'Setting up Prometheus...'; mkdir -p /etc/prometheus && echo 'Created config directory'; echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && echo 'Created config file'; chmod 644 /etc/prometheus/prometheus.yml && echo 'Set config permissions'; echo 'Starting Prometheus...'; exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
   ]
-  cert_arn                 = var.cert_arn
+  cert_arn                 = module.acm.certificate_arn
   ingress_cdir_blocks      = ["0.0.0.0/0"]
   ingress_ipv6_cdir_blocks = []
   create_alb               = true
@@ -434,7 +444,7 @@ module "mark_invoice_handler" {
   service_security_groups  = [module.sgs.lambda_sg_id]
   container_env_vars       = local.handler_env_vars
   zone_id                  = var.zone_id
-  cert_arn                 = var.cert_arn
+  cert_arn                 = module.acm.certificate_arn
   ingress_cdir_blocks      = ["0.0.0.0/0"]
   ingress_ipv6_cdir_blocks = []
   create_alb               = true
@@ -460,7 +470,7 @@ module "mark_admin_api" {
   stage              = var.stage
   environment        = var.environment
   domain             = var.domain
-  certificate_arn    = var.cert_arn
+  certificate_arn    = module.acm.certificate_arn
   zone_id            = var.zone_id
   bot_name           = var.bot_name
   execution_role_arn = module.iam.lambda_role_arn
