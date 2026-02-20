@@ -31,6 +31,7 @@ describe('Invoice Helpers', () => {
 
     mockPurchaseCache = {
       getAllPurchases: jest.fn(),
+      getPurchases: jest.fn<(targetIds: string[]) => Promise<unknown[]>>().mockResolvedValue([]),
     };
 
     mockEventQueue = {
@@ -153,6 +154,41 @@ describe('Invoice Helpers', () => {
       });
     });
 
+    it('should skip invoices that already have purchase in cache', async () => {
+      const invoices: Invoice[] = [
+        {
+          intent_id: 'invoice-1',
+          amount: '1000',
+          owner: '0x123',
+          entry_epoch: 1,
+          origin: '1',
+          destinations: ['2'],
+          ticker_hash: '0xabc',
+          discountBps: 0,
+          hub_status: 'INVOICED',
+          hub_invoice_enqueued_timestamp: Date.now(),
+        },
+      ];
+
+      mockEverclear.fetchInvoicesByTxNonce.mockResolvedValue({
+        invoices,
+        nextCursor: 'cursor-123',
+      });
+      mockEventQueue.hasEvent.mockResolvedValue(false);
+      mockPurchaseCache.getPurchases.mockResolvedValue([
+        { target: { intent_id: 'invoice-1' } } as any,
+      ]);
+
+      await checkPendingInvoices(mockAdapters);
+
+      expect(mockEventQueue.hasEvent).toHaveBeenCalled();
+      expect(mockPurchaseCache.getPurchases).toHaveBeenCalledWith(['invoice-1']);
+      expect(mockEventConsumer.addEvent).not.toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalledWith('Invoice already has purchase, skipping', {
+        invoiceId: 'invoice-1',
+      });
+    });
+
     it('should handle API errors gracefully', async () => {
       mockEverclear.fetchInvoicesByTxNonce.mockRejectedValue(new Error('API error'));
 
@@ -165,7 +201,7 @@ describe('Invoice Helpers', () => {
       expect(mockEventConsumer.addEvent).not.toHaveBeenCalled();
     });
 
-    it('should return early if no invoices', async () => {
+    it('should return early if no invoices and reset cursor', async () => {
       mockEverclear.fetchInvoicesByTxNonce.mockResolvedValue({
         invoices: [],
         nextCursor: null,
@@ -175,6 +211,7 @@ describe('Invoice Helpers', () => {
 
       expect(mockEventQueue.hasEvent).not.toHaveBeenCalled();
       expect(mockEventConsumer.addEvent).not.toHaveBeenCalled();
+      expect(mockEventQueue.setBackfillCursor).toHaveBeenCalledWith(null);
     });
   });
 
