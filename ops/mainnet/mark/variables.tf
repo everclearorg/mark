@@ -39,6 +39,11 @@ variable "image_uri" {
   type        = string
 }
 
+variable "handler_image_uri" {
+  description = "Full image name for the invoice handler container (from CI pipeline)"
+  type        = string
+}
+
 # Poller-specific variables
 variable "invoice_age" {
   description = "Maximum age of invoices to process (in seconds)"

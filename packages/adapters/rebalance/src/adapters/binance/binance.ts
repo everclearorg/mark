@@ -186,36 +186,47 @@ export class BinanceBridgeAdapter implements BridgeAdapter {
         );
       }
 
-      // Get decimals for precision checking
+      // Get origin decimals for precision checking
       const assetConfig = findAssetByAddress(route.asset, route.origin, this.config.chains, this.logger);
       if (!assetConfig) {
         throw new Error(`Unable to find asset config for asset ${route.asset} on chain ${route.origin}`);
       }
       const ticker = assetConfig.tickerHash;
-      const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
-      if (!decimals) {
+      const originDecimals = getDecimalsFromConfig(ticker, route.origin.toString(), this.config);
+      if (!originDecimals) {
         throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.origin}`);
       }
 
+      // Get destination decimals - the caller expects the returned amount in destination chain decimals
+      const destinationDecimals = getDecimalsFromConfig(ticker, route.destination.toString(), this.config);
+      if (!destinationDecimals) {
+        throw new Error(`Unable to find decimals for ticker ${ticker} on chain ${route.destination}`);
+      }
+
       // Round the deposit amount to required precision
-      const amountInUnits = parseFloat(formatUnits(BigInt(amount), decimals));
+      const amountInUnits = parseFloat(formatUnits(BigInt(amount), originDecimals));
       const precision = this.getWithdrawalPrecision(originMapping.binanceSymbol, originMapping.network);
       const roundedDepositAmount = this.roundToPrecision(amountInUnits, precision);
-      const roundedDepositAmountInWei = parseUnits(roundedDepositAmount, decimals);
 
       // Check if deposit amount becomes 0 after rounding
-      if (roundedDepositAmountInWei === BigInt(0)) {
+      if (parseFloat(roundedDepositAmount) === 0) {
         throw new Error(
           `Amount too small after rounding to ${precision} decimals for ${originMapping.binanceSymbol}. Original: ${amountInUnits}, Rounded: ${roundedDepositAmount}`,
         );
       }
 
-      // Calculate net amount after withdrawal fee from the rounded deposit amount
-      const netAmount = calculateNetAmount(roundedDepositAmountInWei.toString(), destinationMapping.withdrawalFee);
+      // Convert rounded amount to destination chain decimals and subtract destination withdrawal fee.
+      // The caller (planDirectBridgeRoute) expects the return value in destination chain's native decimals,
+      // consistent with all other bridge adapters (Across, Stargate, CCIP, etc.).
+      const roundedAmountInDestWei = parseUnits(roundedDepositAmount, destinationDecimals);
+      const netAmount = calculateNetAmount(roundedAmountInDestWei.toString(), destinationMapping.withdrawalFee);
 
       this.logger.debug('Calculated received amount', {
         originalAmount: amount,
-        roundedDepositAmount: roundedDepositAmountInWei.toString(),
+        roundedDepositAmount,
+        roundedAmountInDestWei: roundedAmountInDestWei.toString(),
+        originDecimals,
+        destinationDecimals,
         withdrawalFee: destinationMapping.withdrawalFee,
         netAmount,
         route,

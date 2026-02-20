@@ -44,7 +44,7 @@ export class EventProcessor {
       let invoice: Invoice;
       try {
         invoice = await everclear.fetchInvoiceById(event.id);
-        logger.debug('Fetched invoice from webhook', {
+        logger.debug('Fetched invoice data', {
           requestId,
           invoice,
           ticker: invoice.ticker_hash,

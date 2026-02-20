@@ -133,13 +133,20 @@ describe('gcp-secret-manager', () => {
 
     await getGcpSecret('proj', 'secret');
 
-    // For Fargate, we use a programmatic credential supplier (more secure)
-    expect(lastCredentialConfig).toEqual(
+    // For Fargate, AwsClient is created with a programmatic credential supplier
+    expect(lastAwsClientOptions).toEqual(
       expect.objectContaining({
         aws_security_credentials_supplier: expect.objectContaining({
           getAwsRegion: expect.any(Function),
           getAwsSecurityCredentials: expect.any(Function),
         }),
+      }),
+    );
+    // AwsClient is wrapped in GoogleAuth via authClient option
+    expect(lastAuthOptions).toEqual(
+      expect.objectContaining({
+        authClient: expect.any(Object),
+        scopes: ['https://www.googleapis.com/auth/cloud-platform'],
       }),
     );
     // Credentials should NOT be set in environment (security improvement)
@@ -184,8 +191,8 @@ describe('gcp-secret-manager', () => {
 
     await getGcpSecret('proj', 'secret');
 
-    // For Lambda, we use a programmatic credential supplier
-    expect(lastCredentialConfig).toEqual(
+    // For Lambda, AwsClient is created with a programmatic credential supplier
+    expect(lastAwsClientOptions).toEqual(
       expect.objectContaining({
         aws_security_credentials_supplier: expect.objectContaining({
           getAwsRegion: expect.any(Function),
@@ -193,8 +200,35 @@ describe('gcp-secret-manager', () => {
         }),
       }),
     );
-    // Should NOT have credential_source (uses supplier instead)
-    expect((lastCredentialConfig as { credential_source?: unknown })?.credential_source).toBeUndefined();
+    // AwsClient is wrapped in GoogleAuth via authClient option
+    expect(lastAuthOptions).toEqual(
+      expect.objectContaining({
+        authClient: expect.any(Object),
+      }),
+    );
+    // Should NOT have credential_source in AwsClient options (uses supplier instead)
+    expect((lastAwsClientOptions as { credential_source?: unknown })?.credential_source).toBeUndefined();
+  });
+
+  it('fails with invalid service account email format', async () => {
+    const logger = { warn: jest.fn() };
+
+    configureGcpClient({
+      workloadIdentity: {
+        provider:
+          'projects/123456789/locations/global/workloadIdentityPools/aws-pool/providers/aws-provider',
+        serviceAccountEmail: 'invalid-email-format',
+      },
+      logger,
+    });
+
+    await expect(getGcpSecret('proj', 'secret')).rejects.toThrow(
+      'GCP Secret Manager client not available',
+    );
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid GCP service account email format'),
+    );
   });
 
   it('fails gracefully when Lambda/Fargate without AWS_REGION', async () => {

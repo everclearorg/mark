@@ -86,13 +86,23 @@ export function configureGcpClient(config: GcpClientConfig): void {
 async function createWorkloadIdentityAuthClient(
   provider: string,
   serviceAccountEmail: string,
-): Promise<import('google-auth-library').GoogleAuth | import('google-auth-library').AwsClient> {
+): Promise<import('google-auth-library').GoogleAuth> {
   // Validate provider format
   // Format: projects/{project_number}/locations/global/workloadIdentityPools/{pool_id}/providers/{provider_id}
   const providerPattern = /^projects\/\d+\/locations\/global\/workloadIdentityPools\/[^/]+\/providers\/[^/]+$/;
 
   if (!providerPattern.test(provider)) {
     throw new Error(`Invalid workload identity provider format: ${provider}`);
+  }
+
+  // Validate service account email format
+  // Format: name@project.iam.gserviceaccount.com
+  const serviceAccountPattern = /^[a-zA-Z][a-zA-Z0-9-]*@[a-zA-Z0-9-]+\.iam\.gserviceaccount\.com$/;
+  if (!serviceAccountPattern.test(serviceAccountEmail)) {
+    throw new Error(
+      `Invalid GCP service account email format: ${serviceAccountEmail}. ` +
+        'Expected format: name@project.iam.gserviceaccount.com',
+    );
   }
 
   // Create external account credentials configuration for AWS
@@ -115,10 +125,17 @@ async function createWorkloadIdentityAuthClient(
   const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || '';
 
   if (isLambda || isFargate) {
-    // For Lambda and Fargate: Use AwsClient directly with a credential supplier
-    // GoogleAuth doesn't properly handle aws_security_credentials_supplier when passed inline
-    // We must use AwsClient directly to support programmatic credential suppliers
-    const { AwsClient } = await import('google-auth-library');
+    // For Lambda and Fargate: Use AwsClient with a credential supplier, wrapped in GoogleAuth
+    //
+    // The google-cloud client libraries expect the auth object to have methods like
+    // getClient(), getUniverseDomain(), getProjectId(), etc. that GoogleAuth provides.
+    // AwsClient alone doesn't have these methods.
+    //
+    // Solution: Create AwsClient with the credential supplier, then wrap it in GoogleAuth
+    // using the authClient option. This gives us the best of both worlds:
+    // - AwsClient handles the AWS -> GCP credential exchange
+    // - GoogleAuth provides the interface that google-cloud libraries expect
+    const { AwsClient, GoogleAuth } = await import('google-auth-library');
     const { defaultProvider } = await import('@aws-sdk/credential-provider-node');
     const credentialProvider = defaultProvider();
 
@@ -127,11 +144,22 @@ async function createWorkloadIdentityAuthClient(
     // 1. Credentials are fetched on-demand, not stored globally
     // 2. Credentials auto-refresh when expired
     // 3. No risk of accidentally logging env vars with credentials
+    const AWS_CREDENTIAL_TIMEOUT_MS = 10000; // 10 second timeout for fetching AWS credentials
+
     const awsSecurityCredentialsSupplier = {
       getAwsRegion: async () => region,
       getAwsSecurityCredentials: async () => {
         try {
-          const creds = await credentialProvider();
+          // Add timeout to prevent hanging if ECS metadata endpoint is slow/unreachable
+          const credentialPromise = credentialProvider();
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(
+              () => reject(new Error(`AWS credential fetch timed out after ${AWS_CREDENTIAL_TIMEOUT_MS}ms`)),
+              AWS_CREDENTIAL_TIMEOUT_MS,
+            );
+          });
+
+          const creds = await Promise.race([credentialPromise, timeoutPromise]);
           return {
             accessKeyId: creds.accessKeyId,
             secretAccessKey: creds.secretAccessKey,
@@ -151,7 +179,7 @@ async function createWorkloadIdentityAuthClient(
     // Support custom universe domains via environment variable for Google Distributed Cloud
     const universeDomain = process.env.GOOGLE_CLOUD_UNIVERSE_DOMAIN || 'googleapis.com';
 
-    // Use AwsClient directly - this properly supports aws_security_credentials_supplier
+    // Create AwsClient with the credential supplier
     const awsClient = new AwsClient({
       audience: `//iam.googleapis.com/${provider}`,
       subject_token_type: 'urn:ietf:params:aws:token-type:aws4_request',
@@ -159,32 +187,42 @@ async function createWorkloadIdentityAuthClient(
       token_url: 'https://sts.googleapis.com/v1/token',
       aws_security_credentials_supplier: awsSecurityCredentialsSupplier,
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-      // Note: AwsClient supports universeDomain in constructor, but we also add the method
-      // for compatibility with google-cloud client libraries that call getUniverseDomain()
       universeDomain,
     });
 
-    // Add getUniverseDomain method required by SecretManagerServiceClient
-    // The google-cloud client libraries call auth.getUniverseDomain() as a method,
-    // but AwsClient only exposes universeDomain as a property.
-    // We add the method explicitly to ensure compatibility.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const awsClientAny = awsClient as any;
-    if (typeof awsClientAny.getUniverseDomain !== 'function') {
-      // Only add if not already present (future-proofing for when library adds it)
-      Object.defineProperty(awsClient, 'getUniverseDomain', {
-        value: async () => universeDomain,
-        writable: false,
-        enumerable: false,
-        configurable: false,
-      });
-    }
+    // Wrap AwsClient in GoogleAuth to provide the full interface expected by google-cloud libraries
+    // The authClient option tells GoogleAuth to use our pre-configured AwsClient
+    //
+    // Important: We also pass projectId to ensure GoogleAuth.getProjectId() works correctly.
+    // Some google-cloud libraries call this method internally.
+    const projectId =
+      clientConfig.projectId ||
+      process.env.GCP_PROJECT_ID ||
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      process.env.GCLOUD_PROJECT;
 
-    return awsClient;
+    const authClient = new GoogleAuth({
+      authClient: awsClient,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      universeDomain,
+      projectId,
+    });
+
+    return authClient;
   } else {
     // EC2 or ECS on EC2: Use GoogleAuth with IMDS credential_source
     // This works because credential_source is a static JSON config, not functions
     const { GoogleAuth } = await import('google-auth-library');
+
+    // Determine universe domain (standard GCP uses 'googleapis.com')
+    const universeDomain = process.env.GOOGLE_CLOUD_UNIVERSE_DOMAIN || 'googleapis.com';
+
+    // Get projectId from config or environment
+    const projectId =
+      clientConfig.projectId ||
+      process.env.GCP_PROJECT_ID ||
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      process.env.GCLOUD_PROJECT;
 
     const credentialConfig = {
       type: 'external_account' as const,
@@ -205,6 +243,8 @@ async function createWorkloadIdentityAuthClient(
     const authClient = new GoogleAuth({
       credentials: credentialConfig,
       scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+      universeDomain,
+      projectId,
     });
 
     return authClient;
