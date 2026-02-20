@@ -360,9 +360,44 @@ describe('Wallet Balance Utilities', () => {
       stub(assetModule, 'getTickers').returns(mockTickers);
       stub(contractModule, 'getERC20Contract').rejects(new Error('Contract error'));
 
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const balances = await getMarkBalances(mockConfig, chainService, prometheus);
+      consoleErrorSpy.mockRestore();
+
       const domainBalances = balances.get(mockAssetConfig.tickerHash);
       expect(domainBalances?.get('1')?.toString()).toBe('0'); // Should return 0 for failed contract
+    });
+
+    it('should skip native tokens (e.g. APE on ApeChain)', async () => {
+      const nativeApeConfig = {
+        ownAddress: '0xOwnAddress',
+        chains: {
+          '33139': {
+            providers: ['https://apechain.drpc.org'],
+            assets: [
+              {
+                ...mockAssetConfig,
+                address: '0x7f9FBf9bDd3F4105C478b996B648FE6e828a1e98',
+                tickerHash: '0x26bca2ecad19e981c90a8c6efd8ee9856bbc5a2042259e6ee31e310fdc08d970',
+                isNative: true,
+              },
+            ],
+          },
+        },
+      } as unknown as MarkConfiguration;
+
+      const getERC20ContractStub = stub(contractModule, 'getERC20Contract');
+      stub(contractModule, 'createClient').returns({
+        getBytecode: stub().resolves('0x1234'),
+      } as unknown as ReturnType<typeof contractModule.createClient>);
+
+      stub(assetModule, 'getTickers').returns(['0x26bca2ecad19e981c90a8c6efd8ee9856bbc5a2042259e6ee31e310fdc08d970']);
+
+      const balances = await getMarkBalances(nativeApeConfig, chainService, prometheus);
+
+      expect(getERC20ContractStub.called).toBe(false); // Should not call getEvmBalance for native
+      const domainBalances = balances.get('0x26bca2ecad19e981c90a8c6efd8ee9856bbc5a2042259e6ee31e310fdc08d970');
+      expect(domainBalances?.get('33139')).toBeUndefined(); // Skipped - no balance entry
     });
   });
 

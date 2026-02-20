@@ -12,7 +12,7 @@ const DEFAULT_MAX_RETRIES = parseInt(process.env.EVENT_MAX_RETRIES || '10', 10);
  */
 export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Promise<void> {
   try {
-    const { everclear, logger } = adapters.processingContext;
+    const { everclear, logger, purchaseCache } = adapters.processingContext;
     const { eventQueue } = adapters;
 
     // Get cursor from Redis for persistence across restarts
@@ -32,6 +32,7 @@ export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Pr
     const { invoices, nextCursor } = result;
 
     if (invoices.length === 0) {
+      await eventQueue.setBackfillCursor(null);
       return;
     }
 
@@ -50,6 +51,15 @@ export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Pr
       if (alreadyExists) {
         // Event already exists, skip
         logger.debug('Invoice event already in queue', {
+          invoiceId,
+        });
+        continue;
+      }
+
+      // Skip if we already have a purchase for this invoice (already processed)
+      const existingPurchases = await purchaseCache.getPurchases([invoiceId]);
+      if (existingPurchases.length > 0) {
+        logger.debug('Invoice already has purchase, skipping', {
           invoiceId,
         });
         continue;
