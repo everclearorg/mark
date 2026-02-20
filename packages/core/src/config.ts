@@ -879,3 +879,8 @@ export const getDecimalsFromConfig = (ticker: string, domain: string, config: Ma
   }
   return asset.decimals;
 };
+
+export const getIsNativeFromConfig = (ticker: string, domain: string, config: MarkConfiguration): boolean => {
+  const asset = (config.chains[domain]?.assets ?? []).find((a) => a.tickerHash.toLowerCase() === ticker.toLowerCase());
+  return asset?.isNative ?? false;
+};
