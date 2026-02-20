@@ -32,6 +32,7 @@ export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Pr
     const { invoices, nextCursor } = result;
 
     if (invoices.length === 0) {
+      await eventQueue.setBackfillCursor(null);
       return;
     }
 

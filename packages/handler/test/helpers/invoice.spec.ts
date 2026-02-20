@@ -165,7 +165,7 @@ describe('Invoice Helpers', () => {
       expect(mockEventConsumer.addEvent).not.toHaveBeenCalled();
     });
 
-    it('should return early if no invoices', async () => {
+    it('should return early if no invoices and reset cursor', async () => {
       mockEverclear.fetchInvoicesByTxNonce.mockResolvedValue({
         invoices: [],
         nextCursor: null,
@@ -175,6 +175,7 @@ describe('Invoice Helpers', () => {
 
       expect(mockEventQueue.hasEvent).not.toHaveBeenCalled();
       expect(mockEventConsumer.addEvent).not.toHaveBeenCalled();
+      expect(mockEventQueue.setBackfillCursor).toHaveBeenCalledWith(null);
     });
   });
 
