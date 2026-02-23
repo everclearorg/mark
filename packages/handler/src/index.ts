@@ -258,6 +258,9 @@ async function runMaintenanceTasks(): Promise<void> {
     // Clean up expired earmarks
     await cleanupExpiredEarmarks(context);
 
+    // Clean up expired dead letter queue entries
+    await adapters.eventQueue.cleanupExpiredDeadLetterEntries();
+
     // Cleanup expired regular rebalance operations
     await cleanupExpiredRegularRebalanceOps(context);
 

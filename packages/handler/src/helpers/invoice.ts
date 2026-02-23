@@ -46,6 +46,13 @@ export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Pr
     for (const invoice of invoices) {
       const invoiceId = invoice.intent_id;
 
+      // Skip if we've already marked this invoice as invalid (avoids reprocessing)
+      const isInvalid = await eventQueue.isInvalidInvoice(invoiceId);
+      if (isInvalid) {
+        logger.debug('Invoice marked as invalid, skipping', { invoiceId });
+        continue;
+      }
+
       // Check if the event already exists in redis (pending or processing queue)
       const alreadyExists = await eventQueue.hasEvent(WebhookEventType.InvoiceEnqueued, invoiceId);
       if (alreadyExists) {

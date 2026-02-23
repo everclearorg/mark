@@ -28,6 +28,8 @@ describe('EventQueue', () => {
       multi: jest.fn(),
       exec: jest.fn(),
       set: (jest.fn() as jest.MockedFunction<any>).mockResolvedValue('OK'),
+      setex: (jest.fn() as jest.MockedFunction<any>).mockResolvedValue('OK'),
+      exists: (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(0),
     } as any;
 
     (Redis as jest.MockedClass<typeof Redis>).mockImplementation(() => mockRedis as any);
@@ -44,6 +46,66 @@ describe('EventQueue', () => {
   });
 
   describe('enqueueEvent', () => {
+    it('should throw error for empty event id', async () => {
+      const event: QueuedEvent = {
+        id: '',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      await expect(eventQueue.enqueueEvent(event)).rejects.toThrow('Event ID must be a non-empty string');
+    });
+
+    it('should throw error for invalid scheduledAt', async () => {
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: -100,
+        metadata: { source: 'test' },
+      };
+
+      await expect(eventQueue.enqueueEvent(event)).rejects.toThrow('Event scheduledAt must be a non-negative finite number');
+    });
+
+    it('should throw error for NaN scheduledAt', async () => {
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: NaN,
+        metadata: { source: 'test' },
+      };
+
+      await expect(eventQueue.enqueueEvent(event)).rejects.toThrow('Event scheduledAt must be a non-negative finite number');
+    });
+
+    it('should throw error for invalid priority', async () => {
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      await expect(eventQueue.enqueueEvent(event, 'INVALID' as EventPriority)).rejects.toThrow('Invalid priority');
+    });
+
     it('should enqueue a new event successfully', async () => {
       const event: QueuedEvent = {
         id: 'event-1',
@@ -235,6 +297,7 @@ describe('EventQueue', () => {
       const mockMulti: any = {
         zrem: jest.fn().mockReturnThis(),
         zadd: jest.fn().mockReturnThis(),
+        hdel: jest.fn().mockReturnThis(),
         exec: mockExec,
       };
       mockRedis.multi.mockReturnValue(mockMulti);
@@ -243,6 +306,68 @@ describe('EventQueue', () => {
 
       expect(result).toHaveLength(0);
       expect(mockMulti.zrem).toHaveBeenCalledTimes(2);
+      expect(mockMulti.hdel).toHaveBeenCalledTimes(2);
+    });
+
+    it('should return empty array for non-positive count', async () => {
+      const result = await eventQueue.dequeueEvents(WebhookEventType.InvoiceEnqueued, 0);
+      expect(result).toHaveLength(0);
+      expect(mockRedis.zrange).not.toHaveBeenCalled();
+    });
+
+    it('should return empty array for negative count', async () => {
+      const result = await eventQueue.dequeueEvents(WebhookEventType.InvoiceEnqueued, -5);
+      expect(result).toHaveLength(0);
+      expect(mockRedis.zrange).not.toHaveBeenCalled();
+    });
+
+    it('should cap count at 1000 when exceeded', async () => {
+      mockRedis.zrange.mockResolvedValue([]);
+
+      await eventQueue.dequeueEvents(WebhookEventType.InvoiceEnqueued, 5000);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith('Dequeue count exceeds maximum, capping at 1000', { requestedCount: 5000 });
+      // Verify zrange was called with the capped count (0 to 999 = 1000 items)
+      expect(mockRedis.zrange).toHaveBeenCalled();
+      const zrangeCall = (mockRedis.zrange as jest.Mock).mock.calls[0];
+      expect(zrangeCall[1]).toBe(0);
+      expect(zrangeCall[2]).toBe(999);
+    });
+
+    it('should handle corrupted JSON data gracefully', async () => {
+      const eventIds = ['event-1', 'event-2'];
+      const validEventData = JSON.stringify({
+        id: 'event-2',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now() - 1000,
+        metadata: { source: 'test' },
+      });
+
+      mockRedis.zrange.mockResolvedValue(eventIds);
+      mockRedis.hmget.mockResolvedValue(['invalid-json{', validEventData]);
+      const mockExec = jest.fn() as jest.MockedFunction<any>;
+      mockExec.mockResolvedValue([[null, 1]]);
+      const mockMulti: any = {
+        zrem: jest.fn().mockReturnThis(),
+        zadd: jest.fn().mockReturnThis(),
+        hdel: jest.fn().mockReturnThis(),
+        exec: mockExec,
+      };
+      mockRedis.multi.mockReturnValue(mockMulti);
+
+      const result = await eventQueue.dequeueEvents(WebhookEventType.InvoiceEnqueued, 10);
+
+      expect(result).toHaveLength(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to parse event data during dequeue, marking as orphaned',
+        expect.objectContaining({ eventId: 'event-1' })
+      );
+      // Verify corrupted data is cleaned up
+      expect(mockMulti.hdel).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -351,6 +476,49 @@ describe('EventQueue', () => {
     });
   });
 
+  describe('invalid invoice store', () => {
+    it('should add invalid invoice with default TTL', async () => {
+      await eventQueue.addInvalidInvoice('invoice-123');
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'event-queue:invalid-invoice:invoice-123',
+        7 * 24 * 60 * 60,
+        '1',
+      );
+      expect(mockLogger.debug).toHaveBeenCalledWith('Added invalid invoice to store', {
+        invoiceId: 'invoice-123',
+        ttl: 7 * 24 * 60 * 60,
+      });
+    });
+
+    it('should add invalid invoice with custom TTL', async () => {
+      await eventQueue.addInvalidInvoice('invoice-456', 3600);
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'event-queue:invalid-invoice:invoice-456',
+        3600,
+        '1',
+      );
+    });
+
+    it('should return true when invoice is invalid', async () => {
+      (mockRedis.exists as jest.Mock<() => Promise<number>>).mockResolvedValue(1);
+
+      const result = await eventQueue.isInvalidInvoice('invoice-789');
+
+      expect(result).toBe(true);
+      expect(mockRedis.exists).toHaveBeenCalledWith('event-queue:invalid-invoice:invoice-789');
+    });
+
+    it('should return false when invoice is not invalid', async () => {
+      (mockRedis.exists as jest.Mock<() => Promise<number>>).mockResolvedValue(0);
+
+      const result = await eventQueue.isInvalidInvoice('invoice-999');
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe('getQueueDepths', () => {
     it('should return queue depths for all event types', async () => {
       mockRedis.zcard = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(5);
@@ -365,6 +533,40 @@ describe('EventQueue', () => {
         expect(result[eventType].pending).toBe(5);
         expect(result[eventType].processing).toBe(5);
       }
+    });
+  });
+
+  describe('cleanupExpiredDeadLetterEntries', () => {
+    it('should remove expired entries from dead letter queue', async () => {
+      const expiredEventIds = ['event-1', 'event-2'];
+      mockRedis.zrangebyscore = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(expiredEventIds);
+      const mockExec = jest.fn() as jest.MockedFunction<any>;
+      mockExec.mockResolvedValue([[null, 1], [null, 1], [null, 1], [null, 1]]);
+      const mockMulti: any = {
+        zrem: jest.fn().mockReturnThis(),
+        hdel: jest.fn().mockReturnThis(),
+        exec: mockExec,
+      };
+      mockRedis.multi.mockReturnValue(mockMulti);
+
+      const result = await eventQueue.cleanupExpiredDeadLetterEntries();
+
+      expect(result).toBe(2);
+      expect(mockMulti.zrem).toHaveBeenCalledTimes(2);
+      expect(mockMulti.hdel).toHaveBeenCalledTimes(2);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Cleaned up expired dead letter queue entries',
+        expect.objectContaining({ count: 2 })
+      );
+    });
+
+    it('should return 0 if no expired entries found', async () => {
+      mockRedis.zrangebyscore = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue([]);
+
+      const result = await eventQueue.cleanupExpiredDeadLetterEntries();
+
+      expect(result).toBe(0);
+      expect(mockRedis.multi).not.toHaveBeenCalled();
     });
   });
 });

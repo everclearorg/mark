@@ -1,6 +1,6 @@
 import { jsonifyError, Logger } from '@mark/logger';
 import { EventQueue, QueuedEvent } from '#/queue';
-import { EventProcessingResult, EventProcessor } from '#/processor';
+import { EventProcessingResult, EventProcessor, EventProcessingResultType } from '#/processor';
 import { WebhookEventType } from '@mark/core';
 
 // Debounce delay for scheduling pending work (prevents unbounded task spawning)
@@ -14,6 +14,8 @@ export class EventConsumer {
   private readonly activeCounts: Record<WebhookEventType, number> = {} as Record<WebhookEventType, number>;
   // Debounce timers for pending work per event type (prevents unbounded async spawning)
   private readonly pendingWorkTimers: Map<WebhookEventType, NodeJS.Timeout> = new Map();
+  // Tracks whether pending work processing is currently running for each event type (prevents race conditions)
+  private readonly pendingWorkInProgress: Set<WebhookEventType> = new Set();
 
   constructor(
     private readonly queue: EventQueue,
@@ -112,34 +114,13 @@ export class EventConsumer {
       return;
     }
 
-    // Process immediately with proper error handling
-    this.processEventSafely(event);
-  }
-
-  /**
-   * Process an event with proper error handling for fire-and-forget scenarios.
-   * Ensures that errors trigger retry logic instead of being silently logged.
-   */
-  private processEventSafely(event: QueuedEvent): void {
-    this.processEvent(event).catch(async (e) => {
-      const error = e instanceof Error ? e : new Error(String(e));
-      this.logger.error('Unhandled error processing event, scheduling retry', {
-        eventId: event.id,
+    // Process immediately (fire-and-forget; processEvent handles errors internally)
+    this.processEvent(event).catch((e) => {
+      this.logger.error('Error processing event', {
         eventType: event.type,
-        retryCount: event.retryCount,
+        event,
         error: jsonifyError(e),
       });
-
-      // Trigger retry logic to ensure event is not lost
-      try {
-        await this.handleRetry(event, error, 60000);
-      } catch (retryError) {
-        this.logger.error('Failed to schedule retry for event', {
-          eventId: event.id,
-          eventType: event.type,
-          error: jsonifyError(retryError),
-        });
-      }
     });
   }
 
@@ -173,7 +154,13 @@ export class EventConsumer {
         }
 
         for (const event of events) {
-          this.processEventSafely(event);
+          this.processEvent(event).catch((e) => {
+            this.logger.error('Error processing pending event', {
+              eventType,
+              event,
+              error: jsonifyError(e),
+            });
+          });
         }
       } catch (e) {
         this.logger.error('Error processing pending events', {
@@ -188,12 +175,13 @@ export class EventConsumer {
   /**
    * Process a single event
    */
-  private async processEvent(event: QueuedEvent): Promise<EventProcessingResult> {
+  private async processEvent(event: QueuedEvent): Promise<void> {
     this.totalActive++;
     this.activeCounts[event.type]++;
 
     // Process event and get a result, then decrement counters, and then handle retry/acknowledge
     let result: EventProcessingResult;
+    const startTime = Date.now();
     try {
       this.logger.debug('Processing event', {
         event,
@@ -212,35 +200,59 @@ export class EventConsumer {
         default:
           throw new Error(`Unknown event type: ${event.type}`);
       }
+    } catch (e) {
+      this.logger.error('Unhandled error processing event, scheduling retry', {
+        eventId: event.id,
+        eventType: event.type,
+        retryCount: event.retryCount,
+        error: jsonifyError(e),
+      });
+      result = {
+        result: EventProcessingResultType.Failure,
+        eventId: event.id,
+        processedAt: Date.now(),
+        duration: Date.now() - startTime,
+        error: e instanceof Error ? e.message : 'Unknown error',
+        retryAfter: 60000,
+      };
     } finally {
       // Decrement active processing counters
       this.totalActive = Math.max(0, this.totalActive - 1);
       const updatedCount = this.activeCounts[event.type] - 1;
       this.activeCounts[event.type] = Math.max(0, updatedCount);
+
+      // Handle processing result after counters are decremented
+      // This prevents the race condition where the event is removed from the processing queue
+      // while counters still show it as active
+      await this.handleProcessingResult(event, result!);
+
+      this.schedulePendingWork(event.type);
     }
-
-    // Handle processing result after counters are decremented
-    // This prevents the race condition where the event is removed from the processing queue
-    // while counters still show it as active
-    await this.handleProcessingResult(event, result);
-
-    this.schedulePendingWork(event.type);
-
-    return result;
   }
 
   /**
    * Handle the result of event processing
    */
   private async handleProcessingResult(event: QueuedEvent, result: EventProcessingResult): Promise<void> {
-    if (result.success) {
+    if (result.result === EventProcessingResultType.Failure) {
+      try {
+        await this.handleRetry(event, new Error(result.error || 'Processing failed'), result.retryAfter);
+      } catch (e) {
+        this.logger.error('Failed to schedule retry for event', {
+          eventId: event.id,
+          eventType: event.type,
+          error: jsonifyError(e),
+        });
+      }
+    } else {
+      if (result.result === EventProcessingResultType.Invalid) {
+        await this.queue.addInvalidInvoice(event.id);
+      }
       await this.queue.acknowledgeProcessedEvent(event);
       this.logger.info('Event processed successfully', {
         event,
         duration: result.duration,
       });
-    } else {
-      await this.handleRetry(event, new Error(result.error || 'Processing failed'), result.retryAfter);
     }
   }
 
@@ -278,15 +290,17 @@ export class EventConsumer {
   /**
    * Schedule pending work for an event type with debouncing.
    * Prevents unbounded async task spawning by coalescing rapid calls.
+   * Uses a lock to prevent race conditions between timer expiration and new scheduling.
    */
   private schedulePendingWork(eventType: WebhookEventType): void {
-    // If there's already a pending timer for this event type, don't schedule another
-    if (this.pendingWorkTimers.has(eventType)) {
+    // If there's already a pending timer or work in progress for this event type, don't schedule another
+    if (this.pendingWorkTimers.has(eventType) || this.pendingWorkInProgress.has(eventType)) {
       return;
     }
 
     // Schedule processing after a short debounce delay
     const timer = setTimeout(() => {
+      // Delete timer reference first
       this.pendingWorkTimers.delete(eventType);
 
       // Only process if we're still running
@@ -294,24 +308,33 @@ export class EventConsumer {
         return;
       }
 
-      this.processPendingEventsForType(eventType).catch((e) => {
-        this.logger.error('Error processing pending events after debounce', {
-          eventType,
-          error: jsonifyError(e),
+      // Mark work as in progress to prevent concurrent scheduling
+      this.pendingWorkInProgress.add(eventType);
+
+      this.processPendingEventsForType(eventType)
+        .catch((e) => {
+          this.logger.error('Error processing pending events after debounce', {
+            eventType,
+            error: jsonifyError(e),
+          });
+        })
+        .finally(() => {
+          // Clear the in-progress flag when done
+          this.pendingWorkInProgress.delete(eventType);
         });
-      });
     }, PENDING_WORK_DEBOUNCE_MS);
 
     this.pendingWorkTimers.set(eventType, timer);
   }
 
   /**
-   * Clear all pending work timers (called during shutdown)
+   * Clear all pending work timers and in-progress flags (called during shutdown)
    */
   private clearPendingWorkTimers(): void {
     for (const timer of this.pendingWorkTimers.values()) {
       clearTimeout(timer);
     }
     this.pendingWorkTimers.clear();
+    this.pendingWorkInProgress.clear();
   }
 }
