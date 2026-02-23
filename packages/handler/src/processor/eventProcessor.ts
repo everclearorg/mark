@@ -218,6 +218,16 @@ export class EventProcessor {
           error: jsonifyError(error),
           duration: getTimeSeconds() - start,
         });
+        // Do not continue without earmark state — an earmark may exist and
+        // processing without it could skip the designated purchase chain or
+        // attempt a purchase while rebalancing is in-flight.
+        return {
+          result: EventProcessingResultType.Failure,
+          eventId: event.id,
+          processedAt: Date.now(),
+          duration: Date.now() - startTime,
+          retryAfter: 30000,
+        };
       }
 
       const isPaused = await purchaseCache.isPaused();
