@@ -531,6 +531,61 @@ describe('EventProcessor', () => {
       expect(result.error).toBe('Unexpected error');
       expect(result.retryAfter).toBe(60000);
     });
+
+    it('should return retry when processPendingEarmark fails with DB error', async () => {
+      const event = createInvoiceEvent('invoice-1');
+      const invoice = createMockInvoice();
+      const { processPendingEarmark } = require('#/helpers');
+
+      mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
+      mockEverclear.getMinAmounts.mockResolvedValue({
+        invoiceAmount: '1000',
+        amountAfterDiscount: '900',
+        discountBps: '100',
+        custodiedAmounts: { '1': '0' },
+        minAmounts: { '1': '100' },
+      });
+      processPendingEarmark.mockRejectedValue(new Error('Connection terminated due to connection timeout'));
+
+      const result = await eventProcessor.processInvoiceEnqueued(event);
+
+      expect(result.result).toBe(EventProcessingResultType.Failure);
+      expect(result.retryAfter).toBe(30000);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to process pending earmark for invoice',
+        expect.objectContaining({
+          invoiceId: 'invoice-1',
+        }),
+      );
+    });
+
+    it('should return retry when getEarmarks fails after processPendingEarmark succeeds', async () => {
+      const event = createInvoiceEvent('invoice-1');
+      const invoice = createMockInvoice();
+      const { processPendingEarmark } = require('#/helpers');
+
+      mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
+      mockEverclear.getMinAmounts.mockResolvedValue({
+        invoiceAmount: '1000',
+        amountAfterDiscount: '900',
+        discountBps: '100',
+        custodiedAmounts: { '1': '0' },
+        minAmounts: { '1': '100' },
+      });
+      processPendingEarmark.mockResolvedValue(undefined);
+      mockDatabase.getEarmarks.mockRejectedValue(new Error('Connection terminated due to connection timeout'));
+
+      const result = await eventProcessor.processInvoiceEnqueued(event);
+
+      expect(result.result).toBe(EventProcessingResultType.Failure);
+      expect(result.retryAfter).toBe(30000);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to process pending earmark for invoice',
+        expect.objectContaining({
+          invoiceId: 'invoice-1',
+        }),
+      );
+    });
   });
 
   describe('processSettlementEnqueued', () => {
