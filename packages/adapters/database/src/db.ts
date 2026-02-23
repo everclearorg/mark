@@ -44,7 +44,7 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
 
   const poolConfig: PoolConfig = {
     connectionString,
-    max: config.maxConnections || 20,
+    max: config.maxConnections || 40,
     idleTimeoutMillis: config.idleTimeoutMillis || 30000,
     connectionTimeoutMillis: config.connectionTimeoutMillis || 2000,
   };
