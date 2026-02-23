@@ -1,6 +1,6 @@
 import { jsonifyError, Logger } from '@mark/logger';
 import { EventQueue, QueuedEvent } from '#/queue';
-import { EventProcessingResult, EventProcessor } from '#/processor';
+import { EventProcessingResult, EventProcessor, EventProcessingResultType } from '#/processor';
 import { WebhookEventType } from '@mark/core';
 
 // Debounce delay for scheduling pending work (prevents unbounded task spawning)
@@ -208,7 +208,7 @@ export class EventConsumer {
         error: jsonifyError(e),
       });
       result = {
-        success: false,
+        result: EventProcessingResultType.Failure,
         eventId: event.id,
         processedAt: Date.now(),
         duration: Date.now() - startTime,
@@ -234,13 +234,7 @@ export class EventConsumer {
    * Handle the result of event processing
    */
   private async handleProcessingResult(event: QueuedEvent, result: EventProcessingResult): Promise<void> {
-    if (result.success) {
-      await this.queue.acknowledgeProcessedEvent(event);
-      this.logger.info('Event processed successfully', {
-        event,
-        duration: result.duration,
-      });
-    } else {
+    if (result.result === EventProcessingResultType.Failure) {
       try {
         await this.handleRetry(event, new Error(result.error || 'Processing failed'), result.retryAfter);
       } catch (e) {
@@ -250,6 +244,15 @@ export class EventConsumer {
           error: jsonifyError(e),
         });
       }
+    } else {
+      if (result.result === EventProcessingResultType.Invalid) {
+        await this.queue.addInvalidInvoice(event.id);
+      }
+      await this.queue.acknowledgeProcessedEvent(event);
+      this.logger.info('Event processed successfully', {
+        event,
+        duration: result.duration,
+      });
     }
   }
 

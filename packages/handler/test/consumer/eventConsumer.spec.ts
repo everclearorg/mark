@@ -1,9 +1,40 @@
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { EventConsumer } from '#/consumer';
 import { EventQueue, QueuedEvent, EventPriority } from '#/queue';
-import { EventProcessor } from '#/processor';
+import { EventProcessor, EventProcessingResultType } from '#/processor';
 import { WebhookEventType, InvoiceEnqueuedEvent } from '@mark/core';
 import { Logger } from '@mark/logger';
+
+jest.mock('#/helpers', () => ({
+  processPendingEarmark: jest.fn(),
+  getTimeSeconds: jest.fn(() => Math.floor(Date.now() / 1000)),
+  splitAndSendIntents: jest.fn(),
+}));
+
+jest.mock('@mark/poller/src/helpers', () => ({
+  getMarkBalances: jest.fn(),
+  getCustodiedBalances: jest.fn(),
+  getSupportedDomainsForTicker: jest.fn(),
+  isXerc20Supported: jest.fn(),
+}));
+
+jest.mock('@mark/poller/src/invoice/validation', () => ({
+  isValidInvoice: jest.fn(),
+}));
+
+jest.mock('@mark/poller/src/rebalance/onDemand', () => ({
+  cleanupStaleEarmarks: jest.fn(),
+  cleanupCompletedEarmarks: jest.fn(),
+}));
+
+jest.mock('@mark/rebalance', () => ({
+  RebalanceAdapter: jest.fn(),
+  RebalanceTransactionMemo: {},
+  CCIPBridgeAdapter: jest.fn(),
+  CCIP_ROUTER_ADDRESSES: {},
+  CCIP_SUPPORTED_CHAINS: {},
+  CHAIN_SELECTORS: {},
+}));
 
 describe('EventConsumer', () => {
   let eventConsumer: EventConsumer;
@@ -21,6 +52,7 @@ describe('EventConsumer', () => {
       acknowledgeProcessedEvent: jest.fn(),
       moveToDeadLetterQueue: jest.fn(),
       hasEvent: jest.fn(),
+      addInvalidInvoice: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
     } as any;
 
     mockProcessor = {
@@ -107,7 +139,7 @@ describe('EventConsumer', () => {
 
       mockQueue.enqueueEvent.mockResolvedValue(false);
       (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mockResolvedValue({
-        success: true,
+        result: EventProcessingResultType.Success,
         eventId: 'event-1',
         processedAt: Date.now(),
         duration: 100,
@@ -116,6 +148,34 @@ describe('EventConsumer', () => {
       await eventConsumer.addEvent(event);
 
       expect(mockQueue.enqueueEvent).toHaveBeenCalledWith(event, EventPriority.NORMAL);
+    });
+
+    it('should store invalid invoice when result is Invalid', async () => {
+      const event: QueuedEvent = {
+        id: 'invoice-123',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Invalid,
+        eventId: 'invoice-123',
+        processedAt: Date.now(),
+        duration: 50,
+      });
+
+      await eventConsumer.addEvent(event);
+      // Wait for async processing to complete (processEventSafely is fire-and-forget)
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockQueue.addInvalidInvoice).toHaveBeenCalledWith('invoice-123');
+      expect(mockQueue.acknowledgeProcessedEvent).toHaveBeenCalledWith(event);
     });
 
     it('should not process if event already exists in queue', async () => {

@@ -14,8 +14,26 @@ import { InvoiceLabels } from '@mark/prometheus';
 import { QueuedEvent } from '#/queue';
 import { processPendingEarmark, getTimeSeconds, splitAndSendIntents } from '#/helpers';
 
+// Permanent validation reasons - invoice won't become valid.
+// We store these in the invalid invoice cache.
+const PERMANENT_INVALID_REASONS = new Set([
+  InvalidPurchaseReasons.InvalidAmount,
+  InvalidPurchaseReasons.InvalidFormat,
+  InvalidPurchaseReasons.InvalidOwner,
+  InvalidPurchaseReasons.InvalidDestinations,
+  InvalidPurchaseReasons.InvalidTickers,
+  InvalidPurchaseReasons.InvalidTokenConfiguration,
+  InvalidPurchaseReasons.DestinationXerc20,
+]);
+
+export enum EventProcessingResultType {
+  Success = 'Success',
+  Failure = 'Failure',
+  Invalid = 'Invalid',
+}
+
 export interface EventProcessingResult {
-  success: boolean;
+  result: EventProcessingResultType;
   eventId: string;
   processedAt: number;
   duration: number;
@@ -57,7 +75,50 @@ export class EventProcessor {
         });
         await onDemand.cleanupStaleEarmarks([event.id], this.processingContext);
         return {
-          success: true,
+          result: EventProcessingResultType.Success,
+          eventId: event.id,
+          processedAt: Date.now(),
+          duration: Date.now() - startTime,
+        };
+      }
+
+      // Validate invoice early - before expensive operations
+      const ticker = invoice.ticker_hash;
+      const labels: InvoiceLabels = { origin: invoice.origin, id: invoice.intent_id, ticker };
+      const validationReason = isValidInvoice(invoice, config, start);
+      if (validationReason) {
+        logger.warn('Invoice is invalid, skipping.', {
+          requestId,
+          invoiceId: event.id,
+          ticker,
+          invoice,
+          reason: validationReason,
+          duration: getTimeSeconds() - start,
+        });
+        prometheus.recordInvalidPurchase(validationReason, labels);
+        const invalid = (PERMANENT_INVALID_REASONS as Set<string>).has(validationReason);
+        return {
+          result: invalid ? EventProcessingResultType.Invalid : EventProcessingResultType.Failure,
+          eventId: event.id,
+          processedAt: Date.now(),
+          duration: Date.now() - startTime,
+          retryAfter: 60000,
+        };
+      }
+
+      // Skip this invoice if XERC20 is supported
+      if (await isXerc20Supported(invoice.ticker_hash, invoice.destinations, config)) {
+        logger.info('XERC20 strategy enabled for invoice destination, skipping', {
+          requestId,
+          invoiceId: event.id,
+          destinations: invoice.destinations,
+          invoice,
+          ticker: invoice.ticker_hash,
+          duration: getTimeSeconds() - start,
+        });
+        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.DestinationXerc20, labels);
+        return {
+          result: EventProcessingResultType.Invalid,
           eventId: event.id,
           processedAt: Date.now(),
           duration: Date.now() - startTime,
@@ -65,8 +126,6 @@ export class EventProcessor {
       }
 
       // Get the minimum amounts for the invoice
-      const ticker = invoice.ticker_hash;
-      const labels: InvoiceLabels = { origin: invoice.origin, id: invoice.intent_id, ticker };
       let minAmounts: Record<string, string>;
       try {
         const response = await everclear.getMinAmounts(event.id);
@@ -88,7 +147,7 @@ export class EventProcessor {
         });
         prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, labels);
         return {
-          success: false,
+          result: EventProcessingResultType.Failure,
           eventId: event.id,
           processedAt: Date.now(),
           duration: Date.now() - startTime,
@@ -116,7 +175,7 @@ export class EventProcessor {
               ticker: invoice.ticker_hash,
             });
             return {
-              success: false,
+              result: EventProcessingResultType.Failure,
               eventId: event.id,
               processedAt: Date.now(),
               duration: Date.now() - startTime,
@@ -138,7 +197,7 @@ export class EventProcessor {
               originalMinAmounts: Object.keys(minAmounts),
             });
             return {
-              success: false,
+              result: EventProcessingResultType.Failure,
               eventId: event.id,
               processedAt: Date.now(),
               duration: Date.now() - startTime,
@@ -167,50 +226,11 @@ export class EventProcessor {
           invoiceId: event.id,
         });
         return {
-          success: false,
+          result: EventProcessingResultType.Failure,
           eventId: event.id,
           processedAt: Date.now(),
           duration: Date.now() - startTime,
           retryAfter: 60000,
-        };
-      }
-
-      // Validate invoice
-      const validationReason = isValidInvoice(invoice, config, start);
-      if (validationReason) {
-        logger.warn('Invoice is invalid, skipping.', {
-          requestId,
-          invoiceId: event.id,
-          ticker,
-          invoice,
-          reason: validationReason,
-          duration: getTimeSeconds() - start,
-        });
-        prometheus.recordInvalidPurchase(validationReason, labels);
-        return {
-          success: true,
-          eventId: event.id,
-          processedAt: Date.now(),
-          duration: Date.now() - startTime,
-        };
-      }
-
-      // Skip this invoice if XERC20 is supported
-      if (await isXerc20Supported(invoice.ticker_hash, invoice.destinations, config)) {
-        logger.info('XERC20 strategy enabled for invoice destination, skipping', {
-          requestId,
-          invoiceId: event.id,
-          destinations: invoice.destinations,
-          invoice,
-          ticker: invoice.ticker_hash,
-          duration: getTimeSeconds() - start,
-        });
-        prometheus.recordInvalidPurchase(InvalidPurchaseReasons.DestinationXerc20, labels);
-        return {
-          success: true,
-          eventId: event.id,
-          processedAt: Date.now(),
-          duration: Date.now() - startTime,
         };
       }
 
@@ -252,7 +272,7 @@ export class EventProcessor {
       });
 
       // Skip if we already have a purchase for this invoice
-      if (cachedPurchases.find(({ target }) => target.intent_id === event.id)) {
+      if (cachedPurchases.length > 0) {
         logger.debug('Found existing purchase, skipping invoice', {
           requestId,
           invoiceId: event.id,
@@ -260,7 +280,7 @@ export class EventProcessor {
         });
         prometheus.recordInvalidPurchase(InvalidPurchaseReasons.PendingPurchaseRecord, labels);
         return {
-          success: true,
+          result: EventProcessingResultType.Success,
           eventId: event.id,
           processedAt: Date.now(),
           duration: Date.now() - startTime,
@@ -382,7 +402,7 @@ export class EventProcessor {
         });
 
         return {
-          success: false,
+          result: EventProcessingResultType.Failure,
           eventId: event.id,
           processedAt: Date.now(),
           duration: Date.now() - startTime,
@@ -399,7 +419,7 @@ export class EventProcessor {
       });
 
       return {
-        success: true,
+        result: EventProcessingResultType.Success,
         eventId: event.id,
         processedAt: Date.now(),
         duration: Date.now() - startTime,
@@ -412,7 +432,7 @@ export class EventProcessor {
       });
 
       return {
-        success: false,
+        result: EventProcessingResultType.Failure,
         eventId: event.id,
         processedAt: Date.now(),
         duration: Date.now() - startTime,
@@ -461,7 +481,7 @@ export class EventProcessor {
       });
 
       return {
-        success: true,
+        result: EventProcessingResultType.Success,
         eventId: event.id,
         processedAt: Date.now(),
         duration: Date.now() - startTime,
@@ -473,7 +493,7 @@ export class EventProcessor {
       });
 
       return {
-        success: false,
+        result: EventProcessingResultType.Failure,
         eventId: event.id,
         processedAt: Date.now(),
         duration: Date.now() - startTime,
