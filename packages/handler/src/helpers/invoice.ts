@@ -1,4 +1,4 @@
-import { SettlementEnqueuedEvent, WebhookEventType, InvoiceEnqueuedEvent, Invoice, isNotFoundError } from '@mark/core';
+import { WebhookEventType, Invoice, isNotFoundError } from '@mark/core';
 import { jsonifyError } from '@mark/logger';
 import { InvoiceHandlerAdapters } from '#/init';
 import { EventPriority, QueuedEvent } from '#/queue';
@@ -72,46 +72,10 @@ export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Pr
         continue;
       }
 
-      // Create a minimal InvoiceEnqueuedEvent with only invoiceId
-      const invoiceEvent: InvoiceEnqueuedEvent = {
-        id: invoiceId, // Use invoiceId as event id
-        invoice: {
-          id: invoiceId,
-          intent: {
-            id: invoiceId,
-            queueIdx: '0',
-            status: 'ADDED',
-            initiator: '',
-            receiver: '',
-            inputAsset: '',
-            outputAsset: '',
-            maxFee: '0',
-            origin: '',
-            nonce: '0',
-            timestamp: '0',
-            ttl: '0',
-            amount: '0',
-            destinations: [],
-            data: '',
-          },
-          tickerHash: '',
-          amount: '0',
-          owner: '',
-          entryEpoch: '0',
-        },
-        transactionHash: '',
-        timestamp: '0',
-        gasPrice: '0',
-        gasLimit: '0',
-        blockNumber: '0',
-        txOrigin: '',
-        txNonce: '0',
-      };
-
       const queuedEvent: QueuedEvent = {
-        id: invoiceId, // Use invoiceId as event ID
+        id: invoiceId,
         type: WebhookEventType.InvoiceEnqueued,
-        data: invoiceEvent,
+        data: { id: invoiceId },
         priority: EventPriority.NORMAL,
         retryCount: 0,
         maxRetries: DEFAULT_MAX_RETRIES,
@@ -193,29 +157,10 @@ export async function checkSettledInvoices(adapters: InvoiceHandlerAdapters): Pr
       });
 
       for (const invoiceId of settledInvoiceIds) {
-        // Create minimal SettlementEnqueuedEvent with only invoiceId
-        const settlementEvent: SettlementEnqueuedEvent = {
-          id: invoiceId, // Use invoiceId as event id
-          intentId: invoiceId,
-          domain: '0',
-          entryEpoch: '0',
-          asset: '0x',
-          amount: '0',
-          updateVirtualBalance: false, // Default value
-          owner: '0x',
-          transactionHash: '0x',
-          timestamp: '0',
-          gasPrice: '0',
-          gasLimit: '0',
-          blockNumber: '0',
-          txOrigin: '0x',
-          txNonce: '0',
-        };
-
         const queuedEvent: QueuedEvent = {
           id: invoiceId,
           type: WebhookEventType.SettlementEnqueued,
-          data: settlementEvent,
+          data: { id: invoiceId },
           priority: EventPriority.NORMAL,
           retryCount: 0,
           maxRetries: DEFAULT_MAX_RETRIES,
