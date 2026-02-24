@@ -84,7 +84,11 @@ export class EventQueue {
    * @returns true if the event was already in the pending or processing queue, false otherwise
    * @throws Error if event validation fails
    */
-  async enqueueEvent(event: QueuedEvent, priority: EventPriority = EventPriority.NORMAL): Promise<boolean> {
+  async enqueueEvent(
+    event: QueuedEvent,
+    priority: EventPriority = EventPriority.NORMAL,
+    forceUpdate = false,
+  ): Promise<boolean> {
     // Input validation
     if (!event.id || typeof event.id !== 'string' || event.id.trim() === '') {
       throw new Error('Event ID must be a non-empty string');
@@ -110,6 +114,18 @@ export class EventQueue {
     ]);
 
     const alreadyExists = isInPending !== null || isInProcessing !== null;
+
+    // If the event already exists and this is not a forced update (e.g. from retry logic),
+    // skip to avoid overwriting event data (notably retryCount) with fresh values.
+    if (alreadyExists && !forceUpdate) {
+      this.logger.debug('Event already in queue, skipping enqueue', {
+        eventId: event.id,
+        eventType: event.type,
+        isInPending: isInPending !== null,
+        isInProcessing: isInProcessing !== null,
+      });
+      return true;
+    }
 
     // Use scheduledAt for FIFO ordering
     // Lower score = older event = processed first
