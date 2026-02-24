@@ -283,8 +283,8 @@ export class EventConsumer {
     event.retryCount = retryCount;
     event.scheduledAt = Date.now() + (retryAfter ?? 0);
 
-    // Re-enqueue event
-    await this.queue.enqueueEvent(event, event.priority);
+    // Re-enqueue event with forceUpdate to preserve the incremented retryCount
+    await this.queue.enqueueEvent(event, event.priority, true);
   }
 
   /**

@@ -1,6 +1,5 @@
 import { timingSafeEqual } from 'crypto';
 import { Logger, jsonifyError } from '@mark/logger';
-import { WebhookPayload, InvoiceEnqueuedWebhookPayload, SettlementEnqueuedWebhookPayload } from './types';
 import { WebhookEventProcessor, WebhookEventType } from '@mark/core';
 
 interface WebhookHandlerResult {
@@ -12,6 +11,14 @@ interface WebhookResponse {
   message: string;
   processed: boolean;
   webhookId: string;
+}
+
+/**
+ * Convert base64-encoded bytes to 0x-prefixed hex string.
+ * Mirror pipeline payloads encode byte fields (IDs, hashes) in base64.
+ */
+function base64ToHex(b64: string): string {
+  return '0x' + Buffer.from(b64, 'base64').toString('hex');
 }
 
 export class WebhookHandler {
@@ -48,8 +55,8 @@ export class WebhookHandler {
         };
       }
 
-      const payload: WebhookPayload = JSON.parse(rawBody);
-      const result = await this.routeWebhook(payload);
+      const payload = JSON.parse(rawBody);
+      const result = await this.routeWebhook(payload, webhookName);
 
       return {
         statusCode: 200,
@@ -68,33 +75,42 @@ export class WebhookHandler {
   }
 
   /**
-   * Route webhook to the appropriate handler
+   * Route Mirror pipeline webhook payload to the appropriate handler.
+   * Mirror sends flat subgraph entity data with base64-encoded byte fields.
+   * Only the entity ID is needed — full data is fetched from the Everclear API during processing.
    */
-  private async routeWebhook(payload: WebhookPayload): Promise<WebhookResponse> {
-    if (!payload.data.new) {
-      return { message: 'No new data in webhook payload', processed: false, webhookId: payload.webhook_id };
-    }
+  private async routeWebhook(payload: Record<string, unknown>, webhookName?: string): Promise<WebhookResponse> {
+    const webhookId = (payload._gs_gid as string) || `mirror-${Date.now()}`;
 
-    switch (payload.webhook_name) {
-      case 'invoice-enqueued':
-        const invoiceEvent = (payload as InvoiceEnqueuedWebhookPayload).data.new!;
-        invoiceEvent.id = invoiceEvent.invoice.id;
-        await this.processor.processEvent(payload.webhook_id, WebhookEventType.InvoiceEnqueued, invoiceEvent);
+    let webhookType: WebhookEventType;
+    switch (webhookName) {
+      case 'invoice-enqueued': {
+        webhookType = WebhookEventType.InvoiceEnqueued;
         break;
-      case 'settlement-enqueued':
-        const settlementEvent = (payload as SettlementEnqueuedWebhookPayload).data.new!;
-        settlementEvent.id = settlementEvent.intentId;
-        await this.processor.processEvent(payload.webhook_id, WebhookEventType.SettlementEnqueued, settlementEvent);
+      }
+      case 'settlement-enqueued': {
+        webhookType = WebhookEventType.SettlementEnqueued;
         break;
+      }
       default:
-        return {
-          message: `Unknown webhook type ${payload.webhook_name}`,
-          processed: false,
-          webhookId: payload.webhook_id,
-        };
+        return { message: `Unknown webhook type: ${webhookName}`, processed: false, webhookId };
     }
 
-    return { message: 'Webhook payload processed', processed: true, webhookId: payload.webhook_id };
+    if (!payload.intent) {
+      return { message: 'Missing intent field in payload', processed: false, webhookId };
+    }
+
+    const invoiceId = base64ToHex(payload.intent as string);
+    this.logger.info('Processing webhook', {
+      webhookId,
+      webhookType,
+      invoiceId,
+      blockNumber: payload.block_number,
+    });
+
+    await this.processor.processEvent(invoiceId, webhookType, { id: invoiceId });
+
+    return { message: 'Webhook processed', processed: true, webhookId };
   }
 
   /**

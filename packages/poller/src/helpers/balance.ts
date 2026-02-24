@@ -95,10 +95,16 @@ export const getMarkBalances = async (
 ): Promise<Map<string, Map<string, bigint>>> => {
   const tickers = getTickers(config);
 
-  const markBalances = new Map<string, Map<string, bigint>>();
+  const addresses = await chainService.getAddress();
+  const results = await Promise.all(
+    tickers.map(async (ticker) => {
+      const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus, addresses);
+      return { ticker, tickerBalances };
+    }),
+  );
 
-  for (const ticker of tickers) {
-    const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus);
+  const markBalances = new Map<string, Map<string, bigint>>();
+  for (const { ticker, tickerBalances } of results) {
     markBalances.set(ticker, tickerBalances);
   }
 
@@ -114,11 +120,12 @@ export const getMarkBalancesForTicker = async (
   config: MarkConfiguration,
   chainService: ChainService,
   prometheus: PrometheusAdapter,
+  addresses?: Record<string, string>,
 ): Promise<Map<string, bigint>> => {
   const { chains } = config;
 
-  // Get all addresses once for TVM chains
-  const addresses = await chainService.getAddress();
+  // Resolve addresses if not provided by caller
+  const resolvedAddresses = addresses ?? (await chainService.getAddress());
 
   const balancePromises: Array<{
     domain: string;
@@ -137,7 +144,7 @@ export const getMarkBalancesForTicker = async (
     if (!tokenAddr || !decimals || tokenAddr === zeroAddress || isNative) {
       continue;
     }
-    const address = isSvm ? config.ownSolAddress : isTvm ? addresses[domain] : config.ownAddress;
+    const address = isSvm ? config.ownSolAddress : isTvm ? resolvedAddresses[domain] : config.ownAddress;
     const balancePromise = isSvm
       ? getSvmBalance(config, chainService, domain, address, tokenAddr, decimals, prometheus)
       : isTvm
