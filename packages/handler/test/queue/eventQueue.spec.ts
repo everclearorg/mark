@@ -171,7 +171,7 @@ describe('EventQueue', () => {
       expect(mockMulti.zadd).toHaveBeenCalled();
     });
 
-    it('should return true if event already exists in pending queue', async () => {
+    it('should return true and skip writes if event already exists in pending queue', async () => {
       const event: QueuedEvent = {
         id: 'event-1',
         type: WebhookEventType.InvoiceEnqueued,
@@ -184,22 +184,15 @@ describe('EventQueue', () => {
       };
 
       mockRedis.zscore.mockResolvedValueOnce('123456').mockResolvedValueOnce(null);
-      const mockExec = jest.fn() as jest.MockedFunction<any>;
-      mockExec.mockResolvedValue([[null, 1]]);
-      const mockMulti: any = {
-        zrem: jest.fn().mockReturnThis(),
-        hset: jest.fn().mockReturnThis(),
-        zadd: jest.fn().mockReturnThis(),
-        exec: mockExec,
-      };
-      mockRedis.multi.mockReturnValue(mockMulti);
 
       const result = await eventQueue.enqueueEvent(event);
 
       expect(result).toBe(true);
+      // Should NOT call multi/hset/zadd — event data must not be overwritten
+      expect(mockRedis.multi).not.toHaveBeenCalled();
     });
 
-    it('should return true if event already exists in processing queue', async () => {
+    it('should return true and skip writes if event already exists in processing queue', async () => {
       const event: QueuedEvent = {
         id: 'event-1',
         type: WebhookEventType.InvoiceEnqueued,
@@ -212,6 +205,28 @@ describe('EventQueue', () => {
       };
 
       mockRedis.zscore.mockResolvedValueOnce(null).mockResolvedValueOnce('123456');
+
+      const result = await eventQueue.enqueueEvent(event);
+
+      expect(result).toBe(true);
+      // Should NOT call multi/hset/zadd — event data must not be overwritten
+      expect(mockRedis.multi).not.toHaveBeenCalled();
+    });
+
+    it('should update event data when forceUpdate is true even if event exists', async () => {
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 3,
+        maxRetries: 10,
+        scheduledAt: Date.now() + 60000,
+        metadata: { source: 'test' },
+      };
+
+      // Event exists in processing queue (typical retry scenario)
+      mockRedis.zscore.mockResolvedValueOnce(null).mockResolvedValueOnce('123456');
       const mockExec = jest.fn() as jest.MockedFunction<any>;
       mockExec.mockResolvedValue([[null, 1]]);
       const mockMulti: any = {
@@ -222,9 +237,13 @@ describe('EventQueue', () => {
       };
       mockRedis.multi.mockReturnValue(mockMulti);
 
-      const result = await eventQueue.enqueueEvent(event);
+      const result = await eventQueue.enqueueEvent(event, EventPriority.NORMAL, true);
 
       expect(result).toBe(true);
+      // With forceUpdate, should proceed with writes to update retryCount etc.
+      expect(mockMulti.zrem).toHaveBeenCalled();
+      expect(mockMulti.hset).toHaveBeenCalled();
+      expect(mockMulti.zadd).toHaveBeenCalled();
     });
   });
 
