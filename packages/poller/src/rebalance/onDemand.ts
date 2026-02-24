@@ -1435,8 +1435,7 @@ export async function handleMinAmountIncrease(
   }
 
   // Update earmark with new minAmount
-  const pool = database.getPool();
-  await pool.query('UPDATE earmarks SET "min_amount" = $1, "updated_at" = $2 WHERE id = $3', [
+  await database.queryWithClient('UPDATE earmarks SET "min_amount" = $1, "updated_at" = $2 WHERE id = $3', [
     currentMinAmount,
     new Date(),
     earmark.id,
