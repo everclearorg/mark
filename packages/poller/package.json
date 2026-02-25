@@ -14,6 +14,7 @@
     "build": "tsc --build ./tsconfig.json && tsc-alias -p tsconfig.json",
     "clean": "rimraf ./dist ./tsconfig.tsbuildinfo",
     "dev": "ts-node-dev -r tsconfig-paths/register --respawn src/dev.ts",
+    "debug:intent": "ts-node -r tsconfig-paths/register scripts/debug-intent-creation.ts",
     "lint": "eslint src",
     "lint:fix": "yarn lint --fix",
     "test": "jest",
@@ -21,6 +22,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@mark/agent": "workspace:*",
     "@mark/cache": "workspace:*",
     "@mark/chainservice": "workspace:*",
     "@mark/core": "workspace:*",

@@ -1,0 +1,181 @@
+import { WebhookEventType, Invoice, isNotFoundError } from '@mark/core';
+import { jsonifyError } from '@mark/logger';
+import { InvoiceHandlerAdapters } from '#/init';
+import { EventPriority, QueuedEvent } from '#/queue';
+
+// Default max retries for events (configurable via environment variable)
+const DEFAULT_MAX_RETRIES = parseInt(process.env.EVENT_MAX_RETRIES || '10', 10);
+
+/**
+ * Check for pending invoices and enqueue InvoiceEnqueued events for missed webhooks
+ * Uses Redis-backed cursor for persistence across container restarts
+ */
+export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Promise<void> {
+  try {
+    const { everclear, logger, purchaseCache } = adapters.processingContext;
+    const { eventQueue } = adapters;
+
+    // Get cursor from Redis for persistence across restarts
+    const lastCursor = await eventQueue.getBackfillCursor();
+
+    // Query invoices from API with cursor-based pagination
+    let result: { invoices: Invoice[]; nextCursor: string | null };
+    try {
+      result = await everclear.fetchInvoicesByTxNonce(lastCursor, 100);
+    } catch (error) {
+      logger.warn('Error fetching invoices for backfill', {
+        error: jsonifyError(error),
+      });
+      return;
+    }
+
+    const { invoices, nextCursor } = result;
+
+    if (invoices.length === 0) {
+      await eventQueue.setBackfillCursor(null);
+      return;
+    }
+
+    logger.debug('Checking for pending invoices', {
+      invoicesCount: invoices.length,
+      lastCursor,
+      nextCursor,
+    });
+
+    // Process each invoice
+    for (const invoice of invoices) {
+      const invoiceId = invoice.intent_id;
+
+      // Skip if we've already marked this invoice as invalid (avoids reprocessing)
+      const isInvalid = await eventQueue.isInvalidInvoice(invoiceId);
+      if (isInvalid) {
+        logger.debug('Invoice marked as invalid, skipping', { invoiceId });
+        continue;
+      }
+
+      // Check if the event already exists in redis (pending or processing queue)
+      const alreadyExists = await eventQueue.hasEvent(WebhookEventType.InvoiceEnqueued, invoiceId);
+      if (alreadyExists) {
+        // Event already exists, skip
+        logger.debug('Invoice event already in queue', {
+          invoiceId,
+        });
+        continue;
+      }
+
+      // Skip if we already have a purchase for this invoice (already processed)
+      const existingPurchases = await purchaseCache.getPurchases([invoiceId]);
+      if (existingPurchases.length > 0) {
+        logger.debug('Invoice already has purchase, skipping', {
+          invoiceId,
+        });
+        continue;
+      }
+
+      const queuedEvent: QueuedEvent = {
+        id: invoiceId,
+        type: WebhookEventType.InvoiceEnqueued,
+        data: { id: invoiceId },
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: DEFAULT_MAX_RETRIES,
+        scheduledAt: Date.now(),
+        metadata: {
+          source: 'backfill-check',
+        },
+      };
+
+      await adapters.eventConsumer.addEvent(queuedEvent);
+      logger.info('Found InvoiceEnqueued event missed by webhook', {
+        invoiceId,
+      });
+    }
+
+    // Persist cursor to Redis for consistency across restarts
+    await eventQueue.setBackfillCursor(nextCursor);
+    logger.debug('Updated cursor in Redis', {
+      cursor: nextCursor,
+    });
+  } catch (error) {
+    adapters.processingContext.logger.error('Error checking for pending invoices', {
+      error: jsonifyError(error),
+    });
+  }
+}
+
+/**
+ * Check for settled purchases and enqueue SettlementEnqueued events for missed webhooks
+ */
+export async function checkSettledInvoices(adapters: InvoiceHandlerAdapters): Promise<void> {
+  try {
+    const { purchaseCache, everclear, logger } = adapters.processingContext;
+
+    // Get all pending purchases from the cache
+    const purchases = await purchaseCache.getAllPurchases();
+    if (purchases.length === 0) {
+      return;
+    }
+
+    logger.debug('Checking for settled purchases', {
+      purchaseCount: purchases.length,
+    });
+
+    const settledInvoiceIds: string[] = [];
+
+    // Check each purchase to see if the invoice was settled
+    for (const purchase of purchases) {
+      const invoiceId = purchase.target.intent_id;
+      try {
+        // Try to fetch the invoice - if it returns NotFound, it means it was settled
+        await everclear.fetchInvoiceById(invoiceId);
+        // Invoice still exists and is not settled, skip it
+      } catch (error) {
+        // Use centralized error detection helper
+        // If we get a 404/NotFound error, the invoice was settled
+        // (API filters out SETTLED invoices, so 404 means it's settled or doesn't exist)
+        // Since the invoice is in our purchase cache, it must have existed, so 404 = settled
+        if (isNotFoundError(error)) {
+          settledInvoiceIds.push(invoiceId);
+          logger.info('Found settled invoice that was missed by webhook', {
+            invoiceId,
+          });
+        } else {
+          // Other errors (network, etc.) - log but don't treat as settled
+          logger.warn('Error checking invoice status', {
+            invoiceId,
+            error: jsonifyError(error),
+          });
+        }
+      }
+    }
+
+    // Enqueue SettlementEnqueued events for settled invoices
+    if (settledInvoiceIds.length > 0) {
+      logger.info('Enqueueing SettlementEnqueued events for missed webhooks', {
+        count: settledInvoiceIds.length,
+        invoiceIds: settledInvoiceIds,
+      });
+
+      for (const invoiceId of settledInvoiceIds) {
+        const queuedEvent: QueuedEvent = {
+          id: invoiceId,
+          type: WebhookEventType.SettlementEnqueued,
+          data: { id: invoiceId },
+          priority: EventPriority.NORMAL,
+          retryCount: 0,
+          maxRetries: DEFAULT_MAX_RETRIES,
+          scheduledAt: Date.now(),
+          metadata: {
+            source: 'backfill-check',
+          },
+        };
+
+        await adapters.eventConsumer.addEvent(queuedEvent);
+      }
+    }
+  } catch (error) {
+    adapters.processingContext.logger.error('Error checking for settled purchases', {
+      error: jsonifyError(error),
+    });
+  }
+}

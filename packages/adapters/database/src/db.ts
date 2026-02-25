@@ -44,9 +44,11 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
 
   const poolConfig: PoolConfig = {
     connectionString,
-    max: config.maxConnections || 20,
+    max: config.maxConnections || 40,
     idleTimeoutMillis: config.idleTimeoutMillis || 30000,
-    connectionTimeoutMillis: config.connectionTimeoutMillis || 2000,
+    connectionTimeoutMillis: config.connectionTimeoutMillis || 5000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
   };
 
   // Configure SSL if needed
@@ -61,9 +63,14 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
   pool = new Pool(poolConfig);
 
   // Handle pool errors
-  pool.on('error', (err) => {
+  pool.on('error', async (err) => {
     console.error('Unexpected database error', err);
-    process.exit(-1);
+    try {
+      await closeDatabase();
+    } catch {
+      // ignore cleanup errors
+    }
+    process.exit(1);
   });
 
   return pool;
