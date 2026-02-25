@@ -298,6 +298,10 @@ locals {
     {
       name  = "USDT_239_THRESHOLD"
       value = "100000000"
+    },
+    {
+      name  = "ADMIN_TOKEN"
+      value = local.mark_config.admin_token
     }
   ]
 

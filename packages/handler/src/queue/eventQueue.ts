@@ -53,6 +53,7 @@ export class EventQueue {
   private readonly cursorKey = `${this.prefix}:backfill-cursor`;
   private readonly metricsKey = `${this.prefix}:metrics`;
   private readonly invalidInvoiceKeyPrefix = `${this.prefix}:invalid-invoice`;
+  private readonly pausedKey = `${this.prefix}:paused`;
   private readonly store: Redis;
 
   constructor(
@@ -473,6 +474,25 @@ export class EventQueue {
   }
 
   /**
+   * Check if queue ingestion is paused
+   */
+  async isPaused(): Promise<boolean> {
+    const val = await this.store.get(this.pausedKey);
+    return val === '1';
+  }
+
+  /**
+   * Set the paused state for queue ingestion
+   */
+  async setPaused(paused: boolean): Promise<void> {
+    if (paused) {
+      await this.store.set(this.pausedKey, '1');
+    } else {
+      await this.store.del(this.pausedKey);
+    }
+  }
+
+  /**
    * Increment a metric counter in Redis
    * @param metricName The name of the metric
    * @param labels Optional labels for the metric
@@ -507,6 +527,41 @@ export class EventQueue {
     const key = `${this.invalidInvoiceKeyPrefix}:${invoiceId}`;
     const result = await this.store.exists(key);
     return result === 1;
+  }
+
+  /**
+   * Reset all queues: atomically delete all pending/processing sorted sets,
+   * the data hash, and the backfill cursor key.
+   * @returns Counts of reset events per type (pending + processing)
+   */
+  async resetQueues(): Promise<Record<string, { pending: number; processing: number }>> {
+    // First, gather counts so we can report what was reset
+    const counts: Record<string, { pending: number; processing: number }> = {};
+
+    for (const eventType of Object.values(WebhookEventType) as WebhookEventType[]) {
+      const [pending, processing] = await Promise.all([
+        this.store.zcard(this.pendingQueueKeys[eventType]),
+        this.store.zcard(this.processingQueueKeys[eventType]),
+      ]);
+      counts[eventType] = { pending, processing };
+    }
+
+    // Delete everything in a single transaction
+    const multi = this.store.multi();
+
+    for (const eventType of Object.values(WebhookEventType) as WebhookEventType[]) {
+      multi.del(this.pendingQueueKeys[eventType]);
+      multi.del(this.processingQueueKeys[eventType]);
+    }
+
+    multi.del(this.dataKey);
+    multi.del(this.cursorKey);
+
+    await multi.exec();
+
+    this.logger.info('Reset all queues', { counts });
+
+    return counts;
   }
 
   /**
