@@ -26,7 +26,6 @@ export class WebhookHandler {
     private readonly webhookSecret: string,
     private readonly logger: Logger,
     private readonly processor: WebhookEventProcessor,
-    private readonly minBlockNumber: number = 0,
   ) {}
 
   /**
@@ -102,25 +101,12 @@ export class WebhookHandler {
     }
 
     const invoiceId = base64ToHex(payload.intent as string);
-    const blockNumber = typeof payload.block_number === 'number' ? payload.block_number : 0;
-
     this.logger.info('Processing webhook', {
       webhookId,
       webhookType,
       invoiceId,
-      blockNumber,
+      blockNumber: payload.block_number,
     });
-
-    if (this.minBlockNumber > 0 && blockNumber < this.minBlockNumber) {
-      this.logger.debug('Skipping stale webhook event', {
-        webhookId,
-        webhookType,
-        invoiceId,
-        blockNumber,
-        minBlockNumber: this.minBlockNumber,
-      });
-      return { message: 'Skipped stale event', processed: false, webhookId };
-    }
 
     await this.processor.processEvent(invoiceId, webhookType, { id: invoiceId });
 
