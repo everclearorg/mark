@@ -121,7 +121,16 @@ function registerRoutes(server: FastifyInstance): void {
           200: {
             type: 'object',
             properties: {
-              reset: { type: 'object' },
+              reset: {
+                type: 'object',
+                additionalProperties: {
+                  type: 'object',
+                  properties: {
+                    pending: { type: 'number' },
+                    processing: { type: 'number' },
+                  },
+                },
+              },
             },
           },
           401: {
