@@ -180,42 +180,4 @@ describe('WebhookHandler', () => {
       expect(mockLogger.info.calledWithMatch('Webhook request received')).toBe(true);
     });
   });
-
-  describe('minBlockNumber filtering', () => {
-    it('should skip events with block_number below minBlockNumber', async () => {
-      const handler = new WebhookHandler(webhookSecret, mockLogger, mockProcessor, 4000000);
-      const payload = createInvoicePayload(); // block_number: 3356345
-      const rawBody = JSON.stringify(payload);
-
-      const result = await handler.handleWebhookRequest(rawBody, webhookSecret, 'invoice-enqueued');
-
-      expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body).processed).toBe(false);
-      expect(JSON.parse(result.body).message).toBe('Skipped stale event');
-      expect(mockProcessor.processEvent).not.toHaveBeenCalled();
-    });
-
-    it('should process events with block_number at or above minBlockNumber', async () => {
-      const handler = new WebhookHandler(webhookSecret, mockLogger, mockProcessor, 3000000);
-      const payload = createInvoicePayload(); // block_number: 3356345
-      const rawBody = JSON.stringify(payload);
-
-      const result = await handler.handleWebhookRequest(rawBody, webhookSecret, 'invoice-enqueued');
-
-      expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body).processed).toBe(true);
-      expect(mockProcessor.processEvent).toHaveBeenCalled();
-    });
-
-    it('should not filter when minBlockNumber is 0 (default)', async () => {
-      const payload = createInvoicePayload();
-      const rawBody = JSON.stringify(payload);
-
-      const result = await webhookHandler.handleWebhookRequest(rawBody, webhookSecret, 'invoice-enqueued');
-
-      expect(result.statusCode).toBe(200);
-      expect(JSON.parse(result.body).processed).toBe(true);
-      expect(mockProcessor.processEvent).toHaveBeenCalled();
-    });
-  });
 });

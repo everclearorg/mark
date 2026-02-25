@@ -12,7 +12,6 @@ import { ProcessingContext } from '@mark/poller/src/init';
 // Configurable settings via environment variables
 const DEFAULT_MAX_RETRIES = parseInt(process.env.EVENT_MAX_RETRIES || '10', 10);
 const MAX_CONCURRENT_EVENTS = parseInt(process.env.MAX_CONCURRENT_EVENTS || '5', 10);
-const WEBHOOK_MIN_BLOCK_NUMBER = parseInt(process.env.WEBHOOK_MIN_BLOCK_NUMBER || '4255478', 10);
 
 export interface InvoiceHandlerAdapters {
   processingContext: ProcessingContext;
@@ -91,7 +90,7 @@ export async function initializeAdapters(config: MarkConfiguration, logger: Logg
   if (!webhookSecret) {
     logger.warn('Goldsky webhook secret not configured - webhook authentication will fail');
   }
-  const webhookHandler = new WebhookHandler(webhookSecret, logger, { processEvent }, WEBHOOK_MIN_BLOCK_NUMBER);
+  const webhookHandler = new WebhookHandler(webhookSecret, logger, { processEvent });
 
   return {
     processingContext,
