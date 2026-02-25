@@ -317,6 +317,10 @@ locals {
     {
       name  = "PTUSDE_1399811149_THRESHOLD"
       value = "5000000000000000000"
+    },
+    {
+      name  = "ADMIN_TOKEN"
+      value = local.mark_config.admin_token
     }
   ]
 
