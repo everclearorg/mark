@@ -555,6 +555,91 @@ describe('EventQueue', () => {
     });
   });
 
+  describe('resetQueues', () => {
+    it('should delete all queue keys and return counts', async () => {
+      mockRedis.zcard = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(3);
+      const mockExec = jest.fn() as jest.MockedFunction<any>;
+      mockExec.mockResolvedValue([[null, 1]]);
+      const mockMulti: any = {
+        del: jest.fn().mockReturnThis(),
+        exec: mockExec,
+      };
+      mockRedis.multi.mockReturnValue(mockMulti);
+
+      const result = await eventQueue.resetQueues();
+
+      // Should return counts for each event type
+      for (const eventType of Object.values(WebhookEventType)) {
+        expect(result[eventType]).toEqual({ pending: 3, processing: 3 });
+      }
+
+      // 2 del calls per event type (pending + processing) + data hash + cursor key
+      const eventTypeCount = Object.values(WebhookEventType).length;
+      expect(mockMulti.del).toHaveBeenCalledTimes(eventTypeCount * 2 + 2);
+      expect(mockMulti.exec).toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith('Reset all queues', expect.objectContaining({ counts: result }));
+    });
+
+    it('should handle empty queues gracefully', async () => {
+      mockRedis.zcard = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(0);
+      const mockExec = jest.fn() as jest.MockedFunction<any>;
+      mockExec.mockResolvedValue([[null, 1]]);
+      const mockMulti: any = {
+        del: jest.fn().mockReturnThis(),
+        exec: mockExec,
+      };
+      mockRedis.multi.mockReturnValue(mockMulti);
+
+      const result = await eventQueue.resetQueues();
+
+      for (const eventType of Object.values(WebhookEventType)) {
+        expect(result[eventType]).toEqual({ pending: 0, processing: 0 });
+      }
+
+      // Still deletes all keys even if empty
+      expect(mockMulti.del).toHaveBeenCalled();
+      expect(mockMulti.exec).toHaveBeenCalled();
+    });
+  });
+
+  describe('isPaused / setPaused', () => {
+    it('should return false when not paused', async () => {
+      mockRedis.get = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(null);
+
+      const result = await eventQueue.isPaused();
+
+      expect(result).toBe(false);
+      expect(mockRedis.get).toHaveBeenCalledWith('event-queue:paused');
+    });
+
+    it('should return true when paused', async () => {
+      mockRedis.get = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue('1');
+
+      const result = await eventQueue.isPaused();
+
+      expect(result).toBe(true);
+    });
+
+    it('should set paused state in Redis', async () => {
+      mockRedis.set = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue('OK');
+
+      await eventQueue.setPaused(true);
+
+      expect(mockRedis.set).toHaveBeenCalled();
+      const setCall = (mockRedis.set as jest.Mock).mock.calls[0];
+      expect(setCall[0]).toBe('event-queue:paused');
+      expect(setCall[1]).toBe('1');
+    });
+
+    it('should delete paused key when unpausing', async () => {
+      mockRedis.del = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(1);
+
+      await eventQueue.setPaused(false);
+
+      expect(mockRedis.del).toHaveBeenCalledWith('event-queue:paused');
+    });
+  });
+
   describe('cleanupExpiredDeadLetterEntries', () => {
     it('should remove expired entries from dead letter queue', async () => {
       const expiredEventIds = ['event-1', 'event-2'];

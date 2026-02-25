@@ -25,6 +25,7 @@ const pollingIntervalMs = parseInt(process.env.POLLING_INTERVAL_MS || '60000', 1
 let server: FastifyInstance | null = null;
 let adapters: InvoiceHandlerAdapters | null = null;
 let isShuttingDown = false;
+let isQueuePaused = false;
 let pollingInterval: NodeJS.Timeout | null = null;
 
 /**
@@ -45,6 +46,7 @@ async function startServer(): Promise<void> {
 
   try {
     adapters = await initializeInvoiceHandler();
+    isQueuePaused = await adapters.eventQueue.isPaused();
 
     validateTokenRebalanceConfig(adapters.processingContext.config, logger);
 
@@ -85,7 +87,7 @@ async function startServer(): Promise<void> {
 function registerRoutes(server: FastifyInstance): void {
   // Health check endpoint
   server.get<{
-    Reply: { status: string; mode: string };
+    Reply: { status: string; mode: string; queuePaused: boolean };
   }>(
     '/health',
     {
@@ -96,14 +98,154 @@ function registerRoutes(server: FastifyInstance): void {
             properties: {
               status: { type: 'string' },
               mode: { type: 'string' },
+              queuePaused: { type: 'boolean' },
             },
-            required: ['status', 'mode'],
+            required: ['status', 'mode', 'queuePaused'],
           },
         },
       },
     },
     async (_, res) => {
-      return res.status(200).send({ status: 'ok', mode: 'invoice-handler' });
+      return res.status(200).send({ status: 'ok', mode: 'invoice-handler', queuePaused: isQueuePaused });
+    },
+  );
+
+  // Admin: reset all event queues
+  server.post<{
+    Reply: { reset?: Record<string, { pending: number; processing: number }>; error?: string };
+  }>(
+    '/admin/reset-queue',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              reset: { type: 'object' },
+            },
+          },
+          401: {
+            type: 'object',
+            properties: {
+              error: { type: 'string' },
+            },
+            required: ['error'],
+          },
+          503: {
+            type: 'object',
+            properties: {
+              error: { type: 'string' },
+            },
+            required: ['error'],
+          },
+        },
+      },
+    },
+    async (req, res) => {
+      const adminToken = process.env.ADMIN_TOKEN;
+      const providedToken = req.headers['x-admin-token'] as string;
+
+      if (!adminToken || providedToken !== adminToken) {
+        return res.status(401).send({ error: 'Unauthorized' });
+      }
+
+      if (!adapters) {
+        return res.status(503).send({ error: 'Handlers not initialized' });
+      }
+
+      const reset = await adapters.eventQueue.resetQueues();
+      logger.info('Admin reset-queue executed', { reset });
+      return res.status(200).send({ reset });
+    },
+  );
+
+  // Admin: pause webhook ingestion
+  server.post<{
+    Reply: { paused: boolean } | { error: string };
+  }>(
+    '/admin/pause-queue',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: { paused: { type: 'boolean' } },
+            required: ['paused'],
+          },
+          401: {
+            type: 'object',
+            properties: { error: { type: 'string' } },
+            required: ['error'],
+          },
+          503: {
+            type: 'object',
+            properties: { error: { type: 'string' } },
+            required: ['error'],
+          },
+        },
+      },
+    },
+    async (req, res) => {
+      const adminToken = process.env.ADMIN_TOKEN;
+      const providedToken = req.headers['x-admin-token'] as string;
+
+      if (!adminToken || providedToken !== adminToken) {
+        return res.status(401).send({ error: 'Unauthorized' });
+      }
+
+      if (!adapters) {
+        return res.status(503).send({ error: 'Handlers not initialized' });
+      }
+
+      await adapters.eventQueue.setPaused(true);
+      isQueuePaused = true;
+      logger.info('Admin pause-queue executed');
+      return res.status(200).send({ paused: true });
+    },
+  );
+
+  // Admin: resume webhook ingestion
+  server.post<{
+    Reply: { paused: boolean } | { error: string };
+  }>(
+    '/admin/resume-queue',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: { paused: { type: 'boolean' } },
+            required: ['paused'],
+          },
+          401: {
+            type: 'object',
+            properties: { error: { type: 'string' } },
+            required: ['error'],
+          },
+          503: {
+            type: 'object',
+            properties: { error: { type: 'string' } },
+            required: ['error'],
+          },
+        },
+      },
+    },
+    async (req, res) => {
+      const adminToken = process.env.ADMIN_TOKEN;
+      const providedToken = req.headers['x-admin-token'] as string;
+
+      if (!adminToken || providedToken !== adminToken) {
+        return res.status(401).send({ error: 'Unauthorized' });
+      }
+
+      if (!adapters) {
+        return res.status(503).send({ error: 'Handlers not initialized' });
+      }
+
+      await adapters.eventQueue.setPaused(false);
+      isQueuePaused = false;
+      logger.info('Admin resume-queue executed');
+      return res.status(200).send({ paused: false });
     },
   );
 
@@ -155,6 +297,11 @@ function registerRoutes(server: FastifyInstance): void {
     async (req, res) => {
       if (!adapters) {
         return res.status(503).send({ error: 'Handlers not initialized' });
+      }
+
+      if (isQueuePaused) {
+        logger.info('Webhook ignored, queue ingestion is paused');
+        return res.status(200).send({ message: 'Queue ingestion is paused, event ignored' });
       }
 
       const webhookName = req.params.webhookName;
