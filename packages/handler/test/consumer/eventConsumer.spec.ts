@@ -53,6 +53,7 @@ describe('EventConsumer', () => {
       moveToDeadLetterQueue: jest.fn(),
       hasEvent: jest.fn(),
       addInvalidInvoice: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      peekNextScheduledTime: jest.fn<() => Promise<number | null>>().mockResolvedValue(null),
     } as any;
 
     mockProcessor = {
@@ -225,6 +226,169 @@ describe('EventConsumer', () => {
         'Consumer is not running, skipping event processing',
         { event },
       );
+    });
+  });
+
+  describe('schedulePendingWork (delayed retry)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+      mockQueue.moveProcessingToPending.mockResolvedValue(undefined);
+      mockQueue.dequeueEvents.mockResolvedValue([]);
+    });
+
+    afterEach(async () => {
+      await eventConsumer.stop();
+      jest.useRealTimers();
+    });
+
+    it('should reschedule when next event is in the future', async () => {
+      await eventConsumer.start();
+
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Success,
+        eventId: 'event-1',
+        processedAt: Date.now(),
+        duration: 100,
+      });
+
+      // peekNextScheduledTime returns 30s in the future
+      mockQueue.peekNextScheduledTime.mockResolvedValue(Date.now() + 30000);
+
+      await eventConsumer.addEvent(event);
+      // Wait for processEvent to complete (fire-and-forget)
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Reset dequeueEvents call count after start() calls
+      mockQueue.dequeueEvents.mockClear();
+
+      // Advance past the 100ms debounce — should NOT call dequeueEvents (rescheduled)
+      await jest.advanceTimersByTimeAsync(100);
+      expect(mockQueue.dequeueEvents).not.toHaveBeenCalled();
+
+      // Advance by 30s — now the rescheduled timer fires and dequeues
+      await jest.advanceTimersByTimeAsync(30000);
+      expect(mockQueue.dequeueEvents).toHaveBeenCalled();
+    });
+
+    it('should process immediately when next event is ready', async () => {
+      await eventConsumer.start();
+
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Success,
+        eventId: 'event-1',
+        processedAt: Date.now(),
+        duration: 100,
+      });
+
+      // peekNextScheduledTime returns a time in the past (ready now)
+      mockQueue.peekNextScheduledTime.mockResolvedValue(Date.now() - 1000);
+
+      await eventConsumer.addEvent(event);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      mockQueue.dequeueEvents.mockClear();
+
+      // Advance past the 100ms debounce — should call dequeueEvents (event is ready)
+      await jest.advanceTimersByTimeAsync(100);
+      expect(mockQueue.dequeueEvents).toHaveBeenCalled();
+    });
+
+    it('should do nothing when queue is empty', async () => {
+      await eventConsumer.start();
+
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Success,
+        eventId: 'event-1',
+        processedAt: Date.now(),
+        duration: 100,
+      });
+
+      // peekNextScheduledTime returns null (queue empty)
+      mockQueue.peekNextScheduledTime.mockResolvedValue(null);
+
+      await eventConsumer.addEvent(event);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      mockQueue.dequeueEvents.mockClear();
+
+      // Advance past the 100ms debounce — should NOT call dequeueEvents (queue empty)
+      await jest.advanceTimersByTimeAsync(100);
+      expect(mockQueue.dequeueEvents).not.toHaveBeenCalled();
+    });
+
+    it('should proceed with processing on peek failure', async () => {
+      await eventConsumer.start();
+
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Success,
+        eventId: 'event-1',
+        processedAt: Date.now(),
+        duration: 100,
+      });
+
+      // peekNextScheduledTime rejects (simulating Redis error)
+      mockQueue.peekNextScheduledTime.mockRejectedValue(new Error('Redis connection error'));
+
+      await eventConsumer.addEvent(event);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      mockQueue.dequeueEvents.mockClear();
+
+      // Advance past the 100ms debounce — should call dequeueEvents (fallback on error)
+      await jest.advanceTimersByTimeAsync(100);
+      expect(mockQueue.dequeueEvents).toHaveBeenCalled();
     });
   });
 });

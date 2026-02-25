@@ -291,15 +291,18 @@ export class EventConsumer {
    * Schedule pending work for an event type with debouncing.
    * Prevents unbounded async task spawning by coalescing rapid calls.
    * Uses a lock to prevent race conditions between timer expiration and new scheduling.
+   *
+   * If the next pending event is scheduled in the future (e.g. a delayed retry),
+   * the timer reschedules itself to fire when that event becomes ready.
    */
-  private schedulePendingWork(eventType: WebhookEventType): void {
+  private schedulePendingWork(eventType: WebhookEventType, timeoutMs: number = PENDING_WORK_DEBOUNCE_MS): void {
     // If there's already a pending timer or work in progress for this event type, don't schedule another
     if (this.pendingWorkTimers.has(eventType) || this.pendingWorkInProgress.has(eventType)) {
       return;
     }
 
-    // Schedule processing after a short debounce delay
-    const timer = setTimeout(() => {
+    // Schedule processing after the specified delay
+    const timer = setTimeout(async () => {
       // Delete timer reference first
       this.pendingWorkTimers.delete(eventType);
 
@@ -308,6 +311,21 @@ export class EventConsumer {
         return;
       }
 
+      // Peek at the next scheduled event to decide whether to process or reschedule
+      try {
+        const nextTime = await this.queue.peekNextScheduledTime(eventType);
+        if (nextTime === null) return; // Queue empty, nothing to do
+
+        if (nextTime > Date.now()) {
+          // Next event is in the future — reschedule for when it becomes ready
+          this.schedulePendingWork(eventType, nextTime - Date.now());
+          return;
+        }
+      } catch {
+        // On peek failure, proceed with processing anyway
+      }
+
+      // Events are ready — process them
       // Mark work as in progress to prevent concurrent scheduling
       this.pendingWorkInProgress.add(eventType);
 
@@ -322,7 +340,7 @@ export class EventConsumer {
           // Clear the in-progress flag when done
           this.pendingWorkInProgress.delete(eventType);
         });
-    }, PENDING_WORK_DEBOUNCE_MS);
+    }, timeoutMs);
 
     this.pendingWorkTimers.set(eventType, timer);
   }
