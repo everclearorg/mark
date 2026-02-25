@@ -640,6 +640,37 @@ describe('EventQueue', () => {
     });
   });
 
+  describe('peekNextScheduledTime', () => {
+    it('should return the score of the earliest pending event', async () => {
+      mockRedis.zrange.mockResolvedValue(['event-1']);
+      mockRedis.zscore.mockResolvedValue('1234567890');
+
+      const result = await eventQueue.peekNextScheduledTime(WebhookEventType.InvoiceEnqueued);
+
+      expect(result).toBe(1234567890);
+      expect(mockRedis.zrange).toHaveBeenCalled();
+      expect(mockRedis.zscore).toHaveBeenCalledWith('event-queue:pending:InvoiceEnqueued', 'event-1');
+    });
+
+    it('should return null when queue is empty', async () => {
+      mockRedis.zrange.mockResolvedValue([]);
+
+      const result = await eventQueue.peekNextScheduledTime(WebhookEventType.InvoiceEnqueued);
+
+      expect(result).toBeNull();
+      expect(mockRedis.zscore).not.toHaveBeenCalled();
+    });
+
+    it('should return null when zscore returns null', async () => {
+      mockRedis.zrange.mockResolvedValue(['event-1']);
+      mockRedis.zscore.mockResolvedValue(null);
+
+      const result = await eventQueue.peekNextScheduledTime(WebhookEventType.InvoiceEnqueued);
+
+      expect(result).toBeNull();
+    });
+  });
+
   describe('cleanupExpiredDeadLetterEntries', () => {
     it('should remove expired entries from dead letter queue', async () => {
       const expiredEventIds = ['event-1', 'event-2'];

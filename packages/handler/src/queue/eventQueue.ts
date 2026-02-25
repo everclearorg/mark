@@ -565,6 +565,18 @@ export class EventQueue {
   }
 
   /**
+   * Peek at the scheduledAt time of the earliest pending event for a given type.
+   * Returns the score (scheduledAt timestamp) or null if the queue is empty.
+   */
+  async peekNextScheduledTime(eventType: WebhookEventType): Promise<number | null> {
+    const pendingQueueKey = this.pendingQueueKeys[eventType];
+    const result = await this.store.zrange(pendingQueueKey, 0, 0);
+    if (result.length === 0) return null;
+    const score = await this.store.zscore(pendingQueueKey, result[0]);
+    return score !== null ? parseFloat(score) : null;
+  }
+
+  /**
    * Get queue depths for each event type (for metrics/monitoring)
    * @returns Map of event type to queue depth
    */
