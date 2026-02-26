@@ -224,6 +224,16 @@ jobs:
           echo "Invoice Handler URL for ${{ matrix.environment.name }}:"
           terraform output -raw invoice_handler_url
 
+      - name: Post-Deploy Health Check
+        if: success()
+        uses: ./.github/actions/post-deploy-health-check
+        with:
+          aws-region: ${{ matrix.environment.region }}
+          ecs-cluster: ${{ matrix.environment.name }}-ecs-mainnet-prod
+          services: "${{ matrix.environment.name }}-web3signer-mainnet-prod,${{ matrix.environment.name }}-fillservice-web3signer-mainnet-prod,${{ matrix.environment.name }}-handler-mainnet-prod,${{ matrix.environment.name }}-prometheus-mainnet-prod,${{ matrix.environment.name }}-pushgateway-mainnet-prod"
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
   # Staging deployment (mason) - triggered on staging branch
   build-and-deploy-staging:
     if: github.ref == 'refs/heads/staging'
@@ -355,3 +365,13 @@ jobs:
         run: |
           echo "Invoice Handler URL for mason (staging):"
           terraform output -raw invoice_handler_url
+
+      - name: Post-Deploy Health Check
+        if: success()
+        uses: ./.github/actions/post-deploy-health-check
+        with:
+          aws-region: sa-east-1
+          ecs-cluster: mason-ecs-mainnet-staging
+          services: "mason-web3signer-mainnet-staging,mason-fillservice-web3signer-mainnet-staging,mason-handler-mainnet-staging,mason-prometheus-mainnet-staging,mason-pushgateway-mainnet-staging"
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
