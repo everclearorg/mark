@@ -258,6 +258,11 @@ export class EventConsumer {
       if (result.result === EventProcessingResultType.Invalid) {
         await this.queue.addInvalidInvoice(event.id);
       }
+      // Mark settled invoices so the backfill check won't re-enqueue them
+      // after the purchase is removed from the cache
+      if (event.type === WebhookEventType.SettlementEnqueued && result.result === EventProcessingResultType.Success) {
+        await this.queue.addSettledInvoice(event.id);
+      }
       await this.queue.acknowledgeProcessedEvent(event);
       this.logger.info('Event processed successfully', {
         event,

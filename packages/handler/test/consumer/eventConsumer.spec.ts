@@ -53,6 +53,7 @@ describe('EventConsumer', () => {
       moveToDeadLetterQueue: jest.fn(),
       hasEvent: jest.fn(),
       addInvalidInvoice: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+      addSettledInvoice: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
       peekNextScheduledTime: jest.fn<() => Promise<number | null>>().mockResolvedValue(null),
     } as any;
 
@@ -177,6 +178,65 @@ describe('EventConsumer', () => {
 
       expect(mockQueue.addInvalidInvoice).toHaveBeenCalledWith('invoice-123');
       expect(mockQueue.acknowledgeProcessedEvent).toHaveBeenCalledWith(event);
+    });
+
+    it('should mark invoice as settled when settlement is processed successfully', async () => {
+      const event: QueuedEvent = {
+        id: 'invoice-456',
+        type: WebhookEventType.SettlementEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processSettlementEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Success,
+        eventId: 'invoice-456',
+        processedAt: Date.now(),
+        duration: 50,
+      });
+
+      await eventConsumer.addEvent(event);
+      // Wait for async processing to complete (processEvent is fire-and-forget)
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockQueue.addSettledInvoice).toHaveBeenCalledWith('invoice-456');
+      expect(mockQueue.addInvalidInvoice).not.toHaveBeenCalled();
+      expect(mockQueue.acknowledgeProcessedEvent).toHaveBeenCalledWith(event);
+    });
+
+    it('should not mark invoice as invalid when settlement fails', async () => {
+      const event: QueuedEvent = {
+        id: 'invoice-789',
+        type: WebhookEventType.SettlementEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processSettlementEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Failure,
+        eventId: 'invoice-789',
+        processedAt: Date.now(),
+        duration: 50,
+        error: 'Something failed',
+        retryAfter: 60000,
+      });
+
+      await eventConsumer.addEvent(event);
+      // Wait for async processing to complete
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockQueue.addInvalidInvoice).not.toHaveBeenCalled();
+      expect(mockQueue.addSettledInvoice).not.toHaveBeenCalled();
     });
 
     it('should not process if event already exists in queue', async () => {
