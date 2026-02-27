@@ -520,6 +520,35 @@ describe('EventProcessor', () => {
       expect(result.retryAfter).toBe(10000);
     });
 
+    it('should continue invoice with initiating earmark (no DLQ increment)', async () => {
+      const event = createInvoiceEvent('invoice-1');
+      const invoice = createMockInvoice();
+      const { processPendingEarmark } = require('#/helpers');
+
+      mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
+      mockEverclear.getMinAmounts.mockResolvedValue({
+        invoiceAmount: '1000',
+        amountAfterDiscount: '900',
+        discountBps: '100',
+        custodiedAmounts: { '1': '0' },
+        minAmounts: { '1': '100' },
+      });
+      processPendingEarmark.mockResolvedValue(undefined);
+      mockDatabase.getEarmarks.mockResolvedValue([
+        {
+          id: 'earmark-1',
+          invoiceId: 'invoice-1',
+          status: EarmarkStatus.INITIATING,
+          designatedPurchaseChain: 1,
+        },
+      ]);
+
+      const result = await eventProcessor.processInvoiceEnqueued(event);
+
+      expect(result.result).toBe(EventProcessingResultType.Continue);
+      expect(result.retryAfter).toBe(10000);
+    });
+
     it('should handle processing errors', async () => {
       const event = createInvoiceEvent('invoice-1');
       const invoice = createMockInvoice();
@@ -587,6 +616,95 @@ describe('EventProcessor', () => {
           invoiceId: 'invoice-1',
         }),
       );
+    });
+
+    it('should move READY earmark to COMPLETED after applying chain constraint', async () => {
+      const event = createInvoiceEvent('invoice-1');
+      const invoice = createMockInvoice();
+      const { processPendingEarmark, splitAndSendIntents } = require('#/helpers');
+      const { getMarkBalances, getCustodiedBalances, getSupportedDomainsForTicker, isXerc20Supported } =
+        require('@mark/poller/src/helpers');
+      const { isValidInvoice } = require('@mark/poller/src/invoice/validation');
+
+      mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
+      mockEverclear.getMinAmounts.mockResolvedValue({
+        invoiceAmount: '1000',
+        amountAfterDiscount: '900',
+        discountBps: '100',
+        custodiedAmounts: { '1': '0', '2': '0' },
+        minAmounts: { '1': '100', '2': '200' },
+      });
+      processPendingEarmark.mockResolvedValue(undefined);
+      mockDatabase.getEarmarks.mockResolvedValue([
+        {
+          id: 'earmark-1',
+          invoiceId: 'invoice-1',
+          status: EarmarkStatus.READY,
+          designatedPurchaseChain: 2,
+        },
+      ]);
+      mockDatabase.updateEarmarkStatus.mockResolvedValue(undefined);
+      isValidInvoice.mockReturnValue(null);
+      isXerc20Supported.mockResolvedValue(false);
+      mockPurchaseCache.isPaused.mockResolvedValue(false);
+      mockPurchaseCache.getPurchases.mockResolvedValue([]);
+      getMarkBalances.mockResolvedValue(new Map());
+      getCustodiedBalances.mockResolvedValue(new Map());
+      getSupportedDomainsForTicker.mockReturnValue(['1', '2']);
+      mockEverclear.fetchEconomyData.mockResolvedValue({
+        currentEpoch: { epoch: 1, startBlock: 100, endBlock: 200 },
+        incomingIntents: {},
+      });
+      splitAndSendIntents.mockResolvedValue([]);
+
+      await eventProcessor.processInvoiceEnqueued(event);
+
+      // Earmark should be marked COMPLETED immediately after applying chain constraint
+      expect(mockDatabase.updateEarmarkStatus).toHaveBeenCalledWith('earmark-1', EarmarkStatus.COMPLETED);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Earmark marked COMPLETED after applying chain constraint',
+        expect.objectContaining({
+          invoiceId: 'invoice-1',
+          earmarkId: 'earmark-1',
+          designatedPurchaseChain: 2,
+        }),
+      );
+    });
+
+    it('should move READY earmark to COMPLETED and fail when designated chain not in minAmounts', async () => {
+      const event = createInvoiceEvent('invoice-1');
+      const invoice = createMockInvoice();
+      const { processPendingEarmark } = require('#/helpers');
+      const { isXerc20Supported } = require('@mark/poller/src/helpers');
+      const { isValidInvoice } = require('@mark/poller/src/invoice/validation');
+
+      mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
+      mockEverclear.getMinAmounts.mockResolvedValue({
+        invoiceAmount: '1000',
+        amountAfterDiscount: '900',
+        discountBps: '100',
+        custodiedAmounts: { '1': '0' },
+        minAmounts: { '1': '100' }, // Chain 2 not available
+      });
+      processPendingEarmark.mockResolvedValue(undefined);
+      mockDatabase.getEarmarks.mockResolvedValue([
+        {
+          id: 'earmark-1',
+          invoiceId: 'invoice-1',
+          status: EarmarkStatus.READY,
+          designatedPurchaseChain: 2, // Not in minAmounts
+        },
+      ]);
+      mockDatabase.updateEarmarkStatus.mockResolvedValue(undefined);
+      isValidInvoice.mockReturnValue(null);
+      isXerc20Supported.mockResolvedValue(false);
+
+      const result = await eventProcessor.processInvoiceEnqueued(event);
+
+      // Should mark COMPLETED even when chain unavailable, so next cycle can re-evaluate
+      expect(mockDatabase.updateEarmarkStatus).toHaveBeenCalledWith('earmark-1', EarmarkStatus.COMPLETED);
+      expect(result.result).toBe(EventProcessingResultType.Failure);
+      expect(result.retryAfter).toBe(60000);
     });
 
     it('should return retry when getEarmarks fails after processPendingEarmark succeeds', async () => {
