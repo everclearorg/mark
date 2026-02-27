@@ -664,11 +664,17 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       const invoice = invoiceMap.get(invoiceId);
       if (invoice) {
         if (status === EarmarkStatus.READY) {
-          // READY earmarks go into the processing map
+          // READY earmarks go into the processing map with chain constraint
           earmarkedInvoicesMap.set(invoiceId, designatedPurchaseChain);
-          logger.info('Earmarked invoice ready for processing', {
+
+          // Move READY → COMPLETED immediately after capturing the chain constraint.
+          // This gives the earmark one shot at filling with the designated chain.
+          // If it fails, the earmark is already gone, so the next cycle can re-evaluate fresh.
+          await context.database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
+          logger.info('Earmarked invoice ready for processing, marked COMPLETED', {
             requestId,
             invoiceId,
+            earmarkId: earmark.id,
             designatedPurchaseChain,
             ticker: invoice.ticker_hash,
           });
