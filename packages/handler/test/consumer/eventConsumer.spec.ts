@@ -204,6 +204,39 @@ describe('EventConsumer', () => {
       );
     });
 
+    it('should re-enqueue Continue result without incrementing retryCount', async () => {
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 3,
+        maxRetries: 10,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Continue,
+        eventId: 'event-1',
+        processedAt: Date.now(),
+        duration: 100,
+        retryAfter: 10000,
+      });
+
+      await eventConsumer.addEvent(event);
+      // Wait for async processing to complete
+      await new Promise((r) => setImmediate(r));
+
+      // Should re-enqueue with forceUpdate=true but retryCount should NOT be incremented
+      expect(mockQueue.enqueueEvent).toHaveBeenCalledTimes(2); // once for addEvent, once for continue
+      const lastCall = mockQueue.enqueueEvent.mock.calls[1];
+      expect(lastCall[0].retryCount).toBe(3); // unchanged from original
+      expect(lastCall[2]).toBe(true); // forceUpdate=true
+      expect(mockQueue.moveToDeadLetterQueue).not.toHaveBeenCalled();
+    });
+
     it('should not process if consumer is not running', async () => {
       await eventConsumer.stop();
 

@@ -30,6 +30,7 @@ export enum EventProcessingResultType {
   Success = 'Success',
   Failure = 'Failure',
   Invalid = 'Invalid',
+  Continue = 'Continue',
 }
 
 export interface EventProcessingResult {
@@ -175,7 +176,7 @@ export class EventProcessor {
               ticker: invoice.ticker_hash,
             });
             return {
-              result: EventProcessingResultType.Failure,
+              result: EventProcessingResultType.Continue,
               eventId: event.id,
               processedAt: Date.now(),
               duration: Date.now() - startTime,
