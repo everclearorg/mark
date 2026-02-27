@@ -1,4 +1,5 @@
 export enum EarmarkStatus {
+  INITIATING = 'initiating',
   PENDING = 'pending',
   READY = 'ready',
   COMPLETED = 'completed',
