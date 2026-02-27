@@ -53,6 +53,7 @@ export class EventQueue {
   private readonly cursorKey = `${this.prefix}:backfill-cursor`;
   private readonly metricsKey = `${this.prefix}:metrics`;
   private readonly invalidInvoiceKeyPrefix = `${this.prefix}:invalid-invoice`;
+  private readonly settledInvoiceKeyPrefix = `${this.prefix}:settled-invoice`;
   private readonly pausedKey = `${this.prefix}:paused`;
   private readonly store: Redis;
 
@@ -525,6 +526,30 @@ export class EventQueue {
    */
   async isInvalidInvoice(invoiceId: string): Promise<boolean> {
     const key = `${this.invalidInvoiceKeyPrefix}:${invoiceId}`;
+    const result = await this.store.exists(key);
+    return result === 1;
+  }
+
+  /**
+   * Record an invoice as settled so it won't be reprocessed (e.g. by backfill).
+   * Settled invoices are stored separately from invalid invoices for clarity.
+   * @param invoiceId - The invoice ID to mark as settled
+   * @param ttlSeconds - Optional TTL in seconds (default: 7 days)
+   */
+  async addSettledInvoice(invoiceId: string, ttlSeconds?: number): Promise<void> {
+    const key = `${this.settledInvoiceKeyPrefix}:${invoiceId}`;
+    const ttl = ttlSeconds ?? this.invalidInvoiceTtlSeconds;
+    await this.store.setex(key, ttl, '1');
+    this.logger.debug('Added settled invoice to store', { invoiceId, ttl });
+  }
+
+  /**
+   * Check if an invoice has been marked as settled.
+   * @param invoiceId - The invoice ID to check
+   * @returns true if the invoice is in the settled store
+   */
+  async isSettledInvoice(invoiceId: string): Promise<boolean> {
+    const key = `${this.settledInvoiceKeyPrefix}:${invoiceId}`;
     const result = await this.store.exists(key);
     return result === 1;
   }
