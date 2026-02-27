@@ -160,15 +160,15 @@ export class EventProcessor {
       try {
         await processPendingEarmark(invoice, minAmounts, this.processingContext);
 
-        // Get a pending earmark for this specific invoice
+        // Get an active earmark for this specific invoice
         const pendingEarmarks = await database.getEarmarks({
-          status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
+          status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
           invoiceId: invoice.intent_id,
         });
 
         if (pendingEarmarks.length > 0) {
           const earmark = pendingEarmarks[0];
-          if (earmark.status === EarmarkStatus.PENDING) {
+          if (earmark.status === EarmarkStatus.PENDING || earmark.status === EarmarkStatus.INITIATING) {
             logger.debug('Skipping invoice with pending earmark', {
               requestId,
               invoiceId: event.id,

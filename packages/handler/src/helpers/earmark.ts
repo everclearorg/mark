@@ -17,9 +17,9 @@ export async function processPendingEarmark(
   const { logger, requestId, database } = processingContext;
 
   try {
-    // Get a pending earmark for this specific invoice
+    // Get an active earmark for this specific invoice (INITIATING or PENDING)
     const pendingEarmarks = await database.getEarmarks({
-      status: EarmarkStatus.PENDING,
+      status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING],
       invoiceId: invoice.intent_id,
     });
 
@@ -27,8 +27,19 @@ export async function processPendingEarmark(
       return;
     }
 
-    // Database constraint ensures at most one PENDING earmark per invoice
+    // Database constraint ensures at most one active earmark per invoice
     const earmark = pendingEarmarks[0];
+
+    // INITIATING earmarks are still being set up (bridge transactions in progress)
+    // Don't process them yet - just return so the caller can check the status
+    if (earmark.status === EarmarkStatus.INITIATING) {
+      logger.debug('Earmark still in INITIATING state, waiting for bridge transactions', {
+        requestId,
+        invoiceId: invoice.intent_id,
+        earmarkId: earmark.id,
+      });
+      return;
+    }
     logger.debug('Processing pending earmark for invoice', {
       requestId,
       invoiceId: invoice.intent_id,

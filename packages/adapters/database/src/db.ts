@@ -258,7 +258,7 @@ export async function getActiveEarmarkForInvoice(invoiceId: string): Promise<Cam
   const query = `
     SELECT * FROM earmarks
     WHERE "invoice_id" = $1
-    AND status IN ('pending', 'ready')
+    AND status IN ('initiating', 'pending', 'ready')
   `;
   const result = await queryWithClient<earmarks>(query, [invoiceId]);
 

@@ -67,7 +67,9 @@ export async function evaluateOnDemandRebalancing(
   const balances = await getMarkBalances(config, context.chainService, context.prometheus);
 
   // Get active earmarks to exclude from available balance
-  const activeEarmarks = await database.getEarmarks({ status: [EarmarkStatus.PENDING, EarmarkStatus.READY] });
+  const activeEarmarks = await database.getEarmarks({
+    status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
+  });
   const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
 
   // For each potential destination chain, evaluate if we can aggregate enough funds
@@ -1024,7 +1026,8 @@ export async function executeOnDemandRebalancing(
 
   const { destinationChain, rebalanceOperations, minAmount } = evaluationResult;
 
-  // Check if an active earmark already exists for this invoice before executing operations
+  // Check if an active earmark already exists for this invoice before creating a new one.
+  // This avoids unnecessary constraint violation errors in the normal (non-race) case.
   const existingActive = await database.getActiveEarmarkForInvoice(invoice.intent_id);
 
   if (existingActive) {
@@ -1036,6 +1039,39 @@ export async function executeOnDemandRebalancing(
     });
     return existingActive.status === EarmarkStatus.PENDING ? existingActive.id : null;
   }
+
+  // Create an earmark with INITIATING status BEFORE executing any bridge transactions.
+  // The unique partial index on (invoice_id) WHERE status IN ('initiating', 'pending', 'ready')
+  // prevents two concurrent processes from both creating earmarks. This ensures the constraint
+  // fires before any money moves on-chain, preventing double-rebalancing.
+  let earmark: Earmark;
+  try {
+    earmark = await database.createEarmark({
+      invoiceId: invoice.intent_id,
+      designatedPurchaseChain: destinationChain!,
+      tickerHash: invoice.ticker_hash,
+      minAmount: minAmount!,
+      status: EarmarkStatus.INITIATING,
+    });
+  } catch (error: unknown) {
+    const dbError = error as { code?: string; constraint?: string };
+    if (dbError.code === '23505' && dbError.constraint === 'unique_active_earmark_per_invoice') {
+      // Another process won the race and created the earmark first.
+      // Return null — the caller will retry and pick up the existing earmark.
+      logger.warn('Race condition: another process created earmark first, skipping', {
+        requestId,
+        invoiceId: invoice.intent_id,
+      });
+      return null;
+    }
+    throw error;
+  }
+
+  logger.info('Created INITIATING earmark for invoice', {
+    requestId,
+    earmarkId: earmark.id,
+    invoiceId: invoice.intent_id,
+  });
 
   // Track successful operations to create database records later
   const successfulOperations: Array<{
@@ -1063,6 +1099,7 @@ export async function executeOnDemandRebalancing(
         // Error already logged in executeSingleOperation
         // For swaps, fail fast; for bridges, continue to next operation
         if (operation.isSameChainSwap) {
+          await database.updateEarmarkStatus(earmark.id, EarmarkStatus.FAILED);
           return null;
         }
         continue;
@@ -1099,63 +1136,43 @@ export async function executeOnDemandRebalancing(
           invoiceId: invoice.intent_id,
         });
       }
+      await database.updateEarmarkStatus(earmark.id, EarmarkStatus.FAILED);
       return null;
     }
 
     if (successfulOperations.length === 0) {
-      logger.error('No bridge operations succeeded, not creating earmark', {
+      logger.error('No bridge operations succeeded', {
         requestId,
         invoiceId: invoice.intent_id,
         totalBridgeOperations: bridgeOperationCount,
       });
+      await database.updateEarmarkStatus(earmark.id, EarmarkStatus.FAILED);
       return null;
     }
 
     const allSucceeded = successfulOperations.length === bridgeOperationCount;
+
+    // Transition earmark from INITIATING to PENDING (or FAILED on partial failure)
+    const newStatus = allSucceeded ? EarmarkStatus.PENDING : EarmarkStatus.FAILED;
+    await database.updateEarmarkStatus(earmark.id, newStatus);
+
     if (allSucceeded) {
-      logger.info('All bridge operations succeeded, creating earmark', {
+      logger.info('All bridge operations succeeded, earmark now PENDING', {
         requestId,
+        earmarkId: earmark.id,
         invoiceId: invoice.intent_id,
         successfulOperations: successfulOperations.length,
         totalBridgeOperations: bridgeOperationCount,
       });
     } else {
-      logger.warn('Partial failure in rebalancing, creating FAILED earmark', {
+      logger.warn('Partial failure in rebalancing, earmark now FAILED', {
         requestId,
+        earmarkId: earmark.id,
         invoiceId: invoice.intent_id,
         successfulOperations: successfulOperations.length,
         totalBridgeOperations: bridgeOperationCount,
       });
     }
-
-    let earmark: Earmark;
-    try {
-      earmark = await database.createEarmark({
-        invoiceId: invoice.intent_id,
-        designatedPurchaseChain: destinationChain!,
-        tickerHash: invoice.ticker_hash,
-        minAmount: minAmount!,
-        status: allSucceeded ? EarmarkStatus.PENDING : EarmarkStatus.FAILED,
-      });
-    } catch (error: unknown) {
-      const dbError = error as { code?: string; constraint?: string };
-      if (dbError.code === '23505' && dbError.constraint === 'unique_active_earmark_per_invoice') {
-        logger.warn('Race condition: Active earmark created by another process', {
-          requestId,
-          invoiceId: invoice.intent_id,
-        });
-        const existing = await database.getActiveEarmarkForInvoice(invoice.intent_id);
-        return existing?.status === EarmarkStatus.PENDING ? existing.id : null;
-      }
-      throw error;
-    }
-
-    logger.info('Created earmark for invoice', {
-      requestId,
-      earmarkId: earmark.id,
-      invoiceId: invoice.intent_id,
-      status: earmark.status,
-    });
 
     for (const op of successfulOperations) {
       try {
@@ -1189,7 +1206,7 @@ export async function executeOnDemandRebalancing(
       }
     }
 
-    return earmark.status === EarmarkStatus.PENDING ? earmark.id : null;
+    return newStatus === EarmarkStatus.PENDING ? earmark.id : null;
   } catch (error) {
     logger.error('Failed to execute on-demand rebalancing', {
       requestId,
@@ -1197,6 +1214,16 @@ export async function executeOnDemandRebalancing(
       error: jsonifyError(error),
       successfulOperations: successfulOperations.length,
     });
+    // Mark the earmark as FAILED so it doesn't block future attempts
+    try {
+      await database.updateEarmarkStatus(earmark.id, EarmarkStatus.FAILED);
+    } catch (updateError) {
+      logger.error('Failed to update earmark status to FAILED after error', {
+        requestId,
+        earmarkId: earmark.id,
+        error: jsonifyError(updateError),
+      });
+    }
     return null;
   }
 }
@@ -1263,7 +1290,9 @@ export async function handleMinAmountIncrease(
 
   // Get current balances and earmarked funds
   const balances = await getMarkBalances(config, context.chainService, context.prometheus);
-  const activeEarmarks = await database.getEarmarks({ status: [EarmarkStatus.PENDING, EarmarkStatus.READY] });
+  const activeEarmarks = await database.getEarmarks({
+    status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
+  });
   const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
 
   // Check if destination already has enough available balance
@@ -1906,10 +1935,10 @@ export async function getEarmarkedBalance(
 
   const ticker = tickerHash.toLowerCase();
 
-  // Get earmarked amounts (both pending and ready)
+  // Get earmarked amounts (initiating, pending, and ready)
   const earmarks = await database.getEarmarks({
     designatedPurchaseChain: chainId,
-    status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
+    status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
   });
   const earmarkedAmount = earmarks
     .filter((e: database.Earmark) => e.tickerHash.toLowerCase() === ticker)
