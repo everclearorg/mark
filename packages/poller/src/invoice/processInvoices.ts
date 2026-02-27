@@ -643,9 +643,9 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Process earmarked invoices first
   try {
     await onDemand.processPendingEarmarks(context, invoices);
-    // Get all earmarks (PENDING and READY) to prevent duplicate processing
+    // Get all earmarks (INITIATING, PENDING and READY) to prevent duplicate processing
     const allEarmarks = await context.database.getEarmarks({
-      status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
+      status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
     });
     const staleEarmarkIds: string[] = [];
 
@@ -672,8 +672,8 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
             designatedPurchaseChain,
             ticker: invoice.ticker_hash,
           });
-        } else if (status === EarmarkStatus.PENDING) {
-          // PENDING earmarks are tracked separately to be skipped
+        } else if (status === EarmarkStatus.PENDING || status === EarmarkStatus.INITIATING) {
+          // PENDING/INITIATING earmarks are tracked separately to be skipped
           pendingEarmarkInvoiceIds.add(invoiceId);
           logger.debug('Pending earmarked invoice will be skipped', {
             requestId,

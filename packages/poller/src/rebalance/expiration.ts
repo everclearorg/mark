@@ -57,8 +57,34 @@ export async function cleanupExpiredEarmarks(context: ProcessingContext): Promis
   const { database, logger, requestId, config } = context;
   const ttlMinutes = config.earmarkTTLMinutes || 1440;
 
+  const initiatingTtlMinutes = 5;
+
   try {
     await database.withTransaction(async (client) => {
+      // Expire stuck INITIATING earmarks with a short TTL.
+      // INITIATING is a transient state that should be resolved within seconds.
+      // If still INITIATING after 5 minutes, the status update to PENDING/FAILED must have failed.
+      const stuckInitiating = await client.query(
+        `
+        UPDATE earmarks SET status = $1, updated_at = NOW()
+        WHERE status = $2
+        AND created_at < NOW() - INTERVAL '${initiatingTtlMinutes} minutes'
+        RETURNING id, invoice_id, created_at
+      `,
+        [EarmarkStatus.EXPIRED, EarmarkStatus.INITIATING],
+      );
+
+      for (const earmark of stuckInitiating.rows) {
+        logger.info('Stuck INITIATING earmark expired', {
+          requestId,
+          earmarkId: earmark.id,
+          invoiceId: earmark.invoice_id,
+          reason: 'STUCK_INITIATING',
+          ageMinutes: Math.floor((Date.now() - new Date(earmark.created_at).getTime()) / (1000 * 60)),
+          ttlMinutes: initiatingTtlMinutes,
+        });
+      }
+
       // Find earmarks that should expire due to TTL (not completed/cancelled/expired)
       const earmarksToExpire = await client.query(
         `
@@ -135,9 +161,10 @@ export async function cleanupExpiredEarmarks(context: ProcessingContext): Promis
         });
       }
 
-      if (earmarksToExpire.rows.length > 0 || orphanedEarmarks.rows.length > 0) {
+      if (stuckInitiating.rows.length > 0 || earmarksToExpire.rows.length > 0 || orphanedEarmarks.rows.length > 0) {
         logger.info('Cleanup summary', {
           requestId,
+          stuckInitiatingEarmarks: stuckInitiating.rows.length,
           expiredEarmarks: earmarksToExpire.rows.length,
           orphanedEarmarks: orphanedEarmarks.rows.length,
           ttlMinutes,
