@@ -189,17 +189,6 @@ export class EventProcessor {
             minAmounts = {
               [earmark.designatedPurchaseChain.toString()]: minAmounts[earmark.designatedPurchaseChain.toString()],
             };
-
-            // Move READY → COMPLETED immediately after applying the chain constraint.
-            // This gives the earmark one shot at filling with the designated chain.
-            // If it fails, the earmark is already gone, so the next cycle can re-evaluate fresh.
-            await database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
-            logger.info('Earmark marked COMPLETED after applying chain constraint', {
-              requestId,
-              invoiceId: event.id,
-              earmarkId: earmark.id,
-              designatedPurchaseChain: earmark.designatedPurchaseChain,
-            });
           } else {
             logger.warn('Earmarked invoice designated origin not available in minAmounts', {
               requestId,
@@ -418,6 +407,26 @@ export class EventProcessor {
           throw e;
         }
       } else {
+        // Purchase failed — mark earmark COMPLETED so the next cycle can re-evaluate
+        // fresh (e.g. pick a different chain or create a new earmark).
+        try {
+          const earmark = await database.getActiveEarmarkForInvoice(event.id);
+          if (earmark && earmark.status === EarmarkStatus.READY) {
+            await database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
+            logger.info('Earmark marked COMPLETED after failed purchase attempt', {
+              requestId,
+              invoiceId: event.id,
+              earmarkId: earmark.id,
+            });
+          }
+        } catch (error) {
+          logger.error('Error cleaning up earmark after failed purchase', {
+            requestId,
+            invoiceId: event.id,
+            error: jsonifyError(error),
+          });
+        }
+
         logger.info('Method complete with 0 purchases', {
           requestId,
           invoiceId: event.id,

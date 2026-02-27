@@ -78,6 +78,7 @@ describe('EventProcessor', () => {
 
     mockDatabase = {
       getEarmarks: jest.fn(),
+      getActiveEarmarkForInvoice: jest.fn(),
       updateEarmarkStatus: jest.fn(),
     } as any;
 
@@ -618,7 +619,7 @@ describe('EventProcessor', () => {
       );
     });
 
-    it('should move READY earmark to COMPLETED after applying chain constraint', async () => {
+    it('should keep READY earmark during purchase and mark COMPLETED after failed attempt', async () => {
       const event = createInvoiceEvent('invoice-1');
       const invoice = createMockInvoice();
       const { processPendingEarmark, splitAndSendIntents } = require('#/helpers');
@@ -643,6 +644,12 @@ describe('EventProcessor', () => {
           designatedPurchaseChain: 2,
         },
       ]);
+      mockDatabase.getActiveEarmarkForInvoice.mockResolvedValue({
+        id: 'earmark-1',
+        invoiceId: 'invoice-1',
+        status: EarmarkStatus.READY,
+        designatedPurchaseChain: 2,
+      });
       mockDatabase.updateEarmarkStatus.mockResolvedValue(undefined);
       isValidInvoice.mockReturnValue(null);
       isXerc20Supported.mockResolvedValue(false);
@@ -657,18 +664,26 @@ describe('EventProcessor', () => {
       });
       splitAndSendIntents.mockResolvedValue([]);
 
-      await eventProcessor.processInvoiceEnqueued(event);
+      const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      // Earmark should be marked COMPLETED immediately after applying chain constraint
+      // Earmark stays READY during purchase, then marked COMPLETED after 0 purchases
       expect(mockDatabase.updateEarmarkStatus).toHaveBeenCalledWith('earmark-1', EarmarkStatus.COMPLETED);
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Earmark marked COMPLETED after applying chain constraint',
+        'Applied earmark chain constraint, earmark stays READY during purchase',
         expect.objectContaining({
           invoiceId: 'invoice-1',
           earmarkId: 'earmark-1',
           designatedPurchaseChain: 2,
         }),
       );
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Earmark marked COMPLETED after failed purchase attempt',
+        expect.objectContaining({
+          invoiceId: 'invoice-1',
+          earmarkId: 'earmark-1',
+        }),
+      );
+      expect(result.result).toBe(EventProcessingResultType.Failure);
     });
 
     it('should move READY earmark to COMPLETED and fail when designated chain not in minAmounts', async () => {
