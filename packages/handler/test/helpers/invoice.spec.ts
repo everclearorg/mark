@@ -37,6 +37,7 @@ describe('Invoice Helpers', () => {
     mockEventQueue = {
       hasEvent: jest.fn(),
       isInvalidInvoice: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
+      isSettledInvoice: jest.fn<() => Promise<boolean>>().mockResolvedValue(false),
       enqueueEvent: jest.fn(),
       dequeueEvents: jest.fn(),
       moveProcessingToPending: jest.fn(),
@@ -184,6 +185,39 @@ describe('Invoice Helpers', () => {
       expect(mockEventQueue.hasEvent).not.toHaveBeenCalled();
       expect(mockEventConsumer.addEvent).not.toHaveBeenCalled();
       expect(mockLogger.debug).toHaveBeenCalledWith('Invoice marked as invalid, skipping', {
+        invoiceId: 'invoice-1',
+      });
+    });
+
+    it('should skip invoices marked as settled', async () => {
+      const invoices: Invoice[] = [
+        {
+          intent_id: 'invoice-1',
+          amount: '1000',
+          owner: '0x123',
+          entry_epoch: 1,
+          origin: '1',
+          destinations: ['2'],
+          ticker_hash: '0xabc',
+          discountBps: 0,
+          hub_status: 'INVOICED',
+          hub_invoice_enqueued_timestamp: Date.now(),
+        },
+      ];
+
+      mockEverclear.fetchInvoicesByTxNonce.mockResolvedValue({
+        invoices,
+        nextCursor: 'cursor-123',
+      });
+      mockEventQueue.isSettledInvoice.mockResolvedValue(true);
+      mockEventQueue.hasEvent.mockResolvedValue(false);
+
+      await checkPendingInvoices(mockAdapters);
+
+      expect(mockEventQueue.isSettledInvoice).toHaveBeenCalledWith('invoice-1');
+      expect(mockEventQueue.hasEvent).not.toHaveBeenCalled();
+      expect(mockEventConsumer.addEvent).not.toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalledWith('Invoice marked as settled, skipping', {
         invoiceId: 'invoice-1',
       });
     });
