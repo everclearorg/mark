@@ -78,6 +78,7 @@ describe('EventProcessor', () => {
 
     mockDatabase = {
       getEarmarks: jest.fn(),
+      updateEarmarkStatus: jest.fn(),
     } as any;
 
     mockLogger = {
@@ -455,7 +456,7 @@ describe('EventProcessor', () => {
       expect(result.retryAfter).toBe(10000);
     });
 
-    it('should skip invoice with pending earmark', async () => {
+    it('should continue invoice with pending earmark (no DLQ increment)', async () => {
       const event = createInvoiceEvent('invoice-1');
       const invoice = createMockInvoice();
       const { processPendingEarmark } = require('#/helpers');
@@ -480,7 +481,7 @@ describe('EventProcessor', () => {
 
       const result = await eventProcessor.processInvoiceEnqueued(event);
 
-      expect(result.result).toBe(EventProcessingResultType.Failure);
+      expect(result.result).toBe(EventProcessingResultType.Continue);
       expect(result.retryAfter).toBe(10000);
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Skipping invoice with pending earmark',
@@ -488,6 +489,35 @@ describe('EventProcessor', () => {
           invoiceId: 'invoice-1',
         }),
       );
+    });
+
+    it('should continue invoice with initiating earmark (no DLQ increment)', async () => {
+      const event = createInvoiceEvent('invoice-1');
+      const invoice = createMockInvoice();
+      const { processPendingEarmark } = require('#/helpers');
+
+      mockEverclear.fetchInvoiceById.mockResolvedValue(invoice);
+      mockEverclear.getMinAmounts.mockResolvedValue({
+        invoiceAmount: '1000',
+        amountAfterDiscount: '900',
+        discountBps: '100',
+        custodiedAmounts: { '1': '0' },
+        minAmounts: { '1': '100' },
+      });
+      processPendingEarmark.mockResolvedValue(undefined);
+      mockDatabase.getEarmarks.mockResolvedValue([
+        {
+          id: 'earmark-1',
+          invoiceId: 'invoice-1',
+          status: EarmarkStatus.INITIATING,
+          designatedPurchaseChain: 1,
+        },
+      ]);
+
+      const result = await eventProcessor.processInvoiceEnqueued(event);
+
+      expect(result.result).toBe(EventProcessingResultType.Continue);
+      expect(result.retryAfter).toBe(10000);
     });
 
     it('should handle processing errors', async () => {

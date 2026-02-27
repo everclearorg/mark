@@ -244,6 +244,16 @@ export class EventConsumer {
           error: jsonifyError(e),
         });
       }
+    } else if (result.result === EventProcessingResultType.Continue) {
+      try {
+        await this.handleContinue(event, result.retryAfter);
+      } catch (e) {
+        this.logger.error('Failed to schedule continue for event', {
+          eventId: event.id,
+          eventType: event.type,
+          error: jsonifyError(e),
+        });
+      }
     } else {
       if (result.result === EventProcessingResultType.Invalid) {
         await this.queue.addInvalidInvoice(event.id);
@@ -284,6 +294,25 @@ export class EventConsumer {
     event.scheduledAt = Date.now() + (retryAfter ?? 0);
 
     // Re-enqueue event with forceUpdate to preserve the incremented retryCount
+    await this.queue.enqueueEvent(event, event.priority, true);
+  }
+
+  /**
+   * Handle continue logic — re-enqueue without incrementing retryCount.
+   * Used for expected waits (e.g., rebalancing in progress) that should not
+   * count toward the dead-letter-queue budget.
+   */
+  async handleContinue(event: QueuedEvent, retryAfter?: number): Promise<void> {
+    this.logger.debug('Scheduling event continue (no retry increment)', {
+      eventId: event.id,
+      eventType: event.type,
+      retryCount: event.retryCount,
+      retryAfter,
+    });
+
+    event.scheduledAt = Date.now() + (retryAfter ?? 0);
+
+    // Re-enqueue event with forceUpdate but preserve the existing retryCount
     await this.queue.enqueueEvent(event, event.priority, true);
   }
 
