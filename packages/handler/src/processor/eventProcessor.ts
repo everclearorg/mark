@@ -30,6 +30,7 @@ export enum EventProcessingResultType {
   Success = 'Success',
   Failure = 'Failure',
   Invalid = 'Invalid',
+  Continue = 'Continue',
 }
 
 export interface EventProcessingResult {
@@ -160,22 +161,22 @@ export class EventProcessor {
       try {
         await processPendingEarmark(invoice, minAmounts, this.processingContext);
 
-        // Get a pending earmark for this specific invoice
+        // Get an active earmark for this specific invoice
         const pendingEarmarks = await database.getEarmarks({
-          status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
+          status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
           invoiceId: invoice.intent_id,
         });
 
         if (pendingEarmarks.length > 0) {
           const earmark = pendingEarmarks[0];
-          if (earmark.status === EarmarkStatus.PENDING) {
+          if (earmark.status === EarmarkStatus.PENDING || earmark.status === EarmarkStatus.INITIATING) {
             logger.debug('Skipping invoice with pending earmark', {
               requestId,
               invoiceId: event.id,
               ticker: invoice.ticker_hash,
             });
             return {
-              result: EventProcessingResultType.Failure,
+              result: EventProcessingResultType.Continue,
               eventId: event.id,
               processedAt: Date.now(),
               duration: Date.now() - startTime,
@@ -188,6 +189,17 @@ export class EventProcessor {
             minAmounts = {
               [earmark.designatedPurchaseChain.toString()]: minAmounts[earmark.designatedPurchaseChain.toString()],
             };
+
+            // Move READY → COMPLETED immediately after applying the chain constraint.
+            // This gives the earmark one shot at filling with the designated chain.
+            // If it fails, the earmark is already gone, so the next cycle can re-evaluate fresh.
+            await database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
+            logger.info('Earmark marked COMPLETED after applying chain constraint', {
+              requestId,
+              invoiceId: event.id,
+              earmarkId: earmark.id,
+              designatedPurchaseChain: earmark.designatedPurchaseChain,
+            });
           } else {
             logger.warn('Earmarked invoice designated origin not available in minAmounts', {
               requestId,
@@ -196,6 +208,8 @@ export class EventProcessor {
               availableOrigins: Object.keys(minAmounts),
               originalMinAmounts: Object.keys(minAmounts),
             });
+            // Designated chain unavailable — complete earmark so the next cycle can re-evaluate
+            await database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
             return {
               result: EventProcessingResultType.Failure,
               eventId: event.id,

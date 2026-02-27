@@ -46,10 +46,16 @@ export async function checkPendingInvoices(adapters: InvoiceHandlerAdapters): Pr
     for (const invoice of invoices) {
       const invoiceId = invoice.intent_id;
 
-      // Skip if we've already marked this invoice as invalid (avoids reprocessing)
-      const isInvalid = await eventQueue.isInvalidInvoice(invoiceId);
+      // Skip if we've already marked this invoice as invalid or settled (avoids reprocessing)
+      const [isInvalid, isSettled] = await Promise.all([
+        eventQueue.isInvalidInvoice(invoiceId),
+        eventQueue.isSettledInvoice(invoiceId),
+      ]);
       if (isInvalid) {
         logger.debug('Invoice marked as invalid, skipping', { invoiceId });
+        continue;
+      } else if (isSettled) {
+        logger.debug('Invoice marked as settled, skipping', { invoiceId });
         continue;
       }
 

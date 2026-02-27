@@ -643,9 +643,9 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Process earmarked invoices first
   try {
     await onDemand.processPendingEarmarks(context, invoices);
-    // Get all earmarks (PENDING and READY) to prevent duplicate processing
+    // Get all earmarks (INITIATING, PENDING and READY) to prevent duplicate processing
     const allEarmarks = await context.database.getEarmarks({
-      status: [EarmarkStatus.PENDING, EarmarkStatus.READY],
+      status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
     });
     const staleEarmarkIds: string[] = [];
 
@@ -664,16 +664,22 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
       const invoice = invoiceMap.get(invoiceId);
       if (invoice) {
         if (status === EarmarkStatus.READY) {
-          // READY earmarks go into the processing map
+          // READY earmarks go into the processing map with chain constraint
           earmarkedInvoicesMap.set(invoiceId, designatedPurchaseChain);
-          logger.info('Earmarked invoice ready for processing', {
+
+          // Move READY → COMPLETED immediately after capturing the chain constraint.
+          // This gives the earmark one shot at filling with the designated chain.
+          // If it fails, the earmark is already gone, so the next cycle can re-evaluate fresh.
+          await context.database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
+          logger.info('Earmarked invoice ready for processing, marked COMPLETED', {
             requestId,
             invoiceId,
+            earmarkId: earmark.id,
             designatedPurchaseChain,
             ticker: invoice.ticker_hash,
           });
-        } else if (status === EarmarkStatus.PENDING) {
-          // PENDING earmarks are tracked separately to be skipped
+        } else if (status === EarmarkStatus.PENDING || status === EarmarkStatus.INITIATING) {
+          // PENDING/INITIATING earmarks are tracked separately to be skipped
           pendingEarmarkInvoiceIds.add(invoiceId);
           logger.debug('Pending earmarked invoice will be skipped', {
             requestId,

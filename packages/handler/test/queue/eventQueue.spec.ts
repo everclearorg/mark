@@ -538,6 +538,49 @@ describe('EventQueue', () => {
     });
   });
 
+  describe('settled invoice store', () => {
+    it('should add settled invoice with default TTL', async () => {
+      await eventQueue.addSettledInvoice('invoice-123');
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'event-queue:settled-invoice:invoice-123',
+        7 * 24 * 60 * 60,
+        '1',
+      );
+      expect(mockLogger.debug).toHaveBeenCalledWith('Added settled invoice to store', {
+        invoiceId: 'invoice-123',
+        ttl: 7 * 24 * 60 * 60,
+      });
+    });
+
+    it('should add settled invoice with custom TTL', async () => {
+      await eventQueue.addSettledInvoice('invoice-456', 3600);
+
+      expect(mockRedis.setex).toHaveBeenCalledWith(
+        'event-queue:settled-invoice:invoice-456',
+        3600,
+        '1',
+      );
+    });
+
+    it('should return true when invoice is settled', async () => {
+      (mockRedis.exists as jest.Mock<() => Promise<number>>).mockResolvedValue(1);
+
+      const result = await eventQueue.isSettledInvoice('invoice-789');
+
+      expect(result).toBe(true);
+      expect(mockRedis.exists).toHaveBeenCalledWith('event-queue:settled-invoice:invoice-789');
+    });
+
+    it('should return false when invoice is not settled', async () => {
+      (mockRedis.exists as jest.Mock<() => Promise<number>>).mockResolvedValue(0);
+
+      const result = await eventQueue.isSettledInvoice('invoice-999');
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe('getQueueDepths', () => {
     it('should return queue depths for all event types', async () => {
       mockRedis.zcard = (jest.fn() as jest.MockedFunction<any>).mockResolvedValue(5);
