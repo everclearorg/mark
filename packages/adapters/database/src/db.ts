@@ -27,6 +27,34 @@ type cex_withdrawals = schema.cex_withdrawals.Selectable;
 
 let pool: Pool | null = null;
 
+// Connection timeout retry settings
+const ACQUIRE_MAX_RETRIES = 3;
+const ACQUIRE_BASE_DELAY_MS = 200;
+
+function isConnectionTimeoutError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Connection terminated due to connection timeout');
+}
+
+/**
+ * Acquire a client from the pool with retry on transient connection timeouts.
+ * When the pool is momentarily full, retrying with backoff lets us wait for
+ * a connection to free up instead of failing immediately.
+ */
+async function acquireClient(): Promise<PoolClient> {
+  for (let attempt = 1; attempt <= ACQUIRE_MAX_RETRIES; attempt++) {
+    try {
+      return await getPool().connect();
+    } catch (error) {
+      if (attempt < ACQUIRE_MAX_RETRIES && isConnectionTimeoutError(error)) {
+        await new Promise((resolve) => setTimeout(resolve, ACQUIRE_BASE_DELAY_MS * Math.pow(2, attempt - 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Failed to acquire database client');
+}
+
 export function initializeDatabase(config: DatabaseConfig): Pool {
   if (pool) {
     return pool;
@@ -62,6 +90,13 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
 
   pool = new Pool(poolConfig);
 
+  // Set per-connection timeouts to prevent hung queries from holding connections.
+  // statement_timeout: kills any query running longer than 30s.
+  // idle_in_transaction_session_timeout: kills transactions idle longer than 60s.
+  pool.on('connect', (client) => {
+    client.query('SET statement_timeout = 30000; SET idle_in_transaction_session_timeout = 60000');
+  });
+
   // Handle pool errors
   pool.on('error', async (err) => {
     console.error('Unexpected database error', err);
@@ -92,13 +127,23 @@ export async function closeDatabase(): Promise<void> {
 
 // Zapatos-style query helper functions
 export async function queryWithClient<T>(query: string, values?: unknown[]): Promise<T[]> {
-  const client = getPool();
-  const result = await client.query(query, values);
-  return result.rows;
+  for (let attempt = 1; attempt <= ACQUIRE_MAX_RETRIES; attempt++) {
+    try {
+      const result = await getPool().query(query, values);
+      return result.rows;
+    } catch (error) {
+      if (attempt < ACQUIRE_MAX_RETRIES && isConnectionTimeoutError(error)) {
+        await new Promise((resolve) => setTimeout(resolve, ACQUIRE_BASE_DELAY_MS * Math.pow(2, attempt - 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Failed to execute query');
 }
 
 export async function withTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await getPool().connect();
+  const client = await acquireClient();
   try {
     await client.query('BEGIN');
     const result = await callback(client);
@@ -449,7 +494,7 @@ export async function createRebalanceOperation(input: {
   recipient?: string;
   transactions?: Record<string, TransactionReceipt>;
 }): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }> {
-  const client = await getPool().connect();
+  const client = await acquireClient();
 
   try {
     await client.query('BEGIN');
