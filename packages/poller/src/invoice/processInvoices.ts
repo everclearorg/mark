@@ -667,11 +667,11 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
           // READY earmarks go into the processing map with chain constraint
           earmarkedInvoicesMap.set(invoiceId, designatedPurchaseChain);
 
-          // Move READY → COMPLETED immediately after capturing the chain constraint.
-          // This gives the earmark one shot at filling with the designated chain.
-          // If it fails, the earmark is already gone, so the next cycle can re-evaluate fresh.
-          await context.database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
-          logger.info('Earmarked invoice ready for processing, marked COMPLETED', {
+          // Keep earmark in READY state during purchase processing so that
+          // getEarmarkedBalance() continues to protect these funds from the
+          // regular rebalancer. The earmark will be marked COMPLETED after the
+          // purchase attempt (success or failure).
+          logger.info('Earmarked invoice ready for processing', {
             requestId,
             invoiceId,
             earmarkId: earmark.id,
@@ -938,6 +938,32 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
         duration: getTimeSeconds() - start,
       });
       continue;
+    }
+  }
+
+  // Mark COMPLETED earmarks for invoices that were NOT purchased.
+  // This prevents infinite retry loops when the purchase fails (e.g. insufficient balance)
+  // while keeping the earmark visible to getEarmarkedBalance() during the purchase window.
+  const purchasedIds = new Set(allPurchases.map((p) => p.target.intent_id));
+  for (const [invoiceId] of earmarkedInvoicesMap) {
+    if (!purchasedIds.has(invoiceId)) {
+      try {
+        const earmark = await context.database.getActiveEarmarkForInvoice(invoiceId);
+        if (earmark && earmark.status === EarmarkStatus.READY) {
+          await context.database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
+          logger.info('Earmark marked COMPLETED after failed purchase attempt', {
+            requestId,
+            earmarkId: earmark.id,
+            invoiceId,
+          });
+        }
+      } catch (error) {
+        logger.error('Error cleaning up earmark after failed purchase', {
+          requestId,
+          invoiceId,
+          error: jsonifyError(error),
+        });
+      }
     }
   }
 
