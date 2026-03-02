@@ -44,9 +44,11 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
 
   const poolConfig: PoolConfig = {
     connectionString,
-    max: config.maxConnections || 20,
+    max: config.maxConnections || 40,
     idleTimeoutMillis: config.idleTimeoutMillis || 30000,
-    connectionTimeoutMillis: config.connectionTimeoutMillis || 2000,
+    connectionTimeoutMillis: config.connectionTimeoutMillis || 5000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
   };
 
   // Configure SSL if needed
@@ -61,9 +63,14 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
   pool = new Pool(poolConfig);
 
   // Handle pool errors
-  pool.on('error', (err) => {
+  pool.on('error', async (err) => {
     console.error('Unexpected database error', err);
-    process.exit(-1);
+    try {
+      await closeDatabase();
+    } catch {
+      // ignore cleanup errors
+    }
+    process.exit(1);
   });
 
   return pool;
@@ -251,7 +258,7 @@ export async function getActiveEarmarkForInvoice(invoiceId: string): Promise<Cam
   const query = `
     SELECT * FROM earmarks
     WHERE "invoice_id" = $1
-    AND status IN ('pending', 'ready')
+    AND status IN ('initiating', 'pending', 'ready')
   `;
   const result = await queryWithClient<earmarks>(query, [invoiceId]);
 
@@ -363,9 +370,16 @@ export async function getEarmarksWithOperations(
   const countResult = await queryWithClient<{ count: string }>(countQuery, values);
   const total = parseInt(countResult[0].count, 10);
 
-  // Get earmarks with operations
-  let query = `
-    SELECT e.*,
+  // Paginate earmarks first, then join operations only for the selected rows
+  const query = `
+    WITH paginated AS (
+      SELECT e.*
+      FROM earmarks e
+      ${whereClause}
+      ORDER BY e.created_at DESC
+      LIMIT $${paramCount++} OFFSET $${paramCount++}
+    )
+    SELECT p.*,
            COALESCE(
              json_agg(
                json_build_object(
@@ -385,12 +399,11 @@ export async function getEarmarksWithOperations(
              ) FILTER (WHERE ro.id IS NOT NULL),
              '[]'::json
            ) as operations
-    FROM earmarks e
-    LEFT JOIN rebalance_operations ro ON e.id = ro.earmark_id
-    ${whereClause}
-    GROUP BY e.id
-    ORDER BY e.created_at DESC
-    LIMIT $${paramCount++} OFFSET $${paramCount}
+    FROM paginated p
+    LEFT JOIN rebalance_operations ro ON p.id = ro.earmark_id
+    GROUP BY p.id, p.invoice_id, p.designated_purchase_chain, p.ticker_hash,
+             p.min_amount, p.status, p.created_at, p.updated_at
+    ORDER BY p.created_at DESC
   `;
 
   values.push(limit, offset);

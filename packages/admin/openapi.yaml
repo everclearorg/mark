@@ -1,18 +1,17 @@
-openapi: 3.0.3
+# GENERATED FILE. DO NOT EDIT BY HAND.
+# Regenerate with: yarn workspace @mark/admin generate:openapi
+openapi: 3.1.0
 info:
   title: Mark Admin API
-  description: API for managing purchase and rebalance operations, earmarks, and system state
   version: 1.0.0
+  description: Mark Admin API schema (auto-generated from Zod schemas).
   contact:
     name: Everclear Team
-
 servers:
   - url: https://admin.api.everclear.org
     description: Production server
-
 security:
   - AdminToken: []
-
 tags:
   - name: Purchase Operations
     description: Endpoints for managing purchase cache operations
@@ -21,147 +20,429 @@ tags:
   - name: Earmarks
     description: Endpoints for managing earmarks and related operations
   - name: Trigger Operations
-    description: Endpoints for manually triggering operations (send, rebalance, intent)
-
+    description: Endpoints for manually triggering operations (send, rebalance,
+      intent, swap)
+components:
+  securitySchemes:
+    AdminToken:
+      type: apiKey
+      in: header
+      name: x-admin-token
+      description: Admin token required for all admin endpoints.
+  schemas:
+    SuccessResponse:
+      description: Generic success response
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+      additionalProperties: false
+    ErrorResponse:
+      description: Generic error response
+      type: object
+      properties:
+        message:
+          description: Human-readable error message
+          type: string
+        error:
+          description: Optional error details
+          anyOf:
+            - type: string
+            - type: object
+              propertyNames:
+                type: string
+              additionalProperties: {}
+      required:
+        - message
+      additionalProperties: {}
+    ForbiddenResponse:
+      description: Forbidden response
+      type: object
+      properties:
+        message:
+          type: string
+        recipient:
+          type: string
+      required:
+        - message
+      additionalProperties: {}
 paths:
   /pause/purchase:
     post:
       tags:
         - Purchase Operations
       summary: Pause purchase operations
-      description: Pauses all purchase cache operations
+      description: Pauses all purchase cache operations.
       operationId: pausePurchase
       responses:
-        '200':
-          description: Purchase operations paused successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          description: Internal server error or purchase cache already paused
+                description: Generic success response
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+                additionalProperties: false
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                alreadyPaused:
-                  summary: Purchase cache already paused
-                  value:
-                    message: Purchase cache is already paused
-
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /unpause/purchase:
     post:
       tags:
         - Purchase Operations
       summary: Unpause purchase operations
-      description: Resumes paused purchase cache operations
+      description: Resumes paused purchase cache operations.
       operationId: unpausePurchase
       responses:
-        '200':
-          description: Purchase operations resumed successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          description: Internal server error or purchase cache not paused
+                description: Generic success response
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+                additionalProperties: false
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                notPaused:
-                  summary: Purchase cache not paused
-                  value:
-                    message: Purchase cache is not paused
-
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /pause/rebalance:
     post:
       tags:
         - Rebalance Operations
       summary: Pause rebalance operations
-      description: Pauses all rebalance operations
+      description: Pauses all rebalance operations.
       operationId: pauseRebalance
       responses:
-        '200':
-          description: Rebalance operations paused successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          description: Internal server error or rebalance already paused
+                description: Generic success response
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+                additionalProperties: false
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                alreadyPaused:
-                  summary: Rebalance already paused
-                  value:
-                    message: Rebalance is already paused
-
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /unpause/rebalance:
     post:
       tags:
         - Rebalance Operations
       summary: Unpause rebalance operations
-      description: Resumes paused rebalance operations
+      description: Resumes paused rebalance operations.
       operationId: unpauseRebalance
       responses:
-        '200':
-          description: Rebalance operations resumed successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          description: Internal server error or rebalance not paused
+                description: Generic success response
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+                additionalProperties: false
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                notPaused:
-                  summary: Rebalance not paused
-                  value:
-                    message: Rebalance is not paused
-
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+  /pause/ondemand-rebalance:
+    post:
+      tags:
+        - Rebalance Operations
+      summary: Pause on-demand rebalance operations
+      description: Pauses on-demand rebalance operations.
+      operationId: pauseOnDemandRebalance
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                description: Generic success response
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+                additionalProperties: false
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+  /unpause/ondemand-rebalance:
+    post:
+      tags:
+        - Rebalance Operations
+      summary: Unpause on-demand rebalance operations
+      description: Resumes paused on-demand rebalance operations.
+      operationId: unpauseOnDemandRebalance
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                description: Generic success response
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                  - message
+                additionalProperties: false
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /rebalance/earmarks:
     get:
       tags:
         - Earmarks
       summary: List earmarks
-      description: Retrieve a paginated list of earmarks with optional filtering. Each earmark includes a nested array of its associated operations.
+      description: Retrieve a paginated list of earmarks with optional filtering. Each
+        earmark includes a nested array of its associated operations.
       operationId: getEarmarks
       parameters:
         - name: limit
           in: query
-          description: Maximum number of earmarks to return (max 1000)
+          required: true
           schema:
-            type: integer
-            minimum: 1
-            maximum: 1000
-            default: 50
+            default: "50"
+            type: string
+            pattern: ^\d+$
         - name: offset
           in: query
-          description: Number of earmarks to skip for pagination
+          required: true
           schema:
-            type: integer
-            minimum: 0
-            default: 0
+            default: "0"
+            type: string
+            pattern: ^\d+$
         - name: status
           in: query
-          description: Filter by earmark status
+          required: false
           schema:
             type: string
             enum:
@@ -173,17 +454,18 @@ paths:
               - expired
         - name: chainId
           in: query
-          description: Filter by designated purchase chain ID
+          required: false
           schema:
-            type: integer
+            type: string
+            pattern: ^\d+$
         - name: invoiceId
           in: query
-          description: Filter by invoice ID
+          required: false
           schema:
             type: string
       responses:
-        '200':
-          description: List of earmarks retrieved successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
@@ -192,91 +474,488 @@ paths:
                   earmarks:
                     type: array
                     items:
-                      $ref: '#/components/schemas/EarmarkWithOperations'
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                        invoiceId:
+                          type: string
+                        designatedPurchaseChain:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        tickerHash:
+                          type: string
+                        minAmount:
+                          description: Amount (18-decimals string)
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                            - pending
+                            - ready
+                            - completed
+                            - cancelled
+                            - failed
+                            - expired
+                        createdAt:
+                          type: string
+                          format: date-time
+                          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                        updatedAt:
+                          type: string
+                          format: date-time
+                          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                        operations:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                              status:
+                                type: string
+                                enum:
+                                  - pending
+                                  - awaiting_callback
+                                  - completed
+                                  - expired
+                                  - cancelled
+                              originChainId:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              destinationChainId:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              tickerHash:
+                                type: string
+                              amount:
+                                type: string
+                              slippage:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              bridge:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                              recipient:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                              isOrphaned:
+                                type: boolean
+                              createdAt:
+                                type: string
+                                format: date-time
+                                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                              updatedAt:
+                                type: string
+                                format: date-time
+                                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                            required:
+                              - id
+                              - status
+                              - originChainId
+                              - destinationChainId
+                              - tickerHash
+                              - amount
+                              - slippage
+                              - bridge
+                              - recipient
+                              - createdAt
+                              - updatedAt
+                            additionalProperties: {}
+                      required:
+                        - id
+                        - invoiceId
+                        - designatedPurchaseChain
+                        - tickerHash
+                        - minAmount
+                        - status
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
                   total:
                     type: integer
-                    description: Total number of earmarks matching the filter (before pagination)
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                required:
+                  - earmarks
+                  - total
+                additionalProperties: false
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /rebalance/earmark/{id}:
     get:
       tags:
         - Earmarks
       summary: Get earmark details
-      description: Retrieve detailed information about a specific earmark including its operations
+      description: Retrieve detailed information about a specific earmark including
+        its operations.
       operationId: getEarmarkDetails
       parameters:
         - name: id
           in: path
           required: true
-          description: The earmark ID (UUID)
           schema:
             type: string
             format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
       responses:
-        '200':
-          description: Earmark details retrieved successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   earmark:
-                    $ref: '#/components/schemas/Earmark'
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                      invoiceId:
+                        type: string
+                      designatedPurchaseChain:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      tickerHash:
+                        type: string
+                      minAmount:
+                        description: Amount (18-decimals string)
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - pending
+                          - ready
+                          - completed
+                          - cancelled
+                          - failed
+                          - expired
+                      createdAt:
+                        type: string
+                        format: date-time
+                        pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                      updatedAt:
+                        type: string
+                        format: date-time
+                        pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                    required:
+                      - id
+                      - invoiceId
+                      - designatedPurchaseChain
+                      - tickerHash
+                      - minAmount
+                      - status
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
                   operations:
                     type: array
                     items:
-                      $ref: '#/components/schemas/RebalanceOperation'
-        '400':
-          description: Invalid earmark ID
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                        earmarkId:
+                          anyOf:
+                            - type: string
+                              format: uuid
+                              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                            - type: "null"
+                        originChainId:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        destinationChainId:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        tickerHash:
+                          type: string
+                        amount:
+                          description: Amount (18-decimals string)
+                          type: string
+                        slippage:
+                          description: Basis points
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        bridge:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        status:
+                          type: string
+                          enum:
+                            - pending
+                            - awaiting_callback
+                            - completed
+                            - expired
+                            - cancelled
+                        recipient:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        isOrphaned:
+                          type: boolean
+                        createdAt:
+                          type: string
+                          format: date-time
+                          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                        updatedAt:
+                          type: string
+                          format: date-time
+                          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                        transactions:
+                          type: object
+                          propertyNames:
+                            type: string
+                          additionalProperties:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                              rebalanceOperationId:
+                                anyOf:
+                                  - type: string
+                                    format: uuid
+                                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                                  - type: "null"
+                              transactionHash:
+                                type: string
+                              chainId:
+                                type: string
+                              cumulativeGasUsed:
+                                type: string
+                              effectiveGasPrice:
+                                type: string
+                              from:
+                                type: string
+                              to:
+                                type: string
+                              reason:
+                                type: string
+                              metadata:
+                                type: object
+                                propertyNames:
+                                  type: string
+                                additionalProperties: {}
+                              createdAt:
+                                type: string
+                                format: date-time
+                                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                              updatedAt:
+                                type: string
+                                format: date-time
+                                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                            required:
+                              - id
+                              - transactionHash
+                              - chainId
+                              - cumulativeGasUsed
+                              - effectiveGasPrice
+                              - from
+                              - to
+                              - reason
+                              - metadata
+                              - createdAt
+                              - updatedAt
+                            additionalProperties: {}
+                      required:
+                        - id
+                        - originChainId
+                        - destinationChainId
+                        - tickerHash
+                        - amount
+                        - slippage
+                        - status
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: {}
+                required:
+                  - earmark
+                  - operations
+                additionalProperties: false
+        "400":
+          description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                message: Earmark ID required
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          description: Earmark not found
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                message: Earmark not found
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /rebalance/operations:
     get:
       tags:
         - Rebalance Operations
       summary: List rebalance operations
-      description: Retrieve a paginated list of rebalance operations with optional filtering
+      description: Retrieve a paginated list of rebalance operations with optional
+        filtering.
       operationId: getRebalanceOperations
       parameters:
         - name: limit
           in: query
-          description: Maximum number of operations to return (max 1000)
+          required: true
           schema:
-            type: integer
-            minimum: 1
-            maximum: 1000
-            default: 50
+            default: "50"
+            type: string
+            pattern: ^\d+$
         - name: offset
           in: query
-          description: Number of operations to skip for pagination
+          required: true
           schema:
-            type: integer
-            minimum: 0
-            default: 0
+            default: "0"
+            type: string
+            pattern: ^\d+$
         - name: status
           in: query
-          description: Filter by operation status
+          required: false
           schema:
             type: string
             enum:
@@ -287,23 +966,28 @@ paths:
               - cancelled
         - name: chainId
           in: query
-          description: Filter by origin chain ID
-          schema:
-            type: integer
-        - name: earmarkId
-          in: query
-          description: Filter by associated earmark ID
+          required: false
           schema:
             type: string
-            format: uuid
+            pattern: ^\d+$
+        - name: earmarkId
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+                const: "null"
+              - type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
         - name: invoiceId
           in: query
-          description: Filter by invoice ID of the associated earmark
+          required: false
           schema:
             type: string
       responses:
-        '200':
-          description: List of rebalance operations retrieved successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
@@ -312,67 +996,437 @@ paths:
                   operations:
                     type: array
                     items:
-                      $ref: '#/components/schemas/RebalanceOperation'
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                        earmarkId:
+                          anyOf:
+                            - type: string
+                              format: uuid
+                              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                            - type: "null"
+                        originChainId:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        destinationChainId:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        tickerHash:
+                          type: string
+                        amount:
+                          description: Amount (18-decimals string)
+                          type: string
+                        slippage:
+                          description: Basis points
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        bridge:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        status:
+                          type: string
+                          enum:
+                            - pending
+                            - awaiting_callback
+                            - completed
+                            - expired
+                            - cancelled
+                        recipient:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        isOrphaned:
+                          type: boolean
+                        createdAt:
+                          type: string
+                          format: date-time
+                          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                        updatedAt:
+                          type: string
+                          format: date-time
+                          pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                        transactions:
+                          type: object
+                          propertyNames:
+                            type: string
+                          additionalProperties:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                                format: uuid
+                                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                              rebalanceOperationId:
+                                anyOf:
+                                  - type: string
+                                    format: uuid
+                                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                                  - type: "null"
+                              transactionHash:
+                                type: string
+                              chainId:
+                                type: string
+                              cumulativeGasUsed:
+                                type: string
+                              effectiveGasPrice:
+                                type: string
+                              from:
+                                type: string
+                              to:
+                                type: string
+                              reason:
+                                type: string
+                              metadata:
+                                type: object
+                                propertyNames:
+                                  type: string
+                                additionalProperties: {}
+                              createdAt:
+                                type: string
+                                format: date-time
+                                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                              updatedAt:
+                                type: string
+                                format: date-time
+                                pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                            required:
+                              - id
+                              - transactionHash
+                              - chainId
+                              - cumulativeGasUsed
+                              - effectiveGasPrice
+                              - from
+                              - to
+                              - reason
+                              - metadata
+                              - createdAt
+                              - updatedAt
+                            additionalProperties: {}
+                      required:
+                        - id
+                        - originChainId
+                        - destinationChainId
+                        - tickerHash
+                        - amount
+                        - slippage
+                        - status
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: {}
                   total:
                     type: integer
-                    description: Total number of operations matching the filter (before pagination)
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                required:
+                  - operations
+                  - total
+                additionalProperties: false
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /rebalance/operation/{id}:
     get:
       tags:
         - Rebalance Operations
       summary: Get rebalance operation details
-      description: Retrieve detailed information about a specific rebalance operation by its ID
+      description: Retrieve a specific rebalance operation, including its transactions
+        when available.
       operationId: getRebalanceOperationDetails
       parameters:
         - name: id
           in: path
           required: true
-          description: The rebalance operation ID (UUID)
           schema:
             type: string
             format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
       responses:
-        '200':
-          description: Rebalance operation details retrieved successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   operation:
-                    $ref: '#/components/schemas/RebalanceOperation'
-        '400':
-          description: Invalid operation ID
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                      earmarkId:
+                        anyOf:
+                          - type: string
+                            format: uuid
+                            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                          - type: "null"
+                      originChainId:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      destinationChainId:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      tickerHash:
+                        type: string
+                      amount:
+                        description: Amount (18-decimals string)
+                        type: string
+                      slippage:
+                        description: Basis points
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      bridge:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                        enum:
+                          - pending
+                          - awaiting_callback
+                          - completed
+                          - expired
+                          - cancelled
+                      recipient:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      isOrphaned:
+                        type: boolean
+                      createdAt:
+                        type: string
+                        format: date-time
+                        pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                      updatedAt:
+                        type: string
+                        format: date-time
+                        pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                      transactions:
+                        type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                            rebalanceOperationId:
+                              anyOf:
+                                - type: string
+                                  format: uuid
+                                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                                - type: "null"
+                            transactionHash:
+                              type: string
+                            chainId:
+                              type: string
+                            cumulativeGasUsed:
+                              type: string
+                            effectiveGasPrice:
+                              type: string
+                            from:
+                              type: string
+                            to:
+                              type: string
+                            reason:
+                              type: string
+                            metadata:
+                              type: object
+                              propertyNames:
+                                type: string
+                              additionalProperties: {}
+                            createdAt:
+                              type: string
+                              format: date-time
+                              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                            updatedAt:
+                              type: string
+                              format: date-time
+                              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                          required:
+                            - id
+                            - transactionHash
+                            - chainId
+                            - cumulativeGasUsed
+                            - effectiveGasPrice
+                            - from
+                            - to
+                            - reason
+                            - metadata
+                            - createdAt
+                            - updatedAt
+                          additionalProperties: {}
+                    required:
+                      - id
+                      - originChainId
+                      - destinationChainId
+                      - tickerHash
+                      - amount
+                      - slippage
+                      - status
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: {}
+                required:
+                  - operation
+                additionalProperties: false
+        "400":
+          description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                message: Operation ID required
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          description: Rebalance operation not found
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                message: Rebalance operation not found
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /rebalance/cancel:
     post:
       tags:
         - Earmarks
       summary: Cancel earmark
-      description: Cancel an earmark and orphan all associated pending operations
+      description: Cancels an earmark and marks pending/awaiting_callback operations
+        as orphaned.
       operationId: cancelEarmark
       requestBody:
         required: true
@@ -380,16 +1434,17 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - earmarkId
               properties:
                 earmarkId:
                   type: string
                   format: uuid
-                  description: The ID of the earmark to cancel
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+              required:
+                - earmarkId
+              additionalProperties: false
       responses:
-        '200':
-          description: Earmark cancelled successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
@@ -397,44 +1452,142 @@ paths:
                 properties:
                   message:
                     type: string
-                    example: Earmark cancelled successfully
                   earmark:
-                    $ref: '#/components/schemas/Earmark'
-        '400':
-          description: Invalid request or earmark cannot be cancelled
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                      invoiceId:
+                        type: string
+                      designatedPurchaseChain:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      tickerHash:
+                        type: string
+                      minAmount:
+                        description: Amount (18-decimals string)
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - pending
+                          - ready
+                          - completed
+                          - cancelled
+                          - failed
+                          - expired
+                      createdAt:
+                        type: string
+                        format: date-time
+                        pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                      updatedAt:
+                        type: string
+                        format: date-time
+                        pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                    required:
+                      - id
+                      - invoiceId
+                      - designatedPurchaseChain
+                      - tickerHash
+                      - minAmount
+                      - status
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - message
+                  - earmark
+                additionalProperties: false
+        "400":
+          description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                missingEarmarkId:
-                  summary: Missing earmark ID
-                  value:
-                    message: earmarkId is required in request body
-                cannotCancel:
-                  summary: Cannot cancel earmark
-                  value:
-                    message: "Cannot cancel earmark with status: completed"
-                    currentStatus: completed
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          description: Earmark not found
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                message: Earmark not found
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /rebalance/operation/cancel:
     post:
       tags:
         - Rebalance Operations
       summary: Cancel rebalance operation
-      description: Cancel a specific rebalance operation. Only pending and awaiting_callback operations can be cancelled.
+      description: Cancels a pending rebalance operation (pending or awaiting_callback).
       operationId: cancelRebalanceOperation
       requestBody:
         required: true
@@ -442,16 +1595,17 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - operationId
               properties:
                 operationId:
                   type: string
                   format: uuid
-                  description: The ID of the rebalance operation to cancel
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+              required:
+                - operationId
+              additionalProperties: false
       responses:
-        '200':
-          description: Rebalance operation cancelled successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
@@ -459,44 +1613,223 @@ paths:
                 properties:
                   message:
                     type: string
-                    example: Rebalance operation cancelled successfully
                   operation:
-                    $ref: '#/components/schemas/RebalanceOperation'
-        '400':
-          description: Invalid request or operation cannot be cancelled
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                      earmarkId:
+                        anyOf:
+                          - type: string
+                            format: uuid
+                            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                          - type: "null"
+                      originChainId:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      destinationChainId:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      tickerHash:
+                        type: string
+                      amount:
+                        description: Amount (18-decimals string)
+                        type: string
+                      slippage:
+                        description: Basis points
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      bridge:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                        enum:
+                          - pending
+                          - awaiting_callback
+                          - completed
+                          - expired
+                          - cancelled
+                      recipient:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      isOrphaned:
+                        type: boolean
+                      createdAt:
+                        type: string
+                        format: date-time
+                        pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                      updatedAt:
+                        type: string
+                        format: date-time
+                        pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                      transactions:
+                        type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                            rebalanceOperationId:
+                              anyOf:
+                                - type: string
+                                  format: uuid
+                                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                                - type: "null"
+                            transactionHash:
+                              type: string
+                            chainId:
+                              type: string
+                            cumulativeGasUsed:
+                              type: string
+                            effectiveGasPrice:
+                              type: string
+                            from:
+                              type: string
+                            to:
+                              type: string
+                            reason:
+                              type: string
+                            metadata:
+                              type: object
+                              propertyNames:
+                                type: string
+                              additionalProperties: {}
+                            createdAt:
+                              type: string
+                              format: date-time
+                              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                            updatedAt:
+                              type: string
+                              format: date-time
+                              pattern: ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?(?:Z))$
+                          required:
+                            - id
+                            - transactionHash
+                            - chainId
+                            - cumulativeGasUsed
+                            - effectiveGasPrice
+                            - from
+                            - to
+                            - reason
+                            - metadata
+                            - createdAt
+                            - updatedAt
+                          additionalProperties: {}
+                    required:
+                      - id
+                      - originChainId
+                      - destinationChainId
+                      - tickerHash
+                      - amount
+                      - slippage
+                      - status
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: {}
+                required:
+                  - message
+                  - operation
+                additionalProperties: false
+        "400":
+          description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                missingOperationId:
-                  summary: Missing operation ID
-                  value:
-                    message: operationId is required in request body
-                cannotCancel:
-                  summary: Cannot cancel operation
-                  value:
-                    message: "Cannot cancel operation with status: completed. Only PENDING and AWAITING_CALLBACK operations can be cancelled."
-                    currentStatus: completed
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          description: Rebalance operation not found
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                message: Rebalance operation not found
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /trigger/send:
     post:
       tags:
         - Trigger Operations
-      summary: Send funds to whitelisted address
-      description: Manually send ERC20 tokens to a whitelisted EOA address
+      summary: Trigger token send
+      description: Submits an ERC20 transfer transaction from Mark ownAddress to a
+        whitelisted recipient.
       operationId: triggerSend
       requestBody:
         required: true
@@ -504,39 +1837,55 @@ paths:
           application/json:
             schema:
               type: object
+              properties:
+                chainId:
+                  description: Chain ID
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                asset:
+                  description: Token identifier as expected by Mark config (e.g. tickerHash or
+                    symbol)
+                  type: string
+                recipient:
+                  description: Recipient address
+                  type: string
+                amount:
+                  description: Amount in native units as a bigint string
+                  type: string
+                  pattern: ^\d+$
+                memo:
+                  type: string
               required:
                 - chainId
                 - asset
                 - recipient
                 - amount
-              properties:
-                chainId:
-                  type: integer
-                  description: Chain ID to send from
-                  example: 42161
-                asset:
-                  type: string
-                  description: Asset ticker to send (e.g., USDC, WETH)
-                  example: USDC
-                recipient:
-                  type: string
-                  description: Recipient address (must be in whitelist)
-                  example: "0x1234567890123456789012345678901234567890"
-                amount:
-                  type: string
-                  description: Amount to send in token native units (e.g., wei for 18 decimals, smallest unit for 6 decimals)
-                  example: "1000000"
-                memo:
-                  type: string
-                  description: Optional transaction memo for logging purposes
-                  example: "Emergency withdrawal"
+              additionalProperties: false
       responses:
-        '200':
-          description: Funds sent successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  message:
+                    type: string
+                  transactionHash:
+                    type: string
+                  chainId:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  asset:
+                    type: string
+                  recipient:
+                    type: string
+                  amount:
+                    type: string
+                  memo:
+                    type: string
                 required:
                   - message
                   - transactionHash
@@ -544,55 +1893,73 @@ paths:
                   - asset
                   - recipient
                   - amount
-                properties:
-                  message:
-                    type: string
-                    example: Funds sent successfully
-                  transactionHash:
-                    type: string
-                    example: "0xabc123..."
-                  chainId:
-                    type: integer
-                    example: 42161
-                  asset:
-                    type: string
-                    example: USDC
-                  recipient:
-                    type: string
-                    example: "0x1234567890123456789012345678901234567890"
-                  amount:
-                    type: string
-                    example: "1000000"
-                  memo:
-                    type: string
-                    nullable: true
-                    example: "Emergency withdrawal"
-        '400':
-          description: Invalid request - missing required field or recipient not whitelisted
+                additionalProperties: false
+        "400":
+          description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                missingField:
-                  summary: Missing required field
-                  value:
-                    message: "Missing required field: chainId"
-                notWhitelisted:
-                  summary: Recipient not whitelisted
-                  value:
-                    message: "Recipient address is not whitelisted"
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /trigger/rebalance:
     post:
       tags:
         - Trigger Operations
-      summary: Trigger manual rebalance
-      description: Manually initiate a rebalance operation to move funds between chains
+      summary: Trigger rebalance operation
+      description: Builds and submits rebalance transactions via the selected bridge
+        adapter and records the operation.
       operationId: triggerRebalance
       requestBody:
         required: true
@@ -600,98 +1967,172 @@ paths:
           application/json:
             schema:
               type: object
+              properties:
+                originChain:
+                  description: Chain ID
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                destinationChain:
+                  description: Chain ID
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                asset:
+                  description: Token identifier as expected by Mark config (e.g. tickerHash or
+                    symbol)
+                  type: string
+                amount:
+                  description: Human-readable amount (18-decimals string)
+                  type: string
+                  pattern: ^\d+(\.\d+)?$
+                bridge:
+                  description: Bridge adapter type
+                  type: string
+                slippage:
+                  description: Basis points (e.g. 500 = 5%)
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                earmarkId:
+                  description: Optional earmark ID to attach this operation to
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
               required:
                 - originChain
                 - destinationChain
                 - asset
                 - amount
                 - bridge
-              properties:
-                originChain:
-                  type: integer
-                  description: Origin chain ID
-                  example: 42161
-                destinationChain:
-                  type: integer
-                  description: Destination chain ID
-                  example: 10
-                asset:
-                  type: string
-                  description: Asset ticker (e.g., USDC, WETH)
-                  example: USDC
-                amount:
-                  type: string
-                  description: Amount to rebalance in 18-decimal format
-                  example: "1000000000000000000"
-                bridge:
-                  type: string
-                  description: Bridge type to use
-                  enum:
-                    - across
-                    - cctp
-                    - binance
-                    - kraken
-                    - near
-                  example: across
-                slippage:
-                  type: integer
-                  description: Optional slippage tolerance in decibasis points (DBPS, 1e-7). If provided, validates actual slippage doesn't exceed this value.
-                  example: 1000000
-                earmarkId:
-                  type: string
-                  format: uuid
-                  description: Optional earmark ID to associate this rebalance with
-                  example: "550e8400-e29b-41d4-a716-446655440000"
+              additionalProperties: false
       responses:
-        '200':
-          description: Rebalance operation triggered successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
                 type: object
-                required:
-                  - message
-                  - operation
                 properties:
                   message:
                     type: string
-                    example: Rebalance operation created successfully
                   operation:
-                    $ref: '#/components/schemas/RebalanceOperation'
-        '400':
-          description: Invalid request - missing fields, unsupported bridge, or slippage exceeded
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$
+                      originChain:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      destinationChain:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      asset:
+                        type: string
+                      ticker:
+                        type: string
+                      amount:
+                        description: Human-readable amount (18-decimals string)
+                        type: string
+                      bridge:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - pending
+                          - awaiting_callback
+                          - completed
+                          - expired
+                          - cancelled
+                      transactionHashes:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - id
+                      - originChain
+                      - destinationChain
+                      - asset
+                      - ticker
+                      - amount
+                      - bridge
+                      - status
+                      - transactionHashes
+                    additionalProperties: false
+                required:
+                  - message
+                  - operation
+                additionalProperties: false
+        "400":
+          description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                missingField:
-                  summary: Missing required field
-                  value:
-                    message: "Missing required field: originChain"
-                invalidBridge:
-                  summary: Invalid bridge type
-                  value:
-                    message: "Invalid bridge type: xyz. Supported: across, cctp, binance, kraken, near"
-                slippageExceeded:
-                  summary: Slippage tolerance exceeded
-                  value:
-                    message: Slippage tolerance exceeded
-                    providedSlippageDbps: 1000000
-                    actualSlippageDbps: "1500000"
-                    sentAmount: "1000000000000000000"
-                    receivedAmount: "985000000000000000"
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /trigger/intent:
     post:
       tags:
         - Trigger Operations
-      summary: Trigger intent submission
-      description: Manually submit an intent to the Everclear protocol. Automatically handles ERC20 approval if needed.
+      summary: Trigger Everclear intent
+      description: "Creates and submits an Everclear intent transaction. Safety
+        constraints enforced: maxFee=0 and callData=0x."
       operationId: triggerIntent
       requestBody:
         required: true
@@ -699,6 +2140,50 @@ paths:
           application/json:
             schema:
               type: object
+              properties:
+                origin:
+                  description: Origin chain ID
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                destinations:
+                  description: Destination chain IDs
+                  minItems: 1
+                  type: array
+                  items:
+                    description: Chain ID
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                to:
+                  description: Receiver address (must be Mark ownAddress)
+                  type: string
+                inputAsset:
+                  description: Token address on origin chain
+                  type: string
+                amount:
+                  description: Amount in native units
+                  anyOf:
+                    - type: string
+                      pattern: ^\d+$
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                maxFee:
+                  description: Max fee (must be 0 for safety)
+                  anyOf:
+                    - type: string
+                      pattern: ^\d+$
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                callData:
+                  description: Must be 0x for safety
+                  type: string
+                  pattern: ^0x[0-9a-fA-F]*$
+                user:
+                  description: SVM-only user public key
+                  type: string
               required:
                 - origin
                 - destinations
@@ -706,112 +2191,100 @@ paths:
                 - inputAsset
                 - amount
                 - maxFee
-              properties:
-                origin:
-                  type: string
-                  description: Origin chain ID (as string)
-                  example: "10"
-                destinations:
-                  type: array
-                  description: Array of destination chain IDs
-                  items:
-                    type: number
-                  example: [42161, 8453]
-                to:
-                  type: string
-                  description: Receiver address (must be own address for safety)
-                  example: "0x1234567890123456789012345678901234567890"
-                inputAsset:
-                  type: string
-                  description: Input asset address (ERC20 token)
-                  example: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
-                amount:
-                  type: string
-                  description: Amount in token native units
-                  example: "1000000"
-                maxFee:
-                  type: number
-                  description: Maximum fee in basis points (must be 0 for safety)
-                  example: 0
-                callData:
-                  type: string
-                  description: Optional call data (must be "0x" for safety)
-                  example: "0x"
-                user:
-                  type: string
-                  description: Optional user parameter for SVM chains
-                  example: "SolanaAddress..."
+              additionalProperties: false
       responses:
-        '200':
-          description: Intent submitted successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
                 type: object
-                required:
-                  - message
-                  - transactionHash
-                  - intentId
-                  - chainId
-                  - blockNumber
                 properties:
                   message:
                     type: string
-                    example: Intent submitted successfully
                   transactionHash:
                     type: string
-                    description: Intent transaction hash
-                    example: "0xabc123..."
                   intentId:
                     type: string
-                    description: Extracted intent ID from IntentAdded event
-                    example: "0xdef456..."
                   chainId:
                     type: integer
-                    description: Origin chain ID where intent was submitted
-                    example: 10
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
                   blockNumber:
-                    type: string
-                    description: Block number where intent was mined
-                    example: "12345678"
-        '400':
-          description: Invalid request - missing fields, validation failure, or safety constraints violated
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                required:
+                  - message
+                  - transactionHash
+                  - chainId
+                  - blockNumber
+                additionalProperties: false
+        "400":
+          description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                missingField:
-                  summary: Missing required field
-                  value:
-                    message: "Missing required field: origin"
-                invalidMaxFee:
-                  summary: Safety constraint - maxFee must be 0
-                  value:
-                    message: "maxFee must be 0 (safety constraint)"
-                invalidCallData:
-                  summary: Safety constraint - callData must be 0x
-                  value:
-                    message: "callData must be 0x (safety constraint)"
-                invalidReceiver:
-                  summary: Safety constraint - receiver must be own address
-                  value:
-                    message: "receiver must be own address (safety constraint)"
-                chainNotConfigured:
-                  summary: Chain not configured
-                  value:
-                    message: "Origin chain 999 is not configured"
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
   /trigger/swap:
     post:
       tags:
         - Trigger Operations
-      summary: Trigger swap operation
-      description: Manually execute a same-chain swap operation using the configured swap adapter (e.g., CowSwap).
+      summary: Trigger swap
+      description: Executes a same-chain swap via a supported adapter (defaults to cowswap).
       operationId: triggerSwap
       requestBody:
         required: true
@@ -819,56 +2292,82 @@ paths:
           application/json:
             schema:
               type: object
+              properties:
+                chainId:
+                  description: Chain ID
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                inputAsset:
+                  description: TickerHash, symbol, or address
+                  type: string
+                outputAsset:
+                  description: TickerHash, symbol, or address
+                  type: string
+                amount:
+                  description: Human-readable amount (18-decimals string)
+                  type: string
+                  pattern: ^\d+(\.\d+)?$
+                slippage:
+                  description: Basis points (e.g. 500 = 5%)
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                swapAdapter:
+                  description: Swap adapter name (defaults to cowswap)
+                  type: string
+                recipient:
+                  description: Recipient address (defaults to Mark ownAddress)
+                  type: string
               required:
                 - chainId
                 - inputAsset
                 - outputAsset
                 - amount
-              properties:
-                chainId:
-                  type: number
-                  description: Chain ID to execute swap on
-                  example: 42161
-                inputAsset:
-                  type: string
-                  description: Input asset address or ticker (e.g., USDT address or "USDT")
-                  example: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
-                outputAsset:
-                  type: string
-                  description: Output asset address or ticker (e.g., USDC address or "USDC")
-                  example: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
-                amount:
-                  type: string
-                  description: Amount to swap (in 18 decimals or native units)
-                  example: "1000000000000000000"
-                slippage:
-                  type: number
-                  description: Optional slippage tolerance in DBPS (decibasis points, 1e7 = 100%)
-                  example: 100
-                swapAdapter:
-                  type: string
-                  description: Optional swap adapter name (defaults to "cowswap")
-                  example: "cowswap"
-                recipient:
-                  type: string
-                  description: Optional recipient address (defaults to own address)
-                  example: "0x1234567890123456789012345678901234567890"
+              additionalProperties: false
       responses:
-        '200':
-          description: Swap operation triggered successfully
+        "200":
+          description: Successful response
           content:
             application/json:
               schema:
                 type: object
-                required:
-                  - message
-                  - swap
                 properties:
                   message:
                     type: string
-                    example: Swap operation triggered successfully
                   swap:
                     type: object
+                    properties:
+                      orderUid:
+                        type: string
+                      chainId:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      inputAsset:
+                        type: string
+                      outputAsset:
+                        type: string
+                      inputTicker:
+                        type: string
+                      outputTicker:
+                        type: string
+                      sellAmount:
+                        type: string
+                      buyAmount:
+                        type: string
+                      executedSellAmount:
+                        type: string
+                      executedBuyAmount:
+                        type: string
+                      slippage:
+                        description: Actual slippage in BPS, when available
+                        type: string
+                      status:
+                        description: Optional status (e.g. pending_settlement)
+                        type: string
+                      note:
+                        type: string
                     required:
                       - orderUid
                       - chainId
@@ -878,389 +2377,67 @@ paths:
                       - outputTicker
                       - sellAmount
                       - buyAmount
-                    properties:
-                      orderUid:
-                        type: string
-                        description: Swap order UID from the swap adapter
-                        example: "0xabc123..."
-                      chainId:
-                        type: number
-                        description: Chain ID where swap was executed
-                        example: 42161
-                      inputAsset:
-                        type: string
-                        description: Input asset address
-                        example: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
-                      outputAsset:
-                        type: string
-                        description: Output asset address
-                        example: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
-                      inputTicker:
-                        type: string
-                        description: Input asset ticker
-                        example: "USDT"
-                      outputTicker:
-                        type: string
-                        description: Output asset ticker
-                        example: "USDC"
-                      sellAmount:
-                        type: string
-                        description: Amount sold (input amount)
-                        example: "1000000000000000000"
-                      buyAmount:
-                        type: string
-                        description: Amount bought (expected output amount)
-                        example: "990000000000000000"
-                      executedSellAmount:
-                        type: string
-                        description: Actual executed sell amount (if available)
-                        example: "1000000000000000000"
-                      executedBuyAmount:
-                        type: string
-                        description: Actual executed buy amount (if available)
-                        example: "990000000000000000"
-                      slippage:
-                        type: string
-                        description: Actual slippage in DBPS (if slippage validation was performed)
-                        example: "100"
-        '400':
-          description: Invalid request - missing fields, validation failure, or slippage exceeded
+                    additionalProperties: {}
+                required:
+                  - message
+                  - swap
+                additionalProperties: false
+        "400":
+          description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                missingField:
-                  summary: Missing required field
-                  value:
-                    message: "chainId is required in request body"
-                chainNotConfigured:
-                  summary: Chain not configured
-                  value:
-                    message: "Chain 999 is not configured"
-                assetNotFound:
-                  summary: Asset not found
-                  value:
-                    message: "Input asset USDT not found on chain 42161"
-                invalidAdapter:
-                  summary: Invalid swap adapter
-                  value:
-                    message: "Invalid swap adapter: invalid_adapter. Supported: cowswap, ..."
-                adapterNotSupported:
-                  summary: Adapter does not support executeSwap
-                  value:
-                    message: "Swap adapter invalid does not support executeSwap operation"
-                slippageExceeded:
-                  summary: Slippage tolerance exceeded
-                  value:
-                    message: "Slippage tolerance exceeded"
-                    providedSlippageDbps: 100
-                    actualSlippageDbps: "150"
-                    sentAmount: "1000000000000000000"
-                    receivedAmount: "0.985"
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-components:
-  securitySchemes:
-    AdminToken:
-      type: apiKey
-      in: header
-      name: x-admin-token
-      description: Admin token for authenticating API requests
-
-  schemas:
-    Earmark:
-      type: object
-      description: An earmark represents a reservation of funds for a specific invoice on a designated chain
-      required:
-        - id
-        - invoiceId
-        - designatedPurchaseChain
-        - tickerHash
-        - minAmount
-        - status
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique earmark identifier
-        invoiceId:
-          type: string
-          description: External invoice identifier from the invoice processing system
-        designatedPurchaseChain:
-          type: integer
-          description: Designated chain ID for purchasing this invoice
-        tickerHash:
-          type: string
-          description: Token ticker hash (e.g., USDC, ETH) required for invoice payment
-        minAmount:
-          type: string
-          description: Minimum amount of tokens required for invoice payment (string to preserve precision)
-        status:
-          type: string
-          enum:
-            - pending
-            - ready
-            - completed
-            - cancelled
-            - failed
-            - expired
-          description: Current status of the earmark
-        createdAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: Timestamp when the earmark was created
-        updatedAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: Timestamp when the earmark was last updated
-
-    EarmarkWithOperations:
-      allOf:
-        - $ref: '#/components/schemas/Earmark'
-        - type: object
-          properties:
-            operations:
-              type: array
-              description: Array of rebalance operations associated with this earmark
-              items:
-                $ref: '#/components/schemas/EarmarkOperation'
-
-    EarmarkOperation:
-      type: object
-      description: Rebalance operation as returned in earmark list (without earmarkId field since it's implicit)
-      required:
-        - id
-        - originChainId
-        - destinationChainId
-        - tickerHash
-        - amount
-        - slippage
-        - status
-        - isOrphaned
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique operation identifier
-        originChainId:
-          type: integer
-          description: Source chain ID where funds are being moved from
-        destinationChainId:
-          type: integer
-          description: Target chain ID where funds are being moved to
-        tickerHash:
-          type: string
-          description: Token ticker hash for the operation
-        amount:
-          type: string
-          description: Amount of tokens being rebalanced (string to preserve precision)
-        slippage:
-          type: integer
-          description: Expected slippage in basis points (e.g., 30 = 0.3%)
-        bridge:
-          type: string
-          nullable: true
-          description: Bridge adapter type used for this operation (e.g., across, binance)
-        recipient:
-          type: string
-          nullable: true
-          description: Recipient address for the rebalance operation
-        status:
-          type: string
-          enum:
-            - pending
-            - awaiting_callback
-            - completed
-            - expired
-            - cancelled
-          description: Current status of the operation
-        isOrphaned:
-          type: boolean
-          description: Indicates if this operation was orphaned when its associated earmark was cancelled
-        createdAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: Timestamp when the operation was created
-        updatedAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: Timestamp when the operation was last updated
-
-    RebalanceOperation:
-      type: object
-      description: A rebalance operation represents a cross-chain token movement
-      required:
-        - id
-        - originChainId
-        - destinationChainId
-        - tickerHash
-        - amount
-        - slippage
-        - status
-        - isOrphaned
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique operation identifier
-        earmarkId:
-          type: string
-          format: uuid
-          nullable: true
-          description: Foreign key to the earmark this operation fulfills (null for regular rebalancing)
-        originChainId:
-          type: integer
-          description: Source chain ID where funds are being moved from
-        destinationChainId:
-          type: integer
-          description: Target chain ID where funds are being moved to
-        tickerHash:
-          type: string
-          description: Token ticker hash for the operation
-        amount:
-          type: string
-          description: Amount of tokens being rebalanced (string to preserve precision)
-        slippage:
-          type: integer
-          description: Expected slippage in basis points (e.g., 30 = 0.3%)
-        bridge:
-          type: string
-          nullable: true
-          description: Bridge adapter type used for this operation (e.g., across, binance)
-        recipient:
-          type: string
-          nullable: true
-          description: Recipient address for the rebalance operation
-        status:
-          type: string
-          enum:
-            - pending
-            - awaiting_callback
-            - completed
-            - expired
-            - cancelled
-          description: Current status of the operation
-        isOrphaned:
-          type: boolean
-          description: Indicates if this operation was orphaned when its associated earmark was cancelled
-        transactions:
-          type: object
-          nullable: true
-          description: Map of chain IDs to transaction entries for this operation
-          additionalProperties:
-            $ref: '#/components/schemas/TransactionEntry'
-        createdAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: Timestamp when the operation was created
-        updatedAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: Timestamp when the operation was last updated
-
-    TransactionEntry:
-      type: object
-      description: On-chain transaction associated with a rebalance operation
-      required:
-        - id
-        - chainId
-        - transactionHash
-        - from
-        - to
-        - cumulativeGasUsed
-        - effectiveGasPrice
-        - reason
-        - createdAt
-        - updatedAt
-      properties:
-        id:
-          type: string
-          format: uuid
-          description: Unique transaction identifier
-        rebalanceOperationId:
-          type: string
-          format: uuid
-          nullable: true
-          description: Associated rebalance operation ID
-        chainId:
-          type: string
-          description: Chain ID where transaction occurred (stored as text for large chain IDs)
-        transactionHash:
-          type: string
-          description: On-chain transaction hash
-        from:
-          type: string
-          description: Transaction sender address
-        to:
-          type: string
-          description: Transaction destination address
-        cumulativeGasUsed:
-          type: string
-          description: Total gas used by transaction (string for precision)
-        effectiveGasPrice:
-          type: string
-          description: Effective gas price paid (string for precision)
-        reason:
-          type: string
-          description: Transaction purpose/category (e.g., Rebalance)
-        metadata:
-          type: object
-          nullable: true
-          description: Additional transaction-specific data (e.g., receipt)
-        createdAt:
-          type: string
-          format: date-time
-          description: Timestamp when the transaction was recorded
-        updatedAt:
-          type: string
-          format: date-time
-          description: Timestamp when the transaction was last updated
-
-    SuccessResponse:
-      type: object
-      required:
-        - message
-      properties:
-        message:
-          type: string
-          description: Success message describing the completed operation
-
-    ErrorResponse:
-      type: object
-      required:
-        - message
-      properties:
-        message:
-          type: string
-          description: Error message describing what went wrong
-        currentStatus:
-          type: string
-          description: Current status when relevant to the error
-          nullable: true
-
-  responses:
-    Forbidden:
-      description: Invalid or missing admin token
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            message: 'Forbidden: Invalid admin token'
-
-    InternalError:
-      description: Internal server error
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                description: Forbidden response
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipient:
+                    type: string
+                required:
+                  - message
+                additionalProperties: {}
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                description: Generic error response
+                type: object
+                properties:
+                  message:
+                    description: Human-readable error message
+                    type: string
+                  error:
+                    description: Optional error details
+                    anyOf:
+                      - type: string
+                      - type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties: {}
+                required:
+                  - message
+                additionalProperties: {}

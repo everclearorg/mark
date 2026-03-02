@@ -16,94 +16,27 @@ import {
   AssetConfiguration,
   BPS_MULTIPLIER,
 } from '@mark/core';
-import { APIGatewayProxyEventQueryStringParameters } from 'aws-lambda';
 import { encodeFunctionData, erc20Abi, Hex, formatUnits, parseUnits } from 'viem';
 import { MemoizedTransactionRequest } from '@mark/rebalance';
 import type { SwapExecutionResult } from '@mark/rebalance/src/types';
+import { AdminApi } from '../openapi/adminApi';
+import { ErrorResponse, ForbiddenResponse } from '../openapi/schemas';
+import { isLambdaResponse, jsonWithSchema, parseJsonBody, parsePathParams, parseQuery } from './typedApi';
 
 type Database = typeof database;
-
-// Validation helper functions
-function validatePagination(queryParams: APIGatewayProxyEventQueryStringParameters | null): {
-  limit: number;
-  offset: number;
-} {
-  const parsedLimit = parseInt(queryParams?.limit || '50');
-  const parsedOffset = parseInt(queryParams?.offset || '0');
-
-  const limit = Math.min(isNaN(parsedLimit) ? 50 : parsedLimit, 1000);
-  const offset = isNaN(parsedOffset) ? 0 : Math.max(0, parsedOffset);
-
-  return { limit, offset };
-}
-
-function validateEarmarkFilter(queryParams: APIGatewayProxyEventQueryStringParameters | null) {
-  const filter: {
-    status?: string;
-    chainId?: number;
-    invoiceId?: string;
-  } = {};
-
-  if (queryParams?.status) {
-    filter.status = queryParams.status;
-  }
-  if (queryParams?.chainId) {
-    const parsedChainId = parseInt(queryParams.chainId);
-    if (!isNaN(parsedChainId)) {
-      filter.chainId = parsedChainId;
-    }
-  }
-  if (queryParams?.invoiceId) {
-    filter.invoiceId = queryParams.invoiceId;
-  }
-
-  return filter;
-}
-
-function validateOperationFilter(queryParams: APIGatewayProxyEventQueryStringParameters | null) {
-  const filter: {
-    status?: RebalanceOperationStatus | RebalanceOperationStatus[];
-    chainId?: number;
-    earmarkId?: string | null;
-    invoiceId?: string;
-  } = {};
-
-  if (queryParams?.status) {
-    filter.status = queryParams.status as RebalanceOperationStatus;
-  }
-  if (queryParams?.earmarkId !== undefined) {
-    // Handle special case where "null" string means null earmarkId (standalone operations)
-    filter.earmarkId = queryParams.earmarkId === 'null' ? null : queryParams.earmarkId;
-  }
-  if (queryParams?.chainId) {
-    const parsedChainId = parseInt(queryParams.chainId);
-    if (!isNaN(parsedChainId)) {
-      filter.chainId = parsedChainId;
-    }
-  }
-  if (queryParams?.invoiceId) {
-    filter.invoiceId = queryParams.invoiceId;
-  }
-
-  return filter;
-}
 
 export const handleApiRequest = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
   const { requestId, logger, event } = context;
   if (!verifyAdminToken(context)) {
     logger.warn('Unauthorized access attempt', { requestId, event });
-    return {
-      statusCode: 403,
-      body: JSON.stringify({ message: 'Forbidden: Invalid admin token' }),
-    };
+    return jsonWithSchema(403, ForbiddenResponse, { message: 'Forbidden: Invalid admin token' });
   }
   try {
     const request = extractRequest(context);
     if (!request) {
-      return {
-        statusCode: 404,
-        body: JSON.stringify({ message: `Unknown request: ${context.event.httpMethod} ${context.event.path}` }),
-      };
+      return jsonWithSchema(404, ErrorResponse, {
+        message: `Unknown request: ${context.event.httpMethod} ${context.event.path}`,
+      });
     }
 
     // Handle GET requests for rebalance inspection
@@ -115,22 +48,34 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
     switch (request) {
       case HttpPaths.PausePurchase:
         await pauseIfNeeded('purchase', context.purchaseCache, context);
-        break;
+        return jsonWithSchema(200, AdminApi.pausePurchase.response, {
+          message: `Successfully processed request: ${request}`,
+        });
       case HttpPaths.PauseRebalance:
         await pauseIfNeeded('rebalance', context.database, context);
-        break;
+        return jsonWithSchema(200, AdminApi.pauseRebalance.response, {
+          message: `Successfully processed request: ${request}`,
+        });
       case HttpPaths.PauseOnDemandRebalance:
         await pauseIfNeeded('ondemand', context.database, context);
-        break;
+        return jsonWithSchema(200, AdminApi.pauseOnDemandRebalance.response, {
+          message: `Successfully processed request: ${request}`,
+        });
       case HttpPaths.UnpausePurchase:
         await unpauseIfNeeded('purchase', context.purchaseCache, context);
-        break;
+        return jsonWithSchema(200, AdminApi.unpausePurchase.response, {
+          message: `Successfully processed request: ${request}`,
+        });
       case HttpPaths.UnpauseRebalance:
         await unpauseIfNeeded('rebalance', context.database, context);
-        break;
+        return jsonWithSchema(200, AdminApi.unpauseRebalance.response, {
+          message: `Successfully processed request: ${request}`,
+        });
       case HttpPaths.UnpauseOnDemandRebalance:
         await unpauseIfNeeded('ondemand', context.database, context);
-        break;
+        return jsonWithSchema(200, AdminApi.unpauseOnDemandRebalance.response, {
+          message: `Successfully processed request: ${request}`,
+        });
       case HttpPaths.CancelEarmark:
         return handleCancelEarmark(context);
       case HttpPaths.CancelRebalanceOperation:
@@ -146,29 +91,17 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
       default:
         throw new Error(`Unknown request: ${request}`);
     }
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ message: `Successfully processed request: ${request}` }),
-    };
   } catch (e) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify(jsonifyError(e)),
-    };
+    const err = jsonifyError(e);
+    return jsonWithSchema(500, ErrorResponse, { message: err.message, error: err.stack });
   }
 };
 
 const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
   const { logger, event, database } = context;
-  const body = JSON.parse(event.body || '{}');
-  const operationId = body.operationId;
-
-  if (!operationId) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ message: 'operationId is required in request body' }),
-    };
-  }
+  const bodyParsed = parseJsonBody(AdminApi.cancelRebalanceOperation.body!, event.body ?? null);
+  if (isLambdaResponse(bodyParsed)) return bodyParsed;
+  const { operationId } = bodyParsed;
 
   logger.info('Cancelling rebalance operation', { operationId });
 
@@ -176,26 +109,22 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
     // Get current operation to verify it exists and check status
     const operations = await database
       .queryWithClient<database.rebalance_operations>('SELECT * FROM rebalance_operations WHERE id = $1', [operationId])
-      .then((rows) => rows.map((row) => snakeToCamel(row)));
+      .then((rows: database.rebalance_operations[]) =>
+        rows.map((row: database.rebalance_operations) => snakeToCamel(row)),
+      );
 
     if (operations.length === 0) {
-      return {
-        statusCode: 404,
-        body: JSON.stringify({ message: 'Rebalance operation not found' }),
-      };
+      return jsonWithSchema(404, ErrorResponse, { message: 'Rebalance operation not found' });
     }
 
     const operation = operations[0];
 
     // Check if operation can be cancelled (must be PENDING or AWAITING_CALLBACK)
     if (!['pending', 'awaiting_callback'].includes(operation.status)) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: `Cannot cancel operation with status: ${operation.status}. Only PENDING and AWAITING_CALLBACK operations can be cancelled.`,
-          currentStatus: operation.status,
-        }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Cannot cancel operation with status: ${operation.status}. Only PENDING and AWAITING_CALLBACK operations can be cancelled.`,
+        currentStatus: operation.status,
+      });
     }
 
     // Update operation status to cancelled
@@ -208,7 +137,9 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
        RETURNING *`,
         [RebalanceOperationStatus.CANCELLED, operationId],
       )
-      .then((rows) => rows.map((row) => snakeToCamel(row)));
+      .then((rows: database.rebalance_operations[]) =>
+        rows.map((row: database.rebalance_operations) => snakeToCamel(row)),
+      );
 
     logger.info('Rebalance operation cancelled successfully', {
       operationId,
@@ -218,36 +149,24 @@ const handleCancelRebalanceOperation = async (context: AdminContext): Promise<{ 
       earmarkId: operation.earmarkId,
     });
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Rebalance operation cancelled successfully',
-        operation: updated[0],
-      }),
-    };
+    return jsonWithSchema(200, AdminApi.cancelRebalanceOperation.response, {
+      message: 'Rebalance operation cancelled successfully',
+      operation: updated[0],
+    });
   } catch (error) {
     logger.error('Failed to cancel rebalance operation', { operationId, error });
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Failed to cancel rebalance operation',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }),
-    };
+    return jsonWithSchema(500, ErrorResponse, {
+      message: 'Failed to cancel rebalance operation',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 };
 
 const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
   const { logger, event, database } = context;
-  const body = JSON.parse(event.body || '{}');
-  const earmarkId = body.earmarkId;
-
-  if (!earmarkId) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ message: 'earmarkId is required in request body' }),
-    };
-  }
+  const bodyParsed = parseJsonBody(AdminApi.cancelEarmark.body!, event.body ?? null);
+  if (isLambdaResponse(bodyParsed)) return bodyParsed;
+  const { earmarkId } = bodyParsed;
 
   logger.info('Cancelling earmark', { earmarkId });
 
@@ -255,25 +174,19 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
     // Get current earmark to verify it exists and check status
     const earmarks = await database
       .queryWithClient<database.earmarks>('SELECT * FROM earmarks WHERE id = $1', [earmarkId])
-      .then((rows) => rows.map((row) => snakeToCamel(row)));
+      .then((rows: database.earmarks[]) => rows.map((row: database.earmarks) => snakeToCamel(row)));
     if (earmarks.length === 0) {
-      return {
-        statusCode: 404,
-        body: JSON.stringify({ message: 'Earmark not found' }),
-      };
+      return jsonWithSchema(404, ErrorResponse, { message: 'Earmark not found' });
     }
 
     const earmark = earmarks[0];
 
     // Check if earmark can be cancelled
     if (['completed', 'cancelled', 'expired'].includes(earmark.status)) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: `Cannot cancel earmark with status: ${earmark.status}`,
-          currentStatus: earmark.status,
-        }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Cannot cancel earmark with status: ${earmark.status}`,
+        currentStatus: earmark.status,
+      });
     }
 
     // Mark all operations as orphaned (both PENDING and AWAITING_CALLBACK keep their status)
@@ -293,27 +206,24 @@ const handleCancelEarmark = async (context: AdminContext): Promise<{ statusCode:
       invoiceId: earmark.invoiceId,
       previousStatus: earmark.status,
       orphanedOperations: orphanedOps.length,
-      orphanedPending: orphanedOps.filter((op) => op.status === RebalanceOperationStatus.PENDING).length,
-      orphanedAwaitingCallback: orphanedOps.filter((op) => op.status === RebalanceOperationStatus.AWAITING_CALLBACK)
-        .length,
+      orphanedPending: orphanedOps.filter(
+        (op: { id: string; status: string }) => op.status === RebalanceOperationStatus.PENDING,
+      ).length,
+      orphanedAwaitingCallback: orphanedOps.filter(
+        (op: { id: string; status: string }) => op.status === RebalanceOperationStatus.AWAITING_CALLBACK,
+      ).length,
     });
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Earmark cancelled successfully',
-        earmark: updated,
-      }),
-    };
+    return jsonWithSchema(200, AdminApi.cancelEarmark.response, {
+      message: 'Earmark cancelled successfully',
+      earmark: updated,
+    });
   } catch (error) {
     logger.error('Failed to cancel earmark', { earmarkId, error });
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Failed to cancel earmark',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }),
-    };
+    return jsonWithSchema(500, ErrorResponse, {
+      message: 'Failed to cancel earmark',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 };
 
@@ -322,43 +232,17 @@ const handleTriggerSend = async (context: AdminContext): Promise<{ statusCode: n
   const startTime = Date.now();
 
   try {
-    const body = JSON.parse(event.body || '{}');
-    const { chainId, asset, recipient, amount, memo } = body;
-
-    // Validate required fields
-    if (!chainId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'chainId is required in request body' }),
-      };
-    }
-    if (!asset) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'asset is required in request body' }),
-      };
-    }
-    if (!recipient) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'recipient is required in request body' }),
-      };
-    }
-    if (!amount) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'amount is required in request body' }),
-      };
-    }
+    const bodyParsed = parseJsonBody(AdminApi.triggerSend.body!, event.body ?? null);
+    if (isLambdaResponse(bodyParsed)) return bodyParsed;
+    const { chainId, asset, recipient, amount, memo } = bodyParsed;
 
     // Validate recipient is whitelisted
     const whitelistedRecipients = config.whitelistedRecipients || [];
     if (whitelistedRecipients.length === 0) {
       logger.warn('No whitelisted recipients configured', { chainId, recipient });
-      return {
-        statusCode: 403,
-        body: JSON.stringify({ message: 'No whitelisted recipients configured. Cannot send funds.' }),
-      };
+      return jsonWithSchema(403, ForbiddenResponse, {
+        message: 'No whitelisted recipients configured. Cannot send funds.',
+      });
     }
 
     const isWhitelisted = whitelistedRecipients.some(
@@ -371,13 +255,7 @@ const handleTriggerSend = async (context: AdminContext): Promise<{ statusCode: n
         recipient,
         whitelistedRecipients,
       });
-      return {
-        statusCode: 403,
-        body: JSON.stringify({
-          message: 'Recipient address is not whitelisted',
-          recipient,
-        }),
-      };
+      return jsonWithSchema(403, ForbiddenResponse, { message: 'Recipient address is not whitelisted', recipient });
     }
 
     logger.info('Trigger send request validated', {
@@ -394,20 +272,14 @@ const handleTriggerSend = async (context: AdminContext): Promise<{ statusCode: n
     const chainConfig = markConfig.chains[chainId];
     if (!chainConfig) {
       logger.error('Chain not configured', { chainId });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Chain ${chainId} is not configured` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: `Chain ${chainId} is not configured` });
     }
 
     // Get token address from configuration
     const tokenAddress = getTokenAddressFromConfig(asset, chainId.toString(), markConfig);
     if (!tokenAddress) {
       logger.error('Token not found in configuration', { chainId, asset });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Token ${asset} not found for chain ${chainId}` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: `Token ${asset} not found for chain ${chainId}` });
     }
 
     // Encode ERC20 transfer call
@@ -450,28 +322,22 @@ const handleTriggerSend = async (context: AdminContext): Promise<{ statusCode: n
       operation: 'trigger_send',
     });
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Funds sent successfully',
-        transactionHash: receipt.transactionHash,
-        chainId,
-        asset,
-        recipient,
-        amount,
-        memo,
-      }),
-    };
+    return jsonWithSchema(200, AdminApi.triggerSend.response, {
+      message: 'Funds sent successfully',
+      transactionHash: receipt.transactionHash,
+      chainId,
+      asset,
+      recipient,
+      amount,
+      memo,
+    });
   } catch (error) {
     const duration = Date.now() - startTime;
     logger.error('Failed to process trigger send', { error, duration });
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Failed to process trigger send request',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }),
-    };
+    return jsonWithSchema(500, ErrorResponse, {
+      message: 'Failed to process trigger send request',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 };
 
@@ -510,40 +376,9 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
   const startTime = Date.now();
 
   try {
-    const body = JSON.parse(event.body || '{}');
-    const { originChain, destinationChain, asset, amount, bridge, slippage, earmarkId } = body;
-
-    // Validate required fields
-    if (!originChain) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'originChain is required in request body' }),
-      };
-    }
-    if (!destinationChain) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'destinationChain is required in request body' }),
-      };
-    }
-    if (!asset) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'asset is required in request body' }),
-      };
-    }
-    if (!amount) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'amount is required in request body' }),
-      };
-    }
-    if (!bridge) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'bridge is required in request body' }),
-      };
-    }
+    const bodyParsed = parseJsonBody(AdminApi.triggerRebalance.body!, event.body ?? null);
+    if (isLambdaResponse(bodyParsed)) return bodyParsed;
+    const { originChain, destinationChain, asset, amount, bridge, slippage, earmarkId } = bodyParsed;
 
     logger.info('Trigger rebalance request received', {
       originChain,
@@ -563,18 +398,14 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
 
     if (!originChainConfig) {
       logger.error('Origin chain not configured', { originChain });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Origin chain ${originChain} is not configured` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: `Origin chain ${originChain} is not configured` });
     }
 
     if (!destChainConfig) {
       logger.error('Destination chain not configured', { destinationChain });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Destination chain ${destinationChain} is not configured` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Destination chain ${destinationChain} is not configured`,
+      });
     }
 
     // Get asset address and ticker
@@ -583,27 +414,20 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
 
     if (!originAssetAddress) {
       logger.error('Asset not found on origin chain', { asset, originChain });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Asset ${asset} not found on origin chain ${originChain}` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: `Asset ${asset} not found on origin chain ${originChain}` });
     }
 
     if (!destAssetAddress) {
       logger.error('Asset not found on destination chain', { asset, destinationChain });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Asset ${asset} not found on destination chain ${destinationChain}` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Asset ${asset} not found on destination chain ${destinationChain}`,
+      });
     }
 
     const ticker = getTickerForAsset(originAssetAddress, originChain, markConfig);
     if (!ticker) {
       logger.error('Could not determine ticker for asset', { asset, originChain });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Could not determine ticker for asset ${asset}` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: `Could not determine ticker for asset ${asset}` });
     }
 
     // Get decimals and convert amount
@@ -626,12 +450,9 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
     const bridgeType = bridge as SupportedBridge;
     if (!Object.values(SupportedBridge).includes(bridgeType)) {
       logger.error('Invalid bridge type', { bridge });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: `Invalid bridge type: ${bridge}. Supported: ${Object.values(SupportedBridge).join(', ')}`,
-        }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Invalid bridge type: ${bridge}. Supported: ${Object.values(SupportedBridge).join(', ')}`,
+      });
     }
 
     // Get bridge adapter
@@ -669,16 +490,13 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
       });
 
       if (receivedAmount18 < minimumAcceptableAmount) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({
-            message: 'Slippage tolerance exceeded',
-            providedSlippageBps: slippage,
-            actualSlippageBps: actualSlippageBps.toString(),
-            sentAmount: amount,
-            receivedAmount: formatUnits(receivedAmount18, 18),
-          }),
-        };
+        return jsonWithSchema(400, ErrorResponse, {
+          message: 'Slippage tolerance exceeded',
+          providedSlippageBps: slippage,
+          actualSlippageBps: actualSlippageBps.toString(),
+          sentAmount: amount,
+          receivedAmount: formatUnits(receivedAmount18, 18),
+        });
       }
     }
 
@@ -758,33 +576,27 @@ const handleTriggerRebalance = async (context: AdminContext): Promise<{ statusCo
       operation: 'trigger_rebalance',
     });
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Rebalance operation triggered successfully',
-        operation: {
-          id: operation.id,
-          originChain,
-          destinationChain,
-          asset,
-          ticker,
-          amount: formatUnits(effectiveAmount18, 18),
-          bridge: bridgeType,
-          status: operation.status,
-          transactionHashes: Object.values(receipts).map((r: TransactionReceipt) => r.transactionHash),
-        },
-      }),
-    };
+    return jsonWithSchema(200, AdminApi.triggerRebalance.response, {
+      message: 'Rebalance operation triggered successfully',
+      operation: {
+        id: operation.id,
+        originChain,
+        destinationChain,
+        asset,
+        ticker,
+        amount: formatUnits(effectiveAmount18, 18),
+        bridge: bridgeType,
+        status: operation.status,
+        transactionHashes: Object.values(receipts).map((r: TransactionReceipt) => r.transactionHash),
+      },
+    });
   } catch (error) {
     const duration = Date.now() - startTime;
     logger.error('Failed to process trigger rebalance', { error, duration });
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Failed to process trigger rebalance request',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }),
-    };
+    return jsonWithSchema(500, ErrorResponse, {
+      message: 'Failed to process trigger rebalance request',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 };
 
@@ -793,34 +605,9 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
   const startTime = Date.now();
 
   try {
-    const body = JSON.parse(event.body || '{}');
-    const { chainId, inputAsset, outputAsset, amount, slippage, swapAdapter, recipient } = body;
-
-    // Validate required fields
-    if (!chainId) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'chainId is required in request body' }),
-      };
-    }
-    if (!inputAsset) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'inputAsset is required in request body' }),
-      };
-    }
-    if (!outputAsset) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'outputAsset is required in request body' }),
-      };
-    }
-    if (!amount) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'amount is required in request body' }),
-      };
-    }
+    const bodyParsed = parseJsonBody(AdminApi.triggerSwap.body!, event.body ?? null);
+    if (isLambdaResponse(bodyParsed)) return bodyParsed;
+    const { chainId, inputAsset, outputAsset, amount, slippage, swapAdapter, recipient } = bodyParsed;
 
     logger.info('Trigger swap request received', {
       chainId,
@@ -839,10 +626,7 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
 
     if (!chainConfig) {
       logger.error('Chain not configured', { chainId });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Chain ${chainId} is not configured` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: `Chain ${chainId} is not configured` });
     }
 
     // Helper to resolve asset: can be tickerHash, ticker symbol, or address
@@ -883,18 +667,14 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
 
     if (!inputAssetAddress) {
       logger.error('Input asset not found on chain', { inputAsset, chainId });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Input asset ${inputAsset} not found on chain ${chainId}` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: `Input asset ${inputAsset} not found on chain ${chainId}` });
     }
 
     if (!outputAssetAddress) {
       logger.error('Output asset not found on chain', { outputAsset, chainId });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Output asset ${outputAsset} not found on chain ${chainId}` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Output asset ${outputAsset} not found on chain ${chainId}`,
+      });
     }
 
     // Get tickers for decimals
@@ -903,18 +683,16 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
 
     if (!inputTicker) {
       logger.error('Could not determine ticker for input asset', { inputAsset, chainId });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Could not determine ticker for input asset ${inputAsset}` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Could not determine ticker for input asset ${inputAsset}`,
+      });
     }
 
     if (!outputTicker) {
       logger.error('Could not determine ticker for output asset', { outputAsset, chainId });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Could not determine ticker for output asset ${outputAsset}` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Could not determine ticker for output asset ${outputAsset}`,
+      });
     }
 
     // Get decimals and convert amount
@@ -937,12 +715,9 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
     const adapterName = (swapAdapter || 'cowswap') as SupportedBridge;
     if (!Object.values(SupportedBridge).includes(adapterName)) {
       logger.error('Invalid swap adapter', { swapAdapter: adapterName });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: `Invalid swap adapter: ${adapterName}. Supported: ${Object.values(SupportedBridge).join(', ')}`,
-        }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Invalid swap adapter: ${adapterName}. Supported: ${Object.values(SupportedBridge).join(', ')}`,
+      });
     }
 
     // Get swap adapter
@@ -950,12 +725,9 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
 
     if (!adapter || !adapter.executeSwap) {
       logger.error('Swap adapter does not support executeSwap', { adapterName });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: `Swap adapter ${adapterName} does not support executeSwap operation`,
-        }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Swap adapter ${adapterName} does not support executeSwap operation`,
+      });
     }
 
     // Build route for same-chain swap
@@ -1038,24 +810,21 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
         });
 
         // Return success with order UID, indicating order is pending settlement
-        return {
-          statusCode: 200,
-          body: JSON.stringify({
-            message: 'Swap order submitted successfully (settlement pending)',
-            swap: {
-              orderUid: orderUidMatch[1],
-              chainId,
-              inputAsset: inputAssetAddress,
-              outputAsset: outputAssetAddress,
-              inputTicker,
-              outputTicker,
-              sellAmount: amountNativeUnits.toString(),
-              buyAmount: receivedAmount,
-              status: 'pending_settlement',
-              note: 'Order submitted to CowSwap. Settlement may take time as orders are batch-filled.',
-            },
-          }),
-        };
+        return jsonWithSchema(200, AdminApi.triggerSwap.response, {
+          message: 'Swap order submitted successfully (settlement pending)',
+          swap: {
+            orderUid: orderUidMatch[1],
+            chainId,
+            inputAsset: inputAssetAddress,
+            outputAsset: outputAssetAddress,
+            inputTicker,
+            outputTicker,
+            sellAmount: amountNativeUnits.toString(),
+            buyAmount: receivedAmount,
+            status: 'pending_settlement',
+            note: 'Order submitted to CowSwap. Settlement may take time as orders are batch-filled.',
+          },
+        });
       }
       throw error;
     }
@@ -1086,35 +855,29 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
       operation: 'trigger_swap',
     });
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Swap operation triggered successfully',
-        swap: {
-          orderUid: swapResult.orderUid,
-          chainId,
-          inputAsset: inputAssetAddress,
-          outputAsset: outputAssetAddress,
-          inputTicker,
-          outputTicker,
-          sellAmount: swapResult.sellAmount,
-          buyAmount: swapResult.buyAmount,
-          executedSellAmount: swapResult.executedSellAmount,
-          executedBuyAmount: swapResult.executedBuyAmount,
-          slippage: actualSlippageBps ? actualSlippageBps.toString() : undefined,
-        },
-      }),
-    };
+    return jsonWithSchema(200, AdminApi.triggerSwap.response, {
+      message: 'Swap operation triggered successfully',
+      swap: {
+        orderUid: swapResult.orderUid,
+        chainId,
+        inputAsset: inputAssetAddress,
+        outputAsset: outputAssetAddress,
+        inputTicker,
+        outputTicker,
+        sellAmount: swapResult.sellAmount,
+        buyAmount: swapResult.buyAmount,
+        executedSellAmount: swapResult.executedSellAmount,
+        executedBuyAmount: swapResult.executedBuyAmount,
+        slippage: actualSlippageBps ? actualSlippageBps.toString() : undefined,
+      },
+    });
   } catch (error) {
     const duration = Date.now() - startTime;
     logger.error('Failed to process trigger swap', { error: jsonifyError(error), duration });
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Failed to process trigger swap request',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      }),
-    };
+    return jsonWithSchema(500, ErrorResponse, {
+      message: 'Failed to process trigger swap request',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 };
 
@@ -1127,103 +890,80 @@ const handleGetRequest = async (
 
   switch (request) {
     case HttpPaths.GetEarmarks: {
-      const queryParams = event.queryStringParameters;
-      const { limit, offset } = validatePagination(queryParams);
-      const filter = validateEarmarkFilter(queryParams);
+      const queryParsed = parseQuery(AdminApi.getEarmarks.query!, event.queryStringParameters);
+      if (isLambdaResponse(queryParsed)) return queryParsed;
+      const { limit, offset, status, chainId, invoiceId } = queryParsed;
+      const limitNum = Math.min(Number(limit), 1000);
+      const offsetNum = Math.max(0, Number(offset));
+      const filter = { status, chainId: chainId ? Number(chainId) : undefined, invoiceId };
 
-      const result = await context.database.getEarmarksWithOperations(limit, offset, filter);
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ earmarks: result.earmarks, total: result.total }),
-      };
+      const result = await context.database.getEarmarksWithOperations(limitNum, offsetNum, filter);
+      return jsonWithSchema(200, AdminApi.getEarmarks.response, { earmarks: result.earmarks, total: result.total });
     }
 
     case HttpPaths.GetRebalanceOperations: {
-      const queryParams = event.queryStringParameters;
-      const { limit, offset } = validatePagination(queryParams);
-      const filter = validateOperationFilter(queryParams);
-
-      const result = await context.database.getRebalanceOperations(limit, offset, filter);
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ operations: result.operations, total: result.total }),
+      const queryParsed = parseQuery(AdminApi.getRebalanceOperations.query!, event.queryStringParameters);
+      if (isLambdaResponse(queryParsed)) return queryParsed;
+      const { limit, offset, status, chainId, earmarkId, invoiceId } = queryParsed;
+      const limitNum = Math.min(Number(limit), 1000);
+      const offsetNum = Math.max(0, Number(offset));
+      const earmarkIdParsed = earmarkId === 'null' ? null : earmarkId;
+      const filter = {
+        status: status as RebalanceOperationStatus | undefined,
+        chainId: chainId ? Number(chainId) : undefined,
+        earmarkId: earmarkIdParsed,
+        invoiceId,
       };
+
+      const result = await context.database.getRebalanceOperations(limitNum, offsetNum, filter);
+      return jsonWithSchema(200, AdminApi.getRebalanceOperations.response, {
+        operations: result.operations,
+        total: result.total,
+      });
     }
 
     case HttpPaths.GetEarmarkDetails: {
-      const earmarkId = event.pathParameters?.id;
-      if (!earmarkId) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ message: 'Earmark ID required' }),
-        };
-      }
+      const paramsParsed = parsePathParams(AdminApi.getEarmarkDetails.params!, event.pathParameters ?? null);
+      if (isLambdaResponse(paramsParsed)) return paramsParsed;
+      const { id: earmarkId } = paramsParsed;
 
       try {
         const earmarks = await context.database
           .queryWithClient<database.earmarks>('SELECT * FROM earmarks WHERE id = $1', [earmarkId])
-          .then((rows) => rows.map((row) => snakeToCamel(row)));
+          .then((rows: database.earmarks[]) => rows.map((row: database.earmarks) => snakeToCamel(row)));
         if (earmarks.length === 0) {
-          return {
-            statusCode: 404,
-            body: JSON.stringify({ message: 'Earmark not found' }),
-          };
+          return jsonWithSchema(404, ErrorResponse, { message: 'Earmark not found' });
         }
 
         const operations = await context.database.getRebalanceOperationsByEarmark(earmarkId);
 
-        return {
-          statusCode: 200,
-          body: JSON.stringify({
-            earmark: earmarks[0],
-            operations,
-          }),
-        };
+        return jsonWithSchema(200, AdminApi.getEarmarkDetails.response, { earmark: earmarks[0], operations });
       } catch {
         // Handle invalid UUID format or other database errors
-        return {
-          statusCode: 404,
-          body: JSON.stringify({ message: 'Earmark not found' }),
-        };
+        return jsonWithSchema(404, ErrorResponse, { message: 'Earmark not found' });
       }
     }
 
     case HttpPaths.GetRebalanceOperationDetails: {
-      const operationId = event.pathParameters?.id;
-      if (!operationId) {
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ message: 'Operation ID required' }),
-        };
-      }
+      const paramsParsed = parsePathParams(AdminApi.getRebalanceOperationDetails.params!, event.pathParameters ?? null);
+      if (isLambdaResponse(paramsParsed)) return paramsParsed;
+      const { id: operationId } = paramsParsed;
 
       try {
         const operation = await context.database.getRebalanceOperationById(operationId);
         if (!operation) {
-          return {
-            statusCode: 404,
-            body: JSON.stringify({ message: 'Rebalance operation not found' }),
-          };
+          return jsonWithSchema(404, ErrorResponse, { message: 'Rebalance operation not found' });
         }
 
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ operation }),
-        };
+        return jsonWithSchema(200, AdminApi.getRebalanceOperationDetails.response, { operation });
       } catch {
         // Handle invalid UUID format or other database errors
-        return {
-          statusCode: 404,
-          body: JSON.stringify({ message: 'Rebalance operation not found' }),
-        };
+        return jsonWithSchema(404, ErrorResponse, { message: 'Rebalance operation not found' });
       }
     }
 
     default:
-      return {
-        statusCode: 404,
-        body: JSON.stringify({ message: `Unknown GET request: ${request}` }),
-      };
+      return jsonWithSchema(404, ErrorResponse, { message: `Unknown GET request: ${request}` });
   }
 };
 
@@ -1296,46 +1036,9 @@ const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode:
   const startTime = Date.now();
 
   try {
-    const body = JSON.parse(event.body || '{}');
-    const { origin, destinations, to, inputAsset, amount, maxFee, callData, user } = body;
-
-    // Validate required fields
-    if (!origin) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'origin (chain ID) is required in request body' }),
-      };
-    }
-    if (!destinations || !Array.isArray(destinations) || destinations.length === 0) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'destinations (array of chain IDs) is required in request body' }),
-      };
-    }
-    if (!to) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'to (receiver address) is required in request body' }),
-      };
-    }
-    if (!inputAsset) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'inputAsset is required in request body' }),
-      };
-    }
-    if (!amount) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'amount is required in request body' }),
-      };
-    }
-    if (maxFee === undefined || maxFee === null) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'maxFee is required in request body' }),
-      };
-    }
+    const bodyParsed = parseJsonBody(AdminApi.triggerIntent.body!, event.body ?? null);
+    if (isLambdaResponse(bodyParsed)) return bodyParsed;
+    const { origin, destinations, to, inputAsset, amount, maxFee, callData, user } = bodyParsed;
 
     logger.info('Trigger intent request received', {
       origin,
@@ -1352,19 +1055,13 @@ const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode:
     // Apply safety constraints (same as invoice purchasing)
     if (BigInt(maxFee.toString()) !== BigInt(0)) {
       logger.error('Invalid maxFee - must be 0 for safety', { maxFee });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'maxFee must be 0 (no solver fees allowed)' }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: 'maxFee must be 0 (no solver fees allowed)' });
     }
 
     const normalizedCallData = callData || '0x';
     if (normalizedCallData !== '0x') {
       logger.error('Invalid callData - must be 0x for safety', { callData: normalizedCallData });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: 'callData must be 0x (no custom execution allowed)' }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: 'callData must be 0x (no custom execution allowed)' });
     }
 
     // Validate receiver is ownAddress (funds must come to Mark wallet)
@@ -1373,12 +1070,9 @@ const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode:
         to,
         ownAddress: config.markConfig.ownAddress,
       });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: `Receiver must be Mark's own address (${config.markConfig.ownAddress}). Got: ${to}`,
-        }),
-      };
+      return jsonWithSchema(400, ErrorResponse, {
+        message: `Receiver must be Mark's own address (${config.markConfig.ownAddress}). Got: ${to}`,
+      });
     }
 
     // Validate origin chain is configured
@@ -1386,10 +1080,7 @@ const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode:
     const originChainConfig = config.markConfig.chains[originChainId];
     if (!originChainConfig) {
       logger.error('Origin chain not configured', { origin: originChainId });
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ message: `Origin chain ${originChainId} is not configured` }),
-      };
+      return jsonWithSchema(400, ErrorResponse, { message: `Origin chain ${originChainId} is not configured` });
     }
 
     // Validate all destination chains are configured
@@ -1398,10 +1089,7 @@ const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode:
       const destChainConfig = config.markConfig.chains[destChainId];
       if (!destChainConfig) {
         logger.error('Destination chain not configured', { destination: destChainId });
-        return {
-          statusCode: 400,
-          body: JSON.stringify({ message: `Destination chain ${destChainId} is not configured` }),
-        };
+        return jsonWithSchema(400, ErrorResponse, { message: `Destination chain ${destChainId} is not configured` });
       }
     }
 
@@ -1546,16 +1234,13 @@ const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode:
       operation: 'trigger_intent',
     });
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Intent submitted successfully',
-        transactionHash: receipt.transactionHash,
-        intentId,
-        chainId: originChainIdNum,
-        blockNumber: receipt.blockNumber,
-      }),
-    };
+    return jsonWithSchema(200, AdminApi.triggerIntent.response, {
+      message: 'Intent submitted successfully',
+      transactionHash: receipt.transactionHash,
+      intentId,
+      chainId: originChainIdNum,
+      blockNumber: receipt.blockNumber,
+    });
   } catch (error) {
     const duration = Date.now() - startTime;
     logger.error('Failed to trigger intent', {
@@ -1565,13 +1250,10 @@ const handleTriggerIntent = async (context: AdminContext): Promise<{ statusCode:
       operation: 'trigger_intent',
     });
 
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Failed to trigger intent',
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    };
+    return jsonWithSchema(500, ErrorResponse, {
+      message: 'Failed to trigger intent',
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 };
 

@@ -8,8 +8,10 @@
   "author": "Everclear",
   "workspaces": [
     "packages/admin",
+    "packages/agent",
     "packages/core",
     "packages/poller",
+    "packages/handler",
     "packages/adapters/logger",
     "packages/adapters/cache",
     "packages/adapters/chainservice",
@@ -17,11 +19,14 @@
     "packages/adapters/everclear",
     "packages/adapters/web3signer",
     "packages/adapters/prometheus",
-    "packages/adapters/rebalance"
+    "packages/adapters/rebalance",
+    "packages/adapters/webhooks"
   ],
   "scripts": {
+    "aws:setup": "npx ts-node scripts/aws-shard-setup.ts --manifest",
     "build": "yarn workspaces foreach -Av --parallel --topological-dev run build",
     "clean": "yarn workspaces foreach -A --parallel run clean",
+    "gcp:setup": "npx ts-node scripts/gcp-shard-setup.ts --manifest",
     "lint": "yarn lint:package && yarn workspaces foreach -A --parallel run lint",
     "lint:fix": "yarn workspaces foreach -A --parallel run lint:fix",
     "lint:package": "sort-package-json",
@@ -29,11 +34,21 @@
     "purge": "yarn workspaces foreach -A --parallel run clean && rimraf node_modules packages/*/node_modules packages/adapters/*/node_modules .yarn/cache .yarn/install-state.gz",
     "rebalance:dev": "npx tsx packages/adapters/rebalance/scripts/dev.ts",
     "redis:up": "yarn workspace @mark/cache docker:redis:up",
+    "shamir:split": "npx ts-node scripts/shamir-split-secret.ts",
+    "shamir:verify": "npx ts-node scripts/shamir-verify.ts",
     "test": "yarn workspaces foreach -A --parallel run test",
     "test:unit": "yarn workspaces foreach -v -A --parallel run test:unit"
   },
   "dependencies": {
     "@types/node": "20.17.12"
+  },
+  "dependenciesMeta": {
+    "@eth-optimism/contracts-bedrock": {
+      "built": false
+    },
+    "@eth-optimism/core-utils": {
+      "built": false
+    }
   },
   "devDependencies": {
     "@commitlint/cli": "19.6.1",

@@ -1,4 +1,4 @@
-import { snakeToCamel, camelToSnake } from '../src/utils';
+import { snakeToCamel, camelToSnake, normalizeReceipt, isNormalizedReceipt } from '../src/utils';
 
 describe('Database Utils', () => {
   describe('snakeToCamel', () => {
@@ -358,6 +358,163 @@ describe('Database Utils', () => {
         a_p_i_key: 'key',
         u_r_l_path: '/path',
       });
+    });
+  });
+
+  describe('normalizeReceipt', () => {
+    it('should normalize a valid receipt with all fields', () => {
+      const receipt = {
+        transactionHash: '0xabc123',
+        from: '0xsender',
+        to: '0xrecipient',
+        cumulativeGasUsed: '21000',
+        effectiveGasPrice: '20000000000',
+        blockNumber: 12345,
+        status: 'success',
+        logs: [{ topic: '0x1' }],
+        confirmations: 5,
+      };
+
+      const result = normalizeReceipt(receipt);
+
+      expect(result.transactionHash).toBe('0xabc123');
+      expect(result.from).toBe('0xsender');
+      expect(result.to).toBe('0xrecipient');
+      expect(result.cumulativeGasUsed).toBe('21000');
+      expect(result.effectiveGasPrice).toBe('20000000000');
+      expect(result.blockNumber).toBe(12345);
+      expect(result.status).toBe(1);
+      expect(result.logs).toEqual([{ topic: '0x1' }]);
+      expect(result.confirmations).toBe(5);
+    });
+
+    it('should throw error when transactionHash is missing', () => {
+      const receipt = { from: '0xsender', to: '0xrecipient' };
+      expect(() => normalizeReceipt(receipt)).toThrow(/missing or invalid transactionHash/);
+    });
+
+    it('should throw error when from is missing', () => {
+      const receipt = { transactionHash: '0xabc', to: '0xrecipient' };
+      expect(() => normalizeReceipt(receipt)).toThrow(/missing or invalid 'from' address/);
+    });
+
+    it('should default to empty string when to is missing', () => {
+      const receipt = {
+        transactionHash: '0xabc',
+        from: '0xsender',
+        to: null,
+        cumulativeGasUsed: '0',
+        effectiveGasPrice: '0',
+        blockNumber: 0,
+      };
+
+      const result = normalizeReceipt(receipt);
+      expect(result.to).toBe('');
+    });
+
+    it('should use gasPrice as fallback when effectiveGasPrice is missing', () => {
+      const receipt = {
+        transactionHash: '0xabc',
+        from: '0xsender',
+        to: '0xrecipient',
+        cumulativeGasUsed: '21000',
+        gasPrice: '15000000000',
+        blockNumber: 100,
+      };
+
+      const result = normalizeReceipt(receipt);
+      expect(result.effectiveGasPrice).toBe('15000000000');
+    });
+
+    it('should map status "success" to 1 and other values to undefined', () => {
+      const successReceipt = {
+        transactionHash: '0xabc',
+        from: '0xsender',
+        to: '0xrecipient',
+        status: 'success',
+      };
+      expect(normalizeReceipt(successReceipt).status).toBe(1);
+
+      const numericSuccessReceipt = {
+        transactionHash: '0xdef',
+        from: '0xsender',
+        to: '0xrecipient',
+        status: 1,
+      };
+      expect(normalizeReceipt(numericSuccessReceipt).status).toBe(1);
+
+      const failedReceipt = {
+        transactionHash: '0xghi',
+        from: '0xsender',
+        to: '0xrecipient',
+        status: 'failed',
+      };
+      expect(normalizeReceipt(failedReceipt).status).toBeUndefined();
+    });
+
+    it('should default logs to empty array when missing', () => {
+      const receipt = {
+        transactionHash: '0xabc',
+        from: '0xsender',
+        to: '0xrecipient',
+      };
+
+      const result = normalizeReceipt(receipt);
+      expect(result.logs).toEqual([]);
+    });
+
+    it('should handle confirmations as number vs non-number', () => {
+      const withNumericConfirmations = {
+        transactionHash: '0xabc',
+        from: '0xsender',
+        to: '0xrecipient',
+        confirmations: 10,
+      };
+      expect(normalizeReceipt(withNumericConfirmations).confirmations).toBe(10);
+
+      const withStringConfirmations = {
+        transactionHash: '0xdef',
+        from: '0xsender',
+        to: '0xrecipient',
+        confirmations: '5',
+      };
+      expect(normalizeReceipt(withStringConfirmations).confirmations).toBeUndefined();
+    });
+  });
+
+  describe('isNormalizedReceipt', () => {
+    it('should return true for a valid normalized receipt', () => {
+      const receipt = {
+        transactionHash: '0xabc',
+        from: '0xsender',
+        to: '0xrecipient',
+        cumulativeGasUsed: '21000',
+        effectiveGasPrice: '20000000000',
+        blockNumber: 12345,
+        status: 1,
+        logs: [],
+      };
+
+      expect(isNormalizedReceipt(receipt)).toBe(true);
+    });
+
+    it('should return false when fields have wrong types', () => {
+      expect(isNormalizedReceipt({ transactionHash: 123 })).toBe(false);
+      expect(isNormalizedReceipt({
+        transactionHash: '0x',
+        from: '0x',
+        to: '0x',
+        cumulativeGasUsed: '0',
+        effectiveGasPrice: '0',
+        blockNumber: 'not-a-number',
+        status: 1,
+        logs: [],
+      })).toBe(false);
+    });
+
+    it('should return false for null or undefined input', () => {
+      expect(isNormalizedReceipt(null)).toBe(false);
+      expect(isNormalizedReceipt(undefined)).toBe(false);
     });
   });
 

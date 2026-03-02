@@ -11,15 +11,15 @@ import {
   RebalanceConfig,
   SupportedBridge,
   RouteRebalancingConfig,
-} from './types/config';
+  LogLevel,
+} from './types';
 import yaml from 'js-yaml';
-import fs from 'fs';
-import { LogLevel } from './types/logging';
+import fs, { existsSync, readFileSync } from 'fs';
 import { getSsmParameter } from './ssm';
-import { existsSync, readFileSync } from 'fs';
 import { hexToBase58 } from './solana';
 import { isTvmChain } from './tron';
 import { getRebalanceConfigFromS3 } from './s3';
+import { stitchConfig, loadManifest, setValueByPath } from './shard';
 
 config();
 
@@ -210,9 +210,87 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
 
     const ssmParameterName = (await fromEnv('MARK_CONFIG_SSM_PARAMETER')) ?? 'MARK_CONFIG_' + environment.toUpperCase();
     const configStr = await fromEnv(ssmParameterName, true);
-    const configJson = existsSync('config.json')
+    let configJson = existsSync('config.json')
       ? JSON.parse(readFileSync('config.json', 'utf8'))
       : JSON.parse(configStr ?? '{}');
+
+    // ============ KEY SHARDING: Reconstruct sharded fields ============
+    // Load manifest from: embedded in config, SSM parameter, or local file
+    const manifestStr = await fromEnv('SHARD_MANIFEST', true);
+    const localManifestPath = existsSync('shard-manifest.json') ? 'shard-manifest.json' : undefined;
+    const manifest = loadManifest(configJson, manifestStr, localManifestPath);
+
+    // If manifest exists with sharded fields, load Share 1 values from SSM, fetch GCP shares and reconstruct
+    if (manifest && manifest.shardedFields && manifest.shardedFields.length > 0) {
+      console.log(`🔐 Loading Share 1 values from SSM for ${manifest.shardedFields.length} sharded field(s)...`);
+
+      // Load Share 1 values from AWS SSM and place them into config JSON
+      const parameterPrefix = manifest.awsConfig?.parameterPrefix ?? '/mark/config';
+
+      for (const fieldConfig of manifest.shardedFields) {
+        // Determine SSM parameter name
+        let ssmParamName: string;
+        if (fieldConfig.awsParamName) {
+          ssmParamName = fieldConfig.awsParamName;
+        } else {
+          // Derive from the path: convert dots to underscores and append _share1
+          const safePath = fieldConfig.path.replace(/\./g, '_').replace(/\[/g, '_').replace(/\]/g, '');
+          ssmParamName = `${parameterPrefix}/${safePath}_share1`;
+        }
+
+        try {
+          // Fetch Share 1 from SSM
+          const share1Value = await getSsmParameter(ssmParamName);
+
+          if (share1Value === undefined || share1Value === null) {
+            const isRequired = fieldConfig.required !== false;
+            if (isRequired) {
+              throw new ConfigurationError(
+                `Failed to load Share 1 from SSM parameter '${ssmParamName}' for field '${fieldConfig.path}'`,
+                { ssmParamName, path: fieldConfig.path },
+              );
+            } else {
+              console.warn(
+                `  [shard] ⚠️  Skipping optional field '${fieldConfig.path}': Share 1 not found at '${ssmParamName}'`,
+              );
+              continue;
+            }
+          }
+
+          // Place Share 1 into config JSON at the field's path
+          setValueByPath(configJson, fieldConfig.path, share1Value);
+          console.log(`  [shard] ✓ Loaded Share 1 for '${fieldConfig.path}' from '${ssmParamName}'`);
+        } catch (error) {
+          const isRequired = fieldConfig.required !== false;
+          if (isRequired) {
+            console.error(`  [shard] ❌ Failed to load Share 1 for '${fieldConfig.path}':`, (error as Error).message);
+            throw error;
+          } else {
+            console.warn(`  [shard] ⚠️  Skipping optional field '${fieldConfig.path}': ${(error as Error).message}`);
+          }
+        }
+      }
+
+      // Now reconstruct the original values using Share 1 (from config JSON) and Share 2 (from GCP)
+      console.log(`🔐 Reconstructing ${manifest.shardedFields.length} sharded field(s)...`);
+      try {
+        configJson = await stitchConfig(configJson, manifest, {
+          logger: {
+            debug: (msg) => console.log(`  [shard] ${msg}`),
+            info: (msg) => console.log(`  [shard] ${msg}`),
+            warn: (msg) => console.warn(`  [shard] ⚠️ ${msg}`),
+            error: (msg) => console.error(`  [shard] ❌ ${msg}`),
+          },
+        });
+        console.log('✓ Key sharding reconstruction complete');
+      } catch (error) {
+        console.error('❌ Key sharding reconstruction failed:', (error as Error).message);
+        throw new ConfigurationError(`Failed to reconstruct sharded configuration: ${(error as Error).message}`, {
+          error: JSON.stringify(error),
+        });
+      }
+    }
+    // ============ END KEY SHARDING ============
 
     // Extract web3_signer_private_key from config JSON and make it available as an environment variable
     if (configJson.web3_signer_private_key && !process.env.WEB3_SIGNER_PRIVATE_KEY) {
@@ -239,8 +317,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         return false;
       }
 
-      const isSupported = supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
-      return isSupported;
+      return supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
     });
 
     const filteredOnDemandRoutes = onDemandRoutes?.filter((route) => {
@@ -258,8 +335,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         return false;
       }
 
-      const isSupported = supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
-      return isSupported;
+      return supportedAssets.includes(assetConfig.symbol) || assetConfig.isNative;
     });
 
     const config: MarkConfiguration = {
@@ -498,6 +574,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       regularRebalanceOpTTLMinutes:
         configJson.regularRebalanceOpTTLMinutes ??
         parseInt((await fromEnv('REGULAR_REBALANCE_OP_TTL_MINUTES')) || '1440'),
+      goldskyWebhookSecret: configJson.goldskyWebhookSecret ?? (await fromEnv('GOLDSKY_WEBHOOK_SECRET')) ?? undefined,
     };
 
     validateConfiguration(config);
@@ -671,7 +748,9 @@ export const parseChainConfigurations = async (
         );
       }
       // Skip non-settlement chains without spoke addresses - they may only be used for RPC access
-      console.log(`Chain ${chainId} has no spoke address and is not a settlement domain, skipping`);
+
+      // Reduce log noise
+      // console.log(`Chain ${chainId} has no spoke address and is not a settlement domain, skipping`);
       continue;
     }
 
@@ -799,4 +878,9 @@ export const getDecimalsFromConfig = (ticker: string, domain: string, config: Ma
     return undefined;
   }
   return asset.decimals;
+};
+
+export const getIsNativeFromConfig = (ticker: string, domain: string, config: MarkConfiguration): boolean => {
+  const asset = (config.chains[domain]?.assets ?? []).find((a) => a.tickerHash.toLowerCase() === ticker.toLowerCase());
+  return asset?.isNative ?? false;
 };

@@ -51,16 +51,22 @@ export class PurchaseCache {
    */
   public async getPurchases(targetIds: string[]): Promise<PurchaseAction[]> {
     const results = await this.store.hmget(this.dataKey, ...targetIds);
+    const purchases: PurchaseAction[] = [];
 
-    return results
-      .filter((result): result is string => result !== null)
-      .map((result) => {
+    for (const result of results) {
+      if (result === null) continue;
+      try {
         const parsed = JSON.parse(result) as PurchaseAction;
-        return {
+        purchases.push({
           ...parsed,
           transactionType: parsed.transactionType || TransactionSubmissionType.Onchain, // backwards compatability
-        };
-      });
+        });
+      } catch (parseError) {
+        console.error('Failed to parse purchase data, skipping corrupted entry:', parseError);
+      }
+    }
+
+    return purchases;
   }
 
   /**
@@ -101,14 +107,21 @@ export class PurchaseCache {
    */
   public async getAllPurchases(): Promise<PurchaseAction[]> {
     const all = await this.store.hgetall(this.dataKey);
+    const purchases: PurchaseAction[] = [];
 
-    return Object.values(all).map((result) => {
-      const parsed = JSON.parse(result) as PurchaseAction;
-      return {
-        ...parsed,
-        transactionType: parsed.transactionType || TransactionSubmissionType.Onchain, // backwards compatability
-      };
-    });
+    for (const result of Object.values(all)) {
+      try {
+        const parsed = JSON.parse(result) as PurchaseAction;
+        purchases.push({
+          ...parsed,
+          transactionType: parsed.transactionType || TransactionSubmissionType.Onchain, // backwards compatability
+        });
+      } catch (parseError) {
+        console.error('Failed to parse purchase data in getAllPurchases, skipping corrupted entry:', parseError);
+      }
+    }
+
+    return purchases;
   }
 
   /**

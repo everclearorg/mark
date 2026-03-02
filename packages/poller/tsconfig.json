@@ -9,6 +9,8 @@
       "zapatos/db": ["../adapters/database/node_modules/zapatos/dist/db"]
     },
     "composite": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
     "moduleResolution": "node",
     "module": "commonjs",
     "typeRoots": ["./src/types", "./node_modules/@types", "../../node_modules/@types"],

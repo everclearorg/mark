@@ -1,0 +1,103 @@
+{
+  "$schema": "../packages/core/src/shard/shard-manifest.schema.json",
+  "version": "1.0",
+  "description": "Shard manifest for Mason (mainnet-staging) - sa-east-1",
+  "awsConfig": {
+    "region": "sa-east-1",
+    "parameterPrefix": "/mason/config"
+  },
+  "gcpConfig": {
+    "project": "everclear-staging"
+  },
+  "shardedFields": [
+    {
+      "path": "web3_signer_private_key",
+      "awsParamName": "/mason/config/web3_signer_private_key_share1",
+      "gcpSecretRef": {
+        "project": "everclear-staging",
+        "secretId": "mason-web3-signer-pk-share2"
+      },
+      "method": "shamir",
+      "required": true,
+      "_comment": "Main transaction signer private key for EVM chains"
+    },
+    {
+      "path": "web3_fastfill_signer_private_key",
+      "awsParamName": "/mason/config/web3_fastfill_signer_private_key_share1",
+      "gcpSecretRef": {
+        "project": "everclear-staging",
+        "secretId": "mason-fastfill-signer-pk-share2"
+      },
+      "method": "shamir",
+      "required": true,
+      "_comment": "Fill Service signer private key for fast fills"
+    },
+    {
+      "path": "ton.mnemonic",
+      "awsParamName": "/mason/config/ton_mnemonic_share1",
+      "gcpSecretRef": {
+        "project": "everclear-staging",
+        "secretId": "mason-ton-mnemonic-share2"
+      },
+      "method": "shamir",
+      "required": true,
+      "_comment": "TON wallet mnemonic for TAC bridge operations"
+    },
+    {
+      "path": "solana.privateKey",
+      "awsParamName": "/mason/config/solana_privateKey_share1",
+      "gcpSecretRef": {
+        "project": "everclear-staging",
+        "secretId": "mason-solana-pk-share2"
+      },
+      "method": "shamir",
+      "required": true,
+      "_comment": "Solana wallet private key (base58 encoded)"
+    },
+    {
+      "path": "binance.apiSecret",
+      "awsParamName": "/mason/config/binance_apiSecret_share1",
+      "gcpSecretRef": {
+        "project": "everclear-staging",
+        "secretId": "mason-binance-secret-share2"
+      },
+      "method": "shamir",
+      "required": false,
+      "_comment": "Binance exchange API secret"
+    },
+    {
+      "path": "coinbase.apiSecret",
+      "awsParamName": "/mason/config/coinbase_apiSecret_share1",
+      "gcpSecretRef": {
+        "project": "everclear-staging",
+        "secretId": "mason-coinbase-secret-share2"
+      },
+      "method": "shamir",
+      "required": false,
+      "_comment": "Coinbase exchange API secret"
+    },
+    {
+      "path": "kraken.apiSecret",
+      "awsParamName": "/mason/config/kraken_apiSecret_share1",
+      "gcpSecretRef": {
+        "project": "everclear-staging",
+        "secretId": "mason-kraken-secret-share2"
+      },
+      "method": "shamir",
+      "required": false,
+      "_comment": "Kraken exchange API secret"
+    },
+    {
+      "path": "relayer.key",
+      "awsParamName": "/mason/config/relayer_key_share1",
+      "gcpSecretRef": {
+        "project": "everclear-staging",
+        "secretId": "mason-relayer-key-share2"
+      },
+      "method": "shamir",
+      "required": false,
+      "_comment": "Relayer API key"
+    }
+  ],
+  "_chainPrivateKeysNote": "Add chain-specific private keys based on Mason's supported chains. Mason supports: WETH, USDC, USDT, WBTC, cbBTC across multiple chains."
+}

@@ -47,6 +47,12 @@ export class PrometheusAdapter {
   // Rewards metrics
   private rewards: Gauge<string>;
 
+  // Event queue metrics (for handler)
+  private eventQueueDepth: Gauge<string>;
+  private eventsProcessed: Counter<string>;
+  private eventProcessingDuration: Histogram<string>;
+  private eventsDlq: Gauge<string>;
+
   constructor(
     private logger: Logger,
     private jobName: string,
@@ -125,6 +131,36 @@ export class PrometheusAdapter {
       labelNames: RewardLabelKeys,
       registers: [this.registry],
     });
+
+    // Initialize event queue metrics (for handler)
+    this.eventQueueDepth = new Gauge({
+      name: 'mark_event_queue_depth',
+      help: 'Current depth of event queues',
+      labelNames: ['event_type', 'queue_type'],
+      registers: [this.registry],
+    });
+
+    this.eventsProcessed = new Counter({
+      name: 'mark_events_processed_total',
+      help: 'Total number of events processed',
+      labelNames: ['event_type', 'status'],
+      registers: [this.registry],
+    });
+
+    this.eventProcessingDuration = new Histogram({
+      name: 'mark_event_processing_duration_seconds',
+      help: 'Duration of event processing',
+      labelNames: ['event_type'],
+      buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60],
+      registers: [this.registry],
+    });
+
+    this.eventsDlq = new Gauge({
+      name: 'mark_events_dlq_total',
+      help: 'Total number of events in dead letter queue',
+      labelNames: [],
+      registers: [this.registry],
+    });
   }
 
   // Update chain balance
@@ -180,6 +216,34 @@ export class PrometheusAdapter {
   // Update rewards
   public async updateRewards(labels: RewardLabels, amount: number): Promise<void> {
     this.rewards.labels(labels).set(amount);
+    await this.pushMetrics();
+  }
+
+  // Update event queue depth (for handler)
+  public async updateEventQueueDepth(
+    eventType: string,
+    queueType: 'pending' | 'processing',
+    depth: number,
+  ): Promise<void> {
+    this.eventQueueDepth.labels({ event_type: eventType, queue_type: queueType }).set(depth);
+    await this.pushMetrics();
+  }
+
+  // Record event processed (for handler)
+  public async recordEventProcessed(eventType: string, status: 'success' | 'failure' | 'retry'): Promise<void> {
+    this.eventsProcessed.labels({ event_type: eventType, status }).inc();
+    await this.pushMetrics();
+  }
+
+  // Record event processing duration (for handler)
+  public async recordEventProcessingDuration(eventType: string, durationSeconds: number): Promise<void> {
+    this.eventProcessingDuration.observe({ event_type: eventType }, durationSeconds);
+    await this.pushMetrics();
+  }
+
+  // Update dead letter queue size (for handler)
+  public async updateDeadLetterQueueSize(size: number): Promise<void> {
+    this.eventsDlq.set(size);
     await this.pushMetrics();
   }
 

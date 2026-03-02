@@ -35,8 +35,10 @@ COPY package.json /tmp/build/
 
 # Copy all package.json files
 COPY packages/core/package.json /tmp/build/packages/core/
+COPY packages/agent/package.json /tmp/build/packages/agent/
 COPY packages/poller/package.json /tmp/build/packages/poller/
 COPY packages/admin/package.json /tmp/build/packages/admin/
+COPY packages/handler/package.json /tmp/build/packages/handler/
 COPY packages/adapters/rebalance/package.json /tmp/build/packages/adapters/rebalance/
 COPY packages/adapters/logger/package.json /tmp/build/packages/adapters/logger/
 COPY packages/adapters/chainservice/package.json /tmp/build/packages/adapters/chainservice/
@@ -45,6 +47,7 @@ COPY packages/adapters/web3signer/package.json /tmp/build/packages/adapters/web3
 COPY packages/adapters/cache/package.json /tmp/build/packages/adapters/cache/
 COPY packages/adapters/prometheus/package.json /tmp/build/packages/adapters/prometheus/
 COPY packages/adapters/database/package.json /tmp/build/packages/adapters/database/
+COPY packages/adapters/webhooks/package.json /tmp/build/packages/adapters/webhooks/
 COPY yarn.lock /tmp/build/
 
 # Install dependencies including devDependencies
@@ -59,6 +62,7 @@ RUN yarn cache clean --all && \
 
 # Copy source files
 COPY packages/core /tmp/build/packages/core
+COPY packages/agent /tmp/build/packages/agent
 COPY packages/poller /tmp/build/packages/poller
 COPY packages/admin /tmp/build/packages/admin
 COPY packages/adapters/rebalance /tmp/build/packages/adapters/rebalance
@@ -72,9 +76,19 @@ COPY packages/adapters/database /tmp/build/packages/adapters/database
 COPY tsconfig.json /tmp/build/
 
 # Build packages
-# Build core first to ensure declaration files are available
+# Build only the workspaces needed for poller (not all workspaces)
+# Build dependencies first, then poller
 RUN yarn workspace @mark/core build && \
-    yarn build
+    yarn workspace @mark/logger build && \
+    yarn workspace @mark/cache build && \
+    yarn workspace @mark/chainservice build && \
+    yarn workspace @mark/database build && \
+    yarn workspace @mark/everclear build && \
+    yarn workspace @mark/prometheus build && \
+    yarn workspace @mark/web3signer build && \
+    yarn workspace @mark/rebalance build && \
+    yarn workspace @mark/agent build && \
+    yarn workspace @mark/poller build
 
 # ----------------------------------------
 # Runtime stage
@@ -95,6 +109,7 @@ WORKDIR ${LAMBDA_TASK_ROOT}
 COPY --from=build /tmp/build/node_modules ${LAMBDA_TASK_ROOT}/node_modules
 COPY --from=build /tmp/build/packages/poller/dist ${LAMBDA_TASK_ROOT}/
 COPY --from=build /tmp/build/packages/core/dist ${LAMBDA_TASK_ROOT}/packages/core/dist
+COPY --from=build /tmp/build/packages/agent/dist ${LAMBDA_TASK_ROOT}/packages/agent/dist
 COPY --from=build /tmp/build/packages/adapters/rebalance/dist ${LAMBDA_TASK_ROOT}/packages/adapters/rebalance/dist
 COPY --from=build /tmp/build/packages/adapters/logger/dist ${LAMBDA_TASK_ROOT}/packages/adapters/logger/dist
 COPY --from=build /tmp/build/packages/adapters/chainservice/dist ${LAMBDA_TASK_ROOT}/packages/adapters/chainservice/dist
@@ -109,7 +124,7 @@ COPY --from=build /tmp/build/packages/adapters/database/db ${LAMBDA_TASK_ROOT}/d
 
 # Create symlinks for workspace dependencies
 RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
-    rm -rf core logger chainservice everclear prometheus web3signer cache rebalance database && \
+    rm -rf core logger chainservice everclear prometheus web3signer cache rebalance database agent && \
     ln -s ../../packages/core/dist core && \
     ln -s ../../packages/adapters/logger/dist logger && \
     ln -s ../../packages/adapters/rebalance/dist rebalance && \
@@ -118,7 +133,8 @@ RUN cd ${LAMBDA_TASK_ROOT}/node_modules/@mark && \
     ln -s ../../packages/adapters/prometheus/dist prometheus && \
     ln -s ../../packages/adapters/web3signer/dist web3signer && \
     ln -s ../../packages/adapters/cache/dist cache && \
-    ln -s ../../packages/adapters/database/dist database
+    ln -s ../../packages/adapters/database/dist database && \
+    ln -s ../../packages/agent/dist agent
 
 COPY --from=public.ecr.aws/datadog/lambda-extension:74 /opt/extensions/ /opt/extensions
 

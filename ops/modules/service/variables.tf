@@ -23,6 +23,12 @@ variable "execution_role_arn" {
   type        = string
 }
 
+variable "task_role_arn" {
+  description = "ARN of the ECS task role (for application AWS API calls)"
+  type        = string
+  default     = null
+}
+
 variable "cluster_id" {
   description = "ID of the ECS cluster"
   type        = string

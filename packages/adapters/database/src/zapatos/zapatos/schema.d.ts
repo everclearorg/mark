@@ -514,7 +514,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
+      * Earmark status: initiating, pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -574,7 +574,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
+      * Earmark status: initiating, pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -634,7 +634,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
+      * Earmark status: initiating, pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -694,7 +694,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
+      * Earmark status: initiating, pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -754,7 +754,7 @@ declare module 'zapatos/schema' {
       /**
       * **earmarks.status**
       *
-      * Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
+      * Earmark status: initiating, pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)
       * - `text` in database
       * - `NOT NULL`, default: `'pending'::text`
       */
@@ -840,14 +840,6 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `false`
       */
       is_orphaned: boolean;
-      /**
-      * **rebalance_operations.metadata**
-      *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
-      */
-      metadata: db.JSONValue;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -946,14 +938,6 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `false`
       */
       is_orphaned: boolean;
-      /**
-      * **rebalance_operations.metadata**
-      *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
-      */
-      metadata: db.JSONValue;
       /**
       * **rebalance_operations.origin_chain_id**
       *
@@ -1053,14 +1037,6 @@ declare module 'zapatos/schema' {
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.SQLFragment | db.ParentColumn>;
       /**
-      * **rebalance_operations.metadata**
-      *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
-      */
-      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.SQLFragment | db.ParentColumn>;
-      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -1159,14 +1135,6 @@ declare module 'zapatos/schema' {
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment;
       /**
-      * **rebalance_operations.metadata**
-      *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
-      */
-      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment;
-      /**
       * **rebalance_operations.origin_chain_id**
       *
       * Source chain ID where funds are being moved from
@@ -1264,14 +1232,6 @@ declare module 'zapatos/schema' {
       * - `NOT NULL`, default: `false`
       */
       is_orphaned?: boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, boolean | db.Parameter<boolean> | db.DefaultType | db.SQLFragment>;
-      /**
-      * **rebalance_operations.metadata**
-      *
-      * Bridge-specific metadata (e.g., CEX withdrawal details, bridge transaction IDs)
-      * - `jsonb` in database
-      * - `NOT NULL`, default: `'{}'::jsonb`
-      */
-      metadata?: db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment | db.SQLFragment<any, db.JSONValue | db.Parameter<db.JSONValue> | db.DefaultType | db.SQLFragment>;
       /**
       * **rebalance_operations.origin_chain_id**
       *

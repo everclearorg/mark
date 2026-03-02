@@ -26,6 +26,12 @@ interface MockClient {
 describe('Contracts Module', () => {
   const HUB_TESTNET_ADDR = '0x4C526917051ee1981475BB6c49361B0756F505a8';
   const HUB_MAINNET_ADDR = '0xa05A3380889115bf313f1Db9d5f335157Be4D816';
+  let consoleLogSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
   const mockConfig: MockContractConfig = {
     chains: {
       '1': {
@@ -43,6 +49,7 @@ describe('Contracts Module', () => {
   afterEach(() => {
     sinon.restore();
     contractModule.cleanupViemClients();
+    consoleLogSpy?.mockRestore();
   });
 
   describe('getMulticallAddress', () => {

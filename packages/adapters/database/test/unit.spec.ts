@@ -9,7 +9,7 @@ import {
   DatabaseConfig,
   HealthCheckResult,
 } from '../src';
-import { getRebalanceOperationByTransactionHash } from '../src/db';
+import { getRebalanceOperationByTransactionHash, getPool } from '../src/db';
 import { RebalanceOperationStatus } from '@mark/core';
 import { createMockPool, MOCK_DATABASE_CONFIG } from './setup';
 
@@ -40,6 +40,8 @@ describe('Database Adapter - Unit Tests', () => {
         max: MOCK_DATABASE_CONFIG.maxConnections,
         idleTimeoutMillis: MOCK_DATABASE_CONFIG.idleTimeoutMillis,
         connectionTimeoutMillis: MOCK_DATABASE_CONFIG.connectionTimeoutMillis,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000,
       });
 
       expect(pool).toBe(mockPoolInstance);
@@ -54,10 +56,37 @@ describe('Database Adapter - Unit Tests', () => {
 
       expect(Pool).toHaveBeenCalledWith({
         connectionString: minimalConfig.connectionString,
-        max: 20,
+        max: 40,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
+        connectionTimeoutMillis: 5000,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 10000,
       });
+    });
+
+    it('should configure SSL when connection string contains sslmode=require', () => {
+      const sslConfig: DatabaseConfig = {
+        connectionString: 'postgresql://localhost:5432/test_db?sslmode=require',
+      };
+
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+      initializeDatabase(sslConfig);
+
+      expect(Pool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionString: 'postgresql://localhost:5432/test_db',
+          ssl: { rejectUnauthorized: false },
+        }),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Database SSL: Configured for AWS RDS (accepting self-signed certificates)',
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('should throw when getPool() is called before initialization', async () => {
+      // closeDatabase is called in afterEach, so pool is null here
+      expect(() => getPool()).toThrow('Database not initialized. Call initializeDatabase() first.');
     });
 
     it('should close database connection', async () => {

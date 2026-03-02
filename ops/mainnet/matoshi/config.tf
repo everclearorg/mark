@@ -113,6 +113,162 @@ locals {
     USDT_42161_THRESHOLD = "1000000000"
   }
 
+  # Invoice handler environment variables (ECS service, not Lambda)
+  handler_env_vars = [
+    {
+      name  = "DATABASE_URL"
+      value = module.db.database_url
+    },
+    {
+      name  = "SIGNER_URL"
+      value = "http://${module.mark_web3signer.service_url}:9000"
+    },
+    {
+      name  = "SIGNER_ADDRESS"
+      value = local.mark_config.signerAddress
+    },
+    {
+      name  = "REDIS_HOST"
+      value = module.cache.redis_instance_address
+    },
+    {
+      name  = "REDIS_PORT"
+      value = module.cache.redis_instance_port
+    },
+    {
+      name  = "SUPPORTED_SETTLEMENT_DOMAINS"
+      value = var.supported_settlement_domains
+    },
+    {
+      name  = "SUPPORTED_ASSET_SYMBOLS"
+      value = var.supported_asset_symbols
+    },
+    {
+      name  = "LOG_LEVEL"
+      value = var.log_level
+    },
+    {
+      name  = "ENVIRONMENT"
+      value = var.environment
+    },
+    {
+      name  = "STAGE"
+      value = var.stage
+    },
+    {
+      name  = "CHAIN_IDS"
+      value = var.chain_ids
+    },
+    {
+      name  = "EVERCLEAR_API_URL"
+      value = var.everclear_api_url
+    },
+    {
+      name  = "MARK_CONFIG_SSM_PARAMETER"
+      value = "MATOSHI_CONFIG_MAINNET"
+    },
+    {
+      name  = "REBALANCE_CONFIG_S3_BUCKET"
+      value = local.rebalanceConfig.bucket
+    },
+    {
+      name  = "REBALANCE_CONFIG_S3_KEY"
+      value = local.rebalanceConfig.key
+    },
+    {
+      name  = "REBALANCE_CONFIG_S3_REGION"
+      value = local.rebalanceConfig.region
+    },
+    {
+      name  = "PUSH_GATEWAY_URL"
+      value = "http://${var.bot_name}-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
+    },
+    {
+      name  = "PROMETHEUS_URL"
+      value = "http://${var.bot_name}-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+    },
+    {
+      name  = "PROMETHEUS_ENABLED"
+      value = "true"
+    },
+    {
+      name  = "FILL_SERVICE_SIGNER_URL"
+      value = ""
+    },
+    {
+      name  = "FILL_SERVICE_SIGNER_ADDRESS"
+      value = ""
+    },
+    {
+      name  = "PORT"
+      value = "3000"
+    },
+    {
+      name  = "HOST"
+      value = "0.0.0.0"
+    },
+    {
+      name  = "POLLING_INTERVAL_MS"
+      value = "60000"
+    },
+    {
+      name  = "WETH_1_THRESHOLD"
+      value = "800000000000000000"
+    },
+    {
+      name  = "USDC_1_THRESHOLD"
+      value = "4000000000"
+    },
+    {
+      name  = "USDT_1_THRESHOLD"
+      value = "2000000000"
+    },
+    {
+      name  = "WETH_10_THRESHOLD"
+      value = "1600000000000000000"
+    },
+    {
+      name  = "USDC_10_THRESHOLD"
+      value = "4000000000"
+    },
+    {
+      name  = "USDT_10_THRESHOLD"
+      value = "400000000"
+    },
+    {
+      name  = "USDC_56_THRESHOLD"
+      value = "2000000000000000000000"
+    },
+    {
+      name  = "USDT_56_THRESHOLD"
+      value = "4000000000000000000000"
+    },
+    {
+      name  = "WETH_8453_THRESHOLD"
+      value = "1600000000000000000"
+    },
+    {
+      name  = "USDC_8453_THRESHOLD"
+      value = "4000000000"
+    },
+    {
+      name  = "WETH_42161_THRESHOLD"
+      value = "1600000000000000000"
+    },
+    {
+      name  = "USDC_42161_THRESHOLD"
+      value = "4000000000"
+    },
+    {
+      name  = "USDT_42161_THRESHOLD"
+      value = "1000000000"
+    },
+    {
+      name  = "ADMIN_TOKEN"
+      value = local.mark_config.admin_token
+    }
+  ]
+
   web3signer_env_vars = [
     {
       name  = "WEB3_SIGNER_PRIVATE_KEY"

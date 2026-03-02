@@ -1,7 +1,11 @@
+\restrict y8Fvv0m65jgk1k5xmr9bXOpqiZecYZcEqBDmihkUdh2QXVtW9kajtbBmgnTdVbk
+
+-- Dumped from database version 15.17
+-- Dumped by pg_dump version 15.16 (Ubuntu 15.16-1.pgdg22.04+1)
+
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -58,6 +62,13 @@ CREATE TABLE public.admin_actions (
 
 
 --
+-- Name: COLUMN admin_actions.ondemand_rebalance_paused; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.admin_actions.ondemand_rebalance_paused IS 'Pause flag for on-demand rebalancing operations triggered by invoice processing';
+
+
+--
 -- Name: cex_withdrawals; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -84,7 +95,7 @@ CREATE TABLE public.earmarks (
     status text DEFAULT 'pending'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    CONSTRAINT earmark_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'ready'::text, 'completed'::text, 'cancelled'::text, 'failed'::text, 'expired'::text])))
+    CONSTRAINT earmark_status_check CHECK ((status = ANY (ARRAY['initiating'::text, 'pending'::text, 'ready'::text, 'completed'::text, 'cancelled'::text, 'failed'::text, 'expired'::text])))
 );
 
 
@@ -127,7 +138,7 @@ COMMENT ON COLUMN public.earmarks.min_amount IS 'Minimum amount of tokens requir
 -- Name: COLUMN earmarks.status; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.earmarks.status IS 'Earmark status: pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)';
+COMMENT ON COLUMN public.earmarks.status IS 'Earmark status: initiating, pending, ready, completed, cancelled, failed, expired (enforced by CHECK constraint)';
 
 
 --
@@ -370,14 +381,6 @@ ALTER TABLE ONLY public.transactions
 
 
 --
--- Name: earmarks unique_invoice_id; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.earmarks
-    ADD CONSTRAINT unique_invoice_id UNIQUE (invoice_id);
-
-
---
 -- Name: transactions unique_tx_chain; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -404,6 +407,13 @@ CREATE INDEX idx_earmarks_created_at ON public.earmarks USING btree (created_at)
 --
 
 CREATE INDEX idx_earmarks_invoice_id ON public.earmarks USING btree (invoice_id);
+
+
+--
+-- Name: idx_earmarks_invoice_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_earmarks_invoice_status ON public.earmarks USING btree (invoice_id, status);
 
 
 --
@@ -512,6 +522,13 @@ CREATE INDEX idx_transactions_rebalance_op ON public.transactions USING btree (r
 
 
 --
+-- Name: unique_active_earmark_per_invoice; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_active_earmark_per_invoice ON public.earmarks USING btree (invoice_id) WHERE (status = ANY (ARRAY['initiating'::text, 'pending'::text, 'ready'::text]));
+
+
+--
 -- Name: admin_actions update_admin_actions_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -567,6 +584,8 @@ ALTER TABLE ONLY public.transactions
 -- PostgreSQL database dump complete
 --
 
+\unrestrict y8Fvv0m65jgk1k5xmr9bXOpqiZecYZcEqBDmihkUdh2QXVtW9kajtbBmgnTdVbk
+
 
 --
 -- Dbmate schema migrations
@@ -577,5 +596,7 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20250902175116'),
     ('20250903171904'),
     ('20250911'),
+    ('20250925232303'),
     ('20251016000000'),
-    ('20251021000000');
+    ('20251021000000'),
+    ('20260225000000');

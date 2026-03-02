@@ -446,9 +446,9 @@ const evaluateFillServiceRebalance = async (
   const { operations: inFlightOps } = await database.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
     bridge: [SupportedBridge.Mantle, `${SupportedBridge.Across}-mantle`],
-    earmarkId: null
+    earmarkId: null,
   });
-  if(inFlightOps.length) {
+  if (inFlightOps.length) {
     logger.info(`Found inflight rebalance operations ${inFlightOps.length}. Threshold rebalancing skipping....`, {
       requestId,
     });
@@ -1002,7 +1002,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
       logger.warn('Operation is not a mantle bridge', logContext);
       continue;
     }
-    
+
     const adapter = rebalance.getAdapter(bridgeType as SupportedBridge);
 
     // Get origin transaction hash from JSON field

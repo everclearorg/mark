@@ -721,8 +721,11 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
         designatedPurchaseChain: 1,
         tickerHash: MOCK_TICKER_HASH,
         minAmount: '1000',
-        status: EarmarkStatus.PENDING, // All ops succeeded, so status should be PENDING
+        status: EarmarkStatus.INITIATING, // Created with INITIATING before bridge transactions
       });
+
+      // After successful operations, earmark should be updated to PENDING
+      expect(database.updateEarmarkStatus).toHaveBeenCalledWith('test-earmark-id-123', EarmarkStatus.PENDING);
 
       expect(createRebalanceOperation).toHaveBeenCalledWith({
         earmarkId: 'test-earmark-id-123',
@@ -741,19 +744,23 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
         recipient: '0xtest',
       });
 
-      // Verify earmark was created
-      const earmark = await database.getActiveEarmarkForInvoice(MOCK_INVOICE_ID);
-      expect(earmark).toBeTruthy();
-      expect(earmark?.invoiceId).toBe(MOCK_INVOICE_ID);
-      expect(earmark?.status).toBe('pending');
+      // Verify earmark was created with INITIATING status and then updated to PENDING
+      expect(database.createEarmark).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoiceId: MOCK_INVOICE_ID,
+          status: EarmarkStatus.INITIATING,
+        }),
+      );
+      expect(database.updateEarmarkStatus).toHaveBeenCalledWith('test-earmark-id-123', EarmarkStatus.PENDING);
 
       // Verify rebalance operation was created
-      if (earmark) {
-        const operations = await database.getRebalanceOperationsByEarmark(earmark.id);
-        expect(operations.length).toBe(1);
-        expect(operations[0].originChainId).toBe(10);
-        expect(operations[0].destinationChainId).toBe(1);
-      }
+      expect(database.createRebalanceOperation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          earmarkId: 'test-earmark-id-123',
+          originChainId: 10,
+          destinationChainId: 1,
+        }),
+      );
     });
 
     it('should handle invalid evaluation result', async () => {
@@ -863,7 +870,12 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
 
       expect(earmarkId).toBeNull();
       expect(swapAdapter.executeSwap).toHaveBeenCalledTimes(1);
-      expect(database.createEarmark).not.toHaveBeenCalled();
+      // Earmark is created with INITIATING status before operations, then set to FAILED
+      // since swap-only flow has no bridge operations
+      expect(database.createEarmark).toHaveBeenCalledWith(
+        expect.objectContaining({ status: EarmarkStatus.INITIATING }),
+      );
+      expect(database.updateEarmarkStatus).toHaveBeenCalledWith('mock-earmark-id', EarmarkStatus.FAILED);
     });
 
     it('executes swap+bridge flow and creates earmark', async () => {
@@ -1003,26 +1015,22 @@ describe('On-Demand Rebalancing - Jest Database Tests', () => {
       const { createEarmark } = database;
       (createEarmark as jest.Mock).mockResolvedValue({
         id: 'swap-bridge-earmark',
-        status: 'pending',
+        status: 'initiating',
         invoiceId: MOCK_INVOICE_ID,
         designatedPurchaseChain: Number(OPT_CHAIN),
         tickerHash: MOCK_TICKER_HASH,
         minAmount: minAmounts[OPT_CHAIN],
       });
 
-      (database.getActiveEarmarkForInvoice as jest.Mock)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValue({
-          id: 'swap-bridge-earmark',
-          status: EarmarkStatus.PENDING,
-        });
-
       const earmarkId = await executeOnDemandRebalancing(invoice, evaluation, context);
 
       expect(earmarkId).toBe('swap-bridge-earmark');
       expect(swapAdapter.executeSwap).toHaveBeenCalledTimes(1);
       expect(bridgeAdapter.send).toHaveBeenCalledTimes(1);
-      expect(createEarmark).toHaveBeenCalled();
+      expect(createEarmark).toHaveBeenCalledWith(
+        expect.objectContaining({ status: EarmarkStatus.INITIATING }),
+      );
+      expect(database.updateEarmarkStatus).toHaveBeenCalledWith('swap-bridge-earmark', EarmarkStatus.PENDING);
       expect(database.createRebalanceOperation).toHaveBeenCalled();
     });
   });

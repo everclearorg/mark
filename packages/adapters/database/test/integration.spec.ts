@@ -3,6 +3,7 @@ import { TransactionReasons, TransactionReceipt } from '../src';
 import {
   createEarmark,
   getEarmarks,
+  getEarmarkById,
   getEarmarksWithOperations,
   updateEarmarkStatus,
   getActiveEarmarkForInvoice,
@@ -13,6 +14,10 @@ import {
   updateRebalanceOperation,
   getRebalanceOperations,
   getRebalanceOperationByTransactionHash,
+  getRebalanceOperationById,
+  getRebalanceOperationByRecipient,
+  createCexWithdrawalRecord,
+  getCexWithdrawalRecord,
 } from '../src/db';
 import { setupTestDatabase, teardownTestDatabase, cleanupTestDatabase } from './setup';
 
@@ -1840,6 +1845,437 @@ describe('Database Adapter - Integration Tests', () => {
       // Verify only one earmark exists
       const earmarks = await getEarmarks({ invoiceId: 'invoice-constraint-test' });
       expect(earmarks).toHaveLength(1);
+    });
+  });
+
+  describe('getEarmarkById', () => {
+    it('should return earmark by valid ID', async () => {
+      const earmark = await createEarmark({
+        invoiceId: 'invoice-getbyid-001',
+        designatedPurchaseChain: 1,
+        tickerHash: '0x1234567890123456789012345678901234567890',
+        minAmount: '100000000000',
+      });
+
+      const result = await getEarmarkById(earmark.id);
+      expect(result).toBeDefined();
+      expect(result!.id).toBe(earmark.id);
+      expect(result!.invoiceId).toBe('invoice-getbyid-001');
+    });
+
+    it('should return null for non-existent ID', async () => {
+      const result = await getEarmarkById('00000000-0000-0000-0000-000000000000');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getEarmarks - array and date filters', () => {
+    it('should filter by array of designatedPurchaseChain values', async () => {
+      await createEarmark({
+        invoiceId: 'invoice-chain-arr-1',
+        designatedPurchaseChain: 1,
+        tickerHash: '0xaaa',
+        minAmount: '100',
+      });
+      await createEarmark({
+        invoiceId: 'invoice-chain-arr-2',
+        designatedPurchaseChain: 10,
+        tickerHash: '0xbbb',
+        minAmount: '200',
+      });
+      await createEarmark({
+        invoiceId: 'invoice-chain-arr-3',
+        designatedPurchaseChain: 137,
+        tickerHash: '0xccc',
+        minAmount: '300',
+      });
+
+      const result = await getEarmarks({ designatedPurchaseChain: [1, 137] });
+      expect(result).toHaveLength(2);
+      expect(result.map((e) => e.designatedPurchaseChain).sort()).toEqual([1, 137]);
+    });
+
+    it('should filter by array of tickerHash values', async () => {
+      await createEarmark({
+        invoiceId: 'invoice-ticker-arr-1',
+        designatedPurchaseChain: 1,
+        tickerHash: '0xhash1',
+        minAmount: '100',
+      });
+      await createEarmark({
+        invoiceId: 'invoice-ticker-arr-2',
+        designatedPurchaseChain: 1,
+        tickerHash: '0xhash2',
+        minAmount: '200',
+      });
+      await createEarmark({
+        invoiceId: 'invoice-ticker-arr-3',
+        designatedPurchaseChain: 1,
+        tickerHash: '0xhash3',
+        minAmount: '300',
+      });
+
+      const result = await getEarmarks({ tickerHash: ['0xhash1', '0xhash3'] });
+      expect(result).toHaveLength(2);
+      expect(result.map((e) => e.tickerHash).sort()).toEqual(['0xhash1', '0xhash3']);
+    });
+
+    it('should filter by createdAfter and createdBefore dates', async () => {
+      const before = new Date(Date.now() - 5000);
+      await createEarmark({
+        invoiceId: 'invoice-date-filter-1',
+        designatedPurchaseChain: 1,
+        tickerHash: '0xdate1',
+        minAmount: '100',
+      });
+      const after = new Date(Date.now() + 5000);
+
+      const result = await getEarmarks({ createdAfter: before, createdBefore: after });
+      expect(result.length).toBeGreaterThanOrEqual(1);
+      expect(result.some((e) => e.invoiceId === 'invoice-date-filter-1')).toBe(true);
+
+      // Verify createdBefore in the past returns nothing recent
+      const pastOnly = await getEarmarks({ createdBefore: before });
+      expect(pastOnly.every((e) => e.invoiceId !== 'invoice-date-filter-1')).toBe(true);
+    });
+  });
+
+  describe('removeEarmark - error path', () => {
+    it('should throw error for non-existent earmark ID', async () => {
+      await expect(removeEarmark('00000000-0000-0000-0000-000000000000')).rejects.toThrow(
+        /not found/,
+      );
+    });
+  });
+
+  describe('getRebalanceOperations - bridge filter', () => {
+    it('should filter by single bridge name', async () => {
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xbridge1',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'across',
+      });
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xbridge2',
+        amount: '200',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'stargate',
+      });
+
+      const result = await getRebalanceOperations(undefined, undefined, { bridge: 'across' });
+      expect(result.operations).toHaveLength(1);
+      expect(result.operations[0].bridge).toBe('across');
+    });
+
+    it('should filter by array of bridge names', async () => {
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xbridge-arr-1',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'across',
+      });
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xbridge-arr-2',
+        amount: '200',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'stargate',
+      });
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xbridge-arr-3',
+        amount: '300',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'hop',
+      });
+
+      const result = await getRebalanceOperations(undefined, undefined, { bridge: ['across', 'hop'] });
+      expect(result.operations).toHaveLength(2);
+      expect(result.operations.map((o) => o.bridge).sort()).toEqual(['across', 'hop']);
+    });
+  });
+
+  describe('getRebalanceOperationById', () => {
+    it('should return operation with transactions by valid ID', async () => {
+      const txReceipts: Record<string, TransactionReceipt> = {
+        '1': {
+          from: '0xsender',
+          to: '0xbridge',
+          transactionHash: '0xbyid-hash',
+          cumulativeGasUsed: '21000',
+          effectiveGasPrice: '20000000000',
+        } as TransactionReceipt,
+      };
+
+      const op = await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xbyid-ticker',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+        transactions: txReceipts,
+      });
+
+      const result = await getRebalanceOperationById(op.id);
+      expect(result).toBeDefined();
+      expect(result!.id).toBe(op.id);
+      expect(result!.transactions).toBeDefined();
+      expect(result!.transactions!['1'].transactionHash).toBe('0xbyid-hash');
+    });
+
+    it('should return undefined for non-existent ID', async () => {
+      const result = await getRebalanceOperationById('00000000-0000-0000-0000-000000000000');
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('getRebalanceOperationByRecipient', () => {
+    it('should return operations by chainId and recipient', async () => {
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xrecip1',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+        recipient: '0xRecipientAddress',
+      });
+
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 137,
+        tickerHash: '0xrecip2',
+        amount: '200',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+        recipient: '0xRecipientAddress',
+      });
+
+      const result = await getRebalanceOperationByRecipient(10, '0xRecipientAddress');
+      expect(result).toHaveLength(1);
+      expect(result[0].recipient).toBe('0xRecipientAddress');
+      expect(result[0].destinationChainId).toBe(10);
+    });
+
+    it('should filter by status', async () => {
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xrecip-status-1',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+        recipient: '0xStatusRecipient',
+      });
+      const op2 = await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xrecip-status-2',
+        amount: '200',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+        recipient: '0xStatusRecipient',
+      });
+
+      await updateRebalanceOperation(op2.id, { status: RebalanceOperationStatus.COMPLETED });
+
+      const result = await getRebalanceOperationByRecipient(
+        10,
+        '0xStatusRecipient',
+        RebalanceOperationStatus.COMPLETED,
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toBe('completed');
+    });
+
+    it('should filter by earmarkId null', async () => {
+      const earmark = await createEarmark({
+        invoiceId: 'invoice-recip-earmark',
+        designatedPurchaseChain: 10,
+        tickerHash: '0xrecip-earmark',
+        minAmount: '100',
+      });
+
+      await createRebalanceOperation({
+        earmarkId: earmark.id,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xrecip-earmark',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+        recipient: '0xEarmarkRecipient',
+      });
+
+      await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xrecip-no-earmark',
+        amount: '200',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+        recipient: '0xEarmarkRecipient',
+      });
+
+      const nullResult = await getRebalanceOperationByRecipient(
+        10,
+        '0xEarmarkRecipient',
+        undefined,
+        null,
+      );
+      expect(nullResult).toHaveLength(1);
+      expect(nullResult[0].earmarkId).toBeNull();
+
+      const specificResult = await getRebalanceOperationByRecipient(
+        10,
+        '0xEarmarkRecipient',
+        undefined,
+        earmark.id,
+      );
+      expect(specificResult).toHaveLength(1);
+      expect(specificResult[0].earmarkId).toBe(earmark.id);
+    });
+  });
+
+  describe('CEX Withdrawal Records', () => {
+    it('should create and retrieve a CEX withdrawal record', async () => {
+      const op = await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xcex-test',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'cex-bridge',
+      });
+
+      const created = await createCexWithdrawalRecord({
+        rebalanceOperationId: op.id,
+        platform: 'binance',
+        metadata: { withdrawalId: 'w123', status: 'processing' },
+      });
+
+      expect(created).toBeDefined();
+      expect(created.rebalanceOperationId).toBe(op.id);
+      expect(created.platform).toBe('binance');
+      expect(created.metadata).toEqual({ withdrawalId: 'w123', status: 'processing' });
+
+      const retrieved = await getCexWithdrawalRecord({
+        rebalanceOperationId: op.id,
+        platform: 'binance',
+      });
+
+      expect(retrieved).toBeDefined();
+      expect(retrieved!.rebalanceOperationId).toBe(op.id);
+      expect(retrieved!.platform).toBe('binance');
+      expect(retrieved!.metadata).toEqual({ withdrawalId: 'w123', status: 'processing' });
+    });
+
+    it('should return undefined for non-existent record', async () => {
+      const result = await getCexWithdrawalRecord({
+        rebalanceOperationId: '00000000-0000-0000-0000-000000000000',
+        platform: 'binance',
+      });
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('updateRebalanceOperation - receipt validation', () => {
+    it('should throw for missing transactionHash', async () => {
+      const op = await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xval-test-1',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+      });
+
+      await expect(
+        updateRebalanceOperation(op.id, {
+          txHashes: {
+            '1': { from: '0xsender', to: '0xrecipient' } as unknown as TransactionReceipt,
+          },
+        }),
+      ).rejects.toThrow(/missing transactionHash/);
+    });
+
+    it('should throw for missing from address', async () => {
+      const op = await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xval-test-2',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+      });
+
+      await expect(
+        updateRebalanceOperation(op.id, {
+          txHashes: {
+            '1': { transactionHash: '0xabc', to: '0xrecipient' } as unknown as TransactionReceipt,
+          },
+        }),
+      ).rejects.toThrow(/missing 'from' address/);
+    });
+
+    it('should throw for missing to address', async () => {
+      const op = await createRebalanceOperation({
+        earmarkId: null,
+        originChainId: 1,
+        destinationChainId: 10,
+        tickerHash: '0xval-test-3',
+        amount: '100',
+        slippage: 100,
+        status: RebalanceOperationStatus.PENDING,
+        bridge: 'test-bridge',
+      });
+
+      await expect(
+        updateRebalanceOperation(op.id, {
+          txHashes: {
+            '1': { transactionHash: '0xabc', from: '0xsender' } as unknown as TransactionReceipt,
+          },
+        }),
+      ).rejects.toThrow(/missing 'to' address/);
     });
   });
 

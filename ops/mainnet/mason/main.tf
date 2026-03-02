@@ -39,8 +39,9 @@ locals {
 
   mark_config_json = jsondecode(data.aws_ssm_parameter.mark_config_mainnet.value)
   mark_config = {
-    dd_api_key              = local.mark_config_json.dd_api_key
-    web3_signer_private_key = local.mark_config_json.web3_signer_private_key
+    dd_api_key = local.mark_config_json.dd_api_key
+    # Private keys are stored as Shamir shares in separate SSM parameters, not in main config
+    web3_signer_private_key = try(local.mark_config_json.web3_signer_private_key, "")
     signerAddress           = local.mark_config_json.signerAddress
     chains                  = local.mark_config_json.chains
     db_password             = local.mark_config_json.db_password
@@ -181,6 +182,16 @@ module "cache" {
   public_redis                  = true
 }
 
+# ACM certificate for this bot's domains (handler, admin API, prometheus)
+module "acm" {
+  source      = "../../modules/acm"
+  bot_name    = var.bot_name
+  domain      = var.domain
+  zone_id     = var.zone_id
+  environment = var.environment
+  stage       = var.stage
+}
+
 module "mark_web3signer" {
   source                   = "../../modules/service"
   stage                    = var.stage
@@ -286,7 +297,7 @@ module "mark_prometheus" {
     "-c",
     "set -e; echo 'Setting up Prometheus...'; mkdir -p /etc/prometheus && echo 'Created config directory'; echo \"$PROMETHEUS_CONFIG\" > /etc/prometheus/prometheus.yml && echo 'Created config file'; chmod 644 /etc/prometheus/prometheus.yml && echo 'Set config permissions'; echo 'Starting Prometheus...'; exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle"
   ]
-  cert_arn                 = var.cert_arn
+  cert_arn                 = module.acm.certificate_arn
   ingress_cdir_blocks      = ["0.0.0.0/0"]
   ingress_ipv6_cdir_blocks = []
   create_alb               = true
@@ -338,17 +349,27 @@ module "mark_pushgateway" {
   depends_on               = [aws_service_discovery_private_dns_namespace.mark_internal]
 }
 
-module "mark_poller" {
-  source             = "../../modules/lambda"
-  stage              = var.stage
-  environment        = var.environment
-  container_family   = "${var.bot_name}-poller"
-  execution_role_arn = module.iam.lambda_role_arn
-  image_uri          = var.image_uri
-  subnet_ids         = module.network.private_subnets
-  security_group_id  = module.sgs.lambda_sg_id
-  container_env_vars = local.poller_env_vars
-}
+# ============================================================================
+# POLLER LAMBDA MODULE - REPLACED BY INVOICE HANDLER
+# ============================================================================
+# The mark_poller Lambda is replaced by the invoice handler ECS service to
+# prevent duplicate intent creation. Only mark_poller is replaced - the other
+# poller Lambdas (solana_usdc_poller, poller_tac_only, poller_meth_only) remain.
+# 
+# TODO: Remove this commented module once migration is complete
+# ============================================================================
+
+# module "mark_poller" {
+#   source             = "../../modules/lambda"
+#   stage              = var.stage
+#   environment        = var.environment
+#   container_family   = "${var.bot_name}-poller"
+#   execution_role_arn = module.iam.lambda_role_arn
+#   image_uri          = var.image_uri
+#   subnet_ids         = module.network.private_subnets
+#   security_group_id  = module.sgs.lambda_sg_id
+#   container_env_vars = local.poller_env_vars
+# }
 
 # Solana USDC → ptUSDe rebalancing poller (multi-leg CCIP + Pendle)
 # Schedule: 30 min interval since CCIP bridging takes ~20 min per leg
@@ -397,6 +418,49 @@ module "mark_poller_meth_only" {
   })
 }
 
+# Invoice Handler ECS Service - replaces poller Lambda functions
+# Exposed via public ALB for Goldsky webhook access
+module "mark_invoice_handler" {
+  source                   = "../../modules/service"
+  stage                    = var.stage
+  environment              = var.environment
+  domain                   = var.domain
+  region                   = var.region
+  dd_api_key               = local.mark_config.dd_api_key
+  vpc_flow_logs_role_arn   = module.iam.vpc_flow_logs_role_arn
+  execution_role_arn       = data.aws_iam_role.ecr_admin_role.arn
+  task_role_arn            = module.iam.ecs_task_role_arn
+  cluster_id               = module.ecs.ecs_cluster_id
+  vpc_id                   = module.network.vpc_id
+  lb_subnets               = module.network.public_subnets
+  task_subnets             = module.network.private_subnets
+  efs_id                   = module.efs.mark_efs_id
+  docker_image             = var.handler_image_uri
+  container_family         = "${var.bot_name}-handler"
+  container_port           = 3000
+  cpu                      = 512
+  memory                   = 1024
+  instance_count           = 1
+  service_security_groups  = [module.sgs.lambda_sg_id]
+  container_env_vars       = local.handler_env_vars
+  zone_id                  = var.zone_id
+  cert_arn                 = module.acm.certificate_arn
+  ingress_cdir_blocks      = ["0.0.0.0/0"]
+  ingress_ipv6_cdir_blocks = []
+  create_alb               = true
+  internal_lb              = false
+  health_check_settings = {
+    path                = "/health"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+  }
+  private_dns_namespace_id = aws_service_discovery_private_dns_namespace.mark_internal.id
+  depends_on               = [aws_service_discovery_private_dns_namespace.mark_internal]
+}
+
 module "ecr" {
   source = "../../modules/ecr"
 }
@@ -406,7 +470,7 @@ module "mark_admin_api" {
   stage              = var.stage
   environment        = var.environment
   domain             = var.domain
-  certificate_arn    = var.cert_arn
+  certificate_arn    = module.acm.certificate_arn
   zone_id            = var.zone_id
   bot_name           = var.bot_name
   execution_role_arn = module.iam.lambda_role_arn
@@ -436,6 +500,13 @@ module "mark_admin_api" {
     WHITELISTED_RECIPIENTS       = try(local.mark_config.whitelisted_recipients, "")
     PUSH_GATEWAY_URL             = "http://${var.bot_name}-pushgateway-${var.environment}-${var.stage}.mark.internal:9091"
     PROMETHEUS_URL               = "http://${var.bot_name}-prometheus-${var.environment}-${var.stage}.mark.internal:9090"
+
+    # Key Sharding (Shamir 2-of-2) - reconstructs secrets from AWS SSM + GCP at runtime
+    SHARD_MANIFEST                 = local.shard_manifest
+    GCP_PROJECT_ID                 = local.gcp_project_id
+    GOOGLE_CLOUD_PROJECT           = local.gcp_project_id
+    GCP_WORKLOAD_IDENTITY_PROVIDER = local.gcp_workload_identity_provider
+    GCP_SERVICE_ACCOUNT_EMAIL      = local.gcp_service_account
   }
 }
 

@@ -1,5 +1,6 @@
 import {
   getDecimalsFromConfig,
+  getIsNativeFromConfig,
   getTokenAddressFromConfig,
   MarkConfiguration,
   isSvmChain,
@@ -8,6 +9,7 @@ import {
   AddressFormat,
   GasType,
 } from '@mark/core';
+import { zeroAddress } from 'viem';
 import { createClient, getERC20Contract, getHubStorageContract } from './contracts';
 import { getAssetHash, getTickers, convertTo18Decimals } from './asset';
 import { PrometheusAdapter } from '@mark/prometheus';
@@ -93,10 +95,16 @@ export const getMarkBalances = async (
 ): Promise<Map<string, Map<string, bigint>>> => {
   const tickers = getTickers(config);
 
-  const markBalances = new Map<string, Map<string, bigint>>();
+  const addresses = await chainService.getAddress();
+  const results = await Promise.all(
+    tickers.map(async (ticker) => {
+      const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus, addresses);
+      return { ticker, tickerBalances };
+    }),
+  );
 
-  for (const ticker of tickers) {
-    const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus);
+  const markBalances = new Map<string, Map<string, bigint>>();
+  for (const { ticker, tickerBalances } of results) {
     markBalances.set(ticker, tickerBalances);
   }
 
@@ -112,11 +120,12 @@ export const getMarkBalancesForTicker = async (
   config: MarkConfiguration,
   chainService: ChainService,
   prometheus: PrometheusAdapter,
+  addresses?: Record<string, string>,
 ): Promise<Map<string, bigint>> => {
   const { chains } = config;
 
-  // Get all addresses once for TVM chains
-  const addresses = await chainService.getAddress();
+  // Resolve addresses if not provided by caller
+  const resolvedAddresses = addresses ?? (await chainService.getAddress());
 
   const balancePromises: Array<{
     domain: string;
@@ -130,10 +139,12 @@ export const getMarkBalancesForTicker = async (
     const tokenAddr = getTokenAddressFromConfig(ticker, domain, config, format);
     const decimals = getDecimalsFromConfig(ticker, domain, config);
 
-    if (!tokenAddr || !decimals) {
+    // Skip native tokens as they aren't ERC20 contracts
+    const isNative = getIsNativeFromConfig(ticker, domain, config);
+    if (!tokenAddr || !decimals || tokenAddr === zeroAddress || isNative) {
       continue;
     }
-    const address = isSvm ? config.ownSolAddress : isTvm ? addresses[domain] : config.ownAddress;
+    const address = isSvm ? config.ownSolAddress : isTvm ? resolvedAddresses[domain] : config.ownAddress;
     const balancePromise = isSvm
       ? getSvmBalance(config, chainService, domain, address, tokenAddr, decimals, prometheus)
       : isTvm
@@ -223,11 +234,23 @@ export const getEvmBalance = async (
 ): Promise<bigint> => {
   const { chains, ownAddress } = config;
   const chainConfig = chains[domain];
+  let actualOwner: string = address;
+
+  // Validate the token address before attempting the balance check
+  if (!tokenAddr || tokenAddr.toLowerCase() === zeroAddress) {
+    console.error('Invalid token address for balance check, skipping', {
+      domain,
+      tokenAddr,
+      address,
+    });
+    return 0n;
+  }
+
   try {
     // Get Zodiac configuration for this chain
     const zodiacConfig = getValidatedZodiacConfig(chainConfig);
     // If address matches ownAddress, apply zodiac resolution; otherwise use address directly
-    const actualOwner = address === ownAddress ? getActualOwner(zodiacConfig, ownAddress) : address;
+    actualOwner = address === ownAddress ? getActualOwner(zodiacConfig, ownAddress) : address;
 
     const tokenContract = await getERC20Contract(config, domain, tokenAddr as `0x${string}`);
     let balance = (await tokenContract.read.balanceOf([actualOwner as `0x${string}`])) as bigint;
@@ -241,7 +264,13 @@ export const getEvmBalance = async (
     prometheus.updateChainBalance(domain, tokenAddr, balance);
     return balance;
   } catch (error) {
-    console.error('Error getting evm balance', error);
+    console.error('Error getting evm balance', {
+      domain,
+      tokenAddr,
+      address,
+      actualOwner,
+      error,
+    });
     return 0n; // Return 0 balance on error
   }
 };

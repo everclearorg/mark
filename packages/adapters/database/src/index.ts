@@ -123,20 +123,8 @@ export async function gracefulShutdown(timeoutMs: number = 5000): Promise<void> 
   }
 }
 
-// Setup process handlers for graceful shutdown
-if (typeof process !== 'undefined') {
-  const handleShutdown = async (signal: string) => {
-    console.log(`Received ${signal}, shutting down database connections...`);
-    try {
-      await gracefulShutdown();
-      console.log('Database connections closed successfully');
-      process.exit(0);
-    } catch (error) {
-      console.error('Error during database shutdown:', error);
-      process.exit(1);
-    }
-  };
-
-  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
-  process.on('SIGINT', () => handleShutdown('SIGINT'));
-}
+// NOTE: Process signal handlers for graceful shutdown are NOT registered here.
+// Application services (handler, poller) own their shutdown lifecycle and call
+// closeDatabase() directly. Registering handlers here caused "Called end on pool
+// more than once" errors when both this module and the application service
+// responded to the same SIGTERM/SIGINT signal.

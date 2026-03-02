@@ -2044,7 +2044,6 @@ describe('KrakenBridgeAdapter Unit', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
         isOrphaned: false,
-        metadata: {},
         slippage: 100,
         status: 'pending',
         bridge: SupportedBridge.Kraken,

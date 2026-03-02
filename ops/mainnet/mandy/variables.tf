@@ -39,6 +39,11 @@ variable "image_uri" {
   type        = string
 }
 
+variable "handler_image_uri" {
+  description = "Full image name for the invoice handler container (from CI pipeline)"
+  type        = string
+}
+
 # Poller-specific variables
 variable "invoice_age" {
   description = "Maximum age of invoices to process (in seconds)"
@@ -49,7 +54,7 @@ variable "invoice_age" {
 variable "everclear_api_url" {
   description = "URL of the Everclear API"
   type        = string
-  default     = "https://api.staging.everclear.org"
+  default     = "https://api.everclear.org"
 }
 
 variable "relayer_url" {

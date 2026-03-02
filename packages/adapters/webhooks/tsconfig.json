@@ -1,0 +1,22 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "#/*": ["./src/*", "./test/*"]
+    },
+    "composite": true,
+    "moduleResolution": "node",
+    "module": "commonjs",
+    "types": ["node", "jest"]
+  },
+  "include": ["./src/**/*"],
+  "exclude": ["dist", "node_modules", "**/*.spec.ts", "test"],
+  "references": [
+    { "path": "../../core" },
+    { "path": "../logger" }
+  ]
+}
+
