@@ -501,7 +501,8 @@ function buildRouteEntriesForDestination(
     }
 
     // For swap+bridge routes, swapOutputAsset is the intermediate asset on origin chain
-    // We need to resolve the final output asset from the invoice ticker on destination chain
+    // (the asset the bridge actually carries). We must resolve what the bridge delivers
+    // on the destination chain and verify it matches the invoice ticker.
     const isSwapBridgeRoute = combinedRoute.swapOutputAsset && route.origin !== route.destination;
     logger?.debug('Determining output asset address', {
       invoiceId,
@@ -513,11 +514,15 @@ function buildRouteEntriesForDestination(
       combinedRouteDestinationAsset: combinedRoute.swapOutputAsset,
     });
 
-    // For swap+bridge routes, we must get the token address from the destination chain config
-    // The fallback to route.asset would be wrong (it's on origin chain, not destination)
+    // For swap+bridge routes, resolve the output from the bridge's actual asset, not
+    // the invoice ticker. The bridge carries swapOutputAsset (e.g. USDC) — look up its
+    // ticker on the origin chain, then find that ticker's address on the destination.
     let swapOutputAssetAddress: string | undefined;
     if (isSwapBridgeRoute) {
-      swapOutputAssetAddress = getTokenAddressFromConfig(invoiceTickerLower, route.destination.toString(), config);
+      const bridgeAssetTicker = getTickerForAsset(combinedRoute.swapOutputAsset!, route.origin, config);
+      if (bridgeAssetTicker) {
+        swapOutputAssetAddress = getTokenAddressFromConfig(bridgeAssetTicker, route.destination.toString(), config);
+      }
       if (!swapOutputAssetAddress) {
         logger?.warn('Failed to resolve destination asset address for swap+bridge route', {
           invoiceId,
@@ -525,6 +530,7 @@ function buildRouteEntriesForDestination(
           destinationChain: route.destination,
           originChain: route.origin,
           intermediateAsset: combinedRoute.swapOutputAsset,
+          bridgeAssetTicker: bridgeAssetTicker || 'not found',
         });
       }
     } else {
@@ -547,7 +553,9 @@ function buildRouteEntriesForDestination(
       outputTicker = getTickerForAsset(swapOutputAssetAddress, route.destination, config)?.toLowerCase();
     }
 
-    if (!outputTicker) {
+    // Fallback: for direct bridge routes only, try resolving from the invoice ticker.
+    // Do NOT fallback for swap+bridge routes — the bridge output must match on its own.
+    if (!outputTicker && !isSwapBridgeRoute) {
       logger?.debug('Output ticker not found, trying fallback', {
         invoiceId,
         swapOutputAssetAddress,
