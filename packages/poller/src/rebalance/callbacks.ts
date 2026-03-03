@@ -3,7 +3,15 @@ import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
 import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
-import { RebalanceOperationStatus, SupportedBridge, getTokenAddressFromConfig, serializeBigInt } from '@mark/core';
+import { getTickerForAsset } from '../helpers';
+import {
+  RebalanceOperationStatus,
+  SupportedBridge,
+  getTokenAddressFromConfig,
+  serializeBigInt,
+  RouteRebalancingConfig,
+} from '@mark/core';
+import { buildPostBridgeTransactions } from '@mark/rebalance';
 import { TransactionEntry, TransactionReceipt } from '@mark/database';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
@@ -12,14 +20,39 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
 
   // Get all pending operations from database
   const { operations } = await db.getRebalanceOperations(undefined, undefined, {
-    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    status: [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+      RebalanceOperationStatus.AWAITING_POST_BRIDGE,
+    ],
   });
 
   logger.debug('Found rebalance operations', {
     count: operations.length,
     requestId,
-    statuses: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    statuses: [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+      RebalanceOperationStatus.AWAITING_POST_BRIDGE,
+    ],
   });
+
+  // Helper to find the matching route config for an operation
+  const findMatchingRoute = (op: (typeof operations)[0]): RouteRebalancingConfig | undefined => {
+    return config.routes.find((r) => {
+      if (r.origin !== op.originChainId || r.destination !== op.destinationChainId) return false;
+      const routeTicker = getTickerForAsset(r.asset, r.origin, config)?.toLowerCase();
+      return routeTicker === op.tickerHash.toLowerCase();
+    });
+  };
+
+  // Helper to transition to AWAITING_POST_BRIDGE or COMPLETED based on route config
+  const resolvePostBridgeStatus = (matchingRoute: RouteRebalancingConfig | undefined) => {
+    if (matchingRoute?.postBridgeActions?.length) {
+      return RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+    }
+    return RebalanceOperationStatus.COMPLETED;
+  };
 
   for (const operation of operations) {
     const logContext = {
@@ -29,6 +62,71 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       originChain: operation.originChainId,
       destinationChain: operation.destinationChainId,
     };
+
+    // Handle AWAITING_POST_BRIDGE operations (execute post-bridge actions)
+    if (operation.status === RebalanceOperationStatus.AWAITING_POST_BRIDGE) {
+      const matchingRoute = findMatchingRoute(operation);
+      if (!matchingRoute?.postBridgeActions?.length) {
+        logger.warn('Operation awaiting post-bridge actions but no actions configured, marking completed', logContext);
+        await db.updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.COMPLETED,
+        });
+        continue;
+      }
+
+      const destinationChainConfig = config.chains[operation.destinationChainId];
+      const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, {
+        ...logContext,
+        destination: operation.destinationChainId,
+      });
+
+      try {
+        logger.info('Executing post-bridge actions', {
+          ...logContext,
+          actionCount: matchingRoute.postBridgeActions.length,
+        });
+
+        const postBridgeTxs = await buildPostBridgeTransactions(
+          config.ownAddress,
+          operation.amount,
+          operation.destinationChainId,
+          matchingRoute.postBridgeActions,
+          config.chains,
+          logger,
+        );
+
+        for (const postBridgeTx of postBridgeTxs) {
+          await submitTransactionWithLogging({
+            chainService,
+            logger,
+            chainId: operation.destinationChainId.toString(),
+            txRequest: {
+              chainId: operation.destinationChainId,
+              to: postBridgeTx.transaction.to!,
+              data: postBridgeTx.transaction.data!,
+              value: (postBridgeTx.transaction.value || 0).toString(),
+              from: config.ownAddress,
+              funcSig: postBridgeTx.transaction.funcSig || '',
+            },
+            zodiacConfig,
+            context: { ...logContext, callbackType: `post-bridge: ${postBridgeTx.memo}` },
+          });
+        }
+
+        await db.updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.COMPLETED,
+        });
+
+        logger.info('Post-bridge actions completed successfully', logContext);
+      } catch (e) {
+        // Leave as AWAITING_POST_BRIDGE for retry on next poll cycle
+        logger.error('Failed to execute post-bridge actions, will retry', {
+          ...logContext,
+          error: jsonifyError(e),
+        });
+      }
+      continue;
+    }
 
     if (!operation.bridge) {
       logger.warn('Operation missing bridge type', logContext);
@@ -110,10 +208,12 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       }
 
       if (!callback) {
-        // No callback needed, mark as completed
-        logger.info('No destination callback required, marking as completed', logContext);
+        // No callback needed — check if post-bridge actions are needed
+        const matchingRoute = findMatchingRoute(operation);
+        const nextStatus = resolvePostBridgeStatus(matchingRoute);
+        logger.info('No destination callback required', { ...logContext, nextStatus });
         await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.COMPLETED,
+          status: nextStatus,
         });
         continue;
       }
@@ -164,8 +264,12 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
         }
 
         try {
+          // Check if post-bridge actions are needed
+          const matchingRoute = findMatchingRoute(operation);
+          const nextStatus = resolvePostBridgeStatus(matchingRoute);
+
           await db.updateRebalanceOperation(operation.id, {
-            status: RebalanceOperationStatus.COMPLETED,
+            status: nextStatus,
             txHashes: {
               [route.destination.toString()]: tx.receipt as TransactionReceipt,
             },
