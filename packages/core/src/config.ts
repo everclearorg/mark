@@ -11,6 +11,7 @@ import {
   RebalanceConfig,
   SupportedBridge,
   RouteRebalancingConfig,
+  PostBridgeActionConfig,
   LogLevel,
 } from './types';
 import yaml from 'js-yaml';
@@ -133,6 +134,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
           slippagesDbps: number[];
           preferences: string[];
           reserve?: string;
+          postBridgeActions?: PostBridgeActionConfig[];
         }>;
       };
 
@@ -162,6 +164,7 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
             slippagesDbps: route.slippagesDbps,
             preferences,
             reserve: route.reserve,
+            postBridgeActions: route.postBridgeActions,
           });
         } catch (error) {
           console.error(`Failed to process route: ${route.asset} ${route.origin}>${route.destination}`, error);

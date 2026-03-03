@@ -94,11 +94,27 @@ export interface RebalanceRoute {
   destination: number;
   swapOutputAsset?: string;
 }
+
+export enum PostBridgeActionType {
+  AaveSupply = 'aave-supply',
+}
+
+export interface AaveSupplyActionConfig {
+  type: PostBridgeActionType.AaveSupply;
+  poolAddress: string; // Aave V3 Pool address on destination chain
+  supplyAsset: string; // Underlying token to supply (e.g. syrupUSDT address on Mantle)
+  onBehalfOf?: string; // aToken recipient (defaults to config.ownAddress at runtime)
+  referralCode?: number; // Aave referral code (default 0)
+}
+
+export type PostBridgeActionConfig = AaveSupplyActionConfig;
+
 export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum
   slippagesDbps: number[]; // Slippage tolerance in decibasis points (1000 = 1%). Array indices match preferences
   preferences: SupportedBridge[]; // Priority ordered platforms
   reserve?: string; // Amount to keep on origin chain during rebalancing
+  postBridgeActions?: PostBridgeActionConfig[]; // Actions to execute after bridge completes on destination chain
 }
 
 export interface OnDemandRouteConfig extends RebalanceRoute {
