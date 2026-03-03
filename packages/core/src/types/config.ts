@@ -97,6 +97,7 @@ export interface RebalanceRoute {
 
 export enum PostBridgeActionType {
   AaveSupply = 'aave-supply',
+  DexSwap = 'dex-swap',
 }
 
 export interface AaveSupplyActionConfig {
@@ -107,7 +108,14 @@ export interface AaveSupplyActionConfig {
   referralCode?: number; // Aave referral code (default 0)
 }
 
-export type PostBridgeActionConfig = AaveSupplyActionConfig;
+export interface DexSwapActionConfig {
+  type: PostBridgeActionType.DexSwap;
+  sellToken: string; // Token to sell on destination (e.g., USDT on Mantle)
+  buyToken: string; // Token to buy on destination (e.g., syrupUSDT on Mantle)
+  slippageBps: number; // Slippage tolerance in basis points (100 = 1%)
+}
+
+export type PostBridgeActionConfig = AaveSupplyActionConfig | DexSwapActionConfig;
 
 export interface RouteRebalancingConfig extends RebalanceRoute {
   maximum: string; // Rebalance triggered when balance > maximum
@@ -236,6 +244,7 @@ export interface MarkConfiguration extends RebalanceConfig {
     methL2Address?: string; // Override mETH token on L2 (Mantle)
     bridgeContractAddress?: string; // Override Mantle bridge contract
   };
+  quoteServiceUrl?: string; // Quote service URL for DEX swap quotes (default: https://quotes.api.everclear.org)
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;
