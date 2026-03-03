@@ -2,35 +2,37 @@ import { ChainConfiguration, PostBridgeActionConfig, PostBridgeActionType } from
 import { Logger } from '@mark/logger';
 import { MemoizedTransactionRequest } from '../types';
 import { AaveSupplyActionHandler } from './aave-supply';
+import { DexSwapActionHandler } from './dex-swap';
 
 export { PostBridgeActionHandler } from './types';
 export { AaveSupplyActionHandler } from './aave-supply';
+export { DexSwapActionHandler } from './dex-swap';
 
-export async function buildPostBridgeTransactions(
+const DEFAULT_QUOTE_SERVICE_URL = 'https://quotes.api.everclear.org';
+
+export async function buildTransactionsForAction(
   sender: string,
   amount: string,
   destinationChainId: number,
-  actions: PostBridgeActionConfig[],
+  action: PostBridgeActionConfig,
   chains: Record<string, ChainConfiguration>,
   logger: Logger,
+  quoteServiceUrl?: string,
 ): Promise<MemoizedTransactionRequest[]> {
-  const txs: MemoizedTransactionRequest[] = [];
-
-  for (const action of actions) {
-    switch (action.type) {
-      case PostBridgeActionType.AaveSupply: {
-        const handler = new AaveSupplyActionHandler(chains, logger);
-        const actionTxs = await handler.buildTransactions(sender, amount, destinationChainId, action);
-        txs.push(...actionTxs);
-        break;
-      }
-      default:
-        logger.warn('Unknown post-bridge action type, skipping', {
-          type: (action as PostBridgeActionConfig).type,
-          destinationChainId,
-        });
+  switch (action.type) {
+    case PostBridgeActionType.DexSwap: {
+      const handler = new DexSwapActionHandler(chains, logger, quoteServiceUrl || DEFAULT_QUOTE_SERVICE_URL);
+      return handler.buildTransactions(sender, amount, destinationChainId, action);
     }
+    case PostBridgeActionType.AaveSupply: {
+      const handler = new AaveSupplyActionHandler(chains, logger);
+      return handler.buildTransactions(sender, amount, destinationChainId, action);
+    }
+    default:
+      logger.warn('Unknown post-bridge action type, skipping', {
+        type: (action as PostBridgeActionConfig).type,
+        destinationChainId,
+      });
+      return [];
   }
-
-  return txs;
 }

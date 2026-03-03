@@ -1,7 +1,7 @@
-import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
+import { TransactionReceipt as ViemTransactionReceipt, maxUint256 } from 'viem';
 import { ProcessingContext } from '../init';
 import { jsonifyError } from '@mark/logger';
-import { getValidatedZodiacConfig } from '../helpers/zodiac';
+import { getValidatedZodiacConfig, getActualOwner } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { getTickerForAsset } from '../helpers';
 import {
@@ -11,7 +11,7 @@ import {
   serializeBigInt,
   RouteRebalancingConfig,
 } from '@mark/core';
-import { buildPostBridgeTransactions } from '@mark/rebalance';
+import { buildTransactionsForAction } from '@mark/rebalance';
 import { TransactionEntry, TransactionReceipt } from '@mark/database';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
@@ -86,31 +86,67 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
           actionCount: matchingRoute.postBridgeActions.length,
         });
 
-        const postBridgeTxs = await buildPostBridgeTransactions(
-          config.ownAddress,
-          operation.amount,
-          operation.destinationChainId,
-          matchingRoute.postBridgeActions,
-          config.chains,
-          logger,
-        );
+        const actualSender = getActualOwner(zodiacConfig, config.ownAddress);
 
-        for (const postBridgeTx of postBridgeTxs) {
-          await submitTransactionWithLogging({
-            chainService,
-            logger,
-            chainId: operation.destinationChainId.toString(),
-            txRequest: {
-              chainId: operation.destinationChainId,
-              to: postBridgeTx.transaction.to!,
-              data: postBridgeTx.transaction.data!,
-              value: (postBridgeTx.transaction.value || 0).toString(),
-              from: config.ownAddress,
-              funcSig: postBridgeTx.transaction.funcSig || '',
-            },
-            zodiacConfig,
-            context: { ...logContext, callbackType: `post-bridge: ${postBridgeTx.memo}` },
+        // Execute each action sequentially: build + execute before moving to next.
+        // This allows DexSwap output to be consumed by subsequent AaveSupply.
+        let currentAmount = operation.amount;
+
+        for (let i = 0; i < matchingRoute.postBridgeActions.length; i++) {
+          const action = matchingRoute.postBridgeActions[i];
+
+          logger.info('Building transactions for post-bridge action', {
+            ...logContext,
+            actionIndex: i,
+            actionType: action.type,
+            currentAmount,
           });
+
+          const actionTxs = await buildTransactionsForAction(
+            actualSender,
+            currentAmount,
+            operation.destinationChainId,
+            action,
+            config.chains,
+            logger,
+            config.quoteServiceUrl,
+          );
+
+          if (actionTxs.length === 0) {
+            // Action returned no transactions (e.g., DexSwap already completed on retry).
+            // Use maxUint256 so subsequent actions determine amount from on-chain balance
+            // via their min(balance, requestedAmount) logic, avoiding decimal mismatch.
+            currentAmount = maxUint256.toString();
+            logger.info('Post-bridge action returned no transactions, advancing to next action', {
+              ...logContext,
+              actionIndex: i,
+              actionType: action.type,
+            });
+            continue;
+          }
+
+          for (const actionTx of actionTxs) {
+            await submitTransactionWithLogging({
+              chainService,
+              logger,
+              chainId: operation.destinationChainId.toString(),
+              txRequest: {
+                chainId: operation.destinationChainId,
+                to: actionTx.transaction.to!,
+                data: actionTx.transaction.data!,
+                value: (actionTx.transaction.value ?? BigInt(0)).toString(),
+                from: actualSender,
+                funcSig: actionTx.transaction.funcSig || '',
+              },
+              zodiacConfig,
+              context: { ...logContext, callbackType: `post-bridge: ${actionTx.memo}` },
+            });
+
+            // Carry forward output amount to next action
+            if (actionTx.effectiveAmount) {
+              currentAmount = actionTx.effectiveAmount;
+            }
+          }
         }
 
         await db.updateRebalanceOperation(operation.id, {
@@ -241,7 +277,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
             chainId: +route.destination,
             to: callback.transaction.to!,
             data: callback.transaction.data!,
-            value: (callback.transaction.value || 0).toString(),
+            value: (callback.transaction.value ?? BigInt(0)).toString(),
             from: config.ownAddress,
             funcSig: callback.transaction.funcSig || '',
           },
