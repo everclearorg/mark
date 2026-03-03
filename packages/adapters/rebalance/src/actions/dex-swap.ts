@@ -1,11 +1,11 @@
+import { createPublicClient, encodeFunctionData, erc20Abi, http, fallback } from 'viem';
 import {
-  createPublicClient,
-  encodeFunctionData,
-  erc20Abi,
-  http,
-  fallback,
-} from 'viem';
-import { ChainConfiguration, PostBridgeActionConfig, PostBridgeActionType, DexSwapActionConfig, axiosPost } from '@mark/core';
+  ChainConfiguration,
+  PostBridgeActionConfig,
+  PostBridgeActionType,
+  DexSwapActionConfig,
+  axiosPost,
+} from '@mark/core';
 import { Logger } from '@mark/logger';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '../types';
 import { PostBridgeActionHandler } from './types';
@@ -31,8 +31,6 @@ interface QuoteServiceResponse {
   };
   error?: string;
 }
-
-const DEFAULT_QUOTE_SERVICE_URL = 'https://quotes.api.everclear.org';
 
 export class DexSwapActionHandler implements PostBridgeActionHandler {
   constructor(

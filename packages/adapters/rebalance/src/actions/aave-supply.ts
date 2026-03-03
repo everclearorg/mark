@@ -1,10 +1,4 @@
-import {
-  createPublicClient,
-  encodeFunctionData,
-  erc20Abi,
-  http,
-  fallback,
-} from 'viem';
+import { createPublicClient, encodeFunctionData, erc20Abi, http, fallback } from 'viem';
 import { ChainConfiguration, PostBridgeActionConfig, PostBridgeActionType, AaveSupplyActionConfig } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '../types';
@@ -133,12 +127,7 @@ export class AaveSupplyActionHandler implements PostBridgeActionHandler {
         data: encodeFunctionData({
           abi: AAVE_POOL_ABI,
           functionName: 'supply',
-          args: [
-            supplyAsset as `0x${string}`,
-            supplyAmount,
-            onBehalfOf as `0x${string}`,
-            referralCode,
-          ],
+          args: [supplyAsset as `0x${string}`, supplyAmount, onBehalfOf as `0x${string}`, referralCode],
         }),
         value: BigInt(0),
       },
