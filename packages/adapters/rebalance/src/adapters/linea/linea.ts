@@ -20,15 +20,24 @@ import {
   ETHEREUM_CHAIN_ID,
   LINEA_CHAIN_ID,
   L2_TO_L1_FEE,
-  FINALITY_WINDOW_SECONDS,
   LINEA_SDK_FALLBACK_L1_RPCS,
-  LINEA_L1_MESSAGE_SERVICE_DEPLOY_BLOCK,
+  LINEA_SDK_FALLBACK_L2_RPCS,
   lineaMessageServiceAbi,
   lineaTokenBridgeAbi,
 } from './constants';
 import { LineaSDK } from '@consensys/linea-sdk';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+interface LineaMessageInfo {
+  messageHash: `0x${string}`;
+  messageNumber: bigint;
+  from: `0x${string}`;
+  to: `0x${string}`;
+  fee: bigint;
+  value: bigint;
+  calldata: `0x${string}`;
+}
 
 export class LineaNativeBridgeAdapter implements BridgeAdapter {
   constructor(
@@ -216,48 +225,42 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
 
       if (isL1ToL2) {
         // L1→L2: Auto-claimed by Linea postman service
-        // Check if enough time has passed (usually 15-30 minutes)
         return true;
       } else {
-        // L2→L1: Requires 24-hour finality window
+        // L2→L1: Ready when the L2 block's Merkle root has been anchored on L1,
+        // which is when a proof can be constructed. This is typically 6-8 hours
+        // after the L2 transaction, not a fixed 24-hour window.
         const l1Client = await this.getClient(ETHEREUM_CHAIN_ID);
 
-        // Get the origin transaction timestamp
-        const l2Client = await this.getClient(LINEA_CHAIN_ID);
-        const block = await l2Client.getBlock({ blockNumber: originTransaction.blockNumber });
-        const txTimestamp = Number(block.timestamp);
-        const currentTimestamp = Math.floor(Date.now() / 1000);
-
-        const timeElapsed = currentTimestamp - txTimestamp;
-        const isFinalized = timeElapsed >= FINALITY_WINDOW_SECONDS;
-
-        this.logger.info('Linea withdrawal finality check', {
-          txHash: originTransaction.transactionHash,
-          txTimestamp,
-          currentTimestamp,
-          timeElapsed,
-          requiredSeconds: FINALITY_WINDOW_SECONDS,
-          isFinalized,
-        });
-
-        if (!isFinalized) {
+        const messageInfo = this.extractMessageInfo(originTransaction);
+        if (!messageInfo) {
+          this.logger.info('Linea withdrawal: no MessageSent event found', {
+            txHash: originTransaction.transactionHash,
+          });
           return false;
         }
 
-        // Check if the message has been claimed
-        const messageHash = this.extractMessageHash(originTransaction);
-        if (messageHash) {
-          const isClaimed = await this.isMessageClaimed(l1Client, messageHash);
-          if (isClaimed) {
-            this.logger.info('Linea withdrawal already claimed', {
-              txHash: originTransaction.transactionHash,
-              messageHash,
-            });
-            return true;
-          }
+        // Fast-path: already claimed on L1
+        const isClaimed = await this.isMessageClaimed(l1Client, messageInfo.messageNumber);
+        if (isClaimed) {
+          this.logger.info('Linea withdrawal already claimed', {
+            txHash: originTransaction.transactionHash,
+            messageHash: messageInfo.messageHash,
+          });
+          return true;
         }
 
-        return true;
+        // Check proof availability — proof only exists once the L2 block is anchored on L1
+        const proofData = await this.fetchProofFromLineaSDK(messageInfo.messageHash, originTransaction.transactionHash);
+        const isReady = proofData != null;
+
+        this.logger.info('Linea withdrawal readiness check', {
+          txHash: originTransaction.transactionHash,
+          messageHash: messageInfo.messageHash,
+          isReady,
+        });
+
+        return isReady;
       }
     } catch (error) {
       this.handleError(error, 'check destination readiness', { amount, route, originTransaction });
@@ -278,32 +281,35 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
       if (isL2ToL1) {
         const l1Client = await this.getClient(ETHEREUM_CHAIN_ID);
 
-        // Extract message hash from the origin transaction
-        const messageHash = this.extractMessageHash(originTransaction);
-        if (!messageHash) {
+        // Extract message info from the origin transaction
+        const messageInfo = this.extractMessageInfo(originTransaction);
+        if (!messageInfo) {
           this.logger.warn('No MessageSent event found in transaction logs');
           return;
         }
 
         // Check if already claimed
-        const isClaimed = await this.isMessageClaimed(l1Client, messageHash);
+        const isClaimed = await this.isMessageClaimed(l1Client, messageInfo.messageNumber);
         if (isClaimed) {
           this.logger.info('Linea withdrawal already claimed', {
             txHash: originTransaction.transactionHash,
-            messageHash,
+            messageHash: messageInfo.messageHash,
           });
           return;
         }
 
-        // Get the message proof from Linea SDK/API
-        const proofData = await this.getMessageProof(originTransaction);
-        if (!proofData) {
-          throw new Error('Failed to get message proof - finality may not be reached yet');
+        // Get the Merkle proof from the Linea SDK
+        const proofResponse = await this.fetchProofFromLineaSDK(
+          messageInfo.messageHash,
+          originTransaction.transactionHash,
+        );
+        if (!proofResponse) {
+          throw new Error('Failed to get message proof - L2 block may not be anchored on L1 yet');
         }
 
         this.logger.info('Building Linea claim transaction', {
           withdrawalTxHash: originTransaction.transactionHash,
-          messageHash,
+          messageHash: messageInfo.messageHash,
         });
 
         return {
@@ -313,7 +319,22 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: lineaMessageServiceAbi,
               functionName: 'claimMessageWithProof',
-              args: [proofData],
+              args: [
+                {
+                  proof: proofResponse.proof,
+                  messageNumber: messageInfo.messageNumber,
+                  leafIndex: proofResponse.leafIndex,
+                  from: messageInfo.from,
+                  to: messageInfo.to,
+                  fee: messageInfo.fee,
+                  value: messageInfo.value,
+                  // ZERO_ADDRESS instructs Linea to send the fee to msg.sender (Mark, the claimer).
+                  // This works for both ETH and ERC20: Mark always submits the L1 claim tx.
+                  feeRecipient: ZERO_ADDRESS as `0x${string}`,
+                  merkleRoot: proofResponse.root,
+                  data: messageInfo.calldata,
+                },
+              ],
             }),
             value: BigInt(0),
           },
@@ -343,7 +364,7 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
     throw new Error(`Failed to ${context}: ${(error as Error)?.message ?? ''}`);
   }
 
-  private extractMessageHash(originTransaction: TransactionReceipt): `0x${string}` | undefined {
+  private extractMessageInfo(originTransaction: TransactionReceipt): LineaMessageInfo | undefined {
     const logs = parseEventLogs({
       abi: lineaMessageServiceAbi,
       logs: originTransaction.logs,
@@ -354,149 +375,90 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
       return undefined;
     }
 
-    // The message hash is the third indexed topic
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (messageSentEvent as any).args._messageHash as `0x${string}`;
+    const args = (messageSentEvent as any).args;
+    return {
+      messageHash: args._messageHash as `0x${string}`,
+      messageNumber: args._nonce as bigint,
+      from: args._from as `0x${string}`,
+      to: args._to as `0x${string}`,
+      fee: args._fee as bigint,
+      value: args._value as bigint,
+      calldata: args._calldata as `0x${string}`,
+    };
   }
 
-  private async isMessageClaimed(l1Client: PublicClient, messageHash: `0x${string}`): Promise<boolean> {
+  private async isMessageClaimed(l1Client: PublicClient, messageNumber: bigint): Promise<boolean> {
     try {
-      // Check for MessageClaimed event with this hash
-      const logs = await l1Client.getLogs({
+      // Use the contract's isMessageClaimed(uint256 messageNumber) view function.
+      // This is much more efficient than scanning event logs across thousands of blocks.
+      return (await l1Client.readContract({
         address: LINEA_L1_MESSAGE_SERVICE as `0x${string}`,
-        event: {
-          type: 'event',
-          name: 'MessageClaimed',
-          inputs: [{ type: 'bytes32', name: '_messageHash', indexed: true }],
-        },
-        args: {
-          _messageHash: messageHash,
-        },
-        fromBlock: LINEA_L1_MESSAGE_SERVICE_DEPLOY_BLOCK,
-        toBlock: 'latest',
-      });
-
-      return logs.length > 0;
+        abi: lineaMessageServiceAbi,
+        functionName: 'isMessageClaimed',
+        args: [messageNumber],
+      })) as boolean;
     } catch (error) {
       this.logger.warn('Failed to check if message is claimed', {
-        messageHash,
+        messageNumber: messageNumber.toString(),
         error: jsonifyError(error),
       });
       return false;
     }
   }
 
-  private async getMessageProof(originTransaction: TransactionReceipt): Promise<
-    | {
-        proof: `0x${string}`[];
-        messageNumber: bigint;
-        leafIndex: number;
-        from: `0x${string}`;
-        to: `0x${string}`;
-        fee: bigint;
-        value: bigint;
-        feeRecipient: `0x${string}`;
-        merkleRoot: `0x${string}`;
-        data: `0x${string}`;
-      }
-    | undefined
-  > {
-    try {
-      // Extract message details from the transaction logs
-      const logs = parseEventLogs({
-        abi: lineaMessageServiceAbi,
-        logs: originTransaction.logs,
-      });
-
-      const messageSentEvent = logs.find((log) => log.eventName === 'MessageSent');
-      if (!messageSentEvent) {
-        return undefined;
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const args = (messageSentEvent as any).args;
-
-      // Get proof from Linea SDK
-      const messageHash = args._messageHash as `0x${string}`;
-      const proofResponse = await this.fetchProofFromLineaSDK(messageHash, originTransaction);
-
-      if (!proofResponse) {
-        this.logger.warn('Could not fetch proof from Linea SDK - message may not be finalized yet');
-        return undefined;
-      }
-
-      return {
-        proof: proofResponse.proof,
-        messageNumber: args._nonce,
-        leafIndex: proofResponse.leafIndex,
-        from: args._from,
-        to: args._to,
-        fee: args._fee,
-        value: args._value,
-        feeRecipient: args._from, // Fee recipient is typically the sender
-        merkleRoot: proofResponse.root,
-        data: args._calldata,
-      };
-    } catch (error) {
-      this.logger.warn('Failed to get message proof', {
-        txHash: originTransaction.transactionHash,
-        error: jsonifyError(error),
-      });
-      return undefined;
-    }
-  }
-
   private async fetchProofFromLineaSDK(
     messageHash: `0x${string}`,
-    originTransaction: TransactionReceipt,
+    txHash: string,
   ): Promise<{ proof: `0x${string}`[]; leafIndex: number; root: `0x${string}` } | undefined> {
-    const l2Providers = this.chains[LINEA_CHAIN_ID.toString()]?.providers ?? [];
-    if (l2Providers.length === 0) {
-      this.logger.warn('Missing L2 provider configuration for Linea SDK');
+    // The Linea SDK issues wide-range eth_getLogs on both L1 and L2.
+    // Commercial free-tier providers (Alchemy, DRPC) reject block ranges >10k.
+    // Try configured providers first, then fall back to public RPCs for both chains.
+    const l1Candidates = [...(this.chains[ETHEREUM_CHAIN_ID.toString()]?.providers ?? []), ...LINEA_SDK_FALLBACK_L1_RPCS];
+    const l2Candidates = [...(this.chains[LINEA_CHAIN_ID.toString()]?.providers ?? []), ...LINEA_SDK_FALLBACK_L2_RPCS];
+
+    if (l2Candidates.length === 0) {
+      this.logger.warn('No L2 providers available for Linea SDK');
       return undefined;
     }
 
-    // The Linea SDK queries eth_getLogs from block 0 to latest on L1,
-    // which commercial providers like Alchemy reject due to block range limits.
-    // Use configured L1 providers first, then fall back to public RPCs.
-    const l1Providers = this.chains[ETHEREUM_CHAIN_ID.toString()]?.providers ?? [];
-    const l1RpcCandidates = [...l1Providers, ...LINEA_SDK_FALLBACK_L1_RPCS];
-
-    for (const l1RpcUrl of l1RpcCandidates) {
-      try {
-        const sdk = new LineaSDK({
-          l1RpcUrl,
-          l2RpcUrl: l2Providers[0],
-          network: 'linea-mainnet',
-          mode: 'read-only',
-        });
-
-        const l1ClaimingService = sdk.getL1ClaimingService(LINEA_L1_MESSAGE_SERVICE);
-        const proofResult = await l1ClaimingService.getMessageProof(messageHash);
-
-        if (!proofResult) {
-          this.logger.info('Message proof not yet available from Linea SDK', {
-            messageHash,
-            txHash: originTransaction.transactionHash,
+    // Outer loop: L2 RPC (most likely bottleneck — L2 getLogs for message tree).
+    // Inner loop: L1 RPC (required for anchored root lookup).
+    for (const l2RpcUrl of l2Candidates) {
+      for (const l1RpcUrl of l1Candidates) {
+        try {
+          const sdk = new LineaSDK({
+            l1RpcUrl,
+            l2RpcUrl,
+            network: 'linea-mainnet',
+            mode: 'read-only',
           });
-          return undefined;
-        }
 
-        return {
-          proof: proofResult.proof as `0x${string}`[],
-          leafIndex: proofResult.leafIndex,
-          root: proofResult.root as `0x${string}`,
-        };
-      } catch (error) {
-        this.logger.warn('Failed to fetch proof from Linea SDK, trying next provider', {
-          messageHash,
-          l1RpcUrl: l1RpcUrl.replace(/\/[^/]*$/, '/***'), // mask API key in URL
-          error: jsonifyError(error),
-        });
+          const l1ClaimingService = sdk.getL1ClaimingService(LINEA_L1_MESSAGE_SERVICE);
+          const proofResult = await l1ClaimingService.getMessageProof(messageHash);
+
+          if (!proofResult) {
+            this.logger.info('Message proof not yet available from Linea SDK', { messageHash, txHash });
+            return undefined;
+          }
+
+          return {
+            proof: proofResult.proof as `0x${string}`[],
+            leafIndex: proofResult.leafIndex,
+            root: proofResult.root as `0x${string}`,
+          };
+        } catch (error) {
+          this.logger.warn('Failed to fetch proof from Linea SDK, trying next provider', {
+            messageHash,
+            l1RpcUrl: l1RpcUrl.replace(/\/[^/]*$/, '/***'),
+            l2RpcUrl: l2RpcUrl.replace(/\/[^/]*$/, '/***'),
+            error: jsonifyError(error),
+          });
+        }
       }
     }
 
-    this.logger.warn('All L1 providers failed for Linea SDK proof fetching', { messageHash });
+    this.logger.warn('All providers failed for Linea SDK proof fetching', { messageHash });
     return undefined;
   }
 }

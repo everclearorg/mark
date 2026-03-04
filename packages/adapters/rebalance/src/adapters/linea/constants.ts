@@ -21,6 +21,7 @@ export const lineaMessageServiceAbi = parseAbi([
   // L1 Message Service
   'function sendMessage(address _to, uint256 _fee, bytes calldata _calldata) payable',
   'function claimMessageWithProof((bytes32[] proof, uint256 messageNumber, uint32 leafIndex, address from, address to, uint256 fee, uint256 value, address feeRecipient, bytes32 merkleRoot, bytes data) _params)',
+  'function isMessageClaimed(uint256 _messageNumber) view returns (bool)',
   'event MessageSent(address indexed _from, address indexed _to, uint256 _fee, uint256 _value, uint256 _nonce, bytes _calldata, bytes32 indexed _messageHash)',
   'event MessageClaimed(bytes32 indexed _messageHash)',
   // L2 Message Service
@@ -48,4 +49,13 @@ export const LINEA_SDK_FALLBACK_L1_RPCS = [
   'https://ethereum.publicnode.com',
   'https://eth.llamarpc.com',
   'https://rpc.ankr.com/eth',
+];
+
+// Public Linea L2 RPCs that support wide-range eth_getLogs queries.
+// Free-tier commercial L2 providers (DRPC, Alchemy) reject ranges over 10k blocks,
+// which the Linea SDK requires when fetching message proofs.
+export const LINEA_SDK_FALLBACK_L2_RPCS = [
+  'https://rpc.linea.build',
+  'https://1rpc.io/linea',
+  'https://linea.blockpi.network/v1/rpc/public',
 ];

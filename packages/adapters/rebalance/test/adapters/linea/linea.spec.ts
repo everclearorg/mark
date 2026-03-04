@@ -181,31 +181,74 @@ describe('LineaNativeBridgeAdapter', () => {
       expect(ready).toBe(true);
     });
 
-    it('checks 24-hour finality for L2->L1', async () => {
+    it('returns true when L2 block is anchored on L1 (proof available)', async () => {
       const route = { asset: ethAsset, origin: 59144, destination: 1 };
 
-      // Mock block timestamp more than 24 hours ago
-      const oldTimestamp = Math.floor(Date.now() / 1000) - (25 * 60 * 60); // 25 hours ago
-      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
-        getBlock: jest.fn<any>().mockResolvedValue({ timestamp: BigInt(oldTimestamp) }),
-        getLogs: jest.fn<any>().mockResolvedValue([]),
+      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({});
+      jest.spyOn(adapter as any, 'extractMessageInfo').mockReturnValue({
+        messageHash: '0xhash',
+        messageNumber: BigInt(1),
+        from: sender as `0x${string}`,
+        to: recipient as `0x${string}`,
+        fee: BigInt(0),
+        value: BigInt(amount),
+        calldata: '0x' as `0x${string}`,
       });
-      jest.spyOn(adapter as any, 'extractMessageHash').mockReturnValue('0xhash');
       jest.spyOn(adapter as any, 'isMessageClaimed').mockResolvedValue(false);
+      jest.spyOn(adapter as any, 'fetchProofFromLineaSDK').mockResolvedValue({
+        proof: ['0xproof'],
+        leafIndex: 0,
+        root: '0xroot',
+      });
 
       const ready = await adapter.readyOnDestination(amount, route, mockReceipt);
       expect(ready).toBe(true);
     });
 
-    it('returns false if less than 24 hours for L2->L1', async () => {
+    it('returns false when L2 block is not yet anchored (no proof available)', async () => {
       const route = { asset: ethAsset, origin: 59144, destination: 1 };
 
-      // Mock block timestamp less than 24 hours ago
-      const recentTimestamp = Math.floor(Date.now() / 1000) - (12 * 60 * 60); // 12 hours ago
-      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
-        getBlock: jest.fn<any>().mockResolvedValue({ timestamp: BigInt(recentTimestamp) }),
-        getLogs: jest.fn<any>().mockResolvedValue([]),
+      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({});
+      jest.spyOn(adapter as any, 'extractMessageInfo').mockReturnValue({
+        messageHash: '0xhash',
+        messageNumber: BigInt(1),
+        from: sender as `0x${string}`,
+        to: recipient as `0x${string}`,
+        fee: BigInt(0),
+        value: BigInt(amount),
+        calldata: '0x' as `0x${string}`,
       });
+      jest.spyOn(adapter as any, 'isMessageClaimed').mockResolvedValue(false);
+      jest.spyOn(adapter as any, 'fetchProofFromLineaSDK').mockResolvedValue(undefined);
+
+      const ready = await adapter.readyOnDestination(amount, route, mockReceipt);
+      expect(ready).toBe(false);
+    });
+
+    it('returns true immediately when message is already claimed', async () => {
+      const route = { asset: ethAsset, origin: 59144, destination: 1 };
+
+      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({});
+      jest.spyOn(adapter as any, 'extractMessageInfo').mockReturnValue({
+        messageHash: '0xhash',
+        messageNumber: BigInt(1),
+        from: sender as `0x${string}`,
+        to: recipient as `0x${string}`,
+        fee: BigInt(0),
+        value: BigInt(amount),
+        calldata: '0x' as `0x${string}`,
+      });
+      jest.spyOn(adapter as any, 'isMessageClaimed').mockResolvedValue(true);
+
+      const ready = await adapter.readyOnDestination(amount, route, mockReceipt);
+      expect(ready).toBe(true);
+    });
+
+    it('returns false when no MessageSent event in receipt', async () => {
+      const route = { asset: ethAsset, origin: 59144, destination: 1 };
+
+      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({});
+      jest.spyOn(adapter as any, 'extractMessageInfo').mockReturnValue(undefined);
 
       const ready = await adapter.readyOnDestination(amount, route, mockReceipt);
       expect(ready).toBe(false);
@@ -222,10 +265,8 @@ describe('LineaNativeBridgeAdapter', () => {
     it('returns undefined if no MessageSent event found for L2->L1', async () => {
       const route = { asset: ethAsset, origin: 59144, destination: 1 };
 
-      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
-        getLogs: jest.fn<any>().mockResolvedValue([]),
-      });
-      jest.spyOn(adapter as any, 'extractMessageHash').mockReturnValue(undefined);
+      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({});
+      jest.spyOn(adapter as any, 'extractMessageInfo').mockReturnValue(undefined);
 
       const tx = await adapter.destinationCallback(route, mockReceipt);
       expect(tx).toBeUndefined();
@@ -234,10 +275,16 @@ describe('LineaNativeBridgeAdapter', () => {
     it('returns undefined if message already claimed', async () => {
       const route = { asset: ethAsset, origin: 59144, destination: 1 };
 
-      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
-        getLogs: jest.fn<any>().mockResolvedValue([{ topics: ['0xclaimed'] }]),
+      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({});
+      jest.spyOn(adapter as any, 'extractMessageInfo').mockReturnValue({
+        messageHash: '0xhash',
+        messageNumber: BigInt(1),
+        from: sender as `0x${string}`,
+        to: recipient as `0x${string}`,
+        fee: BigInt(0),
+        value: BigInt(amount),
+        calldata: '0x' as `0x${string}`,
       });
-      jest.spyOn(adapter as any, 'extractMessageHash').mockReturnValue('0xhash');
       jest.spyOn(adapter as any, 'isMessageClaimed').mockResolvedValue(true);
 
       const tx = await adapter.destinationCallback(route, mockReceipt);
@@ -247,22 +294,21 @@ describe('LineaNativeBridgeAdapter', () => {
     it('returns claimMessageWithProof tx when proof is available', async () => {
       const route = { asset: ethAsset, origin: 59144, destination: 1 };
 
-      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
-        getLogs: jest.fn<any>().mockResolvedValue([]),
-      });
-      jest.spyOn(adapter as any, 'extractMessageHash').mockReturnValue('0xhash');
-      jest.spyOn(adapter as any, 'isMessageClaimed').mockResolvedValue(false);
-      jest.spyOn(adapter as any, 'getMessageProof').mockResolvedValue({
-        proof: ['0xproof1', '0xproof2'],
+      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({});
+      jest.spyOn(adapter as any, 'extractMessageInfo').mockReturnValue({
+        messageHash: '0xhash',
         messageNumber: BigInt(1),
-        leafIndex: 0,
-        from: sender,
-        to: recipient,
+        from: sender as `0x${string}`,
+        to: recipient as `0x${string}`,
         fee: BigInt(0),
         value: BigInt(amount),
-        feeRecipient: sender,
-        merkleRoot: '0xroot',
-        data: '0x',
+        calldata: '0x' as `0x${string}`,
+      });
+      jest.spyOn(adapter as any, 'isMessageClaimed').mockResolvedValue(false);
+      jest.spyOn(adapter as any, 'fetchProofFromLineaSDK').mockResolvedValue({
+        proof: ['0xproof1', '0xproof2'],
+        leafIndex: 0,
+        root: '0xroot',
       });
 
       const tx = await adapter.destinationCallback(route, mockReceipt);
@@ -274,21 +320,21 @@ describe('LineaNativeBridgeAdapter', () => {
   });
 
   describe('helper methods', () => {
-    it('isMessageClaimed returns true if event found', async () => {
+    it('isMessageClaimed returns true when contract returns true', async () => {
       const mockClient = {
-        getLogs: jest.fn<any>().mockResolvedValue([{ topics: ['0xclaimed'] }]),
+        readContract: jest.fn<any>().mockResolvedValue(true),
       };
 
-      const isClaimed = await (adapter as any).isMessageClaimed(mockClient, '0xhash');
+      const isClaimed = await (adapter as any).isMessageClaimed(mockClient, BigInt(42));
       expect(isClaimed).toBe(true);
     });
 
-    it('isMessageClaimed returns false if no event found', async () => {
+    it('isMessageClaimed returns false when contract returns false', async () => {
       const mockClient = {
-        getLogs: jest.fn<any>().mockResolvedValue([]),
+        readContract: jest.fn<any>().mockResolvedValue(false),
       };
 
-      const isClaimed = await (adapter as any).isMessageClaimed(mockClient, '0xhash');
+      const isClaimed = await (adapter as any).isMessageClaimed(mockClient, BigInt(42));
       expect(isClaimed).toBe(false);
     });
   });
