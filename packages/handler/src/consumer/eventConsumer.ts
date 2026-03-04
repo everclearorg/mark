@@ -114,6 +114,10 @@ export class EventConsumer {
       return;
     }
 
+    // Move from pending to processing before processing to prevent
+    // processPendingEventsForType from picking up the same event concurrently
+    await this.queue.moveToProcessing(event);
+
     // Process immediately (fire-and-forget; processEvent handles errors internally)
     this.processEvent(event).catch((e) => {
       this.logger.error('Error processing event', {
