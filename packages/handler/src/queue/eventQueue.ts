@@ -234,6 +234,17 @@ export class EventQueue {
   }
 
   /**
+   * Move an event from the pending queue to the processing queue.
+   * Used by addEvent to mark the event as being processed before fire-and-forget,
+   * preventing processPendingEventsForType from picking it up concurrently.
+   */
+  async moveToProcessing(event: QueuedEvent): Promise<void> {
+    const pendingQueueKey = this.pendingQueueKeys[event.type];
+    const processingQueueKey = this.processingQueueKeys[event.type];
+    await this.store.multi().zrem(pendingQueueKey, event.id).zadd(processingQueueKey, Date.now(), event.id).exec();
+  }
+
+  /**
    * Dequeue multiple events for processing (FIFO)
    * Checks the specified event type pending queue and returns up to count ready events
    * Uses a Redis transaction for atomic batch operations
