@@ -50,6 +50,7 @@ describe('EventConsumer', () => {
       dequeueEvents: jest.fn(),
       moveProcessingToPending: jest.fn(),
       acknowledgeProcessedEvent: jest.fn(),
+      moveToProcessing: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
       moveToDeadLetterQueue: jest.fn(),
       hasEvent: jest.fn(),
       addInvalidInvoice: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
@@ -150,6 +151,38 @@ describe('EventConsumer', () => {
       await eventConsumer.addEvent(event);
 
       expect(mockQueue.enqueueEvent).toHaveBeenCalledWith(event, EventPriority.NORMAL);
+    });
+
+    it('should move event to processing queue before processing to prevent concurrent pickup', async () => {
+      const event: QueuedEvent = {
+        id: 'event-1',
+        type: WebhookEventType.InvoiceEnqueued,
+        data: {} as InvoiceEnqueuedEvent,
+        priority: EventPriority.NORMAL,
+        retryCount: 0,
+        maxRetries: -1,
+        scheduledAt: Date.now(),
+        metadata: { source: 'test' },
+      };
+
+      mockQueue.enqueueEvent.mockResolvedValue(false);
+      (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mockResolvedValue({
+        result: EventProcessingResultType.Success,
+        eventId: 'event-1',
+        processedAt: Date.now(),
+        duration: 100,
+      });
+
+      await eventConsumer.addEvent(event);
+      // Wait for async processing to complete
+      await new Promise((r) => setImmediate(r));
+
+      expect(mockQueue.moveToProcessing).toHaveBeenCalledWith(event);
+      // moveToProcessing must be called before processInvoiceEnqueued
+      const moveOrder = mockQueue.moveToProcessing.mock.invocationCallOrder[0];
+      const processOrder = (mockProcessor.processInvoiceEnqueued as jest.MockedFunction<any>).mock
+        .invocationCallOrder[0];
+      expect(moveOrder).toBeLessThan(processOrder);
     });
 
     it('should store invalid invoice when result is Invalid', async () => {
