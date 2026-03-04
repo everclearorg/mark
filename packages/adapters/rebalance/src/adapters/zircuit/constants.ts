@@ -39,10 +39,13 @@ export const zircuitL2StandardBridgeAbi = parseAbi([
 
 // Optimism Portal ABI (for withdrawal proving and finalization)
 export const zircuitOptimismPortalAbi = parseAbi([
+  // New single-step flow: proves and finalizes in one call, guarded by outputFinalizedAt from L2 oracle
   'function proveWithdrawalTransaction((uint256 nonce, address sender, address target, uint256 value, uint256 gasLimit, bytes data) _tx, uint256 _l2OutputIndex, (bytes32 version, bytes32 stateRoot, bytes32 messagePasserStorageRoot, bytes32 latestBlockhash) _outputRootProof, bytes[] calldata _withdrawalProof)',
+  // Legacy flow: finalize after a separate prove step (for pre-migration withdrawals)
   'function finalizeWithdrawalTransaction((uint256 nonce, address sender, address target, uint256 value, uint256 gasLimit, bytes data) _tx)',
   'function provenWithdrawals(bytes32) view returns (bytes32 outputRoot, uint128 timestamp, uint128 l2OutputIndex)',
   'function finalizedWithdrawals(bytes32) view returns (bool)',
+  'function isOutputFinalized(uint256 _l2OutputIndex) view returns (bool)',
   'event WithdrawalProven(bytes32 indexed withdrawalHash, address indexed from, address indexed to)',
   'event WithdrawalFinalized(bytes32 indexed withdrawalHash, bool success)',
 ]);

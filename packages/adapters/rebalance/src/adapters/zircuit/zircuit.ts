@@ -24,7 +24,6 @@ import {
   ZIRCUIT_L2_OUTPUT_ORACLE,
   ETHEREUM_CHAIN_ID,
   ZIRCUIT_CHAIN_ID,
-  CHALLENGE_PERIOD_SECONDS,
   zircuitL1StandardBridgeAbi,
   zircuitL2StandardBridgeAbi,
   zircuitOptimismPortalAbi,
@@ -295,34 +294,9 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
           return true;
         }
 
-        // Check if withdrawal is proven
-        const provenWithdrawal = await l1Client.readContract({
-          address: ZIRCUIT_OPTIMISM_PORTAL as `0x${string}`,
-          abi: zircuitOptimismPortalAbi,
-          functionName: 'provenWithdrawals',
-          args: [withdrawalHash],
-        });
-
-        const [, timestamp] = provenWithdrawal as [`0x${string}`, bigint, bigint];
-
-        if (timestamp > 0) {
-          // Withdrawal is proven, check if challenge period has passed
-          const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
-          const canFinalize = currentTimestamp >= timestamp + BigInt(CHALLENGE_PERIOD_SECONDS);
-
-          this.logger.info('Zircuit withdrawal proven status', {
-            txHash: originTransaction.transactionHash,
-            withdrawalHash,
-            provenTimestamp: timestamp.toString(),
-            currentTimestamp: currentTimestamp.toString(),
-            challengePeriodSeconds: CHALLENGE_PERIOD_SECONDS,
-            canFinalize,
-          });
-
-          return canFinalize;
-        }
-
-        // Withdrawal not yet proven - check if L2 output is available
+        // Check if L2 output exists and its finalization period has elapsed.
+        // The new single-step proveWithdrawalTransaction requires block.timestamp >= outputFinalizedAt,
+        // so we must wait for that before attempting the callback.
         const l2BlockNumber = originTransaction.blockNumber;
         try {
           const l2OutputIndex = await l1Client.readContract({
@@ -332,14 +306,21 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
             args: [l2BlockNumber],
           });
 
-          this.logger.info('Zircuit withdrawal ready to prove', {
-            txHash: originTransaction.transactionHash,
-            l2BlockNumber: l2BlockNumber.toString(),
-            l2OutputIndex: l2OutputIndex.toString(),
+          const outputFinalized = await l1Client.readContract({
+            address: ZIRCUIT_OPTIMISM_PORTAL as `0x${string}`,
+            abi: zircuitOptimismPortalAbi,
+            functionName: 'isOutputFinalized',
+            args: [l2OutputIndex],
           });
 
-          // L2 output is available, withdrawal can be proven
-          return true;
+          this.logger.info('Zircuit withdrawal output finalization status', {
+            txHash: originTransaction.transactionHash,
+            l2BlockNumber: l2BlockNumber.toString(),
+            l2OutputIndex: (l2OutputIndex as bigint).toString(),
+            outputFinalized,
+          });
+
+          return outputFinalized as boolean;
         } catch {
           // L2 output not yet available
           this.logger.info('Zircuit withdrawal: L2 output not yet available', {
@@ -394,83 +375,37 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
           return;
         }
 
-        // Check if withdrawal is proven
-        const provenWithdrawal = await l1Client.readContract({
-          address: ZIRCUIT_OPTIMISM_PORTAL as `0x${string}`,
-          abi: zircuitOptimismPortalAbi,
-          functionName: 'provenWithdrawals',
-          args: [withdrawalHash],
+        // New single-step flow: proveWithdrawalTransaction proves and finalizes atomically.
+        // This is only called when readyOnDestination is true (outputFinalizedAt has elapsed).
+        // Use @zircuit/zircuit-viem which handles both legacy (v1) and new (v2) proof formats.
+        const proofResult = await this.buildZircuitProof(l2Client, l1Client, originTransaction);
+        if (!proofResult) {
+          throw new Error('Failed to get withdrawal proof');
+        }
+
+        this.logger.info('Building Zircuit prove withdrawal transaction', {
+          withdrawalTxHash: originTransaction.transactionHash,
+          withdrawalHash,
+          l2OutputIndex: proofResult.l2OutputIndex.toString(),
         });
 
-        const [, timestamp] = provenWithdrawal as [`0x${string}`, bigint, bigint];
-
-        if (timestamp > 0) {
-          // Withdrawal is proven, check if we can finalize
-          const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
-          const canFinalize = currentTimestamp >= timestamp + BigInt(CHALLENGE_PERIOD_SECONDS);
-
-          if (!canFinalize) {
-            this.logger.info('Zircuit withdrawal: challenge period not yet passed', {
-              txHash: originTransaction.transactionHash,
-              withdrawalHash,
-              provenTimestamp: timestamp.toString(),
-              currentTimestamp: currentTimestamp.toString(),
-              remainingSeconds: (timestamp + BigInt(CHALLENGE_PERIOD_SECONDS) - currentTimestamp).toString(),
-            });
-            return;
-          }
-
-          // Finalize the withdrawal
-          this.logger.info('Building Zircuit finalize withdrawal transaction', {
-            withdrawalTxHash: originTransaction.transactionHash,
-            withdrawalHash,
-          });
-
-          return {
-            memo: RebalanceTransactionMemo.Rebalance,
-            transaction: {
-              to: ZIRCUIT_OPTIMISM_PORTAL as `0x${string}`,
-              data: encodeFunctionData({
-                abi: zircuitOptimismPortalAbi,
-                functionName: 'finalizeWithdrawalTransaction',
-                args: [withdrawalTx],
-              }),
-              value: BigInt(0),
-            },
-          };
-        } else {
-          // Withdrawal not yet proven - need to prove first
-          // Use @zircuit/zircuit-viem which handles both legacy (v1) and new (v2) proof formats.
-          // Zircuit v2 uses a custom Merkle tree for withdrawal proofs instead of standard eth_getProof.
-          const proofResult = await this.buildZircuitProof(l2Client, l1Client, originTransaction);
-          if (!proofResult) {
-            throw new Error('Failed to get withdrawal proof');
-          }
-
-          this.logger.info('Building Zircuit prove withdrawal transaction', {
-            withdrawalTxHash: originTransaction.transactionHash,
-            withdrawalHash,
-            l2OutputIndex: proofResult.l2OutputIndex.toString(),
-          });
-
-          return {
-            memo: RebalanceTransactionMemo.Rebalance,
-            transaction: {
-              to: ZIRCUIT_OPTIMISM_PORTAL as `0x${string}`,
-              data: encodeFunctionData({
-                abi: zircuitOptimismPortalAbi,
-                functionName: 'proveWithdrawalTransaction',
-                args: [
-                  withdrawalTx,
-                  proofResult.l2OutputIndex,
-                  proofResult.outputRootProof,
-                  proofResult.withdrawalProof,
-                ],
-              }),
-              value: BigInt(0),
-            },
-          };
-        }
+        return {
+          memo: RebalanceTransactionMemo.Rebalance,
+          transaction: {
+            to: ZIRCUIT_OPTIMISM_PORTAL as `0x${string}`,
+            data: encodeFunctionData({
+              abi: zircuitOptimismPortalAbi,
+              functionName: 'proveWithdrawalTransaction',
+              args: [
+                withdrawalTx,
+                proofResult.l2OutputIndex,
+                proofResult.outputRootProof,
+                proofResult.withdrawalProof,
+              ],
+            }),
+            value: BigInt(0),
+          },
+        };
       }
     } catch (error) {
       this.handleError(error, 'prepare destination callback', { route, originTransaction });
