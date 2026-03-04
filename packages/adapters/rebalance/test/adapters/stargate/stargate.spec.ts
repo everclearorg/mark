@@ -4,10 +4,23 @@ import { ChainConfiguration, SupportedBridge, RebalanceRoute, axiosGet, cleanupH
 import { jsonifyError, Logger } from '@mark/logger';
 import { TransactionReceipt } from 'viem';
 import { StargateBridgeAdapter } from '../../../src/adapters/stargate/stargate';
-import { 
-  STARGATE_USDT_POOL_ETH, 
-  USDT_ETH, 
-  LZ_ENDPOINT_ID_TON, 
+import {
+  STARGATE_USDT_POOL_ETH,
+  USDT_ETH,
+  USDC_BASE,
+  STARGATE_USDC_POOL_BASE,
+  USDC_ARB,
+  USDT_ARB,
+  STARGATE_USDC_POOL_ARB,
+  STARGATE_USDT_POOL_ARB,
+  USDC_MANTLE,
+  USDT_MANTLE,
+  STARGATE_USDC_POOL_MANTLE,
+  STARGATE_USDT_POOL_MANTLE,
+  LZ_ENDPOINT_ID_TON,
+  LZ_ENDPOINT_ID_BASE,
+  LZ_ENDPOINT_ID_ARB,
+  LZ_ENDPOINT_ID_MANTLE,
   LzMessageStatus,
   STARGATE_CHAIN_NAMES,
   USDT_TON_STARGATE,
@@ -80,6 +93,10 @@ class TestStargateBridgeAdapter extends StargateBridgeAdapter {
   public callGetPublicClient(chainId: number) {
     return this.getPublicClient(chainId);
   }
+
+  public callGetLzEndpointId(chainId: number) {
+    return this.getLzEndpointId(chainId);
+  }
 }
 
 // Mock the Logger
@@ -91,6 +108,9 @@ const mockLogger = {
 } as unknown as jest.Mocked<Logger>;
 
 // Mock chain configurations (no real credentials)
+const USDC_TICKER_HASH = '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa';
+const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
+
 const mockChains: Record<string, ChainConfiguration> = {
   '1': {
     assets: [
@@ -98,12 +118,88 @@ const mockChains: Record<string, ChainConfiguration> = {
         address: USDT_ETH,
         symbol: 'USDT',
         decimals: 6,
-        tickerHash: '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0',
+        tickerHash: USDT_TICKER_HASH,
         isNative: false,
         balanceThreshold: '0',
       },
     ],
     providers: ['https://mock-eth-rpc.example.com'],
+    invoiceAge: 3600,
+    gasThreshold: '5000000000000000',
+    deployments: {
+      everclear: '0xMockEverclearAddress',
+      permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+      multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
+    },
+  },
+  '8453': {
+    assets: [
+      {
+        address: USDC_BASE,
+        symbol: 'USDC',
+        decimals: 6,
+        tickerHash: USDC_TICKER_HASH,
+        isNative: false,
+        balanceThreshold: '0',
+      },
+    ],
+    providers: ['https://mock-base-rpc.example.com'],
+    invoiceAge: 3600,
+    gasThreshold: '5000000000000000',
+    deployments: {
+      everclear: '0xMockEverclearAddress',
+      permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+      multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
+    },
+  },
+  '42161': {
+    assets: [
+      {
+        address: USDC_ARB,
+        symbol: 'USDC',
+        decimals: 6,
+        tickerHash: USDC_TICKER_HASH,
+        isNative: false,
+        balanceThreshold: '0',
+      },
+      {
+        address: USDT_ARB,
+        symbol: 'USDT',
+        decimals: 6,
+        tickerHash: USDT_TICKER_HASH,
+        isNative: false,
+        balanceThreshold: '0',
+      },
+    ],
+    providers: ['https://mock-arb-rpc.example.com'],
+    invoiceAge: 3600,
+    gasThreshold: '5000000000000000',
+    deployments: {
+      everclear: '0xMockEverclearAddress',
+      permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+      multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
+    },
+  },
+  '5000': {
+    assets: [
+      {
+        address: USDC_MANTLE,
+        symbol: 'USDC',
+        decimals: 6,
+        tickerHash: USDC_TICKER_HASH,
+        isNative: false,
+        balanceThreshold: '0',
+      },
+      {
+        address: USDT_MANTLE,
+        symbol: 'USDT',
+        decimals: 6,
+        tickerHash: USDT_TICKER_HASH,
+        isNative: false,
+        balanceThreshold: '0',
+      },
+    ],
+    providers: ['https://mock-mantle-rpc.example.com'],
     invoiceAge: 3600,
     gasThreshold: '5000000000000000',
     deployments: {
@@ -279,7 +375,32 @@ describe('StargateBridgeAdapter', () => {
       expect(result).toBe(STARGATE_USDT_POOL_ETH);
     });
 
-    it('should throw error for unsupported asset', () => {
+    it('should return USDC pool address for Base', () => {
+      const result = adapter.callGetPoolAddress(USDC_BASE, 8453);
+      expect(result).toBe(STARGATE_USDC_POOL_BASE);
+    });
+
+    it('should return USDC pool address for Arbitrum', () => {
+      const result = adapter.callGetPoolAddress(USDC_ARB, 42161);
+      expect(result).toBe(STARGATE_USDC_POOL_ARB);
+    });
+
+    it('should return USDT pool address for Arbitrum', () => {
+      const result = adapter.callGetPoolAddress(USDT_ARB, 42161);
+      expect(result).toBe(STARGATE_USDT_POOL_ARB);
+    });
+
+    it('should return USDC pool address for Mantle', () => {
+      const result = adapter.callGetPoolAddress(USDC_MANTLE, 5000);
+      expect(result).toBe(STARGATE_USDC_POOL_MANTLE);
+    });
+
+    it('should return USDT pool address for Mantle', () => {
+      const result = adapter.callGetPoolAddress(USDT_MANTLE, 5000);
+      expect(result).toBe(STARGATE_USDT_POOL_MANTLE);
+    });
+
+    it('should throw error for unsupported asset on known chain', () => {
       expect(() => adapter.callGetPoolAddress('0xUnknownAsset', 1)).toThrow(
         'No Stargate pool found for asset 0xUnknownAsset on chain 1'
       );
@@ -287,7 +408,7 @@ describe('StargateBridgeAdapter', () => {
 
     it('should throw error for unsupported chain', () => {
       expect(() => adapter.callGetPoolAddress(USDT_ETH, 999)).toThrow(
-        /No Stargate pool found/
+        'No Stargate pools configured for chain 999'
       );
     });
   });
@@ -841,8 +962,76 @@ describe('StargateBridgeAdapter', () => {
       expect(STARGATE_CHAIN_NAMES[1]).toBe('ethereum');
     });
 
+    it('should have mapping for base', () => {
+      expect(STARGATE_CHAIN_NAMES[8453]).toBe('base');
+    });
+
+    it('should have mapping for arbitrum', () => {
+      expect(STARGATE_CHAIN_NAMES[42161]).toBe('arbitrum');
+    });
+
+    it('should have mapping for mantle', () => {
+      expect(STARGATE_CHAIN_NAMES[5000]).toBe('mantle');
+    });
+
     it('should have mapping for TON', () => {
       expect(STARGATE_CHAIN_NAMES[30826]).toBe('ton');
+    });
+  });
+
+  describe('getLzEndpointId', () => {
+    it('should return correct endpoint ID for Ethereum', () => {
+      expect(adapter.callGetLzEndpointId(1)).toBe(30101);
+    });
+
+    it('should return correct endpoint ID for Base', () => {
+      expect(adapter.callGetLzEndpointId(8453)).toBe(LZ_ENDPOINT_ID_BASE);
+    });
+
+    it('should return correct endpoint ID for Arbitrum', () => {
+      expect(adapter.callGetLzEndpointId(42161)).toBe(LZ_ENDPOINT_ID_ARB);
+    });
+
+    it('should return correct endpoint ID for Mantle', () => {
+      expect(adapter.callGetLzEndpointId(5000)).toBe(LZ_ENDPOINT_ID_MANTLE);
+    });
+
+    it('should return correct endpoint ID for TON', () => {
+      expect(adapter.callGetLzEndpointId(30826)).toBe(LZ_ENDPOINT_ID_TON);
+    });
+
+    it('should throw for unknown chain', () => {
+      expect(() => adapter.callGetLzEndpointId(99999)).toThrow(
+        'No LayerZero endpoint ID configured for chain 99999'
+      );
+    });
+  });
+
+  describe('EVM to EVM route (Arb USDC → Mantle)', () => {
+    it('should get API quote with resolved destination token', async () => {
+      const route: RebalanceRoute = {
+        origin: 42161,
+        destination: 5000,
+        asset: USDC_ARB, // USDC on Arb
+      };
+
+      const mockApiResponse = {
+        quotes: [{
+          route: { bridgeName: 'stargate' },
+          dstAmount: '995000',
+        }],
+      };
+      (axiosGet as jest.Mock).mockResolvedValue({ data: mockApiResponse } as never);
+
+      const result = await adapter.callGetApiQuote('1000000', route);
+      expect(result).toBe('995000');
+
+      // Verify the API was called with the Mantle USDC address as dstToken
+      const callUrl = (axiosGet as jest.Mock).mock.calls[0][0] as string;
+      expect(callUrl).toContain('srcChainKey=arbitrum');
+      expect(callUrl).toContain('dstChainKey=mantle');
+      // dstToken should be the Mantle USDC address (resolved via chain config)
+      expect(callUrl.toLowerCase()).toContain(`dsttoken=${USDC_MANTLE.toLowerCase()}`);
     });
   });
 });
