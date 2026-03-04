@@ -7,7 +7,6 @@ import {
   ZIRCUIT_L1_STANDARD_BRIDGE,
   ZIRCUIT_L2_STANDARD_BRIDGE,
   ZIRCUIT_OPTIMISM_PORTAL,
-  CHALLENGE_PERIOD_SECONDS,
 } from '../../../src/adapters/zircuit/constants';
 
 const mockLogger = {
@@ -195,16 +194,14 @@ describe('ZircuitNativeBridgeAdapter', () => {
       expect(ready).toBe(true);
     });
 
-    it('returns true if proven and challenge period passed for L2->L1', async () => {
+    it('returns true if L2 output exists and is finalized for L2->L1', async () => {
       const route = { asset: ethAsset, origin: 48900, destination: 1 };
-
-      // Proven timestamp more than 7 days ago
-      const oldTimestamp = BigInt(Math.floor(Date.now() / 1000) - CHALLENGE_PERIOD_SECONDS - 3600);
 
       jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
         readContract: jest.fn<any>()
-          .mockResolvedValueOnce(false) // finalizedWithdrawals = false
-          .mockResolvedValueOnce(['0xroot', oldTimestamp, BigInt(1)]), // provenWithdrawals
+          .mockResolvedValueOnce(false)    // finalizedWithdrawals = false
+          .mockResolvedValueOnce(BigInt(5)) // getL2OutputIndexAfter
+          .mockResolvedValueOnce(true),    // isOutputFinalized = true
       });
       jest.spyOn(adapter as any, 'extractWithdrawalTransaction').mockResolvedValue({
         nonce: BigInt(1),
@@ -220,16 +217,14 @@ describe('ZircuitNativeBridgeAdapter', () => {
       expect(ready).toBe(true);
     });
 
-    it('returns false if proven but challenge period not passed for L2->L1', async () => {
+    it('returns false if L2 output exists but finalization period not elapsed for L2->L1', async () => {
       const route = { asset: ethAsset, origin: 48900, destination: 1 };
-
-      // Proven timestamp less than 7 days ago
-      const recentTimestamp = BigInt(Math.floor(Date.now() / 1000) - 3600); // 1 hour ago
 
       jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
         readContract: jest.fn<any>()
-          .mockResolvedValueOnce(false) // finalizedWithdrawals = false
-          .mockResolvedValueOnce(['0xroot', recentTimestamp, BigInt(1)]), // provenWithdrawals
+          .mockResolvedValueOnce(false)    // finalizedWithdrawals = false
+          .mockResolvedValueOnce(BigInt(5)) // getL2OutputIndexAfter
+          .mockResolvedValueOnce(false),   // isOutputFinalized = false
       });
       jest.spyOn(adapter as any, 'extractWithdrawalTransaction').mockResolvedValue({
         nonce: BigInt(1),
@@ -245,14 +240,13 @@ describe('ZircuitNativeBridgeAdapter', () => {
       expect(ready).toBe(false);
     });
 
-    it('returns true if not proven but L2 output available for L2->L1', async () => {
+    it('returns false if L2 output not yet available for L2->L1', async () => {
       const route = { asset: ethAsset, origin: 48900, destination: 1 };
 
       jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
         readContract: jest.fn<any>()
           .mockResolvedValueOnce(false) // finalizedWithdrawals = false
-          .mockResolvedValueOnce(['0x0', BigInt(0), BigInt(0)]) // provenWithdrawals (not proven)
-          .mockResolvedValueOnce(BigInt(5)), // getL2OutputIndexAfter
+          .mockRejectedValueOnce(new Error('No output found')), // getL2OutputIndexAfter throws
       });
       jest.spyOn(adapter as any, 'extractWithdrawalTransaction').mockResolvedValue({
         nonce: BigInt(1),
@@ -265,7 +259,7 @@ describe('ZircuitNativeBridgeAdapter', () => {
       jest.spyOn(adapter as any, 'hashWithdrawal').mockReturnValue('0xhash');
 
       const ready = await adapter.readyOnDestination(amount, route, mockReceipt);
-      expect(ready).toBe(true);
+      expect(ready).toBe(false);
     });
   });
 
@@ -296,40 +290,12 @@ describe('ZircuitNativeBridgeAdapter', () => {
       expect(tx).toBeUndefined();
     });
 
-    it('returns finalizeWithdrawalTransaction tx if proven and challenge period passed', async () => {
-      const route = { asset: ethAsset, origin: 48900, destination: 1 };
-
-      const oldTimestamp = BigInt(Math.floor(Date.now() / 1000) - CHALLENGE_PERIOD_SECONDS - 3600);
-
-      jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
-        readContract: jest.fn<any>()
-          .mockResolvedValueOnce(false) // finalizedWithdrawals = false
-          .mockResolvedValueOnce(['0xroot', oldTimestamp, BigInt(1)]), // provenWithdrawals
-      });
-      jest.spyOn(adapter as any, 'extractWithdrawalTransaction').mockResolvedValue({
-        nonce: BigInt(1),
-        sender: sender as `0x${string}`,
-        target: recipient as `0x${string}`,
-        value: BigInt(amount),
-        gasLimit: BigInt(100000),
-        data: '0x' as `0x${string}`,
-      });
-      jest.spyOn(adapter as any, 'hashWithdrawal').mockReturnValue('0xhash');
-
-      const tx = await adapter.destinationCallback(route, mockReceipt);
-
-      expect(tx).toBeDefined();
-      expect(tx?.memo).toBe(RebalanceTransactionMemo.Rebalance);
-      expect(tx?.transaction.to).toBe(ZIRCUIT_OPTIMISM_PORTAL);
-    });
-
-    it('returns proveWithdrawalTransaction tx if not proven', async () => {
+    it('returns proveWithdrawalTransaction tx (single-step prove+finalize) when output is finalized', async () => {
       const route = { asset: ethAsset, origin: 48900, destination: 1 };
 
       jest.spyOn(adapter as any, 'getClient').mockResolvedValue({
         readContract: jest.fn<any>()
-          .mockResolvedValueOnce(false) // finalizedWithdrawals = false
-          .mockResolvedValueOnce(['0x0', BigInt(0), BigInt(0)]), // provenWithdrawals (not proven)
+          .mockResolvedValueOnce(false), // finalizedWithdrawals = false
       });
       jest.spyOn(adapter as any, 'extractWithdrawalTransaction').mockResolvedValue({
         nonce: BigInt(1),
