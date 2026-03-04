@@ -328,9 +328,7 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
                   to: messageInfo.to,
                   fee: messageInfo.fee,
                   value: messageInfo.value,
-                  // ZERO_ADDRESS instructs Linea to send the fee to msg.sender (Mark, the claimer).
-                  // This works for both ETH and ERC20: Mark always submits the L1 claim tx.
-                  feeRecipient: ZERO_ADDRESS as `0x${string}`,
+                  feeRecipient: this.extractFeeRecipient(messageInfo, originTransaction),
                   merkleRoot: proofResponse.root,
                   data: messageInfo.calldata,
                 },
@@ -343,6 +341,26 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
     } catch (error) {
       this.handleError(error, 'prepare destination callback', { route, originTransaction });
     }
+  }
+
+  private extractFeeRecipient(messageInfo: LineaMessageInfo, originTransaction: TransactionReceipt): `0x${string}` {
+    // ETH transfer: messageInfo.from is Mark's address (Mark called sendMessage directly).
+    if (messageInfo.from.toLowerCase() !== LINEA_L2_TOKEN_BRIDGE.toLowerCase()) {
+      return messageInfo.from;
+    }
+
+    // ERC20 transfer: messageInfo.from is the L2 TokenBridge (it called sendMessage internally).
+    // Extract Mark's actual address from the BridgingInitiated event's sender field.
+    const bridgingLogs = parseEventLogs({ abi: lineaTokenBridgeAbi, logs: originTransaction.logs });
+    const bridgingEvent = bridgingLogs.find((log) => log.eventName === 'BridgingInitiated');
+    if (bridgingEvent) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (bridgingEvent as any).args.sender as `0x${string}`;
+    }
+
+    // Fallback: warn and use ZERO_ADDRESS (fee goes to msg.sender)
+    this.logger.warn('BridgingInitiated event not found for ERC20 claim; feeRecipient defaults to msg.sender');
+    return ZERO_ADDRESS as `0x${string}`;
   }
 
   private async getClient(chainId: number): Promise<PublicClient> {
