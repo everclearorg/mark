@@ -210,4 +210,95 @@ describe('ZKSyncNativeBridgeAdapter', () => {
       'Unsupported zkSync route',
     );
   });
+
+  describe('destinationCallback() - additional cases', () => {
+    it('returns undefined for L1->L2 (no callback needed)', async () => {
+      const callback = await adapter.destinationCallback({ asset: ethAsset, origin: 1, destination: 324 }, mockReceipt);
+      expect(callback).toBeUndefined();
+    });
+
+    it('throws when batch number is not available', async () => {
+      jest.spyOn(adapter as any, 'getRawReceipt').mockResolvedValue({ l2ToL1Logs: [] });
+      await expect(
+        adapter.destinationCallback({ asset: ethAsset, origin: 324, destination: 1 }, mockReceipt),
+      ).rejects.toThrow('Batch number not available');
+    });
+
+    it('throws when no matching l2ToL1Log is found for either ETH or ERC20', async () => {
+      jest.spyOn(adapter as any, 'getRawReceipt').mockResolvedValue({
+        l1BatchNumber: 1,
+        l1BatchTxIndex: 0,
+        l2ToL1Logs: [{ sender: '0x' + '9'.repeat(40), key: '0x' + '0'.repeat(64) }],
+      });
+      await expect(
+        adapter.destinationCallback({ asset: ethAsset, origin: 324, destination: 1 }, mockReceipt),
+      ).rejects.toThrow('No l2ToL1Log found');
+    });
+
+    it('returns undefined when ETH withdrawal is already finalized', async () => {
+      jest.spyOn(adapter as any, 'getRawReceipt').mockResolvedValue({
+        l1BatchNumber: 1,
+        l1BatchTxIndex: 0,
+        l2ToL1Logs: [{ sender: L1_MESSENGER, key: `0x${ETH_TOKEN_L2.slice(2).padStart(64, '0')}` }],
+        logs: [],
+      });
+      jest.spyOn(adapter as any, 'getL2ToL1LogProof').mockResolvedValue({ proof: ['0xproof'], id: 3 });
+      jest.spyOn(adapter as any, 'getClient').mockImplementation(async (chainId) => {
+        if (chainId === 1) return { readContract: jest.fn<any>().mockResolvedValue(true) }; // isEthWithdrawalFinalized
+        return { request: jest.fn<any>() };
+      });
+
+      const callback = await adapter.destinationCallback({ asset: ethAsset, origin: 324, destination: 1 }, mockReceipt);
+      expect(callback).toBeUndefined();
+    });
+
+    it('returns undefined when ERC20 withdrawal is already finalized', async () => {
+      const erc20Asset = '0x' + 'a'.repeat(40);
+      jest.spyOn(adapter as any, 'getRawReceipt').mockResolvedValue({
+        l1BatchNumber: 2,
+        l1BatchTxIndex: 1,
+        l2ToL1Logs: [{ sender: L1_MESSENGER, key: `0x${ZKSYNC_L2_BRIDGE.slice(2).padStart(64, '0')}` }],
+        logs: [],
+      });
+      jest.spyOn(adapter as any, 'getL2ToL1LogProof').mockResolvedValue({ proof: ['0xproof'], id: 1 });
+      jest.spyOn(adapter as any, 'getClient').mockImplementation(async (chainId) => {
+        if (chainId === 1) return { readContract: jest.fn<any>().mockResolvedValue(true) }; // isWithdrawalFinalized
+        return { request: jest.fn<any>() };
+      });
+
+      const callback = await adapter.destinationCallback({ asset: erc20Asset, origin: 324, destination: 1 }, mockReceipt);
+      expect(callback).toBeUndefined();
+    });
+
+    it('treats WETH route.asset as ETH when l2ToL1Log key matches ETH_TOKEN_L2', async () => {
+      // WETH on zkSync maps to ETH base token at protocol level, producing an ETH-type log.
+      // The adapter must detect withdrawal type from the log key, not from route.asset.
+      const wethAsset = '0x' + 'e'.repeat(40); // L1 WETH address (non-zero)
+      jest.spyOn(adapter as any, 'getRawReceipt').mockResolvedValue({
+        l1BatchNumber: 1,
+        l1BatchTxIndex: 0,
+        l2ToL1Logs: [{ sender: L1_MESSENGER, key: `0x${ETH_TOKEN_L2.slice(2).padStart(64, '0')}` }],
+        logs: [
+          {
+            address: L1_MESSENGER,
+            topics: [L1_MESSAGE_SENT_TOPIC, `0x${ETH_TOKEN_L2.slice(2).padStart(64, '0')}`],
+            data: `0x${'0'.repeat(64)}${'0'.repeat(63)}4${'ab'.repeat(4)}`,
+          },
+        ],
+      });
+      jest.spyOn(adapter as any, 'getL2ToL1LogProof').mockResolvedValue({ proof: ['0xproof'], id: 0 });
+      jest.spyOn(adapter as any, 'getClient').mockImplementation(async (chainId) => {
+        if (chainId === 1) return { readContract: jest.fn<any>().mockResolvedValue(false) };
+        return { request: jest.fn<any>() };
+      });
+
+      const callback = await adapter.destinationCallback(
+        { asset: wethAsset, origin: 324, destination: 1 },
+        mockReceipt,
+      );
+
+      // ETH path detected from log key → finalizeEthWithdrawal on Diamond Proxy
+      expect(callback?.transaction.to).toBe(ZKSYNC_DIAMOND_PROXY);
+    });
+  });
 });

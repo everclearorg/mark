@@ -279,18 +279,26 @@ export class ZKSyncNativeBridgeAdapter implements BridgeAdapter {
 
         const l1BatchNumber = BigInt(rawReceipt.l1BatchNumber);
         const l1BatchTxIndex = Number(rawReceipt.l1BatchTxIndex);
-        const isETH = route.asset.toLowerCase() === ZERO_ADDRESS;
 
-        // Find the l2ToL1Log index for this withdrawal
+        // Detect withdrawal type from l2ToL1Logs keys (ground truth from the receipt).
+        // WETH on zkSync maps to the ETH base token (0x800A) at protocol level,
+        // so we must not rely solely on route.asset to determine withdrawal type.
         const l2ToL1Logs = rawReceipt.l2ToL1Logs ?? [];
-        const targetKey = isETH ? ETH_TOKEN_L2.toLowerCase() : ZKSYNC_L2_BRIDGE.toLowerCase();
-        const l2ToL1LogIndex = l2ToL1Logs.findIndex(
+        const ethLogIndex = l2ToL1Logs.findIndex(
           (log: { sender: string; key: string }) =>
             log.sender.toLowerCase() === L1_MESSENGER.toLowerCase() &&
-            log.key.toLowerCase().endsWith(targetKey.slice(2)),
+            log.key.toLowerCase().endsWith(ETH_TOKEN_L2.slice(2).toLowerCase()),
         );
+        const erc20LogIndex = l2ToL1Logs.findIndex(
+          (log: { sender: string; key: string }) =>
+            log.sender.toLowerCase() === L1_MESSENGER.toLowerCase() &&
+            log.key.toLowerCase().endsWith(ZKSYNC_L2_BRIDGE.slice(2).toLowerCase()),
+        );
+        const isETH = ethLogIndex !== -1;
+        const l2ToL1LogIndex = isETH ? ethLogIndex : erc20LogIndex;
+        const targetKey = isETH ? ETH_TOKEN_L2.toLowerCase() : ZKSYNC_L2_BRIDGE.toLowerCase();
         if (l2ToL1LogIndex === -1) {
-          throw new Error(`No l2ToL1Log found for ${isETH ? 'ETH' : 'ERC20'} withdrawal`);
+          throw new Error('No l2ToL1Log found for ETH or ERC20 withdrawal');
         }
 
         // Get the L2 to L1 log proof from zkSync RPC
