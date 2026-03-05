@@ -9,7 +9,7 @@ import {
   DatabaseConfig,
   HealthCheckResult,
 } from '../src';
-import { getRebalanceOperationByTransactionHash, getPool } from '../src/db';
+import { getRebalanceOperationByTransactionHash, getPool, queryWithClient, withTransaction } from '../src/db';
 import { RebalanceOperationStatus } from '@mark/core';
 import { createMockPool, MOCK_DATABASE_CONFIG } from './setup';
 
@@ -41,7 +41,8 @@ describe('Database Adapter - Unit Tests', () => {
         idleTimeoutMillis: MOCK_DATABASE_CONFIG.idleTimeoutMillis,
         connectionTimeoutMillis: MOCK_DATABASE_CONFIG.connectionTimeoutMillis,
         keepAlive: true,
-        keepAliveInitialDelayMillis: 10000,
+        keepAliveInitialDelayMillis: 5000,
+        maxLifetimeSeconds: 600,
       });
 
       expect(pool).toBe(mockPoolInstance);
@@ -57,10 +58,11 @@ describe('Database Adapter - Unit Tests', () => {
       expect(Pool).toHaveBeenCalledWith({
         connectionString: minimalConfig.connectionString,
         max: 40,
-        idleTimeoutMillis: 30000,
+        idleTimeoutMillis: 10000,
         connectionTimeoutMillis: 5000,
         keepAlive: true,
-        keepAliveInitialDelayMillis: 10000,
+        keepAliveInitialDelayMillis: 5000,
+        maxLifetimeSeconds: 600,
       });
     });
 
@@ -175,6 +177,155 @@ describe('Database Adapter - Unit Tests', () => {
       );
 
       expect(mockPoolInstance.query).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('queryWithClient Retry Logic', () => {
+    beforeEach(() => {
+      jest.spyOn(console, 'warn').mockImplementation();
+      initializeDatabase(MOCK_DATABASE_CONFIG);
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should return rows on first attempt when query succeeds', async () => {
+      mockPoolInstance.query.mockResolvedValueOnce({ rows: [{ id: 1 }] });
+
+      const result = await queryWithClient('SELECT 1');
+      expect(result).toEqual([{ id: 1 }]);
+      expect(mockPoolInstance.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retry on transient "Connection terminated" error', async () => {
+      mockPoolInstance.query
+        .mockRejectedValueOnce(new Error('Connection terminated due to connection timeout'))
+        .mockResolvedValueOnce({ rows: [{ id: 1 }] });
+
+      const result = await queryWithClient('SELECT 1');
+      expect(result).toEqual([{ id: 1 }]);
+      expect(mockPoolInstance.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry on ECONNRESET error', async () => {
+      mockPoolInstance.query
+        .mockRejectedValueOnce(new Error('read ECONNRESET'))
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await queryWithClient('SELECT 1');
+      expect(result).toEqual([]);
+      expect(mockPoolInstance.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry on PG error code 08006 (connection_failure)', async () => {
+      const pgError = new Error('connection failure') as Error & { code: string };
+      pgError.code = '08006';
+      mockPoolInstance.query
+        .mockRejectedValueOnce(pgError)
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await queryWithClient('SELECT 1');
+      expect(result).toEqual([]);
+      expect(mockPoolInstance.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry on PG error code 57P01 (admin_shutdown)', async () => {
+      const pgError = new Error('admin shutdown') as Error & { code: string };
+      pgError.code = '57P01';
+      mockPoolInstance.query
+        .mockRejectedValueOnce(pgError)
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await queryWithClient('SELECT 1');
+      expect(result).toEqual([]);
+      expect(mockPoolInstance.query).toHaveBeenCalledTimes(2);
+    });
+
+    it('should NOT retry on non-transient errors (e.g. syntax error)', async () => {
+      const syntaxError = new Error('syntax error at or near "SELEC"') as Error & { code: string };
+      syntaxError.code = '42601';
+      mockPoolInstance.query.mockRejectedValueOnce(syntaxError);
+
+      await expect(queryWithClient('SELEC 1')).rejects.toThrow('syntax error');
+      expect(mockPoolInstance.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw after exhausting all retries', async () => {
+      mockPoolInstance.query.mockRejectedValue(new Error('Connection terminated unexpectedly'));
+
+      await expect(queryWithClient('SELECT 1')).rejects.toThrow('Connection terminated unexpectedly');
+      expect(mockPoolInstance.query).toHaveBeenCalledTimes(5); // QUERY_MAX_RETRIES = 5
+    });
+  });
+
+  describe('withTransaction Retry Logic', () => {
+    beforeEach(() => {
+      jest.spyOn(console, 'warn').mockImplementation();
+      initializeDatabase(MOCK_DATABASE_CONFIG);
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('should retry when connect() fails with transient error', async () => {
+      const mockClient = { query: jest.fn(), release: jest.fn() };
+      mockPoolInstance.connect
+        .mockRejectedValueOnce(new Error('Connection terminated due to connection timeout'))
+        .mockResolvedValueOnce(mockClient);
+      mockClient.query
+        .mockResolvedValueOnce(undefined) // BEGIN
+        .mockResolvedValueOnce(undefined); // COMMIT
+
+      const result = await withTransaction(async () => 'ok');
+      expect(result).toBe('ok');
+      expect(mockPoolInstance.connect).toHaveBeenCalledTimes(2);
+    });
+
+    it('should NOT retry non-transient errors in callback', async () => {
+      const mockClient = { query: jest.fn(), release: jest.fn() };
+      mockPoolInstance.connect.mockResolvedValue(mockClient);
+      mockClient.query
+        .mockResolvedValueOnce(undefined) // BEGIN
+        .mockResolvedValueOnce(undefined); // ROLLBACK
+
+      await expect(
+        withTransaction(async () => {
+          throw new Error('unique constraint violation');
+        }),
+      ).rejects.toThrow('unique constraint violation');
+      expect(mockPoolInstance.connect).toHaveBeenCalledTimes(1);
+      expect(mockClient.query).toHaveBeenCalledTimes(2); // BEGIN + ROLLBACK
+      expect(mockClient.query).toHaveBeenNthCalledWith(2, 'ROLLBACK');
+    });
+  });
+
+  describe('Pool Error Handling', () => {
+    it('should log idle client errors without exiting the process', () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      const processExitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+
+      initializeDatabase(MOCK_DATABASE_CONFIG);
+
+      // Find the 'error' handler registered on the pool
+      const errorCall = mockPoolInstance.on.mock.calls.find(
+        (call: [string, (...args: unknown[]) => void]) => call[0] === 'error',
+      );
+      expect(errorCall).toBeDefined();
+
+      // Simulate an idle client error
+      const errorHandler = errorCall![1] as (err: Error) => void;
+      errorHandler(new Error('Connection reset by peer'));
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Idle database client error (connection removed from pool)',
+        'Connection reset by peer',
+      );
+      expect(processExitSpy).not.toHaveBeenCalled();
+
+      consoleErrorSpy.mockRestore();
+      processExitSpy.mockRestore();
     });
   });
 

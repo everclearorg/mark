@@ -34,6 +34,16 @@ export {
   type GetEarmarksFilter,
 } from './db';
 
+// Pool metrics for observability
+export function getPoolStats(): { totalCount: number; idleCount: number; waitingCount: number } {
+  const p = getPool();
+  return {
+    totalCount: p.totalCount,
+    idleCount: p.idleCount,
+    waitingCount: p.waitingCount,
+  };
+}
+
 // Health check and utility functions
 export interface HealthCheckResult {
   healthy: boolean;
