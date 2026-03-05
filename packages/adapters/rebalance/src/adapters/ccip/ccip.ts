@@ -2,7 +2,7 @@ import { TransactionReceipt, createPublicClient, http, fallback, Address } from 
 import { SupportedBridge, RebalanceRoute, ChainConfiguration } from '@mark/core';
 import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
-import { SVMExtraArgsV1, SDKAnyMessage } from './types';
+import { SVMExtraArgsV1, EVMExtraArgsV2, SDKAnyMessage } from './types';
 import {
   CCIPTransferStatus,
   CHAIN_SELECTORS,
@@ -381,10 +381,6 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       // Determine if destination is Solana for special handling
       const isSolanaDestination = this.isSolanaChain(route.destination);
 
-      if (!isSolanaDestination) {
-        throw new Error('Destination chain must be an Solana chain');
-      }
-
       // Get providers for the origin chain
       const providers = this.chains[originChainId.toString()]?.providers ?? [];
       if (!providers.length) {
@@ -396,22 +392,30 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       const sourceChain = await EVMChain.fromUrl(providers[0]);
       const destChainSelector = BigInt(CHAIN_ID_TO_CCIP_SELECTOR[route.destination]);
 
-      // Create CCIP message with proper encoding based on destination chain
-      // For Solana: receiver must be zero address, actual recipient goes in tokenReceiver (extraArgs)
-      // For EVM: receiver is the actual recipient padded to 32 bytes
-      const receiver = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`;
+      // Build receiver and extraArgs based on destination chain type
+      let receiver: `0x${string}`;
+      let extraArgs: SVMExtraArgsV1 | EVMExtraArgsV2;
 
-      const extraArgs = await this.encodeSVMExtraArgsV1(
-        0, // computeUnits: 0 for token-only transfers
-        0n, // accountIsWritableBitmap: 0 for token-only
-        true, // allowOutOfOrderExecution: MUST be true for Solana
-        recipient, // tokenReceiver: actual Solana recipient address
-        [], // accounts: empty for token-only transfers
-      );
+      if (isSolanaDestination) {
+        // For Solana: receiver must be zero address, actual recipient goes in tokenReceiver (extraArgs)
+        receiver = '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`;
+        extraArgs = await this.encodeSVMExtraArgsV1(
+          0, // computeUnits: 0 for token-only transfers
+          0n, // accountIsWritableBitmap: 0 for token-only
+          true, // allowOutOfOrderExecution: MUST be true for Solana
+          recipient, // tokenReceiver: actual Solana recipient address
+          [], // accounts: empty for token-only transfers
+        );
+      } else {
+        // For EVM: pass raw address — the SDK handles abi.encode(address) padding internally
+        receiver = recipient as `0x${string}`;
+        extraArgs = {
+          gasLimit: 0n, // 0 for token-only transfers (no contract execution on destination)
+          allowOutOfOrderExecution: true,
+        } as EVMExtraArgsV2;
+      }
 
       const ccipMessage: SDKAnyMessage = {
-        // For Solana token-only transfers: receiver MUST be zero address
-        // The actual recipient is specified in tokenReceiver field of SVMExtraArgsV1
         receiver,
         data: '0x' as `0x${string}`, // No additional data for simple token transfer
         tokenAmounts: [
@@ -420,8 +424,6 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
             amount: tokenAmount,
           },
         ],
-        // For Solana: SVMExtraArgsV1 with tokenReceiver set to actual recipient
-        // For EVM: EVMExtraArgsV2 with gasLimit=0 for token-only transfers
         extraArgs,
         feeToken: '0x0000000000000000000000000000000000000000' as Address, // Pay fees in native token
       };
@@ -662,9 +664,13 @@ export class CCIPBridgeAdapter implements BridgeAdapter {
       if (this.isSolanaChain(destinationChainId)) {
         destinationChain = await SolanaChain.fromUrl(destinationProviders[0]);
         sourceChain = await EVMChain.fromUrl(originProviders[0]);
-      } else {
+      } else if (this.isSolanaChain(originChainId)) {
         destinationChain = await EVMChain.fromUrl(destinationProviders[0]);
         sourceChain = await SolanaChain.fromUrl(originProviders[0]);
+      } else {
+        // EVM-to-EVM transfer
+        destinationChain = await EVMChain.fromUrl(destinationProviders[0]);
+        sourceChain = await EVMChain.fromUrl(originProviders[0]);
       }
 
       // First, try to extract the message ID from the transaction logs

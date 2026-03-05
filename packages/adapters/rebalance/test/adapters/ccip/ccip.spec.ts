@@ -353,10 +353,12 @@ describe('CCIPBridgeAdapter', () => {
   });
 
   describe('send', () => {
-    it('throws for non-Solana destination', async () => {
-      await expect(adapter.send(sender, recipient, amount, evmToEvmRoute)).rejects.toThrow(
-        'Destination chain must be an Solana chain',
-      );
+    it('returns send transaction for EVM to EVM route', async () => {
+      const txs = await adapter.send(sender, recipient, amount, evmToEvmRoute);
+      const sendTx = txs.find(tx => tx.memo === RebalanceTransactionMemo.Rebalance);
+      expect(sendTx).toBeDefined();
+      expect(sendTx?.transaction.to).toBe(CCIP_ROUTER_ADDRESSES[1]);
+      expect(sendTx?.effectiveAmount).toBe(amount);
     });
 
     it('throws for unsupported origin chain', async () => {

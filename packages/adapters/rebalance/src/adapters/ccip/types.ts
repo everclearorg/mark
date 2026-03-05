@@ -9,11 +9,17 @@ export interface SVMExtraArgsV1 {
   accounts: `0x${string}`[];
 }
 
+// EVM extra arguments structure for CCIP (EVMExtraArgsV2)
+export interface EVMExtraArgsV2 {
+  gasLimit: bigint;
+  allowOutOfOrderExecution: boolean;
+}
+
 // Minimal AnyMessage shape used when calling the CCIP SDK
 export interface SDKAnyMessage {
   receiver: `0x${string}`;
   data: `0x${string}`;
-  extraArgs: SVMExtraArgsV1;
+  extraArgs: SVMExtraArgsV1 | EVMExtraArgsV2;
   tokenAmounts?: { token: Address; amount: bigint }[];
   feeToken?: Address;
   fee?: bigint;
@@ -59,6 +65,7 @@ export const CHAIN_SELECTORS = {
   OPTIMISM: '3734403246176062136',
   POLYGON: '4051577828743386545',
   BASE: '15971525489660198786',
+  MANTLE: '1556008542357238666',
   SOLANA: '124615329519749607',
 } as const;
 
@@ -69,6 +76,7 @@ export const CHAIN_ID_TO_CCIP_SELECTOR: Record<number, string> = {
   10: CHAIN_SELECTORS.OPTIMISM,
   137: CHAIN_SELECTORS.POLYGON,
   8453: CHAIN_SELECTORS.BASE,
+  5000: CHAIN_SELECTORS.MANTLE,
   1399811149: CHAIN_SELECTORS.SOLANA,
 };
 
@@ -83,6 +91,7 @@ export const CCIP_ROUTER_ADDRESSES: Record<number, string> = {
   10: '0x261c05167db67B2b619f9d312e0753f3721ad6E8', // Optimism
   137: '0x849c5ED5a80F5B408Dd4969b78c2C8fdf0565Bfe', // Polygon
   8453: '0x881e3A65B4d4a04dD529061dd0071cf975F58bCD', // Base
+  5000: '0x670052635a9850bb45882Cb2eCcF66bCff0F41B7', // Mantle
   1399811149: 'Ccip842gzYHhvdDkSyi2YVCoAWPbYJoApMFzSxQroE9C', // Solana
 };
 
@@ -93,6 +102,7 @@ export const CCIP_SUPPORTED_CHAINS = {
   10: 'Optimism',
   137: 'Polygon',
   8453: 'Base',
+  5000: 'Mantle',
 } as const;
 
 // CCIP event signatures for extracting message ID from transaction logs
