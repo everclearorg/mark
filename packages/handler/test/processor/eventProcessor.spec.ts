@@ -669,14 +669,6 @@ describe('EventProcessor', () => {
       // Earmark stays READY during purchase, then marked COMPLETED after 0 purchases
       expect(mockDatabase.updateEarmarkStatus).toHaveBeenCalledWith('earmark-1', EarmarkStatus.COMPLETED);
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Applied earmark chain constraint, earmark stays READY during purchase',
-        expect.objectContaining({
-          invoiceId: 'invoice-1',
-          earmarkId: 'earmark-1',
-          designatedPurchaseChain: 2,
-        }),
-      );
-      expect(mockLogger.info).toHaveBeenCalledWith(
         'Earmark marked COMPLETED after failed purchase attempt',
         expect.objectContaining({
           invoiceId: 'invoice-1',

@@ -399,6 +399,8 @@ async function runMaintenanceTasks(): Promise<void> {
   try {
     const context = adapters.processingContext;
 
+    context.logger.info('DB pool stats', context.database.getPoolStats());
+
     // Log file descriptor usage
     logFileDescriptorUsage(context.logger);
 
