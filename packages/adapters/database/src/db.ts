@@ -27,6 +27,41 @@ type cex_withdrawals = schema.cex_withdrawals.Selectable;
 
 let pool: Pool | null = null;
 
+// Connection retry settings
+const QUERY_MAX_RETRIES = 5;
+const QUERY_BASE_DELAY_MS = 200;
+
+/**
+ * Detect transient connection errors that are worth retrying.
+ * Covers TCP-level failures, PG protocol-level disconnects, and
+ * server-side shutdown / maintenance scenarios.
+ */
+function isTransientConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+
+  // PostgreSQL error codes (set on errors originating from the server/driver)
+  const code = (error as Error & { code?: string }).code;
+  if (
+    code?.startsWith('08') || // Class 08 — Connection Exception (08000, 08001, 08003, 08006, …)
+    code === '57P01' || // admin_shutdown
+    code === '57P03' // cannot_connect_now
+  ) {
+    return true;
+  }
+
+  const msg = error.message;
+  return (
+    msg.includes('Connection terminated') ||
+    msg.includes('Connection refused') ||
+    msg.includes('ECONNRESET') ||
+    msg.includes('ECONNREFUSED') ||
+    msg.includes('ETIMEDOUT') ||
+    msg.includes('Client has encountered a connection error') ||
+    msg.includes('getaddrinfo') || // DNS resolution failure
+    msg.includes('connect EHOSTUNREACH')
+  );
+}
+
 export function initializeDatabase(config: DatabaseConfig): Pool {
   if (pool) {
     return pool;
@@ -45,10 +80,11 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
   const poolConfig: PoolConfig = {
     connectionString,
     max: config.maxConnections || 40,
-    idleTimeoutMillis: config.idleTimeoutMillis || 30000,
+    idleTimeoutMillis: config.idleTimeoutMillis || 10000,
     connectionTimeoutMillis: config.connectionTimeoutMillis || 5000,
     keepAlive: true,
-    keepAliveInitialDelayMillis: 10000,
+    keepAliveInitialDelayMillis: 5000,
+    maxLifetimeSeconds: 600,
   };
 
   // Configure SSL if needed
@@ -62,15 +98,18 @@ export function initializeDatabase(config: DatabaseConfig): Pool {
 
   pool = new Pool(poolConfig);
 
-  // Handle pool errors
-  pool.on('error', async (err) => {
-    console.error('Unexpected database error', err);
-    try {
-      await closeDatabase();
-    } catch {
-      // ignore cleanup errors
-    }
-    process.exit(1);
+  // Set per-connection timeouts to prevent hung queries from holding connections.
+  // statement_timeout: kills any query running longer than 30s.
+  // idle_in_transaction_session_timeout: kills transactions idle longer than 60s.
+  pool.on('connect', (client) => {
+    client.query('SET statement_timeout = 30000; SET idle_in_transaction_session_timeout = 60000');
+  });
+
+  // Handle idle client errors. pg-pool automatically removes the errored client
+  // from the pool, so we just log — no need to kill the process over a single
+  // dead connection.
+  pool.on('error', (err) => {
+    console.error('Idle database client error (connection removed from pool)', err.message);
   });
 
   return pool;
@@ -90,26 +129,54 @@ export async function closeDatabase(): Promise<void> {
   }
 }
 
+/**
+ * Retry helper for transient DB connection errors.
+ * Implements exponential backoff with the shared retry/delay constants.
+ */
+async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; attempt <= QUERY_MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt < QUERY_MAX_RETRIES && isTransientConnectionError(error)) {
+        const delay = QUERY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.warn(
+          `Transient DB error in ${label} (attempt ${attempt}/${QUERY_MAX_RETRIES}), retrying in ${delay}ms`,
+          (error as Error).message,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`Failed to execute ${label}`);
+}
+
 // Zapatos-style query helper functions
 export async function queryWithClient<T>(query: string, values?: unknown[]): Promise<T[]> {
-  const client = getPool();
-  const result = await client.query(query, values);
-  return result.rows;
+  return withRetry('query', async () => {
+    const result = await getPool().query(query, values);
+    return result.rows;
+  });
 }
 
 export async function withTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await getPool().connect();
-  try {
-    await client.query('BEGIN');
-    const result = await callback(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  return withRetry('transaction', async () => {
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const result = await callback(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      // ROLLBACK so the client isn't returned to the pool in an aborted-transaction state.
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
 }
 
 // Core earmark operations with business logic
@@ -449,10 +516,7 @@ export async function createRebalanceOperation(input: {
   recipient?: string;
   transactions?: Record<string, TransactionReceipt>;
 }): Promise<CamelCasedProperties<rebalance_operations> & { transactions?: Record<string, TransactionEntry> }> {
-  const client = await getPool().connect();
-
-  try {
-    await client.query('BEGIN');
+  return withTransaction(async (client) => {
     const rebalanceQuery = `
       INSERT INTO rebalance_operations (
         "earmark_id", "origin_chain_id", "destination_chain_id",
@@ -476,7 +540,7 @@ export async function createRebalanceOperation(input: {
 
     const rebalanceResult = await client.query<rebalance_operations>(rebalanceQuery, rebalanceValues);
     const rebalanceOperation = rebalanceResult.rows[0];
-    const transactions: CamelCasedProperties<transactions>[] = [];
+    const txRecords: CamelCasedProperties<transactions>[] = [];
     for (const [chainId, receipt] of Object.entries(input.transactions ?? {})) {
       const { transactionHash, cumulativeGasUsed, effectiveGasPrice, from, to } = receipt;
       const transactionQuery = `
@@ -511,22 +575,16 @@ export async function createRebalanceOperation(input: {
       const raw = response.rows[0];
       const meta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata) : (raw.metadata ?? {});
       const converted = snakeToCamel({ ...raw, metadata: meta }) as CamelCasedProperties<transactions>;
-      transactions.push(converted);
+      txRecords.push(converted);
     }
 
-    await client.query('COMMIT');
     return {
       ...snakeToCamel(rebalanceOperation),
-      transactions: transactions.length
-        ? (Object.fromEntries(transactions.map((t) => [t.chainId, t])) as Record<string, TransactionEntry>)
+      transactions: txRecords.length
+        ? (Object.fromEntries(txRecords.map((t) => [t.chainId, t])) as Record<string, TransactionEntry>)
         : undefined,
     };
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 // Helper function to fetch transactions for rebalance operations
