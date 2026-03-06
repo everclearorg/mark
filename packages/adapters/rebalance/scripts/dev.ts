@@ -234,7 +234,9 @@ async function testBridgeAdapter(
         assetCount: originChain.assets.length
     });
 
-    const asset = Object.values(originChain.assets).find(a => a.address.toLowerCase() === route.asset.toLowerCase());
+    const isNativeETH = route.asset.toLowerCase() === '0x0000000000000000000000000000000000000000';
+    const asset = Object.values(originChain.assets).find(a => a.address.toLowerCase() === route.asset.toLowerCase())
+        ?? (isNativeETH ? { address: route.asset, symbol: 'ETH', decimals: 18, tickerHash: '', isNative: true, balanceThreshold: '0' } : undefined);
     if (!asset) {
         throw new Error(`Asset ${route.asset} not found in origin chain ${route.origin}`);
     }
@@ -441,14 +443,12 @@ program
         } as unknown as MarkConfiguration, logger, database);
         const adapter = rebalancer.getAdapter(type as SupportedBridge);
 
-        // Find the asset to get decimals
+        // Find the asset to get decimals (default to 18 if not found, amount is not used for claiming)
         const asset = Object.values(originChain.assets).find(a => a.address.toLowerCase() === route.asset.toLowerCase());
-        if (!asset) {
-            throw new Error(`Asset ${route.asset} not found in origin chain ${route.origin}`);
-        }
+        const decimals = asset?.decimals ?? 18;
 
         // Convert amount to wei
-        const amountInWei = parseUnits(options.amount, asset.decimals).toString();
+        const amountInWei = parseUnits(options.amount, decimals).toString();
 
         // Poll for transaction readiness
         await pollForTransactionReady(adapter, amountInWei, route, receipt as TransactionReceipt);
