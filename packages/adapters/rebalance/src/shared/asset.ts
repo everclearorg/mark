@@ -1,4 +1,4 @@
-import { AssetConfiguration, ChainConfiguration } from '@mark/core';
+import { AssetConfiguration, ChainConfiguration, ILogger } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { parseUnits } from 'viem';
 
@@ -14,7 +14,7 @@ export function findAssetByAddress(
   asset: string,
   chain: number,
   chains: Record<string, ChainConfiguration>,
-  logger: Logger,
+  logger: ILogger,
 ): AssetConfiguration | undefined {
   logger.debug('Finding matching asset', { asset, chain });
   const chainConfig = chains[chain.toString()];
@@ -40,7 +40,7 @@ export function findMatchingDestinationAsset(
   origin: number,
   destination: number,
   chains: Record<string, ChainConfiguration>,
-  logger: Logger,
+  logger: ILogger,
 ): AssetConfiguration | undefined {
   logger.debug('Finding matching destination asset', { asset, origin, destination });
 
@@ -98,7 +98,7 @@ export function getDestinationAssetAddress(
   originChain: number,
   destinationChain: number,
   chains: Record<string, ChainConfiguration>,
-  logger: Logger,
+  logger: ILogger,
 ): string | undefined {
   const destinationAsset = findMatchingDestinationAsset(originAsset, originChain, destinationChain, chains, logger);
   return destinationAsset?.address;

@@ -8,6 +8,8 @@ export enum RebalanceTransactionMemo {
   Unwrap = 'Unwrap',
   Mint = 'Mint',
   Stake = 'Stake',
+  AaveSupply = 'AaveSupply',
+  DexSwap = 'DexSwap',
 }
 
 export interface MemoizedTransactionRequest {
@@ -28,6 +30,7 @@ export interface BridgeAdapter {
     originTransaction: TransactionReceipt,
   ): Promise<MemoizedTransactionRequest | void>;
   readyOnDestination(amount: string, route: RebalanceRoute, originTransaction: TransactionReceipt): Promise<boolean>;
+  isCallbackComplete?(route: RebalanceRoute, originTransaction: TransactionReceipt): Promise<boolean>;
   executeSwap?(sender: string, recipient: string, amount: string, route: RebalanceRoute): Promise<SwapExecutionResult>;
 }
 

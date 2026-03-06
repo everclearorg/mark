@@ -18,13 +18,46 @@ export const STARGATE_USDT_POOL_ETH = '0x933597a323Eb81cAe705C5bC29985172fd5A397
 // USDT token on Ethereum mainnet
 export const USDT_ETH = '0xdAC17F958D2ee523a2206206994597C13D831ec7' as `0x${string}`;
 
+// Token addresses - Base
+export const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`;
+
+// Token addresses - Arbitrum
+export const USDC_ARB = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' as `0x${string}`;
+export const USDT_ARB = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9' as `0x${string}`;
+
+// Token addresses - Mantle
+export const USDC_MANTLE = '0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9' as `0x${string}`;
+export const USDT_MANTLE = '0x201EBa5CC46D216Ce6DC03F6a759e8E766e956aE' as `0x${string}`;
+
+// Stargate Pool addresses - Base
+export const STARGATE_USDC_POOL_BASE = '0x27a16dc786820B16E5c9028b75B99F6f604b5d26' as `0x${string}`;
+
+// Stargate Pool addresses - Arbitrum
+export const STARGATE_USDC_POOL_ARB = '0xe8CDF27AcD73a434D661C84887215F7598e7d0d3' as `0x${string}`;
+export const STARGATE_USDT_POOL_ARB = '0xcE8CcA271Ebc0533920C83d39F417ED6A0abB7D0' as `0x${string}`;
+
+// Stargate Pool addresses - Mantle
+export const STARGATE_USDC_POOL_MANTLE = '0xAc290Ad4e0c891FDc295ca4F0a6214cf6dC6acDC' as `0x${string}`;
+export const STARGATE_USDT_POOL_MANTLE = '0xB715B85682B731dB9D5063187C450095c91C57FC' as `0x${string}`;
+
 // ============================================================================
 // LayerZero V2 Endpoint IDs
 // Reference: https://docs.layerzero.network/v2/deployments/chains
 // ============================================================================
 
 export const LZ_ENDPOINT_ID_ETH = 30101; // Ethereum mainnet
+export const LZ_ENDPOINT_ID_BASE = 30184; // Base mainnet
+export const LZ_ENDPOINT_ID_ARB = 30110; // Arbitrum mainnet
+export const LZ_ENDPOINT_ID_MANTLE = 30181; // Mantle mainnet
 export const LZ_ENDPOINT_ID_TON = 30826; // TON mainnet
+
+export const CHAIN_ID_TO_LZ_ENDPOINT: Record<number, number> = {
+  1: LZ_ENDPOINT_ID_ETH,
+  8453: LZ_ENDPOINT_ID_BASE,
+  42161: LZ_ENDPOINT_ID_ARB,
+  5000: LZ_ENDPOINT_ID_MANTLE,
+  30826: LZ_ENDPOINT_ID_TON,
+};
 
 // ============================================================================
 // Chain IDs
@@ -35,6 +68,23 @@ export const TAC_CHAIN_ID = 239;
 
 // TON does not have an EVM chain ID, we use LayerZero endpoint ID
 export const TON_CHAIN_ID = 30826;
+
+// ============================================================================
+// Stargate Pool Addresses
+// ============================================================================
+
+export const STARGATE_POOL_ADDRESSES: Record<number, Record<string, `0x${string}`>> = {
+  1: { [USDT_ETH.toLowerCase()]: STARGATE_USDT_POOL_ETH },
+  8453: { [USDC_BASE.toLowerCase()]: STARGATE_USDC_POOL_BASE },
+  42161: {
+    [USDC_ARB.toLowerCase()]: STARGATE_USDC_POOL_ARB,
+    [USDT_ARB.toLowerCase()]: STARGATE_USDT_POOL_ARB,
+  },
+  5000: {
+    [USDC_MANTLE.toLowerCase()]: STARGATE_USDC_POOL_MANTLE,
+    [USDT_MANTLE.toLowerCase()]: STARGATE_USDT_POOL_MANTLE,
+  },
+};
 
 // ============================================================================
 // Stargate API Configuration
@@ -122,6 +172,9 @@ export const USDT_TON_STARGATE = '0xb113a994b5024a16719f69139328eb759596c38a25f5
  */
 export const STARGATE_CHAIN_NAMES: Record<number, string> = {
   1: 'ethereum',
+  8453: 'base',
+  42161: 'arbitrum',
+  5000: 'mantle',
   30826: 'ton',
   239: 'tac',
 };

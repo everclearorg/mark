@@ -14,7 +14,7 @@ export async function cleanupExpiredRegularRebalanceOps(context: ProcessingConte
         UPDATE rebalance_operations
         SET status = $1, updated_at = NOW()
         WHERE earmark_id IS NULL
-          AND status IN ($2, $3)
+          AND status IN ($2, $3, $4)
           AND created_at < NOW() - INTERVAL '${ttlMinutes} minutes'
         RETURNING id, status, created_at, origin_chain_id, destination_chain_id
         `,
@@ -22,6 +22,7 @@ export async function cleanupExpiredRegularRebalanceOps(context: ProcessingConte
           RebalanceOperationStatus.EXPIRED,
           RebalanceOperationStatus.PENDING,
           RebalanceOperationStatus.AWAITING_CALLBACK,
+          RebalanceOperationStatus.AWAITING_POST_BRIDGE,
         ],
       );
 
@@ -97,15 +98,20 @@ export async function cleanupExpiredEarmarks(context: ProcessingContext): Promis
       );
 
       for (const earmark of earmarksToExpire.rows) {
-        // Mark all operations as orphaned (both PENDING and AWAITING_CALLBACK keep their status)
+        // Mark all operations as orphaned (PENDING, AWAITING_CALLBACK, and AWAITING_POST_BRIDGE keep their status)
         const orphanedOps = await client.query(
           `
           UPDATE rebalance_operations
           SET is_orphaned = true, updated_at = NOW()
-          WHERE earmark_id = $1 AND status IN ($2, $3)
+          WHERE earmark_id = $1 AND status IN ($2, $3, $4)
           RETURNING id, status
         `,
-          [earmark.id, RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+          [
+            earmark.id,
+            RebalanceOperationStatus.PENDING,
+            RebalanceOperationStatus.AWAITING_CALLBACK,
+            RebalanceOperationStatus.AWAITING_POST_BRIDGE,
+          ],
         );
 
         // Update earmark status to expired
@@ -139,11 +145,16 @@ export async function cleanupExpiredEarmarks(context: ProcessingContext): Promis
         AND NOT EXISTS (
           SELECT 1 FROM rebalance_operations ro
           WHERE ro.earmark_id = e.id
-          AND ro.status IN ($2, $3)
+          AND ro.status IN ($2, $3, $4)
         )
         AND e.created_at < NOW() - INTERVAL '${ttlMinutes} minutes'
       `,
-        [EarmarkStatus.PENDING, RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+        [
+          EarmarkStatus.PENDING,
+          RebalanceOperationStatus.PENDING,
+          RebalanceOperationStatus.AWAITING_CALLBACK,
+          RebalanceOperationStatus.AWAITING_POST_BRIDGE,
+        ],
       );
 
       for (const earmark of orphanedEarmarks.rows) {
