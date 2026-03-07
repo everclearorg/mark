@@ -6,6 +6,7 @@ import {
   TransactionSubmissionType,
   RebalanceOperationStatus,
   RebalanceRoute,
+  PostBridgeActionType,
 } from '@mark/core';
 import { Logger } from '@mark/logger';
 import { executeDestinationCallbacks } from '../../src/rebalance/callbacks';
@@ -14,6 +15,7 @@ import { ProcessingContext } from '../../src/init';
 import { RebalanceAction } from '@mark/core';
 import * as submitTransactionModule from '../../src/helpers/transactions';
 import { RebalanceAdapter } from '@mark/rebalance';
+import * as rebalanceModule from '@mark/rebalance';
 
 import { TransactionReceipt } from 'viem';
 import * as DatabaseModule from '@mark/database';
@@ -70,6 +72,7 @@ describe('executeDestinationCallbacks', () => {
   let mockRebalanceAdapter: SinonStubbedInstance<RebalanceAdapter>;
   let mockSpecificBridgeAdapter: MockBridgeAdapter;
   let submitTransactionStub: SinonStub;
+  let buildTransactionsForActionSpy: jest.SpyInstance;
   let mockDatabase: typeof DatabaseModule;
 
   let mockConfig: MarkConfiguration;
@@ -275,11 +278,15 @@ describe('executeDestinationCallbacks', () => {
       receipt: mockChainServiceReceipt,
       submissionType: TransactionSubmissionType.Onchain,
     });
+    buildTransactionsForActionSpy = jest.spyOn(rebalanceModule, 'buildTransactionsForAction').mockResolvedValue([]);
   });
 
   afterEach(() => {
     if (submitTransactionStub) {
       submitTransactionStub.restore();
+    }
+    if (buildTransactionsForActionSpy) {
+      buildTransactionsForActionSpy.mockRestore();
     }
   });
 
@@ -288,7 +295,7 @@ describe('executeDestinationCallbacks', () => {
     expect(mockLogger.info.calledWith('Executing destination callbacks', { requestId: MOCK_REQUEST_ID })).toBe(true);
     expect(
       (mockDatabase.getRebalanceOperations as SinonStub).calledWith(undefined, undefined, {
-        status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+        status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK, RebalanceOperationStatus.AWAITING_POST_BRIDGE],
       }),
     ).toBe(true);
     expect(mockChainService.getTransactionReceipt.called).toBe(false);
@@ -386,7 +393,7 @@ describe('executeDestinationCallbacks', () => {
 
     const infoCallWithMessage = mockLogger.info
       .getCalls()
-      .find((call) => call.args[0] === 'No destination callback required, marking as completed');
+      .find((call) => call.args[0] === 'No destination callback required');
     expect(infoCallWithMessage).toBeDefined();
     if (infoCallWithMessage && infoCallWithMessage.args[1]) {
       expect(infoCallWithMessage.args[1].requestId).toBe(MOCK_REQUEST_ID);
@@ -600,6 +607,314 @@ describe('executeDestinationCallbacks', () => {
     expect(mockChainService.getTransactionReceipt.called).toBe(false);
   });
 
+  it('should execute post-bridge actions for AWAITING_POST_BRIDGE operations', async () => {
+    // Configure route with postBridgeActions — asset must be the address so getTickerForAsset can match
+    mockConfig.routes = [
+      {
+        asset: '0xEthAddress1',
+        origin: 1,
+        destination: 10,
+        postBridgeActions: [
+          {
+            type: PostBridgeActionType.AaveSupply,
+            poolAddress: '0xPoolAddress',
+            supplyAsset: '0xEthAddress10',
+          },
+        ],
+      },
+    ] as unknown as typeof mockConfig.routes;
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+    const mockPostBridgeTx = {
+      memo: 'AaveSupply',
+      transaction: {
+        to: '0xPoolAddress' as `0x${string}`,
+        data: '0xpostbridgedata' as `0x${string}`,
+        value: BigInt(0),
+      },
+    };
+    buildTransactionsForActionSpy.mockResolvedValue([mockPostBridgeTx]);
+
+    await executeDestinationCallbacks(mockContext);
+
+    // Verify buildTransactionsForAction was called with the right sender (ownAddress for EOA)
+    expect(buildTransactionsForActionSpy).toHaveBeenCalledTimes(1);
+    expect(buildTransactionsForActionSpy.mock.calls[0][0]).toBe(mockConfig.ownAddress);
+    expect(buildTransactionsForActionSpy.mock.calls[0][1]).toBe(mockAction1.amount);
+    expect(buildTransactionsForActionSpy.mock.calls[0][2]).toBe(mockAction1.destination);
+
+    // Verify the post-bridge transaction was submitted
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    const callArgs = submitTransactionStub.firstCall.args[0];
+    expect(callArgs.txRequest.to).toBe('0xPoolAddress');
+    expect(callArgs.txRequest.from).toBe(mockConfig.ownAddress);
+
+    // Verify operation was marked COMPLETED
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, {
+        status: RebalanceOperationStatus.COMPLETED,
+      }),
+    ).toBe(true);
+
+    // Verify log messages
+    const infoCall = mockLogger.info
+      .getCalls()
+      .find((call) => call.args[0] === 'Post-bridge actions completed successfully');
+    expect(infoCall).toBeDefined();
+  });
+
+  it('should mark AWAITING_POST_BRIDGE as completed if no post-bridge actions configured', async () => {
+    // Route has no postBridgeActions
+    mockConfig.routes = [
+      { asset: 'ETH', origin: 1, destination: 10 },
+    ] as unknown as typeof mockConfig.routes;
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+    await executeDestinationCallbacks(mockContext);
+
+    // Should NOT call buildTransactionsForAction
+    expect(buildTransactionsForActionSpy).not.toHaveBeenCalled();
+
+    // Should mark as COMPLETED
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, {
+        status: RebalanceOperationStatus.COMPLETED,
+      }),
+    ).toBe(true);
+
+    // Verify warning was logged
+    const warnCall = mockLogger.warn
+      .getCalls()
+      .find((call) => call.args[0] === 'Operation awaiting post-bridge actions but no actions configured, marking completed');
+    expect(warnCall).toBeDefined();
+  });
+
+  it('should execute DexSwap + AaveSupply sequentially with amount chaining', async () => {
+    // Configure route with DexSwap then AaveSupply
+    mockConfig.routes = [
+      {
+        asset: '0xEthAddress1',
+        origin: 1,
+        destination: 10,
+        postBridgeActions: [
+          {
+            type: PostBridgeActionType.DexSwap,
+            sellToken: '0xUSDT',
+            buyToken: '0xSyrupUSDT',
+            slippageBps: 100,
+          },
+          {
+            type: PostBridgeActionType.AaveSupply,
+            poolAddress: '0xPoolAddress',
+            supplyAsset: '0xSyrupUSDT',
+          },
+        ],
+      },
+    ] as unknown as typeof mockConfig.routes;
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+    // First call (DexSwap action) returns swap tx with effectiveAmount
+    const mockSwapTx = {
+      memo: 'DexSwap',
+      transaction: {
+        to: '0xSwapRouter' as `0x${string}`,
+        data: '0xswapdata' as `0x${string}`,
+        value: BigInt(0),
+      },
+      effectiveAmount: '2000000000000000000', // 2 USDe in 18 decimals
+    };
+    // Second call (AaveSupply action) returns supply txs
+    const mockSupplyTx = {
+      memo: 'AaveSupply',
+      transaction: {
+        to: '0xPoolAddress' as `0x${string}`,
+        data: '0xsupplydata' as `0x${string}`,
+        value: BigInt(0),
+      },
+    };
+
+    buildTransactionsForActionSpy
+      .mockResolvedValueOnce([mockSwapTx])
+      .mockResolvedValueOnce([mockSupplyTx]);
+
+    await executeDestinationCallbacks(mockContext);
+
+    // Verify buildTransactionsForAction was called twice (once per action)
+    expect(buildTransactionsForActionSpy).toHaveBeenCalledTimes(2);
+
+    // First call should use original amount
+    expect(buildTransactionsForActionSpy.mock.calls[0][1]).toBe(mockAction1.amount);
+
+    // Second call should use effectiveAmount from DexSwap
+    expect(buildTransactionsForActionSpy.mock.calls[1][1]).toBe('2000000000000000000');
+
+    // Both transactions should have been submitted
+    expect(submitTransactionStub.calledTwice).toBe(true);
+
+    // Verify operation was marked COMPLETED
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, {
+        status: RebalanceOperationStatus.COMPLETED,
+      }),
+    ).toBe(true);
+  });
+
+  it('should pass effectiveAmount from DexSwap to AaveSupply amount parameter', async () => {
+    // Configure route with DexSwap then AaveSupply
+    mockConfig.routes = [
+      {
+        asset: '0xEthAddress1',
+        origin: 1,
+        destination: 10,
+        postBridgeActions: [
+          {
+            type: PostBridgeActionType.DexSwap,
+            sellToken: '0xUSDT',
+            buyToken: '0xUSDe',
+            slippageBps: 50,
+          },
+          {
+            type: PostBridgeActionType.AaveSupply,
+            poolAddress: '0xPool',
+            supplyAsset: '0xUSDe',
+          },
+        ],
+      },
+    ] as unknown as typeof mockConfig.routes;
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+    const swapOutputAmount = '5000000000000000000'; // 5 USDe
+    buildTransactionsForActionSpy
+      .mockResolvedValueOnce([{
+        memo: 'DexSwap',
+        transaction: { to: '0xRouter', data: '0x', value: BigInt(0) },
+        effectiveAmount: swapOutputAmount,
+      }])
+      .mockResolvedValueOnce([{
+        memo: 'AaveSupply',
+        transaction: { to: '0xPool', data: '0x', value: BigInt(0) },
+      }]);
+
+    await executeDestinationCallbacks(mockContext);
+
+    // AaveSupply (second call) should receive effectiveAmount from DexSwap as its amount
+    expect(buildTransactionsForActionSpy.mock.calls[1][1]).toBe(swapOutputAmount);
+  });
+
+  it('should handle retry when DexSwap already completed (uses max amount for AaveSupply)', async () => {
+    // Configure route with DexSwap then AaveSupply
+    mockConfig.routes = [
+      {
+        asset: '0xEthAddress1',
+        origin: 1,
+        destination: 10,
+        postBridgeActions: [
+          {
+            type: PostBridgeActionType.DexSwap,
+            sellToken: '0xUSDT',
+            buyToken: '0xSyrupUSDT',
+            slippageBps: 100,
+          },
+          {
+            type: PostBridgeActionType.AaveSupply,
+            poolAddress: '0xPoolAddress',
+            supplyAsset: '0xSyrupUSDT',
+          },
+        ],
+      },
+    ] as unknown as typeof mockConfig.routes;
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+    // DexSwap returns empty — swap already completed on a previous attempt
+    const mockSupplyTx = {
+      memo: 'AaveSupply',
+      transaction: {
+        to: '0xPoolAddress' as `0x${string}`,
+        data: '0xsupplydata' as `0x${string}`,
+        value: BigInt(0),
+      },
+    };
+
+    buildTransactionsForActionSpy
+      .mockResolvedValueOnce([])  // DexSwap returns empty (already completed)
+      .mockResolvedValueOnce([mockSupplyTx]);
+
+    await executeDestinationCallbacks(mockContext);
+
+    // Verify buildTransactionsForAction was called twice (once per action)
+    expect(buildTransactionsForActionSpy).toHaveBeenCalledTimes(2);
+
+    // First call should use original amount
+    expect(buildTransactionsForActionSpy.mock.calls[0][1]).toBe(mockAction1.amount);
+
+    // Second call (AaveSupply) should receive maxUint256 so it uses on-chain balance
+    const MAX_UINT256 = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+    expect(buildTransactionsForActionSpy.mock.calls[1][1]).toBe(MAX_UINT256);
+
+    // Only the supply transaction should have been submitted (swap was skipped)
+    expect(submitTransactionStub.calledOnce).toBe(true);
+
+    // Verify operation was marked COMPLETED
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, {
+        status: RebalanceOperationStatus.COMPLETED,
+      }),
+    ).toBe(true);
+  });
+
+  it('should leave operation as AWAITING_POST_BRIDGE on failure for retry', async () => {
+    mockConfig.routes = [
+      {
+        asset: '0xEthAddress1',
+        origin: 1,
+        destination: 10,
+        postBridgeActions: [
+          {
+            type: PostBridgeActionType.AaveSupply,
+            poolAddress: '0xPoolAddress',
+            supplyAsset: '0xEthAddress10',
+          },
+        ],
+      },
+    ] as unknown as typeof mockConfig.routes;
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+    buildTransactionsForActionSpy.mockRejectedValueOnce(new Error('Quote service down'));
+
+    await executeDestinationCallbacks(mockContext);
+
+    // Should NOT be marked as COMPLETED
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(mockAction1Id, {
+        status: RebalanceOperationStatus.COMPLETED,
+      }),
+    ).toBe(false);
+
+    // Should log error for retry
+    const errorCall = mockLogger.error
+      .getCalls()
+      .find((call) => call.args[0] === 'Failed to execute post-bridge actions, will retry');
+    expect(errorCall).toBeDefined();
+  });
+
   it('should handle callback transaction with undefined value', async () => {
     const callbackWithUndefinedValue = {
       transaction: {
@@ -638,6 +953,107 @@ describe('executeDestinationCallbacks', () => {
         sinon.match({
           status: RebalanceOperationStatus.COMPLETED,
         }),
+      ),
+    ).toBe(true);
+  });
+
+  it('should retain operation when isCallbackComplete returns false (multi-step bridge)', async () => {
+    const isCallbackCompleteStub = stub().resolves(false);
+    const multiStepAdapter = {
+      ...mockSpecificBridgeAdapter,
+      isCallbackComplete: isCallbackCompleteStub,
+    };
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+    mockRebalanceAdapter.getAdapter.callsFake(() => multiStepAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+    multiStepAdapter.destinationCallback.resolves(mockCallbackTx);
+
+    await executeDestinationCallbacks(mockContext);
+
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    expect(isCallbackCompleteStub.calledOnce).toBe(true);
+    // Should NOT mark as completed
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({ status: RebalanceOperationStatus.COMPLETED }),
+      ),
+    ).toBe(false);
+    const infoCall = mockLogger.info
+      .getCalls()
+      .find((call) => call.args[0] === 'Callback submitted but process not yet complete, retaining for next iteration');
+    expect(infoCall).toBeDefined();
+  });
+
+  it('should complete operation when isCallbackComplete returns true', async () => {
+    const isCallbackCompleteStub = stub().resolves(true);
+    const multiStepAdapter = {
+      ...mockSpecificBridgeAdapter,
+      isCallbackComplete: isCallbackCompleteStub,
+    };
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+    mockRebalanceAdapter.getAdapter.callsFake(() => multiStepAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+    multiStepAdapter.destinationCallback.resolves(mockCallbackTx);
+
+    await executeDestinationCallbacks(mockContext);
+
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    expect(isCallbackCompleteStub.calledOnce).toBe(true);
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({ status: RebalanceOperationStatus.COMPLETED }),
+      ),
+    ).toBe(true);
+  });
+
+  it('should complete operation as fail-safe when isCallbackComplete throws', async () => {
+    const isCallbackCompleteStub = stub().rejects(new Error('RPC error'));
+    const multiStepAdapter = {
+      ...mockSpecificBridgeAdapter,
+      isCallbackComplete: isCallbackCompleteStub,
+    };
+
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+    mockRebalanceAdapter.getAdapter.callsFake(() => multiStepAdapter as unknown as ReturnType<RebalanceAdapter['getAdapter']>);
+    multiStepAdapter.destinationCallback.resolves(mockCallbackTx);
+
+    await executeDestinationCallbacks(mockContext);
+
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({ status: RebalanceOperationStatus.COMPLETED }),
+      ),
+    ).toBe(true);
+    const warnCall = mockLogger.warn
+      .getCalls()
+      .find((call) => call.args[0] === 'isCallbackComplete check failed, completing as fail-safe');
+    expect(warnCall).toBeDefined();
+  });
+
+  it('should complete operation when adapter has no isCallbackComplete (backward compat)', async () => {
+    // The default mockSpecificBridgeAdapter has no isCallbackComplete
+    const dbOperation = createDbOperation(mockAction1, mockAction1Id, true);
+    dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+    (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+    mockSpecificBridgeAdapter.destinationCallback.resolves(mockCallbackTx);
+
+    await executeDestinationCallbacks(mockContext);
+
+    expect(submitTransactionStub.calledOnce).toBe(true);
+    expect(
+      (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(
+        mockAction1Id,
+        sinon.match({ status: RebalanceOperationStatus.COMPLETED }),
       ),
     ).toBe(true);
   });

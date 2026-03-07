@@ -14,9 +14,9 @@ import { jsonifyError, Logger } from '@mark/logger';
 import { BridgeAdapter, MemoizedTransactionRequest, RebalanceTransactionMemo } from '../../types';
 import { STARGATE_OFT_ABI } from './abi';
 import {
-  STARGATE_USDT_POOL_ETH,
   USDT_ETH,
-  LZ_ENDPOINT_ID_TON,
+  STARGATE_POOL_ADDRESSES,
+  CHAIN_ID_TO_LZ_ENDPOINT,
   StargateSendParam,
   StargateMessagingFee,
   LzMessageStatus,
@@ -27,6 +27,7 @@ import {
   tonAddressToBytes32,
   USDT_TON_STARGATE,
 } from './types';
+import { getDestinationAssetAddress } from '../../shared/asset';
 
 // LayerZero Scan API base URL
 const LZ_SCAN_API_URL = 'https://scan.layerzero-api.com';
@@ -54,6 +55,26 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
   type(): SupportedBridge {
     return SupportedBridge.Stargate;
+  }
+
+  /**
+   * Resolve the destination token address for a route
+   * For TON, uses the Stargate-specific hex address; for EVM chains, looks up via chain config
+   */
+  private resolveDstToken(route: RebalanceRoute): string | null {
+    if (route.destination === 30826) return USDT_TON_STARGATE;
+    return (
+      getDestinationAssetAddress(route.asset, route.origin, route.destination, this.chains, this.logger) ?? null
+    );
+  }
+
+  /**
+   * Get the LayerZero endpoint ID for a chain
+   */
+  protected getLzEndpointId(chainId: number): number {
+    const eid = CHAIN_ID_TO_LZ_ENDPOINT[chainId];
+    if (eid === undefined) throw new Error(`No LayerZero endpoint ID configured for chain ${chainId}`);
+    return eid;
   }
 
   /**
@@ -99,8 +120,11 @@ export class StargateBridgeAdapter implements BridgeAdapter {
         return null;
       }
 
-      // For TON destination, use the Stargate-specific token address format
-      const dstToken = route.destination === 30826 ? USDT_TON_STARGATE : route.asset;
+      const dstToken = this.resolveDstToken(route);
+      if (!dstToken) {
+        this.logger.warn('Could not resolve destination token', { route });
+        return null;
+      }
 
       // Use a placeholder address for quote - actual address will be used in send()
       const placeholderAddress = '0x1234567890abcdef1234567890abcdef12345678';
@@ -162,7 +186,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
       // Prepare send parameters for quote
       const sendParam: StargateSendParam = {
-        dstEid: LZ_ENDPOINT_ID_TON,
+        dstEid: this.getLzEndpointId(route.destination),
         to: pad('0x0000000000000000000000000000000000000000' as `0x${string}`, { size: 32 }),
         amountLD: BigInt(amount),
         minAmountLD: BigInt(0), // Will be calculated after quote
@@ -304,8 +328,11 @@ export class StargateBridgeAdapter implements BridgeAdapter {
       return null;
     }
 
-    // For TON destination, use the Stargate-specific token address format
-    const dstToken = route.destination === 30826 ? USDT_TON_STARGATE : route.asset;
+    const dstToken = this.resolveDstToken(route);
+    if (!dstToken) {
+      this.logger.warn('Could not resolve destination token', { route });
+      return null;
+    }
 
     // Calculate minimum amount with slippage (0.5%)
     const slippageBps = 50n;
@@ -471,7 +498,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
 
       // Prepare send parameters
       const sendParam: StargateSendParam = {
-        dstEid: LZ_ENDPOINT_ID_TON,
+        dstEid: this.getLzEndpointId(route.destination),
         to: recipientBytes32,
         amountLD: BigInt(amount),
         minAmountLD: minAmount,
@@ -745,13 +772,11 @@ export class StargateBridgeAdapter implements BridgeAdapter {
    * Get the Stargate pool address for an asset
    */
   protected getPoolAddress(asset: string, chainId: number): `0x${string}` {
-    // For USDT on Ethereum mainnet
-    if (asset.toLowerCase() === USDT_ETH.toLowerCase() && chainId === 1) {
-      return STARGATE_USDT_POOL_ETH;
-    }
-
-    // Add more pool addresses as needed
-    throw new Error(`No Stargate pool found for asset ${asset} on chain ${chainId}`);
+    const chainPools = STARGATE_POOL_ADDRESSES[chainId];
+    if (!chainPools) throw new Error(`No Stargate pools configured for chain ${chainId}`);
+    const pool = chainPools[asset.toLowerCase()];
+    if (!pool) throw new Error(`No Stargate pool found for asset ${asset} on chain ${chainId}`);
+    return pool;
   }
 
   /**
