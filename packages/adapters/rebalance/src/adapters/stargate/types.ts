@@ -15,8 +15,15 @@ export const STARGATE_ROUTER_ETH = '0xeCc19E177d24551aA7ed6Bc6FE566eCa726CC8a9' 
 // Reference: https://stargateprotocol.gitbook.io/stargate/v2/deployments
 export const STARGATE_USDT_POOL_ETH = '0x933597a323Eb81cAe705C5bC29985172fd5A3973' as `0x${string}`;
 
+// Stargate USDC Pool on Ethereum mainnet
+// Reference: https://stargateprotocol.gitbook.io/stargate/v2-developer-docs/technical-reference/mainnet-contracts
+export const STARGATE_USDC_POOL_ETH = '0xc026395860Db2d07ee33e05fE50ed7bD583189C7' as `0x${string}`;
+
 // USDT token on Ethereum mainnet
 export const USDT_ETH = '0xdAC17F958D2ee523a2206206994597C13D831ec7' as `0x${string}`;
+
+// USDC token on Ethereum mainnet
+export const USDC_ETH = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as `0x${string}`;
 
 // Token addresses - Base
 export const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`;
@@ -74,7 +81,10 @@ export const TON_CHAIN_ID = 30826;
 // ============================================================================
 
 export const STARGATE_POOL_ADDRESSES: Record<number, Record<string, `0x${string}`>> = {
-  1: { [USDT_ETH.toLowerCase()]: STARGATE_USDT_POOL_ETH },
+  1: {
+    [USDC_ETH.toLowerCase()]: STARGATE_USDC_POOL_ETH,
+    [USDT_ETH.toLowerCase()]: STARGATE_USDT_POOL_ETH,
+  },
   8453: { [USDC_BASE.toLowerCase()]: STARGATE_USDC_POOL_BASE },
   42161: {
     [USDC_ARB.toLowerCase()]: STARGATE_USDC_POOL_ARB,
