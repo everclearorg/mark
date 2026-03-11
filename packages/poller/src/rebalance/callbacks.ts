@@ -10,6 +10,7 @@ import {
   getTokenAddressFromConfig,
   serializeBigInt,
   RouteRebalancingConfig,
+  OnDemandRouteConfig,
 } from '@mark/core';
 import { buildTransactionsForAction } from '@mark/rebalance';
 import { TransactionEntry, TransactionReceipt } from '@mark/database';
@@ -38,8 +39,18 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
   });
 
   // Helper to find the matching route config for an operation
-  const findMatchingRoute = (op: (typeof operations)[0]): RouteRebalancingConfig | undefined => {
-    return config.routes.find((r) => {
+  const findMatchingRoute = (op: (typeof operations)[0]): RouteRebalancingConfig | OnDemandRouteConfig | undefined => {
+    const match = config.routes.find((r) => {
+      if (r.origin !== op.originChainId || r.destination !== op.destinationChainId) return false;
+      const routeTicker = getTickerForAsset(r.asset, r.origin, config)?.toLowerCase();
+      return routeTicker === op.tickerHash.toLowerCase();
+    });
+    if (match) return match;
+
+    // Only fall back to on-demand routes when they have post-bridge actions configured,
+    // so that operations without post-bridge needs continue to behave as before.
+    return config.onDemandRoutes?.find((r) => {
+      if (!r.postBridgeActions?.length) return false;
       if (r.origin !== op.originChainId || r.destination !== op.destinationChainId) return false;
       const routeTicker = getTickerForAsset(r.asset, r.origin, config)?.toLowerCase();
       return routeTicker === op.tickerHash.toLowerCase();
@@ -47,7 +58,7 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
   };
 
   // Helper to transition to AWAITING_POST_BRIDGE or COMPLETED based on route config
-  const resolvePostBridgeStatus = (matchingRoute: RouteRebalancingConfig | undefined) => {
+  const resolvePostBridgeStatus = (matchingRoute: RouteRebalancingConfig | OnDemandRouteConfig | undefined) => {
     if (matchingRoute?.postBridgeActions?.length) {
       return RebalanceOperationStatus.AWAITING_POST_BRIDGE;
     }
