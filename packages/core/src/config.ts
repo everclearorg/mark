@@ -520,6 +520,140 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
             undefined, // Max amount per operation (optional cap)
         },
       },
+      aManUsdeRebalance: {
+        enabled:
+          parseBooleanValue(configJson.aManUsdeRebalance?.enabled) ??
+          parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_ENABLED', true)) ??
+          false,
+        marketMaker: {
+          address:
+            configJson.aManUsdeRebalance?.marketMaker?.address ??
+            (await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
+            undefined,
+          onDemandEnabled:
+            parseBooleanValue(configJson.aManUsdeRebalance?.marketMaker?.onDemandEnabled) ??
+            parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
+            false,
+          thresholdEnabled:
+            parseBooleanValue(configJson.aManUsdeRebalance?.marketMaker?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.aManUsdeRebalance?.marketMaker?.threshold ??
+            (await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
+            '100000000000000000000', // 100 aManUSDe (18 decimals)
+          targetBalance:
+            configJson.aManUsdeRebalance?.marketMaker?.targetBalance ??
+            (await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
+            '500000000000000000000', // 500 aManUSDe (18 decimals)
+        },
+        fillService: {
+          address:
+            configJson.aManUsdeRebalance?.fillService?.address ??
+            (await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
+            undefined,
+          senderAddress:
+            configJson.aManUsdeRebalance?.fillService?.senderAddress ??
+            (await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
+            undefined,
+          thresholdEnabled:
+            parseBooleanValue(configJson.aManUsdeRebalance?.fillService?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.aManUsdeRebalance?.fillService?.threshold ??
+            (await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
+            '100000000000000000000', // 100 aManUSDe (18 decimals)
+          targetBalance:
+            configJson.aManUsdeRebalance?.fillService?.targetBalance ??
+            (await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
+            '500000000000000000000', // 500 aManUSDe (18 decimals)
+          allowCrossWalletRebalancing:
+            parseBooleanValue(configJson.aManUsdeRebalance?.fillService?.allowCrossWalletRebalancing) ??
+            parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
+            false,
+        },
+        bridge: {
+          slippageDbps:
+            configJson.aManUsdeRebalance?.bridge?.slippageDbps ??
+            parseInt((await fromEnv('AMANUSDE_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '50', 10), // 0.5% default
+          minRebalanceAmount:
+            configJson.aManUsdeRebalance?.bridge?.minRebalanceAmount ??
+            (await fromEnv('AMANUSDE_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
+            '1000000', // 1 USDC minimum (6 decimals)
+          maxRebalanceAmount:
+            configJson.aManUsdeRebalance?.bridge?.maxRebalanceAmount ??
+            (await fromEnv('AMANUSDE_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
+            '100000000', // 100 USDC max (6 decimals)
+        },
+      },
+      aMansyrupUsdtRebalance: {
+        enabled:
+          parseBooleanValue(configJson.aMansyrupUsdtRebalance?.enabled) ??
+          parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_ENABLED', true)) ??
+          false,
+        marketMaker: {
+          address:
+            configJson.aMansyrupUsdtRebalance?.marketMaker?.address ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
+            undefined,
+          onDemandEnabled:
+            parseBooleanValue(configJson.aMansyrupUsdtRebalance?.marketMaker?.onDemandEnabled) ??
+            parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
+            false,
+          thresholdEnabled:
+            parseBooleanValue(configJson.aMansyrupUsdtRebalance?.marketMaker?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.aMansyrupUsdtRebalance?.marketMaker?.threshold ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
+            '100000000', // 100 aMansyrupUSDT (6 decimals)
+          targetBalance:
+            configJson.aMansyrupUsdtRebalance?.marketMaker?.targetBalance ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
+            '500000000', // 500 aMansyrupUSDT (6 decimals)
+        },
+        fillService: {
+          address:
+            configJson.aMansyrupUsdtRebalance?.fillService?.address ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
+            undefined,
+          senderAddress:
+            configJson.aMansyrupUsdtRebalance?.fillService?.senderAddress ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
+            undefined,
+          thresholdEnabled:
+            parseBooleanValue(configJson.aMansyrupUsdtRebalance?.fillService?.thresholdEnabled) ??
+            parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
+            false,
+          threshold:
+            configJson.aMansyrupUsdtRebalance?.fillService?.threshold ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
+            '100000000', // 100 aMansyrupUSDT (6 decimals)
+          targetBalance:
+            configJson.aMansyrupUsdtRebalance?.fillService?.targetBalance ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
+            '500000000', // 500 aMansyrupUSDT (6 decimals)
+          allowCrossWalletRebalancing:
+            parseBooleanValue(configJson.aMansyrupUsdtRebalance?.fillService?.allowCrossWalletRebalancing) ??
+            parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
+            false,
+        },
+        bridge: {
+          slippageDbps:
+            configJson.aMansyrupUsdtRebalance?.bridge?.slippageDbps ??
+            parseInt((await fromEnv('AMANSYRUPUSDT_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '50', 10), // 0.5% default
+          minRebalanceAmount:
+            configJson.aMansyrupUsdtRebalance?.bridge?.minRebalanceAmount ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
+            '1000000', // 1 USDC minimum (6 decimals)
+          maxRebalanceAmount:
+            configJson.aMansyrupUsdtRebalance?.bridge?.maxRebalanceAmount ??
+            (await fromEnv('AMANSYRUPUSDT_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
+            '100000000', // 100 USDC max (6 decimals)
+        },
+      },
       solanaPtusdeRebalance: {
         enabled:
           parseBooleanValue(configJson.solanaPtusdeRebalance?.enabled) ??

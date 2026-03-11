@@ -7,7 +7,7 @@ import { MarkConfiguration, TokenRebalanceConfig } from '@mark/core';
  */
 function validateSingleTokenRebalanceConfig(
   tokenConfig: TokenRebalanceConfig | undefined,
-  configName: 'tacRebalance' | 'methRebalance',
+  configName: 'tacRebalance' | 'methRebalance' | 'aManUsdeRebalance' | 'aMansyrupUsdtRebalance',
   config: MarkConfiguration,
   logger: Logger,
 ): void {
@@ -106,4 +106,6 @@ function validateSingleTokenRebalanceConfig(
 export function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger): void {
   validateSingleTokenRebalanceConfig(config.tacRebalance, 'tacRebalance', config, logger);
   validateSingleTokenRebalanceConfig(config.methRebalance, 'methRebalance', config, logger);
+  validateSingleTokenRebalanceConfig(config.aManUsdeRebalance, 'aManUsdeRebalance', config, logger);
+  validateSingleTokenRebalanceConfig(config.aMansyrupUsdtRebalance, 'aMansyrupUsdtRebalance', config, logger);
 }
