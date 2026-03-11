@@ -1057,4 +1057,207 @@ describe('executeDestinationCallbacks', () => {
       ),
     ).toBe(true);
   });
+
+  describe('findMatchingRoute on-demand fallback', () => {
+    // Use USDC 1→137 for on-demand tests (chain assets already in mockConfig)
+    const onDemandAction: RebalanceAction = {
+      asset: 'USDC',
+      origin: 1,
+      destination: 137,
+      bridge: 'Across' as SupportedBridge,
+      transaction: '0xtxhash_od',
+      amount: '5000000',
+      recipient: '0x1234567890123456789012345678901234567890',
+    };
+    const onDemandOpId = 'od-action-1';
+
+    it('should match on-demand route with postBridgeActions when no regular route matches', async () => {
+      // No regular route for USDC 1→137
+      mockConfig.routes = [] as unknown as typeof mockConfig.routes;
+      // On-demand route WITH postBridgeActions
+      mockConfig.onDemandRoutes = [
+        {
+          asset: '0xUsdcAddress1',
+          origin: 1,
+          destination: 137,
+          postBridgeActions: [
+            {
+              type: PostBridgeActionType.DexSwap,
+              sellToken: '0xUsdcAddress137',
+              buyToken: '0xUSDe',
+              slippageBps: 50,
+            },
+          ],
+        },
+      ] as unknown as typeof mockConfig.onDemandRoutes;
+
+      const dbOperation = createDbOperation(onDemandAction, onDemandOpId, true);
+      dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+      (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+      const mockSwapTx = {
+        memo: 'DexSwap',
+        transaction: { to: '0xRouter' as `0x${string}`, data: '0x' as `0x${string}`, value: BigInt(0) },
+        effectiveAmount: '5000000000000000000',
+      };
+      buildTransactionsForActionSpy.mockResolvedValueOnce([mockSwapTx]);
+
+      await executeDestinationCallbacks(mockContext);
+
+      // Should have found the on-demand route and executed post-bridge action
+      expect(buildTransactionsForActionSpy).toHaveBeenCalledTimes(1);
+      expect(submitTransactionStub.calledOnce).toBe(true);
+      expect(
+        (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(onDemandOpId, {
+          status: RebalanceOperationStatus.COMPLETED,
+        }),
+      ).toBe(true);
+    });
+
+    it('should NOT match on-demand route without postBridgeActions', async () => {
+      // No regular route for USDC 1→137
+      mockConfig.routes = [] as unknown as typeof mockConfig.routes;
+      // On-demand route WITHOUT postBridgeActions
+      mockConfig.onDemandRoutes = [
+        {
+          asset: '0xUsdcAddress1',
+          origin: 1,
+          destination: 137,
+          // No postBridgeActions
+        },
+      ] as unknown as typeof mockConfig.onDemandRoutes;
+
+      const dbOperation = createDbOperation(onDemandAction, onDemandOpId, true);
+      dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+      (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+      await executeDestinationCallbacks(mockContext);
+
+      // Should NOT execute any post-bridge actions
+      expect(buildTransactionsForActionSpy).not.toHaveBeenCalled();
+      // Should mark as COMPLETED (no actions found)
+      expect(
+        (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(onDemandOpId, {
+          status: RebalanceOperationStatus.COMPLETED,
+        }),
+      ).toBe(true);
+      // Should log warning about no actions configured
+      const warnCall = mockLogger.warn
+        .getCalls()
+        .find((call) => call.args[0] === 'Operation awaiting post-bridge actions but no actions configured, marking completed');
+      expect(warnCall).toBeDefined();
+    });
+
+    it('should NOT match on-demand route with empty postBridgeActions array', async () => {
+      mockConfig.routes = [] as unknown as typeof mockConfig.routes;
+      mockConfig.onDemandRoutes = [
+        {
+          asset: '0xUsdcAddress1',
+          origin: 1,
+          destination: 137,
+          postBridgeActions: [], // Empty array
+        },
+      ] as unknown as typeof mockConfig.onDemandRoutes;
+
+      const dbOperation = createDbOperation(onDemandAction, onDemandOpId, true);
+      dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+      (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+      await executeDestinationCallbacks(mockContext);
+
+      expect(buildTransactionsForActionSpy).not.toHaveBeenCalled();
+      expect(
+        (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(onDemandOpId, {
+          status: RebalanceOperationStatus.COMPLETED,
+        }),
+      ).toBe(true);
+    });
+
+    it('should prefer regular route over on-demand route for same pathway', async () => {
+      // Regular route for USDC 1→137 with AaveSupply
+      mockConfig.routes = [
+        {
+          asset: '0xUsdcAddress1',
+          origin: 1,
+          destination: 137,
+          postBridgeActions: [
+            {
+              type: PostBridgeActionType.AaveSupply,
+              poolAddress: '0xRegularPool',
+              supplyAsset: '0xUsdcAddress137',
+            },
+          ],
+        },
+      ] as unknown as typeof mockConfig.routes;
+      // On-demand route for same pathway with DexSwap
+      mockConfig.onDemandRoutes = [
+        {
+          asset: '0xUsdcAddress1',
+          origin: 1,
+          destination: 137,
+          postBridgeActions: [
+            {
+              type: PostBridgeActionType.DexSwap,
+              sellToken: '0xUsdcAddress137',
+              buyToken: '0xUSDe',
+              slippageBps: 50,
+            },
+          ],
+        },
+      ] as unknown as typeof mockConfig.onDemandRoutes;
+
+      const dbOperation = createDbOperation(onDemandAction, onDemandOpId, true);
+      dbOperation.status = RebalanceOperationStatus.AWAITING_POST_BRIDGE;
+      (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+
+      const mockSupplyTx = {
+        memo: 'AaveSupply',
+        transaction: { to: '0xRegularPool' as `0x${string}`, data: '0x' as `0x${string}`, value: BigInt(0) },
+      };
+      buildTransactionsForActionSpy.mockResolvedValueOnce([mockSupplyTx]);
+
+      await executeDestinationCallbacks(mockContext);
+
+      // Should use the regular route's AaveSupply action, not the on-demand DexSwap
+      expect(buildTransactionsForActionSpy).toHaveBeenCalledTimes(1);
+      const actionArg = buildTransactionsForActionSpy.mock.calls[0][3];
+      expect(actionArg.type).toBe(PostBridgeActionType.AaveSupply);
+      expect(actionArg.poolAddress).toBe('0xRegularPool');
+    });
+
+    it('should transition on-demand operation to AWAITING_POST_BRIDGE when callback completes', async () => {
+      // No regular route — only on-demand with postBridgeActions
+      mockConfig.routes = [] as unknown as typeof mockConfig.routes;
+      mockConfig.onDemandRoutes = [
+        {
+          asset: '0xUsdcAddress1',
+          origin: 1,
+          destination: 137,
+          postBridgeActions: [
+            {
+              type: PostBridgeActionType.DexSwap,
+              sellToken: '0xUsdcAddress137',
+              buyToken: '0xUSDe',
+              slippageBps: 50,
+            },
+          ],
+        },
+      ] as unknown as typeof mockConfig.onDemandRoutes;
+
+      const dbOperation = createDbOperation(onDemandAction, onDemandOpId, true);
+      dbOperation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
+      (mockDatabase.getRebalanceOperations as SinonStub).resolves({ operations: [dbOperation], total: 1 });
+      // No callback needed — triggers resolvePostBridgeStatus
+      mockSpecificBridgeAdapter.destinationCallback.resolves(undefined);
+
+      await executeDestinationCallbacks(mockContext);
+
+      // Should transition to AWAITING_POST_BRIDGE (not COMPLETED) because on-demand route has actions
+      expect(
+        (mockDatabase.updateRebalanceOperation as SinonStub).calledWith(onDemandOpId, {
+          status: RebalanceOperationStatus.AWAITING_POST_BRIDGE,
+        }),
+      ).toBe(true);
+    });
+  });
 });
