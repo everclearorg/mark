@@ -240,6 +240,8 @@ export interface MarkConfiguration extends RebalanceConfig {
   solanaPtusdeRebalance?: SolanaRebalanceConfig;
   tacRebalance?: TokenRebalanceConfig;
   methRebalance?: TokenRebalanceConfig;
+  aManUsdeRebalance?: TokenRebalanceConfig;
+  aMansyrupUsdtRebalance?: TokenRebalanceConfig;
   // Mantle bridge configuration
   mantle?: {
     l2Gas?: number; // L2 gas limit for bridge transactions (default: 200000)
