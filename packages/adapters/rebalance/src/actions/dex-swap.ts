@@ -165,7 +165,7 @@ export class DexSwapActionHandler implements PostBridgeActionHandler {
           data: encodeFunctionData({
             abi: erc20Abi,
             functionName: 'approve',
-            args: [spender as `0x${string}`, swapAmount],
+            args: [spender as `0x${string}`, swapAmount + (swapAmount * BigInt(slippageBps)) / BigInt(10000)],
           }),
           value: BigInt(0),
         },
