@@ -65,6 +65,10 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     return RebalanceOperationStatus.COMPLETED;
   };
 
+  // Bridge tags managed by the dedicated Aave token rebalancer — skip them here
+  // so the generic handler doesn't race and mark them completed prematurely.
+  const aaveTokenBridgeTags = ['stargate-amanusde', 'stargate-amansyrupusdt'];
+
   for (const operation of operations) {
     const logContext = {
       requestId,
@@ -73,6 +77,16 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       originChain: operation.originChainId,
       destinationChain: operation.destinationChainId,
     };
+
+    // Skip operations owned by the Aave token rebalancer
+    if (operation.bridge && aaveTokenBridgeTags.includes(operation.bridge)) {
+      logger.debug('Skipping operation managed by Aave token rebalancer', {
+        ...logContext,
+        bridge: operation.bridge,
+        status: operation.status,
+      });
+      continue;
+    }
 
     // Handle AWAITING_POST_BRIDGE operations (execute post-bridge actions)
     if (operation.status === RebalanceOperationStatus.AWAITING_POST_BRIDGE) {
