@@ -350,7 +350,7 @@ export const executeStargateBridgeForAaveToken = async (
   recipientAddress: string,
   amount: bigint,
 ): Promise<RebalanceAction[]> => {
-  const { config, chainService, logger, requestId, rebalance } = context;
+  const { config, chainService, fillServiceChainService, logger, requestId, rebalance } = context;
   const tokenConfig = descriptor.getConfig(config)!;
   const bridgeConfig = tokenConfig.bridge;
   const actions: RebalanceAction[] = [];
@@ -359,6 +359,21 @@ export const executeStargateBridgeForAaveToken = async (
   const adapter = rebalance.getAdapter(bridgeType);
   if (!adapter) {
     logger.error('Stargate adapter not found', { requestId });
+    return actions;
+  }
+
+  // Select the correct chain service based on whether the sender is the fill service address
+  const fsConfig = tokenConfig.fillService;
+  const fillerSenderAddress = fsConfig.senderAddress ?? fsConfig.address;
+  const isFillerSender = senderAddress.toLowerCase() === fillerSenderAddress?.toLowerCase();
+  const selectedChainService = isFillerSender && fillServiceChainService ? fillServiceChainService : chainService;
+
+  if (isFillerSender && !fillServiceChainService) {
+    logger.error(`Fill service chain service not available but sender is fill service address for ${descriptor.name}`, {
+      requestId,
+      senderAddress,
+      fillerSenderAddress,
+    });
     return actions;
   }
 
@@ -381,6 +396,7 @@ export const executeStargateBridgeForAaveToken = async (
     amount: amount.toString(),
     senderAddress,
     recipientAddress,
+    usingFillServiceSigner: isFillerSender,
     route,
   });
 
@@ -433,7 +449,7 @@ export const executeStargateBridgeForAaveToken = async (
       });
 
       const result = await submitTransactionWithLogging({
-        chainService,
+        chainService: selectedChainService,
         logger,
         chainId: MAINNET_CHAIN_ID,
         txRequest: {
@@ -515,7 +531,7 @@ export const executeAaveTokenCallbacks = async (
   context: ProcessingContext,
   descriptor: AaveTokenFlowDescriptor,
 ): Promise<void> => {
-  const { logger, requestId, config, rebalance, chainService, database: db } = context;
+  const { logger, requestId, config, rebalance, chainService, fillServiceChainService, database: db } = context;
   logger.info(`Executing callbacks for ${descriptor.name} rebalance`, { requestId });
 
   const operationTtlMinutes = config.regularRebalanceOpTTLMinutes ?? DEFAULT_OPERATION_TTL_MINUTES;
@@ -544,6 +560,25 @@ export const executeAaveTokenCallbacks = async (
       destinationChain: operation.destinationChainId,
       status: operation.status,
     };
+
+    // Determine if this is for Fill Service or Market Maker based on recipient
+    const tokenConfig = descriptor.getConfig(config);
+    const fsAddress = tokenConfig?.fillService?.address;
+    const isForFillService = operation.recipient?.toLowerCase() === fsAddress?.toLowerCase();
+    const fillerSenderAddress = tokenConfig?.fillService?.senderAddress ?? fsAddress;
+    const selectedSender = isForFillService && fillerSenderAddress ? fillerSenderAddress : config.ownAddress;
+    const selectedChainService = isForFillService && fillServiceChainService ? fillServiceChainService : chainService;
+
+    if (isForFillService && !fillServiceChainService) {
+      logger.warn(
+        `Fill service chain service not available for ${descriptor.name} callback, using main chain service`,
+        {
+          ...logContext,
+          recipient: operation.recipient,
+          fsAddress,
+        },
+      );
+    }
 
     // Check for operation timeout
     if (operation.createdAt && isOperationTimedOut(operation.createdAt, operationTtlMinutes)) {
@@ -644,7 +679,7 @@ export const executeAaveTokenCallbacks = async (
           const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, logContext);
 
           const tx = await submitTransactionWithLogging({
-            chainService,
+            chainService: selectedChainService,
             logger,
             chainId: operation.destinationChainId.toString(),
             txRequest: {
@@ -652,7 +687,7 @@ export const executeAaveTokenCallbacks = async (
               to: callback.transaction.to!,
               data: callback.transaction.data!,
               value: (callback.transaction.value ?? BigInt(0)).toString(),
-              from: config.ownAddress,
+              from: selectedSender,
               funcSig: callback.transaction.funcSig || '',
             },
             zodiacConfig,
@@ -717,7 +752,7 @@ export const executeAaveTokenCallbacks = async (
 
       const destinationChainConfig = config.chains[operation.destinationChainId];
       const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, logContext);
-      const actualSender = getActualOwner(zodiacConfig, config.ownAddress);
+      const actualSender = getActualOwner(zodiacConfig, selectedSender);
 
       try {
         logger.info(`Executing post-bridge actions for ${descriptor.name}`, {
@@ -764,7 +799,7 @@ export const executeAaveTokenCallbacks = async (
 
           for (const actionTx of actionTxs) {
             await submitTransactionWithLogging({
-              chainService,
+              chainService: selectedChainService,
               logger,
               chainId: operation.destinationChainId.toString(),
               txRequest: {
