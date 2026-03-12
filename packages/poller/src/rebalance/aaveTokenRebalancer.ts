@@ -731,10 +731,14 @@ export const executeAaveTokenCallbacks = async (
       );
 
       if (!sourceTokenOnMantle || !intermediateTokenOnMantle) {
+        const availableAssets = (config.chains[MANTLE_CHAIN_ID]?.assets ?? []).map((a) => a.symbol);
         logger.error('Source or intermediate token address not found in chain config for Mantle', {
           ...logContext,
           sourceTokenOnMantle,
           intermediateTokenOnMantle,
+          sourceTokenTickerHash: descriptor.sourceTokenTickerHash,
+          intermediateTokenTickerHash: descriptor.intermediateTokenTickerHash,
+          availableAssetsOnMantle: availableAssets,
         });
         continue;
       }
