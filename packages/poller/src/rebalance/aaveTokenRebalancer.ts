@@ -19,8 +19,6 @@ import { ProcessingContext } from '../init';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { RebalanceTransactionMemo, buildTransactionsForAction } from '@mark/rebalance';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
-import { getActualOwner } from '../helpers/zodiac';
-import { getValidatedZodiacConfig } from '../helpers/zodiac';
 
 // Default operation timeout: 24 hours (in minutes)
 const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
@@ -674,9 +672,7 @@ export const executeAaveTokenCallbacks = async (
         }
 
         if (callback) {
-          // Execute destination callback
-          const destinationChainConfig = config.chains[operation.destinationChainId];
-          const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, logContext);
+          const callbackSender = operation.recipient ?? selectedSender;
 
           const tx = await submitTransactionWithLogging({
             chainService: selectedChainService,
@@ -687,10 +683,10 @@ export const executeAaveTokenCallbacks = async (
               to: callback.transaction.to!,
               data: callback.transaction.data!,
               value: (callback.transaction.value ?? BigInt(0)).toString(),
-              from: selectedSender,
+              from: callbackSender,
               funcSig: callback.transaction.funcSig || '',
             },
-            zodiacConfig,
+            zodiacConfig: { walletType: WalletType.EOA },
             context: { ...logContext, callbackType: `destination: ${callback.memo}` },
           });
 
@@ -750,9 +746,9 @@ export const executeAaveTokenCallbacks = async (
         dexSwapSlippageBps,
       });
 
-      const destinationChainConfig = config.chains[operation.destinationChainId];
-      const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, logContext);
-      const actualSender = getActualOwner(zodiacConfig, selectedSender);
+      // Use operation.recipient — that's where the bridge deposits tokens on the
+      // destination chain, so balance/allowance checks must target that address.
+      const actualSender = operation.recipient ?? selectedSender;
 
       try {
         logger.info(`Executing post-bridge actions for ${descriptor.name}`, {
@@ -810,7 +806,7 @@ export const executeAaveTokenCallbacks = async (
                 from: actualSender,
                 funcSig: actionTx.transaction.funcSig || '',
               },
-              zodiacConfig,
+              zodiacConfig: { walletType: WalletType.EOA },
               context: { ...logContext, callbackType: `post-bridge: ${actionTx.memo}` },
             });
 
