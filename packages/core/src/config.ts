@@ -16,7 +16,7 @@ import {
 } from './types';
 import yaml from 'js-yaml';
 import fs, { existsSync, readFileSync } from 'fs';
-import { getSsmParameter } from './ssm';
+import { getSsmParameter, SsmParameterReadError } from './ssm';
 import { hexToBase58 } from './solana';
 import { isTvmChain } from './tron';
 import { getRebalanceConfigFromS3 } from './s3';
@@ -767,7 +767,14 @@ export const requireEnv = async (name: string, checkSsm = false): Promise<string
 export const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
   let value = undefined;
   if (checkSsm) {
-    value = await getSsmParameter(name);
+    try {
+      value = await getSsmParameter(name);
+    } catch (error) {
+      if (error instanceof SsmParameterReadError && process.env[name] !== undefined) {
+        return process.env[name];
+      }
+      throw error;
+    }
   }
   return value ?? process.env[name];
 };

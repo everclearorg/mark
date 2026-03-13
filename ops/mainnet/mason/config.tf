@@ -31,14 +31,14 @@ locals {
         awsParamName = "/mason/config/web3_fastfill_signer_private_key_share1"
         gcpSecretRef = { project = "everclear-staging", secretId = "mason-fastfill-signer-pk-share2" }
         method       = "shamir"
-        required     = true
+        required     = false
       },
       {
         path         = "ton.mnemonic"
         awsParamName = "/mason/config/ton_mnemonic_share1"
         gcpSecretRef = { project = "everclear-staging", secretId = "mason-ton-mnemonic-share2" }
         method       = "shamir"
-        required     = true
+        required     = false
       },
       {
         path         = "solana.privateKey"
