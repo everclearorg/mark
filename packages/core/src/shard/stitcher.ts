@@ -16,7 +16,7 @@ import { ShardManifest, ShardedFieldConfig, StitcherOptions, ShardError, ShardEr
 import { getGcpSecret, configureGcpClient } from './gcp-secret-manager';
 import { shamirReconstructPair, isValidShare } from './shamir';
 import { xorReconstruct } from './xor';
-import { setValueByPath, deleteValueByPath } from './path-utils';
+import { setValueByPath, deleteValueByPath, getValueByPath } from './path-utils';
 import { getSsmParameter } from '../ssm';
 
 /**
@@ -169,25 +169,35 @@ async function processShardedField(
     );
   }
 
-  // Fetch Share 1 from AWS SSM Parameter Store
-  logger?.debug?.(`Fetching Share 1 for '${path}' from AWS SSM: ${awsParamName}`);
+  // Use Share 1 from configJson if already pre-loaded (avoids redundant SSM read)
+  const preloadedValue = getValueByPath(configJson, path);
+  let share1Value: string;
 
-  const share1Value = await getSsmParameter(awsParamName);
+  if (typeof preloadedValue === 'string' && preloadedValue.length > 0) {
+    share1Value = preloadedValue;
+    logger?.debug?.(`Using pre-loaded Share 1 for '${path}' from config`);
+  } else {
+    logger?.debug?.(`Fetching Share 1 for '${path}' from AWS SSM: ${awsParamName}`);
 
-  if (share1Value === undefined || share1Value === null) {
-    throw new ShardError(
-      `Share 1 not found in AWS SSM at '${awsParamName}' for field '${path}'`,
-      ShardErrorCode.FIELD_NOT_FOUND,
-      { path, awsParamName },
-    );
-  }
+    const ssmValue = await getSsmParameter(awsParamName);
 
-  if (typeof share1Value !== 'string') {
-    throw new ShardError(
-      `Share 1 from AWS SSM '${awsParamName}' must be a string, got ${typeof share1Value}`,
-      ShardErrorCode.INVALID_SHARE_FORMAT,
-      { path, awsParamName, type: typeof share1Value },
-    );
+    if (ssmValue === undefined || ssmValue === null) {
+      throw new ShardError(
+        `Share 1 not found in AWS SSM at '${awsParamName}' for field '${path}'`,
+        ShardErrorCode.FIELD_NOT_FOUND,
+        { path, awsParamName },
+      );
+    }
+
+    if (typeof ssmValue !== 'string') {
+      throw new ShardError(
+        `Share 1 from AWS SSM '${awsParamName}' must be a string, got ${typeof ssmValue}`,
+        ShardErrorCode.INVALID_SHARE_FORMAT,
+        { path, awsParamName, type: typeof ssmValue },
+      );
+    }
+
+    share1Value = ssmValue;
   }
 
   // Fetch Share 2 from GCP Secret Manager

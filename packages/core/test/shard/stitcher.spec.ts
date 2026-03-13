@@ -102,6 +102,35 @@ describe('stitcher', () => {
       expect(result.solana.rpcUrl).toBe('https://api.mainnet-beta.solana.com'); // Unchanged
     });
 
+    it('should use pre-loaded Share 1 from config without re-reading SSM', async () => {
+      const originalSecret = 'preloaded-secret';
+      const { share1, share2 } = shamirSplitPair(originalSecret);
+
+      const config = {
+        web3_signer_private_key: share1,
+      };
+
+      mockedGetGcpSecret.mockResolvedValue(share2);
+
+      const manifest: ShardManifest = {
+        version: '1.0',
+        shardedFields: [
+          {
+            path: 'web3_signer_private_key',
+            awsParamName: '/test/web3_signer_private_key_share1',
+            gcpSecretRef: { project: 'test-project', secretId: 'test-secret' },
+            method: 'shamir',
+          },
+        ],
+      };
+
+      const result = await stitchConfig(config, manifest) as { web3_signer_private_key: string };
+
+      expect(result.web3_signer_private_key).toBe(originalSecret);
+      expect(mockedGetSsmParameter).not.toHaveBeenCalled();
+      expect(mockedGetGcpSecret).toHaveBeenCalledWith('test-project', 'test-secret', undefined);
+    });
+
     it('should handle numeric object keys (chain IDs)', async () => {
       const originalSecret = 'chain-1-private-key';
       const { share1, share2 } = shamirSplitPair(originalSecret);
