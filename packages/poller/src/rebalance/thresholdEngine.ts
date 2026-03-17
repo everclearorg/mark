@@ -90,11 +90,14 @@ export async function runThresholdRebalance(
   const { threshold, target } = descriptor.getThresholds();
 
   if (target < threshold) {
-    logger.error(`${name} misconfiguration: target (${target.toString()}) is less than threshold (${threshold.toString()})`, {
-      requestId,
-      threshold: threshold.toString(),
-      target: target.toString(),
-    });
+    logger.error(
+      `${name} misconfiguration: target (${target.toString()}) is less than threshold (${threshold.toString()})`,
+      {
+        requestId,
+        threshold: threshold.toString(),
+        target: target.toString(),
+      },
+    );
     return [];
   }
 
