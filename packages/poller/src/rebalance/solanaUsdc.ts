@@ -1,5 +1,5 @@
 import { TransactionReceipt as ViemTransactionReceipt } from 'viem';
-import { safeParseBigInt } from '../helpers';
+import { safeParseBigInt, getEvmBalance } from '../helpers';
 import { jsonifyError } from '@mark/logger';
 import {
   RebalanceOperationStatus,
@@ -709,6 +709,36 @@ async function executeLeg2And3(
 
     const ptUsdeAddress = tokenPair.ptUSDe;
 
+    // Use actual USDC balance on Mainnet instead of operation.amount to account for
+    // potential differences from CCIP fees or rounding during the cross-chain transfer
+    let swapAmount = operation.amount;
+    try {
+      const usdcBalance = await getEvmBalance(
+        rebalanceConfig,
+        MAINNET_CHAIN_ID.toString(),
+        recipient,
+        usdcAddress,
+        USDC_SOLANA_DECIMALS,
+        context.prometheus,
+      );
+      const operationAmount = safeParseBigInt(operation.amount);
+      if (usdcBalance < operationAmount) {
+        logger.warn('Actual USDC balance on Mainnet is less than operation amount (CCIP fees/rounding)', {
+          ...logContext,
+          operationAmount: operation.amount,
+          actualBalance: usdcBalance.toString(),
+          difference: (operationAmount - usdcBalance).toString(),
+        });
+        swapAmount = usdcBalance.toString();
+      }
+    } catch (balanceError) {
+      logger.warn('Failed to check actual USDC balance on Mainnet, using operation amount', {
+        ...logContext,
+        error: jsonifyError(balanceError),
+        fallbackAmount: operation.amount,
+      });
+    }
+
     logger.debug('Leg 2 Pendle swap details', {
       ...logContext,
       storedRecipient,
@@ -716,7 +746,7 @@ async function executeLeg2And3(
       finalRecipient: recipient,
       usdcAddress,
       ptUsdeAddress,
-      amountToSwap: operation.amount,
+      amountToSwap: swapAmount,
     });
 
     // Create route for USDC → ptUSDe swap on mainnet (same chain swap)
@@ -728,17 +758,17 @@ async function executeLeg2And3(
     };
 
     // Get quote from Pendle for USDC → ptUSDe
-    const receivedAmountStr = await pendleAdapter.getReceivedAmount(operation.amount, pendleRoute);
+    const receivedAmountStr = await pendleAdapter.getReceivedAmount(swapAmount, pendleRoute);
 
     logger.info('Received Pendle quote for USDC → ptUSDe swap', {
       ...logContext,
-      amountToSwap: operation.amount,
+      amountToSwap: swapAmount,
       expectedPtUsde: receivedAmountStr,
       route: pendleRoute,
     });
 
     // Execute the Pendle swap transactions
-    const swapTxRequests = await pendleAdapter.send(recipient, recipient, operation.amount, pendleRoute);
+    const swapTxRequests = await pendleAdapter.send(recipient, recipient, swapAmount, pendleRoute);
 
     if (!swapTxRequests.length) {
       logger.error('No swap transactions returned from Pendle adapter', logContext);
@@ -874,9 +904,9 @@ async function executeLeg2And3(
       status: RebalanceOperationStatus.CANCELLED,
     });
 
-    logger.info('Marked operation as FAILED due to Leg 2/3 failure', {
+    logger.info('Marked operation as CANCELLED due to Leg 2/3 failure', {
       ...logContext,
-      note: 'Funds are on Mainnet as USDC - manual intervention may be required',
+      note: 'Funds are on Mainnet as USDC or ptUSDe (depending on which leg failed) - manual intervention required',
     });
   }
 }

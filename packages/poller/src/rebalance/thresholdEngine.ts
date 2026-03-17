@@ -88,6 +88,16 @@ export async function runThresholdRebalance(
 
   // 4. Threshold comparison
   const { threshold, target } = descriptor.getThresholds();
+
+  if (target < threshold) {
+    logger.error(`${name} misconfiguration: target (${target.toString()}) is less than threshold (${threshold.toString()})`, {
+      requestId,
+      threshold: threshold.toString(),
+      target: target.toString(),
+    });
+    return [];
+  }
+
   logger.info(`${name} threshold check`, {
     requestId,
     recipientBalance: recipientBalance.toString(),
@@ -106,7 +116,12 @@ export async function runThresholdRebalance(
   }
 
   // 5. Compute shortfall and convert to bridge amount
-  const shortfall = target - recipientBalance;
+  // Clamp to 0n to guard against edge cases where recipientBalance > target but < threshold
+  const shortfall = recipientBalance < target ? target - recipientBalance : 0n;
+  if (shortfall === 0n) {
+    logger.info(`${name} recipient balance above target, no shortfall`, { requestId });
+    return [];
+  }
   let bridgeAmount: bigint;
   try {
     bridgeAmount = await descriptor.convertShortfallToBridgeAmount(shortfall, context);
