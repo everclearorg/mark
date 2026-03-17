@@ -942,8 +942,18 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
     operation.recipient!.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
   const fillerSenderAddress =
     config.methRebalance?.fillService?.senderAddress ?? config.methRebalance?.fillService?.address;
+
+  if (isForFillService && !fillServiceChainService) {
+    logger.warn('Fill service chain service not available for FS operation callback, skipping', {
+      ...logContext,
+      recipientAddress: operation.recipient,
+      note: 'fillServiceChainService may not be configured in this deployment',
+    });
+    return;
+  }
+
   const evmSender = isForFillService ? fillerSenderAddress! : config.ownAddress;
-  const selectedChainService = isForFillService ? fillServiceChainService : chainService;
+  const selectedChainService = isForFillService ? fillServiceChainService! : chainService;
 
   // Check if ready for callback
   if (operation.status === RebalanceOperationStatus.PENDING) {

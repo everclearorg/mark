@@ -112,7 +112,21 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
 
     logger.debug('Logging run mode of the instance', { runMode: process.env.RUN_MODE });
 
-    const rebalancer = getRegisteredRebalancers().find((r) => r.runMode === process.env.RUN_MODE);
+    const runMode = process.env.RUN_MODE;
+    const rebalancer = runMode ? getRegisteredRebalancers().find((r) => r.runMode === runMode) : undefined;
+
+    if (runMode && !rebalancer && runMode !== 'rebalanceOnly') {
+      const validModes = getRegisteredRebalancers().map((r) => r.runMode);
+      logger.error(`Unknown RUN_MODE "${runMode}". Valid modes: ${validModes.join(', ')}, rebalanceOnly`, {
+        runMode,
+        validModes,
+      });
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: `Unknown RUN_MODE: ${runMode}` }),
+      };
+    }
+
     if (rebalancer) {
       logger.info(`Starting ${rebalancer.displayName} rebalancing`, {
         stage: config.stage,
