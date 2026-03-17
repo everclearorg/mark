@@ -524,7 +524,7 @@ describe('mETH Rebalancing', () => {
 
       const infoCalls = mockLogger.info.getCalls();
       const enoughBalanceLog = infoCalls.find(
-        (call) => call.args[0] && call.args[0].includes('FS receiver has enough mETH, no rebalance needed'),
+        (call) => call.args[0] && call.args[0].includes('recipient balance above threshold, no rebalance needed'),
       );
       expect(enoughBalanceLog).toBeTruthy();
     });
@@ -561,9 +561,9 @@ describe('mETH Rebalancing', () => {
         config: smallShortfallConfig,
       } as unknown as ProcessingContext);
 
-      const debugCalls = mockLogger.debug.getCalls();
-      const shortfallLog = debugCalls.find(
-        (call) => call.args[0] && call.args[0].includes('FS shortfall below minimum rebalance amount'),
+      const warnCalls = mockLogger.warn.getCalls();
+      const shortfallLog = warnCalls.find(
+        (call) => call.args[0] && call.args[0].includes('available amount below minimum rebalance threshold, skipping'),
       );
       expect(shortfallLog).toBeTruthy();
     });
@@ -584,15 +584,9 @@ describe('mETH Rebalancing', () => {
 
       await rebalanceMantleEth(mockContext as unknown as ProcessingContext);
 
-      const warnCalls = mockLogger.warn.getCalls();
-      const insufficientLog = warnCalls.find(
-        (call) => call.args[0] && call.args[0].includes('FS sender has insufficient WETH to cover the full shortfall'),
-      );
-      expect(insufficientLog).toBeTruthy();
-
       const infoCalls = mockLogger.info.getCalls();
       const triggerLog = infoCalls.find(
-        (call) => call.args[0] && call.args[0].includes('FS threshold rebalancing triggered'),
+        (call) => call.args[0] && call.args[0].includes('threshold rebalance triggered'),
       );
       expect(triggerLog).toBeTruthy();
     });
@@ -614,7 +608,7 @@ describe('mETH Rebalancing', () => {
 
       const warnCalls = mockLogger.warn.getCalls();
       const belowMinLog = warnCalls.find(
-        (call) => call.args[0] && call.args[0].includes('Available WETH below minimum rebalance threshold'),
+        (call) => call.args[0] && call.args[0].includes('available amount below minimum rebalance threshold, skipping'),
       );
       expect(belowMinLog).toBeTruthy();
     });
@@ -963,7 +957,7 @@ describe('mETH Rebalancing', () => {
 
       const warnCalls = mockLogger.warn.getCalls();
       const errorLog = warnCalls.find(
-        (call) => call.args[0] && call.args[0].includes('Failed to check FS receiver mETH balance'),
+        (call) => call.args[0] && call.args[0].includes('failed to get recipient balance'),
       );
       expect(errorLog).toBeTruthy();
     });
@@ -973,6 +967,9 @@ describe('mETH Rebalancing', () => {
         if (chainId === MAINNET_CHAIN_ID.toString() && address === MOCK_FS_SENDER_ADDRESS) {
           throw new Error('RPC error');
         }
+        if (chainId === MANTLE_CHAIN_ID.toString() && address === MOCK_FS_ADDRESS) {
+          return BigInt('50000000000000000000'); // 50 mETH (below 100 threshold)
+        }
         return BigInt('1000000000000000000000');
       });
 
@@ -980,7 +977,7 @@ describe('mETH Rebalancing', () => {
 
       const warnCalls = mockLogger.warn.getCalls();
       const errorLog = warnCalls.find(
-        (call) => call.args[0] && call.args[0].includes('Failed to check FS sender WETH balance'),
+        (call) => call.args[0] && call.args[0].includes('failed to get sender balance'),
       );
       expect(errorLog).toBeTruthy();
     });

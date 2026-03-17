@@ -41,15 +41,8 @@ import {
 const USDT_ON_ETH_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
 
-/**
- * Sender configuration for TAC rebalancing transactions.
- * Specifies which address should sign and send from Ethereum mainnet.
- */
-interface TacSenderConfig {
-  address: string; // Sender's Ethereum address
-  signerUrl?: string; // Web3signer URL for this sender (uses default if not specified)
-  label: 'market-maker' | 'fill-service'; // For logging
-}
+import { isOperationTimedOut, DEFAULT_OPERATION_TTL_MINUTES } from './helpers';
+import { SenderConfig, RebalanceRunState } from './types';
 
 /**
  * Resolved USDT token addresses and decimals for TAC rebalancing.
@@ -65,23 +58,6 @@ interface UsdtInfo {
 
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
-
-// Default operation timeout: 24 hours (in minutes)
-const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
-
-/**
- * Check if an operation has exceeded its TTL (time-to-live).
- * Operations stuck in PENDING or AWAITING_CALLBACK for too long should be marked as failed.
- *
- * @param createdAt - Operation creation timestamp
- * @param ttlMinutes - TTL in minutes (default: 24 hours)
- * @returns true if operation has timed out
- */
-function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERATION_TTL_MINUTES): boolean {
-  const maxAgeMs = ttlMinutes * 60 * 1000;
-  const operationAgeMs = Date.now() - createdAt.getTime();
-  return operationAgeMs > maxAgeMs;
-}
 
 /**
  * Type for TAC transaction metadata stored in database
@@ -237,7 +213,7 @@ interface ExecuteBridgeParams {
   bridgeType: SupportedBridge;
   bridgeTxRequests: MemoizedTransactionRequest[];
   amountToBridge: bigint;
-  senderOverride?: TacSenderConfig; // Optional: use different sender than config.ownAddress
+  senderOverride?: SenderConfig; // Optional: use different sender than config.ownAddress
 }
 
 interface ExecuteBridgeResult {
@@ -329,14 +305,6 @@ const executeBridgeTransactions = async ({
 
   return { receipt, effectiveBridgedAmount };
 };
-
-/**
- * Shared state for tracking ETH USDT that has been committed in this run
- * This prevents over-committing when both MM and FS need rebalancing simultaneously
- */
-interface RebalanceRunState {
-  committedEthUsdt: bigint; // Amount of ETH USDT committed in this run (not yet confirmed on-chain)
-}
 
 /**
  * Main TAC USDT rebalancing function
@@ -458,7 +426,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
 
   // Track committed funds to prevent over-committing in this run
   const runState: RebalanceRunState = {
-    committedEthUsdt: 0n,
+    committedAmount: 0n,
   };
 
   // Calculate available balance for MM (no deductions yet)
@@ -469,12 +437,12 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
   actions.push(...mmActions);
 
   // Calculate remaining balance for FS (deduct MM committed amount)
-  const fsAvailableBalance = initialEthUsdtBalance - runState.committedEthUsdt;
+  const fsAvailableBalance = initialEthUsdtBalance - runState.committedAmount;
 
-  if (runState.committedEthUsdt > 0n) {
+  if (runState.committedAmount > 0n) {
     logger.info('MM committed funds, reducing available balance for FS', {
       requestId,
-      mmCommitted: runState.committedEthUsdt.toString(),
+      mmCommitted: runState.committedAmount.toString(),
       fsAvailable: fsAvailableBalance.toString(),
     });
   }
@@ -488,7 +456,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     totalActions: actions.length,
     mmActions: mmActions.length,
     fsActions: fsActions.length,
-    totalCommitted: runState.committedEthUsdt.toString(),
+    totalCommitted: runState.committedAmount.toString(),
   });
 
   return actions;
@@ -589,7 +557,7 @@ const processOnDemandRebalancing = async (
   }
 
   // Track remaining available balance for this on-demand run
-  let remainingEthUsdt = availableEthUsdt - runState.committedEthUsdt;
+  let remainingEthUsdt = availableEthUsdt - runState.committedAmount;
 
   const actions: RebalanceAction[] = [];
 
@@ -914,14 +882,14 @@ const processOnDemandRebalancing = async (
 
       // Track committed funds to prevent over-committing in subsequent operations
       const bridgedAmount = safeParseBigInt(effectiveBridgedAmount);
-      runState.committedEthUsdt += bridgedAmount;
+      runState.committedAmount += bridgedAmount;
       remainingEthUsdt -= bridgedAmount;
 
       logger.debug('Updated committed funds after on-demand bridge', {
         requestId,
         invoiceId: invoice.intent_id.toString(),
         bridgedAmount: bridgedAmount.toString(),
-        totalCommitted: runState.committedEthUsdt.toString(),
+        totalCommitted: runState.committedAmount.toString(),
         remainingAvailable: remainingEthUsdt.toString(),
       });
     } catch (error) {
@@ -1054,13 +1022,13 @@ const processThresholdRebalancing = async ({
 
   // 4. Use available ETH balance (already accounts for committed funds in this run)
   // This prevents over-committing when both MM and FS need rebalancing simultaneously
-  const remainingEthUsdt = availableEthUsdt - runState.committedEthUsdt;
+  const remainingEthUsdt = availableEthUsdt - runState.committedAmount;
 
   logger.debug('Threshold rebalancing: checking available balance', {
     requestId,
     recipient: recipientAddress,
     availableEthUsdt: availableEthUsdt.toString(),
-    alreadyCommitted: runState.committedEthUsdt.toString(),
+    alreadyCommitted: runState.committedAmount.toString(),
     remainingEthUsdt: remainingEthUsdt.toString(),
     shortfall: shortfall.toString(),
   });
@@ -1091,12 +1059,12 @@ const processThresholdRebalancing = async ({
 
   // Track committed funds if bridge was successful
   if (actions.length > 0) {
-    runState.committedEthUsdt += amountToBridge;
+    runState.committedAmount += amountToBridge;
     logger.debug('Updated committed funds after threshold bridge', {
       requestId,
       recipient: recipientAddress,
       bridgedAmount: amountToBridge.toString(),
-      totalCommitted: runState.committedEthUsdt.toString(),
+      totalCommitted: runState.committedAmount.toString(),
     });
   }
 
@@ -1154,7 +1122,7 @@ const executeTacBridge = async (
     config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
 
   let evmSender: string;
-  let senderConfig: TacSenderConfig | undefined;
+  let senderConfig: SenderConfig | undefined;
   let selectedChainService = chainService;
 
   if (isForFillService && fillerSenderAddress && fillServiceChainService) {
@@ -1645,12 +1613,12 @@ const evaluateFillServiceRebalance = async (
   }
 
   // Check if MM has funds available
-  const mmRemainingBalance = mmAvailableEthUsdt - runState.committedEthUsdt;
+  const mmRemainingBalance = mmAvailableEthUsdt - runState.committedAmount;
   if (mmRemainingBalance < minRebalance18) {
     logger.info('Cross-wallet rebalancing: MM has insufficient available funds', {
       requestId,
       mmAvailableEthUsdt: mmAvailableEthUsdt.toString(),
-      committed: runState.committedEthUsdt.toString(),
+      committed: runState.committedAmount.toString(),
       mmRemainingBalance: mmRemainingBalance.toString(),
       minRebalance: minRebalance18.toString(),
     });
@@ -1706,7 +1674,7 @@ const calculateMinExpectedAmount = (amount: bigint, slippageBps: number): bigint
  * - Each flow only bridges its own operation-specific amount
  * - This prevents mixing funds from multiple concurrent flows
  */
-const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
+export const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, database: db } = context;
   logger.info('Executing TAC USDT rebalance callbacks', { requestId });
 

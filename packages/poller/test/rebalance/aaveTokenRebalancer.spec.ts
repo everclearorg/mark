@@ -217,6 +217,7 @@ describe('Aave Token Rebalancer', () => {
       startTime: Date.now(),
       logger: mockLogger,
       chainService: mockChainService,
+      fillServiceChainService: mockChainService,
       rebalance: mockRebalanceAdapter,
       database: mockDatabase,
       everclear: { fetchIntents: stub().resolves([]) },
@@ -344,7 +345,7 @@ describe('Aave Token Rebalancer', () => {
   // ==========================================
   describe('evaluateThresholdRebalance', () => {
     const descriptor = createMockDescriptor();
-    const makeRunState = () => ({ committedSourceToken: 0n });
+    const makeRunState = () => ({ committedAmount: 0n });
 
     it('should return empty when thresholdEnabled is false', async () => {
       const config = {
@@ -381,7 +382,7 @@ describe('Aave Token Rebalancer', () => {
       const result = await evaluateThresholdRebalance(mockContext, badDescriptor, makeRunState());
 
       expect(result).toEqual([]);
-      expect(mockLogger.error.calledWithMatch('token not found in chain config for Mantle')).toBe(true);
+      expect(mockLogger.warn.calledWithMatch('failed to get recipient balance')).toBe(true);
     });
 
     it('should return empty when aToken balance >= threshold', async () => {

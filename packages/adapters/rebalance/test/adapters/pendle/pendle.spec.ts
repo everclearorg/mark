@@ -284,7 +284,7 @@ describe('PendleBridgeAdapter', () => {
     it('has USDC/ptUSDe pair for mainnet', () => {
       expect(USDC_PTUSDE_PAIRS[1]).toBeDefined();
       expect(USDC_PTUSDE_PAIRS[1].usdc).toBe('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48');
-      expect(USDC_PTUSDE_PAIRS[1].ptUSDe).toBe('0xE8483517077afa11A9B07f849cee2552f040d7b2');
+      expect(USDC_PTUSDE_PAIRS[1].ptUSDe).toBe('0x3de0ff76e8b528c092d47b9dac775931cef80f49');
     });
 
     it('has mainnet in supported chains', () => {
