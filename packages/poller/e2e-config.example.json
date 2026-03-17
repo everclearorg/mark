@@ -1,7 +1,7 @@
 {
   "dryRun": true,
-  "runModes": ["methOnly"],
-  "sequential": false,
+  "runModes": ["all"],
+  "sequential": true,
   "overrides": {
     "methRebalance": {
       "enabled": true,
@@ -18,10 +18,15 @@
     },
     "tacRebalance": {
       "enabled": true,
+      "marketMaker": {
+        "thresholdEnabled": true,
+        "threshold": "999000000000000000000",
+        "targetBalance": "999000000000000000000"
+      },
       "fillService": {
         "thresholdEnabled": true,
-        "threshold": "999000000",
-        "targetBalance": "999000000"
+        "threshold": "999000000000000000000",
+        "targetBalance": "999000000000000000000"
       },
       "bridge": {
         "minRebalanceAmount": "100000",
@@ -39,7 +44,7 @@
       "bridge": {
         "minRebalanceAmount": "100000",
         "maxRebalanceAmount": "100000",
-        "slippageDbps": 500
+        "slippageDbps": 50
       }
     },
     "aMansyrupUsdtRebalance": {
@@ -52,7 +57,7 @@
       "bridge": {
         "minRebalanceAmount": "100000",
         "maxRebalanceAmount": "100000",
-        "slippageDbps": 500
+        "slippageDbps": 50
       }
     },
     "solanaPtusdeRebalance": {
