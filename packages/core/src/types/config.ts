@@ -186,6 +186,14 @@ export interface SolanaRebalanceConfig {
     maxRebalanceAmount?: string; // Max USDC amount per operation (optional cap)
   };
 }
+export type TokenRebalancerKey = 'tacRebalance' | 'methRebalance' | 'aManUsdeRebalance' | 'aMansyrupUsdtRebalance';
+export const TOKEN_REBALANCER_KEYS: TokenRebalancerKey[] = [
+  'tacRebalance',
+  'methRebalance',
+  'aManUsdeRebalance',
+  'aMansyrupUsdtRebalance',
+];
+
 export interface RedisConfig {
   host: string;
   port: number;

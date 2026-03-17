@@ -18,11 +18,8 @@ import { RebalanceAdapter } from '@mark/rebalance';
 import { cleanupViemClients } from './helpers/contracts';
 import * as database from '@mark/database';
 import { bytesToHex, WalletClient } from 'viem';
-import { rebalanceMantleEth } from './rebalance/mantleEth';
-import { rebalanceTacUsdt } from './rebalance/tacUsdt';
-import { rebalanceSolanaUsdc } from './rebalance/solanaUsdc';
-import { rebalanceAManUsde } from './rebalance/aManUsde';
-import { rebalanceAMansyrupUsdt } from './rebalance/aMansyrupUsdt';
+import './rebalance/registrations';
+import { getRegisteredRebalancers } from './rebalance/registry';
 import { randomBytes } from 'crypto';
 
 export interface MarkAdapters {
@@ -115,145 +112,22 @@ export const initPoller = async (): Promise<{ statusCode: number; body: string }
 
     logger.debug('Logging run mode of the instance', { runMode: process.env.RUN_MODE });
 
-    if (process.env.RUN_MODE === 'methOnly') {
-      logger.info('Starting meth rebalancing', {
+    const rebalancer = getRegisteredRebalancers().find((r) => r.runMode === process.env.RUN_MODE);
+    if (rebalancer) {
+      logger.info(`Starting ${rebalancer.displayName} rebalancing`, {
         stage: config.stage,
         environment: config.environment,
         addresses,
         fillServiceAddresses,
       });
 
-      const rebalanceOperations = await rebalanceMantleEth(context);
+      const rebalanceOperations = await rebalancer.handler(context);
       if (rebalanceOperations.length === 0) {
-        logger.info('Meth Rebalancing completed: no operations needed', {
+        logger.info(`${rebalancer.displayName} Rebalancing completed: no operations needed`, {
           requestId: context.requestId,
         });
       } else {
-        logger.info('Successfully completed meth rebalancing operations', {
-          requestId: context.requestId,
-          numOperations: rebalanceOperations.length,
-          operations: rebalanceOperations,
-        });
-      }
-
-      logFileDescriptorUsage(logger);
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          rebalanceOperations: rebalanceOperations ?? [],
-        }),
-      };
-    }
-
-    if (process.env.RUN_MODE === 'tacOnly') {
-      logger.info('Starting TAC USDT rebalancing', {
-        stage: config.stage,
-        environment: config.environment,
-        addresses,
-        fillServiceAddresses,
-      });
-
-      const rebalanceOperations = await rebalanceTacUsdt(context);
-      if (rebalanceOperations.length === 0) {
-        logger.info('TAC USDT Rebalancing completed: no operations needed', {
-          requestId: context.requestId,
-        });
-      } else {
-        logger.info('Successfully completed TAC USDT rebalancing operations', {
-          requestId: context.requestId,
-          numOperations: rebalanceOperations.length,
-          operations: rebalanceOperations,
-        });
-      }
-
-      logFileDescriptorUsage(logger);
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          rebalanceOperations: rebalanceOperations ?? [],
-        }),
-      };
-    }
-
-    if (process.env.RUN_MODE === 'aManUsdeOnly') {
-      logger.info('Starting aManUSDe rebalancing', {
-        stage: config.stage,
-        environment: config.environment,
-        addresses,
-        fillServiceAddresses,
-      });
-
-      const rebalanceOperations = await rebalanceAManUsde(context);
-      if (rebalanceOperations.length === 0) {
-        logger.info('aManUSDe Rebalancing completed: no operations needed', {
-          requestId: context.requestId,
-        });
-      } else {
-        logger.info('Successfully completed aManUSDe rebalancing operations', {
-          requestId: context.requestId,
-          numOperations: rebalanceOperations.length,
-          operations: rebalanceOperations,
-        });
-      }
-
-      logFileDescriptorUsage(logger);
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          rebalanceOperations: rebalanceOperations ?? [],
-        }),
-      };
-    }
-
-    if (process.env.RUN_MODE === 'aMansyrupUsdtOnly') {
-      logger.info('Starting aMansyrupUSDT rebalancing', {
-        stage: config.stage,
-        environment: config.environment,
-        addresses,
-        fillServiceAddresses,
-      });
-
-      const rebalanceOperations = await rebalanceAMansyrupUsdt(context);
-      if (rebalanceOperations.length === 0) {
-        logger.info('aMansyrupUSDT Rebalancing completed: no operations needed', {
-          requestId: context.requestId,
-        });
-      } else {
-        logger.info('Successfully completed aMansyrupUSDT rebalancing operations', {
-          requestId: context.requestId,
-          numOperations: rebalanceOperations.length,
-          operations: rebalanceOperations,
-        });
-      }
-
-      logFileDescriptorUsage(logger);
-
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          rebalanceOperations: rebalanceOperations ?? [],
-        }),
-      };
-    }
-
-    if (process.env.RUN_MODE === 'solanaUsdcOnly') {
-      logger.info('Starting Solana USDC → ptUSDe rebalancing', {
-        stage: config.stage,
-        environment: config.environment,
-        addresses,
-        fillServiceAddresses,
-      });
-
-      const rebalanceOperations = await rebalanceSolanaUsdc(context);
-      if (rebalanceOperations.length === 0) {
-        logger.info('Solana USDC Rebalancing completed: no operations needed', {
-          requestId: context.requestId,
-        });
-      } else {
-        logger.info('Successfully completed Solana USDC rebalancing operations', {
+        logger.info(`Successfully completed ${rebalancer.displayName} rebalancing operations`, {
           requestId: context.requestId,
           numOperations: rebalanceOperations.length,
           operations: rebalanceOperations,

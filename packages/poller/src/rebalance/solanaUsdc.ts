@@ -19,6 +19,9 @@ import { SolanaSigner } from '@mark/chainservice';
 import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
 import { submitTransactionWithLogging, TransactionSubmissionResult } from '../helpers/transactions';
 import { RebalanceTransactionMemo, USDC_PTUSDE_PAIRS, CCIPBridgeAdapter, PendleBridgeAdapter } from '@mark/rebalance';
+import { RebalanceRunState } from './types';
+import { runThresholdRebalance, ThresholdRebalanceDescriptor } from './thresholdEngine';
+import { runCallbackLoop, RebalanceOperation } from './callbackEngine';
 
 // Ticker hash from chaindata/everclear.json for cross-chain asset matching
 const USDC_TICKER_HASH = '0xd6aca1be9729c13d677335161321649cccae6a591554772516700f986f942eaa';
@@ -27,9 +30,6 @@ const USDC_TICKER_HASH = '0xd6aca1be9729c13d677335161321649cccae6a59155477251670
 const PTUSDE_SOLANA_DECIMALS = 9; // PT-sUSDE has 9 decimals on Solana
 const USDC_SOLANA_DECIMALS = 6; // USDC has 6 decimals on Solana
 const PTUSDE_MAINNET_DECIMALS = 18; // PT-sUSDE has 18 decimals on Mainnet
-
-// Default operation timeout: 24 hours (in minutes)
-const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
 
 /**
  * Get Solana rebalance configuration from context.
@@ -47,20 +47,6 @@ function getSolanaRebalanceConfig(config: ProcessingContext['config']): SolanaRe
     throw new Error('solanaPtusdeRebalance config not found - this should be provided by @mark/core config loader');
   }
   return config.solanaPtusdeRebalance;
-}
-
-/**
- * Check if an operation has exceeded its TTL (time-to-live).
- * Operations stuck in PENDING or AWAITING_CALLBACK for too long should be marked as failed.
- *
- * @param createdAt - Operation creation timestamp
- * @param ttlMinutes - TTL in minutes (default: 24 hours)
- * @returns true if operation has timed out
- */
-function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERATION_TTL_MINUTES): boolean {
-  const maxAgeMs = ttlMinutes * 60 * 1000;
-  const operationAgeMs = Date.now() - createdAt.getTime();
-  return operationAgeMs > maxAgeMs;
 }
 
 /**
@@ -342,783 +328,621 @@ export async function rebalanceSolanaUsdc(context: ProcessingContext): Promise<R
     solanaAddress: solanaSigner.getAddress(),
   });
 
-  // Check solver's ptUSDe balance directly on Solana to determine if rebalancing is needed
-  let solanaPtUsdeBalance: bigint = 0n;
-  try {
-    const connection = solanaSigner.getConnection();
-    const walletPublicKey = solanaSigner.getPublicKey();
-
-    const ptUsdeTokenAccount = await getAssociatedTokenAddress(PTUSDE_SOLANA_MINT, walletPublicKey);
-
-    try {
-      const ptUsdeAccountInfo = await getAccount(connection, ptUsdeTokenAccount);
-      solanaPtUsdeBalance = ptUsdeAccountInfo.amount;
-    } catch (accountError) {
-      // Account might not exist if no ptUSDe has been received yet
-      logger.info('ptUSDe token account does not exist or is empty', {
-        requestId,
-        walletAddress: walletPublicKey.toBase58(),
-        ptUsdeTokenAccount: ptUsdeTokenAccount.toBase58(),
-        error: jsonifyError(accountError),
-      });
-      solanaPtUsdeBalance = 0n;
-    }
-
-    logger.info('Retrieved Solana ptUSDe balance', {
-      requestId,
-      walletAddress: walletPublicKey.toBase58(),
-      ptUsdeTokenAccount: ptUsdeTokenAccount.toBase58(),
-      balance: solanaPtUsdeBalance.toString(),
-      balanceInPtUsde: (Number(solanaPtUsdeBalance) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
-    });
-  } catch (error) {
-    logger.error('Failed to retrieve Solana ptUSDe balance', {
-      requestId,
-      error: jsonifyError(error),
-    });
-    // Continue with 0 balance - this will trigger rebalancing if USDC is available
-    solanaPtUsdeBalance = 0n;
-  }
-
-  // Get Solana USDC balance - this is what we'll bridge if ptUSDe is low
-  let solanaUsdcBalance: bigint = 0n;
-  try {
-    const connection = solanaSigner.getConnection();
-    const walletPublicKey = solanaSigner.getPublicKey();
-
-    const sourceTokenAccount = await getAssociatedTokenAddress(USDC_SOLANA_MINT, walletPublicKey);
-
-    const tokenAccountInfo = await getAccount(connection, sourceTokenAccount);
-    solanaUsdcBalance = tokenAccountInfo.amount;
-
-    logger.info('Retrieved Solana USDC balance for potential bridging', {
-      requestId,
-      walletAddress: walletPublicKey.toBase58(),
-      tokenAccount: sourceTokenAccount.toBase58(),
-      balance: solanaUsdcBalance.toString(),
-      balanceInUsdc: (Number(solanaUsdcBalance) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-    });
-  } catch (error) {
-    logger.error('Failed to retrieve Solana USDC balance', {
-      requestId,
-      error: jsonifyError(error),
-    });
-    return rebalanceOperations;
-  }
-
-  if (solanaUsdcBalance === 0n) {
-    logger.info('No Solana USDC balance available for bridging, skipping rebalancing', { requestId });
-    return rebalanceOperations;
-  }
-
-  // Parse thresholds from configuration (in native decimals)
-  const ptUsdeThreshold = safeParseBigInt(solanaRebalanceConfig.ptUsdeThreshold);
-  const ptUsdeTarget = safeParseBigInt(solanaRebalanceConfig.ptUsdeTarget);
   const minRebalanceAmount = safeParseBigInt(solanaRebalanceConfig.bridge.minRebalanceAmount);
   const maxRebalanceAmount = safeParseBigInt(solanaRebalanceConfig.bridge.maxRebalanceAmount);
 
-  logger.info('Checking ptUSDe balance threshold for rebalancing decision', {
-    requestId,
-    ptUsdeBalance: solanaPtUsdeBalance.toString(),
-    ptUsdeBalanceFormatted: (Number(solanaPtUsdeBalance) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
-    ptUsdeThreshold: ptUsdeThreshold.toString(),
-    ptUsdeThresholdFormatted: (Number(ptUsdeThreshold) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
-    ptUsdeTarget: ptUsdeTarget.toString(),
-    ptUsdeTargetFormatted: (Number(ptUsdeTarget) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
-    shouldTriggerRebalance: solanaPtUsdeBalance < ptUsdeThreshold,
-    availableSolanaUsdc: solanaUsdcBalance.toString(),
-    availableSolanaUsdcFormatted: (Number(solanaUsdcBalance) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-    configSource: config.solanaPtusdeRebalance ? 'explicit' : 'defaults',
-  });
+  const solanaThresholdDescriptor: ThresholdRebalanceDescriptor = {
+    name: 'Solana ptUSDe',
 
-  if (solanaPtUsdeBalance >= ptUsdeThreshold) {
-    logger.info('ptUSDe balance is above threshold, no rebalancing needed', {
-      requestId,
-      ptUsdeBalance: solanaPtUsdeBalance.toString(),
-      ptUsdeThreshold: ptUsdeThreshold.toString(),
-    });
-    return rebalanceOperations;
-  }
+    isEnabled: () => true, // Already checked solanaRebalanceConfig.enabled above
 
-  // Calculate how much USDC to bridge based on ptUSDe deficit and available Solana USDC
-  const ptUsdeShortfall = ptUsdeTarget - solanaPtUsdeBalance;
-
-  // Get Pendle adapter for accurate pricing
-  const pendleAdapter = context.rebalance.getAdapter(SupportedBridge.Pendle) as PendleBridgeAdapter;
-
-  // Calculate required USDC using Pendle API pricing
-  const usdcNeeded = await calculateRequiredUsdcForPtUsde(ptUsdeShortfall, pendleAdapter, logger);
-
-  // If Pendle API is unavailable, skip rebalancing
-  if (usdcNeeded === null) {
-    logger.error('Skipping rebalancing due to Pendle API unavailability', {
-      requestId,
-      ptUsdeShortfall: ptUsdeShortfall.toString(),
-      reason: 'Cannot determine accurate USDC requirement without Pendle API',
-    });
-    return rebalanceOperations;
-  }
-
-  // Calculate amount to bridge: min(shortfall, available balance, max per operation)
-  let amountToBridge = usdcNeeded;
-  if (amountToBridge > solanaUsdcBalance) {
-    amountToBridge = solanaUsdcBalance;
-  }
-  if (maxRebalanceAmount && maxRebalanceAmount > 0n && amountToBridge > maxRebalanceAmount) {
-    amountToBridge = maxRebalanceAmount;
-  }
-
-  // Check minimum rebalancing amount from config
-  if (amountToBridge < minRebalanceAmount) {
-    logger.warn('Calculated bridge amount is below minimum threshold, skipping rebalancing', {
-      requestId,
-      calculatedAmount: amountToBridge.toString(),
-      calculatedAmountFormatted: (Number(amountToBridge) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-      minAmount: minRebalanceAmount.toString(),
-      minAmountFormatted: (Number(minRebalanceAmount) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-      reason: 'Calculated bridge amount too small to be effective',
-    });
-    return rebalanceOperations;
-  }
-
-  logger.info('Calculated bridge amount based on ptUSDe deficit and available balance', {
-    requestId,
-    balanceChecks: {
-      ptUsdeShortfall: ptUsdeShortfall.toString(),
-      ptUsdeShortfallFormatted: (Number(ptUsdeShortfall) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
-      usdcNeeded: usdcNeeded.toString(),
-      usdcNeededFormatted: (Number(usdcNeeded) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-      availableSolanaUsdc: solanaUsdcBalance.toString(),
-      availableSolanaUsdcFormatted: (Number(solanaUsdcBalance) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-      maxRebalanceAmount: maxRebalanceAmount?.toString() ?? 'unlimited',
-      maxRebalanceAmountFormatted: maxRebalanceAmount
-        ? (Number(maxRebalanceAmount) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6)
-        : 'unlimited',
+    hasInFlightOperations: async () => {
+      const { operations } = await context.database.getRebalanceOperations(undefined, undefined, {
+        status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+        chainId: Number(SOLANA_CHAINID),
+        bridge: 'ccip-solana-mainnet',
+      });
+      if (operations.length > 0) {
+        logger.info('In-flight Solana rebalance operations exist, skipping new rebalance to prevent overlap', {
+          requestId,
+          inFlightCount: operations.length,
+          inFlightOperationIds: operations.map((op) => op.id),
+        });
+      }
+      return operations.length > 0;
     },
-    bridgeDecision: {
-      finalAmountToBridge: amountToBridge.toString(),
-      finalAmountToBridgeFormatted: (Number(amountToBridge) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-      isPartialBridge: solanaUsdcBalance < usdcNeeded,
-      utilizationPercentage: ((Number(amountToBridge) / Number(solanaUsdcBalance)) * 100).toFixed(2) + '%',
+
+    getRecipientBalance: async () => {
+      // Get ptUSDe balance on Solana (in native 9-decimal units)
+      const connection = solanaSigner.getConnection();
+      const walletPublicKey = solanaSigner.getPublicKey();
+      const ptUsdeTokenAccount = await getAssociatedTokenAddress(PTUSDE_SOLANA_MINT, walletPublicKey);
+      let balance = 0n;
+      try {
+        const ptUsdeAccountInfo = await getAccount(connection, ptUsdeTokenAccount);
+        balance = ptUsdeAccountInfo.amount;
+      } catch (accountError) {
+        // Account might not exist if no ptUSDe has been received yet
+        logger.info('ptUSDe token account does not exist or is empty', {
+          requestId,
+          walletAddress: walletPublicKey.toBase58(),
+          ptUsdeTokenAccount: ptUsdeTokenAccount.toBase58(),
+          error: jsonifyError(accountError),
+        });
+        return 0n;
+      }
+      logger.info('Retrieved Solana ptUSDe balance', {
+        requestId,
+        walletAddress: walletPublicKey.toBase58(),
+        ptUsdeTokenAccount: ptUsdeTokenAccount.toBase58(),
+        balance: balance.toString(),
+        balanceInPtUsde: (Number(balance) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
+      });
+      return balance;
     },
-  });
 
-  // Check for in-flight operations to prevent overlapping rebalances
-  const { operations: inFlightSolanaOps } = await context.database.getRebalanceOperations(undefined, undefined, {
-    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
-    chainId: Number(SOLANA_CHAINID),
-    bridge: 'ccip-solana-mainnet',
-  });
+    getThresholds: () => ({
+      threshold: safeParseBigInt(solanaRebalanceConfig.ptUsdeThreshold),
+      target: safeParseBigInt(solanaRebalanceConfig.ptUsdeTarget),
+    }),
 
-  if (inFlightSolanaOps.length > 0) {
-    logger.info('In-flight Solana rebalance operations exist, skipping new rebalance to prevent overlap', {
-      requestId,
-      inFlightCount: inFlightSolanaOps.length,
-      inFlightOperationIds: inFlightSolanaOps.map((op) => op.id),
-    });
-    return rebalanceOperations;
-  }
+    convertShortfallToBridgeAmount: async (ptUsdeShortfall) => {
+      // Convert ptUSDe shortfall (9 decimals) to USDC needed (6 decimals) via Pendle pricing
+      logger.info('Converting ptUSDe shortfall to USDC via Pendle pricing', {
+        requestId,
+        ptUsdeShortfall: ptUsdeShortfall.toString(),
+        ptUsdeShortfallFormatted: (Number(ptUsdeShortfall) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
+      });
+      const pendleAdapter = context.rebalance.getAdapter(SupportedBridge.Pendle) as PendleBridgeAdapter;
+      const usdcNeeded = await calculateRequiredUsdcForPtUsde(ptUsdeShortfall, pendleAdapter, logger);
+      if (usdcNeeded === null) {
+        throw new Error('Cannot determine accurate USDC requirement without Pendle API');
+      }
+      logger.info('Pendle pricing: USDC required for ptUSDe shortfall', {
+        requestId,
+        ptUsdeShortfall: ptUsdeShortfall.toString(),
+        usdcNeeded: usdcNeeded.toString(),
+        usdcNeededFormatted: (Number(usdcNeeded) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
+      });
+      return usdcNeeded;
+    },
 
-  // Prepare route for Solana to Mainnet bridge
-  const solanaToMainnetRoute = {
-    origin: Number(SOLANA_CHAINID),
-    destination: Number(MAINNET_CHAIN_ID),
-    asset: USDC_SOLANA_MINT.toString(),
-  };
+    getSenderBalance: async () => {
+      // Get Solana USDC balance (in native 6-decimal units)
+      const connection = solanaSigner.getConnection();
+      const walletPublicKey = solanaSigner.getPublicKey();
+      const sourceTokenAccount = await getAssociatedTokenAddress(USDC_SOLANA_MINT, walletPublicKey);
+      const tokenAccountInfo = await getAccount(connection, sourceTokenAccount);
+      const balance = tokenAccountInfo.amount;
+      logger.info('Retrieved Solana USDC balance for potential bridging', {
+        requestId,
+        walletAddress: walletPublicKey.toBase58(),
+        tokenAccount: sourceTokenAccount.toBase58(),
+        balance: balance.toString(),
+        balanceInUsdc: (Number(balance) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
+      });
+      return balance;
+    },
 
-  logger.info('Starting Leg 1: Solana to Mainnet CCIP bridge (threshold-based)', {
-    requestId,
-    route: solanaToMainnetRoute,
-    amountToBridge: amountToBridge.toString(),
-    amountToBridgeInUsdc: (Number(amountToBridge) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-    recipientAddress: config.ownAddress,
-    trigger: 'threshold-based',
-    ptUsdeBalance: solanaPtUsdeBalance.toString(),
-    ptUsdeThreshold: ptUsdeThreshold.toString(),
-  });
+    getAmountCaps: () => ({
+      min: minRebalanceAmount,
+      max: maxRebalanceAmount > 0n ? maxRebalanceAmount : undefined,
+    }),
 
-  try {
-    // Pre-flight checks
-    if (!config.ownAddress) {
-      throw new Error('Recipient address (config.ownAddress) not configured');
-    }
+    executeBridge: async (ctx, amountToBridge) => {
+      if (!config.ownAddress) {
+        throw new Error('Recipient address (config.ownAddress) not configured');
+      }
 
-    // Validate balance
-    if (solanaUsdcBalance < amountToBridge) {
-      throw new Error(
-        `Insufficient Solana USDC balance. Required: ${amountToBridge.toString()}, Available: ${solanaUsdcBalance.toString()}`,
-      );
-    }
-
-    logger.info('Performing pre-bridge validation checks', {
-      requestId,
-      trigger: 'threshold-based',
-      checks: {
-        solanaUsdcBalance: solanaUsdcBalance.toString(),
-        solanaUsdcBalanceFormatted: (Number(solanaUsdcBalance) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
+      logger.info('Starting Leg 1: Solana to Mainnet CCIP bridge (threshold-based)', {
+        requestId,
         amountToBridge: amountToBridge.toString(),
-        amountToBridgeFormatted: (Number(amountToBridge) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-        hasSufficientBalance: solanaUsdcBalance >= amountToBridge,
-        recipientValid: !!config.ownAddress,
-        recipient: config.ownAddress,
-      },
-    });
+        amountToBridgeInUsdc: (Number(amountToBridge) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
+        recipientAddress: config.ownAddress,
+        trigger: 'threshold-based',
+      });
 
-    // Execute Leg 1: Solana to Mainnet bridge
-    const bridgeResult = await executeSolanaToMainnetBridge({
-      context: { requestId, logger, config, chainService, rebalance: context.rebalance },
-      solanaSigner,
-      route: solanaToMainnetRoute,
-      amountToBridge,
-      recipientAddress: config.ownAddress,
-    });
+      const solanaToMainnetRoute = {
+        origin: Number(SOLANA_CHAINID),
+        destination: Number(MAINNET_CHAIN_ID),
+        asset: USDC_SOLANA_MINT.toString(),
+      };
 
-    if (!bridgeResult.receipt || bridgeResult.receipt.status !== 1) {
-      throw new Error(`Bridge transaction failed: ${bridgeResult.receipt?.transactionHash || 'Unknown transaction'}`);
-    }
+      const bridgeResult = await executeSolanaToMainnetBridge({
+        context: { requestId, logger, config, chainService, rebalance: context.rebalance },
+        solanaSigner,
+        route: solanaToMainnetRoute,
+        amountToBridge,
+        recipientAddress: config.ownAddress,
+      });
 
-    logger.info('Leg 1 bridge completed successfully', {
-      requestId,
-      transactionHash: bridgeResult.receipt.transactionHash,
-      effectiveAmount: bridgeResult.effectiveBridgedAmount,
-      blockNumber: bridgeResult.receipt.blockNumber,
-      solanaSlot: bridgeResult.receipt.blockNumber,
-    });
+      if (!bridgeResult.receipt || bridgeResult.receipt.status !== 1) {
+        throw new Error(`Bridge transaction failed: ${bridgeResult.receipt?.transactionHash || 'Unknown transaction'}`);
+      }
 
-    // Create rebalance operation record for tracking all 3 legs (no earmark for threshold-based)
-    try {
+      logger.info('Leg 1 bridge completed successfully', {
+        requestId,
+        transactionHash: bridgeResult.receipt.transactionHash,
+        effectiveAmount: bridgeResult.effectiveBridgedAmount,
+        blockNumber: bridgeResult.receipt.blockNumber,
+      });
+
       await createRebalanceOperation({
-        earmarkId: null, // No earmark for threshold-based rebalancing
+        earmarkId: null,
         originChainId: Number(SOLANA_CHAINID),
         destinationChainId: Number(MAINNET_CHAIN_ID),
         tickerHash: USDC_TICKER_HASH,
         amount: bridgeResult.effectiveBridgedAmount,
-        slippage: 1000, // 1% slippage
-        status: RebalanceOperationStatus.PENDING, // pending as CCIP takes 20 mins to bridge
+        slippage: 1000,
+        status: RebalanceOperationStatus.PENDING,
         bridge: 'ccip-solana-mainnet',
         transactions: { [SOLANA_CHAINID]: bridgeResult.receipt },
         recipient: config.ownAddress,
       });
 
-      logger.info('Rebalance operation record created for Leg 1', {
-        requestId,
-        operationStatus: RebalanceOperationStatus.PENDING,
-        note: 'Status is PENDING because CCIP takes ~20 minutes to complete',
-      });
+      return [
+        {
+          bridge: SupportedBridge.CCIP,
+          amount: bridgeResult.effectiveBridgedAmount,
+          origin: Number(SOLANA_CHAINID),
+          destination: Number(MAINNET_CHAIN_ID),
+          asset: USDC_SOLANA_MINT.toString(),
+          transaction: bridgeResult.receipt.transactionHash,
+          recipient: config.ownAddress,
+        },
+      ];
+    },
+  };
 
-      const rebalanceAction: RebalanceAction = {
-        bridge: SupportedBridge.CCIP,
-        amount: bridgeResult.effectiveBridgedAmount,
-        origin: Number(SOLANA_CHAINID),
-        destination: Number(MAINNET_CHAIN_ID),
-        asset: USDC_SOLANA_MINT.toString(),
-        transaction: bridgeResult.receipt.transactionHash,
-        recipient: config.ownAddress,
-      };
-      rebalanceOperations.push(rebalanceAction);
+  const ptUsdeThreshold = safeParseBigInt(solanaRebalanceConfig.ptUsdeThreshold);
+  const ptUsdeTarget = safeParseBigInt(solanaRebalanceConfig.ptUsdeTarget);
 
-      logger.info('Leg 1 rebalance completed successfully', {
-        requestId,
-        bridgedAmount: bridgeResult.effectiveBridgedAmount,
-        bridgedAmountInUsdc: (Number(bridgeResult.effectiveBridgedAmount) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
-        transactionHash: bridgeResult.receipt.transactionHash,
-      });
-    } catch (dbError) {
-      logger.error('Failed to create rebalance operation record', {
-        requestId,
-        error: jsonifyError(dbError),
-      });
-      // Don't throw here - the bridge was successful, just the record creation failed
-    }
-  } catch (bridgeError) {
-    logger.error('Leg 1 bridge operation failed', {
-      requestId,
-      route: solanaToMainnetRoute,
-      amountToBridge: amountToBridge.toString(),
-      error: jsonifyError(bridgeError),
-      errorMessage: (bridgeError as Error)?.message,
-      errorStack: (bridgeError as Error)?.stack,
-    });
-  }
+  logger.info('Solana ptUSDe rebalance configuration', {
+    requestId,
+    ptUsdeThreshold: ptUsdeThreshold.toString(),
+    ptUsdeThresholdFormatted: (Number(ptUsdeThreshold) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
+    ptUsdeTarget: ptUsdeTarget.toString(),
+    ptUsdeTargetFormatted: (Number(ptUsdeTarget) / 10 ** PTUSDE_SOLANA_DECIMALS).toFixed(6),
+    minRebalanceAmount: minRebalanceAmount.toString(),
+    minRebalanceAmountFormatted: (Number(minRebalanceAmount) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6),
+    maxRebalanceAmount: maxRebalanceAmount.toString(),
+    maxRebalanceAmountFormatted:
+      maxRebalanceAmount > 0n ? (Number(maxRebalanceAmount) / 10 ** USDC_SOLANA_DECIMALS).toFixed(6) : 'unlimited',
+    configSource: config.solanaPtusdeRebalance ? 'explicit' : 'defaults',
+  });
 
-  logger.info('Completed rebalancing Solana USDC', { requestId });
+  const runState: RebalanceRunState = { committedAmount: 0n };
+  const thresholdActions = await runThresholdRebalance(context, solanaThresholdDescriptor, runState);
+  rebalanceOperations.push(...thresholdActions);
+
+  logger.info('Completed rebalancing Solana USDC', {
+    requestId,
+    operationCount: rebalanceOperations.length,
+  });
 
   return rebalanceOperations;
 }
 
 export const executeSolanaUsdcCallbacks = async (context: ProcessingContext): Promise<void> => {
-  const { logger, requestId, database: db } = context;
-  logger.info('Executing destination callbacks for Solana USDC rebalance', { requestId });
-
-  // Get all pending CCIP operations from Solana to Mainnet
-  const { operations: pendingSolanaOps } = await db.getRebalanceOperations(undefined, undefined, {
-    status: [RebalanceOperationStatus.PENDING],
-    chainId: Number(SOLANA_CHAINID),
+  return runCallbackLoop(context, {
+    name: 'Solana USDC',
     bridge: 'ccip-solana-mainnet',
+    statuses: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
+    timeoutStatus: RebalanceOperationStatus.EXPIRED,
+    processOperation: (operation, ctx) => processSolanaOperation(operation, ctx),
   });
+};
 
-  logger.debug('Found pending Solana USDC rebalance operations', {
-    count: pendingSolanaOps.length,
+/**
+ * Process a single in-flight Solana USDC operation through its state machine.
+ * Dispatches to leg-specific handlers based on operation status.
+ */
+async function processSolanaOperation(operation: RebalanceOperation, context: ProcessingContext): Promise<void> {
+  if (operation.status === RebalanceOperationStatus.PENDING) {
+    await processLeg1Completion(operation, context);
+  } else if (operation.status === RebalanceOperationStatus.AWAITING_CALLBACK) {
+    await checkLeg3Completion(operation, context);
+  }
+}
+
+/**
+ * Leg 1 completion: Check if Solana→Mainnet CCIP bridge completed.
+ * On success, executes Leg 2 (USDC→ptUSDe swap) and Leg 3 (ptUSDe→Solana CCIP).
+ */
+async function processLeg1Completion(operation: RebalanceOperation, context: ProcessingContext): Promise<void> {
+  const { logger, requestId, database: db } = context;
+  const logContext = {
     requestId,
-    status: RebalanceOperationStatus.PENDING,
+    operationId: operation.id,
+    earmarkId: operation.earmarkId,
+    originChain: operation.originChainId,
+    destinationChain: operation.destinationChainId,
+  };
+
+  if (operation.originChainId !== Number(SOLANA_CHAINID) || operation.destinationChainId !== Number(MAINNET_CHAIN_ID)) {
+    return;
+  }
+
+  logger.info('Checking if CCIP bridge completed and USDC arrived on Mainnet', {
+    ...logContext,
+    bridge: operation.bridge,
+    amount: operation.amount,
   });
 
-  for (const operation of pendingSolanaOps) {
-    const logContext = {
-      requestId,
-      operationId: operation.id,
-      earmarkId: operation.earmarkId,
-      originChain: operation.originChainId,
-      destinationChain: operation.destinationChainId,
-    };
-
-    if (
-      operation.originChainId !== Number(SOLANA_CHAINID) ||
-      operation.destinationChainId !== Number(MAINNET_CHAIN_ID)
-    ) {
-      continue;
-    }
-
-    // Check for operation timeout - mark as failed if stuck for too long
-    if (operation.createdAt && isOperationTimedOut(new Date(operation.createdAt))) {
-      logger.warn('Operation has exceeded TTL, marking as FAILED', {
-        ...logContext,
-        createdAt: operation.createdAt,
-        ttlMinutes: DEFAULT_OPERATION_TTL_MINUTES,
-      });
-      await db.updateRebalanceOperation(operation.id, {
-        status: RebalanceOperationStatus.EXPIRED,
-      });
-      continue;
-    }
-
-    logger.info('Checking if CCIP bridge completed and USDC arrived on Mainnet', {
+  // Get the Solana transaction hash from the stored receipt
+  const solanaTransactionHash = operation.transactions?.[SOLANA_CHAINID]?.transactionHash;
+  if (!solanaTransactionHash) {
+    logger.warn('No Solana transaction hash found for CCIP operation', {
       ...logContext,
-      bridge: operation.bridge,
-      amount: operation.amount,
+      transactions: operation.transactions,
+    });
+    return;
+  }
+
+  // Use CCIP adapter to check transaction status
+  const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP) as CCIPBridgeAdapter;
+  const ccipStatus = await ccipAdapter.getTransferStatus(
+    solanaTransactionHash,
+    Number(SOLANA_CHAINID),
+    Number(MAINNET_CHAIN_ID),
+  );
+
+  const createdAt = operation.createdAt ? new Date(operation.createdAt).getTime() : Date.now();
+  const timeSinceCreation = new Date().getTime() - createdAt;
+
+  logger.info('CCIP bridge status check', {
+    ...logContext,
+    solanaTransactionHash,
+    ccipStatus: ccipStatus.status,
+    ccipMessage: ccipStatus.message,
+    destinationTransactionHash: ccipStatus.destinationTransactionHash,
+    timeSinceCreation,
+  });
+
+  if (ccipStatus.status === 'SUCCESS') {
+    // IDEMPOTENCY CHECK: Check if we already have a Mainnet transaction hash
+    // which would indicate Leg 2/3 have already been executed
+    const existingMainnetTx = operation.transactions?.[MAINNET_CHAIN_ID]?.transactionHash;
+    if (existingMainnetTx) {
+      logger.info('Leg 2/3 already executed (Mainnet tx hash exists), skipping duplicate execution', {
+        ...logContext,
+        existingMainnetTx,
+        solanaTransactionHash,
+      });
+      return;
+    }
+
+    logger.info('CCIP bridge completed successfully, initiating Leg 2: USDC → ptUSDe swap', {
+      ...logContext,
+      solanaTransactionHash,
+      proceedingToLeg2: true,
     });
 
-    try {
-      // Get the Solana transaction hash from the stored receipt
-      const solanaTransactionHash = operation.transactions?.[SOLANA_CHAINID]?.transactionHash;
-      if (!solanaTransactionHash) {
-        logger.warn('No Solana transaction hash found for CCIP operation', {
-          ...logContext,
-          transactions: operation.transactions,
-        });
-        continue;
-      }
+    // Update operation to AWAITING_CALLBACK to indicate Leg 1 is done, Leg 2 starting
+    await db.updateRebalanceOperation(operation.id, {
+      status: RebalanceOperationStatus.AWAITING_CALLBACK,
+    });
 
-      // Use CCIP adapter to check transaction status
-      const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP) as CCIPBridgeAdapter;
-      const ccipStatus = await ccipAdapter.getTransferStatus(
-        solanaTransactionHash,
-        Number(SOLANA_CHAINID),
-        Number(MAINNET_CHAIN_ID),
-      );
+    // Execute Legs 2 and 3
+    await executeLeg2And3(operation, context, logContext);
+  } else if (ccipStatus.status === 'FAILURE') {
+    logger.error('CCIP bridge transaction failed', {
+      ...logContext,
+      solanaTransactionHash,
+      ccipMessage: ccipStatus.message,
+      shouldRetry: false,
+    });
 
-      const createdAt = operation.createdAt ? new Date(operation.createdAt).getTime() : Date.now();
-      const timeSinceCreation = new Date().getTime() - createdAt;
+    await db.updateRebalanceOperation(operation.id, {
+      status: RebalanceOperationStatus.FAILED,
+    });
 
-      logger.info('CCIP bridge status check', {
+    logger.info('Marked operation as FAILED due to CCIP bridge failure', {
+      ...logContext,
+      note: 'Leg 1 CCIP bridge failed - funds may still be on Solana',
+    });
+  } else {
+    // CCIP still pending
+    const twentyMinutesMs = 20 * 60 * 1000;
+
+    if (timeSinceCreation > twentyMinutesMs) {
+      logger.warn('CCIP bridge taking longer than expected', {
         ...logContext,
         solanaTransactionHash,
+        timeSinceCreation,
+        expectedMaxTime: twentyMinutesMs,
         ccipStatus: ccipStatus.status,
         ccipMessage: ccipStatus.message,
-        destinationTransactionHash: ccipStatus.destinationTransactionHash,
-        timeSinceCreation,
+        shouldInvestigate: true,
       });
-
-      if (ccipStatus.status === 'SUCCESS') {
-        // IDEMPOTENCY CHECK: Check if we already have a Mainnet transaction hash
-        // which would indicate Leg 2/3 have already been executed
-        const existingMainnetTx = operation.transactions?.[MAINNET_CHAIN_ID]?.transactionHash;
-        if (existingMainnetTx) {
-          logger.info('Leg 2/3 already executed (Mainnet tx hash exists), skipping duplicate execution', {
-            ...logContext,
-            existingMainnetTx,
-            solanaTransactionHash,
-          });
-          // Status should already be AWAITING_CALLBACK, just continue to next operation
-          continue;
-        }
-
-        logger.info('CCIP bridge completed successfully, initiating Leg 2: USDC → ptUSDe swap', {
-          ...logContext,
-          solanaTransactionHash,
-          proceedingToLeg2: true,
-        });
-
-        // Update operation to AWAITING_CALLBACK to indicate Leg 1 is done, Leg 2 starting
-        await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.AWAITING_CALLBACK,
-        });
-
-        // Execute Leg 2: Mainnet USDC → ptUSDe using Pendle adapter
-        logger.info('Executing Leg 2: Mainnet USDC → ptUSDe via Pendle adapter', logContext);
-
-        try {
-          const { rebalance, config: rebalanceConfig } = context;
-
-          // Get the Pendle adapter
-          const pendleAdapter = rebalance.getAdapter(SupportedBridge.Pendle);
-          if (!pendleAdapter) {
-            logger.error('Pendle adapter not found', logContext);
-            continue;
-          }
-
-          // Get USDC address on mainnet for the swap
-          const usdcAddress = getTokenAddressFromConfig(USDC_TICKER_HASH, MAINNET_CHAIN_ID.toString(), rebalanceConfig);
-          if (!usdcAddress) {
-            logger.error('Could not find USDC address for mainnet', logContext);
-            continue;
-          }
-
-          // Use stored recipient from Leg 1 operation to ensure consistency
-          const storedRecipient = operation.recipient;
-          const recipient = storedRecipient || rebalanceConfig.ownAddress;
-
-          // Get ptUSDe address from the USDC_PTUSDE_PAIRS config
-          const tokenPair = USDC_PTUSDE_PAIRS[Number(MAINNET_CHAIN_ID)];
-          if (!tokenPair?.ptUSDe) {
-            logger.error('ptUSDe address not configured for mainnet in USDC_PTUSDE_PAIRS', logContext);
-            await db.updateRebalanceOperation(operation.id, {
-              status: RebalanceOperationStatus.CANCELLED,
-            });
-            continue;
-          }
-
-          const ptUsdeAddress = tokenPair.ptUSDe;
-
-          logger.debug('Leg 2 Pendle swap details', {
-            ...logContext,
-            storedRecipient,
-            fallbackRecipient: rebalanceConfig.ownAddress,
-            finalRecipient: recipient,
-            usdcAddress,
-            ptUsdeAddress,
-            amountToSwap: operation.amount,
-          });
-
-          // Create route for USDC → ptUSDe swap on mainnet (same chain swap)
-          const pendleRoute = {
-            asset: usdcAddress,
-            origin: Number(MAINNET_CHAIN_ID),
-            destination: Number(MAINNET_CHAIN_ID), // Same chain swap
-            swapOutputAsset: ptUsdeAddress, // Target ptUSDe (actual address)
-          };
-
-          // Get quote from Pendle for USDC → ptUSDe
-          const receivedAmountStr = await pendleAdapter.getReceivedAmount(operation.amount, pendleRoute);
-
-          logger.info('Received Pendle quote for USDC → ptUSDe swap', {
-            ...logContext,
-            amountToSwap: operation.amount,
-            expectedPtUsde: receivedAmountStr,
-            route: pendleRoute,
-          });
-
-          // Execute the Pendle swap transactions
-          const swapTxRequests = await pendleAdapter.send(recipient, recipient, operation.amount, pendleRoute);
-
-          if (!swapTxRequests.length) {
-            logger.error('No swap transactions returned from Pendle adapter', logContext);
-            continue;
-          }
-
-          logger.info('Executing Pendle USDC → ptUSDe swap transactions', {
-            ...logContext,
-            transactionCount: swapTxRequests.length,
-            recipient,
-          });
-
-          // Execute each transaction in the swap sequence
-          let effectivePtUsdeAmount = receivedAmountStr;
-
-          for (const { transaction, memo, effectiveAmount } of swapTxRequests) {
-            logger.info('Submitting Pendle swap transaction', {
-              requestId,
-              memo,
-              transaction,
-            });
-
-            const result = await submitTransactionWithLogging({
-              chainService: context.chainService,
-              logger,
-              chainId: MAINNET_CHAIN_ID.toString(),
-              txRequest: {
-                to: transaction.to!,
-                data: transaction.data!,
-                value: (transaction.value || 0).toString(),
-                chainId: Number(MAINNET_CHAIN_ID),
-                from: rebalanceConfig.ownAddress,
-                funcSig: transaction.funcSig || '',
-              },
-              zodiacConfig: {
-                walletType: WalletType.EOA,
-              },
-              context: { requestId, route: pendleRoute, bridgeType: SupportedBridge.Pendle, transactionType: memo },
-            });
-
-            logger.info('Successfully submitted Pendle swap transaction', {
-              requestId,
-              memo,
-              transactionHash: result.hash,
-            });
-
-            if (memo === RebalanceTransactionMemo.Rebalance) {
-              if (effectiveAmount) {
-                effectivePtUsdeAmount = effectiveAmount;
-              }
-            }
-          }
-
-          // Execute Leg 3: ptUSDe → Solana CCIP immediately after Leg 2
-          logger.info('Executing Leg 3: Mainnet ptUSDe → Solana via CCIP adapter', logContext);
-
-          const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP);
-
-          // Reuse ptUsdeAddress from Leg 2 scope for Leg 3
-
-          // Create route for ptUSDe → Solana CCIP bridge
-          const ccipRoute = {
-            asset: ptUsdeAddress,
-            origin: Number(MAINNET_CHAIN_ID),
-            destination: Number(SOLANA_CHAINID), // Back to Solana
-          };
-
-          // Execute Leg 3 CCIP transactions
-          const solanaRecipient = context.solanaSigner?.getAddress();
-          if (!solanaRecipient) throw new Error('Solana signer address unavailable for CCIP leg 3');
-
-          const ccipTxRequests = await ccipAdapter.send(recipient, solanaRecipient, effectivePtUsdeAmount, ccipRoute);
-
-          let leg3CcipTx: TransactionSubmissionResult | undefined;
-
-          for (const { transaction, memo } of ccipTxRequests) {
-            logger.info('Submitting CCIP ptUSDe → Solana transaction', {
-              requestId,
-              memo,
-              transaction,
-            });
-
-            const result = await submitTransactionWithLogging({
-              chainService: context.chainService,
-              logger,
-              chainId: MAINNET_CHAIN_ID.toString(),
-              txRequest: {
-                to: transaction.to!,
-                data: transaction.data!,
-                value: (transaction.value || 0).toString(),
-                chainId: Number(MAINNET_CHAIN_ID),
-                from: rebalanceConfig.ownAddress,
-                funcSig: transaction.funcSig || '',
-              },
-              zodiacConfig: {
-                walletType: WalletType.EOA,
-              },
-              context: { requestId, route: ccipRoute, bridgeType: SupportedBridge.CCIP, transactionType: memo },
-            });
-
-            logger.info('Successfully submitted CCIP transaction', {
-              requestId,
-              memo,
-              transactionHash: result.hash,
-            });
-
-            // Store the CCIP bridge transaction hash (not approval)
-            if (memo === RebalanceTransactionMemo.Rebalance) {
-              leg3CcipTx = result;
-            }
-          }
-
-          // Update operation with Leg 3 CCIP transaction hash for status tracking
-          if (leg3CcipTx) {
-            const leg3Receipt: TransactionReceipt = leg3CcipTx.receipt!;
-
-            const insertedTransactions = {
-              [MAINNET_CHAIN_ID]: leg3Receipt,
-            };
-
-            await db.updateRebalanceOperation(operation.id, {
-              txHashes: insertedTransactions,
-            });
-
-            logger.info('Stored Leg 3 CCIP transaction hash for status tracking', {
-              requestId,
-              operationId: operation.id,
-              leg3CcipTxHash: leg3CcipTx.hash,
-            });
-          }
-
-          // Keep status as AWAITING_CALLBACK - Leg 3 CCIP takes 20+ minutes
-          // Will be checked in next callback cycle
-          logger.info('Legs 1, 2, and 3 submitted successfully', {
-            ...logContext,
-            ptUsdeAmount: effectivePtUsdeAmount,
-            note: 'Leg 1: Done, Leg 2: Done, Leg 3: CCIP submitted, waiting for completion',
-            status: 'AWAITING_CALLBACK',
-          });
-        } catch (pendleError) {
-          logger.error('Failed to execute Leg 2/3', {
-            ...logContext,
-            error: jsonifyError(pendleError),
-          });
-
-          // Mark operation as FAILED since Leg 2/3 failed
-          await db.updateRebalanceOperation(operation.id, {
-            status: RebalanceOperationStatus.CANCELLED,
-          });
-
-          logger.info('Marked operation as FAILED due to Leg 2/3 failure', {
-            ...logContext,
-            note: 'Funds are on Mainnet as USDC - manual intervention may be required',
-          });
-        }
-      } else if (ccipStatus.status === 'FAILURE') {
-        logger.error('CCIP bridge transaction failed', {
-          ...logContext,
-          solanaTransactionHash,
-          ccipMessage: ccipStatus.message,
-          shouldRetry: false,
-        });
-
-        // Mark operation as FAILED since CCIP bridge failed
-        await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.FAILED,
-        });
-
-        logger.info('Marked operation as FAILED due to CCIP bridge failure', {
-          ...logContext,
-          note: 'Leg 1 CCIP bridge failed - funds may still be on Solana',
-        });
-      } else {
-        // CCIP still pending - check if it's been too long (CCIP typically takes 20 minutes)
-        const twentyMinutesMs = 20 * 60 * 1000;
-
-        if (timeSinceCreation > twentyMinutesMs) {
-          logger.warn('CCIP bridge taking longer than expected', {
-            ...logContext,
-            solanaTransactionHash,
-            timeSinceCreation,
-            expectedMaxTime: twentyMinutesMs,
-            ccipStatus: ccipStatus.status,
-            ccipMessage: ccipStatus.message,
-            shouldInvestigate: true,
-          });
-        } else {
-          logger.debug('CCIP bridge still pending within expected timeframe', {
-            ...logContext,
-            solanaTransactionHash,
-            timeSinceCreation,
-            remainingTime: twentyMinutesMs - timeSinceCreation,
-            ccipStatus: ccipStatus.status,
-          });
-        }
-      }
-    } catch (error) {
-      logger.error('Failed to check CCIP bridge completion status', {
+    } else {
+      logger.debug('CCIP bridge still pending within expected timeframe', {
         ...logContext,
-        error: jsonifyError(error),
+        solanaTransactionHash,
+        timeSinceCreation,
+        remainingTime: twentyMinutesMs - timeSinceCreation,
+        ccipStatus: ccipStatus.status,
       });
     }
   }
+}
 
-  // Check operations in AWAITING_CALLBACK status for Leg 3 (ptUSDe → Solana CCIP) completion
-  const { operations: awaitingCallbackOps } = await db.getRebalanceOperations(undefined, undefined, {
-    status: [RebalanceOperationStatus.AWAITING_CALLBACK],
-    bridge: 'ccip-solana-mainnet',
-  });
+/**
+ * Execute Leg 2 (Mainnet USDC → ptUSDe via Pendle) and Leg 3 (ptUSDe → Solana via CCIP).
+ */
+async function executeLeg2And3(
+  operation: RebalanceOperation,
+  context: ProcessingContext,
+  logContext: Record<string, unknown>,
+): Promise<void> {
+  const { logger, requestId, database: db, rebalance, config: rebalanceConfig, chainService } = context;
 
-  logger.debug('Found operations awaiting Leg 3 CCIP completion', {
-    count: awaitingCallbackOps.length,
-    requestId,
-    status: RebalanceOperationStatus.AWAITING_CALLBACK,
-  });
+  try {
+    logger.info('Executing Leg 2: Mainnet USDC → ptUSDe via Pendle adapter', logContext);
 
-  for (const operation of awaitingCallbackOps) {
-    const logContext = {
-      requestId,
-      operationId: operation.id,
-      earmarkId: operation.earmarkId,
-      originChain: operation.originChainId,
-      destinationChain: operation.destinationChainId,
+    // Get the Pendle adapter
+    const pendleAdapter = rebalance.getAdapter(SupportedBridge.Pendle);
+    if (!pendleAdapter) {
+      logger.error('Pendle adapter not found', logContext);
+      return;
+    }
+
+    // Get USDC address on mainnet for the swap
+    const usdcAddress = getTokenAddressFromConfig(USDC_TICKER_HASH, MAINNET_CHAIN_ID.toString(), rebalanceConfig);
+    if (!usdcAddress) {
+      logger.error('Could not find USDC address for mainnet', logContext);
+      return;
+    }
+
+    const storedRecipient = operation.recipient;
+    const recipient = storedRecipient || rebalanceConfig.ownAddress;
+
+    // Get ptUSDe address from the USDC_PTUSDE_PAIRS config
+    const tokenPair = USDC_PTUSDE_PAIRS[Number(MAINNET_CHAIN_ID)];
+    if (!tokenPair?.ptUSDe) {
+      logger.error('ptUSDe address not configured for mainnet in USDC_PTUSDE_PAIRS', logContext);
+      await db.updateRebalanceOperation(operation.id, {
+        status: RebalanceOperationStatus.CANCELLED,
+      });
+      return;
+    }
+
+    const ptUsdeAddress = tokenPair.ptUSDe;
+
+    logger.debug('Leg 2 Pendle swap details', {
+      ...logContext,
+      storedRecipient,
+      fallbackRecipient: rebalanceConfig.ownAddress,
+      finalRecipient: recipient,
+      usdcAddress,
+      ptUsdeAddress,
+      amountToSwap: operation.amount,
+    });
+
+    // Create route for USDC → ptUSDe swap on mainnet (same chain swap)
+    const pendleRoute = {
+      asset: usdcAddress,
+      origin: Number(MAINNET_CHAIN_ID),
+      destination: Number(MAINNET_CHAIN_ID),
+      swapOutputAsset: ptUsdeAddress,
     };
 
-    // Check for operation timeout - mark as failed if stuck for too long
-    if (operation.createdAt && isOperationTimedOut(new Date(operation.createdAt))) {
-      logger.warn('AWAITING_CALLBACK operation has exceeded TTL, marking as FAILED', {
-        ...logContext,
-        createdAt: operation.createdAt,
-        ttlMinutes: DEFAULT_OPERATION_TTL_MINUTES,
-        note: 'Leg 3 CCIP may have failed or taken too long',
+    // Get quote from Pendle for USDC → ptUSDe
+    const receivedAmountStr = await pendleAdapter.getReceivedAmount(operation.amount, pendleRoute);
+
+    logger.info('Received Pendle quote for USDC → ptUSDe swap', {
+      ...logContext,
+      amountToSwap: operation.amount,
+      expectedPtUsde: receivedAmountStr,
+      route: pendleRoute,
+    });
+
+    // Execute the Pendle swap transactions
+    const swapTxRequests = await pendleAdapter.send(recipient, recipient, operation.amount, pendleRoute);
+
+    if (!swapTxRequests.length) {
+      logger.error('No swap transactions returned from Pendle adapter', logContext);
+      return;
+    }
+
+    logger.info('Executing Pendle USDC → ptUSDe swap transactions', {
+      ...logContext,
+      transactionCount: swapTxRequests.length,
+      recipient,
+    });
+
+    let effectivePtUsdeAmount = receivedAmountStr;
+
+    for (const { transaction, memo, effectiveAmount } of swapTxRequests) {
+      logger.info('Submitting Pendle swap transaction', {
+        requestId,
+        memo,
+        transaction,
       });
+
+      const result = await submitTransactionWithLogging({
+        chainService,
+        logger,
+        chainId: MAINNET_CHAIN_ID.toString(),
+        txRequest: {
+          to: transaction.to!,
+          data: transaction.data!,
+          value: (transaction.value || 0).toString(),
+          chainId: Number(MAINNET_CHAIN_ID),
+          from: rebalanceConfig.ownAddress,
+          funcSig: transaction.funcSig || '',
+        },
+        zodiacConfig: {
+          walletType: WalletType.EOA,
+        },
+        context: { requestId, route: pendleRoute, bridgeType: SupportedBridge.Pendle, transactionType: memo },
+      });
+
+      logger.info('Successfully submitted Pendle swap transaction', {
+        requestId,
+        memo,
+        transactionHash: result.hash,
+      });
+
+      if (memo === RebalanceTransactionMemo.Rebalance && effectiveAmount) {
+        effectivePtUsdeAmount = effectiveAmount;
+      }
+    }
+
+    // Execute Leg 3: ptUSDe → Solana CCIP immediately after Leg 2
+    logger.info('Executing Leg 3: Mainnet ptUSDe → Solana via CCIP adapter', logContext);
+
+    const ccipAdapter = rebalance.getAdapter(SupportedBridge.CCIP);
+
+    const ccipRoute = {
+      asset: ptUsdeAddress,
+      origin: Number(MAINNET_CHAIN_ID),
+      destination: Number(SOLANA_CHAINID),
+    };
+
+    const solanaRecipient = context.solanaSigner?.getAddress();
+    if (!solanaRecipient) throw new Error('Solana signer address unavailable for CCIP leg 3');
+
+    const ccipTxRequests = await ccipAdapter.send(recipient, solanaRecipient, effectivePtUsdeAmount, ccipRoute);
+
+    let leg3CcipTx: TransactionSubmissionResult | undefined;
+
+    for (const { transaction, memo } of ccipTxRequests) {
+      logger.info('Submitting CCIP ptUSDe → Solana transaction', {
+        requestId,
+        memo,
+        transaction,
+      });
+
+      const result = await submitTransactionWithLogging({
+        chainService,
+        logger,
+        chainId: MAINNET_CHAIN_ID.toString(),
+        txRequest: {
+          to: transaction.to!,
+          data: transaction.data!,
+          value: (transaction.value || 0).toString(),
+          chainId: Number(MAINNET_CHAIN_ID),
+          from: rebalanceConfig.ownAddress,
+          funcSig: transaction.funcSig || '',
+        },
+        zodiacConfig: {
+          walletType: WalletType.EOA,
+        },
+        context: { requestId, route: ccipRoute, bridgeType: SupportedBridge.CCIP, transactionType: memo },
+      });
+
+      logger.info('Successfully submitted CCIP transaction', {
+        requestId,
+        memo,
+        transactionHash: result.hash,
+      });
+
+      if (memo === RebalanceTransactionMemo.Rebalance) {
+        leg3CcipTx = result;
+      }
+    }
+
+    // Update operation with Leg 3 CCIP transaction hash for status tracking
+    if (leg3CcipTx) {
+      const leg3Receipt: TransactionReceipt = leg3CcipTx.receipt!;
+
       await db.updateRebalanceOperation(operation.id, {
-        status: RebalanceOperationStatus.EXPIRED,
-      });
-      continue;
-    }
-
-    logger.info('Checking Leg 3 CCIP completion (ptUSDe → Solana)', logContext);
-
-    try {
-      // Get Leg 3 CCIP transaction hash from mainnet transactions
-      const mainnetTransactionHash = operation.transactions?.[MAINNET_CHAIN_ID]?.transactionHash;
-      if (!mainnetTransactionHash) {
-        logger.warn('No Leg 3 CCIP transaction hash found', {
-          ...logContext,
-          transactions: operation.transactions,
-        });
-        continue;
-      }
-
-      // Check if Leg 3 CCIP (ptUSDe → Solana) is ready on destination
-      const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP) as CCIPBridgeAdapter;
-
-      const leg3Route = {
-        origin: Number(MAINNET_CHAIN_ID),
-        destination: Number(SOLANA_CHAINID),
-        asset: '', // Will be filled by adapter
-      };
-
-      // Create minimal receipt for readyOnDestination - the CCIP adapter only uses
-      // transactionHash and status fields, so we cast a partial object
-      const isLeg3Ready = await ccipAdapter.readyOnDestination('0', leg3Route, {
-        transactionHash: mainnetTransactionHash,
-        status: 'success',
-      } as ViemTransactionReceipt);
-
-      logger.info('Leg 3 CCIP readiness check', {
-        ...logContext,
-        mainnetTransactionHash,
-        isReady: isLeg3Ready,
-        route: leg3Route,
+        txHashes: { [MAINNET_CHAIN_ID]: leg3Receipt },
       });
 
-      if (isLeg3Ready) {
-        // All 3 legs completed successfully
-        await db.updateRebalanceOperation(operation.id, {
-          status: RebalanceOperationStatus.COMPLETED,
-        });
-
-        logger.info('All 3 legs completed successfully', {
-          ...logContext,
-          mainnetTransactionHash,
-          note: 'Leg 1: Solana→Mainnet CCIP ✓, Leg 2: USDC→ptUSDe ✓, Leg 3: ptUSDe→Solana CCIP ✓',
-          finalStatus: 'COMPLETED',
-        });
-      } else {
-        logger.debug('Leg 3 CCIP still pending', {
-          ...logContext,
-          mainnetTransactionHash,
-          note: 'Waiting for ptUSDe → Solana CCIP to complete',
-        });
-      }
-    } catch (error) {
-      logger.error('Failed to check Leg 3 CCIP completion', {
-        ...logContext,
-        error: jsonifyError(error),
+      logger.info('Stored Leg 3 CCIP transaction hash for status tracking', {
+        requestId,
+        operationId: operation.id,
+        leg3CcipTxHash: leg3CcipTx.hash,
       });
     }
+
+    logger.info('Legs 1, 2, and 3 submitted successfully', {
+      ...logContext,
+      ptUsdeAmount: effectivePtUsdeAmount,
+      note: 'Leg 1: Done, Leg 2: Done, Leg 3: CCIP submitted, waiting for completion',
+      status: 'AWAITING_CALLBACK',
+    });
+  } catch (pendleError) {
+    logger.error('Failed to execute Leg 2/3', {
+      ...logContext,
+      error: jsonifyError(pendleError),
+    });
+
+    await db.updateRebalanceOperation(operation.id, {
+      status: RebalanceOperationStatus.CANCELLED,
+    });
+
+    logger.info('Marked operation as FAILED due to Leg 2/3 failure', {
+      ...logContext,
+      note: 'Funds are on Mainnet as USDC - manual intervention may be required',
+    });
   }
-};
+}
+
+/**
+ * Check if Leg 3 (ptUSDe → Solana CCIP) has completed.
+ * Operations in AWAITING_CALLBACK status have Legs 1+2 done, waiting for Leg 3 CCIP.
+ */
+async function checkLeg3Completion(operation: RebalanceOperation, context: ProcessingContext): Promise<void> {
+  const { logger, requestId, database: db } = context;
+  const logContext = {
+    requestId,
+    operationId: operation.id,
+    earmarkId: operation.earmarkId,
+    originChain: operation.originChainId,
+    destinationChain: operation.destinationChainId,
+  };
+
+  logger.info('Checking Leg 3 CCIP completion (ptUSDe → Solana)', logContext);
+
+  // Get Leg 3 CCIP transaction hash from mainnet transactions
+  const mainnetTransactionHash = operation.transactions?.[MAINNET_CHAIN_ID]?.transactionHash;
+  if (!mainnetTransactionHash) {
+    logger.warn('No Leg 3 CCIP transaction hash found', {
+      ...logContext,
+      transactions: operation.transactions,
+    });
+    return;
+  }
+
+  // Check if Leg 3 CCIP (ptUSDe → Solana) is ready on destination
+  const ccipAdapter = context.rebalance.getAdapter(SupportedBridge.CCIP) as CCIPBridgeAdapter;
+
+  const leg3Route = {
+    origin: Number(MAINNET_CHAIN_ID),
+    destination: Number(SOLANA_CHAINID),
+    asset: '',
+  };
+
+  const isLeg3Ready = await ccipAdapter.readyOnDestination('0', leg3Route, {
+    transactionHash: mainnetTransactionHash,
+    status: 'success',
+  } as ViemTransactionReceipt);
+
+  logger.info('Leg 3 CCIP readiness check', {
+    ...logContext,
+    mainnetTransactionHash,
+    isReady: isLeg3Ready,
+    route: leg3Route,
+  });
+
+  if (isLeg3Ready) {
+    await db.updateRebalanceOperation(operation.id, {
+      status: RebalanceOperationStatus.COMPLETED,
+    });
+
+    logger.info('All 3 legs completed successfully', {
+      ...logContext,
+      mainnetTransactionHash,
+      finalStatus: 'COMPLETED',
+    });
+  } else {
+    logger.debug('Leg 3 CCIP still pending', {
+      ...logContext,
+      mainnetTransactionHash,
+      note: 'Waiting for ptUSDe → Solana CCIP to complete',
+    });
+  }
+}

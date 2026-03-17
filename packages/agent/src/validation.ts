@@ -1,5 +1,11 @@
 import { Logger } from '@mark/logger';
-import { MarkConfiguration, TokenRebalanceConfig } from '@mark/core';
+import {
+  MarkConfiguration,
+  TokenRebalanceConfig,
+  TOKEN_REBALANCER_KEYS,
+  TokenRebalancerKey,
+  SolanaRebalanceConfig,
+} from '@mark/core';
 
 /**
  * Validates a single token rebalance configuration.
@@ -7,7 +13,7 @@ import { MarkConfiguration, TokenRebalanceConfig } from '@mark/core';
  */
 function validateSingleTokenRebalanceConfig(
   tokenConfig: TokenRebalanceConfig | undefined,
-  configName: 'tacRebalance' | 'methRebalance' | 'aManUsdeRebalance' | 'aMansyrupUsdtRebalance',
+  configName: TokenRebalancerKey,
   config: MarkConfiguration,
   logger: Logger,
 ): void {
@@ -100,12 +106,55 @@ function validateSingleTokenRebalanceConfig(
 }
 
 /**
+ * Validates Solana ptUSDe rebalance configuration.
+ * Solana uses a different config shape (SolanaRebalanceConfig) than the EVM token rebalancers.
+ */
+function validateSolanaRebalanceConfig(
+  solanaConfig: SolanaRebalanceConfig | undefined,
+  config: MarkConfiguration,
+  logger: Logger,
+): void {
+  if (!solanaConfig?.enabled) {
+    logger.debug('solanaPtusdeRebalance disabled, skipping config validation');
+    return;
+  }
+
+  const errors: string[] = [];
+
+  if (!solanaConfig.ptUsdeThreshold) {
+    errors.push('solanaPtusdeRebalance.ptUsdeThreshold is required when enabled');
+  }
+  if (!solanaConfig.ptUsdeTarget) {
+    errors.push('solanaPtusdeRebalance.ptUsdeTarget is required when enabled');
+  }
+  if (!solanaConfig.bridge?.minRebalanceAmount) {
+    errors.push('solanaPtusdeRebalance.bridge.minRebalanceAmount is required');
+  }
+  if (!config.solana?.privateKey) {
+    errors.push('solana.privateKey (SOLANA_PRIVATE_KEY) is required for Solana rebalancing');
+  }
+
+  if (errors.length > 0) {
+    const errorMessage = `solanaPtusdeRebalance config validation failed:\n  - ${errors.join('\n  - ')}`;
+    logger.error('solanaPtusdeRebalance config validation failed', { errors });
+    throw new Error(errorMessage);
+  }
+
+  logger.info('solanaPtusdeRebalance config validated successfully', {
+    ptUsdeThreshold: solanaConfig.ptUsdeThreshold,
+    ptUsdeTarget: solanaConfig.ptUsdeTarget,
+    minRebalanceAmount: solanaConfig.bridge.minRebalanceAmount,
+    maxRebalanceAmount: solanaConfig.bridge.maxRebalanceAmount,
+  });
+}
+
+/**
  * Validates token rebalance configuration for production readiness.
  * Throws if required fields are missing when token rebalancing is enabled.
  */
 export function validateTokenRebalanceConfig(config: MarkConfiguration, logger: Logger): void {
-  validateSingleTokenRebalanceConfig(config.tacRebalance, 'tacRebalance', config, logger);
-  validateSingleTokenRebalanceConfig(config.methRebalance, 'methRebalance', config, logger);
-  validateSingleTokenRebalanceConfig(config.aManUsdeRebalance, 'aManUsdeRebalance', config, logger);
-  validateSingleTokenRebalanceConfig(config.aMansyrupUsdtRebalance, 'aMansyrupUsdtRebalance', config, logger);
+  for (const key of TOKEN_REBALANCER_KEYS) {
+    validateSingleTokenRebalanceConfig(config[key], key, config, logger);
+  }
+  validateSolanaRebalanceConfig(config.solanaPtusdeRebalance, config, logger);
 }

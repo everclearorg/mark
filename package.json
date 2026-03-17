@@ -26,6 +26,7 @@
     "aws:setup": "npx ts-node scripts/aws-shard-setup.ts --manifest",
     "build": "yarn workspaces foreach -Av --parallel --topological-dev run build",
     "clean": "yarn workspaces foreach -A --parallel run clean",
+    "e2e:rebalance": "yarn workspace @mark/poller e2e",
     "gcp:setup": "npx ts-node scripts/gcp-shard-setup.ts --manifest",
     "lint": "yarn lint:package && yarn workspaces foreach -A --parallel run lint",
     "lint:fix": "yarn workspaces foreach -A --parallel run lint:fix",
@@ -41,14 +42,6 @@
   },
   "dependencies": {
     "@types/node": "20.17.12"
-  },
-  "dependenciesMeta": {
-    "@eth-optimism/contracts-bedrock": {
-      "built": false
-    },
-    "@eth-optimism/core-utils": {
-      "built": false
-    }
   },
   "devDependencies": {
     "@commitlint/cli": "19.6.1",
@@ -73,6 +66,14 @@
     "sort-package-json": "2.12.0",
     "tsc-alias": "1.8.10",
     "typescript": "5.7.2"
+  },
+  "dependenciesMeta": {
+    "@eth-optimism/contracts-bedrock": {
+      "built": false
+    },
+    "@eth-optimism/core-utils": {
+      "built": false
+    }
   },
   "packageManager": "yarn@3.3.1"
 }

@@ -396,12 +396,7 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: zircuitOptimismPortalAbi,
               functionName: 'proveWithdrawalTransaction',
-              args: [
-                withdrawalTx,
-                proofResult.l2OutputIndex,
-                proofResult.outputRootProof,
-                proofResult.withdrawalProof,
-              ],
+              args: [withdrawalTx, proofResult.l2OutputIndex, proofResult.outputRootProof, proofResult.withdrawalProof],
             }),
             value: BigInt(0),
           },
