@@ -17,7 +17,7 @@ import {
 import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
-import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
+import { MemoizedTransactionRequest } from '@mark/rebalance';
 import {
   createEarmark,
   createRebalanceOperation,
@@ -33,28 +33,10 @@ import { getBridgeTypeFromTag } from './helpers';
 import { runCallbackLoop, RebalanceOperation } from './callbackEngine';
 import { SenderConfig, RebalanceRunState } from './types';
 import { runThresholdRebalance, ThresholdRebalanceDescriptor } from './thresholdEngine';
+import { submitBridgeTransactions, executeEvmBridge } from './bridgeExecution';
 
 const WETH_TICKER_HASH = '0x0f8a193ff464434486c0daf7db2a895884365d2bc84ba47a68fcf89c1b14b5b8';
 const METH_TICKER_HASH = '0xd5a2aecb01320815a5625da6d67fbe0b34c12b267ebb3b060c014486ec5484d8';
-
-type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
-interface ExecuteBridgeParams {
-  context: ExecuteBridgeContext;
-  route: {
-    origin: number;
-    destination: number;
-    asset: string;
-  };
-  bridgeType: SupportedBridge;
-  bridgeTxRequests: MemoizedTransactionRequest[];
-  amountToBridge: bigint;
-  senderOverride?: SenderConfig; // Optional: use different sender than config.ownAddress
-}
-
-interface ExecuteBridgeResult {
-  receipt?: TransactionReceipt;
-  effectiveBridgedAmount: string;
-}
 
 interface ThresholdRebalanceParams {
   context: ProcessingContext;
@@ -65,91 +47,6 @@ interface ThresholdRebalanceParams {
   earmarkId: string | null; // null for threshold-based
   skipCommitTracking?: boolean; // true when called from threshold engine (which tracks itself)
 }
-
-/**
- * Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
- * @param senderOverride - If provided, uses this address as sender instead of config.ownAddress
- */
-const executeBridgeTransactions = async ({
-  context,
-  route,
-  bridgeType,
-  bridgeTxRequests,
-  amountToBridge,
-  senderOverride,
-}: ExecuteBridgeParams): Promise<ExecuteBridgeResult> => {
-  const { logger, chainService, config, requestId } = context;
-
-  // Use sender override if provided, otherwise default to ownAddress
-  const senderAddress = senderOverride?.address ?? config.ownAddress;
-  const senderLabel = senderOverride?.label ?? 'market-maker';
-
-  let idx = -1;
-  let effectiveBridgedAmount = amountToBridge.toString();
-  let receipt: TransactionReceipt | undefined;
-
-  for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
-    idx++;
-    logger.info('Submitting bridge transaction', {
-      requestId,
-      route,
-      bridgeType,
-      transactionIndex: idx,
-      totalTransactions: bridgeTxRequests.length,
-      transaction,
-      memo,
-      amountToBridge,
-      sender: senderAddress,
-      senderType: senderLabel,
-    });
-
-    const result = await submitTransactionWithLogging({
-      chainService,
-      logger,
-      chainId: route.origin.toString(),
-      txRequest: {
-        to: transaction.to!,
-        data: transaction.data!,
-        value: (transaction.value || 0).toString(),
-        chainId: route.origin,
-        from: senderAddress,
-        funcSig: transaction.funcSig || '',
-      },
-      zodiacConfig: {
-        walletType: WalletType.EOA,
-      },
-      context: { requestId, route, bridgeType, transactionType: memo, sender: senderLabel },
-    });
-
-    logger.info('Successfully submitted bridge transaction', {
-      requestId,
-      route,
-      bridgeType,
-      transactionIndex: idx,
-      totalTransactions: bridgeTxRequests.length,
-      transactionHash: result.hash,
-      memo,
-      amountToBridge,
-    });
-
-    if (memo !== RebalanceTransactionMemo.Rebalance) {
-      continue;
-    }
-
-    receipt = result.receipt! as unknown as TransactionReceipt;
-    if (effectiveAmount) {
-      effectiveBridgedAmount = effectiveAmount;
-      logger.info('Using effective bridged amount from adapter', {
-        requestId,
-        originalAmount: amountToBridge.toString(),
-        effectiveAmount: effectiveBridgedAmount,
-        bridgeType,
-      });
-    }
-  }
-
-  return { receipt, effectiveBridgedAmount };
-};
 
 export async function rebalanceMantleEth(context: ProcessingContext): Promise<RebalanceAction[]> {
   const { logger, requestId, config, rebalance } = context;
@@ -405,12 +302,21 @@ const evaluateFillServiceRebalance = async (
     });
 
     if (fsActions.length === 0) {
-      await removeEarmark(earmark.id);
-      logger.info('Removed earmark for intent rebalance because no operations were executed', {
-        requestId,
-        earmarkId: earmark.id,
-        invoiceId: intent.intent_id,
-      });
+      try {
+        await removeEarmark(earmark.id);
+        logger.info('Removed earmark for intent rebalance because no operations were executed', {
+          requestId,
+          earmarkId: earmark.id,
+          invoiceId: intent.intent_id,
+        });
+      } catch (removeError) {
+        logger.error('Failed to remove earmark after no operations executed', {
+          requestId,
+          earmarkId: earmark.id,
+          invoiceId: intent.intent_id,
+          error: jsonifyError(removeError),
+        });
+      }
     }
 
     actions.push(...fsActions);
@@ -564,7 +470,6 @@ const executeMethBridge = async (
   const isForFillService = recipientAddress.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
 
   // --- Leg 1: Bridge WETH from origin chain to Mainnet via Across ---
-  let rebalanceSuccessful = false;
   const bridgeType = SupportedBridge.Across;
 
   // Determine sender for the bridge based on recipient type
@@ -715,52 +620,77 @@ const executeMethBridge = async (
     return [];
   }
 
-  let bridgeTxRequests: MemoizedTransactionRequest[] = [];
-  let receivedAmount: bigint = amount;
-
   const originIsMainnet = String(origin) === MAINNET_CHAIN_ID;
-  if (!originIsMainnet) {
+
+  if (originIsMainnet) {
+    // Origin is mainnet — skip Across bridge, just create DB record with AWAITING_CALLBACK
+    try {
+      await createRebalanceOperation({
+        earmarkId: earmarkId,
+        originChainId: route.origin,
+        destinationChainId: route.destination,
+        tickerHash: getTickerForAsset(route.asset, route.origin, config) || WETH_TICKER_HASH,
+        amount: amount.toString(),
+        slippage: route.slippagesDbps[0],
+        status: RebalanceOperationStatus.AWAITING_CALLBACK,
+        bridge: `${bridgeType}-mantle`,
+        recipient: recipientAddress,
+      });
+
+      logger.info('Successfully created mETH Leg 1 rebalance operation (origin is mainnet)', {
+        requestId,
+        route,
+        bridgeType,
+        amountToBridge: amount.toString(),
+      });
+
+      actions.push({
+        bridge: adapter.type(),
+        amount: amount.toString(),
+        origin: route.origin,
+        destination: route.destination,
+        asset: route.asset,
+        transaction: '',
+        recipient: recipientAddress,
+      });
+    } catch (error) {
+      logger.error('Failed to create mETH rebalance operation', {
+        requestId,
+        route,
+        error: jsonifyError(error),
+      });
+      return [];
+    }
+  } else {
+    // Non-mainnet origin — full Across bridge flow
     try {
       const amountInNativeUnits = convertToNativeUnits(amount, originWethDecimals);
-      // Get quote
-      const receivedAmountStr = await adapter.getReceivedAmount(amountInNativeUnits.toString(), route);
-      logger.info('Received Across quote', {
-        requestId,
+
+      const result = await executeEvmBridge({
+        context,
+        adapter,
         route,
-        amountToBridge: amountInNativeUnits.toString(),
-        receivedAmount: receivedAmountStr,
+        amount: amountInNativeUnits,
+        dbAmount: amount, // preserve 18-decimal for DB record consistency
+        sender: evmSender,
+        recipient: recipientAddress,
+        slippageTolerance: BigInt(route.slippagesDbps[0]),
+        slippageMultiplier: DBPS_MULTIPLIER,
+        chainService: selectedChainService,
+        senderConfig,
+        dbRecord: {
+          earmarkId: earmarkId,
+          tickerHash: getTickerForAsset(route.asset, route.origin, config) || WETH_TICKER_HASH,
+          bridgeTag: `${bridgeType}-mantle`,
+          status: RebalanceOperationStatus.PENDING,
+        },
+        label: 'mETH Leg 1 Across',
       });
 
-      // Check slippage - use safeParseBigInt for adapter response
-      // Note: Both receivedAmount and minimumAcceptableAmount are in native units (18 decimals for WETH)
-      receivedAmount = safeParseBigInt(receivedAmountStr);
-      const slippageDbps = BigInt(route.slippagesDbps[0]); // slippagesDbps is number[], BigInt is safe
-      const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageDbps) / DBPS_MULTIPLIER;
-
-      if (receivedAmount < minimumAcceptableAmount) {
-        logger.warn('Across quote does not meet slippage requirements', {
-          requestId,
-          route,
-          amountToBridge: amountInNativeUnits.toString(),
-          receivedAmount: receivedAmount.toString(),
-          minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-        });
+      if (result.actions.length === 0) {
         return [];
       }
-
-      // Get bridge transactions
-      bridgeTxRequests = await adapter.send(evmSender, recipientAddress, amountInNativeUnits.toString(), route);
-
-      if (!bridgeTxRequests.length) {
-        logger.error('No bridge transactions returned from Across adapter', { requestId });
-        return [];
-      }
-
-      logger.info('Prepared Across bridge transactions', {
-        requestId,
-        route,
-        transactionCount: bridgeTxRequests.length,
-      });
+      actions.push(...result.actions);
     } catch (error) {
       logger.error('Failed to execute Across bridge', {
         requestId,
@@ -770,80 +700,6 @@ const executeMethBridge = async (
       });
       return [];
     }
-  }
-
-  try {
-    // Execute bridge transactions using the selected chain service and sender
-    const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-      context: { requestId, logger, chainService: selectedChainService, config },
-      route,
-      bridgeType,
-      bridgeTxRequests,
-      amountToBridge: amount,
-      senderOverride: senderConfig,
-    });
-
-    // Create database record for Leg 1
-    await createRebalanceOperation({
-      earmarkId: earmarkId,
-      originChainId: route.origin,
-      destinationChainId: route.destination,
-      tickerHash: getTickerForAsset(route.asset, route.origin, config) || WETH_TICKER_HASH,
-      amount: effectiveBridgedAmount,
-      slippage: route.slippagesDbps[0],
-      status: originIsMainnet ? RebalanceOperationStatus.AWAITING_CALLBACK : RebalanceOperationStatus.PENDING,
-      bridge: `${bridgeType}-mantle`,
-      transactions: receipt
-        ? {
-            [route.origin]: receipt,
-          }
-        : undefined,
-      recipient: recipientAddress,
-    });
-
-    logger.info('Successfully created mETH Leg 1 rebalance operation', {
-      requestId,
-      route,
-      bridgeType,
-      originTxHash: receipt?.transactionHash,
-      amountToBridge: effectiveBridgedAmount,
-    });
-
-    // Track the operation
-    const rebalanceAction: RebalanceAction = {
-      bridge: adapter.type(),
-      amount: amount.toString(),
-      origin: route.origin,
-      destination: route.destination,
-      asset: route.asset,
-      transaction: receipt?.transactionHash || '',
-      recipient: recipientAddress,
-    };
-    actions.push(rebalanceAction);
-
-    rebalanceSuccessful = true;
-  } catch (error) {
-    logger.error('Failed to execute Across bridge', {
-      requestId,
-      route,
-      bridgeType,
-      error: jsonifyError(error),
-    });
-    return [];
-  }
-
-  if (rebalanceSuccessful) {
-    logger.info('Leg 1 rebalance successful', {
-      requestId,
-      route,
-      amount: amount.toString(),
-    });
-  } else {
-    logger.warn('Failed to complete Leg 1 rebalance', {
-      requestId,
-      route,
-      amount: amount.toString(),
-    });
   }
 
   return actions;
@@ -938,8 +794,12 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
   };
 
   // Determine if this is for Fill Service or Market Maker based on recipient
+  if (!operation.recipient) {
+    logger.error('Operation missing recipient address', logContext);
+    return;
+  }
   const isForFillService =
-    operation.recipient!.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
+    operation.recipient.toLowerCase() === config.methRebalance?.fillService?.address?.toLowerCase();
   const fillerSenderAddress =
     config.methRebalance?.fillService?.senderAddress ?? config.methRebalance?.fillService?.address;
 
@@ -1126,8 +986,9 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
 
       // Step 3: Submit the bridge transactions in order and create database record
       try {
-        const { receipt: mantleReceipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-          context: { requestId, logger, chainService: selectedChainService as ChainService, config },
+        const { receipt: mantleReceipt, effectiveBridgedAmount } = await submitBridgeTransactions({
+          context: { requestId, logger, config },
+          chainService: selectedChainService as ChainService,
           route,
           bridgeType: mantleBridgeType,
           bridgeTxRequests,
@@ -1173,20 +1034,28 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
     }
 
     if (successCallback) {
-      await db.updateRebalanceOperation(operation.id, {
-        status: RebalanceOperationStatus.COMPLETED,
-        txHashes: callbackTxHashes,
-      });
+      try {
+        await db.updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.COMPLETED,
+          txHashes: callbackTxHashes,
+        });
 
-      if (operation.earmarkId) {
-        await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.COMPLETED);
+        if (operation.earmarkId) {
+          await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.COMPLETED);
+        }
+        logger.info('Successfully updated database with destination transaction', {
+          operationId: operation.id,
+          earmarkId: operation.earmarkId,
+          status: RebalanceOperationStatus.COMPLETED,
+          txHashes: callbackTxHashes,
+        });
+      } catch (dbError) {
+        logger.error('Failed to update database after successful callback — operation may be retried', {
+          operationId: operation.id,
+          earmarkId: operation.earmarkId,
+          error: jsonifyError(dbError),
+        });
       }
-      logger.info('Successfully updated database with destination transaction', {
-        operationId: operation.id,
-        earmarkId: operation.earmarkId,
-        status: RebalanceOperationStatus.COMPLETED,
-        txHashes: callbackTxHashes,
-      });
     }
   }
 }

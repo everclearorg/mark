@@ -17,12 +17,13 @@ import {
 } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { submitTransactionWithLogging } from '../helpers/transactions';
-import { RebalanceTransactionMemo, buildTransactionsForAction } from '@mark/rebalance';
-import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
+import { buildTransactionsForAction } from '@mark/rebalance';
+import { TransactionReceipt } from '@mark/database';
 import { getBridgeTypeFromTag } from './helpers';
 import { RebalanceRunState } from './types';
 import { runThresholdRebalance, ThresholdRebalanceDescriptor } from './thresholdEngine';
 import { runCallbackLoop, RebalanceOperation } from './callbackEngine';
+import { executeEvmBridge } from './bridgeExecution';
 
 /**
  * Descriptor that parameterizes the generic Aave token rebalancer for a specific flow.
@@ -252,13 +253,12 @@ export const executeStargateBridgeForAaveToken = async (
   const { config, chainService, fillServiceChainService, logger, requestId, rebalance } = context;
   const tokenConfig = descriptor.getConfig(config)!;
   const bridgeConfig = tokenConfig.bridge;
-  const actions: RebalanceAction[] = [];
 
   const bridgeType = SupportedBridge.Stargate;
   const adapter = rebalance.getAdapter(bridgeType);
   if (!adapter) {
     logger.error('Stargate adapter not found', { requestId });
-    return actions;
+    return [];
   }
 
   // Select the correct chain service based on whether the sender is the fill service address
@@ -273,7 +273,7 @@ export const executeStargateBridgeForAaveToken = async (
       senderAddress,
       fillerSenderAddress,
     });
-    return actions;
+    return [];
   }
 
   const sourceTokenAddress = getTokenAddressFromConfig(descriptor.sourceTokenTickerHash, MAINNET_CHAIN_ID, config)!;
@@ -300,122 +300,37 @@ export const executeStargateBridgeForAaveToken = async (
   });
 
   try {
-    // Get quote
-    const receivedAmountStr = await adapter.getReceivedAmount(amount.toString(), route);
-    logger.info('Received Stargate quote', {
-      requestId,
-      amountToBridge: amount.toString(),
-      receivedAmount: receivedAmountStr,
-    });
-
-    // Check slippage
-    const receivedAmount = BigInt(receivedAmountStr);
-    const slippage = BigInt(slippageDbps);
-    const minimumAcceptableAmount = amount - (amount * slippage) / DBPS_MULTIPLIER;
-
-    if (receivedAmount < minimumAcceptableAmount) {
-      logger.warn('Stargate quote does not meet slippage requirements', {
-        requestId,
-        amountToBridge: amount.toString(),
-        receivedAmount: receivedAmount.toString(),
-        minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-        slippageDbps,
-      });
-      return actions;
-    }
-
-    // Get bridge transactions
-    const bridgeTxRequests = await adapter.send(senderAddress, recipientAddress, amount.toString(), route);
-    if (!bridgeTxRequests.length) {
-      logger.error('No bridge transactions returned from Stargate adapter', { requestId });
-      return actions;
-    }
-
-    logger.info('Prepared Stargate bridge transactions', {
-      requestId,
-      transactionCount: bridgeTxRequests.length,
-    });
-
-    // Execute bridge transactions
-    let receipt: TransactionReceipt | undefined;
-    let effectiveBridgedAmount = amount.toString();
-
-    for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
-      logger.info('Submitting Stargate bridge transaction', {
-        requestId,
-        memo,
-        to: transaction.to,
-      });
-
-      const result = await submitTransactionWithLogging({
-        chainService: selectedChainService,
-        logger,
-        chainId: MAINNET_CHAIN_ID,
-        txRequest: {
-          to: transaction.to!,
-          data: transaction.data!,
-          value: (transaction.value || 0).toString(),
-          chainId: Number(MAINNET_CHAIN_ID),
-          from: senderAddress,
-          funcSig: transaction.funcSig || '',
-        },
-        zodiacConfig: { walletType: WalletType.EOA },
-        context: { requestId, route, bridgeType, transactionType: memo },
-      });
-
-      logger.info('Successfully submitted Stargate bridge transaction', {
-        requestId,
-        memo,
-        transactionHash: result.hash,
-      });
-
-      if (memo === RebalanceTransactionMemo.Rebalance) {
-        receipt = result.receipt! as unknown as TransactionReceipt;
-        if (effectiveAmount) {
-          effectiveBridgedAmount = effectiveAmount;
-        }
-      }
-    }
-
-    // Create database record
-    await createRebalanceOperation({
-      earmarkId: null,
-      originChainId: route.origin,
-      destinationChainId: route.destination,
-      tickerHash: descriptor.sourceTokenTickerHash,
-      amount: effectiveBridgedAmount,
-      slippage: slippageDbps,
-      status: RebalanceOperationStatus.PENDING,
-      bridge: descriptor.bridgeTag,
-      transactions: receipt ? { [MAINNET_CHAIN_ID]: receipt } : undefined,
+    const result = await executeEvmBridge({
+      context,
+      adapter,
+      route,
+      amount,
+      sender: senderAddress,
       recipient: recipientAddress,
+      slippageTolerance: BigInt(slippageDbps),
+      slippageMultiplier: DBPS_MULTIPLIER,
+      chainService: selectedChainService,
+      senderConfig: {
+        address: senderAddress,
+        label: isFillerSender ? 'fill-service' : 'market-maker',
+      },
+      dbRecord: {
+        earmarkId: null,
+        tickerHash: descriptor.sourceTokenTickerHash,
+        bridgeTag: descriptor.bridgeTag,
+        status: RebalanceOperationStatus.PENDING,
+      },
+      label: `Stargate ${descriptor.name}`,
     });
-
-    logger.info(`Successfully created ${descriptor.name} rebalance operation`, {
-      requestId,
-      originTxHash: receipt?.transactionHash,
-      amountToBridge: effectiveBridgedAmount,
-      bridge: descriptor.bridgeTag,
-    });
-
-    actions.push({
-      bridge: bridgeType,
-      amount: amount.toString(),
-      origin: route.origin,
-      destination: route.destination,
-      asset: route.asset,
-      transaction: receipt?.transactionHash || '',
-      recipient: recipientAddress,
-    });
+    return result.actions;
   } catch (error) {
     logger.error(`Failed to execute Stargate bridge for ${descriptor.name}`, {
       requestId,
       route,
       error: jsonifyError(error),
     });
+    return [];
   }
-
-  return actions;
 };
 
 /**
@@ -468,11 +383,12 @@ async function processAaveTokenOperation(
   const selectedChainService = isForFillService && fillServiceChainService ? fillServiceChainService : chainService;
 
   if (isForFillService && !fillServiceChainService) {
-    logger.warn(`Fill service chain service not available for ${descriptor.name} callback, using main chain service`, {
+    logger.error(`Fill service chain service not available for ${descriptor.name} callback, skipping`, {
       ...logContext,
       recipient: operation.recipient,
       fsAddress,
     });
+    return;
   }
 
   const bridgeType = operation.bridge ? getBridgeTypeFromTag(operation.bridge) : undefined;
