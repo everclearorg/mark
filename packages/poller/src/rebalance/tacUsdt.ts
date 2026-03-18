@@ -412,7 +412,7 @@ const evaluateMarketMakerRebalance = async (
       recipientAddress: mmConfig.address!,
       threshold: threshold18,
       targetBalance: target18,
-      availableEthUsdt,
+      availableEthUsdt: availableEthUsdt - runState.committedAmount,
       runState,
       tacUsdtAddress: usdtInfo.tacAddress,
       tacUsdtDecimals: usdtInfo.tacDecimals,
@@ -476,7 +476,7 @@ const processOnDemandRebalancing = async (
     const origin = Number(MAINNET_CHAIN_ID); // Always start from Ethereum mainnet
     const destination = Number(TAC_CHAIN_ID);
     const ticker = USDT_TICKER_HASH;
-    const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
+    const decimals = getDecimalsFromConfig(ticker, origin.toString(), config) ?? 6;
 
     // All amounts normalized to 18 decimals for consistent calculations
     // (same pattern as threshold rebalancing)
@@ -644,7 +644,7 @@ const processOnDemandRebalancing = async (
     });
 
     // Use slippage from config (default 500 = 5%)
-    const slippageDbps = config.tacRebalance!.bridge.slippageDbps;
+    const slippageDbps = config.tacRebalance!.bridge.slippageDbps ?? 500;
 
     const route = {
       asset: USDT_ON_ETH_ADDRESS,
@@ -705,6 +705,21 @@ const processOnDemandRebalancing = async (
       });
 
       if (result.actions.length === 0) {
+        // Cancel orphaned earmark to prevent permanently blocking this invoice
+        try {
+          await database.updateEarmarkStatus(earmark.id, EarmarkStatus.CANCELLED);
+          logger.info('Cancelled earmark after bridge returned no actions', {
+            requestId,
+            earmarkId: earmark.id,
+            invoiceId: invoice.intent_id.toString(),
+          });
+        } catch (cancelError) {
+          logger.error('Failed to cancel orphaned earmark', {
+            requestId,
+            earmarkId: earmark.id,
+            error: jsonifyError(cancelError),
+          });
+        }
         continue;
       }
 
@@ -801,11 +816,19 @@ const processThresholdRebalancing = async ({
     return [];
   }
 
-  // 2. Check for in-flight operations to this recipient
-  const pendingOps = await db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), recipientAddress, [
-    RebalanceOperationStatus.PENDING,
-    RebalanceOperationStatus.AWAITING_CALLBACK,
+  // 2. Check for in-flight operations to this recipient (check both TON and TAC destinations
+  // since Leg 1 stores destination=TON_LZ_CHAIN_ID and Leg 2 stores destination=TAC_CHAIN_ID)
+  const [pendingOpsTac, pendingOpsTon] = await Promise.all([
+    db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), recipientAddress, [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+    ]),
+    db.getRebalanceOperationByRecipient(Number(TON_LZ_CHAIN_ID), recipientAddress, [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+    ]),
   ]);
+  const pendingOps = [...pendingOpsTac, ...pendingOpsTon];
   if (pendingOps.length > 0) {
     logger.info('Active rebalance in progress for recipient', {
       requestId,
@@ -836,9 +859,9 @@ const processThresholdRebalancing = async ({
     return [];
   }
 
-  // 4. Use available ETH balance (already accounts for committed funds in this run)
-  // This prevents over-committing when both MM and FS need rebalancing simultaneously
-  const remainingEthUsdt = availableEthUsdt - runState.committedAmount;
+  // 4. Use available ETH balance as-is — callers are responsible for deducting
+  // committedAmount where appropriate (e.g., cross-wallet flow deducts before calling).
+  const remainingEthUsdt = availableEthUsdt;
 
   logger.debug('Threshold rebalancing: checking available balance', {
     requestId,
@@ -1067,7 +1090,7 @@ const executeTacBridge = async (
   });
 
   // Use slippage from config (default 500 = 5%)
-  const slippageDbps = config.tacRebalance!.bridge.slippageDbps;
+  const slippageDbps = config.tacRebalance!.bridge.slippageDbps ?? 500;
 
   const route = {
     asset: USDT_ON_ETH_ADDRESS,
@@ -1167,16 +1190,24 @@ const evaluateFillServiceRebalance = async (
     return [];
   }
 
-  // Check for pending FS rebalancing operations
-  const { operations: inFlightOps } = await db.getRebalanceOperations(undefined, undefined, {
-    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
-    bridge: [`${SupportedBridge.Stargate}-tac`, SupportedBridge.TacInner],
-  });
+  // Check for pending FS rebalancing operations (scoped to FS recipient, not global)
+  const [fsInFlightTac, fsInFlightTon] = await Promise.all([
+    db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), fsConfig.address!, [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+    ]),
+    db.getRebalanceOperationByRecipient(Number(TON_LZ_CHAIN_ID), fsConfig.address!, [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+    ]),
+  ]);
+  const inFlightOps = [...fsInFlightTac, ...fsInFlightTon];
 
   if (inFlightOps.length > 0) {
-    logger.info('TAC in-flight rebalance operations exist. skipping...', {
+    logger.info('TAC FS in-flight rebalance operations exist, skipping', {
       requestId,
       inFlightOps: inFlightOps.length,
+      recipient: fsConfig.address,
     });
     return [];
   }

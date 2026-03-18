@@ -147,26 +147,29 @@ export interface TokenRebalanceConfig {
   enabled: boolean;
   // Market Maker receiver configuration
   marketMaker: {
-    address?: string; // EVM address on TAC for MM
+    address?: string; // EVM address for MM on destination chain
     onDemandEnabled: boolean; // Enable invoice-triggered rebalancing
     thresholdEnabled: boolean; // Enable balance-threshold rebalancing
-    threshold?: string; // Min USDT balance (6 decimals)
-    targetBalance?: string; // Target after threshold-triggered rebalance
+    threshold?: string; // Balance threshold that triggers rebalancing. Units depend on rebalancer:
+    //   TAC USDT: native 6-decimal (code converts to 18-decimal internally)
+    //   mETH: 18-decimal wei (WETH/mETH are natively 18-decimal)
+    //   aManUSDe/aMansyrupUSDT: 18-decimal (getEvmBalance normalizes to 18-decimal)
+    targetBalance?: string; // Target balance after rebalancing (same units as threshold)
   };
   // Fill Service receiver configuration
   fillService: {
-    address?: string; // EVM address on TAC for FS (destination) - also used as sender on ETH if senderAddress not set
+    address?: string; // EVM address for FS on destination chain - also used as sender on ETH if senderAddress not set
     senderAddress?: string; // Optional: ETH sender address if different from 'address' (rare - same key = same address)
     thresholdEnabled: boolean; // Enable balance-threshold rebalancing
-    threshold?: string; // Min USDT balance (6 decimals)
-    targetBalance?: string; // Target after threshold-triggered rebalance
+    threshold?: string; // Balance threshold (same unit semantics as marketMaker.threshold)
+    targetBalance?: string; // Target balance (same unit semantics as marketMaker.targetBalance)
     allowCrossWalletRebalancing?: boolean; // Allow MM to fund FS rebalancing when FS has insufficient ETH USDT
   };
   // Shared bridge configuration
   bridge: {
-    slippageDbps: number; // Slippage for Stargate (default: 500 = 5%)
-    minRebalanceAmount: string; // Min amount per operation (6 decimals)
-    maxRebalanceAmount?: string; // Max amount per operation (optional cap)
+    slippageDbps: number; // Slippage tolerance in decibasis points (500 = 5%)
+    minRebalanceAmount: string; // Min amount per bridge operation (in source token native decimals, e.g., 6-dec for USDC)
+    maxRebalanceAmount?: string; // Max amount per bridge operation (same units as minRebalanceAmount)
   };
 }
 

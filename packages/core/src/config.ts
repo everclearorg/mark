@@ -272,12 +272,12 @@ async function loadTokenRebalanceConfig(
         cfg?.bridge?.minRebalanceAmount ??
         (await fromEnv(`${envPrefix}_BRIDGE_MIN_REBALANCE_AMOUNT`, true)) ??
         defaults?.minAmount ??
-        undefined,
+        '100000000', // Safe default: 100 units (6-decimal tokens like USDC/USDT)
       maxRebalanceAmount:
         cfg?.bridge?.maxRebalanceAmount ??
         (await fromEnv(`${envPrefix}_BRIDGE_MAX_REBALANCE_AMOUNT`, true)) ??
         defaults?.maxAmount ??
-        undefined,
+        '100000000', // Safe default: 100 units (6-decimal tokens) — prevents unlimited bridging
     },
   };
 }
@@ -486,7 +486,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         enabled:
           parseBooleanValue(configJson.solanaPtusdeRebalance?.enabled) ??
           parseBooleanValue(await fromEnv('SOLANA_PTUSDE_REBALANCE_ENABLED', true)) ??
-          true,
+          false,
         ptUsdeThreshold:
           configJson.solanaPtusdeRebalance?.ptUsdeThreshold ??
           (await fromEnv('SOLANA_PTUSDE_REBALANCE_THRESHOLD', true)) ??
