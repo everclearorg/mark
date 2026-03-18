@@ -476,28 +476,11 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       },
       tacRebalance: await loadTokenRebalanceConfig(configJson, 'tacRebalance', 'TAC_REBALANCE'),
       methRebalance: await loadTokenRebalanceConfig(configJson, 'methRebalance', 'METH_REBALANCE'),
-      aManUsdeRebalance: await loadTokenRebalanceConfig(configJson, 'aManUsdeRebalance', 'AMANUSDE_REBALANCE', {
-        mmThreshold: '100000000000000000000', // 100 aManUSDe (18 decimals)
-        mmTarget: '500000000000000000000', // 500 aManUSDe (18 decimals)
-        fsThreshold: '100000000000000000000', // 100 aManUSDe (18 decimals)
-        fsTarget: '500000000000000000000', // 500 aManUSDe (18 decimals)
-        slippageDbps: 50, // 0.5% default
-        minAmount: '1000000', // 1 USDC minimum (6 decimals)
-        maxAmount: '100000000', // 100 USDC max (6 decimals)
-      }),
+      aManUsdeRebalance: await loadTokenRebalanceConfig(configJson, 'aManUsdeRebalance', 'AMANUSDE_REBALANCE'),
       aMansyrupUsdtRebalance: await loadTokenRebalanceConfig(
         configJson,
         'aMansyrupUsdtRebalance',
         'AMANSYRUPUSDT_REBALANCE',
-        {
-          mmThreshold: '100000000', // 100 aMansyrupUSDT (6 decimals)
-          mmTarget: '500000000', // 500 aMansyrupUSDT (6 decimals)
-          fsThreshold: '100000000', // 100 aMansyrupUSDT (6 decimals)
-          fsTarget: '500000000', // 500 aMansyrupUSDT (6 decimals)
-          slippageDbps: 50, // 0.5% default
-          minAmount: '1000000', // 1 USDC minimum (6 decimals)
-          maxAmount: '100000000', // 100 USDC max (6 decimals)
-        },
       ),
       solanaPtusdeRebalance: {
         enabled:
