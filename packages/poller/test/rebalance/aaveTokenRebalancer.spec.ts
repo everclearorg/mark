@@ -322,6 +322,7 @@ describe('Aave Token Rebalancer', () => {
       );
 
       const mockStargateAdapter = {
+        type: stub().returns(SupportedBridge.Stargate),
         getReceivedAmount: stub().resolves('99600000'), // passes slippage: min = 100M - 500k = 99.5M
         send: stub().resolves([
           {
@@ -424,6 +425,7 @@ describe('Aave Token Rebalancer', () => {
       );
 
       const mockStargateAdapter = {
+        type: stub().returns(SupportedBridge.Stargate),
         getReceivedAmount: stub().resolves('99600000'), // passes slippage: min = 100M - 500k = 99.5M
         send: stub().resolves([
           {
@@ -471,6 +473,7 @@ describe('Aave Token Rebalancer', () => {
       );
 
       const mockStargateAdapter = {
+        type: stub().returns(SupportedBridge.Stargate),
         getReceivedAmount: stub().resolves('199500000'), // passes slippage: min = 200M - 1M = 199M
         send: stub().resolves([
           {
@@ -507,6 +510,7 @@ describe('Aave Token Rebalancer', () => {
         .mockResolvedValueOnce(BigInt('50000000000000000000')); // sender = 50 USDC in 18 dec
 
       const mockStargateAdapter = {
+        type: stub().returns(SupportedBridge.Stargate),
         getReceivedAmount: stub().resolves('49800000'), // passes slippage: min = 50M - 250k = 49.75M
         send: stub().resolves([
           {
@@ -558,6 +562,7 @@ describe('Aave Token Rebalancer', () => {
       );
 
       const mockStargateAdapter = {
+        type: stub().returns(SupportedBridge.Stargate),
         getReceivedAmount: stub().resolves('999000000'), // passes slippage: min = 1000M - 5M = 995M
         send: stub().resolves([
           {
@@ -598,6 +603,7 @@ describe('Aave Token Rebalancer', () => {
 
     it('should return empty when quote fails slippage check', async () => {
       const mockStargateAdapter = {
+        type: stub().returns(SupportedBridge.Stargate),
         getReceivedAmount: stub().resolves('1'), // Way too low
         send: stub().resolves([]),
       };
@@ -612,11 +618,12 @@ describe('Aave Token Rebalancer', () => {
       );
 
       expect(result).toEqual([]);
-      expect(mockLogger.warn.calledWithMatch('slippage requirements')).toBe(true);
+      expect(mockLogger.warn.calledWithMatch('does not meet slippage requirements')).toBe(true);
     });
 
     it('should submit transactions and create DB record with correct bridge tag', async () => {
       const mockStargateAdapter = {
+        type: stub().returns(SupportedBridge.Stargate),
         getReceivedAmount: stub().resolves('995000'),
         send: stub().resolves([
           {
@@ -652,6 +659,7 @@ describe('Aave Token Rebalancer', () => {
 
     it('should return RebalanceAction with correct fields', async () => {
       const mockStargateAdapter = {
+        type: stub().returns(SupportedBridge.Stargate),
         getReceivedAmount: stub().resolves('996000'), // passes slippage: min = 1M - 5k = 995k
         send: stub().resolves([
           {

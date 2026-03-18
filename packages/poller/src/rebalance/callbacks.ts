@@ -14,6 +14,7 @@ import {
 } from '@mark/core';
 import { buildTransactionsForAction } from '@mark/rebalance';
 import { TransactionEntry, TransactionReceipt } from '@mark/database';
+import { getRegisteredBridgeTags } from './registry';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, chainService, database: db } = context;
@@ -65,9 +66,9 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     return RebalanceOperationStatus.COMPLETED;
   };
 
-  // Bridge tags managed by the dedicated Aave token rebalancer — skip them here
+  // Bridge tags managed by dedicated rebalancers — skip them here
   // so the generic handler doesn't race and mark them completed prematurely.
-  const aaveTokenBridgeTags = ['stargate-amanusde', 'stargate-amansyrupusdt'];
+  const ownedBridgeTags = getRegisteredBridgeTags();
 
   for (const operation of operations) {
     const logContext = {
@@ -78,9 +79,9 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       destinationChain: operation.destinationChainId,
     };
 
-    // Skip operations owned by the Aave token rebalancer
-    if (operation.bridge && aaveTokenBridgeTags.includes(operation.bridge)) {
-      logger.debug('Skipping operation managed by Aave token rebalancer', {
+    // Skip operations owned by dedicated rebalancers
+    if (operation.bridge && ownedBridgeTags.has(operation.bridge)) {
+      logger.debug('Skipping operation managed by dedicated rebalancer', {
         ...logContext,
         bridge: operation.bridge,
         status: operation.status,

@@ -177,7 +177,17 @@ export async function runThresholdRebalance(
   });
 
   // 9. Execute bridge
-  const actions = await descriptor.executeBridge(context, amount);
+  let actions: RebalanceAction[];
+  try {
+    actions = await descriptor.executeBridge(context, amount);
+  } catch (error) {
+    logger.error(`${name} failed to execute bridge`, {
+      requestId,
+      amount: amount.toString(),
+      error: jsonifyError(error),
+    });
+    return [];
+  }
 
   // 10. Track committed amount
   if (actions.length > 0) {
