@@ -11,11 +11,11 @@ import {
   SupportedBridge,
   MAINNET_CHAIN_ID,
   MANTLE_CHAIN_ID,
-  WalletType,
   PostBridgeActionConfig,
   TokenRebalanceConfig,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
+import { getValidatedZodiacConfig } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
 import { buildTransactionsForAction } from '@mark/rebalance';
 import { TransactionReceipt } from '@mark/database';
@@ -88,6 +88,9 @@ export async function rebalanceAaveToken(
   }
   if (!tokenConfig.bridge?.minRebalanceAmount) {
     validationErrors.push('bridge.minRebalanceAmount is required');
+  }
+  if (!descriptor.getAavePoolAddress()) {
+    validationErrors.push(`Aave pool address env var is not set (post-bridge supply will fail)`);
   }
   if (validationErrors.length > 0) {
     logger.error(`${descriptor.name} rebalance configuration validation failed`, {
@@ -277,7 +280,7 @@ export const executeStargateBridgeForAaveToken = async (
   }
 
   const sourceTokenAddress = getTokenAddressFromConfig(descriptor.sourceTokenTickerHash, MAINNET_CHAIN_ID, config)!;
-  const slippageDbps = bridgeConfig.slippageDbps;
+  const slippageDbps = bridgeConfig.slippageDbps ?? 500;
 
   const route = {
     asset: sourceTokenAddress,
@@ -462,6 +465,8 @@ async function processAaveTokenOperation(
 
       if (callback) {
         const callbackSender = operation.recipient ?? selectedSender;
+        const destinationChainConfig = config.chains[operation.destinationChainId];
+        const zodiacConfig = getValidatedZodiacConfig(destinationChainConfig, logger, logContext);
 
         const tx = await submitTransactionWithLogging({
           chainService: selectedChainService,
@@ -475,7 +480,7 @@ async function processAaveTokenOperation(
             from: callbackSender,
             funcSig: callback.transaction.funcSig || '',
           },
-          zodiacConfig: { walletType: WalletType.EOA },
+          zodiacConfig,
           context: { ...logContext, callbackType: `destination: ${callback.memo}` },
         });
 
@@ -583,6 +588,9 @@ async function processAaveTokenOperation(
           continue;
         }
 
+        const destChainConfig = config.chains[operation.destinationChainId];
+        const postBridgeZodiacConfig = getValidatedZodiacConfig(destChainConfig, logger, logContext);
+
         for (const actionTx of actionTxs) {
           await submitTransactionWithLogging({
             chainService: selectedChainService,
@@ -596,7 +604,7 @@ async function processAaveTokenOperation(
               from: actualSender,
               funcSig: actionTx.transaction.funcSig || '',
             },
-            zodiacConfig: { walletType: WalletType.EOA },
+            zodiacConfig: postBridgeZodiacConfig,
             context: { ...logContext, callbackType: `post-bridge: ${actionTx.memo}` },
           });
 

@@ -618,12 +618,10 @@ async function processLeg1Completion(operation: RebalanceOperation, context: Pro
       proceedingToLeg2: true,
     });
 
-    // Update operation to AWAITING_CALLBACK to indicate Leg 1 is done, Leg 2 starting
-    await db.updateRebalanceOperation(operation.id, {
-      status: RebalanceOperationStatus.AWAITING_CALLBACK,
-    });
-
-    // Execute Legs 2 and 3
+    // Execute Legs 2 and 3. The function handles its own errors internally
+    // (sets CANCELLED on failure). Status is updated to AWAITING_CALLBACK
+    // inside executeLeg2And3 only after Leg 3 tx hash is stored, preventing
+    // the operation from being stuck in AWAITING_CALLBACK with no tx hash.
     await executeLeg2And3(operation, context, logContext);
   } else if (ccipStatus.status === 'FAILURE') {
     logger.error('CCIP bridge transaction failed', {
@@ -713,7 +711,7 @@ async function executeLeg2And3(
     // potential differences from CCIP fees or rounding during the cross-chain transfer
     let swapAmount = operation.amount;
     try {
-      const usdcBalance = await getEvmBalance(
+      const usdcBalance18 = await getEvmBalance(
         rebalanceConfig,
         MAINNET_CHAIN_ID.toString(),
         recipient,
@@ -721,15 +719,18 @@ async function executeLeg2And3(
         USDC_SOLANA_DECIMALS,
         context.prometheus,
       );
+      // getEvmBalance returns 18-decimal normalized values — convert back to native 6-decimal
+      // for comparison with operation.amount (which is stored in native 6-decimal units)
+      const usdcBalanceNative = usdcBalance18 / BigInt(10 ** (18 - USDC_SOLANA_DECIMALS));
       const operationAmount = safeParseBigInt(operation.amount);
-      if (usdcBalance < operationAmount) {
+      if (usdcBalanceNative < operationAmount) {
         logger.warn('Actual USDC balance on Mainnet is less than operation amount (CCIP fees/rounding)', {
           ...logContext,
           operationAmount: operation.amount,
-          actualBalance: usdcBalance.toString(),
-          difference: (operationAmount - usdcBalance).toString(),
+          actualBalance: usdcBalanceNative.toString(),
+          difference: (operationAmount - usdcBalanceNative).toString(),
         });
-        swapAmount = usdcBalance.toString();
+        swapAmount = usdcBalanceNative.toString();
       }
     } catch (balanceError) {
       logger.warn('Failed to check actual USDC balance on Mainnet, using operation amount', {
@@ -875,18 +876,29 @@ async function executeLeg2And3(
 
     // Update operation with Leg 3 CCIP transaction hash for status tracking
     if (leg3CcipTx) {
-      const leg3Receipt: TransactionReceipt = leg3CcipTx.receipt!;
+      if (!leg3CcipTx.receipt) {
+        logger.error('Leg 3 CCIP transaction submitted but receipt is missing — operation may get stuck', {
+          ...logContext,
+          leg3CcipTxHash: leg3CcipTx.hash,
+        });
+      } else {
+        await db.updateRebalanceOperation(operation.id, {
+          txHashes: { [MAINNET_CHAIN_ID]: leg3CcipTx.receipt },
+        });
 
-      await db.updateRebalanceOperation(operation.id, {
-        txHashes: { [MAINNET_CHAIN_ID]: leg3Receipt },
-      });
-
-      logger.info('Stored Leg 3 CCIP transaction hash for status tracking', {
-        requestId,
-        operationId: operation.id,
-        leg3CcipTxHash: leg3CcipTx.hash,
-      });
+        logger.info('Stored Leg 3 CCIP transaction hash for status tracking', {
+          requestId,
+          operationId: operation.id,
+          leg3CcipTxHash: leg3CcipTx.hash,
+        });
+      }
     }
+
+    // Only transition to AWAITING_CALLBACK after all legs are submitted and tx hash is stored.
+    // This ensures the operation is never in AWAITING_CALLBACK without a stored tx hash.
+    await db.updateRebalanceOperation(operation.id, {
+      status: RebalanceOperationStatus.AWAITING_CALLBACK,
+    });
 
     logger.info('Legs 1, 2, and 3 submitted successfully', {
       ...logContext,

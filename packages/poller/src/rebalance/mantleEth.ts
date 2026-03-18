@@ -333,7 +333,6 @@ const evaluateFillServiceRebalance = async (
       const { operations } = await database.getRebalanceOperations(undefined, undefined, {
         status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
         bridge: [SupportedBridge.Mantle, `${SupportedBridge.Across}-mantle`],
-        earmarkId: null,
       });
       if (operations.length > 0) {
         logger.info(`Found ${operations.length} in-flight mETH rebalance operations, skipping threshold`, {
@@ -592,7 +591,7 @@ const executeMethBridge = async (
   });
 
   // Use slippage from config (default 500 = 5%)
-  const slippageDbps = config.methRebalance!.bridge.slippageDbps;
+  const slippageDbps = config.methRebalance!.bridge.slippageDbps ?? 500;
 
   // Send WETH to Mainnet first
   const route = {
@@ -958,7 +957,7 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
       // Step 2: Get Bridge Transaction Requests
       let bridgeTxRequests: MemoizedTransactionRequest[] = [];
       try {
-        bridgeTxRequests = await mantleAdapter.send(evmSender, evmSender, amountToBridge, route);
+        bridgeTxRequests = await mantleAdapter.send(evmSender, operation.recipient!, amountToBridge, route);
         logger.info('Prepared bridge transaction request from Mantle adapter', {
           requestId,
           route,
@@ -968,7 +967,7 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
           receiveAmount: receivedAmountStr,
           transactionCount: bridgeTxRequests.length,
           sender: evmSender,
-          recipient: evmSender,
+          recipient: operation.recipient,
         });
         if (!bridgeTxRequests.length) {
           throw new Error(`Failed to retrieve any bridge transaction requests`);
@@ -984,7 +983,30 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
         return;
       }
 
-      // Step 3: Submit the bridge transactions in order and create database record
+      // Step 3: Mark Leg 1 as COMPLETED *before* submitting Leg 2 to prevent
+      // double-bridge on retry (if Leg 2 succeeds but Leg 1 status update fails,
+      // the next poll cycle would re-process Leg 1 and trigger another Leg 2).
+      try {
+        await db.updateRebalanceOperation(operation.id, {
+          status: RebalanceOperationStatus.COMPLETED,
+          txHashes: callbackTxHashes,
+        });
+        if (operation.earmarkId) {
+          await db.updateEarmarkStatus(operation.earmarkId, EarmarkStatus.COMPLETED);
+        }
+        logger.info('Marked Leg 1 operation as COMPLETED before Leg 2 submission', {
+          operationId: operation.id,
+          earmarkId: operation.earmarkId,
+        });
+      } catch (dbError) {
+        logger.error('Failed to mark Leg 1 as COMPLETED — aborting Leg 2 to prevent double-bridge', {
+          operationId: operation.id,
+          error: jsonifyError(dbError),
+        });
+        return;
+      }
+
+      // Step 4: Submit the Mantle bridge transactions
       try {
         const { receipt: mantleReceipt, effectiveBridgedAmount } = await submitBridgeTransactions({
           context: { requestId, logger, config },
@@ -999,18 +1021,18 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
           },
         });
 
-        // Step 4: Create database record for the Mantle bridge leg
+        // Step 5: Create database record for the Mantle bridge leg
         await createRebalanceOperation({
-          earmarkId: null,
+          earmarkId: operation.earmarkId ?? null,
           originChainId: route.origin,
           destinationChainId: route.destination,
           tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
           amount: effectiveBridgedAmount,
-          slippage: config.methRebalance!.bridge.slippageDbps,
+          slippage: config.methRebalance!.bridge.slippageDbps ?? 500,
           status: RebalanceOperationStatus.PENDING,
           bridge: mantleBridgeType,
           transactions: mantleReceipt ? { [route.origin]: mantleReceipt } : undefined,
-          recipient: evmSender,
+          recipient: operation.recipient!,
         });
 
         logger.info('Successfully created Mantle rebalance operation in database', {
@@ -1028,12 +1050,14 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
           route,
           bridgeType: mantleBridgeType,
           error: jsonifyError(sendError),
+          note: 'Leg 1 is already COMPLETED — funds on Mainnet may need manual bridging',
         });
         return;
       }
     }
 
-    if (successCallback) {
+    // For non-Leg-2 paths (direct Mantle bridge callback completion)
+    if (successCallback && !isToMainnetBridge) {
       try {
         await db.updateRebalanceOperation(operation.id, {
           status: RebalanceOperationStatus.COMPLETED,
