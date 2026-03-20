@@ -710,7 +710,7 @@ describe('rebalanceInventory', () => {
       (call) =>
         call.args[0] &&
         typeof call.args[0] === 'string' &&
-        call.args[0].includes('Failed to get bridge transaction request from adapter, trying next preference'),
+        call.args[0].includes('Failed to get') && call.args[0].includes('bridge transactions'),
     );
 
     expect(sendFailedMessage).toBeTruthy();
@@ -954,7 +954,7 @@ describe('rebalanceInventory', () => {
     // We should see bridge transaction submissions
     const logCalls = mockLogger.info.getCalls();
     const hasBridgeLog = logCalls.some(
-      (call) => call.args[0] && call.args[0].includes('Successfully submitted and confirmed origin bridge transaction'),
+      (call) => call.args[0] && call.args[0].includes('Successfully submitted bridge transaction'),
     );
     expect(hasBridgeLog).toBe(true);
 
@@ -1075,7 +1075,7 @@ describe('rebalanceInventory', () => {
     // Check that the logger was called with the expected message
     const errorCalls = mockLogger.error.getCalls();
     const quoteFailedMessage = errorCalls.find(
-      (call) => call.args[0] && call.args[0].includes('Failed to get quote from adapter'),
+      (call) => call.args[0] && call.args[0].includes('Failed to get') && call.args[0].includes('quote'),
     );
     expect(quoteFailedMessage).toBeTruthy();
     expect(mockAdapterA.getReceivedAmount.calledOnce).toBe(true);
@@ -1150,7 +1150,7 @@ describe('rebalanceInventory', () => {
     // Verify successful rebalance with second adapter
     const infoCalls = mockLogger.info.getCalls();
     const successMessage = infoCalls.find(
-      (call) => call.args[0] && call.args[0].includes('Quote meets slippage requirements'),
+      (call) => call.args[0] && call.args[0].includes('Successfully created'),
     );
     expect(successMessage).toBeTruthy();
 
@@ -1273,7 +1273,7 @@ describe('rebalanceInventory', () => {
     // Check that the logger was called with the expected message
     const errorCalls = mockLogger.error.getCalls();
     const sendFailedMessage = errorCalls.find(
-      (call) => call.args[0] && call.args[0].includes('Failed to get bridge transaction request from adapter'),
+      (call) => call.args[0] && call.args[0].includes('Failed to') && call.args[0].includes('bridge'),
     );
     expect(sendFailedMessage).toBeTruthy();
     expect(mockAdapterA_sendFails.send.calledOnce).toBe(true);

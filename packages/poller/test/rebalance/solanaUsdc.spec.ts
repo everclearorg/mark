@@ -52,7 +52,7 @@ jest.mock('@solana/spl-token', () => ({
     toBase58: () => 'MockAssociatedTokenAddress',
   }),
   getAccount: () => Promise.resolve({
-    amount: BigInt('1000000000'),
+    amount: BigInt('500000000000'), // 500 ptUSDe in 9 decimals (above default threshold of 100)
   }),
 }));
 
@@ -309,30 +309,26 @@ describe('Solana USDC Rebalancing', () => {
     });
 
     it('should check AWAITING_CALLBACK operations for Leg 3 completion', async () => {
-      // Mock AWAITING_CALLBACK operation (Leg 3 pending)
-      (mockDatabase.getRebalanceOperations as SinonStub)
-        .onFirstCall()
-        .resolves({ operations: [], total: 0 })
-        .onSecondCall()
-        .resolves({
-          operations: [
-            {
-              id: 'op-123',
-              earmarkId: 'earmark-123',
-              originChainId: Number(SOLANA_CHAINID),
-              destinationChainId: Number(MAINNET_CHAIN_ID),
-              bridge: 'ccip-solana-mainnet',
-              status: RebalanceOperationStatus.AWAITING_CALLBACK,
-              transactions: {
-                [SOLANA_CHAINID]: { transactionHash: 'SolanaTxHash123' },
-                [MAINNET_CHAIN_ID]: { transactionHash: 'MainnetTxHash123' },
-              },
-              amount: '1000000',
-              createdAt: new Date(),
+      // Mock operations: single query now returns both PENDING and AWAITING_CALLBACK
+      (mockDatabase.getRebalanceOperations as SinonStub).resolves({
+        operations: [
+          {
+            id: 'op-123',
+            earmarkId: 'earmark-123',
+            originChainId: Number(SOLANA_CHAINID),
+            destinationChainId: Number(MAINNET_CHAIN_ID),
+            bridge: 'ccip-solana-mainnet',
+            status: RebalanceOperationStatus.AWAITING_CALLBACK,
+            transactions: {
+              [SOLANA_CHAINID]: { transactionHash: 'SolanaTxHash123' },
+              [MAINNET_CHAIN_ID]: { transactionHash: 'MainnetTxHash123' },
             },
-          ],
-          total: 1,
-        });
+            amount: '1000000',
+            createdAt: new Date(),
+          },
+        ],
+        total: 1,
+      });
 
       // Mock CCIP adapter returning SUCCESS for Leg 3
       const mockCcipAdapter = {

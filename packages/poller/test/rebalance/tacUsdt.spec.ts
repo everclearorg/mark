@@ -1749,10 +1749,10 @@ describe('FS Rebalancing Priority Flow', () => {
 
       await rebalanceTacUsdt(mockContext as unknown as ProcessingContext);
 
-      // Should log that cross-wallet is blocked due to pending ops
+      // Should log that FS in-flight operations exist (caught by FS-scoped in-flight check)
       const infoCalls = mockLogger.info.getCalls();
       const blockedLog = infoCalls.find(
-        (call) => call.args[0] && call.args[0].includes('Cross-wallet rebalancing blocked: pending FS operations exist'),
+        (call) => call.args[0] && call.args[0].includes('TAC FS in-flight rebalance operations exist'),
       );
       expect(blockedLog).toBeTruthy();
     });

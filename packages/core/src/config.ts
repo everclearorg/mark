@@ -13,6 +13,7 @@ import {
   RouteRebalancingConfig,
   PostBridgeActionConfig,
   LogLevel,
+  TokenRebalanceConfig,
 } from './types';
 import yaml from 'js-yaml';
 import fs, { existsSync, readFileSync } from 'fs';
@@ -193,6 +194,93 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
     onDemandRoutes: [],
   };
 };
+
+interface TokenRebalanceDefaults {
+  mmThreshold?: string;
+  mmTarget?: string;
+  fsThreshold?: string;
+  fsTarget?: string;
+  slippageDbps?: number;
+  minAmount?: string;
+  maxAmount?: string;
+}
+
+async function loadTokenRebalanceConfig(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  configJson: Record<string, any>,
+  configKey: string,
+  envPrefix: string,
+  defaults?: TokenRebalanceDefaults,
+): Promise<TokenRebalanceConfig> {
+  const cfg = configJson[configKey];
+  return {
+    enabled: parseBooleanValue(cfg?.enabled) ?? parseBooleanValue(await fromEnv(`${envPrefix}_ENABLED`, true)) ?? false,
+    marketMaker: {
+      address: cfg?.marketMaker?.address ?? (await fromEnv(`${envPrefix}_MARKET_MAKER_ADDRESS`, true)) ?? undefined,
+      onDemandEnabled:
+        parseBooleanValue(cfg?.marketMaker?.onDemandEnabled) ??
+        parseBooleanValue(await fromEnv(`${envPrefix}_MARKET_MAKER_ON_DEMAND_ENABLED`, true)) ??
+        false,
+      thresholdEnabled:
+        parseBooleanValue(cfg?.marketMaker?.thresholdEnabled) ??
+        parseBooleanValue(await fromEnv(`${envPrefix}_MARKET_MAKER_THRESHOLD_ENABLED`, true)) ??
+        false,
+      threshold:
+        cfg?.marketMaker?.threshold ??
+        (await fromEnv(`${envPrefix}_MARKET_MAKER_THRESHOLD`, true)) ??
+        defaults?.mmThreshold ??
+        undefined,
+      targetBalance:
+        cfg?.marketMaker?.targetBalance ??
+        (await fromEnv(`${envPrefix}_MARKET_MAKER_TARGET_BALANCE`, true)) ??
+        defaults?.mmTarget ??
+        undefined,
+    },
+    fillService: {
+      address: cfg?.fillService?.address ?? (await fromEnv(`${envPrefix}_FILL_SERVICE_ADDRESS`, true)) ?? undefined,
+      senderAddress:
+        cfg?.fillService?.senderAddress ??
+        (await fromEnv(`${envPrefix}_FILL_SERVICE_SENDER_ADDRESS`, true)) ??
+        undefined,
+      thresholdEnabled:
+        parseBooleanValue(cfg?.fillService?.thresholdEnabled) ??
+        parseBooleanValue(await fromEnv(`${envPrefix}_FILL_SERVICE_THRESHOLD_ENABLED`, true)) ??
+        false,
+      threshold:
+        cfg?.fillService?.threshold ??
+        (await fromEnv(`${envPrefix}_FILL_SERVICE_THRESHOLD`, true)) ??
+        defaults?.fsThreshold ??
+        undefined,
+      targetBalance:
+        cfg?.fillService?.targetBalance ??
+        (await fromEnv(`${envPrefix}_FILL_SERVICE_TARGET_BALANCE`, true)) ??
+        defaults?.fsTarget ??
+        undefined,
+      allowCrossWalletRebalancing:
+        parseBooleanValue(cfg?.fillService?.allowCrossWalletRebalancing) ??
+        parseBooleanValue(await fromEnv(`${envPrefix}_FILL_SERVICE_ALLOW_CROSS_WALLET`, true)) ??
+        false,
+    },
+    bridge: {
+      slippageDbps:
+        cfg?.bridge?.slippageDbps ??
+        parseInt(
+          (await fromEnv(`${envPrefix}_BRIDGE_SLIPPAGE_DBPS`, true)) ?? String(defaults?.slippageDbps ?? 500),
+          10,
+        ),
+      minRebalanceAmount:
+        cfg?.bridge?.minRebalanceAmount ??
+        (await fromEnv(`${envPrefix}_BRIDGE_MIN_REBALANCE_AMOUNT`, true)) ??
+        defaults?.minAmount ??
+        '100000000', // Safe default: 100 units (6-decimal tokens like USDC/USDT)
+      maxRebalanceAmount:
+        cfg?.bridge?.maxRebalanceAmount ??
+        (await fromEnv(`${envPrefix}_BRIDGE_MAX_REBALANCE_AMOUNT`, true)) ??
+        defaults?.maxAmount ??
+        '100000000', // Safe default: 100 units (6-decimal tokens) — prevents unlimited bridging
+    },
+  };
+}
 
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
@@ -386,279 +474,19 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         privateKey: configJson.solana?.privateKey ?? (await fromEnv('SOLANA_PRIVATE_KEY', true)) ?? undefined,
         rpcUrl: configJson.solana?.rpcUrl ?? (await fromEnv('SOLANA_RPC_URL', true)) ?? undefined,
       },
-      tacRebalance: {
-        enabled:
-          parseBooleanValue(configJson.tacRebalance?.enabled) ??
-          parseBooleanValue(await fromEnv('TAC_REBALANCE_ENABLED', true)) ??
-          false,
-        marketMaker: {
-          address:
-            configJson.tacRebalance?.marketMaker?.address ??
-            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
-            undefined,
-          onDemandEnabled:
-            parseBooleanValue(configJson.tacRebalance?.marketMaker?.onDemandEnabled) ??
-            parseBooleanValue(await fromEnv('TAC_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
-            false,
-          thresholdEnabled:
-            parseBooleanValue(configJson.tacRebalance?.marketMaker?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.tacRebalance?.marketMaker?.threshold ??
-            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
-            undefined,
-          targetBalance:
-            configJson.tacRebalance?.marketMaker?.targetBalance ??
-            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
-            undefined,
-        },
-        fillService: {
-          address:
-            configJson.tacRebalance?.fillService?.address ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
-            undefined,
-          senderAddress:
-            configJson.tacRebalance?.fillService?.senderAddress ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
-            undefined, // Filler's ETH address for sending from mainnet
-          thresholdEnabled:
-            parseBooleanValue(configJson.tacRebalance?.fillService?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.tacRebalance?.fillService?.threshold ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
-            undefined,
-          targetBalance:
-            configJson.tacRebalance?.fillService?.targetBalance ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
-            undefined,
-          allowCrossWalletRebalancing:
-            parseBooleanValue(configJson.tacRebalance?.fillService?.allowCrossWalletRebalancing) ??
-            parseBooleanValue(await fromEnv('TAC_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
-            false,
-        },
-        bridge: {
-          slippageDbps:
-            configJson.tacRebalance?.bridge?.slippageDbps ??
-            parseInt((await fromEnv('TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '500', 10),
-          minRebalanceAmount:
-            configJson.tacRebalance?.bridge?.minRebalanceAmount ??
-            (await fromEnv('TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
-            undefined,
-          maxRebalanceAmount:
-            configJson.tacRebalance?.bridge?.maxRebalanceAmount ??
-            (await fromEnv('TAC_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
-            undefined, // Max amount per operation (optional cap)
-        },
-      },
-      methRebalance: {
-        enabled:
-          parseBooleanValue(configJson.methRebalance?.enabled) ??
-          parseBooleanValue(await fromEnv('METH_REBALANCE_ENABLED', true)) ??
-          false,
-        marketMaker: {
-          address:
-            configJson.methRebalance?.marketMaker?.address ??
-            (await fromEnv('METH_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
-            undefined,
-          onDemandEnabled:
-            parseBooleanValue(configJson.methRebalance?.marketMaker?.onDemandEnabled) ??
-            parseBooleanValue(await fromEnv('METH_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
-            false,
-          thresholdEnabled:
-            parseBooleanValue(configJson.methRebalance?.marketMaker?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('METH_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.methRebalance?.marketMaker?.threshold ??
-            (await fromEnv('METH_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
-            undefined,
-          targetBalance:
-            configJson.methRebalance?.marketMaker?.targetBalance ??
-            (await fromEnv('METH_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
-            undefined,
-        },
-        fillService: {
-          address:
-            configJson.methRebalance?.fillService?.address ??
-            (await fromEnv('METH_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
-            undefined,
-          senderAddress:
-            configJson.methRebalance?.fillService?.senderAddress ??
-            (await fromEnv('METH_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
-            undefined, // Filler's ETH address for sending from mainnet
-          thresholdEnabled:
-            parseBooleanValue(configJson.methRebalance?.fillService?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('METH_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.methRebalance?.fillService?.threshold ??
-            (await fromEnv('METH_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
-            undefined,
-          targetBalance:
-            configJson.methRebalance?.fillService?.targetBalance ??
-            (await fromEnv('METH_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
-            undefined,
-          allowCrossWalletRebalancing:
-            parseBooleanValue(configJson.methRebalance?.fillService?.allowCrossWalletRebalancing) ??
-            parseBooleanValue(await fromEnv('METH_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
-            false,
-        },
-        bridge: {
-          slippageDbps:
-            configJson.methRebalance?.bridge?.slippageDbps ??
-            parseInt((await fromEnv('METH_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '500', 10),
-          minRebalanceAmount:
-            configJson.methRebalance?.bridge?.minRebalanceAmount ??
-            (await fromEnv('METH_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
-            undefined,
-          maxRebalanceAmount:
-            configJson.methRebalance?.bridge?.maxRebalanceAmount ??
-            (await fromEnv('METH_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
-            undefined, // Max amount per operation (optional cap)
-        },
-      },
-      aManUsdeRebalance: {
-        enabled:
-          parseBooleanValue(configJson.aManUsdeRebalance?.enabled) ??
-          parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_ENABLED', true)) ??
-          false,
-        marketMaker: {
-          address:
-            configJson.aManUsdeRebalance?.marketMaker?.address ??
-            (await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
-            undefined,
-          onDemandEnabled:
-            parseBooleanValue(configJson.aManUsdeRebalance?.marketMaker?.onDemandEnabled) ??
-            parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
-            false,
-          thresholdEnabled:
-            parseBooleanValue(configJson.aManUsdeRebalance?.marketMaker?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.aManUsdeRebalance?.marketMaker?.threshold ??
-            (await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
-            '100000000000000000000', // 100 aManUSDe (18 decimals)
-          targetBalance:
-            configJson.aManUsdeRebalance?.marketMaker?.targetBalance ??
-            (await fromEnv('AMANUSDE_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
-            '500000000000000000000', // 500 aManUSDe (18 decimals)
-        },
-        fillService: {
-          address:
-            configJson.aManUsdeRebalance?.fillService?.address ??
-            (await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
-            undefined,
-          senderAddress:
-            configJson.aManUsdeRebalance?.fillService?.senderAddress ??
-            (await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
-            undefined,
-          thresholdEnabled:
-            parseBooleanValue(configJson.aManUsdeRebalance?.fillService?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.aManUsdeRebalance?.fillService?.threshold ??
-            (await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
-            '100000000000000000000', // 100 aManUSDe (18 decimals)
-          targetBalance:
-            configJson.aManUsdeRebalance?.fillService?.targetBalance ??
-            (await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
-            '500000000000000000000', // 500 aManUSDe (18 decimals)
-          allowCrossWalletRebalancing:
-            parseBooleanValue(configJson.aManUsdeRebalance?.fillService?.allowCrossWalletRebalancing) ??
-            parseBooleanValue(await fromEnv('AMANUSDE_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
-            false,
-        },
-        bridge: {
-          slippageDbps:
-            configJson.aManUsdeRebalance?.bridge?.slippageDbps ??
-            parseInt((await fromEnv('AMANUSDE_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '50', 10), // 0.5% default
-          minRebalanceAmount:
-            configJson.aManUsdeRebalance?.bridge?.minRebalanceAmount ??
-            (await fromEnv('AMANUSDE_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
-            '1000000', // 1 USDC minimum (6 decimals)
-          maxRebalanceAmount:
-            configJson.aManUsdeRebalance?.bridge?.maxRebalanceAmount ??
-            (await fromEnv('AMANUSDE_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
-            '100000000', // 100 USDC max (6 decimals)
-        },
-      },
-      aMansyrupUsdtRebalance: {
-        enabled:
-          parseBooleanValue(configJson.aMansyrupUsdtRebalance?.enabled) ??
-          parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_ENABLED', true)) ??
-          false,
-        marketMaker: {
-          address:
-            configJson.aMansyrupUsdtRebalance?.marketMaker?.address ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
-            undefined,
-          onDemandEnabled:
-            parseBooleanValue(configJson.aMansyrupUsdtRebalance?.marketMaker?.onDemandEnabled) ??
-            parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
-            false,
-          thresholdEnabled:
-            parseBooleanValue(configJson.aMansyrupUsdtRebalance?.marketMaker?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.aMansyrupUsdtRebalance?.marketMaker?.threshold ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
-            '100000000', // 100 aMansyrupUSDT (6 decimals)
-          targetBalance:
-            configJson.aMansyrupUsdtRebalance?.marketMaker?.targetBalance ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
-            '500000000', // 500 aMansyrupUSDT (6 decimals)
-        },
-        fillService: {
-          address:
-            configJson.aMansyrupUsdtRebalance?.fillService?.address ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
-            undefined,
-          senderAddress:
-            configJson.aMansyrupUsdtRebalance?.fillService?.senderAddress ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
-            undefined,
-          thresholdEnabled:
-            parseBooleanValue(configJson.aMansyrupUsdtRebalance?.fillService?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.aMansyrupUsdtRebalance?.fillService?.threshold ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
-            '100000000', // 100 aMansyrupUSDT (6 decimals)
-          targetBalance:
-            configJson.aMansyrupUsdtRebalance?.fillService?.targetBalance ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
-            '500000000', // 500 aMansyrupUSDT (6 decimals)
-          allowCrossWalletRebalancing:
-            parseBooleanValue(configJson.aMansyrupUsdtRebalance?.fillService?.allowCrossWalletRebalancing) ??
-            parseBooleanValue(await fromEnv('AMANSYRUPUSDT_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
-            false,
-        },
-        bridge: {
-          slippageDbps:
-            configJson.aMansyrupUsdtRebalance?.bridge?.slippageDbps ??
-            parseInt((await fromEnv('AMANSYRUPUSDT_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '50', 10), // 0.5% default
-          minRebalanceAmount:
-            configJson.aMansyrupUsdtRebalance?.bridge?.minRebalanceAmount ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
-            '1000000', // 1 USDC minimum (6 decimals)
-          maxRebalanceAmount:
-            configJson.aMansyrupUsdtRebalance?.bridge?.maxRebalanceAmount ??
-            (await fromEnv('AMANSYRUPUSDT_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
-            '100000000', // 100 USDC max (6 decimals)
-        },
-      },
+      tacRebalance: await loadTokenRebalanceConfig(configJson, 'tacRebalance', 'TAC_REBALANCE'),
+      methRebalance: await loadTokenRebalanceConfig(configJson, 'methRebalance', 'METH_REBALANCE'),
+      aManUsdeRebalance: await loadTokenRebalanceConfig(configJson, 'aManUsdeRebalance', 'AMANUSDE_REBALANCE'),
+      aMansyrupUsdtRebalance: await loadTokenRebalanceConfig(
+        configJson,
+        'aMansyrupUsdtRebalance',
+        'AMANSYRUPUSDT_REBALANCE',
+      ),
       solanaPtusdeRebalance: {
         enabled:
           parseBooleanValue(configJson.solanaPtusdeRebalance?.enabled) ??
           parseBooleanValue(await fromEnv('SOLANA_PTUSDE_REBALANCE_ENABLED', true)) ??
-          true,
+          false,
         ptUsdeThreshold:
           configJson.solanaPtusdeRebalance?.ptUsdeThreshold ??
           (await fromEnv('SOLANA_PTUSDE_REBALANCE_THRESHOLD', true)) ??

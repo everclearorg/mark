@@ -70,6 +70,8 @@ export function initializeBaseAdapters(
   const fsSenderAddress =
     config.tacRebalance?.fillService?.senderAddress ??
     config.tacRebalance?.fillService?.address ??
+    config.methRebalance?.fillService?.senderAddress ??
+    config.methRebalance?.fillService?.address ??
     config.aManUsdeRebalance?.fillService?.senderAddress ??
     config.aManUsdeRebalance?.fillService?.address ??
     config.aMansyrupUsdtRebalance?.fillService?.senderAddress ??
