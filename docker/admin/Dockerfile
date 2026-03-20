@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM public.ecr.aws/lambda/nodejs:20 AS node
 
 # ----------------------------------------
@@ -53,9 +54,10 @@ COPY yarn.lock /tmp/build/
 # Install dependencies including devDependencies
 # Note: --mode=skip-build skips preinstall/postinstall scripts during install
 # This avoids the "npx only-allow pnpm" check in @eth-optimism/core-utils
-# Clear yarn cache before install to avoid corrupted package downloads
-# Retry install on failure to handle transient npm registry issues
-RUN yarn cache clean --all && \
+# Cache mount speeds up yarn install when Docker layer cache misses
+# Clear cache and retry on failure to handle corrupted downloads or transient registry issues
+ENV YARN_CACHE_FOLDER=/tmp/yarn-cache
+RUN --mount=type=cache,target=/tmp/yarn-cache \
     yarn install --immutable --mode=skip-build || \
     (yarn cache clean --all && sleep 2 && yarn install --immutable --mode=skip-build) && \
     yarn workspaces foreach -A run rebuild
@@ -76,18 +78,11 @@ COPY packages/adapters/database /tmp/build/packages/adapters/database
 COPY tsconfig.json /tmp/build/
 
 # Build packages
-# Build only the workspaces needed for admin (not all workspaces)
-# Build dependencies first, then admin
-RUN yarn workspace @mark/core build && \
-    yarn workspace @mark/logger build && \
-    yarn workspace @mark/cache build && \
-    yarn workspace @mark/chainservice build && \
-    yarn workspace @mark/database build && \
-    yarn workspace @mark/everclear build && \
-    yarn workspace @mark/prometheus build && \
-    yarn workspace @mark/web3signer build && \
-    yarn workspace @mark/rebalance build && \
-    yarn workspace @mark/admin build
+# Build packages in topological order (respects declared deps)
+# Exclude root workspace (its build script would re-run foreach without our excludes)
+# Exclude packages not needed by admin
+RUN yarn workspaces foreach -Av --topological-dev \
+    --exclude mark --exclude @mark/handler --exclude @mark/poller --exclude @mark/agent --exclude @mark/webhooks run build
 
 # ----------------------------------------
 # Runtime stage
