@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:20 AS base
 
 # ----------------------------------------
@@ -53,7 +54,9 @@ COPY yarn.lock /tmp/build/
 # Note: --mode=skip-build skips preinstall/postinstall scripts during install
 # This avoids the "npx only-allow pnpm" check in @eth-optimism/core-utils
 # Then we run rebuild to build native modules with our build tools
-RUN yarn install --immutable --mode=skip-build && \
+ENV YARN_CACHE_FOLDER=/tmp/yarn-cache
+RUN --mount=type=cache,target=/tmp/yarn-cache \
+    yarn install --immutable --mode=skip-build && \
     yarn workspaces foreach -A run rebuild
 
 # Copy source files
@@ -73,10 +76,11 @@ COPY packages/adapters/database /tmp/build/packages/adapters/database
 COPY packages/adapters/webhooks /tmp/build/packages/adapters/webhooks
 COPY tsconfig.json /tmp/build/
 
-# Build packages
-# Build core first to ensure declaration files are available
-RUN yarn workspace @mark/core build && \
-    yarn build
+# Build packages in topological order (respects declared deps)
+# Exclude root workspace (its build script would re-run foreach without our excludes)
+# Exclude admin — not needed by handler
+RUN yarn workspaces foreach -Av --topological-dev \
+    --exclude mark --exclude @mark/admin run build
 
 # ----------------------------------------
 # Runtime stage

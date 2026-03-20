@@ -234,9 +234,74 @@ jobs:
           aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
 
-  # Staging deployment (mason) - triggered on staging branch
-  build-and-deploy-staging:
+  # Staging Docker builds - parallel via matrix
+  build-staging-images:
     if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: admin
+            dockerfile: docker/admin/Dockerfile
+            repository: mark-admin
+            image_tag: mark-admin-${{ github.sha }}
+          - service: handler
+            dockerfile: docker/handler/Dockerfile
+            repository: mark-handler
+            image_tag: mark-handler-${{ github.sha }}
+          - service: poller
+            dockerfile: docker/poller/Dockerfile
+            repository: mark-poller
+            image_tag: mark-poller-${{ github.sha }}
+    env:
+      AWS_REGION: sa-east-1
+      REGISTRY: 679752396206.dkr.ecr.sa-east-1.amazonaws.com
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: sa-east-1
+          aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Login to Private ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Ensure ECR repository exists
+        run: |
+          aws ecr describe-repositories --repository-names ${{ matrix.repository }} --region $AWS_REGION || \
+            aws ecr create-repository --repository-name ${{ matrix.repository }} --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ${{ matrix.service }} Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ matrix.repository }}:${{ matrix.image_tag }}
+          cache-from: type=gha,scope=staging-${{ matrix.service }}
+          cache-to: type=gha,scope=staging-${{ matrix.service }},mode=max
+          provenance: false
+          sbom: false
+
+  # Staging deployment - runs after all images are built
+  deploy-staging:
+    if: github.ref == 'refs/heads/staging'
+    needs: build-staging-images
     runs-on: ubuntu-latest
     env:
       AWS_REGION: sa-east-1
@@ -262,43 +327,12 @@ jobs:
           aws-access-key-id: ${{ secrets.DEPLOYER_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.DEPLOYER_AWS_SECRET_ACCESS_KEY }}
 
-      - name: Login to Private ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
-        with:
-          mask-password: 'true'
-
-      - name: Ensure ECR repositories exist
-        run: |
-          # Create repositories if they don't exist
-          aws ecr describe-repositories --repository-names $ADMIN_REPOSITORY --region $AWS_REGION || \
-            aws ecr create-repository --repository-name $ADMIN_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
-          aws ecr describe-repositories --repository-names $HANDLER_REPOSITORY --region $AWS_REGION || \
-            aws ecr create-repository --repository-name $HANDLER_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
-          aws ecr describe-repositories --repository-names $POLLER_REPOSITORY --region $AWS_REGION || \
-            aws ecr create-repository --repository-name $POLLER_REPOSITORY --region $AWS_REGION --image-scanning-configuration scanOnPush=true --image-tag-mutability MUTABLE
-
-      - name: Build and push Admin Docker image
-        run: |
-          docker build --provenance=false --sbom=false -f docker/admin/Dockerfile -t $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG .
-          docker push $REGISTRY/$ADMIN_REPOSITORY:$ADMIN_IMAGE_TAG
-
-      - name: Build and push Invoice Handler Docker image
-        run: |
-          docker build -f docker/handler/Dockerfile -t $REGISTRY/$HANDLER_REPOSITORY:$HANDLER_IMAGE_TAG .
-          docker push $REGISTRY/$HANDLER_REPOSITORY:$HANDLER_IMAGE_TAG
-
-      - name: Build and push Poller Docker image
-        run: |
-          docker build --provenance=false --sbom=false -f docker/poller/Dockerfile -t $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG .
-          docker push $REGISTRY/$POLLER_REPOSITORY:$POLLER_IMAGE_TAG
-
       # ============================================================================
       # POLLER REMOVAL - TEMPORARY
       # ============================================================================
       # Remove only the main poller Lambda function (mark_poller) before deploying the invoice
       # handler to prevent duplicate intent creation. Other poller Lambdas remain active.
-      # 
+      #
       # TODO: Remove this step once poller migration is complete
       # ============================================================================
       - name: Remove Main Poller Lambda Function
