@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM public.ecr.aws/lambda/nodejs:20 AS node
 
 # ----------------------------------------
@@ -53,9 +54,10 @@ COPY yarn.lock /tmp/build/
 # Install dependencies including devDependencies
 # Note: --mode=skip-build skips preinstall/postinstall scripts during install
 # This avoids the "npx only-allow pnpm" check in @eth-optimism/core-utils
-# Clear yarn cache before install to avoid corrupted package downloads
-# Retry install on failure to handle transient npm registry issues
-RUN yarn cache clean --all && \
+# Cache mount speeds up yarn install when Docker layer cache misses
+# Clear cache and retry on failure to handle corrupted downloads or transient registry issues
+ENV YARN_CACHE_FOLDER=/tmp/yarn-cache
+RUN --mount=type=cache,target=/tmp/yarn-cache \
     yarn install --immutable --mode=skip-build || \
     (yarn cache clean --all && sleep 2 && yarn install --immutable --mode=skip-build) && \
     yarn workspaces foreach -A run rebuild
@@ -76,19 +78,11 @@ COPY packages/adapters/database /tmp/build/packages/adapters/database
 COPY tsconfig.json /tmp/build/
 
 # Build packages
-# Build only the workspaces needed for poller (not all workspaces)
-# Build dependencies first, then poller
-RUN yarn workspace @mark/core build && \
-    yarn workspace @mark/logger build && \
-    yarn workspace @mark/cache build && \
-    yarn workspace @mark/chainservice build && \
-    yarn workspace @mark/database build && \
-    yarn workspace @mark/everclear build && \
-    yarn workspace @mark/prometheus build && \
-    yarn workspace @mark/web3signer build && \
-    yarn workspace @mark/rebalance build && \
-    yarn workspace @mark/agent build && \
-    yarn workspace @mark/poller build
+# Build packages in topological order (respects declared deps)
+# Exclude root workspace (its build script would re-run foreach without our excludes)
+# Exclude packages not needed by poller
+RUN yarn workspaces foreach -Av --topological-dev \
+    --exclude mark --exclude @mark/admin --exclude @mark/handler --exclude @mark/webhooks run build
 
 # ----------------------------------------
 # Runtime stage
@@ -97,7 +91,14 @@ RUN yarn workspace @mark/core build && \
 FROM node AS runtime
 
 # Install dbmate for database migrations
-RUN curl -fsSL -o /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 && \
+# Pin to specific version and verify SHA256 checksum for supply chain security
+ARG DBMATE_VERSION=v2.29.3
+ARG DBMATE_SHA256=2bb1554a32d9c0bd544841d3523eae64fd60a58d7720c5d82900043dc5e87a6c
+RUN set -eux; \
+    curl -fsSL -o /tmp/dbmate \
+        https://github.com/amacneil/dbmate/releases/download/${DBMATE_VERSION}/dbmate-linux-amd64; \
+    echo "${DBMATE_SHA256}  /tmp/dbmate" | sha256sum -c -; \
+    mv /tmp/dbmate /usr/local/bin/dbmate; \
     chmod +x /usr/local/bin/dbmate
 
 ENV NODE_ENV=production \
