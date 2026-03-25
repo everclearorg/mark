@@ -511,13 +511,28 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
       },
       // Fetch threshold configs from S3 (fee-admin) - highest priority source
       // Falls back gracefully to SSM/env if S3 is unavailable or empty
-      ...await (async () => {
+      ...(await (async () => {
         const thresholdS3 = await getThresholdRebalanceConfigFromS3();
         const solanaS3 = thresholdS3?.solanaPtusdeRebalance;
         return {
-          tacRebalance: await loadTokenRebalanceConfig(thresholdS3?.tacRebalance, configJson, 'tacRebalance', 'TAC_REBALANCE'),
-          methRebalance: await loadTokenRebalanceConfig(thresholdS3?.methRebalance, configJson, 'methRebalance', 'METH_REBALANCE'),
-          aManUsdeRebalance: await loadTokenRebalanceConfig(thresholdS3?.aManUsdeRebalance, configJson, 'aManUsdeRebalance', 'AMANUSDE_REBALANCE'),
+          tacRebalance: await loadTokenRebalanceConfig(
+            thresholdS3?.tacRebalance,
+            configJson,
+            'tacRebalance',
+            'TAC_REBALANCE',
+          ),
+          methRebalance: await loadTokenRebalanceConfig(
+            thresholdS3?.methRebalance,
+            configJson,
+            'methRebalance',
+            'METH_REBALANCE',
+          ),
+          aManUsdeRebalance: await loadTokenRebalanceConfig(
+            thresholdS3?.aManUsdeRebalance,
+            configJson,
+            'aManUsdeRebalance',
+            'AMANUSDE_REBALANCE',
+          ),
           aMansyrupUsdtRebalance: await loadTokenRebalanceConfig(
             thresholdS3?.aMansyrupUsdtRebalance,
             configJson,
@@ -558,7 +573,7 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
             },
           },
         };
-      })(),
+      })()),
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),
@@ -633,21 +648,23 @@ function logThresholdRebalancerConfigs(config: MarkConfiguration): void {
     });
   };
 
-  logTokenRebalancer('tacRebalance', config.tacRebalance);
-  logTokenRebalancer('methRebalance', config.methRebalance);
-  logTokenRebalancer('aManUsdeRebalance', config.aManUsdeRebalance);
-  logTokenRebalancer('aMansyrupUsdtRebalance', config.aMansyrupUsdtRebalance);
+  if (config.tacRebalance) logTokenRebalancer('tacRebalance', config.tacRebalance);
+  if (config.methRebalance) logTokenRebalancer('methRebalance', config.methRebalance);
+  if (config.aManUsdeRebalance) logTokenRebalancer('aManUsdeRebalance', config.aManUsdeRebalance);
+  if (config.aMansyrupUsdtRebalance) logTokenRebalancer('aMansyrupUsdtRebalance', config.aMansyrupUsdtRebalance);
 
-  console.log('[ThresholdConfig] solanaPtusdeRebalance:', {
-    enabled: config.solanaPtusdeRebalance.enabled,
-    ptUsdeThreshold: config.solanaPtusdeRebalance.ptUsdeThreshold,
-    ptUsdeTarget: config.solanaPtusdeRebalance.ptUsdeTarget,
-    bridge: {
-      slippageDbps: config.solanaPtusdeRebalance.bridge.slippageDbps,
-      minRebalanceAmount: config.solanaPtusdeRebalance.bridge.minRebalanceAmount,
-      maxRebalanceAmount: config.solanaPtusdeRebalance.bridge.maxRebalanceAmount,
-    },
-  });
+  if (config.solanaPtusdeRebalance) {
+    console.log('[ThresholdConfig] solanaPtusdeRebalance:', {
+      enabled: config.solanaPtusdeRebalance.enabled,
+      ptUsdeThreshold: config.solanaPtusdeRebalance.ptUsdeThreshold,
+      ptUsdeTarget: config.solanaPtusdeRebalance.ptUsdeTarget,
+      bridge: {
+        slippageDbps: config.solanaPtusdeRebalance.bridge.slippageDbps,
+        minRebalanceAmount: config.solanaPtusdeRebalance.bridge.minRebalanceAmount,
+        maxRebalanceAmount: config.solanaPtusdeRebalance.bridge.maxRebalanceAmount,
+      },
+    });
+  }
 }
 
 function validateConfiguration(config: MarkConfiguration): void {
