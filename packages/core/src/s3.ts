@@ -127,10 +127,7 @@ export const getThresholdRebalanceConfigFromS3 = async (): Promise<ThresholdReba
 
     return config;
   } catch (error) {
-    console.warn(
-      'Failed to fetch threshold rebalance config from S3:',
-      error instanceof Error ? error.message : error,
-    );
+    console.warn('Failed to fetch threshold rebalance config from S3:', error instanceof Error ? error.message : error);
     return null;
   }
 };
