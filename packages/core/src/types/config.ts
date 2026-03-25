@@ -197,6 +197,19 @@ export const TOKEN_REBALANCER_KEYS: TokenRebalancerKey[] = [
   'aMansyrupUsdtRebalance',
 ];
 
+/**
+ * S3 threshold rebalance config shape exported by fee-admin.
+ * Each key maps to its corresponding TokenRebalanceConfig or SolanaRebalanceConfig.
+ * Loaded from threshold-rebalance-config.json in the solver's S3 bucket.
+ */
+export interface ThresholdRebalanceS3Config {
+  tacRebalance?: TokenRebalanceConfig;
+  methRebalance?: TokenRebalanceConfig;
+  aManUsdeRebalance?: TokenRebalanceConfig;
+  aMansyrupUsdtRebalance?: TokenRebalanceConfig;
+  solanaPtusdeRebalance?: SolanaRebalanceConfig;
+}
+
 export interface RedisConfig {
   host: string;
   port: number;
