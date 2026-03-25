@@ -1,5 +1,5 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { RebalanceConfig } from './types/config';
+import { RebalanceConfig, ThresholdRebalanceS3Config } from './types/config';
 
 // Singleton client to prevent race conditions
 let s3Client: S3Client | null = null;
@@ -77,6 +77,60 @@ export const getRebalanceConfigFromS3 = async (): Promise<RebalanceConfig | null
     return config;
   } catch (error) {
     console.warn('Failed to fetch rebalance config from S3:', error instanceof Error ? error.message : error);
+    return null;
+  }
+};
+
+/**
+ * Fetch threshold-based rebalancer configs from S3.
+ * These are exported by fee-admin as threshold-rebalance-config.json.
+ * Uses the same S3 bucket as regular rebalance config.
+ *
+ * Priority chain: S3 (fee-admin) > SSM/configJson > env vars
+ */
+export const getThresholdRebalanceConfigFromS3 = async (): Promise<ThresholdRebalanceS3Config | null> => {
+  try {
+    const bucket = process.env.REBALANCE_CONFIG_S3_BUCKET;
+    const key = process.env.THRESHOLD_REBALANCE_CONFIG_S3_KEY || 'threshold-rebalance-config.json';
+    const region = process.env.REBALANCE_CONFIG_S3_REGION;
+
+    if (!bucket) {
+      return null;
+    }
+
+    const client = getS3Client(region);
+    if (!client) {
+      return null;
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    });
+
+    const response = await client.send(command);
+
+    if (!response.Body) {
+      return null;
+    }
+
+    const bodyString = await response.Body.transformToString();
+    const config = JSON.parse(bodyString) as ThresholdRebalanceS3Config;
+
+    const configKeys = Object.keys(config);
+    console.log('Successfully loaded threshold rebalance config from S3', {
+      bucket,
+      key,
+      configKeys,
+      configCount: configKeys.length,
+    });
+
+    return config;
+  } catch (error) {
+    console.warn(
+      'Failed to fetch threshold rebalance config from S3:',
+      error instanceof Error ? error.message : error,
+    );
     return null;
   }
 };
