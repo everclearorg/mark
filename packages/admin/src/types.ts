@@ -50,6 +50,8 @@ export enum HttpPaths {
   TriggerIntent = '/trigger/intent',
   TriggerSwap = '/trigger/swap',
   BinanceCheck = '/binance/check',
+  BinanceWithdraw = '/binance/withdraw',
+  BinanceWithdrawStatus = '/binance/withdraw-status',
 }
 
 export interface PaginationParams {

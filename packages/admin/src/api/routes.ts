@@ -17,7 +17,7 @@ import {
   BPS_MULTIPLIER,
 } from '@mark/core';
 import { encodeFunctionData, erc20Abi, Hex, formatUnits, parseUnits } from 'viem';
-import { MemoizedTransactionRequest, BinanceClient, BINANCE_NETWORK_TO_CHAIN_ID } from '@mark/rebalance';
+import { MemoizedTransactionRequest, BinanceClient, BINANCE_NETWORK_TO_CHAIN_ID, WITHDRAWAL_STATUS } from '@mark/rebalance';
 import type { SwapExecutionResult } from '@mark/rebalance/src/types';
 import { AdminApi } from '../openapi/adminApi';
 import { ErrorResponse, ForbiddenResponse } from '../openapi/schemas';
@@ -88,6 +88,8 @@ export const handleApiRequest = async (context: AdminContext): Promise<{ statusC
         return handleTriggerIntent(context);
       case HttpPaths.TriggerSwap:
         return handleTriggerSwap(context);
+      case HttpPaths.BinanceWithdraw:
+        return handleBinanceWithdraw(context);
       default:
         throw new Error(`Unknown request: ${request}`);
     }
@@ -987,6 +989,246 @@ const handleBinanceCheck = async (context: AdminContext): Promise<{ statusCode: 
   }
 };
 
+const handleBinanceWithdraw = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
+  const { logger, config, event } = context;
+
+  try {
+    const { binance } = config.markConfig;
+    if (!binance?.apiKey || !binance?.apiSecret) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'Binance API key and secret not configured' }),
+      };
+    }
+
+    // Parse request body
+    let body: { coin?: string; network?: string; address?: string; amount?: string };
+    try {
+      body = JSON.parse(event.body || '{}');
+    } catch {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'Invalid JSON body' }),
+      };
+    }
+
+    const { coin, network, address, amount } = body;
+
+    if (!coin || !network || !address || !amount) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: 'Missing required fields: coin, network, address, amount',
+          example: { coin: 'USDC', network: 'ETH', address: '0x...', amount: '100.5' },
+        }),
+      };
+    }
+
+    logger.info('Initiating Binance withdrawal', { coin, network, address, amount });
+
+    const client = new BinanceClient(binance.apiKey, binance.apiSecret, 'https://api.binance.com', logger);
+
+    // Pre-flight checks
+    const isOperational = await client.isSystemOperational();
+    if (!isOperational) {
+      return {
+        statusCode: 503,
+        body: JSON.stringify({ message: 'Binance system is not operational' }),
+      };
+    }
+
+    // Check balance
+    const balances = await client.getAccountBalance();
+    const availableBalance = parseFloat((balances[coin] as string) || '0');
+    const requestedAmount = parseFloat(amount);
+
+    if (requestedAmount > availableBalance) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: `Insufficient ${coin} balance`,
+          available: availableBalance,
+          requested: requestedAmount,
+        }),
+      };
+    }
+
+    // Check network config
+    const assetConfigs = await client.getAssetConfig();
+    const coinConfig = assetConfigs.find((c: { coin: string }) => c.coin === coin);
+    if (!coinConfig) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `${coin} not found in Binance asset config` }),
+      };
+    }
+
+    const networkConfig = coinConfig.networkList.find((n: { network: string }) => n.network === network);
+    if (!networkConfig) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: `Network ${network} not available for ${coin}`,
+          availableNetworks: coinConfig.networkList.map((n: { network: string }) => n.network),
+        }),
+      };
+    }
+
+    if (!networkConfig.withdrawEnable) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: `Withdrawals disabled for ${coin} on ${network}` }),
+      };
+    }
+
+    const fee = parseFloat(networkConfig.withdrawFee);
+    const min = parseFloat(networkConfig.withdrawMin);
+
+    if (requestedAmount < min) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: `Amount below minimum withdrawal`,
+          minimum: min,
+          requested: requestedAmount,
+        }),
+      };
+    }
+
+    // Initiate withdrawal
+    logger.info('Submitting withdrawal to Binance', { coin, network, address, amount });
+
+    const result = await client.withdraw({
+      coin,
+      network,
+      address,
+      amount,
+    });
+
+    logger.info('Withdrawal submitted successfully', { withdrawalId: result.id, coin, network, address, amount });
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        message: 'Withdrawal submitted successfully',
+        withdrawalId: result.id,
+        coin,
+        network,
+        address,
+        amount,
+        fee: networkConfig.withdrawFee,
+        youReceive: (requestedAmount - fee).toFixed(6),
+      }),
+    };
+  } catch (error) {
+    logger.error('Binance withdrawal failed', { error: jsonifyError(error) });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: 'Binance withdrawal failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
+    };
+  }
+};
+
+const WITHDRAWAL_STATUS_LABELS: Record<number, string> = {
+  [WITHDRAWAL_STATUS.EMAIL_SENT]: 'EMAIL_SENT',
+  [WITHDRAWAL_STATUS.CANCELLED]: 'CANCELLED',
+  [WITHDRAWAL_STATUS.AWAITING_APPROVAL]: 'AWAITING_APPROVAL',
+  [WITHDRAWAL_STATUS.REJECTED]: 'REJECTED',
+  [WITHDRAWAL_STATUS.PROCESSING]: 'PROCESSING',
+  [WITHDRAWAL_STATUS.FAILURE]: 'FAILURE',
+  [WITHDRAWAL_STATUS.COMPLETED]: 'COMPLETED',
+};
+
+const handleBinanceWithdrawStatus = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
+  const { logger, config, event } = context;
+
+  try {
+    const { binance } = config.markConfig;
+    if (!binance?.apiKey || !binance?.apiSecret) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'Binance API key and secret not configured' }),
+      };
+    }
+
+    const client = new BinanceClient(binance.apiKey, binance.apiSecret, 'https://api.binance.com', logger);
+
+    const coin = event.queryStringParameters?.coin || 'USDC';
+    const withdrawalId = event.queryStringParameters?.withdrawalId;
+
+    logger.info('Checking withdrawal status', { coin, withdrawalId });
+
+    const history = await client.getWithdrawHistory(coin);
+
+    // If a specific withdrawal ID is provided, filter for it
+    if (withdrawalId) {
+      const record = history.find((r: { id: string }) => r.id === withdrawalId);
+      if (!record) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ message: `Withdrawal ${withdrawalId} not found` }),
+        };
+      }
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          withdrawal: {
+            id: record.id,
+            coin: record.coin,
+            network: record.network,
+            address: record.address,
+            amount: record.amount,
+            transactionFee: record.transactionFee,
+            status: record.status,
+            statusLabel: WITHDRAWAL_STATUS_LABELS[record.status] || 'UNKNOWN',
+            txId: record.txId || null,
+            applyTime: record.applyTime,
+            confirmNo: record.confirmNo,
+            info: record.info,
+          },
+        }),
+      };
+    }
+
+    // Return recent withdrawal history
+    const withdrawals = history.slice(0, 20).map((r: { id: string; coin: string; network: string; address: string; amount: string; transactionFee: string; status: number; txId: string; applyTime: string; confirmNo: number }) => ({
+      id: r.id,
+      coin: r.coin,
+      network: r.network,
+      address: r.address,
+      amount: r.amount,
+      transactionFee: r.transactionFee,
+      status: r.status,
+      statusLabel: WITHDRAWAL_STATUS_LABELS[r.status] || 'UNKNOWN',
+      txId: r.txId || null,
+      applyTime: r.applyTime,
+      confirmNo: r.confirmNo,
+    }));
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        coin,
+        count: withdrawals.length,
+        withdrawals,
+      }),
+    };
+  } catch (error) {
+    logger.error('Binance withdrawal status check failed', { error: jsonifyError(error) });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: 'Binance withdrawal status check failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
+    };
+  }
+};
+
 const handleGetRequest = async (
   request: HttpPaths,
   context: AdminContext,
@@ -1052,6 +1294,9 @@ const handleGetRequest = async (
 
     case HttpPaths.BinanceCheck:
       return handleBinanceCheck(context);
+
+    case HttpPaths.BinanceWithdrawStatus:
+      return handleBinanceWithdrawStatus(context);
 
     case HttpPaths.GetRebalanceOperationDetails: {
       const paramsParsed = parsePathParams(AdminApi.getRebalanceOperationDetails.params!, event.pathParameters ?? null);
@@ -1377,9 +1622,15 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
     return undefined;
   }
 
-  // Handle Binance check
+  // Handle Binance endpoints
   if (httpMethod === 'GET' && path.endsWith('/binance/check')) {
     return HttpPaths.BinanceCheck;
+  }
+  if (httpMethod === 'GET' && path.endsWith('/binance/withdraw-status')) {
+    return HttpPaths.BinanceWithdrawStatus;
+  }
+  if (httpMethod === 'POST' && path.endsWith('/binance/withdraw')) {
+    return HttpPaths.BinanceWithdraw;
   }
 
   // Handle earmark detail path with ID parameter
