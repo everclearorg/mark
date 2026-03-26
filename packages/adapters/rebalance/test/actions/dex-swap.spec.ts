@@ -236,7 +236,7 @@ describe('DexSwapActionHandler', () => {
     const customEstOutput = '9999999999999999999';
     mockReadContract
       .mockResolvedValueOnce(BigInt(1000000) as never) // balanceOf
-      .mockResolvedValueOnce(BigInt(1000000) as never); // allowance (sufficient)
+      .mockResolvedValueOnce(BigInt(1010000) as never); // allowance (sufficient including slippage padding)
 
     axiosPostMock.mockResolvedValueOnce({
       data: {

@@ -149,12 +149,15 @@ export class DexSwapActionHandler implements PostBridgeActionHandler {
       args: [sender as `0x${string}`, spender as `0x${string}`],
     });
 
-    if (allowance < swapAmount) {
+    const approvalAmount = swapAmount + (swapAmount * BigInt(slippageBps)) / BigInt(10000);
+    if (allowance < approvalAmount) {
       this.logger.info('DexSwap: building approval transaction', {
         sellToken,
         spender,
         currentAllowance: allowance.toString(),
-        requiredAmount: swapAmount.toString(),
+        approvalAmount: approvalAmount.toString(),
+        swapAmount: swapAmount.toString(),
+        slippageBps,
         destinationChainId,
       });
 
@@ -165,7 +168,7 @@ export class DexSwapActionHandler implements PostBridgeActionHandler {
           data: encodeFunctionData({
             abi: erc20Abi,
             functionName: 'approve',
-            args: [spender as `0x${string}`, swapAmount],
+            args: [spender as `0x${string}`, approvalAmount],
           }),
           value: BigInt(0),
         },
@@ -175,7 +178,7 @@ export class DexSwapActionHandler implements PostBridgeActionHandler {
         sellToken,
         spender,
         currentAllowance: allowance.toString(),
-        requiredAmount: swapAmount.toString(),
+        requiredAmount: approvalAmount.toString(),
         destinationChainId,
       });
     }

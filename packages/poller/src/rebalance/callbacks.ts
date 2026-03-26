@@ -14,6 +14,7 @@ import {
 } from '@mark/core';
 import { buildTransactionsForAction } from '@mark/rebalance';
 import { TransactionEntry, TransactionReceipt } from '@mark/database';
+import { getRegisteredBridgeTags } from './registry';
 
 export const executeDestinationCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, chainService, database: db } = context;
@@ -65,6 +66,10 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
     return RebalanceOperationStatus.COMPLETED;
   };
 
+  // Bridge tags managed by dedicated rebalancers — skip them here
+  // so the generic handler doesn't race and mark them completed prematurely.
+  const ownedBridgeTags = getRegisteredBridgeTags();
+
   for (const operation of operations) {
     const logContext = {
       requestId,
@@ -73,6 +78,16 @@ export const executeDestinationCallbacks = async (context: ProcessingContext): P
       originChain: operation.originChainId,
       destinationChain: operation.destinationChainId,
     };
+
+    // Skip operations owned by dedicated rebalancers
+    if (operation.bridge && ownedBridgeTags.has(operation.bridge)) {
+      logger.debug('Skipping operation managed by dedicated rebalancer', {
+        ...logContext,
+        bridge: operation.bridge,
+        status: operation.status,
+      });
+      continue;
+    }
 
     // Handle AWAITING_POST_BRIDGE operations (execute post-bridge actions)
     if (operation.status === RebalanceOperationStatus.AWAITING_POST_BRIDGE) {

@@ -432,7 +432,10 @@ export class LineaNativeBridgeAdapter implements BridgeAdapter {
     // The Linea SDK issues wide-range eth_getLogs on both L1 and L2.
     // Commercial free-tier providers (Alchemy, DRPC) reject block ranges >10k.
     // Try configured providers first, then fall back to public RPCs for both chains.
-    const l1Candidates = [...(this.chains[ETHEREUM_CHAIN_ID.toString()]?.providers ?? []), ...LINEA_SDK_FALLBACK_L1_RPCS];
+    const l1Candidates = [
+      ...(this.chains[ETHEREUM_CHAIN_ID.toString()]?.providers ?? []),
+      ...LINEA_SDK_FALLBACK_L1_RPCS,
+    ];
     const l2Candidates = [...(this.chains[LINEA_CHAIN_ID.toString()]?.providers ?? []), ...LINEA_SDK_FALLBACK_L2_RPCS];
 
     if (l2Candidates.length === 0) {
