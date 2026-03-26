@@ -6,4 +6,4 @@ export { CHAIN_SELECTORS, CCIP_ROUTER_ADDRESSES, CCIP_SUPPORTED_CHAINS } from '.
 export { CCIPBridgeAdapter } from './adapters/ccip';
 export { buildTransactionsForAction, DexSwapActionHandler } from './actions';
 export { BinanceClient } from './adapters/binance/client';
-export { BINANCE_NETWORK_TO_CHAIN_ID } from './adapters/binance/constants';
+export { BINANCE_NETWORK_TO_CHAIN_ID, WITHDRAWAL_STATUS } from './adapters/binance/constants';
