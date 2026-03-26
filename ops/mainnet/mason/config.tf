@@ -31,14 +31,14 @@ locals {
         awsParamName = "/mason/config/web3_fastfill_signer_private_key_share1"
         gcpSecretRef = { project = "everclear-staging", secretId = "mason-fastfill-signer-pk-share2" }
         method       = "shamir"
-        required     = true
+        required     = false
       },
       {
         path         = "ton.mnemonic"
         awsParamName = "/mason/config/ton_mnemonic_share1"
         gcpSecretRef = { project = "everclear-staging", secretId = "mason-ton-mnemonic-share2" }
         method       = "shamir"
-        required     = true
+        required     = false
       },
       {
         path         = "solana.privateKey"
@@ -107,12 +107,14 @@ locals {
     }
   ]
 
-  # NOTE: TAC/METH rebalance config is loaded from SSM at runtime (not as env vars)
+  # NOTE: TAC/METH/aManUSDe/aMansyrupUSDT rebalance config is loaded from SSM at runtime (not as env vars)
   # to stay under AWS Lambda's 4KB env var limit.
-  # 
+  #
   # SSM-loaded config (via MARK_CONFIG_SSM_PARAMETER):
   # - tacRebalance.* (all TAC_REBALANCE_* values)
-  # - methRebalance.* (all METH_REBALANCE_* values)  
+  # - methRebalance.* (all METH_REBALANCE_* values)
+  # - aManUsdeRebalance.* (all AMANUSDE_REBALANCE_* values)
+  # - aMansyrupUsdtRebalance.* (all AMANSYRUPUSDT_REBALANCE_* values)
   # - ton.mnemonic, tonSignerAddress
   #
   # See packages/core/src/config.ts for the fallback logic.
@@ -197,6 +199,28 @@ locals {
       SOLANA_PRIVATE_KEY    = local.mark_config.solana.privateKey
       SOLANA_RPC_URL        = local.mark_config.solana.rpcUrl
       SOLANA_SIGNER_ADDRESS = local.mark_config.solanaSignerAddress
+    }
+  )
+
+  # aManUSDe rebalancing poller configuration
+  # Flow: USDC (ETH) → Stargate Bridge → USDC (Mantle) → DEX Swap → USDe → Aave Supply → aManUSDe
+  amanusde_poller_env_vars = merge(
+    local.poller_env_vars,
+    {
+      RUN_MODE                     = "aManUsdeOnly"
+      AMANUSDE_AAVE_POOL_ADDRESS   = "0x458F293454fE0d67EC0655f3672301301DD51422"
+      AMANUSDE_DEX_SWAP_SLIPPAGE_BPS = "100"
+    }
+  )
+
+  # aMansyrupUSDT rebalancing poller configuration
+  # Flow: USDC (ETH) → Stargate Bridge → USDC (Mantle) → DEX Swap → syrupUSDT → Aave Supply → aMansyrupUSDT
+  amansyrupusdt_poller_env_vars = merge(
+    local.poller_env_vars,
+    {
+      RUN_MODE                          = "aMansyrupUsdtOnly"
+      AMANSYRUPUSDT_AAVE_POOL_ADDRESS   = "0x458F293454fE0d67EC0655f3672301301DD51422"
+      AMANSYRUPUSDT_DEX_SWAP_SLIPPAGE_BPS = "100"
     }
   )
 

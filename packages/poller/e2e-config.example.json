@@ -1,0 +1,74 @@
+{
+  "dryRun": true,
+  "runModes": ["all"],
+  "sequential": true,
+  "overrides": {
+    "methRebalance": {
+      "enabled": true,
+      "fillService": {
+        "thresholdEnabled": true,
+        "threshold": "999000000000000000000",
+        "targetBalance": "999000000000000000000"
+      },
+      "bridge": {
+        "minRebalanceAmount": "100000000000000",
+        "maxRebalanceAmount": "100000000000000",
+        "slippageDbps": 500
+      }
+    },
+    "tacRebalance": {
+      "enabled": true,
+      "marketMaker": {
+        "thresholdEnabled": true,
+        "threshold": "999000000000000000000",
+        "targetBalance": "999000000000000000000"
+      },
+      "fillService": {
+        "thresholdEnabled": true,
+        "threshold": "999000000000000000000",
+        "targetBalance": "999000000000000000000"
+      },
+      "bridge": {
+        "minRebalanceAmount": "100000",
+        "maxRebalanceAmount": "100000",
+        "slippageDbps": 500
+      }
+    },
+    "aManUsdeRebalance": {
+      "enabled": true,
+      "fillService": {
+        "thresholdEnabled": true,
+        "threshold": "999000000000000000000",
+        "targetBalance": "999000000000000000000"
+      },
+      "bridge": {
+        "minRebalanceAmount": "100000",
+        "maxRebalanceAmount": "100000",
+        "slippageDbps": 50
+      }
+    },
+    "aMansyrupUsdtRebalance": {
+      "enabled": true,
+      "fillService": {
+        "thresholdEnabled": true,
+        "threshold": "999000000",
+        "targetBalance": "999000000"
+      },
+      "bridge": {
+        "minRebalanceAmount": "100000",
+        "maxRebalanceAmount": "100000",
+        "slippageDbps": 50
+      }
+    },
+    "solanaPtusdeRebalance": {
+      "enabled": true,
+      "ptUsdeThreshold": "1000000000",
+      "ptUsdeTarget": "1000000000",
+      "bridge": {
+        "slippageDbps": 500,
+        "minRebalanceAmount": "100000",
+        "maxRebalanceAmount": "100000"
+      }
+    }
+  }
+}

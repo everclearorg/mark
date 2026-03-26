@@ -65,8 +65,17 @@ export function initializeBaseAdapters(
   );
 
   // Initialize fill service chain service if configured
+  // Check all rebalance configs that may use a separate fill service sender
   let fillServiceChainService: ChainService | undefined;
-  const fsSenderAddress = config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
+  const fsSenderAddress =
+    config.tacRebalance?.fillService?.senderAddress ??
+    config.tacRebalance?.fillService?.address ??
+    config.methRebalance?.fillService?.senderAddress ??
+    config.methRebalance?.fillService?.address ??
+    config.aManUsdeRebalance?.fillService?.senderAddress ??
+    config.aManUsdeRebalance?.fillService?.address ??
+    config.aMansyrupUsdtRebalance?.fillService?.senderAddress ??
+    config.aMansyrupUsdtRebalance?.fillService?.address;
   if (config.fillServiceSignerUrl && fsSenderAddress) {
     logger.info('Initializing Fill Service chain service', {
       signerUrl: config.fillServiceSignerUrl,

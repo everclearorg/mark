@@ -10,10 +10,8 @@ import {
 import { ProcessingContext } from '../init';
 import { executeDestinationCallbacks } from './callbacks';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
-import { submitTransactionWithLogging } from '../helpers/transactions';
-import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getEarmarkedBalance } from './onDemand';
-import { createRebalanceOperation, TransactionReceipt } from '@mark/database';
+import { executeEvmBridge } from './bridgeExecution';
 
 export async function rebalanceInventory(context: ProcessingContext): Promise<RebalanceAction[]> {
   const { logger, requestId, config, chainService, rebalance } = context;
@@ -148,223 +146,46 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
         continue; // Skip to next bridge preference
       }
 
-      // Step 1: Get Quote
-      let receivedAmountStr: string;
-      try {
-        receivedAmountStr = await adapter.getReceivedAmount(amountToBridge.toString(), route);
-        logger.info('Received quote from adapter', {
-          requestId,
-          route,
-          bridgeType,
-          amountToBridge: amountToBridge.toString(),
-          receivedAmount: receivedAmountStr,
-        });
-      } catch (quoteError) {
-        logger.error('Failed to get quote from adapter, trying next preference', {
-          requestId,
-          route,
-          bridgeType,
-          amountToBridge: amountToBridge.toString(),
-          error: jsonifyError(quoteError),
-        });
-        continue; // Skip to next bridge preference
-      }
-
-      // Step 2: Check Slippage
-      const receivedAmount = BigInt(receivedAmountStr);
-      const slippageDbps = BigInt(route.slippagesDbps[bridgeIndex]);
-      const minimumAcceptableAmount = amountToBridge - (amountToBridge * slippageDbps) / DBPS_MULTIPLIER;
-
-      const actualSlippageDbps = ((amountToBridge - receivedAmount) * DBPS_MULTIPLIER) / amountToBridge;
-
-      if (receivedAmount < minimumAcceptableAmount) {
-        logger.warn('Quote does not meet slippage requirements, trying next preference', {
-          requestId,
-          route,
-          bridgeType,
-          amountToBridge: amountToBridge.toString(),
-          receivedAmount: receivedAmount.toString(),
-          minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-          slippageDbps: slippageDbps.toString(),
-          actualSlippageDbps: actualSlippageDbps.toString(),
-          configuredSlippageDBPS: slippageDbps.toString(),
-        });
-        continue; // Skip to next bridge preference
-      }
-
-      logger.info('Quote meets slippage requirements', {
-        requestId,
-        route,
-        bridgeType,
-        amountToBridge: amountToBridge.toString(),
-        receivedAmount: receivedAmount.toString(),
-        minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-        slippageDbps: slippageDbps.toString(),
-        actualSlippageDbps: actualSlippageDbps.toString(),
-        configuredSlippageDBPS: slippageDbps.toString(),
-      });
-
-      // Step 3: Get Bridge Transaction Requests
-      let bridgeTxRequests = [];
       const sender = getActualAddress(route.origin, config, logger, { requestId });
       const recipient = getActualAddress(route.destination, config, logger, { requestId });
+
       try {
-        bridgeTxRequests = await adapter.send(sender, recipient, amountToBridge.toString(), route);
-        logger.info('Prepared bridge transaction request from adapter', {
-          requestId,
+        const result = await executeEvmBridge({
+          context,
+          adapter,
           route,
-          bridgeType,
-          bridgeTxRequests,
-          amountToBridge: amountToBridge,
-          receiveAmount: receivedAmount,
-          transactionCount: bridgeTxRequests.length,
+          amount: amountToBridge,
           sender,
           recipient,
-          useOriginZodiac: originZodiacConfig.walletType,
-          useDestinationZodiac: destinationZodiacConfig.walletType,
-        });
-        if (!bridgeTxRequests.length) {
-          throw new Error(`Failed to retrieve any bridge transaction requests`);
-        }
-      } catch (sendError) {
-        logger.error('Failed to get bridge transaction request from adapter, trying next preference', {
-          requestId,
-          route,
-          bridgeType,
-          amountToBridge: amountToBridge,
-          error: jsonifyError(sendError),
-        });
-        continue; // Skip to next bridge preference
-      }
-
-      // Step 4: Submit the bridge transactions in order
-      // TODO: Use multisend for zodiac-enabled origin transactions
-      let idx = -1;
-      let effectiveBridgedAmount = amountToBridge.toString(); // Default to original amount
-      try {
-        let receipt: TransactionReceipt | undefined = undefined;
-        for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
-          idx++;
-          logger.info('Submitting bridge transaction', {
-            requestId,
-            route,
-            bridgeType,
-            transactionIndex: idx,
-            totalTransactions: bridgeTxRequests.length,
-            transaction,
-            memo,
-            amountToBridge: amountToBridge,
-            useZodiac: originZodiacConfig.walletType,
-          });
-          const result = await submitTransactionWithLogging({
-            chainService,
-            logger,
-            chainId: route.origin.toString(),
-            txRequest: {
-              to: transaction.to!,
-              data: transaction.data!,
-              value: (transaction.value || 0).toString(),
-              chainId: route.origin,
-              from: config.ownAddress,
-              funcSig: transaction.funcSig || '',
-            },
-            zodiacConfig: originZodiacConfig,
-            context: { requestId, route, bridgeType, transactionType: memo },
-          });
-
-          logger.info('Successfully submitted and confirmed origin bridge transaction', {
-            requestId,
-            route,
-            bridgeType,
-            transactionIndex: idx,
-            totalTransactions: bridgeTxRequests.length,
-            transactionHash: result.hash,
-            memo,
-            amountToBridge: amountToBridge,
-            useZodiac: originZodiacConfig.walletType,
-          });
-
-          if (memo !== RebalanceTransactionMemo.Rebalance) {
-            continue;
-          }
-          receipt = result.receipt! as unknown as TransactionReceipt;
-          // Use the effective bridged amount if provided (e.g., for Near caps or Binance rounding)
-          if (effectiveAmount) {
-            effectiveBridgedAmount = effectiveAmount;
-            logger.info('Using effective bridged amount from adapter', {
-              requestId,
-              originalAmount: amountToBridge.toString(),
-              effectiveAmount: effectiveBridgedAmount,
-              bridgeType,
-            });
-          }
-        }
-
-        // Step 5: Create database record
-        try {
-          await createRebalanceOperation({
-            earmarkId: null, // NULL indicates regular rebalancing
-            originChainId: route.origin,
-            destinationChainId: route.destination,
+          slippageTolerance: BigInt(route.slippagesDbps[bridgeIndex]),
+          slippageMultiplier: DBPS_MULTIPLIER,
+          chainService,
+          zodiacConfig: originZodiacConfig,
+          dbRecord: {
+            earmarkId: null,
             tickerHash: getTickerForAsset(route.asset, route.origin, config) || route.asset,
-            amount: effectiveBridgedAmount,
-            slippage: route.slippagesDbps[bridgeIndex],
+            bridgeTag: bridgeType,
             status: RebalanceOperationStatus.PENDING,
-            bridge: bridgeType,
-            transactions: receipt ? { [route.origin]: receipt } : undefined,
-            recipient: recipient,
-          });
+          },
+          label: `route ${route.origin}->${route.destination}`,
+        });
 
-          logger.info('Successfully created rebalance operation in database', {
-            requestId,
-            route,
-            bridgeType,
-            originTxHash: receipt?.transactionHash,
-            amountToBridge: effectiveBridgedAmount,
-            originalRequestedAmount: amountToBridge.toString(),
-            receiveAmount: receivedAmount,
-          });
-
-          // Add for tracking
-          const rebalanceAction: RebalanceAction = {
-            bridge: adapter.type(),
-            amount: amountToBridge.toString(),
-            origin: route.origin,
-            destination: route.destination,
-            asset: route.asset,
-            transaction: receipt!.transactionHash,
-            recipient,
-          };
-          rebalanceOperations.push(rebalanceAction);
-
+        if (result.actions.length > 0) {
+          rebalanceOperations.push(...result.actions);
           rebalanceSuccessful = true;
-          // If we got here, the rebalance for this route was successful with this bridge.
           break; // Exit the bridge preference loop for this route
-        } catch (error) {
-          logger.error('Failed to confirm transaction or create database record', {
-            requestId,
-            route,
-            bridgeType,
-            transactionHash: receipt?.transactionHash,
-            amountToBridge: amountToBridge,
-            receiveAmount: receivedAmount,
-            error: jsonifyError(error),
-          });
-
-          // Don't consider this a success if we can't confirm or record it
-          continue; // Try next bridge
         }
-      } catch (sendError) {
-        logger.error('Failed to send or monitor bridge transaction, trying next preference', {
+        // Empty actions means quote/slippage failure — try next preference
+        continue;
+      } catch (error) {
+        logger.error('Failed to execute bridge, trying next preference', {
           requestId,
           route,
           bridgeType,
-          transaction: bridgeTxRequests[idx],
-          transactionIndex: idx,
-          amountToBridge: amountToBridge,
-          error: jsonifyError(sendError),
+          amountToBridge: amountToBridge.toString(),
+          error: jsonifyError(error),
         });
-        continue; // Skip to next bridge preference
+        continue;
       }
     } // End of bridge preference loop
 

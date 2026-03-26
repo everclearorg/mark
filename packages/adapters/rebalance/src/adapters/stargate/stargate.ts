@@ -63,9 +63,7 @@ export class StargateBridgeAdapter implements BridgeAdapter {
    */
   private resolveDstToken(route: RebalanceRoute): string | null {
     if (route.destination === 30826) return USDT_TON_STARGATE;
-    return (
-      getDestinationAssetAddress(route.asset, route.origin, route.destination, this.chains, this.logger) ?? null
-    );
+    return getDestinationAssetAddress(route.asset, route.origin, route.destination, this.chains, this.logger) ?? null;
   }
 
   /**

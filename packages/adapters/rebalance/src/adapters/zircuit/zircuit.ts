@@ -396,12 +396,7 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: zircuitOptimismPortalAbi,
               functionName: 'proveWithdrawalTransaction',
-              args: [
-                withdrawalTx,
-                proofResult.l2OutputIndex,
-                proofResult.outputRootProof,
-                proofResult.withdrawalProof,
-              ],
+              args: [withdrawalTx, proofResult.l2OutputIndex, proofResult.outputRootProof, proofResult.withdrawalProof],
             }),
             value: BigInt(0),
           },
@@ -413,40 +408,44 @@ export class ZircuitNativeBridgeAdapter implements BridgeAdapter {
   }
 
   async isCallbackComplete(route: RebalanceRoute, originTransaction: TransactionReceipt): Promise<boolean> {
-    const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZIRCUIT_CHAIN_ID;
-    const isL2ToL1 = route.origin === ZIRCUIT_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
-    if (!isL1ToL2 && !isL2ToL1) {
-      throw new Error(`Unsupported Zircuit route: ${route.origin}->${route.destination}`);
+    try {
+      const isL1ToL2 = route.origin === ETHEREUM_CHAIN_ID && route.destination === ZIRCUIT_CHAIN_ID;
+      const isL2ToL1 = route.origin === ZIRCUIT_CHAIN_ID && route.destination === ETHEREUM_CHAIN_ID;
+      if (!isL1ToL2 && !isL2ToL1) {
+        throw new Error(`Unsupported Zircuit route: ${route.origin}->${route.destination}`);
+      }
+      if (isL1ToL2) {
+        return true;
+      }
+
+      // L2→L1: complete only when finalized
+      const l1Client = await this.getClient(ETHEREUM_CHAIN_ID);
+      const l2Client = await this.getClient(ZIRCUIT_CHAIN_ID);
+
+      const withdrawalTx = await this.extractWithdrawalTransaction(l2Client, originTransaction);
+      if (!withdrawalTx) {
+        // Cannot determine state — treat as complete to avoid stuck entries
+        return true;
+      }
+
+      const withdrawalHash = this.hashWithdrawal(withdrawalTx);
+      const isFinalized = await l1Client.readContract({
+        address: ZIRCUIT_OPTIMISM_PORTAL as `0x${string}`,
+        abi: zircuitOptimismPortalAbi,
+        functionName: 'finalizedWithdrawals',
+        args: [withdrawalHash],
+      });
+
+      this.logger.info('Zircuit isCallbackComplete check', {
+        txHash: originTransaction.transactionHash,
+        withdrawalHash,
+        isFinalized,
+      });
+
+      return isFinalized as boolean;
+    } catch (error) {
+      this.handleError(error, 'check if callback is complete', { route, originTransaction });
     }
-    if (isL1ToL2) {
-      return true;
-    }
-
-    // L2→L1: complete only when finalized
-    const l1Client = await this.getClient(ETHEREUM_CHAIN_ID);
-    const l2Client = await this.getClient(ZIRCUIT_CHAIN_ID);
-
-    const withdrawalTx = await this.extractWithdrawalTransaction(l2Client, originTransaction);
-    if (!withdrawalTx) {
-      // Cannot determine state — treat as complete to avoid stuck entries
-      return true;
-    }
-
-    const withdrawalHash = this.hashWithdrawal(withdrawalTx);
-    const isFinalized = await l1Client.readContract({
-      address: ZIRCUIT_OPTIMISM_PORTAL as `0x${string}`,
-      abi: zircuitOptimismPortalAbi,
-      functionName: 'finalizedWithdrawals',
-      args: [withdrawalHash],
-    });
-
-    this.logger.info('Zircuit isCallbackComplete check', {
-      txHash: originTransaction.transactionHash,
-      withdrawalHash,
-      isFinalized,
-    });
-
-    return isFinalized as boolean;
   }
 
   private async getClient(chainId: number): Promise<PublicClient> {

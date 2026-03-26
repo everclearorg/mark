@@ -29,8 +29,8 @@
         "secretId": "mason-fastfill-signer-pk-share2"
       },
       "method": "shamir",
-      "required": true,
-      "_comment": "Fill Service signer private key for fast fills"
+      "required": false,
+      "_comment": "Fill Service signer private key for fast fills (optional - only needed when fill service is enabled)"
     },
     {
       "path": "ton.mnemonic",
@@ -40,8 +40,8 @@
         "secretId": "mason-ton-mnemonic-share2"
       },
       "method": "shamir",
-      "required": true,
-      "_comment": "TON wallet mnemonic for TAC bridge operations"
+      "required": false,
+      "_comment": "TON wallet mnemonic for TAC bridge operations (optional - only needed when TAC rebalance is enabled)"
     },
     {
       "path": "solana.privateKey",
@@ -52,7 +52,7 @@
       },
       "method": "shamir",
       "required": true,
-      "_comment": "Solana wallet private key (base58 encoded)"
+      "_comment": "Solana wallet private key (required for the dedicated Solana USDC poller)"
     },
     {
       "path": "binance.apiSecret",

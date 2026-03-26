@@ -24,6 +24,6 @@ export const PENDLE_SUPPORTED_CHAINS = {
 export const USDC_PTUSDE_PAIRS: Record<number, { usdc: string; ptUSDe: string }> = {
   1: {
     usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-    ptUSDe: '0xE8483517077afa11A9B07f849cee2552f040d7b2',
+    ptUSDe: '0x3de0ff76e8b528c092d47b9dac775931cef80f49',
   },
 };

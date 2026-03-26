@@ -119,6 +119,54 @@ locals {
         maxRebalanceAmount = try(local.mark_config_json.methRebalance.bridge.maxRebalanceAmount, "")
       }
     }
+    # aManUSDe Rebalance configuration
+    aManUsdeRebalance = {
+      enabled = try(local.mark_config_json.aManUsdeRebalance.enabled, false)
+      marketMaker = {
+        address          = try(local.mark_config_json.aManUsdeRebalance.marketMaker.address, "")
+        onDemandEnabled  = try(local.mark_config_json.aManUsdeRebalance.marketMaker.onDemandEnabled, false)
+        thresholdEnabled = try(local.mark_config_json.aManUsdeRebalance.marketMaker.thresholdEnabled, false)
+        threshold        = try(local.mark_config_json.aManUsdeRebalance.marketMaker.threshold, "")
+        targetBalance    = try(local.mark_config_json.aManUsdeRebalance.marketMaker.targetBalance, "")
+      }
+      fillService = {
+        address                     = try(local.mark_config_json.aManUsdeRebalance.fillService.address, "")
+        senderAddress               = try(local.mark_config_json.aManUsdeRebalance.fillService.senderAddress, "")
+        thresholdEnabled            = try(local.mark_config_json.aManUsdeRebalance.fillService.thresholdEnabled, false)
+        threshold                   = try(local.mark_config_json.aManUsdeRebalance.fillService.threshold, "")
+        targetBalance               = try(local.mark_config_json.aManUsdeRebalance.fillService.targetBalance, "")
+        allowCrossWalletRebalancing = try(local.mark_config_json.aManUsdeRebalance.fillService.allowCrossWalletRebalancing, false)
+      }
+      bridge = {
+        slippageDbps       = try(local.mark_config_json.aManUsdeRebalance.bridge.slippageDbps, 50) # 0.5% default
+        minRebalanceAmount = try(local.mark_config_json.aManUsdeRebalance.bridge.minRebalanceAmount, "")
+        maxRebalanceAmount = try(local.mark_config_json.aManUsdeRebalance.bridge.maxRebalanceAmount, "")
+      }
+    }
+    # aMansyrupUSDT Rebalance configuration
+    aMansyrupUsdtRebalance = {
+      enabled = try(local.mark_config_json.aMansyrupUsdtRebalance.enabled, false)
+      marketMaker = {
+        address          = try(local.mark_config_json.aMansyrupUsdtRebalance.marketMaker.address, "")
+        onDemandEnabled  = try(local.mark_config_json.aMansyrupUsdtRebalance.marketMaker.onDemandEnabled, false)
+        thresholdEnabled = try(local.mark_config_json.aMansyrupUsdtRebalance.marketMaker.thresholdEnabled, false)
+        threshold        = try(local.mark_config_json.aMansyrupUsdtRebalance.marketMaker.threshold, "")
+        targetBalance    = try(local.mark_config_json.aMansyrupUsdtRebalance.marketMaker.targetBalance, "")
+      }
+      fillService = {
+        address                     = try(local.mark_config_json.aMansyrupUsdtRebalance.fillService.address, "")
+        senderAddress               = try(local.mark_config_json.aMansyrupUsdtRebalance.fillService.senderAddress, "")
+        thresholdEnabled            = try(local.mark_config_json.aMansyrupUsdtRebalance.fillService.thresholdEnabled, false)
+        threshold                   = try(local.mark_config_json.aMansyrupUsdtRebalance.fillService.threshold, "")
+        targetBalance               = try(local.mark_config_json.aMansyrupUsdtRebalance.fillService.targetBalance, "")
+        allowCrossWalletRebalancing = try(local.mark_config_json.aMansyrupUsdtRebalance.fillService.allowCrossWalletRebalancing, false)
+      }
+      bridge = {
+        slippageDbps       = try(local.mark_config_json.aMansyrupUsdtRebalance.bridge.slippageDbps, 500) # 5% default
+        minRebalanceAmount = try(local.mark_config_json.aMansyrupUsdtRebalance.bridge.minRebalanceAmount, "")
+        maxRebalanceAmount = try(local.mark_config_json.aMansyrupUsdtRebalance.bridge.maxRebalanceAmount, "")
+      }
+    }
   }
 }
 
@@ -416,6 +464,36 @@ module "mark_poller_meth_only" {
   container_env_vars = merge(local.poller_env_vars, {
     RUN_MODE = "methOnly"
   })
+}
+
+# aManUSDe-only Lambda - runs aManUSDe rebalancing every 5 minutes
+# Flow: USDC (ETH) → Stargate → USDC (Mantle) → DEX Swap → USDe → Aave Supply → aManUSDe
+module "mark_poller_amanusde_only" {
+  source              = "../../modules/lambda"
+  stage               = var.stage
+  environment         = var.environment
+  container_family    = "${var.bot_name}-poller-amanusde"
+  execution_role_arn  = module.iam.lambda_role_arn
+  image_uri           = var.image_uri
+  subnet_ids          = module.network.private_subnets
+  security_group_id   = module.sgs.lambda_sg_id
+  schedule_expression = "rate(5 minutes)"
+  container_env_vars  = local.amanusde_poller_env_vars
+}
+
+# aMansyrupUSDT-only Lambda - runs aMansyrupUSDT rebalancing every 5 minutes
+# Flow: USDC (ETH) → Stargate → USDC (Mantle) → DEX Swap → syrupUSDT → Aave Supply → aMansyrupUSDT
+module "mark_poller_amansyrupusdt_only" {
+  source              = "../../modules/lambda"
+  stage               = var.stage
+  environment         = var.environment
+  container_family    = "${var.bot_name}-poller-amansyrupusdt"
+  execution_role_arn  = module.iam.lambda_role_arn
+  image_uri           = var.image_uri
+  subnet_ids          = module.network.private_subnets
+  security_group_id   = module.sgs.lambda_sg_id
+  schedule_expression = "rate(5 minutes)"
+  container_env_vars  = local.amansyrupusdt_poller_env_vars
 }
 
 # Invoice Handler ECS Service - replaces poller Lambda functions

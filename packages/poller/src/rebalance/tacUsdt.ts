@@ -10,7 +10,7 @@ import {
   safeParseBigInt,
   getTonAssetDecimals,
 } from '../helpers';
-import { jsonifyMap, jsonifyError } from '@mark/logger';
+import { Logger, jsonifyMap, jsonifyError } from '@mark/logger';
 import {
   RebalanceOperationStatus,
   BPS_MULTIPLIER,
@@ -20,14 +20,11 @@ import {
   TAC_CHAIN_ID,
   TON_LZ_CHAIN_ID,
   getTokenAddressFromConfig,
-  WalletType,
   EarmarkStatus,
   getDecimalsFromConfig,
 } from '@mark/core';
 import { ProcessingContext } from '../init';
 import { getActualAddress } from '../helpers/zodiac';
-import { submitTransactionWithLogging } from '../helpers/transactions';
-import { MemoizedTransactionRequest, RebalanceTransactionMemo } from '@mark/rebalance';
 import {
   createRebalanceOperation,
   Earmark,
@@ -41,15 +38,9 @@ import {
 const USDT_ON_ETH_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
 const USDT_TICKER_HASH = '0x8b1a1d9c2b109e527c9134b25b1a1833b16b6594f92daa9f6d9b7a6024bce9d0';
 
-/**
- * Sender configuration for TAC rebalancing transactions.
- * Specifies which address should sign and send from Ethereum mainnet.
- */
-interface TacSenderConfig {
-  address: string; // Sender's Ethereum address
-  signerUrl?: string; // Web3signer URL for this sender (uses default if not specified)
-  label: 'market-maker' | 'fill-service'; // For logging
-}
+import { isOperationTimedOut, DEFAULT_OPERATION_TTL_MINUTES } from './helpers';
+import { SenderConfig, RebalanceRunState } from './types';
+import { executeEvmBridge } from './bridgeExecution';
 
 /**
  * Resolved USDT token addresses and decimals for TAC rebalancing.
@@ -65,23 +56,6 @@ interface UsdtInfo {
 
 // Minimum TON balance required for gas (0.5 TON in nanotons)
 const MIN_TON_GAS_BALANCE = 500000000n;
-
-// Default operation timeout: 24 hours (in minutes)
-const DEFAULT_OPERATION_TTL_MINUTES = 24 * 60;
-
-/**
- * Check if an operation has exceeded its TTL (time-to-live).
- * Operations stuck in PENDING or AWAITING_CALLBACK for too long should be marked as failed.
- *
- * @param createdAt - Operation creation timestamp
- * @param ttlMinutes - TTL in minutes (default: 24 hours)
- * @returns true if operation has timed out
- */
-function isOperationTimedOut(createdAt: Date, ttlMinutes: number = DEFAULT_OPERATION_TTL_MINUTES): boolean {
-  const maxAgeMs = ttlMinutes * 60 * 1000;
-  const operationAgeMs = Date.now() - createdAt.getTime();
-  return operationAgeMs > maxAgeMs;
-}
 
 /**
  * Type for TAC transaction metadata stored in database
@@ -164,6 +138,7 @@ function buildTonApiHeaders(apiKey?: string): Record<string, string> {
  */
 async function getTonNativeBalance(
   walletAddress: string,
+  logger: Logger,
   apiKey?: string,
   rpcUrl: string = TONAPI_DEFAULT_URL,
 ): Promise<bigint> {
@@ -174,17 +149,19 @@ async function getTonNativeBalance(
     });
 
     if (!response.ok) {
+      logger.warn('getTonNativeBalance: non-OK response', { walletAddress, status: response.status });
       return 0n;
     }
 
     const data = (await response.json()) as { balance?: number | string };
     if (data.balance === undefined) {
+      logger.warn('getTonNativeBalance: balance field undefined in response', { walletAddress });
       return 0n;
     }
 
     return safeParseBigInt(data.balance.toString());
   } catch (error) {
-    console.log('getTonNativeBalance error', error);
+    logger.error('getTonNativeBalance error', { walletAddress, error: jsonifyError(error) });
     return 0n;
   }
 }
@@ -201,6 +178,7 @@ async function getTonNativeBalance(
 async function getTonJettonBalance(
   walletAddress: string,
   jettonAddress: string,
+  logger: Logger,
   apiKey?: string,
   rpcUrl: string = TONAPI_DEFAULT_URL,
 ): Promise<bigint> {
@@ -211,131 +189,21 @@ async function getTonJettonBalance(
     });
 
     if (!response.ok) {
+      logger.warn('getTonJettonBalance: non-OK response', { walletAddress, jettonAddress, status: response.status });
       return 0n;
     }
 
     const data = (await response.json()) as { balance?: string };
     if (data.balance === undefined) {
+      logger.warn('getTonJettonBalance: balance field undefined in response', { walletAddress, jettonAddress });
       return 0n;
     }
 
     return safeParseBigInt(data.balance);
-  } catch {
+  } catch (error) {
+    logger.error('getTonJettonBalance error', { walletAddress, jettonAddress, error: jsonifyError(error) });
     return 0n;
   }
-}
-
-type ExecuteBridgeContext = Pick<ProcessingContext, 'logger' | 'chainService' | 'config' | 'requestId'>;
-
-interface ExecuteBridgeParams {
-  context: ExecuteBridgeContext;
-  route: {
-    origin: number;
-    destination: number;
-    asset: string;
-  };
-  bridgeType: SupportedBridge;
-  bridgeTxRequests: MemoizedTransactionRequest[];
-  amountToBridge: bigint;
-  senderOverride?: TacSenderConfig; // Optional: use different sender than config.ownAddress
-}
-
-interface ExecuteBridgeResult {
-  receipt?: TransactionReceipt;
-  effectiveBridgedAmount: string;
-}
-
-/**
- * Submits a sequence of bridge transactions and returns the final receipt and effective bridged amount.
- * @param senderOverride - If provided, uses this address as sender instead of config.ownAddress
- */
-const executeBridgeTransactions = async ({
-  context,
-  route,
-  bridgeType,
-  bridgeTxRequests,
-  amountToBridge,
-  senderOverride,
-}: ExecuteBridgeParams): Promise<ExecuteBridgeResult> => {
-  const { logger, chainService, config, requestId } = context;
-
-  // Use sender override if provided, otherwise default to ownAddress
-  const senderAddress = senderOverride?.address ?? config.ownAddress;
-  const senderLabel = senderOverride?.label ?? 'market-maker';
-
-  let idx = -1;
-  let effectiveBridgedAmount = amountToBridge.toString();
-  let receipt: TransactionReceipt | undefined;
-
-  for (const { transaction, memo, effectiveAmount } of bridgeTxRequests) {
-    idx++;
-    logger.info('Submitting TAC bridge transaction', {
-      requestId,
-      route,
-      bridgeType,
-      transactionIndex: idx,
-      totalTransactions: bridgeTxRequests.length,
-      transaction,
-      memo,
-      amountToBridge,
-      sender: senderAddress,
-      senderType: senderLabel,
-    });
-
-    const result = await submitTransactionWithLogging({
-      chainService,
-      logger,
-      chainId: route.origin.toString(),
-      txRequest: {
-        to: transaction.to!,
-        data: transaction.data!,
-        value: (transaction.value || 0).toString(),
-        chainId: route.origin,
-        from: senderAddress,
-        funcSig: transaction.funcSig || '',
-      },
-      zodiacConfig: {
-        walletType: WalletType.EOA,
-      },
-      context: { requestId, route, bridgeType, transactionType: memo, sender: senderLabel },
-    });
-
-    logger.info('Successfully submitted TAC bridge transaction', {
-      requestId,
-      route,
-      bridgeType,
-      transactionIndex: idx,
-      totalTransactions: bridgeTxRequests.length,
-      transactionHash: result.hash,
-      memo,
-      amountToBridge,
-    });
-
-    if (memo !== RebalanceTransactionMemo.Rebalance) {
-      continue;
-    }
-
-    receipt = result.receipt! as unknown as TransactionReceipt;
-    if (effectiveAmount) {
-      effectiveBridgedAmount = effectiveAmount;
-      logger.info('Using effective bridged amount from adapter', {
-        requestId,
-        originalAmount: amountToBridge.toString(),
-        effectiveAmount: effectiveBridgedAmount,
-        bridgeType,
-      });
-    }
-  }
-
-  return { receipt, effectiveBridgedAmount };
-};
-
-/**
- * Shared state for tracking ETH USDT that has been committed in this run
- * This prevents over-committing when both MM and FS need rebalancing simultaneously
- */
-interface RebalanceRunState {
-  committedEthUsdt: bigint; // Amount of ETH USDT committed in this run (not yet confirmed on-chain)
 }
 
 /**
@@ -458,7 +326,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
 
   // Track committed funds to prevent over-committing in this run
   const runState: RebalanceRunState = {
-    committedEthUsdt: 0n,
+    committedAmount: 0n,
   };
 
   // Calculate available balance for MM (no deductions yet)
@@ -469,12 +337,12 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
   actions.push(...mmActions);
 
   // Calculate remaining balance for FS (deduct MM committed amount)
-  const fsAvailableBalance = initialEthUsdtBalance - runState.committedEthUsdt;
+  const fsAvailableBalance = initialEthUsdtBalance - runState.committedAmount;
 
-  if (runState.committedEthUsdt > 0n) {
+  if (runState.committedAmount > 0n) {
     logger.info('MM committed funds, reducing available balance for FS', {
       requestId,
-      mmCommitted: runState.committedEthUsdt.toString(),
+      mmCommitted: runState.committedAmount.toString(),
       fsAvailable: fsAvailableBalance.toString(),
     });
   }
@@ -488,7 +356,7 @@ export async function rebalanceTacUsdt(context: ProcessingContext): Promise<Reba
     totalActions: actions.length,
     mmActions: mmActions.length,
     fsActions: fsActions.length,
-    totalCommitted: runState.committedEthUsdt.toString(),
+    totalCommitted: runState.committedAmount.toString(),
   });
 
   return actions;
@@ -544,7 +412,7 @@ const evaluateMarketMakerRebalance = async (
       recipientAddress: mmConfig.address!,
       threshold: threshold18,
       targetBalance: target18,
-      availableEthUsdt,
+      availableEthUsdt: availableEthUsdt - runState.committedAmount,
       runState,
       tacUsdtAddress: usdtInfo.tacAddress,
       tacUsdtDecimals: usdtInfo.tacDecimals,
@@ -589,7 +457,7 @@ const processOnDemandRebalancing = async (
   }
 
   // Track remaining available balance for this on-demand run
-  let remainingEthUsdt = availableEthUsdt - runState.committedEthUsdt;
+  let remainingEthUsdt = availableEthUsdt - runState.committedAmount;
 
   const actions: RebalanceAction[] = [];
 
@@ -608,7 +476,7 @@ const processOnDemandRebalancing = async (
     const origin = Number(MAINNET_CHAIN_ID); // Always start from Ethereum mainnet
     const destination = Number(TAC_CHAIN_ID);
     const ticker = USDT_TICKER_HASH;
-    const decimals = getDecimalsFromConfig(ticker, origin.toString(), config);
+    const decimals = getDecimalsFromConfig(ticker, origin.toString(), config) ?? 6;
 
     // All amounts normalized to 18 decimals for consistent calculations
     // (same pattern as threshold rebalancing)
@@ -745,7 +613,6 @@ const processOnDemandRebalancing = async (
     });
 
     // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
-    let rebalanceSuccessful = false;
     const bridgeType = SupportedBridge.Stargate;
 
     // Get addresses for the bridging flow
@@ -777,7 +644,7 @@ const processOnDemandRebalancing = async (
     });
 
     // Use slippage from config (default 500 = 5%)
-    const slippageDbps = config.tacRebalance!.bridge.slippageDbps;
+    const slippageDbps = config.tacRebalance!.bridge.slippageDbps ?? 500;
 
     const route = {
       asset: USDT_ON_ETH_ADDRESS,
@@ -806,9 +673,6 @@ const processOnDemandRebalancing = async (
 
     try {
       // CRITICAL: Convert amount from 18 decimals to native USDT decimals (6)
-      // The Stargate API expects amounts in native token units, not normalized 18 decimals
-      // Without this conversion, amounts like "10000000000000000000" (10 USDT in 18 decimals)
-      // are interpreted as 10 trillion USDT, exceeding pool liquidity and causing "Failed to get route"
       const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, origin.toString(), config) ?? 6;
       const amountInNativeUnits = convertToNativeUnits(amountToBridge, ethUsdtDecimals);
 
@@ -819,109 +683,58 @@ const processOnDemandRebalancing = async (
         decimals: ethUsdtDecimals,
       });
 
-      // Get quote
-      const receivedAmountStr = await adapter.getReceivedAmount(amountInNativeUnits.toString(), route);
-      logger.info('Received Stargate quote', {
-        requestId,
+      const result = await executeEvmBridge({
+        context,
+        adapter,
         route,
-        amountToBridge: amountInNativeUnits.toString(),
-        receivedAmount: receivedAmountStr,
+        amount: amountInNativeUnits,
+        dbAmount: amountToBridge, // preserve 18-decimal for DB record + committed-funds tracking
+        sender: evmSender,
+        recipient: tonRecipient,
+        dbRecipient: tacRecipient,
+        slippageTolerance: BigInt(route.slippagesDbps[0]),
+        slippageMultiplier: BPS_MULTIPLIER,
+        chainService,
+        dbRecord: {
+          earmarkId: earmark.id,
+          tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
+          bridgeTag: 'stargate-tac',
+          status: RebalanceOperationStatus.PENDING,
+        },
+        label: 'TAC on-demand Stargate',
       });
 
-      // Check slippage - use safeParseBigInt for adapter response
-      // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
-      const receivedAmount = safeParseBigInt(receivedAmountStr);
-      // slippagesDbps config uses basis points (500 = 5%), not deci-basis points
-      const slippageBps = BigInt(route.slippagesDbps[0]);
-      const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageBps) / BPS_MULTIPLIER;
-
-      if (receivedAmount < minimumAcceptableAmount) {
-        logger.warn('Stargate quote does not meet slippage requirements', {
-          requestId,
-          route,
-          amountToBridge: amountInNativeUnits.toString(),
-          receivedAmount: receivedAmount.toString(),
-          minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-        });
+      if (result.actions.length === 0) {
+        // Cancel orphaned earmark to prevent permanently blocking this invoice
+        try {
+          await database.updateEarmarkStatus(earmark.id, EarmarkStatus.CANCELLED);
+          logger.info('Cancelled earmark after bridge returned no actions', {
+            requestId,
+            earmarkId: earmark.id,
+            invoiceId: invoice.intent_id.toString(),
+          });
+        } catch (cancelError) {
+          logger.error('Failed to cancel orphaned earmark', {
+            requestId,
+            earmarkId: earmark.id,
+            error: jsonifyError(cancelError),
+          });
+        }
         continue;
       }
 
-      // Get bridge transactions
-      // Sender is EVM address, recipient is TON address (for Stargate to deliver to)
-      const bridgeTxRequests = await adapter.send(evmSender, tonRecipient, amountInNativeUnits.toString(), route);
-
-      if (!bridgeTxRequests.length) {
-        logger.error('No bridge transactions returned from Stargate adapter', { requestId });
-        continue;
-      }
-
-      logger.info('Prepared Stargate bridge transactions', {
-        requestId,
-        route,
-        transactionCount: bridgeTxRequests.length,
-      });
-
-      // Execute bridge transactions
-      const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-        context: { requestId, logger, chainService, config },
-        route,
-        bridgeType,
-        bridgeTxRequests,
-        amountToBridge,
-      });
-
-      // Create database record for Leg 1
-      // Store both TON recipient (for Stargate) and TAC recipient (for Leg 2)
-      // Note: Use USDT_TICKER_HASH as fallback to ensure we store ticker hash, not address
-      await createRebalanceOperation({
-        earmarkId: earmark.id,
-        originChainId: route.origin,
-        destinationChainId: route.destination,
-        tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
-        amount: effectiveBridgedAmount,
-        slippage: route.slippagesDbps[0],
-        status: RebalanceOperationStatus.PENDING,
-        bridge: 'stargate-tac', // Tagged for TAC flow
-        transactions: receipt
-          ? {
-              [route.origin]: receipt,
-            }
-          : undefined,
-        recipient: tacRecipient, // Final TAC recipient
-      });
-
-      logger.info('Successfully created TAC Leg 1 rebalance operation', {
-        requestId,
-        route,
-        bridgeType,
-        originTxHash: receipt?.transactionHash,
-        amountToBridge: effectiveBridgedAmount,
-      });
-
-      // Track the operation
-      const rebalanceAction: RebalanceAction = {
-        bridge: adapter.type(),
-        amount: amountToBridge.toString(),
-        origin: route.origin,
-        destination: route.destination,
-        asset: route.asset,
-        transaction: receipt?.transactionHash || '',
-        recipient: tacRecipient, // Final TAC destination
-      };
-      actions.push(rebalanceAction as RebalanceAction);
-
-      rebalanceSuccessful = true;
+      actions.push(...result.actions);
 
       // Track committed funds to prevent over-committing in subsequent operations
-      const bridgedAmount = safeParseBigInt(effectiveBridgedAmount);
-      runState.committedEthUsdt += bridgedAmount;
+      const bridgedAmount = safeParseBigInt(result.effectiveBridgedAmount);
+      runState.committedAmount += bridgedAmount;
       remainingEthUsdt -= bridgedAmount;
 
       logger.debug('Updated committed funds after on-demand bridge', {
         requestId,
         invoiceId: invoice.intent_id.toString(),
         bridgedAmount: bridgedAmount.toString(),
-        totalCommitted: runState.committedEthUsdt.toString(),
+        totalCommitted: runState.committedAmount.toString(),
         remainingAvailable: remainingEthUsdt.toString(),
       });
     } catch (error) {
@@ -932,20 +745,6 @@ const processOnDemandRebalancing = async (
         error: jsonifyError(error),
       });
       continue;
-    }
-
-    if (rebalanceSuccessful) {
-      logger.info('Leg 1 rebalance successful', {
-        requestId,
-        route,
-        amountToBridge: amountToBridge.toString(),
-      });
-    } else {
-      logger.warn('Failed to complete Leg 1 rebalance', {
-        requestId,
-        route,
-        amountToBridge: amountToBridge.toString(),
-      });
     }
   }
 
@@ -1017,11 +816,19 @@ const processThresholdRebalancing = async ({
     return [];
   }
 
-  // 2. Check for in-flight operations to this recipient
-  const pendingOps = await db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), recipientAddress, [
-    RebalanceOperationStatus.PENDING,
-    RebalanceOperationStatus.AWAITING_CALLBACK,
+  // 2. Check for in-flight operations to this recipient (check both TON and TAC destinations
+  // since Leg 1 stores destination=TON_LZ_CHAIN_ID and Leg 2 stores destination=TAC_CHAIN_ID)
+  const [pendingOpsTac, pendingOpsTon] = await Promise.all([
+    db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), recipientAddress, [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+    ]),
+    db.getRebalanceOperationByRecipient(Number(TON_LZ_CHAIN_ID), recipientAddress, [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+    ]),
   ]);
+  const pendingOps = [...pendingOpsTac, ...pendingOpsTon];
   if (pendingOps.length > 0) {
     logger.info('Active rebalance in progress for recipient', {
       requestId,
@@ -1052,15 +859,15 @@ const processThresholdRebalancing = async ({
     return [];
   }
 
-  // 4. Use available ETH balance (already accounts for committed funds in this run)
-  // This prevents over-committing when both MM and FS need rebalancing simultaneously
-  const remainingEthUsdt = availableEthUsdt - runState.committedEthUsdt;
+  // 4. Use available ETH balance as-is — callers are responsible for deducting
+  // committedAmount where appropriate (e.g., cross-wallet flow deducts before calling).
+  const remainingEthUsdt = availableEthUsdt;
 
   logger.debug('Threshold rebalancing: checking available balance', {
     requestId,
     recipient: recipientAddress,
     availableEthUsdt: availableEthUsdt.toString(),
-    alreadyCommitted: runState.committedEthUsdt.toString(),
+    alreadyCommitted: runState.committedAmount.toString(),
     remainingEthUsdt: remainingEthUsdt.toString(),
     shortfall: shortfall.toString(),
   });
@@ -1091,12 +898,12 @@ const processThresholdRebalancing = async ({
 
   // Track committed funds if bridge was successful
   if (actions.length > 0) {
-    runState.committedEthUsdt += amountToBridge;
+    runState.committedAmount += amountToBridge;
     logger.debug('Updated committed funds after threshold bridge', {
       requestId,
       recipient: recipientAddress,
       bridgedAmount: amountToBridge.toString(),
-      totalCommitted: runState.committedEthUsdt.toString(),
+      totalCommitted: runState.committedAmount.toString(),
     });
   }
 
@@ -1110,11 +917,6 @@ const executeTacBridge = async (
   earmarkId: string | null, // null for threshold-based
 ): Promise<RebalanceAction[]> => {
   const { config, chainService, fillServiceChainService, logger, requestId, rebalance, prometheus } = context;
-  // Existing Stargate bridge logic
-  // Store recipientAddress in operation.recipient
-  // Store earmarkId (null for threshold-based)
-  const actions: RebalanceAction[] = [];
-
   // Determine if this is for Fill Service or Market Maker based on recipient
   const isForFillService = recipientAddress.toLowerCase() === config.tacRebalance?.fillService?.address?.toLowerCase();
   const walletType = isForFillService ? 'fill-service' : 'market-maker';
@@ -1143,7 +945,6 @@ const executeTacBridge = async (
   const origin = Number(MAINNET_CHAIN_ID); // Always start from Ethereum mainnet
 
   // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
-  let rebalanceSuccessful = false;
   const bridgeType = SupportedBridge.Stargate;
 
   // Determine sender for the bridge based on recipient type
@@ -1154,7 +955,7 @@ const executeTacBridge = async (
     config.tacRebalance?.fillService?.senderAddress ?? config.tacRebalance?.fillService?.address;
 
   let evmSender: string;
-  let senderConfig: TacSenderConfig | undefined;
+  let senderConfig: SenderConfig | undefined;
   let selectedChainService = chainService;
 
   if (isForFillService && fillerSenderAddress && fillServiceChainService) {
@@ -1289,7 +1090,7 @@ const executeTacBridge = async (
   });
 
   // Use slippage from config (default 500 = 5%)
-  const slippageDbps = config.tacRebalance!.bridge.slippageDbps;
+  const slippageDbps = config.tacRebalance!.bridge.slippageDbps ?? 500;
 
   const route = {
     asset: USDT_ON_ETH_ADDRESS,
@@ -1318,9 +1119,6 @@ const executeTacBridge = async (
 
   try {
     // CRITICAL: Convert amount from 18 decimals to native USDT decimals (6)
-    // The Stargate API expects amounts in native token units, not normalized 18 decimals
-    // Without this conversion, amounts like "10000000000000000000" (10 USDT in 18 decimals)
-    // are interpreted as 10 trillion USDT, exceeding pool liquidity and causing "Failed to get route"
     const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, origin.toString(), config) ?? 6;
     const amountInNativeUnits = convertToNativeUnits(amount, ethUsdtDecimals);
 
@@ -1331,99 +1129,29 @@ const executeTacBridge = async (
       decimals: ethUsdtDecimals,
     });
 
-    // Get quote
-    const receivedAmountStr = await adapter.getReceivedAmount(amountInNativeUnits.toString(), route);
-    logger.info('Received Stargate quote', {
-      requestId,
+    const result = await executeEvmBridge({
+      context,
+      adapter,
       route,
-      amountToBridge: amountInNativeUnits.toString(),
-      receivedAmount: receivedAmountStr,
+      amount: amountInNativeUnits,
+      dbAmount: amount, // preserve 18-decimal for DB record
+      sender: evmSender,
+      recipient: tonRecipient,
+      dbRecipient: tacRecipient,
+      slippageTolerance: BigInt(route.slippagesDbps[0]),
+      slippageMultiplier: BPS_MULTIPLIER,
+      chainService: selectedChainService,
+      senderConfig,
+      dbRecord: {
+        earmarkId: earmarkId,
+        tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
+        bridgeTag: 'stargate-tac',
+        status: RebalanceOperationStatus.PENDING,
+      },
+      label: 'TAC threshold Stargate',
     });
 
-    // Check slippage - use safeParseBigInt for adapter response
-    // Note: Both receivedAmount and minimumAcceptableAmount are in native units (6 decimals)
-    const receivedAmount = safeParseBigInt(receivedAmountStr);
-    // slippagesDbps config uses basis points (500 = 5%), not deci-basis points
-    const slippageBps = BigInt(route.slippagesDbps[0]);
-    const minimumAcceptableAmount = amountInNativeUnits - (amountInNativeUnits * slippageBps) / BPS_MULTIPLIER;
-
-    if (receivedAmount < minimumAcceptableAmount) {
-      logger.warn('Stargate quote does not meet slippage requirements', {
-        requestId,
-        route,
-        amountToBridge: amountInNativeUnits.toString(),
-        receivedAmount: receivedAmount.toString(),
-        minimumAcceptableAmount: minimumAcceptableAmount.toString(),
-      });
-      return [];
-    }
-
-    // Get bridge transactions
-    // Sender is EVM address, recipient is TON address (for Stargate to deliver to)
-    const bridgeTxRequests = await adapter.send(evmSender, tonRecipient, amountInNativeUnits.toString(), route);
-
-    if (!bridgeTxRequests.length) {
-      logger.error('No bridge transactions returned from Stargate adapter', { requestId });
-      return [];
-    }
-
-    logger.info('Prepared Stargate bridge transactions', {
-      requestId,
-      route,
-      transactionCount: bridgeTxRequests.length,
-    });
-
-    // Execute bridge transactions using the selected chain service and sender
-    const { receipt, effectiveBridgedAmount } = await executeBridgeTransactions({
-      context: { requestId, logger, chainService: selectedChainService, config },
-      route,
-      bridgeType,
-      bridgeTxRequests,
-      amountToBridge: amount,
-      senderOverride: senderConfig,
-    });
-
-    // Create database record for Leg 1
-    // Store both TON recipient (for Stargate) and TAC recipient (for Leg 2)
-    // Note: Use USDT_TICKER_HASH as fallback to ensure we store ticker hash, not address
-    await createRebalanceOperation({
-      earmarkId: earmarkId,
-      originChainId: route.origin,
-      destinationChainId: route.destination,
-      tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
-      amount: effectiveBridgedAmount,
-      slippage: route.slippagesDbps[0],
-      status: RebalanceOperationStatus.PENDING,
-      bridge: 'stargate-tac', // Tagged for TAC flow
-      transactions: receipt
-        ? {
-            [route.origin]: receipt,
-          }
-        : undefined,
-      recipient: tacRecipient, // Final TAC recipient
-    });
-
-    logger.info('Successfully created TAC Leg 1 rebalance operation', {
-      requestId,
-      route,
-      bridgeType,
-      originTxHash: receipt?.transactionHash,
-      amountToBridge: effectiveBridgedAmount,
-    });
-
-    // Track the operation
-    const rebalanceAction: RebalanceAction = {
-      bridge: adapter.type(),
-      amount: amount.toString(),
-      origin: route.origin,
-      destination: route.destination,
-      asset: route.asset,
-      transaction: receipt?.transactionHash || '',
-      recipient: tacRecipient, // Final TAC destination
-    };
-    actions.push(rebalanceAction);
-
-    rebalanceSuccessful = true;
+    return result.actions;
   } catch (error) {
     logger.error('Failed to execute Stargate bridge', {
       requestId,
@@ -1433,22 +1161,6 @@ const executeTacBridge = async (
     });
     return [];
   }
-
-  if (rebalanceSuccessful) {
-    logger.info('Leg 1 rebalance successful', {
-      requestId,
-      route,
-      amount: amount.toString(),
-    });
-  } else {
-    logger.warn('Failed to complete Leg 1 rebalance', {
-      requestId,
-      route,
-      amount: amount.toString(),
-    });
-  }
-
-  return actions;
 };
 
 /**
@@ -1478,16 +1190,24 @@ const evaluateFillServiceRebalance = async (
     return [];
   }
 
-  // Check for pending FS rebalancing operations
-  const { operations: inFlightOps } = await db.getRebalanceOperations(undefined, undefined, {
-    status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
-    bridge: [`${SupportedBridge.Stargate}-tac`, SupportedBridge.TacInner],
-  });
+  // Check for pending FS rebalancing operations (scoped to FS recipient, not global)
+  const [fsInFlightTac, fsInFlightTon] = await Promise.all([
+    db.getRebalanceOperationByRecipient(Number(TAC_CHAIN_ID), fsConfig.address!, [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+    ]),
+    db.getRebalanceOperationByRecipient(Number(TON_LZ_CHAIN_ID), fsConfig.address!, [
+      RebalanceOperationStatus.PENDING,
+      RebalanceOperationStatus.AWAITING_CALLBACK,
+    ]),
+  ]);
+  const inFlightOps = [...fsInFlightTac, ...fsInFlightTon];
 
   if (inFlightOps.length > 0) {
-    logger.info('TAC in-flight rebalance operations exist. skipping...', {
+    logger.info('TAC FS in-flight rebalance operations exist, skipping', {
       requestId,
       inFlightOps: inFlightOps.length,
+      recipient: fsConfig.address,
     });
     return [];
   }
@@ -1645,12 +1365,12 @@ const evaluateFillServiceRebalance = async (
   }
 
   // Check if MM has funds available
-  const mmRemainingBalance = mmAvailableEthUsdt - runState.committedEthUsdt;
+  const mmRemainingBalance = mmAvailableEthUsdt - runState.committedAmount;
   if (mmRemainingBalance < minRebalance18) {
     logger.info('Cross-wallet rebalancing: MM has insufficient available funds', {
       requestId,
       mmAvailableEthUsdt: mmAvailableEthUsdt.toString(),
-      committed: runState.committedEthUsdt.toString(),
+      committed: runState.committedAmount.toString(),
       mmRemainingBalance: mmRemainingBalance.toString(),
       minRebalance: minRebalance18.toString(),
     });
@@ -1706,7 +1426,7 @@ const calculateMinExpectedAmount = (amount: bigint, slippageBps: number): bigint
  * - Each flow only bridges its own operation-specific amount
  * - This prevents mixing funds from multiple concurrent flows
  */
-const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
+export const executeTacCallbacks = async (context: ProcessingContext): Promise<void> => {
   const { logger, requestId, config, rebalance, database: db } = context;
   logger.info('Executing TAC USDT rebalance callbacks', { requestId });
 
@@ -1950,7 +1670,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             const tonUSDTDecimals = getTonAssetDecimals(operation.tickerHash, config) ?? 6;
 
             // Check TON native balance for gas
-            const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
+            const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, logger, tonApiKey);
             if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
               logger.error('Insufficient TON balance for gas', {
                 ...logContext,
@@ -1963,7 +1683,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
             }
 
             // Get actual USDT balance on TON
-            const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
+            const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, logger, tonApiKey);
             const actualUsdtBalance18 = convertTo18Decimals(actualUsdtBalance, tonUSDTDecimals);
             logger.info('Ton Jetton Balance', {
               tonWalletAddress,
@@ -2163,7 +1883,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
 
             if (tonMnemonic && tonWalletAddress) {
               // Get actual USDT balance on TON
-              const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, tonApiKey);
+              const actualUsdtBalance = await getTonJettonBalance(tonWalletAddress, jettonAddress, logger, tonApiKey);
               const actualUsdtBalance18 = convertTo18Decimals(actualUsdtBalance, tonUSDTDecimals);
 
               if (actualUsdtBalance === 0n) {
@@ -2173,7 +1893,7 @@ const executeTacCallbacks = async (context: ProcessingContext): Promise<void> =>
               } else {
                 // TON has USDT - try to execute the bridge
                 // First check TON gas balance
-                const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, tonApiKey);
+                const tonNativeBalance = await getTonNativeBalance(tonWalletAddress, logger, tonApiKey);
                 if (tonNativeBalance < MIN_TON_GAS_BALANCE) {
                   logger.error('Insufficient TON balance for gas (retry)', {
                     ...logContext,

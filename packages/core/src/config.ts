@@ -13,13 +13,14 @@ import {
   RouteRebalancingConfig,
   PostBridgeActionConfig,
   LogLevel,
+  TokenRebalanceConfig,
 } from './types';
 import yaml from 'js-yaml';
 import fs, { existsSync, readFileSync } from 'fs';
-import { getSsmParameter } from './ssm';
+import { getSsmParameter, SsmParameterReadError } from './ssm';
 import { hexToBase58 } from './solana';
 import { isTvmChain } from './tron';
-import { getRebalanceConfigFromS3 } from './s3';
+import { getRebalanceConfigFromS3, getThresholdRebalanceConfigFromS3 } from './s3';
 import { stitchConfig, loadManifest, setValueByPath } from './shard';
 
 config();
@@ -193,6 +194,128 @@ export const loadRebalanceRoutes = async (): Promise<RebalanceConfig> => {
     onDemandRoutes: [],
   };
 };
+
+interface TokenRebalanceDefaults {
+  mmThreshold?: string;
+  mmTarget?: string;
+  fsThreshold?: string;
+  fsTarget?: string;
+  slippageDbps?: number;
+  minAmount?: string;
+  maxAmount?: string;
+}
+
+/**
+ * Convert empty strings to undefined so they don't short-circuit ?? fallback chains.
+ * Fee-admin S3 export should already convert empty strings to null, but this
+ * provides a defensive layer in mark to prevent empty string overrides.
+ */
+const nonEmpty = (value: string | undefined | null): string | undefined =>
+  value === '' || value === null ? undefined : value;
+
+async function loadTokenRebalanceConfig(
+  s3Config: TokenRebalanceConfig | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  configJson: Record<string, any>,
+  configKey: string,
+  envPrefix: string,
+  defaults?: TokenRebalanceDefaults,
+): Promise<TokenRebalanceConfig> {
+  // Priority: S3 (fee-admin) > configJson (SSM) > env vars > defaults
+  const s3 = s3Config;
+  const cfg = configJson[configKey];
+  return {
+    enabled:
+      s3?.enabled ??
+      parseBooleanValue(cfg?.enabled) ??
+      parseBooleanValue(await fromEnv(`${envPrefix}_ENABLED`, true)) ??
+      false,
+    marketMaker: {
+      address:
+        nonEmpty(s3?.marketMaker?.address) ??
+        cfg?.marketMaker?.address ??
+        (await fromEnv(`${envPrefix}_MARKET_MAKER_ADDRESS`, true)) ??
+        undefined,
+      onDemandEnabled:
+        s3?.marketMaker?.onDemandEnabled ??
+        parseBooleanValue(cfg?.marketMaker?.onDemandEnabled) ??
+        parseBooleanValue(await fromEnv(`${envPrefix}_MARKET_MAKER_ON_DEMAND_ENABLED`, true)) ??
+        false,
+      thresholdEnabled:
+        s3?.marketMaker?.thresholdEnabled ??
+        parseBooleanValue(cfg?.marketMaker?.thresholdEnabled) ??
+        parseBooleanValue(await fromEnv(`${envPrefix}_MARKET_MAKER_THRESHOLD_ENABLED`, true)) ??
+        false,
+      threshold:
+        nonEmpty(s3?.marketMaker?.threshold) ??
+        cfg?.marketMaker?.threshold ??
+        (await fromEnv(`${envPrefix}_MARKET_MAKER_THRESHOLD`, true)) ??
+        defaults?.mmThreshold ??
+        undefined,
+      targetBalance:
+        nonEmpty(s3?.marketMaker?.targetBalance) ??
+        cfg?.marketMaker?.targetBalance ??
+        (await fromEnv(`${envPrefix}_MARKET_MAKER_TARGET_BALANCE`, true)) ??
+        defaults?.mmTarget ??
+        undefined,
+    },
+    fillService: {
+      address:
+        nonEmpty(s3?.fillService?.address) ??
+        cfg?.fillService?.address ??
+        (await fromEnv(`${envPrefix}_FILL_SERVICE_ADDRESS`, true)) ??
+        undefined,
+      senderAddress:
+        nonEmpty(s3?.fillService?.senderAddress) ??
+        cfg?.fillService?.senderAddress ??
+        (await fromEnv(`${envPrefix}_FILL_SERVICE_SENDER_ADDRESS`, true)) ??
+        undefined,
+      thresholdEnabled:
+        s3?.fillService?.thresholdEnabled ??
+        parseBooleanValue(cfg?.fillService?.thresholdEnabled) ??
+        parseBooleanValue(await fromEnv(`${envPrefix}_FILL_SERVICE_THRESHOLD_ENABLED`, true)) ??
+        false,
+      threshold:
+        nonEmpty(s3?.fillService?.threshold) ??
+        cfg?.fillService?.threshold ??
+        (await fromEnv(`${envPrefix}_FILL_SERVICE_THRESHOLD`, true)) ??
+        defaults?.fsThreshold ??
+        undefined,
+      targetBalance:
+        nonEmpty(s3?.fillService?.targetBalance) ??
+        cfg?.fillService?.targetBalance ??
+        (await fromEnv(`${envPrefix}_FILL_SERVICE_TARGET_BALANCE`, true)) ??
+        defaults?.fsTarget ??
+        undefined,
+      allowCrossWalletRebalancing:
+        s3?.fillService?.allowCrossWalletRebalancing ??
+        parseBooleanValue(cfg?.fillService?.allowCrossWalletRebalancing) ??
+        parseBooleanValue(await fromEnv(`${envPrefix}_FILL_SERVICE_ALLOW_CROSS_WALLET`, true)) ??
+        false,
+    },
+    bridge: {
+      slippageDbps:
+        s3?.bridge?.slippageDbps ??
+        cfg?.bridge?.slippageDbps ??
+        parseInt(
+          (await fromEnv(`${envPrefix}_BRIDGE_SLIPPAGE_DBPS`, true)) ?? String(defaults?.slippageDbps ?? 500),
+          10,
+        ),
+      minRebalanceAmount:
+        nonEmpty(s3?.bridge?.minRebalanceAmount) ??
+        cfg?.bridge?.minRebalanceAmount ??
+        (await fromEnv(`${envPrefix}_BRIDGE_MIN_REBALANCE_AMOUNT`, true)) ??
+        defaults?.minAmount ??
+        '100000000', // Safe default: 100 units (6-decimal tokens like USDC/USDT)
+      maxRebalanceAmount:
+        nonEmpty(s3?.bridge?.maxRebalanceAmount) ??
+        cfg?.bridge?.maxRebalanceAmount ??
+        (await fromEnv(`${envPrefix}_BRIDGE_MAX_REBALANCE_AMOUNT`, true)) ??
+        defaults?.maxAmount ??
+        '100000000', // Safe default: 100 units (6-decimal tokens) — prevents unlimited bridging
+    },
+  };
+}
 
 export async function loadConfiguration(): Promise<MarkConfiguration> {
   try {
@@ -386,167 +509,71 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
         privateKey: configJson.solana?.privateKey ?? (await fromEnv('SOLANA_PRIVATE_KEY', true)) ?? undefined,
         rpcUrl: configJson.solana?.rpcUrl ?? (await fromEnv('SOLANA_RPC_URL', true)) ?? undefined,
       },
-      tacRebalance: {
-        enabled:
-          parseBooleanValue(configJson.tacRebalance?.enabled) ??
-          parseBooleanValue(await fromEnv('TAC_REBALANCE_ENABLED', true)) ??
-          false,
-        marketMaker: {
-          address:
-            configJson.tacRebalance?.marketMaker?.address ??
-            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
-            undefined,
-          onDemandEnabled:
-            parseBooleanValue(configJson.tacRebalance?.marketMaker?.onDemandEnabled) ??
-            parseBooleanValue(await fromEnv('TAC_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
-            false,
-          thresholdEnabled:
-            parseBooleanValue(configJson.tacRebalance?.marketMaker?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.tacRebalance?.marketMaker?.threshold ??
-            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
-            undefined,
-          targetBalance:
-            configJson.tacRebalance?.marketMaker?.targetBalance ??
-            (await fromEnv('TAC_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
-            undefined,
-        },
-        fillService: {
-          address:
-            configJson.tacRebalance?.fillService?.address ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
-            undefined,
-          senderAddress:
-            configJson.tacRebalance?.fillService?.senderAddress ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
-            undefined, // Filler's ETH address for sending from mainnet
-          thresholdEnabled:
-            parseBooleanValue(configJson.tacRebalance?.fillService?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.tacRebalance?.fillService?.threshold ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
-            undefined,
-          targetBalance:
-            configJson.tacRebalance?.fillService?.targetBalance ??
-            (await fromEnv('TAC_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
-            undefined,
-          allowCrossWalletRebalancing:
-            parseBooleanValue(configJson.tacRebalance?.fillService?.allowCrossWalletRebalancing) ??
-            parseBooleanValue(await fromEnv('TAC_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
-            false,
-        },
-        bridge: {
-          slippageDbps:
-            configJson.tacRebalance?.bridge?.slippageDbps ??
-            parseInt((await fromEnv('TAC_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '500', 10),
-          minRebalanceAmount:
-            configJson.tacRebalance?.bridge?.minRebalanceAmount ??
-            (await fromEnv('TAC_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
-            undefined,
-          maxRebalanceAmount:
-            configJson.tacRebalance?.bridge?.maxRebalanceAmount ??
-            (await fromEnv('TAC_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
-            undefined, // Max amount per operation (optional cap)
-        },
-      },
-      methRebalance: {
-        enabled:
-          parseBooleanValue(configJson.methRebalance?.enabled) ??
-          parseBooleanValue(await fromEnv('METH_REBALANCE_ENABLED', true)) ??
-          false,
-        marketMaker: {
-          address:
-            configJson.methRebalance?.marketMaker?.address ??
-            (await fromEnv('METH_REBALANCE_MARKET_MAKER_ADDRESS', true)) ??
-            undefined,
-          onDemandEnabled:
-            parseBooleanValue(configJson.methRebalance?.marketMaker?.onDemandEnabled) ??
-            parseBooleanValue(await fromEnv('METH_REBALANCE_MARKET_MAKER_ON_DEMAND_ENABLED', true)) ??
-            false,
-          thresholdEnabled:
-            parseBooleanValue(configJson.methRebalance?.marketMaker?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('METH_REBALANCE_MARKET_MAKER_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.methRebalance?.marketMaker?.threshold ??
-            (await fromEnv('METH_REBALANCE_MARKET_MAKER_THRESHOLD', true)) ??
-            undefined,
-          targetBalance:
-            configJson.methRebalance?.marketMaker?.targetBalance ??
-            (await fromEnv('METH_REBALANCE_MARKET_MAKER_TARGET_BALANCE', true)) ??
-            undefined,
-        },
-        fillService: {
-          address:
-            configJson.methRebalance?.fillService?.address ??
-            (await fromEnv('METH_REBALANCE_FILL_SERVICE_ADDRESS', true)) ??
-            undefined,
-          senderAddress:
-            configJson.methRebalance?.fillService?.senderAddress ??
-            (await fromEnv('METH_REBALANCE_FILL_SERVICE_SENDER_ADDRESS', true)) ??
-            undefined, // Filler's ETH address for sending from mainnet
-          thresholdEnabled:
-            parseBooleanValue(configJson.methRebalance?.fillService?.thresholdEnabled) ??
-            parseBooleanValue(await fromEnv('METH_REBALANCE_FILL_SERVICE_THRESHOLD_ENABLED', true)) ??
-            false,
-          threshold:
-            configJson.methRebalance?.fillService?.threshold ??
-            (await fromEnv('METH_REBALANCE_FILL_SERVICE_THRESHOLD', true)) ??
-            undefined,
-          targetBalance:
-            configJson.methRebalance?.fillService?.targetBalance ??
-            (await fromEnv('METH_REBALANCE_FILL_SERVICE_TARGET_BALANCE', true)) ??
-            undefined,
-          allowCrossWalletRebalancing:
-            parseBooleanValue(configJson.methRebalance?.fillService?.allowCrossWalletRebalancing) ??
-            parseBooleanValue(await fromEnv('METH_REBALANCE_FILL_SERVICE_ALLOW_CROSS_WALLET', true)) ??
-            false,
-        },
-        bridge: {
-          slippageDbps:
-            configJson.methRebalance?.bridge?.slippageDbps ??
-            parseInt((await fromEnv('METH_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '500', 10),
-          minRebalanceAmount:
-            configJson.methRebalance?.bridge?.minRebalanceAmount ??
-            (await fromEnv('METH_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
-            undefined,
-          maxRebalanceAmount:
-            configJson.methRebalance?.bridge?.maxRebalanceAmount ??
-            (await fromEnv('METH_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
-            undefined, // Max amount per operation (optional cap)
-        },
-      },
-      solanaPtusdeRebalance: {
-        enabled:
-          parseBooleanValue(configJson.solanaPtusdeRebalance?.enabled) ??
-          parseBooleanValue(await fromEnv('SOLANA_PTUSDE_REBALANCE_ENABLED', true)) ??
-          true,
-        ptUsdeThreshold:
-          configJson.solanaPtusdeRebalance?.ptUsdeThreshold ??
-          (await fromEnv('SOLANA_PTUSDE_REBALANCE_THRESHOLD', true)) ??
-          '100000000000', // 100 ptUSDe (9 decimals on Solana)
-        ptUsdeTarget:
-          configJson.solanaPtusdeRebalance?.ptUsdeTarget ??
-          (await fromEnv('SOLANA_PTUSDE_REBALANCE_TARGET', true)) ??
-          '500000000000', // 500 ptUSDe (9 decimals on Solana)
-        bridge: {
-          slippageDbps:
-            configJson.solanaPtusdeRebalance?.bridge?.slippageDbps ??
-            parseInt((await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '50', 10), // 0.5% default
-          minRebalanceAmount:
-            configJson.solanaPtusdeRebalance?.bridge?.minRebalanceAmount ??
-            (await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
-            '1000000', // 1 USDC minimum (6 decimals)
-          maxRebalanceAmount:
-            configJson.solanaPtusdeRebalance?.bridge?.maxRebalanceAmount ??
-            (await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
-            '100000000', // 100 USDC max (6 decimals)
-        },
-      },
+      // Fetch threshold configs from S3 (fee-admin) - highest priority source
+      // Falls back gracefully to SSM/env if S3 is unavailable or empty
+      ...(await (async () => {
+        const thresholdS3 = await getThresholdRebalanceConfigFromS3();
+        const solanaS3 = thresholdS3?.solanaPtusdeRebalance;
+        return {
+          tacRebalance: await loadTokenRebalanceConfig(
+            thresholdS3?.tacRebalance,
+            configJson,
+            'tacRebalance',
+            'TAC_REBALANCE',
+          ),
+          methRebalance: await loadTokenRebalanceConfig(
+            thresholdS3?.methRebalance,
+            configJson,
+            'methRebalance',
+            'METH_REBALANCE',
+          ),
+          aManUsdeRebalance: await loadTokenRebalanceConfig(
+            thresholdS3?.aManUsdeRebalance,
+            configJson,
+            'aManUsdeRebalance',
+            'AMANUSDE_REBALANCE',
+          ),
+          aMansyrupUsdtRebalance: await loadTokenRebalanceConfig(
+            thresholdS3?.aMansyrupUsdtRebalance,
+            configJson,
+            'aMansyrupUsdtRebalance',
+            'AMANSYRUPUSDT_REBALANCE',
+          ),
+          solanaPtusdeRebalance: {
+            enabled:
+              solanaS3?.enabled ??
+              parseBooleanValue(configJson.solanaPtusdeRebalance?.enabled) ??
+              parseBooleanValue(await fromEnv('SOLANA_PTUSDE_REBALANCE_ENABLED', true)) ??
+              false,
+            ptUsdeThreshold:
+              nonEmpty(solanaS3?.ptUsdeThreshold) ??
+              configJson.solanaPtusdeRebalance?.ptUsdeThreshold ??
+              (await fromEnv('SOLANA_PTUSDE_REBALANCE_THRESHOLD', true)) ??
+              '100000000000', // 100 ptUSDe (9 decimals on Solana)
+            ptUsdeTarget:
+              nonEmpty(solanaS3?.ptUsdeTarget) ??
+              configJson.solanaPtusdeRebalance?.ptUsdeTarget ??
+              (await fromEnv('SOLANA_PTUSDE_REBALANCE_TARGET', true)) ??
+              '500000000000', // 500 ptUSDe (9 decimals on Solana)
+            bridge: {
+              slippageDbps:
+                solanaS3?.bridge?.slippageDbps ??
+                configJson.solanaPtusdeRebalance?.bridge?.slippageDbps ??
+                parseInt((await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_SLIPPAGE_DBPS', true)) ?? '50', 10), // 0.5% default
+              minRebalanceAmount:
+                nonEmpty(solanaS3?.bridge?.minRebalanceAmount) ??
+                configJson.solanaPtusdeRebalance?.bridge?.minRebalanceAmount ??
+                (await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_MIN_REBALANCE_AMOUNT', true)) ??
+                '1000000', // 1 USDC minimum (6 decimals)
+              maxRebalanceAmount:
+                nonEmpty(solanaS3?.bridge?.maxRebalanceAmount) ??
+                configJson.solanaPtusdeRebalance?.bridge?.maxRebalanceAmount ??
+                (await fromEnv('SOLANA_PTUSDE_REBALANCE_BRIDGE_MAX_REBALANCE_AMOUNT', true)) ??
+                '100000000', // 100 USDC max (6 decimals)
+            },
+          },
+        };
+      })()),
       redis: configJson.redis ?? {
         host: await requireEnv('REDIS_HOST'),
         port: parseInt(await requireEnv('REDIS_PORT')),
@@ -581,10 +608,62 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     };
 
     validateConfiguration(config);
+    logThresholdRebalancerConfigs(config);
     return config;
   } catch (_error: unknown) {
     const error = _error as Error;
     throw new ConfigurationError('Failed to load configuration: ' + error.message, { error: JSON.stringify(error) });
+  }
+}
+
+/**
+ * Log loaded threshold rebalancer configs at startup.
+ * Only logs non-secret operational parameters: addresses, thresholds,
+ * targets, slippage, and amounts. No private keys, mnemonics, or API keys.
+ */
+function logThresholdRebalancerConfigs(config: MarkConfiguration): void {
+  const logTokenRebalancer = (name: string, cfg: TokenRebalanceConfig) => {
+    console.log(`[ThresholdConfig] ${name}:`, {
+      enabled: cfg.enabled,
+      marketMaker: {
+        address: cfg.marketMaker.address,
+        onDemandEnabled: cfg.marketMaker.onDemandEnabled,
+        thresholdEnabled: cfg.marketMaker.thresholdEnabled,
+        threshold: cfg.marketMaker.threshold,
+        targetBalance: cfg.marketMaker.targetBalance,
+      },
+      fillService: {
+        address: cfg.fillService.address,
+        senderAddress: cfg.fillService.senderAddress,
+        thresholdEnabled: cfg.fillService.thresholdEnabled,
+        threshold: cfg.fillService.threshold,
+        targetBalance: cfg.fillService.targetBalance,
+        allowCrossWalletRebalancing: cfg.fillService.allowCrossWalletRebalancing,
+      },
+      bridge: {
+        slippageDbps: cfg.bridge.slippageDbps,
+        minRebalanceAmount: cfg.bridge.minRebalanceAmount,
+        maxRebalanceAmount: cfg.bridge.maxRebalanceAmount,
+      },
+    });
+  };
+
+  if (config.tacRebalance) logTokenRebalancer('tacRebalance', config.tacRebalance);
+  if (config.methRebalance) logTokenRebalancer('methRebalance', config.methRebalance);
+  if (config.aManUsdeRebalance) logTokenRebalancer('aManUsdeRebalance', config.aManUsdeRebalance);
+  if (config.aMansyrupUsdtRebalance) logTokenRebalancer('aMansyrupUsdtRebalance', config.aMansyrupUsdtRebalance);
+
+  if (config.solanaPtusdeRebalance) {
+    console.log('[ThresholdConfig] solanaPtusdeRebalance:', {
+      enabled: config.solanaPtusdeRebalance.enabled,
+      ptUsdeThreshold: config.solanaPtusdeRebalance.ptUsdeThreshold,
+      ptUsdeTarget: config.solanaPtusdeRebalance.ptUsdeTarget,
+      bridge: {
+        slippageDbps: config.solanaPtusdeRebalance.bridge.slippageDbps,
+        minRebalanceAmount: config.solanaPtusdeRebalance.bridge.minRebalanceAmount,
+        maxRebalanceAmount: config.solanaPtusdeRebalance.bridge.maxRebalanceAmount,
+      },
+    });
   }
 }
 
@@ -633,7 +712,14 @@ export const requireEnv = async (name: string, checkSsm = false): Promise<string
 export const fromEnv = async (name: string, checkSsm = false): Promise<string | undefined> => {
   let value = undefined;
   if (checkSsm) {
-    value = await getSsmParameter(name);
+    try {
+      value = await getSsmParameter(name);
+    } catch (error) {
+      if (error instanceof SsmParameterReadError && process.env[name] !== undefined) {
+        return process.env[name];
+      }
+      throw error;
+    }
   }
   return value ?? process.env[name];
 };
