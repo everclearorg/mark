@@ -17,7 +17,7 @@ import {
   BPS_MULTIPLIER,
 } from '@mark/core';
 import { encodeFunctionData, erc20Abi, Hex, formatUnits, parseUnits } from 'viem';
-import { MemoizedTransactionRequest } from '@mark/rebalance';
+import { MemoizedTransactionRequest, BinanceClient, BINANCE_NETWORK_TO_CHAIN_ID } from '@mark/rebalance';
 import type { SwapExecutionResult } from '@mark/rebalance/src/types';
 import { AdminApi } from '../openapi/adminApi';
 import { ErrorResponse, ForbiddenResponse } from '../openapi/schemas';
@@ -881,6 +881,112 @@ const handleTriggerSwap = async (context: AdminContext): Promise<{ statusCode: n
   }
 };
 
+const handleBinanceCheck = async (context: AdminContext): Promise<{ statusCode: number; body: string }> => {
+  const { logger, config } = context;
+
+  try {
+    const { binance } = config.markConfig;
+    if (!binance?.apiKey || !binance?.apiSecret) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ message: 'Binance API key and secret not configured' }),
+      };
+    }
+
+    const client = new BinanceClient(binance.apiKey, binance.apiSecret, 'https://api.binance.com', logger);
+
+    // 1. System status
+    const isOperational = await client.isSystemOperational();
+    logger.info('Binance system status', { isOperational });
+
+    if (!isOperational) {
+      return {
+        statusCode: 503,
+        body: JSON.stringify({ message: 'Binance system is not operational', isOperational }),
+      };
+    }
+
+    // 2. Account balances
+    const balances = await client.getAccountBalance();
+    const nonZeroBalances: Record<string, string> = {};
+    for (const [asset, balance] of Object.entries(balances)) {
+      if (parseFloat(balance as string) > 0) {
+        nonZeroBalances[asset] = balance as string;
+      }
+    }
+
+    logger.info('Binance account balances', { nonZeroBalances });
+
+    const usdcBalance = balances['USDC'] || '0';
+    const usdtBalance = balances['USDT'] || '0';
+    const ethBalance = balances['ETH'] || '0';
+
+    // 3. Withdrawal quota
+    const quota = await client.getWithdrawQuota();
+    const totalQuota = parseFloat(quota.wdQuota);
+    const usedQuota = parseFloat(quota.usedWdQuota);
+    const remainingQuota = totalQuota - usedQuota;
+
+    logger.info('Withdrawal quota', { totalQuota, usedQuota, remainingQuota });
+
+    // 4. USDC network configs
+    const assetConfigs = await client.getAssetConfig();
+    const usdcConfig = assetConfigs.find((c: { coin: string }) => c.coin === 'USDC');
+
+    const networks: Record<string, unknown>[] = [];
+    if (usdcConfig) {
+      const usdcBalanceNum = parseFloat(usdcBalance);
+      for (const net of usdcConfig.networkList) {
+        const chainId = BINANCE_NETWORK_TO_CHAIN_ID[net.network as keyof typeof BINANCE_NETWORK_TO_CHAIN_ID] || null;
+        const fee = parseFloat(net.withdrawFee);
+        const min = parseFloat(net.withdrawMin);
+        const maxWithdrawable = Math.min(usdcBalanceNum - fee, parseFloat(net.withdrawMax), remainingQuota);
+        const canWithdraw = net.withdrawEnable && usdcBalanceNum >= min + fee && maxWithdrawable > 0;
+
+        networks.push({
+          network: net.network,
+          chainId,
+          depositEnabled: net.depositEnable,
+          withdrawEnabled: net.withdrawEnable,
+          withdrawFee: net.withdrawFee,
+          withdrawMin: net.withdrawMin,
+          withdrawMax: net.withdrawMax,
+          canWithdraw,
+          maxWithdrawable: canWithdraw ? maxWithdrawable.toFixed(2) : '0',
+        });
+      }
+    }
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        isOperational,
+        balances: {
+          all: nonZeroBalances,
+          USDC: usdcBalance,
+          USDT: usdtBalance,
+          ETH: ethBalance,
+        },
+        quota: {
+          totalQuotaUSD: totalQuota,
+          usedQuotaUSD: usedQuota,
+          remainingQuotaUSD: remainingQuota,
+        },
+        usdcNetworks: networks,
+      }),
+    };
+  } catch (error) {
+    logger.error('Binance check failed', { error: jsonifyError(error) });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: 'Binance check failed',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
+    };
+  }
+};
+
 const handleGetRequest = async (
   request: HttpPaths,
   context: AdminContext,
@@ -943,6 +1049,9 @@ const handleGetRequest = async (
         return jsonWithSchema(404, ErrorResponse, { message: 'Earmark not found' });
       }
     }
+
+    case HttpPaths.BinanceCheck:
+      return handleBinanceCheck(context);
 
     case HttpPaths.GetRebalanceOperationDetails: {
       const paramsParsed = parsePathParams(AdminApi.getRebalanceOperationDetails.params!, event.pathParameters ?? null);
@@ -1266,6 +1375,11 @@ export const extractRequest = (context: AdminContext): HttpPaths | undefined => 
   if (httpMethod !== 'POST' && httpMethod !== 'GET') {
     logger.error('Unknown http method', { requestId, path, pathParameters, httpMethod });
     return undefined;
+  }
+
+  // Handle Binance check
+  if (httpMethod === 'GET' && path.endsWith('/binance/check')) {
+    return HttpPaths.BinanceCheck;
   }
 
   // Handle earmark detail path with ID parameter

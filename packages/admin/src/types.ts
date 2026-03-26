@@ -49,6 +49,7 @@ export enum HttpPaths {
   TriggerRebalance = '/trigger/rebalance',
   TriggerIntent = '/trigger/intent',
   TriggerSwap = '/trigger/swap',
+  BinanceCheck = '/binance/check',
 }
 
 export interface PaginationParams {
