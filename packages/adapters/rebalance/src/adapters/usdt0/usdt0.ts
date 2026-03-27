@@ -165,7 +165,10 @@ export class Usdt0BridgeAdapter implements BridgeAdapter {
         spender: USDT0_LEGACY_MESH_ETH,
       });
 
-      if (allowance < BigInt(amount)) {
+      // Approve amount + 5% buffer to cover any on-chain fees the OFT contract charges on top
+      const approvalAmount = BigInt(amount) + (BigInt(amount) * 5n) / 100n;
+
+      if (allowance < approvalAmount) {
         // Mainnet USDT requires setting allowance to 0 before setting a new non-zero value
         if (
           route.origin === Number(MAINNET_CHAIN_ID) &&
@@ -198,7 +201,7 @@ export class Usdt0BridgeAdapter implements BridgeAdapter {
             data: encodeFunctionData({
               abi: erc20Abi,
               functionName: 'approve',
-              args: [USDT0_LEGACY_MESH_ETH, BigInt(amount)],
+              args: [USDT0_LEGACY_MESH_ETH, approvalAmount],
             }),
             value: BigInt(0),
             funcSig: 'approve(address,uint256)',
@@ -207,6 +210,7 @@ export class Usdt0BridgeAdapter implements BridgeAdapter {
 
         this.logger.debug('USDT0 approval transaction(s) added', {
           ...logContext,
+          approvalAmount: approvalAmount.toString(),
           approvalCount: transactions.length,
         });
       }
