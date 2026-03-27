@@ -17,6 +17,7 @@ import { CCIPBridgeAdapter } from './ccip';
 import { ZKSyncNativeBridgeAdapter } from './zksync';
 import { LineaNativeBridgeAdapter } from './linea';
 import { ZircuitNativeBridgeAdapter } from './zircuit';
+import { Usdt0BridgeAdapter } from './usdt0';
 
 export class RebalanceAdapter {
   constructor(
@@ -103,6 +104,8 @@ export class RebalanceAdapter {
         return new LineaNativeBridgeAdapter(this.config.chains, this.logger);
       case SupportedBridge.Zircuit:
         return new ZircuitNativeBridgeAdapter(this.config.chains, this.logger);
+      case SupportedBridge.Usdt0:
+        return new Usdt0BridgeAdapter(this.config.chains, this.logger);
       default:
         throw new Error(`Unsupported adapter type: ${type}`);
     }
