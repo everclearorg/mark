@@ -83,6 +83,7 @@ export enum SupportedBridge {
   Zksync = 'zksync',
   Linea = 'linea',
   Zircuit = 'zircuit',
+  Usdt0 = 'usdt0',
 }
 
 export enum GasType {

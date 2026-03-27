@@ -612,8 +612,12 @@ const processOnDemandRebalancing = async (
       invoiceId: invoice.intent_id.toString(),
     });
 
-    // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
-    const bridgeType = SupportedBridge.Stargate;
+    // --- Leg 1: Bridge USDT from Ethereum to TON ---
+    // Try Stargate first, fall back to USDT0 Legacy Mesh if Stargate fails (e.g., no liquidity)
+    const bridgePreferences: { type: SupportedBridge; tag: string; label: string }[] = [
+      { type: SupportedBridge.Stargate, tag: 'stargate-tac', label: 'TAC on-demand Stargate' },
+      { type: SupportedBridge.Usdt0, tag: 'usdt0-tac', label: 'TAC on-demand USDT0' },
+    ];
 
     // Get addresses for the bridging flow
     // evmSender: The Ethereum address that holds USDT and will initiate the bridge
@@ -628,7 +632,7 @@ const processOnDemandRebalancing = async (
 
     // Validate TON address is configured
     if (!tonRecipient) {
-      logger.error('TON address not configured (config.ownTonAddress), cannot execute Stargate bridge', {
+      logger.error('TON address not configured (config.ownTonAddress), cannot execute bridge to TON', {
         requestId,
         note: 'Add ownTonAddress to config to enable TAC rebalancing',
       });
@@ -646,104 +650,139 @@ const processOnDemandRebalancing = async (
     // Use slippage from config (default 500 = 5%)
     const slippageDbps = config.tacRebalance!.bridge.slippageDbps ?? 500;
 
-    const route = {
-      asset: USDT_ON_ETH_ADDRESS,
-      origin: origin,
-      destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
-      maximum: amountToBridge.toString(),
-      slippagesDbps: [slippageDbps],
-      preferences: [bridgeType],
-      reserve: '0',
-    };
+    // CRITICAL: Convert amount from 18 decimals to native USDT decimals (6)
+    const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, origin.toString(), config) ?? 6;
+    const amountInNativeUnits = convertToNativeUnits(amountToBridge, ethUsdtDecimals);
 
-    logger.info('Attempting Leg 1: Ethereum to TON via Stargate', {
+    logger.debug('Converting amount to native units for bridge', {
       requestId,
-      bridgeType,
-      amountToBridge: amountToBridge.toString(),
-      evmSender,
-      tonRecipient,
-      tacRecipient,
+      amountIn18Decimals: amountToBridge.toString(),
+      amountInNativeUnits: amountInNativeUnits.toString(),
+      decimals: ethUsdtDecimals,
     });
 
-    const adapter = rebalance.getAdapter(bridgeType);
-    if (!adapter) {
-      logger.error('Stargate adapter not found', { requestId });
-      continue;
-    }
+    // Try each bridge in preference order (Stargate first, USDT0 fallback)
+    let onDemandBridgeSucceeded = false;
+    for (const bridgePref of bridgePreferences) {
+      const route = {
+        asset: USDT_ON_ETH_ADDRESS,
+        origin: origin,
+        destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
+        maximum: amountToBridge.toString(),
+        slippagesDbps: [slippageDbps],
+        preferences: [bridgePref.type],
+        reserve: '0',
+      };
 
-    try {
-      // CRITICAL: Convert amount from 18 decimals to native USDT decimals (6)
-      const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, origin.toString(), config) ?? 6;
-      const amountInNativeUnits = convertToNativeUnits(amountToBridge, ethUsdtDecimals);
-
-      logger.debug('Converting amount to native units for Stargate', {
+      logger.info('Attempting Leg 1: Ethereum to TON', {
         requestId,
-        amountIn18Decimals: amountToBridge.toString(),
-        amountInNativeUnits: amountInNativeUnits.toString(),
-        decimals: ethUsdtDecimals,
+        bridgeType: bridgePref.type,
+        bridgeLabel: bridgePref.label,
+        amountToBridge: amountToBridge.toString(),
+        evmSender,
+        tonRecipient,
+        tacRecipient,
       });
 
-      const result = await executeEvmBridge({
-        context,
-        adapter,
-        route,
-        amount: amountInNativeUnits,
-        dbAmount: amountToBridge, // preserve 18-decimal for DB record + committed-funds tracking
-        sender: evmSender,
-        recipient: tonRecipient,
-        dbRecipient: tacRecipient,
-        slippageTolerance: BigInt(route.slippagesDbps[0]),
-        slippageMultiplier: BPS_MULTIPLIER,
-        chainService,
-        dbRecord: {
-          earmarkId: earmark.id,
-          tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
-          bridgeTag: 'stargate-tac',
-          status: RebalanceOperationStatus.PENDING,
-        },
-        label: 'TAC on-demand Stargate',
-      });
-
-      if (result.actions.length === 0) {
-        // Cancel orphaned earmark to prevent permanently blocking this invoice
-        try {
-          await database.updateEarmarkStatus(earmark.id, EarmarkStatus.CANCELLED);
-          logger.info('Cancelled earmark after bridge returned no actions', {
-            requestId,
-            earmarkId: earmark.id,
-            invoiceId: invoice.intent_id.toString(),
-          });
-        } catch (cancelError) {
-          logger.error('Failed to cancel orphaned earmark', {
-            requestId,
-            earmarkId: earmark.id,
-            error: jsonifyError(cancelError),
-          });
-        }
+      let adapter;
+      try {
+        adapter = rebalance.getAdapter(bridgePref.type);
+      } catch (adapterError) {
+        logger.warn('Bridge adapter not available, trying next preference', {
+          requestId,
+          bridgeType: bridgePref.type,
+          error: jsonifyError(adapterError),
+        });
         continue;
       }
 
-      actions.push(...result.actions);
+      try {
+        const result = await executeEvmBridge({
+          context,
+          adapter,
+          route,
+          amount: amountInNativeUnits,
+          dbAmount: amountToBridge, // preserve 18-decimal for DB record + committed-funds tracking
+          sender: evmSender,
+          recipient: tonRecipient,
+          dbRecipient: tacRecipient,
+          slippageTolerance: BigInt(route.slippagesDbps[0]),
+          slippageMultiplier: BPS_MULTIPLIER,
+          chainService,
+          dbRecord: {
+            earmarkId: earmark.id,
+            tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
+            bridgeTag: bridgePref.tag,
+            status: RebalanceOperationStatus.PENDING,
+          },
+          label: bridgePref.label,
+        });
 
-      // Track committed funds to prevent over-committing in subsequent operations
-      const bridgedAmount = safeParseBigInt(result.effectiveBridgedAmount);
-      runState.committedAmount += bridgedAmount;
-      remainingEthUsdt -= bridgedAmount;
+        if (result.actions.length === 0) {
+          logger.warn('Bridge returned no actions, trying next preference', {
+            requestId,
+            bridgeType: bridgePref.type,
+            bridgeTag: bridgePref.tag,
+          });
+          continue;
+        }
 
-      logger.debug('Updated committed funds after on-demand bridge', {
+        logger.info('Leg 1 bridge succeeded', {
+          requestId,
+          bridgeType: bridgePref.type,
+          bridgeTag: bridgePref.tag,
+          actionCount: result.actions.length,
+        });
+
+        actions.push(...result.actions);
+
+        // Track committed funds to prevent over-committing in subsequent operations
+        const bridgedAmount = safeParseBigInt(result.effectiveBridgedAmount);
+        runState.committedAmount += bridgedAmount;
+        remainingEthUsdt -= bridgedAmount;
+
+        logger.debug('Updated committed funds after on-demand bridge', {
+          requestId,
+          invoiceId: invoice.intent_id.toString(),
+          bridgedAmount: bridgedAmount.toString(),
+          totalCommitted: runState.committedAmount.toString(),
+          remainingAvailable: remainingEthUsdt.toString(),
+        });
+
+        onDemandBridgeSucceeded = true;
+        break; // Success — don't try remaining preferences
+      } catch (bridgeError) {
+        logger.warn('Bridge execution failed, trying next preference', {
+          requestId,
+          bridgeType: bridgePref.type,
+          bridgeTag: bridgePref.tag,
+          error: jsonifyError(bridgeError),
+        });
+        continue;
+      }
+    }
+
+    if (!onDemandBridgeSucceeded) {
+      logger.error('All bridge preferences failed for on-demand Leg 1 (Ethereum to TON)', {
         requestId,
-        invoiceId: invoice.intent_id.toString(),
-        bridgedAmount: bridgedAmount.toString(),
-        totalCommitted: runState.committedAmount.toString(),
-        remainingAvailable: remainingEthUsdt.toString(),
+        preferences: bridgePreferences.map((p) => p.type),
+        amountToBridge: amountToBridge.toString(),
       });
-    } catch (error) {
-      logger.error('Failed to execute Stargate bridge', {
-        requestId,
-        route,
-        bridgeType,
-        error: jsonifyError(error),
-      });
+      // Cancel orphaned earmark to prevent permanently blocking this invoice
+      try {
+        await database.updateEarmarkStatus(earmark.id, EarmarkStatus.CANCELLED);
+        logger.info('Cancelled earmark after all bridge preferences failed', {
+          requestId,
+          earmarkId: earmark.id,
+          invoiceId: invoice.intent_id.toString(),
+        });
+      } catch (cancelError) {
+        logger.error('Failed to cancel orphaned earmark', {
+          requestId,
+          earmarkId: earmark.id,
+          error: jsonifyError(cancelError),
+        });
+      }
       continue;
     }
   }
@@ -944,8 +983,12 @@ const executeTacBridge = async (
 
   const origin = Number(MAINNET_CHAIN_ID); // Always start from Ethereum mainnet
 
-  // --- Leg 1: Bridge USDT from Ethereum to TON via Stargate ---
-  const bridgeType = SupportedBridge.Stargate;
+  // --- Leg 1: Bridge USDT from Ethereum to TON ---
+  // Try Stargate first, fall back to USDT0 Legacy Mesh if Stargate fails (e.g., no liquidity)
+  const bridgePreferences: { type: SupportedBridge; tag: string; label: string }[] = [
+    { type: SupportedBridge.Stargate, tag: 'stargate-tac', label: 'TAC threshold Stargate' },
+    { type: SupportedBridge.Usdt0, tag: 'usdt0-tac', label: 'TAC threshold USDT0' },
+  ];
 
   // Determine sender for the bridge based on recipient type
   // For Fill Service recipient: prefer filler as sender, fallback to MM
@@ -1057,7 +1100,7 @@ const executeTacBridge = async (
 
   // Validate TON address is configured
   if (!tonRecipient) {
-    logger.error('TON address not configured (config.ownTonAddress), cannot execute Stargate bridge', {
+    logger.error('TON address not configured (config.ownTonAddress), cannot execute bridge to TON', {
       requestId,
       note: 'Add ownTonAddress to config to enable TAC rebalancing',
     });
@@ -1092,75 +1135,106 @@ const executeTacBridge = async (
   // Use slippage from config (default 500 = 5%)
   const slippageDbps = config.tacRebalance!.bridge.slippageDbps ?? 500;
 
-  const route = {
-    asset: USDT_ON_ETH_ADDRESS,
-    origin: origin,
-    destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
-    maximum: amount.toString(),
-    slippagesDbps: [slippageDbps],
-    preferences: [bridgeType],
-    reserve: '0',
-  };
+  // CRITICAL: Convert amount from 18 decimals to native USDT decimals (6)
+  const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, origin.toString(), config) ?? 6;
+  const amountInNativeUnits = convertToNativeUnits(amount, ethUsdtDecimals);
 
-  logger.info('Attempting Leg 1: Ethereum to TON via Stargate', {
+  logger.debug('Converting amount to native units for bridge', {
     requestId,
-    bridgeType,
-    amount: amount.toString(),
-    evmSender,
-    tonRecipient,
-    tacRecipient,
+    amountIn18Decimals: amount.toString(),
+    amountInNativeUnits: amountInNativeUnits.toString(),
+    decimals: ethUsdtDecimals,
   });
 
-  const adapter = rebalance.getAdapter(bridgeType);
-  if (!adapter) {
-    logger.error('Stargate adapter not found', { requestId });
-    return [];
+  // Try each bridge in preference order (Stargate first, USDT0 fallback)
+  for (const bridgePref of bridgePreferences) {
+    const route = {
+      asset: USDT_ON_ETH_ADDRESS,
+      origin: origin,
+      destination: Number(TON_LZ_CHAIN_ID), // First leg goes to TON
+      maximum: amount.toString(),
+      slippagesDbps: [slippageDbps],
+      preferences: [bridgePref.type],
+      reserve: '0',
+    };
+
+    logger.info('Attempting Leg 1: Ethereum to TON', {
+      requestId,
+      bridgeType: bridgePref.type,
+      bridgeLabel: bridgePref.label,
+      amount: amount.toString(),
+      evmSender,
+      tonRecipient,
+      tacRecipient,
+    });
+
+    let adapter;
+    try {
+      adapter = rebalance.getAdapter(bridgePref.type);
+    } catch (adapterError) {
+      logger.warn('Bridge adapter not available, trying next preference', {
+        requestId,
+        bridgeType: bridgePref.type,
+        error: jsonifyError(adapterError),
+      });
+      continue;
+    }
+
+    try {
+      const result = await executeEvmBridge({
+        context,
+        adapter,
+        route,
+        amount: amountInNativeUnits,
+        dbAmount: amount, // preserve 18-decimal for DB record
+        sender: evmSender,
+        recipient: tonRecipient,
+        dbRecipient: tacRecipient,
+        slippageTolerance: BigInt(route.slippagesDbps[0]),
+        slippageMultiplier: BPS_MULTIPLIER,
+        chainService: selectedChainService,
+        senderConfig,
+        dbRecord: {
+          earmarkId: earmarkId,
+          tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
+          bridgeTag: bridgePref.tag,
+          status: RebalanceOperationStatus.PENDING,
+        },
+        label: bridgePref.label,
+      });
+
+      if (result.actions.length > 0) {
+        logger.info('Leg 1 bridge succeeded', {
+          requestId,
+          bridgeType: bridgePref.type,
+          bridgeTag: bridgePref.tag,
+          actionCount: result.actions.length,
+        });
+        return result.actions;
+      }
+
+      logger.warn('Bridge returned no actions, trying next preference', {
+        requestId,
+        bridgeType: bridgePref.type,
+        bridgeTag: bridgePref.tag,
+      });
+    } catch (bridgeError) {
+      logger.warn('Bridge execution failed, trying next preference', {
+        requestId,
+        bridgeType: bridgePref.type,
+        bridgeTag: bridgePref.tag,
+        error: jsonifyError(bridgeError),
+      });
+      continue;
+    }
   }
 
-  try {
-    // CRITICAL: Convert amount from 18 decimals to native USDT decimals (6)
-    const ethUsdtDecimals = getDecimalsFromConfig(USDT_TICKER_HASH, origin.toString(), config) ?? 6;
-    const amountInNativeUnits = convertToNativeUnits(amount, ethUsdtDecimals);
-
-    logger.debug('Converting amount to native units for Stargate', {
-      requestId,
-      amountIn18Decimals: amount.toString(),
-      amountInNativeUnits: amountInNativeUnits.toString(),
-      decimals: ethUsdtDecimals,
-    });
-
-    const result = await executeEvmBridge({
-      context,
-      adapter,
-      route,
-      amount: amountInNativeUnits,
-      dbAmount: amount, // preserve 18-decimal for DB record
-      sender: evmSender,
-      recipient: tonRecipient,
-      dbRecipient: tacRecipient,
-      slippageTolerance: BigInt(route.slippagesDbps[0]),
-      slippageMultiplier: BPS_MULTIPLIER,
-      chainService: selectedChainService,
-      senderConfig,
-      dbRecord: {
-        earmarkId: earmarkId,
-        tickerHash: getTickerForAsset(route.asset, route.origin, config) || USDT_TICKER_HASH,
-        bridgeTag: 'stargate-tac',
-        status: RebalanceOperationStatus.PENDING,
-      },
-      label: 'TAC threshold Stargate',
-    });
-
-    return result.actions;
-  } catch (error) {
-    logger.error('Failed to execute Stargate bridge', {
-      requestId,
-      route,
-      bridgeType,
-      error: jsonifyError(error),
-    });
-    return [];
-  }
+  logger.error('All bridge preferences failed for threshold Leg 1 (Ethereum to TON)', {
+    requestId,
+    preferences: bridgePreferences.map((p) => p.type),
+    amount: amount.toString(),
+  });
+  return [];
 };
 
 /**
@@ -1436,7 +1510,7 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
   // Get all pending TAC operations
   const { operations: tacOperations } = await db.getRebalanceOperations(undefined, undefined, {
     status: [RebalanceOperationStatus.PENDING, RebalanceOperationStatus.AWAITING_CALLBACK],
-    bridge: [`${SupportedBridge.Stargate}-tac`, SupportedBridge.TacInner],
+    bridge: [`${SupportedBridge.Stargate}-tac`, `${SupportedBridge.Usdt0}-tac`, SupportedBridge.TacInner],
   });
 
   // SERIALIZATION CHECK: Only allow one Leg 2 (TacInner) operation in-flight at a time
@@ -1505,6 +1579,8 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
     }
 
     const isStargateToTon = operation.bridge === 'stargate-tac';
+    const isUsdt0ToTon = operation.bridge === 'usdt0-tac';
+    const isLeg1ToTon = isStargateToTon || isUsdt0ToTon;
     const isTacInnerBridge = operation.bridge === SupportedBridge.TacInner;
 
     // Get transaction receipt
@@ -1556,13 +1632,14 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
       asset: assetAddress,
     };
 
-    // Handle Stargate operations (Leg 1: Ethereum → TON)
-    if (isStargateToTon) {
-      const stargateAdapter = rebalance.getAdapter(SupportedBridge.Stargate);
+    // Handle Leg 1 operations (Ethereum → TON via Stargate or USDT0)
+    if (isLeg1ToTon) {
+      const leg1BridgeType = isStargateToTon ? SupportedBridge.Stargate : SupportedBridge.Usdt0;
+      const leg1Adapter = rebalance.getAdapter(leg1BridgeType);
 
       if (operation.status === RebalanceOperationStatus.PENDING) {
         try {
-          const ready = await stargateAdapter.readyOnDestination(
+          const ready = await leg1Adapter.readyOnDestination(
             operation.amount,
             route,
             receipt as unknown as ViemTransactionReceipt,
@@ -1572,15 +1649,16 @@ export const executeTacCallbacks = async (context: ProcessingContext): Promise<v
             await db.updateRebalanceOperation(operation.id, {
               status: RebalanceOperationStatus.AWAITING_CALLBACK,
             });
-            logger.info('Stargate transfer ready, updated to AWAITING_CALLBACK', {
+            logger.info('Leg 1 transfer ready, updated to AWAITING_CALLBACK', {
               ...logContext,
+              bridgeType: leg1BridgeType,
             });
             operation.status = RebalanceOperationStatus.AWAITING_CALLBACK;
           } else {
-            logger.info('Stargate transfer not yet ready', logContext);
+            logger.info('Leg 1 transfer not yet ready', { ...logContext, bridgeType: leg1BridgeType });
           }
         } catch (e: unknown) {
-          logger.error('Failed to check Stargate readiness', { ...logContext, error: jsonifyError(e) });
+          logger.error('Failed to check Leg 1 readiness', { ...logContext, bridgeType: leg1BridgeType, error: jsonifyError(e) });
           continue;
         }
       }
