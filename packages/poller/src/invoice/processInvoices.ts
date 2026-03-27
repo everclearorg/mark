@@ -503,9 +503,41 @@ export async function processTickerGroup(
 
   // Send all intents in one batch
   let purchases: PurchaseAction[] = [];
+  const { inventory } = context;
+  const purchaseReservationIds: string[] = [];
   try {
     if (allIntents.length === 0) {
       throw new Error('No intents to send');
+    }
+
+    // Create MARK_PURCHASE reservations via inventory service for each invoice in the batch
+    if (inventory) {
+      for (const { invoice, intents } of batchedGroup.invoicesWithIntents) {
+        const totalAmount = intents.reduce((sum, i) => sum + BigInt(i.amount), 0n);
+        const tickerAddress = getTokenAddressFromConfig(
+          invoice.ticker_hash,
+          batchedGroup.origin,
+          config,
+        );
+        const reservation = await inventory.createReservation({
+          chainId: batchedGroup.origin,
+          asset: tickerAddress || invoice.ticker_hash,
+          amount: totalAmount.toString(),
+          operationType: 'MARK_PURCHASE',
+          operationId: invoice.intent_id,
+          requestedBy: 'mark',
+          ttlSeconds: 120, // spec: MARK_PURCHASE default TTL is 120s
+          metadata: {
+            invoiceId: invoice.intent_id,
+            tickerHash: invoice.ticker_hash,
+            intentCount: intents.length.toString(),
+          },
+        });
+        if (reservation) {
+          purchaseReservationIds.push(reservation.id);
+          await inventory.updateReservationStatus(reservation.id, 'EXECUTING');
+        }
+      }
     }
 
     const intentResults = await sendIntents(
@@ -515,6 +547,17 @@ export async function processTickerGroup(
       config,
       requestId,
     );
+
+    // Report successful purchase to inventory service
+    if (inventory && intentResults.length > 0) {
+      for (const reservationId of purchaseReservationIds) {
+        await inventory.reportTransactionSuccess(
+          reservationId,
+          intentResults[0].transactionHash,
+          intentResults[0].chainId,
+        );
+      }
+    }
 
     // Create purchases maintaining the invoice-intent relationship
     purchases = intentResults.map((result, index) => ({
@@ -592,6 +635,13 @@ export async function processTickerGroup(
       duration: getTimeSeconds() - start,
     });
   } catch (error) {
+    // Release purchase reservations on failure
+    if (inventory && purchaseReservationIds.length > 0) {
+      for (const reservationId of purchaseReservationIds) {
+        await inventory.reportTransactionFailure(reservationId, 'intent_submission_failed');
+      }
+    }
+
     // Record invalid purchase for each invoice in the batch
     for (const { invoice } of batchedGroup.invoicesWithIntents) {
       prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, {
@@ -722,7 +772,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Query all of Mark's balances across chains
   logger.info('Getting mark balances', { requestId, chains: Object.keys(config.chains) });
   start = getTimeSeconds();
-  const balances = await getMarkBalances(config, chainService, prometheus);
+  const balances = await getMarkBalances(config, chainService, prometheus, context.inventory);
   logger.debug('Retrieved balances', { requestId, balances: jsonifyMap(balances), duration: getTimeSeconds() - start });
 
   // Query all of Mark's gas balances across chains

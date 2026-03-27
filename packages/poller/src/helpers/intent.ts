@@ -291,6 +291,8 @@ export const sendEvmIntents = async (
       owner: ownerForAllowance,
       zodiacConfig: originWalletConfig,
       context: { requestId, invoiceId },
+      inventory: adapters.inventory,
+      walletAddress: config.ownAddress,
     });
 
     if (approvalResult.wasRequired) {
@@ -359,6 +361,9 @@ export const sendEvmIntents = async (
       },
       zodiacConfig: originWalletConfig,
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
+      inventory: adapters.inventory,
+      walletAddress: config.ownAddress,
+      operationId: invoiceId,
     });
 
     const purchaseTx: TransactionReceipt = purchaseResult.receipt!;
@@ -688,6 +693,8 @@ export const sendTvmIntents = async (
         owner: tronAddress,
         zodiacConfig: originWalletConfig,
         context: { requestId, invoiceId },
+        inventory: adapters.inventory,
+        walletAddress: config.ownAddress,
       });
 
       if (approvalResult.wasRequired) {

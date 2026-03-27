@@ -223,7 +223,6 @@ export interface DatabaseConfig {
 export interface MarkConfiguration extends RebalanceConfig {
   pushGatewayUrl: string;
   web3SignerUrl: string;
-  fillServiceSignerUrl?: string; // Optional: separate web3signer for fill service sender
   everclearApiUrl: string;
   relayer: {
     url?: string;

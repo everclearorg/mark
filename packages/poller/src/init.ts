@@ -15,6 +15,7 @@ import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { rebalanceInventory, cleanupExpiredEarmarks, cleanupExpiredRegularRebalanceOps } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { InventoryServiceClient } from '@mark/inventory';
 import { cleanupViemClients } from './helpers/contracts';
 import * as database from '@mark/database';
 import { bytesToHex, WalletClient } from 'viem';
@@ -25,7 +26,7 @@ import { randomBytes } from 'crypto';
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
   chainService: ChainService;
-  fillServiceChainService?: ChainService; // Optional: separate chain service for fill service sender
+  fillServiceChainService?: ChainService; // Deprecated: same as chainService with single EOA
   everclear: EverclearAdapter;
   web3Signer: Web3Signer | WalletClient;
   solanaSigner?: SolanaSigner; // Optional: only initialized when Solana config is present
@@ -33,6 +34,7 @@ export interface MarkAdapters {
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;
   database: typeof database;
+  inventory: InventoryServiceClient; // Unified inventory service client (always initialized, non-blocking)
 }
 export interface ProcessingContext extends MarkAdapters {
   config: MarkConfiguration;

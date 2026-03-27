@@ -25,6 +25,7 @@
     "@mark/core": "workspace:*",
     "@mark/database": "workspace:*",
     "@mark/everclear": "workspace:*",
+    "@mark/inventory": "workspace:*",
     "@mark/logger": "workspace:*",
     "@mark/prometheus": "workspace:*",
     "@mark/rebalance": "workspace:*",

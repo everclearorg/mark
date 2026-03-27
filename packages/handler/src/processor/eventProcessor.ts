@@ -50,7 +50,7 @@ export class EventProcessor {
    */
   async processInvoiceEnqueued(event: QueuedEvent): Promise<EventProcessingResult> {
     const startTime = Date.now();
-    const { config, everclear, chainService, purchaseCache, logger, prometheus, requestId, database } =
+    const { config, everclear, chainService, purchaseCache, logger, prometheus, requestId, database, inventory } =
       this.processingContext;
     let start = getTimeSeconds();
 
@@ -250,7 +250,7 @@ export class EventProcessor {
       // Query all of Mark's balances across chains
       logger.info('Getting mark balances', { requestId, chains: Object.keys(config.chains) });
       start = getTimeSeconds();
-      const balances = await getMarkBalances(config, chainService, prometheus);
+      const balances = await getMarkBalances(config, chainService, prometheus, inventory);
       logger.debug('Retrieved balances', {
         requestId,
         invoiceId: event.id,

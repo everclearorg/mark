@@ -17,6 +17,7 @@
     "packages/adapters/chainservice",
     "packages/adapters/database",
     "packages/adapters/everclear",
+    "packages/adapters/inventory",
     "packages/adapters/web3signer",
     "packages/adapters/prometheus",
     "packages/adapters/rebalance",

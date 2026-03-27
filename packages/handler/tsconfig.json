@@ -22,6 +22,7 @@
     { "path": "../adapters/database" },
     { "path": "../adapters/chainservice" },
     { "path": "../adapters/everclear" },
+    { "path": "../adapters/inventory" },
     { "path": "../adapters/prometheus" },
     { "path": "../adapters/rebalance" },
     { "path": "../adapters/web3signer" },

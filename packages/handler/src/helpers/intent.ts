@@ -114,8 +114,44 @@ export async function splitAndSendIntents(
 
   // Send all intents in one batch
   let purchases: PurchaseAction[] = [];
+
+  // Create MARK_PURCHASE reservation via inventory service
+  const { inventory } = processingContext;
+  let purchaseReservationId: string | undefined;
+  if (inventory && originDomain) {
+    const totalAmount = intents.reduce((sum, i) => sum + BigInt(i.amount), 0n);
+    const tickerAddress = getTokenAddressFromConfig(ticker, originDomain, config);
+    const reservation = await inventory.createReservation({
+      chainId: originDomain,
+      asset: tickerAddress || ticker,
+      amount: totalAmount.toString(),
+      operationType: 'MARK_PURCHASE',
+      operationId: invoiceId,
+      requestedBy: 'mark-handler',
+      ttlSeconds: 120, // spec: MARK_PURCHASE default TTL is 120s
+      metadata: {
+        invoiceId,
+        tickerHash: ticker,
+        intentCount: intents.length.toString(),
+      },
+    });
+    if (reservation) {
+      purchaseReservationId = reservation.id;
+      await inventory.updateReservationStatus(reservation.id, 'EXECUTING');
+    }
+  }
+
   try {
     const intentResults = await sendIntents(invoice.intent_id, intents, processingContext, config, requestId);
+
+    // Report successful purchase to inventory service
+    if (inventory && purchaseReservationId && intentResults.length > 0) {
+      await inventory.reportTransactionSuccess(
+        purchaseReservationId,
+        intentResults[0].transactionHash,
+        intentResults[0].chainId,
+      );
+    }
 
     // Create purchases maintaining the invoice-intent relationship
     purchases = intentResults.map((result, index) => ({
@@ -188,6 +224,11 @@ export async function splitAndSendIntents(
       duration: getTimeSeconds() - start,
     });
   } catch (error) {
+    // Release purchase reservation on failure
+    if (inventory && purchaseReservationId) {
+      await inventory.reportTransactionFailure(purchaseReservationId, 'intent_submission_failed');
+    }
+
     prometheus.recordInvalidPurchase(InvalidPurchaseReasons.TransactionFailed, labels);
 
     logger.error('Failed to send intents for invoice', {

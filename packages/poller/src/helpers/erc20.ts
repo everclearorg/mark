@@ -6,6 +6,7 @@ import { TransactionReason } from '@mark/prometheus';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { TronWeb } from 'tronweb';
 import { submitTransactionWithLogging } from './transactions';
+import type { InventoryServiceClient } from '@mark/inventory';
 
 export interface ApprovalParams {
   config: MarkConfiguration;
@@ -19,6 +20,8 @@ export interface ApprovalParams {
   owner: string;
   zodiacConfig: WalletConfig;
   context?: LoggingContext; // For logging context (requestId, invoiceId, etc.)
+  inventory?: InventoryServiceClient; // For nonce sequencing with shared EOA
+  walletAddress?: string; // Wallet address for nonce management
 }
 
 export interface ApprovalResult {
@@ -86,6 +89,8 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
     owner,
     zodiacConfig,
     context = {},
+    inventory,
+    walletAddress,
   } = params;
 
   const result: ApprovalResult = { wasRequired: false };
@@ -148,6 +153,9 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
       },
       zodiacConfig,
       context: { ...context, transactionType: 'zero-approval', asset: tokenAddress },
+      inventory,
+      walletAddress,
+      operationId: `approval-zero-${chainId}-${tokenAddress}`,
     });
 
     if (
@@ -206,6 +214,9 @@ export async function checkAndApproveERC20(params: ApprovalParams): Promise<Appr
     },
     zodiacConfig,
     context: { ...context, transactionType: 'approval', asset: tokenAddress },
+    inventory,
+    walletAddress,
+    operationId: `approval-${chainId}-${tokenAddress}`,
   });
 
   if (prometheus && approvalResult.receipt) {
