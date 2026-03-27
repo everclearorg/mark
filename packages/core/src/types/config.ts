@@ -222,7 +222,6 @@ export interface DatabaseConfig {
 export interface MarkConfiguration extends RebalanceConfig {
   pushGatewayUrl: string;
   web3SignerUrl: string;
-  fillServiceSignerUrl?: string; // Optional: separate web3signer for fill service sender
   everclearApiUrl: string;
   relayer: {
     url?: string;
@@ -275,7 +274,6 @@ export interface MarkConfiguration extends RebalanceConfig {
     bridgeContractAddress?: string; // Override Mantle bridge contract
   };
   quoteServiceUrl?: string; // Quote service URL for DEX swap quotes (default: https://quotes.api.everclear.org)
-  unifiedInventoryEnabled?: boolean; // Enable unified inventory service (reservations/nonce via everclearApiUrl)
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;

@@ -16,6 +16,7 @@ import { PrometheusAdapter } from '@mark/prometheus';
 import { getValidatedZodiacConfig, getActualOwner } from './zodiac';
 import { ChainService } from '@mark/chainservice';
 import { TronWeb } from 'tronweb';
+import type { InventoryServiceClient } from '@mark/inventory';
 
 /**
  * Returns the gas balance of mark on all chains.
@@ -92,13 +93,14 @@ export const getMarkBalances = async (
   config: MarkConfiguration,
   chainService: ChainService,
   prometheus: PrometheusAdapter,
+  inventory?: InventoryServiceClient,
 ): Promise<Map<string, Map<string, bigint>>> => {
   const tickers = getTickers(config);
 
   const addresses = await chainService.getAddress();
   const results = await Promise.all(
     tickers.map(async (ticker) => {
-      const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus, addresses);
+      const tickerBalances = await getMarkBalancesForTicker(ticker, config, chainService, prometheus, addresses, inventory);
       return { ticker, tickerBalances };
     }),
   );
@@ -121,6 +123,7 @@ export const getMarkBalancesForTicker = async (
   chainService: ChainService,
   prometheus: PrometheusAdapter,
   addresses?: Record<string, string>,
+  inventory?: InventoryServiceClient,
 ): Promise<Map<string, bigint>> => {
   const { chains } = config;
 
@@ -144,6 +147,18 @@ export const getMarkBalancesForTicker = async (
     if (!tokenAddr || !decimals || tokenAddr === zeroAddress || isNative) {
       continue;
     }
+
+    // When inventory service is available, use its availableBalance for EVM chains.
+    // This reflects reservations from all services (Mark + fill service), giving
+    // an accurate view of funds actually available for use.
+    if (inventory && !isSvm && !isTvm) {
+      balancePromises.push({
+        domain,
+        promise: getInventoryAvailableBalance(inventory, domain, tokenAddr, decimals, prometheus),
+      });
+      continue;
+    }
+
     const address = isSvm ? config.ownSolAddress : isTvm ? resolvedAddresses[domain] : config.ownAddress;
     const balancePromise = isSvm
       ? getSvmBalance(config, chainService, domain, address, tokenAddr, decimals, prometheus)
@@ -273,6 +288,35 @@ export const getEvmBalance = async (
     });
     return 0n; // Return 0 balance on error
   }
+};
+
+/**
+ * Gets the available balance from the unified inventory service.
+ * The inventory service returns availableBalance = totalBalance - reservations - pendingIntents + pendingInbound,
+ * which accounts for spending by all services (Mark, fill service, etc.).
+ * Falls back to 0n on error (caller can retry with on-chain read).
+ */
+const getInventoryAvailableBalance = async (
+  inventory: InventoryServiceClient,
+  domain: string,
+  tokenAddr: string,
+  decimals: number,
+  prometheus: PrometheusAdapter,
+): Promise<bigint> => {
+  const balance = await inventory.getInventoryBalance(domain, tokenAddr);
+  if (!balance) {
+    return 0n;
+  }
+
+  let available = BigInt(balance.availableBalance);
+
+  // Inventory service returns raw on-chain units; convert to 18 decimals
+  if (decimals !== 18) {
+    available = convertTo18Decimals(available, decimals);
+  }
+
+  prometheus.updateChainBalance(domain, tokenAddr, available);
+  return available;
 };
 
 /**

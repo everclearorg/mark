@@ -291,6 +291,8 @@ export const sendEvmIntents = async (
       owner: ownerForAllowance,
       zodiacConfig: originWalletConfig,
       context: { requestId, invoiceId },
+      inventory: adapters.inventory,
+      walletAddress: config.ownAddress,
     });
 
     if (approvalResult.wasRequired) {
@@ -691,6 +693,8 @@ export const sendTvmIntents = async (
         owner: tronAddress,
         zodiacConfig: originWalletConfig,
         context: { requestId, invoiceId },
+        inventory: adapters.inventory,
+        walletAddress: config.ownAddress,
       });
 
       if (approvalResult.wasRequired) {

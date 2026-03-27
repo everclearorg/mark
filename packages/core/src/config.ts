@@ -467,8 +467,6 @@ export async function loadConfiguration(): Promise<MarkConfiguration> {
     const config: MarkConfiguration = {
       pushGatewayUrl: configJson.pushGatewayUrl ?? (await requireEnv('PUSH_GATEWAY_URL')),
       web3SignerUrl: configJson.web3SignerUrl ?? (await requireEnv('SIGNER_URL')),
-      fillServiceSignerUrl:
-        configJson.fillServiceSignerUrl ?? (await fromEnv('FILL_SERVICE_SIGNER_URL', true)) ?? undefined,
       everclearApiUrl: configJson.everclearApiUrl ?? (await fromEnv('EVERCLEAR_API_URL')) ?? apiUrl,
       relayer: {
         url: configJson?.relayer?.url ?? (await fromEnv('RELAYER_URL')) ?? undefined,

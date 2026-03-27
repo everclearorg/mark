@@ -14,14 +14,13 @@ import * as database from '@mark/database';
  */
 export interface BaseAdapters {
   chainService: ChainService;
-  fillServiceChainService?: ChainService;
   everclear: EverclearAdapter;
   purchaseCache: PurchaseCache;
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;
   database: typeof database;
   web3Signer: Web3Signer;
-  inventory?: InventoryServiceClient;
+  inventory: InventoryServiceClient;
 }
 
 /**
@@ -66,39 +65,11 @@ export function initializeBaseAdapters(
     logger,
   );
 
-  // Initialize fill service chain service if configured
-  // Check all rebalance configs that may use a separate fill service sender
-  let fillServiceChainService: ChainService | undefined;
-  const fsSenderAddress =
-    config.tacRebalance?.fillService?.senderAddress ??
-    config.tacRebalance?.fillService?.address ??
-    config.methRebalance?.fillService?.senderAddress ??
-    config.methRebalance?.fillService?.address ??
-    config.aManUsdeRebalance?.fillService?.senderAddress ??
-    config.aManUsdeRebalance?.fillService?.address ??
-    config.aMansyrupUsdtRebalance?.fillService?.senderAddress ??
-    config.aMansyrupUsdtRebalance?.fillService?.address;
-  if (config.fillServiceSignerUrl && fsSenderAddress) {
-    logger.info('Initializing Fill Service chain service', {
-      signerUrl: config.fillServiceSignerUrl,
-      senderAddress: fsSenderAddress,
-    });
-
-    const fillServiceSigner = config.fillServiceSignerUrl.startsWith('http')
-      ? new Web3Signer(config.fillServiceSignerUrl)
-      : new EthWallet(config.fillServiceSignerUrl);
-
-    fillServiceChainService = new ChainService(
-      {
-        chains: config.chains,
-        maxRetries: 3,
-        retryDelay: 15000,
-        logLevel: config.logLevel,
-      },
-      fillServiceSigner as EthWallet,
-      logger,
-    );
-  }
+  // Initialize inventory service client.
+  // The inventory API is served from the same connext-api as everclearApiUrl.
+  // Always initialized — all methods are non-blocking and degrade gracefully
+  // when the inventory service endpoints are not available.
+  const inventory = new InventoryServiceClient(config.everclearApiUrl, logger);
 
   // Initialize other adapters
   const everclear = new EverclearAdapter(config.everclearApiUrl, logger);
@@ -109,19 +80,8 @@ export function initializeBaseAdapters(
   // Initialize database
   database.initializeDatabase(config.database);
 
-  // Initialize inventory service client if unified inventory is enabled.
-  // The inventory API is served from the same connext-api as everclearApiUrl.
-  let inventory: InventoryServiceClient | undefined;
-  if (config.unifiedInventoryEnabled) {
-    inventory = new InventoryServiceClient(config.everclearApiUrl, logger);
-    logger.info('Unified inventory service client initialized', {
-      url: config.everclearApiUrl,
-    });
-  }
-
   const baseAdapters: BaseAdapters & { solanaSigner?: SolanaSigner } = {
     chainService,
-    fillServiceChainService,
     everclear,
     purchaseCache,
     prometheus,

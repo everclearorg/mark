@@ -772,7 +772,7 @@ export async function processInvoices(context: ProcessingContext, invoices: Invo
   // Query all of Mark's balances across chains
   logger.info('Getting mark balances', { requestId, chains: Object.keys(config.chains) });
   start = getTimeSeconds();
-  const balances = await getMarkBalances(config, chainService, prometheus);
+  const balances = await getMarkBalances(config, chainService, prometheus, context.inventory);
   logger.debug('Retrieved balances', { requestId, balances: jsonifyMap(balances), duration: getTimeSeconds() - start });
 
   // Query all of Mark's gas balances across chains

@@ -26,7 +26,7 @@ import { randomBytes } from 'crypto';
 export interface MarkAdapters {
   purchaseCache: PurchaseCache;
   chainService: ChainService;
-  fillServiceChainService?: ChainService; // Optional: separate chain service for fill service sender
+  fillServiceChainService?: ChainService; // Deprecated: same as chainService with single EOA
   everclear: EverclearAdapter;
   web3Signer: Web3Signer | WalletClient;
   solanaSigner?: SolanaSigner; // Optional: only initialized when Solana config is present
@@ -34,7 +34,7 @@ export interface MarkAdapters {
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;
   database: typeof database;
-  inventory?: InventoryServiceClient; // Optional: unified inventory service client
+  inventory: InventoryServiceClient; // Unified inventory service client (always initialized, non-blocking)
 }
 export interface ProcessingContext extends MarkAdapters {
   config: MarkConfiguration;

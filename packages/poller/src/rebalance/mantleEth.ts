@@ -727,7 +727,7 @@ export const executeMethCallbacks = async (context: ProcessingContext): Promise<
  * Process a single in-flight mETH operation through its state machine.
  */
 async function processMethOperation(operation: RebalanceOperation, context: ProcessingContext): Promise<void> {
-  const { logger, requestId, config, rebalance, chainService, fillServiceChainService, database: db } = context;
+  const { logger, requestId, config, rebalance, chainService, fillServiceChainService, database: db, inventory } = context;
   const logContext = {
     requestId,
     operationId: operation.id,
@@ -1009,7 +1009,7 @@ async function processMethOperation(operation: RebalanceOperation, context: Proc
       // Step 4: Submit the Mantle bridge transactions
       try {
         const { receipt: mantleReceipt, effectiveBridgedAmount } = await submitBridgeTransactions({
-          context: { requestId, logger, config },
+          context: { requestId, logger, config, inventory },
           chainService: selectedChainService as ChainService,
           route,
           bridgeType: mantleBridgeType,

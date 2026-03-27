@@ -65,13 +65,18 @@ export async function evaluateOnDemandRebalancing(
     return { canRebalance: false };
   }
 
-  const balances = await getMarkBalances(config, context.chainService, context.prometheus);
+  const balances = await getMarkBalances(config, context.chainService, context.prometheus, context.inventory);
 
-  // Get active earmarks to exclude from available balance
-  const activeEarmarks = await database.getEarmarks({
-    status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
-  });
-  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
+  // Get active earmarks to exclude from available balance.
+  // When inventory service provides the balance, it already accounts for all reservations,
+  // so we use empty earmarked funds to avoid double-counting.
+  let earmarkedFunds: EarmarkedFunds[] = [];
+  if (!context.inventory) {
+    const activeEarmarks = await database.getEarmarks({
+      status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
+    });
+    earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
+  }
 
   // For each potential destination chain, evaluate if we can aggregate enough funds
   const evaluationResults: Map<number, OnDemandRebalanceResult & { minAmount: string }> = new Map();
@@ -1065,7 +1070,7 @@ export async function executeOnDemandRebalancing(
       operationType: 'REBALANCE_ONDEMAND',
       operationId: invoice.intent_id,
       requestedBy: 'mark',
-      ttlSeconds: 3600, // spec: REBALANCE_ONDEMAND default TTL is 3600s
+      ttlSeconds: 3600,
       metadata: {
         invoiceId: invoice.intent_id,
         tickerHash: invoice.ticker_hash,
@@ -1458,16 +1463,20 @@ export async function handleMinAmountIncrease(
     difference: additionalAmount.toString(),
   });
 
-  // Get current balances and earmarked funds
-  const balances = await getMarkBalances(config, context.chainService, context.prometheus);
-  const activeEarmarks = await database.getEarmarks({
-    status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
-  });
-  const earmarkedFunds = calculateEarmarkedFunds(activeEarmarks);
+  // Get current balances and earmarked funds.
+  // When inventory provides balance, it already accounts for reservations — skip earmark subtraction.
+  const balances = await getMarkBalances(config, context.chainService, context.prometheus, context.inventory);
+  let earmarkedFundsForMinAmount: EarmarkedFunds[] = [];
+  if (!context.inventory) {
+    const activeEarmarks = await database.getEarmarks({
+      status: [EarmarkStatus.INITIATING, EarmarkStatus.PENDING, EarmarkStatus.READY],
+    });
+    earmarkedFundsForMinAmount = calculateEarmarkedFunds(activeEarmarks);
+  }
 
   // Check if destination already has enough available balance
   const destinationBalance = balances.get(ticker)?.get(earmark.designatedPurchaseChain.toString()) || 0n;
-  const earmarkedOnDestination = earmarkedFunds
+  const earmarkedOnDestination = earmarkedFundsForMinAmount
     .filter((e) => e.chainId === earmark.designatedPurchaseChain && e.tickerHash.toLowerCase() === ticker)
     .reduce((sum, e) => sum + e.amount, 0n);
   const availableBalance = destinationBalance - earmarkedOnDestination;
@@ -1498,7 +1507,7 @@ export async function handleMinAmountIncrease(
     additionalAmount,
     additionalRouteEntries,
     balances,
-    earmarkedFunds,
+    earmarkedFundsForMinAmount,
     invoice.ticker_hash.toLowerCase(),
     earmark.invoiceId,
     context,

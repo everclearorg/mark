@@ -30,7 +30,7 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
   logger.info('Starting to rebalance inventory', { requestId });
 
   // Get all of mark balances
-  const balances = await getMarkBalances(config, chainService, context.prometheus);
+  const balances = await getMarkBalances(config, chainService, context.prometheus, context.inventory);
   logger.debug('Retrieved all mark balances', { balances: jsonifyMap(balances) });
 
   // For each route that is configured,
@@ -89,9 +89,13 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
       continue; // Skip to next route
     }
 
-    // Get balance minus earmarked funds
-    const earmarkedBalance = await getEarmarkedBalance(route.origin, ticker, context);
-    const availableBalance = (tickerBalances.get(route.origin.toString()) || 0n) - earmarkedBalance;
+    // Get balance minus earmarked funds.
+    // When inventory service provides the balance, it already accounts for all reservations
+    // (from both Mark and fill service), so we skip the earmark subtraction to avoid double-counting.
+    const rawBalance = tickerBalances.get(route.origin.toString()) || 0n;
+    const availableBalance = context.inventory
+      ? rawBalance
+      : rawBalance - await getEarmarkedBalance(route.origin, ticker, context);
 
     // Ticker balances always in 18 units, convert to proper decimals
     const decimals = getDecimalsFromConfig(ticker, route.origin.toString(), config);
@@ -174,6 +178,16 @@ export async function rebalanceInventory(context: ProcessingContext): Promise<Re
           if (reservation) {
             thresholdReservationId = reservation.id;
             await inventory.updateReservationStatus(reservation.id, 'EXECUTING');
+          } else {
+            // Inventory service rejected the reservation (insufficient balance or unavailable).
+            // Skip this bridge attempt — another service may have reserved the funds.
+            logger.warn('Inventory reservation failed for threshold rebalance, skipping bridge', {
+              requestId,
+              route,
+              bridgeType,
+              amountToBridge: amountToBridge.toString(),
+            });
+            continue;
           }
         }
 
