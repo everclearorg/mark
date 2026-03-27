@@ -6,6 +6,7 @@ import { EverclearAdapter } from '@mark/everclear';
 import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { InventoryServiceClient } from '@mark/inventory';
 import * as database from '@mark/database';
 
 /**
@@ -20,6 +21,7 @@ export interface BaseAdapters {
   rebalance: RebalanceAdapter;
   database: typeof database;
   web3Signer: Web3Signer;
+  inventory?: InventoryServiceClient;
 }
 
 /**
@@ -107,6 +109,16 @@ export function initializeBaseAdapters(
   // Initialize database
   database.initializeDatabase(config.database);
 
+  // Initialize inventory service client if unified inventory is enabled.
+  // The inventory API is served from the same connext-api as everclearApiUrl.
+  let inventory: InventoryServiceClient | undefined;
+  if (config.unifiedInventoryEnabled) {
+    inventory = new InventoryServiceClient(config.everclearApiUrl, logger);
+    logger.info('Unified inventory service client initialized', {
+      url: config.everclearApiUrl,
+    });
+  }
+
   const baseAdapters: BaseAdapters & { solanaSigner?: SolanaSigner } = {
     chainService,
     fillServiceChainService,
@@ -116,6 +128,7 @@ export function initializeBaseAdapters(
     rebalance,
     database,
     web3Signer: web3Signer as Web3Signer,
+    inventory,
   };
 
   // Initialize Solana signer if requested and configured

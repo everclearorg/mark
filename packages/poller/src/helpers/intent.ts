@@ -359,6 +359,9 @@ export const sendEvmIntents = async (
       },
       zodiacConfig: originWalletConfig,
       context: { requestId, invoiceId, transactionType: 'batch-create-intent' },
+      inventory: adapters.inventory,
+      walletAddress: config.ownAddress,
+      operationId: invoiceId,
     });
 
     const purchaseTx: TransactionReceipt = purchaseResult.receipt!;

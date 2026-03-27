@@ -275,6 +275,7 @@ export interface MarkConfiguration extends RebalanceConfig {
     bridgeContractAddress?: string; // Override Mantle bridge contract
   };
   quoteServiceUrl?: string; // Quote service URL for DEX swap quotes (default: https://quotes.api.everclear.org)
+  unifiedInventoryEnabled?: boolean; // Enable unified inventory service (reservations/nonce via everclearApiUrl)
   redis: RedisConfig;
   database: DatabaseConfig;
   ownAddress: string;

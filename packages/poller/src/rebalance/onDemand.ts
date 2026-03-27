@@ -22,6 +22,7 @@ import { jsonifyError } from '@mark/logger';
 import { RebalanceTransactionMemo } from '@mark/rebalance';
 import { getValidatedZodiacConfig, getActualAddress } from '../helpers/zodiac';
 import { submitTransactionWithLogging } from '../helpers/transactions';
+import type { Reservation } from '@mark/inventory';
 
 const MIN_REBALANCE_AMOUNT_FACTOR = 2n;
 
@@ -1026,7 +1027,7 @@ export async function executeOnDemandRebalancing(
   evaluationResult: OnDemandRebalanceResult,
   context: ProcessingContext,
 ): Promise<string | null> {
-  const { logger, requestId, config } = context;
+  const { logger, requestId, config, inventory } = context;
 
   if (!evaluationResult.canRebalance) {
     return null;
@@ -1048,6 +1049,45 @@ export async function executeOnDemandRebalancing(
     return existingActive.status === EarmarkStatus.PENDING ? existingActive.id : null;
   }
 
+  // Create a reservation via the inventory service BEFORE creating the earmark.
+  // This ensures the unified inventory service tracks the reserved funds across all services.
+  let reservation: Reservation | undefined;
+  if (inventory) {
+    const tickerAddress = getTokenAddressFromConfig(
+      invoice.ticker_hash.toLowerCase(),
+      destinationChain!.toString(),
+      config,
+    );
+    reservation = await inventory.createReservation({
+      chainId: destinationChain!.toString(),
+      asset: tickerAddress || invoice.ticker_hash,
+      amount: minAmount!,
+      operationType: 'REBALANCE_ONDEMAND',
+      operationId: invoice.intent_id,
+      requestedBy: 'mark',
+      ttlSeconds: 3600, // spec: REBALANCE_ONDEMAND default TTL is 3600s
+      metadata: {
+        invoiceId: invoice.intent_id,
+        tickerHash: invoice.ticker_hash,
+      },
+    });
+
+    if (reservation) {
+      logger.info('Created inventory reservation for on-demand rebalance', {
+        requestId,
+        reservationId: reservation.id,
+        invoiceId: invoice.intent_id,
+        chainId: destinationChain,
+        amount: minAmount,
+      });
+    } else {
+      logger.warn('Failed to create inventory reservation, proceeding with earmark only', {
+        requestId,
+        invoiceId: invoice.intent_id,
+      });
+    }
+  }
+
   // Create an earmark with INITIATING status BEFORE executing any bridge transactions.
   // The unique partial index on (invoice_id) WHERE status IN ('initiating', 'pending', 'ready')
   // prevents two concurrent processes from both creating earmarks. This ensures the constraint
@@ -1065,12 +1105,23 @@ export async function executeOnDemandRebalancing(
     const dbError = error as { code?: string; constraint?: string };
     if (dbError.code === '23505' && dbError.constraint === 'unique_active_earmark_per_invoice') {
       // Another process won the race and created the earmark first.
-      // Return null — the caller will retry and pick up the existing earmark.
+      // Release the reservation since we won't proceed.
+      if (reservation && inventory) {
+        await inventory.updateReservationStatus(reservation.id, 'FAILED', {
+          reason: 'race_condition_earmark_exists',
+        });
+      }
       logger.warn('Race condition: another process created earmark first, skipping', {
         requestId,
         invoiceId: invoice.intent_id,
       });
       return null;
+    }
+    // Release reservation on unexpected error
+    if (reservation && inventory) {
+      await inventory.updateReservationStatus(reservation.id, 'FAILED', {
+        reason: 'earmark_creation_failed',
+      });
     }
     throw error;
   }
@@ -1079,7 +1130,15 @@ export async function executeOnDemandRebalancing(
     requestId,
     earmarkId: earmark.id,
     invoiceId: invoice.intent_id,
+    reservationId: reservation?.id,
   });
+
+  // Update reservation to ACTIVE now that earmark is created
+  if (reservation && inventory) {
+    await inventory.updateReservationStatus(reservation.id, 'ACTIVE', {
+      earmarkId: earmark.id,
+    });
+  }
 
   // Track successful operations to create database records later
   const successfulOperations: Array<{
@@ -1095,6 +1154,34 @@ export async function executeOnDemandRebalancing(
 
   try {
     for (const operation of rebalanceOperations!) {
+      // Create a per-operation reservation for the origin chain funds being bridged
+      let originReservation: Reservation | undefined;
+      if (inventory && !operation.isSameChainSwap) {
+        const originTickerAddress = getTokenAddressFromConfig(
+          invoice.ticker_hash.toLowerCase(),
+          operation.originChain.toString(),
+          config,
+        );
+        originReservation = await inventory.createReservation({
+          chainId: operation.originChain.toString(),
+          asset: originTickerAddress || invoice.ticker_hash,
+          amount: operation.amount,
+          operationType: 'REBALANCE_ONDEMAND',
+          operationId: `${invoice.intent_id}-bridge-${operation.originChain}-${operation.destinationChain}`,
+          requestedBy: 'mark',
+          ttlSeconds: 3600, // 1 hour for bridge operations
+          metadata: {
+            invoiceId: invoice.intent_id,
+            bridge: operation.bridge,
+            parentReservationId: reservation?.id || '',
+          },
+        });
+
+        if (originReservation) {
+          await inventory.updateReservationStatus(originReservation.id, 'EXECUTING');
+        }
+      }
+
       const execResult = await executeSingleOperation(
         operation,
         invoice.intent_id,
@@ -1104,10 +1191,20 @@ export async function executeOnDemandRebalancing(
       );
 
       if (!execResult) {
-        // Error already logged in executeSingleOperation
+        // Release origin reservation on failure
+        if (originReservation && inventory) {
+          await inventory.updateReservationStatus(originReservation.id, 'FAILED', {
+            reason: 'bridge_operation_failed',
+          });
+        }
         // For swaps, fail fast; for bridges, continue to next operation
         if (operation.isSameChainSwap) {
           await database.updateEarmarkStatus(earmark.id, EarmarkStatus.FAILED);
+          if (reservation && inventory) {
+            await inventory.updateReservationStatus(reservation.id, 'FAILED', {
+              reason: 'swap_operation_failed',
+            });
+          }
           return null;
         }
         continue;
@@ -1129,6 +1226,40 @@ export async function executeOnDemandRebalancing(
           receipt: execResult.result.receipt,
           recipient: execResult.recipient,
         });
+
+        // Report successful bridge tx to inventory service and release origin reservation
+        if (originReservation && inventory) {
+          await inventory.reportTransactionSuccess(
+            originReservation.id,
+            execResult.result.receipt.transactionHash,
+            operation.originChain.toString(),
+            { bridge: operation.bridge },
+          );
+        }
+
+        // Register pending inbound on the destination chain so the inventory
+        // service knows funds are in transit and can include them in balance calcs
+        if (inventory) {
+          const destTickerAddress = getTokenAddressFromConfig(
+            invoice.ticker_hash.toLowerCase(),
+            destinationChain!.toString(),
+            config,
+          );
+          await inventory.registerInbound({
+            chainId: destinationChain!.toString(),
+            asset: destTickerAddress || invoice.ticker_hash,
+            amount: execResult.result.effectiveAmount || operation.amount,
+            sourceChain: operation.originChain.toString(),
+            operationType: 'REBALANCE_ONDEMAND',
+            operationId: invoice.intent_id,
+            expectedArrivalSeconds: 1800, // 30 min default for bridge operations
+            txHash: execResult.result.receipt.transactionHash,
+            metadata: {
+              bridge: operation.bridge,
+              earmarkId: earmark.id,
+            },
+          });
+        }
       }
     }
 
@@ -1145,6 +1276,11 @@ export async function executeOnDemandRebalancing(
         });
       }
       await database.updateEarmarkStatus(earmark.id, EarmarkStatus.FAILED);
+      if (reservation && inventory) {
+        await inventory.updateReservationStatus(reservation.id, 'FAILED', {
+          reason: 'no_bridge_operations',
+        });
+      }
       return null;
     }
 
@@ -1155,6 +1291,11 @@ export async function executeOnDemandRebalancing(
         totalBridgeOperations: bridgeOperationCount,
       });
       await database.updateEarmarkStatus(earmark.id, EarmarkStatus.FAILED);
+      if (reservation && inventory) {
+        await inventory.updateReservationStatus(reservation.id, 'FAILED', {
+          reason: 'all_bridge_operations_failed',
+        });
+      }
       return null;
     }
 
@@ -1164,11 +1305,26 @@ export async function executeOnDemandRebalancing(
     const newStatus = allSucceeded ? EarmarkStatus.PENDING : EarmarkStatus.FAILED;
     await database.updateEarmarkStatus(earmark.id, newStatus);
 
+    // Update reservation status to match earmark
+    if (reservation && inventory) {
+      if (allSucceeded) {
+        await inventory.updateReservationStatus(reservation.id, 'EXECUTING', {
+          earmarkStatus: 'pending',
+          bridgeOperations: successfulOperations.length.toString(),
+        });
+      } else {
+        await inventory.updateReservationStatus(reservation.id, 'FAILED', {
+          reason: 'partial_bridge_failure',
+        });
+      }
+    }
+
     if (allSucceeded) {
       logger.info('All bridge operations succeeded, earmark now PENDING', {
         requestId,
         earmarkId: earmark.id,
         invoiceId: invoice.intent_id,
+        reservationId: reservation?.id,
         successfulOperations: successfulOperations.length,
         totalBridgeOperations: bridgeOperationCount,
       });
@@ -1230,6 +1386,12 @@ export async function executeOnDemandRebalancing(
         requestId,
         earmarkId: earmark.id,
         error: jsonifyError(updateError),
+      });
+    }
+    // Release reservation on error
+    if (reservation && inventory) {
+      await inventory.updateReservationStatus(reservation.id, 'FAILED', {
+        reason: 'execution_error',
       });
     }
     return null;
@@ -1736,6 +1898,9 @@ async function executeRebalanceTransactionWithBridge(
             },
             zodiacConfig,
             context: { requestId, invoiceId, bridgeType, transactionType: memo },
+            inventory: context.inventory,
+            walletAddress: context.config.ownAddress,
+            operationId: `${invoiceId}-${bridgeType}-${route.origin}`,
           });
 
           logger.info('Successfully submitted on-demand rebalance transaction', {
@@ -1881,7 +2046,7 @@ export async function cleanupCompletedEarmarks(
   purchasedInvoiceIds: string[],
   context: ProcessingContext,
 ): Promise<void> {
-  const { logger, requestId } = context;
+  const { logger, requestId, inventory } = context;
 
   for (const invoiceId of purchasedInvoiceIds) {
     try {
@@ -1889,6 +2054,18 @@ export async function cleanupCompletedEarmarks(
 
       if (earmark && earmark.status === EarmarkStatus.READY) {
         await database.updateEarmarkStatus(earmark.id, EarmarkStatus.COMPLETED);
+
+        // Release any associated inventory reservations
+        if (inventory) {
+          const reservations = await inventory.getReservationsByOperation(invoiceId);
+          for (const reservation of reservations) {
+            if (reservation.status !== 'COMPLETED' && reservation.status !== 'FAILED' && reservation.status !== 'EXPIRED') {
+              await inventory.updateReservationStatus(reservation.id, 'COMPLETED', {
+                reason: 'earmark_completed',
+              });
+            }
+          }
+        }
 
         logger.info('Marked earmark as completed', {
           requestId,
@@ -1907,7 +2084,7 @@ export async function cleanupCompletedEarmarks(
 }
 
 export async function cleanupStaleEarmarks(invoiceIds: string[], context: ProcessingContext): Promise<void> {
-  const { logger, requestId } = context;
+  const { logger, requestId, inventory } = context;
 
   for (const invoiceId of invoiceIds) {
     try {
@@ -1916,6 +2093,18 @@ export async function cleanupStaleEarmarks(invoiceIds: string[], context: Proces
       if (earmark) {
         // Mark earmark as cancelled since the invoice is no longer available
         await database.updateEarmarkStatus(earmark.id, EarmarkStatus.CANCELLED);
+
+        // Release any associated inventory reservations
+        if (inventory) {
+          const reservations = await inventory.getReservationsByOperation(invoiceId);
+          for (const reservation of reservations) {
+            if (reservation.status !== 'COMPLETED' && reservation.status !== 'FAILED' && reservation.status !== 'EXPIRED') {
+              await inventory.updateReservationStatus(reservation.id, 'FAILED', {
+                reason: 'earmark_cancelled_stale',
+              });
+            }
+          }
+        }
 
         logger.info('Marked stale earmark as cancelled', {
           requestId,
@@ -1939,10 +2128,41 @@ export async function getEarmarkedBalance(
   tickerHash: string,
   context: ProcessingContext,
 ): Promise<bigint> {
-  const { config } = context;
+  const { config, inventory, logger, requestId } = context;
 
   const ticker = tickerHash.toLowerCase();
 
+  // If inventory service is available, query it for the authoritative reserved balance.
+  // GET /inventory/balance/{chainId}/{asset} returns the full balance view including
+  // reservations across all services (Mark, fast-path filler, etc.).
+  if (inventory) {
+    const tickerAddress = getTokenAddressFromConfig(ticker, chainId.toString(), config);
+    if (tickerAddress) {
+      const balance = await inventory.getInventoryBalance(chainId.toString(), tickerAddress);
+      if (balance) {
+        // The reserved amount is totalBalance - availableBalance
+        const totalReserved = BigInt(balance.totalBalance) - BigInt(balance.availableBalance);
+        logger.debug('Got reserved balance from inventory service', {
+          requestId,
+          chainId,
+          ticker,
+          totalBalance: balance.totalBalance,
+          availableBalance: balance.availableBalance,
+          totalReserved: totalReserved.toString(),
+          reservedByType: balance.reservedByType,
+        });
+        return totalReserved > 0n ? totalReserved : 0n;
+      }
+      // Fall through to database-based calculation if inventory service call fails
+      logger.debug('Inventory service unavailable, falling back to database earmarks', {
+        requestId,
+        chainId,
+        ticker,
+      });
+    }
+  }
+
+  // Fallback: database-based earmark calculation (original behavior)
   // Get earmarked amounts (initiating, pending, and ready)
   const earmarks = await database.getEarmarks({
     designatedPurchaseChain: chainId,

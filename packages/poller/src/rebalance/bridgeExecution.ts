@@ -20,7 +20,7 @@ import { SenderConfig } from './types';
 // ---------------------------------------------------------------------------
 
 export interface SubmitBridgeTxsParams {
-  context: Pick<ProcessingContext, 'logger' | 'config' | 'requestId'>;
+  context: Pick<ProcessingContext, 'logger' | 'config' | 'requestId' | 'inventory'>;
   chainService: ChainService;
   route: { origin: number; destination: number; asset: string };
   bridgeType: SupportedBridge;
@@ -87,6 +87,9 @@ export const submitBridgeTransactions = async ({
       },
       zodiacConfig,
       context: { requestId, route, bridgeType, transactionType: memo, sender: senderLabel },
+      inventory: context.inventory,
+      walletAddress: senderAddress,
+      operationId: `rebalance-${bridgeType}-${route.origin}-${route.destination}`,
     });
 
     logger.info('Successfully submitted bridge transaction', {

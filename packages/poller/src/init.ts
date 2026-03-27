@@ -15,6 +15,7 @@ import { PurchaseCache } from '@mark/cache';
 import { PrometheusAdapter } from '@mark/prometheus';
 import { rebalanceInventory, cleanupExpiredEarmarks, cleanupExpiredRegularRebalanceOps } from './rebalance';
 import { RebalanceAdapter } from '@mark/rebalance';
+import { InventoryServiceClient } from '@mark/inventory';
 import { cleanupViemClients } from './helpers/contracts';
 import * as database from '@mark/database';
 import { bytesToHex, WalletClient } from 'viem';
@@ -33,6 +34,7 @@ export interface MarkAdapters {
   prometheus: PrometheusAdapter;
   rebalance: RebalanceAdapter;
   database: typeof database;
+  inventory?: InventoryServiceClient; // Optional: unified inventory service client
 }
 export interface ProcessingContext extends MarkAdapters {
   config: MarkConfiguration;
